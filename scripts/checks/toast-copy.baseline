@@ -382,7 +382,6 @@ packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | 
 packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/edit/TemplateDialog.tsx | untitled | t.templateSaved({ name: template.name })
-packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | ctx.gatheredBy === "blocked" ? t.movedStaysBlocked({ status: ctx.targetLabel }) : t.movedStaysOverdue({ status: ctx.targetLabel })
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message

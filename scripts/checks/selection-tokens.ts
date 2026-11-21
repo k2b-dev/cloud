@@ -225,21 +225,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     subject: 'if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";',
     reason: "Data: HTTP method color; the chip names the method.",
   },
-  {
-    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
-    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"',
-    reason: "Control: drop target under a dragged card.",
-  },
-  {
-    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
-    subject: 'isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"',
-    reason: "Control: drop target under a dragged card.",
-  },
-  {
-    file: "packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx",
-    subject: 'active() ? "bg-[var(--ui-selected)]" : ""',
-    reason: "Control: drop target under a dragged card.",
-  },
 ];
 
 const BASELINE = "scripts/checks/selection-tokens.baseline";

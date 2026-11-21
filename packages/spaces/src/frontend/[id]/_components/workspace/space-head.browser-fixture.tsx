@@ -4,7 +4,6 @@ import type { ComponentProps } from "solid-js";
 import { Match, Show, Switch } from "solid-js";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import SpacesOverview from "../../../SpacesOverview.island";
-import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { parseFilterFromUrl } from "../filter/types";
 import type { KanbanBucketInitial } from "../kanban/types";
 import SpacesSidebarList from "../sidebar/SpacesSidebarList.island";
@@ -86,18 +85,6 @@ export default function SpaceHeadFixture(props: Props) {
                 hintOpen={props.hint === "spaces.view-tabs"}
               />
             )
-          }
-          filters={
-            !props.overview && props.view !== "calendar" ? (
-              <SpaceHeadFilters
-                spaceId="Space1"
-                columns={props.columns}
-                tags={props.tags}
-                currentView={props.view}
-                initialSource={props.source}
-                initialTotal={props.itemsResult.total}
-              />
-            ) : undefined
           }
           actions={
             <SpaceHeadActions

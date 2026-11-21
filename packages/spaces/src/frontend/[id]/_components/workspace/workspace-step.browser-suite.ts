@@ -368,7 +368,7 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
         await selected(page, "Item02", "Task 2");
         const highlighted = () =>
           Array.from(document.querySelectorAll<HTMLElement>("[data-spaces-kanban-card]"))
-            .filter((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state") === "selected")
+            .filter((link) => link.closest("article")?.hasAttribute("data-selected"))
             .map((link) => link.dataset.itemId);
         await page.route("**/items/Item03/detail", async (route) => {
           await response.promise;
@@ -377,7 +377,7 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
         await card(page, "Item02").focus();
         if (tooltipOpen) {
           // A passive hover hint must not swallow J while the card owns keyboard focus.
-          await page.locator('[data-spaces-kanban-grip="Item02"]').hover();
+          await page.locator('[data-spaces-kanban-card-menu="Item02"]').hover();
           await page.locator('[role="tooltip"]:popover-open').waitFor();
         } else {
           await page.mouse.move(0, 0);
@@ -427,7 +427,7 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "hidden" });
       await card(page, "Item02").focus();
-      await page.locator('[data-spaces-kanban-grip="Item02"]').hover();
+      await page.locator('[data-spaces-kanban-card-menu="Item02"]').hover();
       const tooltip = page.locator('[role="tooltip"]:popover-open');
       await tooltip.waitFor();
       await page.keyboard.press("Escape");
@@ -448,9 +448,7 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
         await page.keyboard.press("j");
         const next = name === "folded" ? "Item04" : "Item03";
         await selected(page, next, name === "folded" ? "Task 4" : "Task 3");
-        expect(await card(page, next).evaluate((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state"))).toBe(
-          "selected",
-        );
+        expect(await card(page, next).evaluate((link) => link.closest("article")?.hasAttribute("data-selected"))).toBe(true);
       } finally {
         await page.context().close();
       }

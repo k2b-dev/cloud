@@ -245,7 +245,8 @@ describe("Spaces feedback channels", () => {
 
     // The form stays with the input and the reason; nothing is retried from a toast.
     const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
-    expect(alerts).toEqual(["Spaces is unavailable"]);
+    // The cell above the footer names the failure and says the entries stay (K10).
+    expect(alerts).toEqual(["Spaces is unavailableYour entries stay."]);
     expect(title.value).toBe("Order name labels");
     expect(errors).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
@@ -296,7 +297,8 @@ describe("Spaces feedback channels", () => {
     await flush();
 
     const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
-    expect(alerts).toEqual(["Spaces is unavailable"]);
+    // The cell above the footer names the failure and says the entries stay (K10).
+    expect(alerts).toEqual(["Spaces is unavailableYour entries stay."]);
     expect(dom.root.querySelector("form")).not.toBeNull();
     expect(errors).not.toHaveBeenCalled();
 

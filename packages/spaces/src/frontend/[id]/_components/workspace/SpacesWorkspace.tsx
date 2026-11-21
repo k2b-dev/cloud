@@ -3,7 +3,6 @@ import { AppWorkspace } from "@k2b/ui";
 import type { SpaceAssignableUser } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
-import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types";
 import { createMenuPopup } from "../shared/create-menu";
 import SpaceSidebar from "../sidebar/SpaceSidebar";
@@ -123,18 +122,6 @@ export default function SpacesWorkspace(props: {
           views={
             <SpaceViewTabs spaceId={state.space.id} query={state.query} currentView={state.currentView} hintOpen={props.hints.viewTabs} />
           }
-          filters={
-            state.currentView !== "calendar" ? (
-              <SpaceHeadFilters
-                spaceId={state.space.id}
-                columns={state.space.columns}
-                tags={state.space.tags}
-                currentView={state.currentView}
-                initialSource={route.itemLinkBaseUrl}
-                initialTotal={state.currentView === "kanban" ? undefined : state.itemsResult.total}
-              />
-            ) : undefined
-          }
           actions={
             <SpaceHeadActions
               spaceId={state.space.id}
@@ -161,8 +148,13 @@ export default function SpacesWorkspace(props: {
         />
 
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-            {state.space.description && <p class="mb-2 text-xs leading-relaxed text-dimmed">{state.space.description}</p>}
+          {/* List and board run from edge to edge (K7); the calendar keeps its own design and its inset. */}
+          <AppWorkspace.Main class={state.currentView === "calendar" ? "p-[var(--ui-space-shell)]" : undefined} scroll={false}>
+            {state.space.description && (
+              <p class="spaces-description" title={state.space.description}>
+                {state.space.description}
+              </p>
+            )}
             {(state.currentView === "list" || state.currentView === "table") && (
               <SpacesListRoute
                 spaceId={state.space.id}

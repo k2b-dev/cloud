@@ -86,45 +86,13 @@ if (!isServer) {
   }));
 }
 
-// happy-dom has no layout: give every column body and card a fixed box so drop targets resolve like in a browser.
-const COLUMN_BODY = '[data-scroll-preserve^="spaces-kanban-column-"]';
-const CARD_TOP = 10;
-const CARD_HEIGHT = 50;
-const CARD_STRIDE = 60;
-const COLUMN_STRIDE = 300;
-const cardCenter = (index: number) => CARD_TOP + index * CARD_STRIDE + CARD_HEIGHT / 2;
-const columnX = (column: number) => column * COLUMN_STRIDE + 140;
-const box = (left: number, top: number, width: number, height: number) =>
-  ({ left, top, width, height, x: left, y: top, right: left + width, bottom: top + height, toJSON: () => ({}) }) as DOMRect;
-
-const WORMHOLE_TARGET = '[title^="Move item to"]';
-
-const layOut = (document: Document) => {
-  const HTMLElementPrototype = document.defaultView!.HTMLElement.prototype;
-  HTMLElementPrototype.getBoundingClientRect = function (this: HTMLElement) {
-    // The wormhole target sits right of the three columns.
-    if (this.matches(WORMHOLE_TARGET)) return box(3 * COLUMN_STRIDE, 0, 280, 144);
-    const body = this.closest<HTMLElement>(COLUMN_BODY);
-    if (!body) return box(0, 0, 0, 0);
-    const column = Array.from(document.querySelectorAll(COLUMN_BODY)).indexOf(body);
-    if (this === body) return box(column * COLUMN_STRIDE, 0, 280, 1000);
-    if (this.dataset.cardIndex === undefined) return box(0, 0, 0, 0);
-    return box(column * COLUMN_STRIDE + 10, CARD_TOP + Number(this.dataset.cardIndex) * CARD_STRIDE, 260, CARD_HEIGHT);
-  };
-};
-
-/** Reads one column as its card ids in order, with `|` for the insertion line and `empty` for the empty state. */
+/** Reads one column as its card ids in order, or `empty`. */
 const columnSlots = (document: Document, label: string) => {
-  const section = Array.from(document.querySelectorAll("section")).find((entry) => entry.querySelector("h3")?.textContent === label)!;
-  const body = section.querySelector<HTMLElement>(COLUMN_BODY)!;
-  return Array.from(body.children)
-    .map((child) => {
-      if (child.hasAttribute("data-spaces-kanban-drop-indicator")) return "|";
-      if (child.hasAttribute("data-card-index")) return child.querySelector<HTMLElement>("[data-item-id]")!.dataset.itemId;
-      return child.textContent === "No items" ? "empty" : null;
-    })
-    .filter(Boolean)
-    .join(" ");
+  const section = Array.from(document.querySelectorAll("section[data-spaces-kanban-column]")).find(
+    (entry) => entry.querySelector("h3")?.textContent === label,
+  )!;
+  const ids = Array.from(section.querySelectorAll<HTMLElement>("a[data-spaces-kanban-card]"), (card) => card.dataset.itemId);
+  return ids.length ? ids.join(" ") : "empty";
 };
 
 const flush = async () => {
@@ -142,7 +110,7 @@ const archiveWormhole: SpaceWormhole = {
   updatedAt: NOW,
 };
 
-/** Renders the board over the three columns Open, Review, and Later with a fixed layout and pointer helpers. */
+/** Renders the board over the three columns Open, Review, and Later with keyboard and menu helpers. */
 const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormholes: SpaceWormhole[] = []) => {
   const dom = createDomTestHarness();
   const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
@@ -170,127 +138,53 @@ const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormhole
       }),
     dom.root,
   );
-  layOut(dom.document);
-
-  const pointer = (type: string, target: EventTarget, x: number, y: number) =>
-    target.dispatchEvent(
-      new dom.window.PointerEvent(type, {
-        bubbles: true,
-        button: 0,
-        clientX: x,
-        clientY: y,
-        isPrimary: true,
-        pointerId: 1,
-        pointerType: "mouse",
-      }) as unknown as Event,
-    );
-  const moveTo = async (column: number, y: number) => {
-    pointer("pointermove", dom.window as unknown as EventTarget, columnX(column), y);
-    await flush();
-  };
+  const key = (target: Element, value: string) =>
+    target.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }) as unknown as Event);
   const slots = () => ["Open", "Review", "Later"].map((label) => `${label}: ${columnSlots(dom.document, label)}`);
-  const handleOf = (itemId: string) =>
-    dom.document.querySelector(`[data-item-id="${itemId}"]`)?.closest("article")?.querySelector("[data-dnd-card-handle]") ?? null;
-  /** Drags a card to `y` in `column`, releases it, and waits until the answered move has settled. */
-  const drop = async (itemId: string, column: number, y: number) => {
-    const card = dom.document.querySelector(`[data-item-id="${itemId}"]`)!.closest<HTMLElement>("article")!;
-    const sourceColumn = Array.from(dom.document.querySelectorAll(COLUMN_BODY)).indexOf(card.closest(COLUMN_BODY)!);
+  const columnOf = (itemId: string) =>
+    ["Open", "Review", "Later"].findIndex((label) => columnSlots(dom.document, label).split(" ").includes(itemId));
+  const gripOf = (itemId: string) => dom.document.querySelector<HTMLButtonElement>(`[data-sortable-handle="${itemId}"]`);
+  /**
+   * Moves a card with the shared engine's keyboard lift: Space lifts, the arrows choose the column, Home and the
+   * arrows choose `index`, its place once moved, and Enter drops. Waits until the answered move has settled.
+   */
+  const drop = async (itemId: string, column: number, index: number) => {
     const sent = moves.length;
-    pointer("pointerdown", handleOf(itemId)!, columnX(sourceColumn), cardCenter(Number(card.dataset.cardIndex)));
-    await moveTo(column, y);
-    pointer("pointerup", dom.window as unknown as EventTarget, columnX(column), y);
-    // The handle returns once the answered move has settled and the board accepts the next drag.
-    for (let attempt = 0; attempt < 20 && (moves.length === sent || !handleOf(itemId)); attempt++) {
+    const grip = gripOf(itemId)!;
+    grip.focus();
+    key(grip, " ");
+    for (let attempt = 0; attempt < 20 && !dom.document.querySelector("[data-sortable-target], [data-sortable-dragging]"); attempt++)
       await flush();
-    }
+    const from = columnOf(itemId);
+    for (let step = 0; step < Math.abs(column - from); step++) key(grip, column > from ? "ArrowRight" : "ArrowLeft");
+    key(grip, "Home");
+    for (let step = 0; step < index; step++) key(grip, "ArrowDown");
+    key(grip, "Enter");
+    for (let attempt = 0; attempt < 40 && (moves.length === sent || !gripOf(itemId)); attempt++) await flush();
     expect(moves.length).toBe(sent + 1);
-    expect(handleOf(itemId)).not.toBeNull();
+    expect(gripOf(itemId)).not.toBeNull();
   };
-  /** Drags a card onto the wormhole target, right of the three columns, and releases it there. */
+  /** Sends a card through the wormhole from its menu: "Move to another Space" and the wormhole's entry. */
   const dropOnWormhole = async (itemId: string) => {
-    const card = dom.document.querySelector(`[data-item-id="${itemId}"]`)!.closest<HTMLElement>("article")!;
-    const sourceColumn = Array.from(dom.document.querySelectorAll(COLUMN_BODY)).indexOf(card.closest(COLUMN_BODY)!);
-    pointer("pointerdown", handleOf(itemId)!, columnX(sourceColumn), cardCenter(Number(card.dataset.cardIndex)));
-    await moveTo(3, 70);
-    pointer("pointerup", dom.window as unknown as EventTarget, columnX(3), 70);
-    await flush();
+    const click = async (find: () => HTMLElement | null | undefined) => {
+      for (let attempt = 0; attempt < 20 && !find(); attempt++) await flush();
+      find()!.click();
+      await flush();
+    };
+    const item = (label: string) =>
+      [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((entry) => entry.textContent?.includes(label));
+    await click(() => dom.document.querySelector<HTMLElement>(`[data-spaces-kanban-card-menu="${itemId}"]`));
+    await click(() => item("Move to another Space"));
+    await click(() => item("Archive · Inbox"));
   };
-  return { dom, dispose, pointer, moveTo, slots, drop, dropOnWormhole };
+  return { dom, dispose, slots, drop, dropOnWormhole };
 };
 
-describe("Spaces Kanban drop indicator", () => {
+describe("Spaces Kanban moves", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
-
-  test("marks the exact landing gap at column top, between cards, at the bottom, in empty columns, and rings the hovered wormhole", async () => {
-    moves.length = 0;
-    const { dom, dispose, pointer, moveTo, slots } = await renderBoard(
-      [
-        bucket("Col001", "Open", [
-          item("A", "Col001", "1024"),
-          item("B", "Col001", "2048"),
-          item("C", "Col001", "3072"),
-          item("D", "Col001", "4096"),
-        ]),
-        bucket("Col002", "Review", [item("X", "Col002", "1024"), item("Y", "Col002", "2048")]),
-        bucket("Col003", "Later", []),
-      ],
-      [archiveWormhole],
-    );
-
-    const handle = dom.document.querySelector('[data-item-id="A"]')!.closest("article")!.querySelector("[data-dnd-card-handle]")!;
-    pointer("pointerdown", handle, columnX(0), cardCenter(0));
-
-    // Over its own slot the drop changes nothing, so the dimmed card is the only marker.
-    await moveTo(0, cardCenter(0) + 10);
-    expect(slots()).toEqual(["Open: A B C D", "Review: X Y", "Later: empty"]);
-
-    // Lower half of C in the same column: the card lands between C and D, not above C.
-    await moveTo(0, cardCenter(2) + 10);
-    expect(slots()).toEqual(["Open: A B C | D", "Review: X Y", "Later: empty"]);
-
-    // Below the last card of the source column.
-    await moveTo(0, cardCenter(3) + 40);
-    expect(slots()).toEqual(["Open: A B C D |", "Review: X Y", "Later: empty"]);
-
-    // Top of another column, between its cards, and below its last card.
-    await moveTo(1, cardCenter(0) - 10);
-    expect(slots()).toEqual(["Open: A B C D", "Review: | X Y", "Later: empty"]);
-    await moveTo(1, cardCenter(0) + 10);
-    expect(slots()).toEqual(["Open: A B C D", "Review: X | Y", "Later: empty"]);
-    await moveTo(1, cardCenter(1) + 40);
-    expect(slots()).toEqual(["Open: A B C D", "Review: X Y |", "Later: empty"]);
-
-    // An empty column marks the top, where the card will appear.
-    await moveTo(2, 300);
-    expect(slots()).toEqual(["Open: A B C D", "Review: X Y", "Later: | empty"]);
-
-    // The line is painted with the app accent; `--ui-focus` is a box-shadow and cannot color it.
-    const line = dom.document.querySelector("[data-spaces-kanban-drop-indicator]")!;
-    expect(line.getAttribute("aria-hidden")).toBe("true");
-    expect(line.outerHTML).toContain("bg-[var(--ui-app-accent-border)]");
-    expect(line.outerHTML).not.toContain("--ui-focus");
-
-    // The active wormhole ring is `--ui-focus` as its own box-shadow; a drop target casts no inner shade (layers and shadows).
-    const wormhole = dom.document.querySelector<HTMLElement>(WORMHOLE_TARGET)!;
-    expect(wormhole.style.boxShadow).not.toContain("--ui-focus");
-    await moveTo(3, 70);
-    expect(slots()).toEqual(["Open: A B C D", "Review: X Y", "Later: empty"]);
-    expect(wormhole.style.boxShadow).toBe("var(--ui-focus)");
-
-    // Dropping where the line points puts the card exactly there.
-    await moveTo(0, cardCenter(2) + 10);
-    expect(slots()[0]).toBe("Open: A B C | D");
-    pointer("pointerup", dom.window as unknown as EventTarget, columnX(0), cardCenter(2) + 10);
-    await flush();
-    expect(moves).toEqual([{ itemId: "A", json: { columnId: "Col001", afterItemId: "C" } }]);
-    expect(slots()).toEqual(["Open: B C A D", "Review: X Y", "Later: empty"]);
-
-    dispose();
-    dom.cleanup();
-  });
 
   test("a transfer ends the claim: one question takes someone else's over, the holder's own ends without one", async () => {
     transfers.length = 0;
@@ -388,15 +282,15 @@ describe("Spaces Kanban drop indicator", () => {
     const { toast } = await import("@k2b/ui");
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
 
-    await drop("X", 0, cardCenter(0) - 10);
+    await drop("X", 0, 0);
     expect(slots()).toEqual(["Open: X A B C D", "Review: Y Z", "Later: empty"]);
-    await drop("Y", 0, cardCenter(1) + 10);
+    await drop("Y", 0, 2);
     expect(slots()).toEqual(["Open: X A Y B C D", "Review: Z", "Later: empty"]);
-    await drop("Z", 0, cardCenter(5) + 40);
+    await drop("Z", 0, 6);
     expect(slots()).toEqual(["Open: X A Y B C D Z", "Review: empty", "Later: empty"]);
-    await drop("B", 2, 300);
+    await drop("B", 2, 0);
     expect(slots()).toEqual(["Open: X A Y C D Z", "Review: empty", "Later: B"]);
-    await drop("X", 0, cardCenter(5) + 40);
+    await drop("X", 0, 5);
     expect(slots()).toEqual(["Open: A Y C D Z X", "Review: empty", "Later: B"]);
 
     expect(moves).toEqual([
@@ -446,12 +340,13 @@ describe("Spaces Kanban drop indicator", () => {
       expect(slots()).toEqual(expected);
     };
 
-    await drop("Y", 0, cardCenter(2) + 10);
+    await drop("Y", 0, 3);
     expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "C" } });
+    for (let attempt = 0; attempt < 40 && errors.mock.calls.length === 0; attempt++) await flush();
     expect(errors).toHaveBeenCalledWith("The neighboring item is no longer in the target column; reload and try again");
     await settle(["Open: A B", "Review: X Y", "Later: C"]);
 
-    await drop("Y", 0, cardCenter(1) + 10);
+    await drop("Y", 0, 2);
     expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "B" } });
     await settle(["Open: A B Y", "Review: X", "Later: C"]);
     expect(errors).toHaveBeenCalledTimes(1);

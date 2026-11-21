@@ -11,10 +11,11 @@
 
 .k2b-ui .spaces-overview-workspace { background: var(--ui-surface); }
 /* The head row sits above, so the list starts right below it. */
-.k2b-ui .spaces-overview-main { box-shadow: none; padding: .25rem clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
+/* Flat (K7): the list starts under the head and its rows run from edge to edge of the column between hairlines. */
+.k2b-ui .spaces-overview-main { box-shadow: none; padding: 0; overflow-y: auto; scrollbar-gutter: stable; background: var(--ui-surface); }
 /* The overview is deliberately not a Space: one page title, one scope chip,
    one list. Spaces live in the sidebar and open their own workspace. */
-.spaces-overview-page { display: flex; min-width: 0; flex-direction: column; gap: 1rem; }
+.spaces-overview-page { display: flex; min-width: 0; flex-direction: column; }
 .k2b-ui .spaces-overview-page > .k2b-panel-header { margin-bottom: .5rem; }
 .spaces-overview-toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
 /* Unlayered like the shared rule it overrides: the segmented control is full-width by default. */
@@ -25,15 +26,16 @@
 .dark .spaces-overview-space[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 .spaces-overview-space-dot, .spaces-overview-space-mark { display: inline-block; width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: 999px; }
 .spaces-overview-tab-count { color: var(--ui-text-dimmed); font-variant-numeric: tabular-nums; }
-.spaces-overview-work-list { display: flex; flex-direction: column; }
-.spaces-overview-work-row { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem; padding: .75rem .5rem; color: inherit; text-decoration: none; border-radius: var(--ui-radius-control); transition: background-color 120ms ease; }
-.spaces-overview-work-row:hover { background: var(--ui-hover); }
-.spaces-overview-work-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
+.spaces-overview-work-list { display: flex; flex-direction: column; border-bottom: 1px solid var(--k2b-border); }
+.spaces-overview-work-list:empty { border-bottom: 0; }
+.spaces-overview-work-row { display: grid; min-width: 0; min-height: var(--k2b-h-row-2); box-sizing: border-box; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: var(--k2b-space-3); padding: var(--k2b-space-2) var(--k2b-gutter); color: inherit; text-decoration: none; transition: background-color 120ms ease; }
+.spaces-overview-work-row:hover { background: var(--k2b-hover); }
+.spaces-overview-work-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
 .spaces-overview-work-row > .spaces-overview-priority { grid-column: 3; grid-row: 1; }
 .spaces-overview-work-row > time { grid-column: 4; grid-row: 1; }
 .spaces-overview-work-row > .ti-chevron-right { grid-column: -2; grid-row: 1; }
 .spaces-overview-work-copy { display: flex; min-width: 0; flex-direction: column; gap: .125rem; }
-.spaces-overview-work-copy strong { overflow: hidden; color: var(--color-zinc-900); font-size: .875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-overview-work-copy strong { overflow: hidden; color: var(--k2b-text); font-size: var(--k2b-font-size-row); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--ui-text-dimmed); font-size: .75rem; white-space: nowrap; }
 .spaces-overview-work-row time { font-variant-numeric: tabular-nums; }
 .spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--ui-text-dimmed); font-size: .625rem; text-transform: capitalize; }
@@ -51,9 +53,6 @@
   .k2b-ui .spaces-overview-mobile-activity { display: inline-flex !important; }
   .spaces-overview-work-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .spaces-overview-work-row :is(.spaces-overview-priority, time) { display: none; }
-}
-@media (max-width: 39.999rem) {
-  .k2b-ui .spaces-overview-main { padding: 1rem; }
 }
 
 /* Detail panel: linked tasks as the value of a planning row. Each line is as tall as a property row; hover paints the
@@ -289,56 +288,134 @@
 .spaces-pwa-comment { display: flex; align-items: flex-end; gap: .5rem; }
 .spaces-pwa-comment > .k2b-field { flex: 1; min-width: 0; }
 
-/* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
-   "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */
+/* Kanban, flat (K7): a column is a narrow table and a card is a row of it — square, no tint, no frame, no shadow, 56 px
+   with one title line and 20 px for each further line. Colour comes from the tag and the priority sign. The columns
+   share one hairline between them (k2b-divided-inline), the head owns the line under itself, and the cards' list draws
+   the lines between and under its cards, so every line has one owner. The lines between columns are fixed. */
+.spaces-kanban-board { position: relative; min-height: 0; flex: 1; overflow-x: auto; overflow-y: hidden; }
+.spaces-kanban-board:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.spaces-kanban-columns { display: flex; height: 100%; min-width: max-content; align-items: stretch; }
+.spaces-kanban-lane { display: flex; width: 17.5rem; min-width: 0; height: 100%; flex: 1 0 15rem; flex-direction: column; }
+.spaces-kanban-lane__head {
+  display: flex; height: var(--k2b-h-colhead); box-sizing: border-box; flex: none; align-items: center; gap: var(--k2b-space-2);
+  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - var(--k2b-space-2));
+  border-bottom: 1px solid var(--k2b-border); color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); font-weight: 500;
+}
+.spaces-kanban-lane__dot { display: inline-block; width: .5rem; height: .5rem; flex: none; border-radius: var(--k2b-radius-round); }
+.spaces-kanban-lane__head > .spaces-kanban-lane__dot, .spaces-kanban-lane__head > .inline-flex, .spaces-kanban-lane__mark { margin-inline: .25rem; }
+.spaces-kanban-lane__mark { flex: none; font-size: .875rem; }
+.spaces-kanban-lane__name { min-width: 0; overflow: hidden; margin: 0; color: var(--k2b-text); font-size: var(--k2b-font-size-meta); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-kanban-lane__count { flex: none; font-variant-numeric: tabular-nums; }
+.spaces-kanban-lane__refuse { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-kanban-lane__tools { display: flex; margin-inline-start: auto; align-items: center; }
+/* Only the cards scroll; their space stays reserved, so a scrollbar moves nothing. */
+.spaces-kanban-lane__body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
+.spaces-kanban-lane__body > * { flex: none; }
+.spaces-kanban-cards { --k2b-sortable-gap: 0px; --k2b-sortable-line-inset: var(--k2b-gutter); }
+.spaces-kanban-cards > li:last-child { border-bottom: 1px solid var(--k2b-border); }
+.spaces-kanban-lane__empty { margin: 0; padding: var(--k2b-space-3) var(--k2b-gutter); color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); line-height: 1.25rem; }
+.k2b-ui .spaces-kanban-lane__row {
+  display: flex; width: 100%; height: var(--k2b-h-row); align-items: center; gap: var(--k2b-space-2); padding: 0 var(--k2b-gutter);
+  border: 0; background: transparent; color: var(--k2b-text-subtle); font: inherit; font-size: var(--k2b-font-size-row); text-align: start; cursor: pointer;
+}
+.k2b-ui .spaces-kanban-lane__row:hover { background: var(--k2b-hover); color: var(--k2b-text); }
+.k2b-ui .spaces-kanban-lane__row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+/* "Add task" is a quiet row of the column, on its text edge. */
+.k2b-ui .spaces-kanban-lane__add .k2b-button[data-size] {
+  width: 100%; height: var(--k2b-h-row); justify-content: flex-start; padding: 0 var(--k2b-gutter); border-radius: var(--k2b-radius-flat);
+  color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-row); font-weight: 400;
+}
+.k2b-ui .spaces-kanban-lane__add .k2b-button i { font-size: .875rem; }
+.spaces-kanban-lane__error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--k2b-space-2); padding: var(--k2b-space-2) var(--k2b-gutter); background: color-mix(in srgb, var(--k2b-danger-text) 8%, transparent); color: var(--k2b-danger-text); font-size: var(--k2b-font-size-row); }
+.k2b-ui .spaces-kanban-lane__link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+/* A column that takes no card says so in its head while one is dragged. */
+.spaces-kanban-lane[data-spaces-kanban-no-drop] > .spaces-kanban-lane__body { cursor: not-allowed; }
+
+/* A card is a row: glyph on the axis of the head's dot, title on the head's text edge (K5). */
+.k2b-ui .spaces-kanban-card {
+  position: relative; display: grid; min-height: 3.5rem; box-sizing: border-box; grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-content: center; column-gap: var(--k2b-space-2); padding: var(--k2b-space-2) calc(var(--k2b-gutter) - var(--k2b-space-1)) var(--k2b-space-2) var(--k2b-gutter);
+  --spaces-card-bg: var(--k2b-surface);
+  background: var(--spaces-card-bg); color: var(--k2b-text); font-size: var(--k2b-font-size-row); line-height: 1.25rem;
+}
+/* 56 px with the line above it (K1): the divider, or the column head's line for the first card. */
+.k2b-ui .spaces-kanban-cards .spaces-kanban-card { min-height: calc(3.5rem - 1px); padding-top: calc(var(--k2b-space-2) - 1px); }
+.k2b-ui .spaces-kanban-card:hover { --spaces-card-bg: var(--k2b-hover); }
+.k2b-ui .spaces-kanban-card[data-selected] { --spaces-card-bg: var(--ui-app-selected); }
+.spaces-kanban-card__glyph { display: grid; height: 1.25rem; grid-column: 1; align-self: start; place-items: center; font-size: .875rem; }
+.spaces-kanban-card__title {
+  display: -webkit-box; overflow: hidden; grid-column: 2 / -1; padding-inline-end: var(--spaces-card-tools, 0px);
+  font-weight: 500; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.k2b-ui .spaces-kanban-card[data-done] .spaces-kanban-card__title { color: var(--k2b-text-subtle); text-decoration: line-through; }
+.spaces-kanban-card__desc { overflow: hidden; grid-column: 2 / -1; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta); text-overflow: ellipsis; white-space: nowrap; }
+.spaces-kanban-card__meta {
+  position: relative; z-index: 1; display: flex; min-width: 0; min-height: 1.25rem; grid-column: 2; flex-wrap: wrap; align-items: center; gap: var(--k2b-space-1) var(--k2b-space-2);
+  color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); pointer-events: none; white-space: nowrap;
+}
+.spaces-kanban-card__date { font-variant-numeric: tabular-nums; }
+.spaces-kanban-card__status, .spaces-kanban-card__inactive { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: var(--k2b-space-1); }
+.spaces-kanban-card__inactive { color: var(--k2b-warning-text); }
+.k2b-ui .spaces-kanban-card__tag { max-width: 8rem; }
+.spaces-kanban-card__people { position: relative; z-index: 1; display: flex; min-height: 1.25rem; grid-column: 3; align-items: center; align-self: end; justify-self: end; pointer-events: none; }
+/* The link spans the whole card and carries its focus ring inside the row; text and meta lie above it. */
+.k2b-ui .spaces-kanban-card__link { position: absolute; inset: 0; z-index: 0; outline: none; }
+.k2b-ui .spaces-kanban-card__link:focus-visible { box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); }
+.spaces-kanban-card__title, .spaces-kanban-card__desc, .spaces-kanban-card__glyph { position: relative; z-index: 0; pointer-events: none; }
+/* Tools (claim, menu) stand at the top end. With a mouse they show on hover and focus over the end of the title, on
+   the card's own fill, so nothing moves; a title keeps room only for tools that always show: on touch, and for a task
+   someone works on. */
+.spaces-kanban-card__tools {
+  position: absolute; top: var(--k2b-space-2); right: var(--k2b-space-2); z-index: 2; display: flex; align-items: center; gap: 2px;
+  padding-inline-start: var(--k2b-space-3);
+}
+.k2b-ui .spaces-kanban-card:is(:hover, :focus-within) > .spaces-kanban-card__tools {
+  background: linear-gradient(to right, transparent, var(--spaces-card-bg) var(--k2b-space-3));
+}
+.k2b-ui .spaces-kanban-card:has(.spaces-kanban-card__tools > :not(.k2b-progressive-action, .spaces-kanban-card__busy)) { --spaces-card-tools: 1.75rem; }
+@media (any-pointer: coarse) { .k2b-ui .spaces-kanban-card:has(.spaces-kanban-card__tools) { --spaces-card-tools: 3.25rem; } }
+.spaces-kanban-card__busy { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; color: var(--k2b-text-subtle); font-size: .75rem; }
+/* The grip serves the keyboard only (the whole card drags): over the glyph, shown on keyboard focus. */
+.k2b-ui .spaces-kanban-card > .k2b-sortable-list__handle {
+  position: absolute; top: var(--k2b-space-2); left: calc(var(--k2b-gutter) - .25rem); z-index: 2; width: 1.5rem; height: 1.25rem;
+  background: var(--k2b-surface); opacity: 0; pointer-events: none;
+}
+.k2b-ui .spaces-kanban-card > .k2b-sortable-list__handle:focus-visible { opacity: 1; pointer-events: auto; }
+.k2b-ui .spaces-card-reactions { pointer-events: none; }
 .k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }
 
-/* Kanban on the workspace's surface: no column trays, groups apart by space and a clear head (dot, name, count).
-   A card is an object you drag and open, so it is an island (layers and shadows, layer 1): a light 1 px edge and
-   the island shadow on the island surface, flat columns around it. Its first tag tints it 6 % (10 % dark), and the
-   tag's name always stands in the footer. State changes only paint. */
-.spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
-.spaces-kanban-column { width: 17.5rem; }
-.k2b-ui .spaces-kanban-card {
-  /* KanbanBoard sets the first tag's colour inline on a tinted card. */
-  --spaces-card-tag: transparent;
-  --spaces-card-fill: var(--k2b-island-surface);
-  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-island-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  --spaces-card-ring: 0 0 #0000;
-  background: var(--spaces-card-fill);
-  box-shadow: inset 0 0 0 1px var(--spaces-card-edge), var(--spaces-card-ring), var(--k2b-island-shadow);
-  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+/* A folded column is a narrow strip that still takes a card at its top. */
+.spaces-kanban-strip { position: relative; display: flex; width: 2.5rem; height: 100%; flex: none; flex-direction: column; }
+.k2b-ui .spaces-kanban-strip__button {
+  display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: center; gap: var(--k2b-space-2); padding: var(--k2b-space-3) 0;
+  border: 0; background: transparent; color: var(--k2b-text-subtle); font: inherit; font-size: var(--k2b-font-size-meta); cursor: pointer;
 }
-.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-island-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 20%, var(--k2b-surface));
+.k2b-ui .spaces-kanban-strip__button:hover { background: var(--k2b-hover); }
+.k2b-ui .spaces-kanban-strip__button:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.spaces-kanban-strip__count { font-variant-numeric: tabular-nums; }
+.spaces-kanban-strip__label { min-height: 0; overflow: hidden; color: var(--k2b-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl; }
+.spaces-kanban-strip > .k2b-sortable-list { position: absolute; inset: 0 0 auto; }
+.spaces-kanban-strip > .k2b-sortable-list::before, .spaces-kanban-strip > .k2b-sortable-list::after { display: none; }
+
+/* Wormholes: rows that take a dragged card into another Space. */
+.k2b-ui .spaces-kanban-wormhole {
+  display: grid; min-height: 3.5rem; grid-template-columns: 1rem minmax(0, 1fr); align-content: center; column-gap: var(--k2b-space-2);
+  padding: var(--k2b-space-2) var(--k2b-gutter); font-size: var(--k2b-font-size-row); line-height: 1.25rem;
 }
-.dark .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint],
-.k2b-ui.dark .spaces-kanban-card[data-spaces-kanban-card-tint] {
-  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-island-surface));
-  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-island-surface));
-  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 24%, var(--k2b-surface));
-}
-.k2b-ui .spaces-kanban-card:hover { background: var(--spaces-card-fill-hover); }
-.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="selected"] {
-  --spaces-card-ring: inset 0 0 0 1.5px var(--ui-app-accent-border);
-  background: var(--spaces-card-fill-hover);
-}
-.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { --spaces-card-ring: inset 0 0 0 1.5px var(--ui-app-accent-border); }
-/* The drag ghost is a clone of the card on the page; it floats on layer 3 with the float token, through the shadow
-   variable @k2b/stdlib (0.31.1) reads for the ghost. */
-body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
-  --stdlib-dnd-ghost-shadow: var(--k2b-shadow-float);
-}
-.k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
-.k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
-@media (prefers-reduced-motion: reduce) { .k2b-ui .spaces-kanban-card { transition: none; } }
+.spaces-kanban-wormhole__icon { grid-row: 1 / 3; font-size: .875rem; line-height: 1.25rem; }
+.spaces-kanban-wormhole__name { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-kanban-wormhole__column { overflow: hidden; color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); text-overflow: ellipsis; white-space: nowrap; }
+
 /* Phone: one column at a time with a look at the next, so it is clear the board goes on. */
 @media not all and (min-width: 48rem) {
-  .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; }
-  .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
+  .spaces-kanban-lane { width: calc(100vw - 4.5rem); max-width: 20rem; flex: none; }
+  /* A card shows no buttons on a phone but its menu, which also claims it (K7). */
+  .spaces-kanban-card__tools > :not(:last-child) { display: none; }
+  .k2b-ui .spaces-kanban-card:has(.spaces-kanban-card__tools) { --spaces-card-tools: 1.75rem; }
+}
+/* Below 1024 px the board fades at its end, so it is clear that more columns follow. */
+@container k2b-app-area (max-width: 63.999rem) {
+  .spaces-kanban-board { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 2.5rem), transparent); }
 }
 
 /* The head row of a Space. The people row needs the wide head; below an 80 rem workspace it moves under "…"
@@ -418,3 +495,107 @@ body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
 /* The note beside Save that an open suggestion is not saved: two lines at most, reserved from the first frame, so the
    footer keeps its height whether the note shows or not. */
 .k2b-ui .spaces-item-form__open-suggestion { display: -webkit-box; min-width: 0; min-height: 2rem; flex: 1 1 0; margin: 0; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; line-height: 1rem; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* A Space's description stands as one quiet line above the status row; the whole text is its tooltip (K15). */
+.spaces-description { flex: none; margin: 0; overflow: hidden; padding: var(--k2b-space-3) var(--k2b-gutter) 0; color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The list, flat (K7): one column grid for the head and every row, rows 40 px between hairlines, groups as 36 px bands
+   on the quiet ground (K17). Columns drop by the list's own width, they never get narrower than their content; below
+   640 px a row has two lines. The list draws the line under its last row; the head owns the line under itself. */
+.spaces-list {
+  --spaces-list-cols: minmax(0, 1fr) auto;
+  container: spaces-list / inline-size; min-width: 0;
+}
+.spaces-list > :last-child { border-bottom: 1px solid var(--k2b-border); }
+@container spaces-list (min-width: 40rem) { .spaces-list > * { --spaces-list-cols: minmax(12.5rem, 1fr) 6.75rem 11.5rem 6.5rem; } }
+@container spaces-list (min-width: 55rem) { .spaces-list > * { --spaces-list-cols: minmax(12.5rem, 1fr) 8rem 11rem 10.5rem 6.75rem; } }
+@container spaces-list (min-width: 65rem) { .spaces-list > * { --spaces-list-cols: minmax(12.5rem, 35rem) 8rem 13rem 12.5rem minmax(0, 1fr) 6.75rem; } }
+/* The box stands on the text edge and the title one symbol after it (K5); the row is 40 px with its line (K1). */
+/* Every row is 40 px with the line above it: a divider, the group head's line, or the column head's line. */
+.spaces-list-head, .k2b-ui .spaces-list-row {
+  --spaces-row-h: calc(var(--k2b-h-row) - 1px);
+  display: grid; grid-template-columns: 1rem var(--spaces-list-cols); align-items: center; column-gap: var(--k2b-space-2);
+  padding-inline: var(--k2b-gutter);
+}
+.spaces-list-head {
+  position: sticky; top: 0; z-index: 2; height: var(--k2b-h-colhead); box-sizing: border-box; border-bottom: 1px solid var(--k2b-border);
+  background: var(--k2b-surface); color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); font-weight: 500; white-space: nowrap;
+}
+.spaces-list-head__title { grid-column: 2; }
+.spaces-list-head__people { grid-column: -2; justify-self: end; }
+.k2b-ui .spaces-list-row { position: relative; min-height: var(--spaces-row-h); box-sizing: border-box; font-size: var(--k2b-font-size-row); }
+.k2b-ui .spaces-list-row:hover { background: var(--k2b-hover); }
+.k2b-ui .spaces-list-row[data-selected] { background: var(--ui-app-selected); }
+/* The box lies above the row's link, so its touch area completes the task and never opens it. */
+.spaces-list-row__check { position: relative; z-index: 1; display: flex; justify-content: center; }
+.k2b-ui .spaces-list-row__link {
+  display: grid; min-width: 0; min-height: var(--spaces-row-h); grid-column: 2 / -1; grid-template-columns: subgrid; align-items: center;
+  color: var(--k2b-text); text-decoration: none; outline: none;
+}
+.k2b-ui .spaces-list-row__link::after { position: absolute; inset: 0; content: ""; }
+.k2b-ui .spaces-list-row__link:focus-visible::after { box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring); }
+/* A hint goes as a whole before the title is cut (K15): one 20 px line that wraps what does not fit out of view. */
+.spaces-list-row__main { display: flex; min-width: 0; height: 1.25rem; flex-wrap: wrap; align-items: center; gap: 0 var(--k2b-space-2); overflow: hidden; }
+.spaces-list-row__title { min-width: 0; flex: 0 1 auto; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .spaces-list-row[data-done] .spaces-list-row__title { color: var(--k2b-text-subtle); text-decoration: line-through; }
+.spaces-list-row__time { flex: none; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta); font-variant-numeric: tabular-nums; }
+.spaces-list-row__kind { flex: none; color: var(--k2b-text-subtle); }
+.spaces-list-row__hint { display: inline-flex; flex: none; align-items: center; gap: var(--k2b-space-1); color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); white-space: nowrap; }
+.spaces-list-row__hint[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .spaces-list-row__overdue.k2b-status-badge { flex: none; font-size: var(--k2b-font-size-meta); }
+@container spaces-list (min-width: 40rem) { .k2b-ui .spaces-list-row__overdue.k2b-status-badge { display: none; } }
+.k2b-ui .spaces-list-row__tags .k2b-tag { height: 1.25rem; font-size: var(--k2b-font-size-meta); }
+.spaces-list-row__dot { display: inline-block; width: .5rem; height: .5rem; flex: none; border-radius: var(--k2b-radius-round); }
+.spaces-list-row__priority, .spaces-list-row__date, .spaces-list-row__tags { display: none; min-width: 0; align-items: center; gap: var(--k2b-space-2); overflow: hidden; white-space: nowrap; }
+.spaces-list-row__date { font-variant-numeric: tabular-nums; }
+.spaces-list-row__date[data-overdue] { color: var(--k2b-danger-text); font-weight: 500; }
+.spaces-list-row__none { color: var(--k2b-text-subtle); }
+.spaces-list-row__more { color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); }
+.spaces-list-row__people { display: flex; grid-column: -2; justify-content: flex-end; }
+.spaces-list-row__meta { grid-column: 1; grid-row: 2; overflow: hidden; color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); text-overflow: ellipsis; white-space: nowrap; }
+.spaces-list-row__meta:empty { display: none; }
+.spaces-list-head > :is(.spaces-list-head__priority, .spaces-list-head__date, .spaces-list-head__tags) { display: none; }
+@container spaces-list (min-width: 40rem) {
+  .spaces-list-row__priority, .spaces-list-row__date, .spaces-list-head > .spaces-list-head__priority, .spaces-list-head > .spaces-list-head__date { display: flex; }
+  .spaces-list-row__meta { display: none; }
+}
+@container spaces-list (min-width: 55rem) { .spaces-list-row__tags, .spaces-list-head > .spaces-list-head__tags { display: flex; } }
+/* Below 640 px of list a row is a two-line entry without a column head (K7, K12). */
+@container spaces-list (max-width: 39.999rem) {
+  .spaces-list-head { display: none; }
+  /* A state stays at the title and the title gives way; plain hints leave first (K15). */
+  .spaces-list-row__main { flex-wrap: nowrap; }
+  .spaces-list-row__hint:not([data-state]) { display: none; }
+  .k2b-ui .spaces-list-row { --spaces-row-h: calc(var(--k2b-h-row-phone, 60px) - 1px); }
+  .k2b-ui .spaces-list-row__link { grid-template-rows: auto auto; padding-block: var(--k2b-space-2); }
+  .spaces-list-row__people { grid-row: 1 / 3; }
+}
+.spaces-list-group { display: inline-flex; min-width: 0; align-items: center; gap: var(--k2b-space-2); }
+.spaces-list-group__sign { display: grid; width: 1rem; flex: none; place-items: center; color: var(--k2b-text-subtle); font-size: .875rem; }
+.spaces-list-group__meta { color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); font-weight: 400; }
+/* Chips in a card's meta line keep to its 20 px (K1). */
+.k2b-ui .spaces-kanban-card__meta :is(.k2b-tag, .k2b-status-badge) { height: 1.25rem; font-size: var(--k2b-font-size-meta); }
+.k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar { --k2b-reaction-height: 1.25rem; }
+/* People on a card take the 20 px of its meta line, as in the mockup (K1). */
+.k2b-ui .spaces-kanban-card__people .k2b-avatar.k2b-avatar { width: 1.25rem; height: 1.25rem; font-size: 9px; }
+.k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar__add-button.k2b-reaction-bar__add-button { width: 1.25rem; height: 1.25rem; min-height: 0; }
+
+/* The filters stand at the end of the status row (K6); what does not fit scrolls sideways. */
+/* Beside a wide list the filters leave room for the key figures; on a phone they take their own line. */
+@container k2b-app-area (min-width: 48rem) { .k2b-ui .spaces-status .k2b-status-row__end { max-width: 60%; } }
+.k2b-ui .k2b-status-row__end > .spaces-head-filters {
+  min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none;
+}
+/* While a card moves, the row says what moves where; the filters wait (K7). */
+.k2b-ui .spaces-status[data-mode="announcement"] > .k2b-status-row__end { display: none; }
+/* Where the filters scroll, they fade at the end (K15); a scroll-driven fade only shows while there is more. */
+@property --spaces-filter-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes spaces-filter-fade { from { --spaces-filter-fade: 1.5rem; } to { --spaces-filter-fade: 0px; } }
+@supports (animation-timeline: scroll()) {
+  .k2b-ui .k2b-status-row__end > .spaces-head-filters {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--spaces-filter-fade)), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - var(--spaces-filter-fade)), transparent);
+    animation: spaces-filter-fade linear both; animation-timeline: scroll(self inline);
+  }
+}
+.k2b-ui .k2b-status-row__end > .spaces-head-filters::-webkit-scrollbar { display: none; }

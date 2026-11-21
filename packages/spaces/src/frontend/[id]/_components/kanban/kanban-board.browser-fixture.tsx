@@ -1,7 +1,6 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import type { ItemListResult } from "@/contracts";
-import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
 import { defaultFilter } from "../filter/types";
 import SpaceHeadActions from "../workspace/SpaceHeadActions.island";
 import SpacesKanbanRoute from "../workspace/SpacesKanbanRoute.island";
@@ -53,16 +52,6 @@ export default function KanbanFixture(props: Props) {
           </AppWorkspace.Sidebar>
         )}
         <AppWorkspace.Head
-          filters={
-            <SpaceHeadFilters
-              spaceId={props.spaceId}
-              columns={props.columns}
-              tags={props.tags}
-              currentView={props.workspace === "table" ? "table" : "kanban"}
-              initialSource={props.baseUrl}
-              initialTotal={props.itemsResult?.total}
-            />
-          }
           actions={
             <SpaceHeadActions
               spaceId={props.spaceId}

@@ -154,7 +154,7 @@ const settle = async () => {
 };
 const box = (title: string) => dom.root.querySelector<HTMLInputElement>(`input[aria-label="Mark complete: ${title}"]`);
 const row = (title: string) => box(title)?.closest<HTMLElement>("[data-space-list-row]") ?? null;
-const titles = () => [...dom.root.querySelectorAll("[data-space-list-row] a span.block")].map((element) => element.textContent);
+const titles = () => [...dom.root.querySelectorAll("[data-space-list-row] .spaces-list-row__title")].map((element) => element.textContent);
 const collapsing = (title: string) => row(title)?.className.includes("grid-rows-[0fr]") ?? false;
 /** The Undo of the open toast; a closing toast stays in the document for its animation. */
 const undoButton = () =>
@@ -187,7 +187,7 @@ domTest("keeps a task ticked off under the open filter in place, done, then coll
   box("Book room")!.click();
   // The tick shows at once: the box is filled and the title struck through.
   expect(box("Book room")!.checked).toBe(true);
-  expect(row("Book room")!.querySelector("a span.block")!.className).toContain("line-through");
+  expect(row("Book room")!.querySelector(".spaces-list-row")!.hasAttribute("data-done")).toBe(true);
 
   await settle();
   expect(requests).toEqual([{ path: "/api/spaces/Space1/items/TaskB/completed", body: { completed: true } }]);
@@ -316,8 +316,8 @@ domTest("keeps a ticked task in its group while it leaves, also among the overdu
   jest.useFakeTimers();
   const groups = () =>
     [...dom.root.querySelectorAll("section")].map((section) => ({
-      group: section.querySelector("h2")?.textContent,
-      titles: [...section.querySelectorAll("[data-space-list-row] a span.block")].map((element) => element.textContent),
+      group: section.querySelector("h3")?.firstChild?.textContent,
+      titles: [...section.querySelectorAll("[data-space-list-row] .spaces-list-row__title")].map((element) => element.textContent),
     }));
   expect(groups()).toEqual([{ group: "Overdue", titles: ["Draft agenda", "Book room", "Send invites"] }]);
   const ticked = box("Book room")!;
@@ -345,7 +345,7 @@ domTest("collapses a group with its last task, header and gap included, then let
   await mount("active", { groupBy: "column" });
   jest.useFakeTimers();
   const section = (name: string) =>
-    [...dom.root.querySelectorAll("section")].find((candidate) => candidate.querySelector("h2")?.textContent === name) ?? null;
+    [...dom.root.querySelectorAll("section")].find((candidate) => candidate.querySelector("h3")?.firstChild?.textContent === name) ?? null;
   // The group's outer wrapper carries the collapse; the section inside keeps its padding.
   const wrapper = (name: string) => section(name)?.parentElement?.parentElement ?? null;
   box("Draft agenda")!.click();
@@ -355,7 +355,6 @@ domTest("collapses a group with its last task, header and gap included, then let
   jest.advanceTimersByTime(LEAVE_DELAY_MS);
   expect(collapsing("Draft agenda")).toBe(true);
   expect(wrapper("To Do")!.className).toContain("grid-rows-[0fr]");
-  expect(wrapper("To Do")!.className).toContain("-mb-[var(--ui-space-section)]");
   // A group that keeps tasks stays open.
   expect(wrapper("Doing")!.className).toContain("grid-rows-[1fr]");
   jest.advanceTimersByTime(COLLAPSE_MS);
@@ -405,7 +404,7 @@ domTest("still confirms a completion with Undo when the list cannot be read agai
 domTest("headers use full filtered counts, including zero, and fall back to visible rows when absent", async () => {
   await mount("active", { groupBy: "column", groupCounts: { Col001: 57, Col002: 0 } });
   const counts = () =>
-    [...dom.root.querySelectorAll("section")].map((section) => section.querySelector("h2")!.parentElement!.lastElementChild!.textContent);
+    [...dom.root.querySelectorAll("section")].map((section) => section.querySelector(".k2b-row-group__count")!.textContent);
   expect(counts()).toEqual(["57", "0"]);
   dispose!();
   dispose = undefined;

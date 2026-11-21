@@ -484,7 +484,8 @@ const expectStableFrame = async (page: Page) => {
 
 const expectPhoneControls = async (page: Page) => {
   const tabs = await page.locator(".k2b-app-workspace__head-views").boundingBox();
-  const filters = await page.locator(".k2b-app-workspace__head-filters").boundingBox();
+  // The filters stand in the status row under the tabs.
+  const filters = await page.locator("[data-spaces-head-filters]").first().boundingBox();
   if (!tabs || !filters) throw new Error("Phone head has no views or filters");
   expect(tabs.y + tabs.height).toBeLessThanOrEqual(filters.y);
   const primary = await page.locator("[data-workspace-primary]").evaluate((element) => {
@@ -495,6 +496,7 @@ const expectPhoneControls = async (page: Page) => {
   expect(primary.radius).toBeGreaterThanOrEqual(primary.width / 2);
 };
 
+/** Flat (K7, K14): columns without fill or frame; a card is a row of its column, 13 px, without tint or frame. */
 const expectKanbanAppearance = async (page: Page) => {
   const columns = await page.locator("section[data-spaces-kanban-column]").evaluateAll((sections) =>
     sections.map((section) => {
@@ -504,19 +506,21 @@ const expectKanbanAppearance = async (page: Page) => {
   );
   expect(columns.length).toBe(4);
   for (const column of columns) expect(column).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
-  const cards = await page.locator("[data-spaces-kanban-card] p").evaluateAll((titles) =>
-    titles.map((title) => ({
-      size: getComputedStyle(title).fontSize,
-      border: getComputedStyle(title.closest("article")!).borderTopWidth,
-    })),
+  const cards = await page.locator("article .spaces-kanban-card__title").evaluateAll((titles) =>
+    titles.map((title) => {
+      const card = getComputedStyle(title.closest("article")!);
+      return { size: getComputedStyle(title).fontSize, border: card.borderTopWidth, radius: card.borderTopLeftRadius, shadow: card.boxShadow };
+    }),
   );
   expect(cards.length).toBe(11);
-  for (const card of cards) expect(card).toEqual({ size: "14px", border: "0px" });
-  // The first tag tints its card and its name stands on the card; a card without a tag stays neutral.
-  const tinted = page.locator('article:has([data-item-id="Item07"])');
-  expect(await tinted.getAttribute("data-spaces-kanban-card-tint")).toBe("");
-  expect(await tinted.locator("[data-spaces-kanban-card-tag]").textContent()).toBe("Routes+1");
-  expect(await page.locator('article:has([data-item-id="Item09"])').getAttribute("data-spaces-kanban-card-tint")).toBeNull();
+  for (const card of cards) expect(card).toEqual({ size: "13px", border: "0px", radius: "0px", shadow: "none" });
+  // The first tag stands as a chip on the card with its count of further tags; the card itself takes no tint.
+  const tagged = page.locator('article:has([data-item-id="Item07"])');
+  expect(await tagged.locator(".k2b-tag").textContent()).toBe("Routes");
+  expect(await tagged.locator(".spaces-kanban-card__more").textContent()).toBe("+1");
+  expect(await tagged.evaluate((card) => getComputedStyle(card).backgroundColor)).toBe(
+    await page.locator('article:has([data-item-id="Item09"])').evaluate((card) => getComputedStyle(card).backgroundColor),
+  );
 };
 
 const expectKanbanColumns = async (page: Page) => {
@@ -526,80 +530,6 @@ const expectKanbanColumns = async (page: Page) => {
       lists.filter((list) => list.scrollWidth > list.clientWidth).map((list) => list.closest("section")?.dataset.spacesKanbanColumn),
     );
   expect(sideways).toEqual([]);
-};
-
-const expectCardContrast = async (page: Page) => {
-  const palette = [
-    "#ef4444",
-    "#f97316",
-    "#f59e0b",
-    "#eab308",
-    "#84cc16",
-    "#22c55e",
-    "#10b981",
-    "#14b8a6",
-    "#06b6d4",
-    "#0ea5e9",
-    "#3b82f6",
-    "#6366f1",
-    "#8b5cf6",
-    "#a855f7",
-    "#d946ef",
-    "#ec4899",
-    "#f43f5e",
-    "#6b7280",
-    "#facc15",
-    "#000000",
-    "#ffffff",
-  ];
-  const lowest = await page.evaluate((colors) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext("2d", { willReadFrequently: true })!;
-    /** Paints the layers from the page's own computed colors, so color-mix and alpha resolve as rendered. */
-    const paint = (...layers: string[]) => {
-      context.clearRect(0, 0, 1, 1);
-      for (const layer of [getComputedStyle(document.body).backgroundColor, ...layers]) {
-        context.fillStyle = layer;
-        context.fillRect(0, 0, 1, 1);
-      }
-      const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-      return [r!, g!, b!];
-    };
-    const luminance = (rgb: number[]) => {
-      const [r, g, b] = rgb.map((value) => {
-        const channel = value / 255;
-        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-    };
-    const contrast = (a: number[], b: number[]) => {
-      const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-      return (light! + 0.05) / (dark! + 0.05);
-    };
-    const card = document.querySelector<HTMLElement>('article:has([data-item-id="Item05"])')!;
-    const texts = [card.querySelector("p")!, ...card.querySelectorAll<HTMLElement>(".spaces-kanban-card-meta")];
-    const results: { color: string; part: string; ratio: number }[] = [];
-    for (const color of colors) {
-      card.style.setProperty("--spaces-card-tag", color);
-      const surface = getComputedStyle(card).backgroundColor;
-      for (const text of texts)
-        results.push({ color, part: text.textContent ?? "", ratio: contrast(paint(getComputedStyle(text).color), paint(surface)) });
-      // Hover deepens the tint; it must keep the same contrast.
-      const probe = card.appendChild(document.createElement("i"));
-      probe.style.backgroundColor = "var(--spaces-card-fill-hover)";
-      const hover = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      for (const text of texts)
-        results.push({
-          color,
-          part: `hover ${text.textContent}`,
-          ratio: contrast(paint(getComputedStyle(text).color), paint(hover)),
-        });
-    }
-    return results.sort((a, b) => a.ratio - b.ratio).slice(0, 3);
-  }, palette);
-  expect(lowest[0]!.ratio, JSON.stringify(lowest)).toBeGreaterThanOrEqual(4.5);
 };
 
 describe(`Spaces shared head in ${browserName}`, () => {
@@ -627,7 +557,6 @@ describe(`Spaces shared head in ${browserName}`, () => {
             await expectStableFrame(page);
             expect(await geometry(page)).toEqual(frame);
             // Contrast probes change card colors, so keep them after the initial capture and reload proof.
-            if (view === "kanban" && width === 1440) await expectCardContrast(page);
           } finally {
             await page.context().close();
           }

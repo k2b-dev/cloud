@@ -1,9 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button } from "@k2b/ui";
+import { Button, dragStatus, StatusRow } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { SpaceColumn, SpaceItemTemplate, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
+import SpaceFilters from "../filter/SpaceFilters";
 import { boardFilter, type FilterState } from "../filter/types";
+import { boardSummary } from "../kanban/board-summary";
 import KanbanBoard from "../kanban/KanbanBoard";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { writeSpaceSettings } from "../settings/SpaceSettingsStore";
@@ -63,21 +65,48 @@ export default function SpacesKanbanRoute(props: Props) {
     writeSpaceSettings(props.spaceId, { foldedColumns: stored });
   };
 
+  // The status row belongs to the route, so its filters keep their state and focus while the board under it is mounted
+  // again for a new snapshot; the board reports its size and key figures.
+  const [summary, setSummary] = createSignal(
+    boardSummary(props.initialBuckets, { open: t.factOpen, overdue: t.factOverdue, blocked: t.factBlocked }, props.dateConfig),
+  );
+
   return (
     <>
-      <Show when={view.error()}>
-        {(error) => (
-          <div class="flex items-center justify-between gap-2 pt-1 text-xs text-red-600" role="alert">
-            <span>{error().message}</span>
-            <Button type="button" variant="ghost" size="xs" disabled={view.busy()} onClick={() => void view.refresh()}>
-              {t.retry}
-            </Button>
-          </div>
-        )}
-      </Show>
-      <div class="h-2" />
+      <p class="sr-only" role="alert">
+        {view.error()?.message}
+      </p>
+      <StatusRow
+        class="spaces-status"
+        lead={t.itemCount({ count: summary().total })}
+        facts={summary().facts}
+        state={view.error() ? { label: view.error()!.message, icon: "ti ti-cloud-off" } : undefined}
+        announcement={
+          dragStatus() ? (
+            <>
+              <i class="ti ti-hand-grab" aria-hidden="true" /> <b>{dragStatus()!.lead}</b> {dragStatus()!.detail}
+            </>
+          ) : undefined
+        }
+        filters={
+          <>
+            {view.error() && (
+              <Button type="button" variant="ghost" size="sm" disabled={view.busy()} onClick={() => void view.refresh()}>
+                {t.reloadView}
+              </Button>
+            )}
+            <SpaceFilters
+              spaceId={props.spaceId}
+              columns={props.columns}
+              tags={props.tags}
+              currentView="kanban"
+              initialSource={props.baseUrl}
+            />
+          </>
+        }
+      />
       {/* The board scrolls itself and ends in Main's content box; a scroller around it would reserve its gutter before the detail panel. */}
-      <div class="min-h-0 flex-1">
+      <div class="flex min-h-0 flex-1 flex-col">
         <Show when={view.current()} keyed>
           {(current) => (
             <KanbanBoard
@@ -96,6 +125,7 @@ export default function SpacesKanbanRoute(props: Props) {
               canWrite={props.canWrite}
               currentUserId={props.currentUserId}
               wormholes={current.wormholes}
+              onSummary={setSummary}
             />
           )}
         </Show>

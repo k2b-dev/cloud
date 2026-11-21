@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Checkbox, Tag } from "@k2b/ui";
+import { Checkbox, StatusBadge, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
@@ -27,6 +27,8 @@ type ItemRowProps = {
   canWrite: boolean;
   currentUserId: string;
   agenda?: boolean;
+  /** The list is not grouped by status, so each row names its status after the title. */
+  showStatus?: boolean;
   /** Whether the list shows the item now; a filter can hide a row once it is completed or reopened. */
   isListed: (itemId: string) => boolean;
   /** Keeps a row the filters drop after a tick in view for a moment, done, before it collapses. */
@@ -38,10 +40,10 @@ type ItemRowProps = {
 };
 
 const PRIORITY_STYLES: Record<string, { icon: string; color: string }> = {
-  urgent: { icon: "ti-alert-circle", color: "text-red-500" },
-  high: { icon: "ti-arrow-up", color: "text-orange-500" },
-  medium: { icon: "ti-minus", color: "text-yellow-500" },
-  low: { icon: "ti-arrow-down", color: "text-blue-500" },
+  urgent: { icon: "ti-alert-circle", color: "text-red-600" },
+  high: { icon: "ti-arrow-up", color: "text-orange-600" },
+  medium: { icon: "ti-minus", color: "text-yellow-600" },
+  low: { icon: "ti-arrow-down", color: "text-blue-600" },
 };
 
 const formatEstimate = (minutes: number) => {
@@ -145,7 +147,9 @@ export default function ItemRow(props: ItemRowProps) {
   );
   const completionBlocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);
-  const priority = () => (props.item.priority ? PRIORITY_STYLES[props.item.priority] : null);
+  const priorityLabel: Record<string, string> = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low };
+  const priority = () =>
+    props.item.priority ? { ...PRIORITY_STYLES[props.item.priority]!, label: priorityLabel[props.item.priority] ?? "" } : null;
   const status = () => props.columns.find((column) => column.id === props.item.columnId) ?? null;
   const isOverdue = (): boolean => !isCompleted() && isTaskOverdue(props.item, props.dateConfig);
   const schedule = () => (isEvent() ? props.item.startsAt : props.item.deadline) ?? null;
@@ -153,19 +157,6 @@ export default function ItemRow(props: ItemRowProps) {
     if (!isEvent()) return null;
     if (props.item.allDay) return t.allDay;
     return `${dates.formatTime(props.item.startsAt!, props.dateConfig)}–${dates.formatTime(props.item.endsAt!, props.dateConfig)}`;
-  };
-  const hasMetadata = () =>
-    !!status() ||
-    (!props.agenda && !!schedule()) ||
-    (!props.agenda && isEvent()) ||
-    props.item.activeBlockerCount > 0 ||
-    props.item.estimatedDurationMinutes !== null ||
-    isInactiveTask(props.item) ||
-    (props.item.tags?.length ?? 0) > 0;
-  const titleTone = () => {
-    if (isSelectedLocal()) return isCompleted() ? "app-accent-text line-through" : "app-accent-text";
-    if (isCompleted()) return "line-through text-dimmed";
-    return "text-secondary group-hover:app-accent-text group-focus-within:app-accent-text";
   };
 
   const itemUrl = () => {
@@ -185,14 +176,21 @@ export default function ItemRow(props: ItemRowProps) {
       <div class={`min-h-0 ${collapsing() ? "overflow-hidden" : ""}`}>
         {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: it only watches the clicks of the checkbox inside, which Space fires too. */}
         <div
-          class="group flex min-h-12 items-center gap-3 px-2.5 py-2 focus-within:relative focus-within:z-10"
+          class="spaces-list-row"
+          data-selected={isSelectedLocal() ? "" : undefined}
+          data-done={isCompleted() ? "" : undefined}
           onClick={(event) => {
             // Until the change is in, the box ignores another click or Space, so it cannot get out of step with the
             // change. Unlike disabling it, this keeps keyboard focus on the box.
             if (event.target instanceof Element && event.target.matches("input") && busy()) event.preventDefault();
           }}
         >
-          <span class="flex shrink-0" title={props.canWrite && completionBlocked() ? t.completeBlockersFirst : undefined}>
+          {/* On touch, the box's hit area reaches past this cell on purpose; the layout self-check skips it. */}
+          <span
+            class="spaces-list-row__check"
+            data-layout-check="skip"
+            title={props.canWrite && completionBlocked() ? t.completeBlockersFirst : undefined}
+          >
             <Checkbox
               // A reader who cannot change the task hears its title and whether it is checked.
               aria-label={props.canWrite ? `${t.markComplete}: ${props.item.title}` : props.item.title}
@@ -202,10 +200,11 @@ export default function ItemRow(props: ItemRowProps) {
             />
           </span>
 
-          {/* Item Link - Main content area. It paints over the checkbox's touch area, so a tap on the task opens it. */}
+          {/* The link is the rest of the row, cell by cell on the list's column grid (K7). It paints over the checkbox's
+              touch area, so a tap on the task opens it. */}
           <a
             href={itemUrl()}
-            class="focus-ui relative flex min-w-0 flex-1 items-center gap-3 rounded-[var(--ui-radius-control)]"
+            class="spaces-list-row__link"
             data-spaces-item-link
             aria-current={isSelectedLocal() ? "true" : undefined}
             onClick={(event) => {
@@ -214,72 +213,119 @@ export default function ItemRow(props: ItemRowProps) {
               requestSpacesRouteNavigation(itemUrl(), { scroll: "preserve" });
             }}
           >
-            <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-2">
-                <Show when={props.agenda && eventTime()}>
-                  <span class="shrink-0 text-xs font-medium tabular-nums text-purple-600 dark:text-purple-300">{eventTime()}</span>
-                </Show>
-                <Show when={priority()}>
-                  <i class={`ti ${priority()!.icon} ${priority()!.color} shrink-0 text-sm`} />
-                </Show>
-                <span class={`block truncate text-sm font-medium transition-colors ${titleTone()}`}>{props.item.title}</span>
-              </div>
-              <Show when={hasMetadata()}>
-                <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-dimmed">
-                  <Show when={status()}>
-                    <span class="inline-flex min-w-0 items-center gap-1">
-                      <span class="h-1.5 w-1.5 shrink-0 rounded-full" style={`background-color:${status()!.color ?? "#6b7280"}`} />
-                      <span class="truncate">{status()!.name}</span>
-                    </span>
-                  </Show>
-                  <Show when={!props.agenda && schedule()}>
-                    <span class={`inline-flex shrink-0 items-center gap-1 ${isOverdue() ? "text-red-500" : ""}`}>
-                      <i class={`ti ${isEvent() ? "ti-calendar-event" : "ti-clock"}`} />
-                      {isEvent() ? dates.formatDateRelative(schedule()!, props.dateConfig) : formatDeadline(schedule()!, props.dateConfig)}
-                    </span>
-                  </Show>
-                  <Show when={!props.agenda && isEvent()}>
-                    <span class="inline-flex items-center gap-1 text-[11px] text-purple-600 dark:text-purple-300">
-                      <i class="ti ti-calendar-event" /> {t.event}
-                    </span>
-                  </Show>
-                  <Show when={props.item.estimatedDurationMinutes !== null}>
-                    <span class="inline-flex shrink-0 items-center gap-1">
-                      <i class="ti ti-hourglass" aria-hidden="true" />
-                      {formatEstimate(props.item.estimatedDurationMinutes!)}
-                    </span>
-                  </Show>
-                  <Show when={props.item.activeBlockerCount > 0}>
-                    <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
-                      <i class="ti ti-lock" aria-hidden="true" />
-                      {t.blockedByCount({ count: props.item.activeBlockerCount })}
-                    </span>
-                  </Show>
-                  <Show when={isInactiveTask(props.item)}>
-                    <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
-                      <i class="ti ti-clock-pause" aria-hidden="true" />
-                      {t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
-                    </span>
-                  </Show>
-                  <For each={props.item.tags?.slice(0, 2) ?? []}>
-                    {(tag) => (
-                      <Tag size="sm" color={tag.color} class="max-w-24">
-                        {tag.name}
-                      </Tag>
-                    )}
-                  </For>
-                  <Show when={(props.item.tags?.length ?? 0) > 2}>
-                    <span class="text-[11px] text-dimmed">+{props.item.tags!.length - 2}</span>
-                  </Show>
-                </div>
+            <span class="spaces-list-row__main">
+              <Show when={props.agenda && eventTime()}>
+                <span class="spaces-list-row__time">{eventTime()}</span>
               </Show>
-            </div>
-
-            <Show when={props.item.assignees?.length || props.item.claim}>
-              <div class="shrink-0">
+              <Show when={isEvent() && !props.agenda}>
+                <i class="ti ti-calendar-event spaces-list-row__kind" aria-hidden="true" />
+                <span class="sr-only">{t.eventKind}</span>
+              </Show>
+              <span class="spaces-list-row__title" title={props.item.title}>
+                {props.item.title}
+              </span>
+              {/* Without its date column, an overdue row says so at its title (K15). */}
+              <Show when={isOverdue()}>
+                <StatusBadge tone="error" variant="dot" label={t.overdue} class="spaces-list-row__overdue" />
+              </Show>
+              {/* Hints after the title go as a whole before the title is cut (K15). */}
+              <Show when={props.showStatus && status()}>
+                <span class="spaces-list-row__hint">
+                  <span class="spaces-list-row__dot" style={`background-color:${status()!.color ?? "#6b7280"}`} aria-hidden="true" />
+                  {status()!.name}
+                </span>
+              </Show>
+              <Show when={props.item.activeBlockerCount > 0}>
+                <span class="spaces-list-row__hint" data-state>
+                  <i class="ti ti-lock" aria-hidden="true" />
+                  {t.blockedByCount({ count: props.item.activeBlockerCount })}
+                </span>
+              </Show>
+              <Show when={props.item.estimatedDurationMinutes !== null}>
+                <span class="spaces-list-row__hint">
+                  <i class="ti ti-hourglass" aria-hidden="true" />
+                  {formatEstimate(props.item.estimatedDurationMinutes!)}
+                </span>
+              </Show>
+              <Show when={isInactiveTask(props.item)}>
+                <span class="spaces-list-row__hint" data-tone="warning">
+                  <i class="ti ti-clock-pause" aria-hidden="true" />
+                  {t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                </span>
+              </Show>
+            </span>
+            <span class="spaces-list-row__priority">
+              <Show
+                when={priority()}
+                fallback={
+                  <span class="spaces-list-row__none" aria-hidden="true">
+                    —
+                  </span>
+                }
+              >
+                {(meta) => (
+                  <>
+                    <i class={`ti ${meta().icon} ${meta().color}`} aria-hidden="true" />
+                    {meta().label}
+                  </>
+                )}
+              </Show>
+            </span>
+            <span class="spaces-list-row__date" data-overdue={isOverdue() ? "" : undefined}>
+              <Show
+                when={schedule()}
+                fallback={
+                  <span class="spaces-list-row__none" aria-hidden="true">
+                    —
+                  </span>
+                }
+              >
+                {(when) => (
+                  <>
+                    {isEvent()
+                      ? `${dates.formatDateRelative(when(), props.dateConfig)}${eventTime() && !props.agenda ? `, ${eventTime()}` : ""}`
+                      : formatDeadline(when(), props.dateConfig)}
+                    <Show when={isOverdue()}> · {t.overdue}</Show>
+                  </>
+                )}
+              </Show>
+            </span>
+            <span class="spaces-list-row__tags">
+              <For each={props.item.tags?.slice(0, 2) ?? []}>
+                {(tag) => (
+                  <Tag color={tag.color} class="max-w-24">
+                    {tag.name}
+                  </Tag>
+                )}
+              </For>
+              <Show when={(props.item.tags?.length ?? 0) > 2}>
+                <span class="spaces-list-row__more">+{props.item.tags!.length - 2}</span>
+              </Show>
+            </span>
+            {/* Below 640 px of list, the cells give way to one quiet second line (K7: two lines on a phone). */}
+            <span class="spaces-list-row__meta">
+              {[
+                priority()?.label,
+                schedule()
+                  ? `${isEvent() ? dates.formatDateRelative(schedule()!, props.dateConfig) : formatDeadline(schedule()!, props.dateConfig)}${isOverdue() ? ` · ${t.overdue}` : ""}`
+                  : undefined,
+                ...(props.item.tags?.map((tag) => tag.name) ?? []),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+            <span class="spaces-list-row__people">
+              <Show
+                when={props.item.assignees?.length || props.item.claim}
+                fallback={
+                  <span class="spaces-list-row__none" aria-hidden="true">
+                    —
+                  </span>
+                }
+              >
                 <AssigneeAvatars assignees={props.item.assignees ?? []} claim={props.item.claim} currentUserId={props.currentUserId} />
-              </div>
-            </Show>
+              </Show>
+            </span>
           </a>
         </div>
       </div>

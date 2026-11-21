@@ -195,11 +195,13 @@ describe("Spaces Kanban write responses", () => {
       await flush();
       if (action === "assign") key(dom.document.activeElement!, "m");
       else {
-        const grip = dom.root.querySelector<HTMLElement>('[data-spaces-kanban-grip="Item04"]')!;
+        // The shared engine lifts on Space once its keyboard module has loaded, then the arrows move and Enter drops.
+        const grip = dom.root.querySelector<HTMLElement>('[data-sortable-handle="Item04"]')!;
         grip.focus();
         key(grip, " ");
+        await flush();
         key(grip, "ArrowRight");
-        key(grip, " ");
+        key(grip, "Enter");
       }
       await flush();
       expect(calls).toEqual([...priorCalls, `${action}:Item04`]);

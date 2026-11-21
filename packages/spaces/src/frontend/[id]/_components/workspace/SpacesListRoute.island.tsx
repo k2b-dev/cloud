@@ -1,9 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Button, Pagination, Placeholder, ScrollArea, StatusRow } from "@k2b/ui";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import type { ItemListResult, SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import { isTaskOverdue } from "@/task-overdue";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
+import SpaceFilters from "../filter/SpaceFilters";
 import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import ItemsList from "../list";
 import { createLeavingItems } from "../shared/leaving";
@@ -80,6 +82,19 @@ export default function SpacesListRoute(props: Props) {
   };
 
   const empty = () => itemsResult().items.length === 0 && leaving.held().size === 0;
+  /** Key figures only from tasks the page holds: with more than one page they would count a part, so they wait. */
+  const facts = () => {
+    const result = itemsResult();
+    if (result.totalPages > 1) return [];
+    const open = result.items.filter((item) => !item.completedAt);
+    const overdue = open.filter((item) => isTaskOverdue(item, props.dateConfig)).length;
+    const blocked = open.filter((item) => item.activeBlockerCount > 0).length;
+    return [
+      { value: String(open.length), label: t.factOpen },
+      ...(overdue ? [{ value: String(overdue), label: t.factOverdue }] : []),
+      ...(blocked ? [{ value: String(blocked), label: t.factBlocked }] : []),
+    ];
+  };
 
   const content = () => (
     <>
@@ -157,17 +172,33 @@ export default function SpacesListRoute(props: Props) {
 
   return (
     <>
-      <Show when={view.error()}>
-        {(error) => (
-          <div class="flex items-center justify-between gap-2 py-1 text-xs text-red-600" role="alert">
-            <span>{error().message}</span>
-            <Button type="button" variant="ghost" size="xs" disabled={view.busy()} onClick={() => void view.refresh()}>
-              {t.retry}
-            </Button>
-          </div>
-        )}
-      </Show>
-      <div class="h-2" />
+      <p class="sr-only" role="alert">
+        {view.error()?.message}
+      </p>
+      <StatusRow
+        class="spaces-status"
+        lead={t.itemCount({ count: itemsResult().total })}
+        facts={facts()}
+        state={view.error() ? { label: view.error()!.message, icon: "ti ti-cloud-off" } : undefined}
+        filters={
+          <>
+            {view.error() && (
+              <Button type="button" variant="ghost" size="sm" disabled={view.busy()} onClick={() => void view.refresh()}>
+                {t.reloadView}
+              </Button>
+            )}
+            <SpaceFilters
+              spaceId={props.spaceId}
+              columns={props.columns}
+              tags={props.tags}
+              currentView={props.currentView}
+              initialSource={props.itemLinkBaseUrl}
+              initialTotal={props.initialItemsResult.total}
+            />
+          </>
+        }
+        line={props.currentView === "list" && empty()}
+      />
 
       {props.currentView === "table" && !empty() ? (
         // The table scrolls both ways itself and ends in Main's content box, as a board does.

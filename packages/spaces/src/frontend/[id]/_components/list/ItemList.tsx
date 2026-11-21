@@ -1,8 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
+import { RowGroup } from "@k2b/ui";
 import { createComputed, createMemo, For, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { ItemGroupBy, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
+import { useSpaceMessages } from "../../messages";
 import { keepHeld, type LeavingItems } from "../shared/leaving";
 import ItemRow from "./ItemRow";
 import { groupItems, type ItemListGroup } from "./item-list-groups";
@@ -28,24 +30,33 @@ type ItemListProps = {
 // Group Header Component
 // =============================================================================
 
-function GroupHeader(props: { config: ItemListGroup; count: number; id: string }) {
-  // Flat list has no header
-  if (!props.config.label) return null;
-
+/** A group's name with its sign: an icon or the status dot, and a date where the group is a day. */
+function GroupTitle(props: { config: ItemListGroup }) {
   return (
-    <div class="flex min-h-9 items-center gap-2 px-2.5 py-2">
-      {/* Icon or color dot */}
-      {props.config.icon && !props.config.color?.startsWith("#") && <i class={`ti ${props.config.icon} text-sm text-dimmed`} />}
-      {props.config.color && !props.config.icon && (
-        <div class="h-2.5 w-2.5 shrink-0 rounded-full" style={`background-color: ${props.config.color}`} />
-      )}
-      {props.config.icon && props.config.color && <i class={`ti ${props.config.icon} text-sm`} style={`color: ${props.config.color}`} />}
+    <span class="spaces-list-group">
+      <span class="spaces-list-group__sign" aria-hidden="true">
+        {props.config.icon ? (
+          <i class={`ti ${props.config.icon}`} style={props.config.color?.startsWith("#") ? `color: ${props.config.color}` : undefined} />
+        ) : (
+          <span class="spaces-list-row__dot" style={`background-color: ${props.config.color ?? "#6b7280"}`} />
+        )}
+      </span>
+      {props.config.label}
+      {props.config.meta && <span class="spaces-list-group__meta">{props.config.meta}</span>}
+    </span>
+  );
+}
 
-      <h2 id={props.id} class="text-sm font-medium text-primary">
-        {props.config.label}
-      </h2>
-      {props.config.meta && <span class="text-xs text-dimmed">{props.config.meta}</span>}
-      <span class="ml-auto text-xs tabular-nums text-dimmed">{props.count}</span>
+/** The column head of the list: the same grid as its rows, sticky in the list's one scroll area. */
+function ColumnHead() {
+  const t = useSpaceMessages();
+  return (
+    <div class="spaces-list-head" aria-hidden="true">
+      <span class="spaces-list-head__title">{t.title}</span>
+      <span class="spaces-list-head__priority">{t.priority}</span>
+      <span class="spaces-list-head__date">{t.schedule}</span>
+      <span class="spaces-list-head__tags">{t.tags}</span>
+      <span class="spaces-list-head__people">{t.assignees}</span>
     </div>
   );
 }
@@ -93,6 +104,7 @@ export default function ItemList(props: ItemListProps) {
           canWrite={props.canWrite}
           currentUserId={props.currentUserId}
           agenda={props.groupBy === "deadline"}
+          showStatus={props.groupBy !== "column"}
           isListed={isListed}
           leaving={props.leaving}
           list={() => list}
@@ -104,38 +116,35 @@ export default function ItemList(props: ItemListProps) {
 
   return (
     // Moving the pointer over the list, maybe towards the next task, keeps the rows that left in place a while longer.
-    <div ref={list} class="min-w-0" on:pointermove={(event) => event.pointerType === "mouse" && props.leaving.postpone()}>
+    <div ref={list} class="spaces-list" on:pointermove={(event) => event.pointerType === "mouse" && props.leaving.postpone()}>
+      <ColumnHead />
       {props.groupBy === "none" ? (
-        <div class="flex flex-col">
+        <div class="spaces-list__rows k2b-divided">
           <Rows items={rows} />
         </div>
       ) : (
-        <div class="flex flex-col gap-[var(--ui-space-section)]">
+        <div class="spaces-list__groups k2b-divided">
           <For each={groupKeys()}>
             {(key) => {
               const group = () => nonEmptyGroups().find((candidate) => candidate.key === key);
               const items = () => grouped().itemsByGroup[key] ?? [];
-              const headingId = `space-list-group-${key}`;
               // A group whose last rows collapse collapses with them, header and gap included, so the groups after it
               // slide up instead of jumping once the rows have gone.
               const collapsing = () => items().length > 0 && items().every((item) => props.leaving.collapsing(item.id));
               return (
                 <div
-                  class={`grid transition-[grid-template-rows,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
-                    collapsing() ? "-mb-[var(--ui-space-section)] grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
+                  class={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
+                    collapsing() ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
                   }`}
                 >
                   <div class={`min-h-0 ${collapsing() ? "overflow-hidden" : ""}`}>
-                    <section aria-labelledby={headingId}>
-                      <GroupHeader
-                        config={group() ?? { key, label: "" }}
-                        count={props.groupCounts?.[key] ?? items().length}
-                        id={headingId}
-                      />
-                      <div class="flex flex-col">
-                        <Rows items={items()} />
-                      </div>
-                    </section>
+                    <RowGroup
+                      level={3}
+                      title={<GroupTitle config={group() ?? { key, label: "" }} />}
+                      count={props.groupCounts?.[key] ?? items().length}
+                    >
+                      <Rows items={items()} />
+                    </RowGroup>
                   </div>
                 </div>
               );

@@ -9,7 +9,8 @@ import {
 import FilterBar from "./FilterBar";
 import { boardFilter, buildFilterUrl, defaultFilter, type FilterState, parseFilterFromUrl } from "./types";
 
-export default function SpaceHeadFilters(props: {
+/** Search and filter chips of a list or board, in its status row; they talk to the route through window events. */
+export default function SpaceFilters(props: {
   spaceId: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];

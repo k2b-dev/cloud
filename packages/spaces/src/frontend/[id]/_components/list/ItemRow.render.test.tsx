@@ -99,7 +99,7 @@ test.each([
   setSystemTime(new Date("2026-10-09T12:00:00Z"));
   try {
     const html = renderRow(task({ deadline }));
-    expect(html.includes("text-red-500")).toBe(overdue);
+    expect(html.includes("data-overdue")).toBe(overdue);
   } finally {
     setSystemTime();
   }

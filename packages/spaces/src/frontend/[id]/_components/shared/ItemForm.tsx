@@ -439,13 +439,15 @@ export default function ItemForm(props: ItemFormProps) {
     return range.end ? allDayEnd(range.end, props.dateConfig) : undefined;
   };
 
+  const [titleError, setTitleError] = createSignal("");
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
     if (submitting()) return;
     setError("");
 
+    // A missing title is the title field's own error, in its third line (K5); the cell above the footer is for the rest.
     if (!title().trim()) {
-      setError(t.titleRequired);
+      setTitleError(t.titleRequired);
       return;
     }
 
@@ -555,7 +557,9 @@ export default function ItemForm(props: ItemFormProps) {
 
   return (
     <PanelDialog>
+      {/* The form checks itself, so its errors read like the rest of Cloud instead of the browser's own bubble. */}
       <form
+        noValidate
         onSubmit={handleSubmit}
         class="spaces-item-form flex min-h-0 flex-1 flex-col overflow-hidden"
         data-presentation={quickCreate() ? "compact" : "full"}
@@ -905,7 +909,9 @@ export default function ItemForm(props: ItemFormProps) {
                 onValueChange={(value) => {
                   setTitle(value);
                   setError("");
+                  setTitleError("");
                 }}
+                error={titleError() || undefined}
                 autofocus
                 required
               />
@@ -976,16 +982,10 @@ export default function ItemForm(props: ItemFormProps) {
               </Show>
             </div>
           </Show>
-
-          <Show when={error()}>
-            <div class="flex items-center gap-1 text-sm text-red-500" role="alert">
-              <i class="ti ti-alert-circle" />
-              {error()}
-            </div>
-          </Show>
         </PanelDialog.Body>
 
-        <PanelDialog.Footer>
+        {/* A failed save is a tinted cell above the footer (K10, K16); the footer stays where it is. */}
+        <PanelDialog.Footer error={error() ? { title: error(), description: t.inputsKept } : undefined}>
           <Show when={quickCreate()}>
             <Button type="button" variant="ghost" size="sm" onClick={() => setShowFullEditor(true)}>
               {t.moreOptions}

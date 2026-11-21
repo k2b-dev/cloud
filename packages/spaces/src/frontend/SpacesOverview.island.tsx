@@ -354,7 +354,7 @@ export default function SpacesOverview(props: Props) {
         />
       }
     >
-      <div class="spaces-overview-work-list">
+      <div class="spaces-overview-work-list k2b-divided">
         <For each={workItems()}>
           {(item) => (
             <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>

@@ -237,7 +237,7 @@ describe("Spaces list search", () => {
       loadSpacesViewSnapshot: () => pending.promise,
     }));
     const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
-    const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceHeadFilters.island");
+    const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceFilters");
     const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
     const dispose = render(
       () => [

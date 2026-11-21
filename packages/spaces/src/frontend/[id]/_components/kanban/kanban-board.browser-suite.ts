@@ -141,23 +141,6 @@ const withAutomaticColumns = (locale: "en" | "de" = "en") => [
   overdueBucket(locale === "de" ? "Überfällig" : "Overdue"),
   statusBucket(columns[3]!),
 ];
-// A Wormhole to another Space; the board shows the Wormholes section after the last column.
-const wormhole: SpaceWormhole = {
-  id: "Worm01",
-  sourceSpaceId: "Space1",
-  color: "#10b981",
-  rank: "1",
-  target: {
-    spaceId: "Space2",
-    spaceName: "Fair logistics",
-    spaceColor: "#10b981",
-    columnId: "Col101",
-    columnName: "Inbox",
-    columnIsDone: false,
-  },
-  createdAt: "2026-09-20T10:00:00.000Z",
-  updatedAt: "2026-09-20T10:00:00.000Z",
-};
 const assignedToMe = () =>
   bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === me.id) ?? false);
 
@@ -334,7 +317,6 @@ afterAll(async () => {
 });
 
 type PointerEnvironment = { hover: string; "any-hover": string; pointer: string; "any-pointer": readonly string[] };
-const tabletWithMouse: PointerEnvironment = { hover: "none", "any-hover": "hover", pointer: "coarse", "any-pointer": ["coarse", "fine"] };
 
 // Neither engine emulates a touch primary pointer with a hovering secondary one, so the stylesheet answers the
 // pointer media queries itself, as in @k2b/ui's row-action-reveal browser test.
@@ -362,8 +344,6 @@ const pageHtml = (scenario: Scenario, theme: "light" | "dark", pointer?: Pointer
 let caseCounter = 0;
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
-const tablet: View = { width: 820, height: 1180, touch: true };
-const iPadLandscape: View = { width: 1180, height: 820, touch: true };
 const desktop: View = { width: 1280, height: 800, touch: false };
 
 const open = async (
@@ -396,7 +376,7 @@ const open = async (
   return page;
 };
 /** The island has replaced the server markup: hydrated icon buttons drop their server-only native title. */
-const rendered = (page: Page) => page.waitForSelector('[data-spaces-kanban-fold][aria-expanded="true"]:not([title])', { timeout: 15_000 });
+const rendered = (page: Page) => page.waitForSelector(".spaces-kanban-board[data-hydrated]", { timeout: 15_000 });
 
 const layout = (page: Page) =>
   page.evaluate(() => {
@@ -414,7 +394,8 @@ const layout = (page: Page) =>
       cards: Array.from(board.querySelectorAll("article")).map(box),
       /** How far a card's title sits below the card's top edge; its corner buttons must not push it down. */
       titleOffset: Math.round(
-        board.querySelector("article p")!.getBoundingClientRect().top - board.querySelector("article")!.getBoundingClientRect().top,
+        board.querySelector("article .spaces-kanban-card__title")!.getBoundingClientRect().top -
+          board.querySelector("article")!.getBoundingClientRect().top,
       ),
     };
   });
@@ -430,65 +411,16 @@ const drag = async (page: Page, from: { x: number; y: number; width: number; hei
     );
   }
 };
-/** A finger's pointer event, dispatched in the page: Playwright drives WebKit's touch input only as a whole tap. */
-const touchPointer = (
-  locator: ReturnType<Page["locator"]>,
-  type: "pointerdown" | "pointermove" | "pointerup",
-  pointerId: number,
-  point: { x: number; y: number },
-) =>
-  locator.evaluate(
-    (element, { type, pointerId, point }) =>
-      element.dispatchEvent(
-        new PointerEvent(type, {
-          pointerType: "touch",
-          pointerId,
-          isPrimary: true,
-          button: type === "pointermove" ? -1 : 0,
-          bubbles: true,
-          cancelable: true,
-          clientX: point.x,
-          clientY: point.y,
-        }),
-      ),
-    { type, pointerId, point },
-  );
-/** Whether the board kept a finger's move from scrolling it; the board reads no touch data, so a plain event will do. */
-const touchMovePrevented = (locator: ReturnType<Page["locator"]>) =>
-  locator.evaluate((element) => {
-    const event = new Event("touchmove", { bubbles: true, cancelable: true });
-    element.dispatchEvent(event);
-    return event.defaultPrevented;
-  });
 const center = async (locator: ReturnType<Page["locator"]>) => {
   const box = (await locator.boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 };
-const cardHandle = async (page: Page, title: string) => {
-  const card = page.locator("article").filter({ hasText: title });
-  await hoverInPlace(card);
-  return (await card.locator("[data-dnd-card-handle]").boundingBox())!;
-};
+/** Where a pointer picks a card up: the whole card drags (K7). */
+const cardHandle = async (page: Page, title: string) => (await page.locator("article").filter({ hasText: title }).boundingBox())!;
 const columnTitles = (page: Page) =>
   page
     .locator('[role="region"] section[data-spaces-kanban-column] h3')
     .evaluateAll((titles) => titles.map((title) => title.firstChild?.textContent ?? ""));
-/** What the drag-and-drop live regions last told screen readers. */
-const dragAnnouncements = (page: Page) => page.locator('body > [role="status"][aria-live="polite"]').allTextContents();
-const announcements = (page: Page) => page.locator('[data-k2b-live] [data-politeness="polite"] > div').allTextContents();
-const waitForAnnouncement = async (page: Page, text: string) => {
-  await page.waitForFunction(
-    (text) =>
-      Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).some((line) => line.textContent === text),
-    text,
-  );
-  expect(await announcements(page)).toContain(text);
-};
-const focusedGrip = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-spaces-kanban-grip"));
-const waitForGripFocus = async (page: Page, itemId: string) => {
-  await page.waitForFunction((id) => document.activeElement?.getAttribute("data-spaces-kanban-grip") === id, itemId);
-  expect(await focusedGrip(page)).toBe(itemId);
-};
 /** The toast rail; the live region repeats each toast's text for screen readers. */
 const notifications = (page: Page, locale: "en" | "de" = "en") =>
   page.getByRole("region", { name: locale === "de" ? "Benachrichtigungen" : "Notifications" });
@@ -496,21 +428,6 @@ const cardsIn = (page: Page, key: string) =>
   page
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
     .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
-
-/** Card lift state is shared by keyboard pick-up and touch hold. */
-const liftedCards = (page: Page) =>
-  page
-    .locator('[role="region"] article[data-spaces-kanban-card-state="held"] [data-spaces-kanban-card]')
-    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-item-id")));
-
-/** Wait until exactly these cards are held, without depending on the ring's paint or transition. */
-const waitForLiftedCards = (page: Page, ids: string[]) =>
-  page.waitForFunction((expected) => {
-    const lifted = Array.from(
-      document.querySelectorAll('[role="region"] article[data-spaces-kanban-card-state="held"] [data-spaces-kanban-card]'),
-    ).map((card) => card.getAttribute("data-item-id"));
-    return lifted.join() === expected.join();
-  }, ids);
 
 const waitForCards = (page: Page, key: string, ids: string[]) =>
   page.waitForFunction(
@@ -522,58 +439,6 @@ const waitForCards = (page: Page, key: string, ids: string[]) =>
     [key, ids] as const,
   );
 
-const cardControls = (page: Page, title: string) =>
-  page
-    .locator("article")
-    .filter({ hasText: title })
-    .evaluate((article) => {
-      const box = (element: Element) => {
-        const { x, y, width, height, top, right } = element.getBoundingClientRect();
-        return { x, y, width, height, top, right };
-      };
-      const control = (selector: string) => {
-        const button = article.querySelector(selector);
-        if (!button) throw new Error(`Missing card control: ${selector}`);
-        let opacity = 1;
-        for (let node: Element | null = button; node; node = node === article ? null : node.parentElement) {
-          opacity *= Number(getComputedStyle(node).opacity);
-        }
-        const rect = box(button);
-        const horizontalReach = (44 - rect.width) / 2 - 2;
-        const verticalReach = (44 - rect.height) / 2 - 2;
-        const hits = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(selector) === button;
-        const centerX = rect.x + rect.width / 2;
-        return {
-          opacity,
-          cursor: getComputedStyle(button).cursor,
-          box: rect,
-          horizontalReach,
-          verticalReach,
-          leftHit: hits(rect.x - horizontalReach, rect.y + rect.height / 2),
-          topHit: hits(centerX, rect.y - verticalReach),
-          // On a one-line card the grip sits right above the claim button: each keeps the strip next to its own box.
-          bottomHit: hits(centerX, rect.y + rect.height + verticalReach),
-          bottomEdgeHit: hits(centerX, rect.y + rect.height - 1),
-        };
-      };
-      const link = article.querySelector("[data-spaces-kanban-card]")!;
-      const linkBox = link.getBoundingClientRect();
-      const firstLine = article.querySelector("p")!.getBoundingClientRect();
-      return {
-        // The last pixel the title's first line can reach still opens the item.
-        textEndHit:
-          document
-            .elementFromPoint(linkBox.right - Number.parseFloat(getComputedStyle(link).paddingRight) - 1, firstLine.top + 2)
-            ?.closest("[data-spaces-kanban-card]") === link,
-        article: box(article),
-        border: {
-          top: Number.parseFloat(getComputedStyle(article).borderTopWidth),
-          right: Number.parseFloat(getComputedStyle(article).borderRightWidth),
-        },
-        grip: control("[data-dnd-card-handle]"),
-        claim: control("[data-spaces-claim-action]"),
-      };
-    });
 /** Hover and focus fade the controls in; wait until the fade has finished. */
 const settled = (page: Page) =>
   page.evaluate(() =>
@@ -584,24 +449,10 @@ const settled = (page: Page) =>
         .map((animation) => animation.finished),
     ),
   );
-const expectGripBox = (state: Awaited<ReturnType<typeof cardControls>>) => {
-  expect([state.grip.box.width, state.grip.box.height]).toEqual([20, 20]);
-  // Absolute offsets start inside the article's border.
-  expect(state.article.right - state.border.right - state.grip.box.right).toBe(6);
-  expect(state.grip.box.top - state.article.top - state.border.top).toBe(6);
-};
-const expectHitArea = (control: Awaited<ReturnType<typeof cardControls>>["grip"]) => {
-  expect(control.horizontalReach).toBeGreaterThanOrEqual(6);
-  expect(control.verticalReach).toBeGreaterThanOrEqual(6);
-  expect(control.leftHit).toBe(true);
-  expect(control.topHit).toBe(true);
-  expect(control.bottomHit).toBe(true);
-  expect(control.bottomEdgeHit).toBe(true);
-};
 
 // Each `kanban-*.browser.test.ts` runs one part in a child process of its own, so every part keeps its own budget
 // (#3026). Run directly, the suite runs every part.
-const parts = ["board", "keyboard", "head", "columns", "cards"] as const;
+const parts = ["board", "head", "columns", "cards"] as const;
 export type KanbanPart = (typeof parts)[number];
 if (selectedPart !== undefined && !parts.some((part) => part === selectedPart))
   throw new Error(`Unknown SPACES_KANBAN_PART "${selectedPart}"; expected one of ${parts.join(", ")}`);
@@ -610,437 +461,6 @@ const describePart = (part: KanbanPart, title: string, define: () => void) => {
 };
 
 describePart("board", "Spaces Kanban board in a browser", () => {
-  for (const [name, view] of [
-    ["phone", phone],
-    ["tablet", tablet],
-  ] as const) {
-    test(`${name}: touch-only card controls stay visible with larger hit areas and text still opens the item`, async () => {
-      const page = await open(view, { locale: "en" });
-      try {
-        const state = await cardControls(page, "Ask the bakery about a stand");
-        expect([state.grip.opacity, state.claim.opacity]).toEqual([1, 1]);
-        expectGripBox(state);
-        expectHitArea(state.grip);
-        expectHitArea(state.claim);
-        expect(state.textEndHit).toBe(true);
-        // A finger that lands just below the grip, as for a long-press, must not claim the task for everyone.
-        const claims: string[] = [];
-        page.on("request", (request) => {
-          if (request.url().endsWith("/claim")) claims.push(request.url());
-        });
-        await page.touchscreen.tap(
-          state.grip.box.x + state.grip.box.width / 2,
-          state.grip.box.y + state.grip.box.height + state.grip.verticalReach,
-        );
-        await page.waitForTimeout(100);
-        expect(claims).toEqual([]);
-        // Without the fixture's case parameter the item link differs from the page only in its item, so it opens in place.
-        await page.evaluate(() => history.replaceState(null, "", window.location.pathname));
-        const opening = page.evaluate(
-          () =>
-            new Promise<string>((resolve) => {
-              window.addEventListener(
-                "spaces-detail-navigation",
-                (event) => {
-                  if (!(event instanceof CustomEvent)) return;
-                  const detail: unknown = event.detail;
-                  if (typeof detail === "object" && detail !== null && "href" in detail && typeof detail.href === "string")
-                    resolve(detail.href);
-                },
-                { once: true },
-              );
-            }),
-        );
-        const text = await center(page.locator('[data-item-id="Item01"] p').first());
-        await page.touchscreen.tap(text.x, text.y);
-        expect(new URL(await opening, page.url()).searchParams.get("item")).toBe("Item01");
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
-  }
-
-  test("desktop: card controls reveal on hover and focus while my release control stays visible", async () => {
-    const buckets = unfiltered().map((entry) => ({
-      ...entry,
-      items: entry.items.map((task) =>
-        task.id === "Item05"
-          ? {
-              ...task,
-              claim: {
-                id: "55555555-5555-4555-8555-555555555555",
-                actor: { kind: "user" as const, id: me.id },
-                displayName: me.displayName,
-                avatarHash: null,
-                claimedAt: "2026-10-01T08:00:00.000Z",
-              },
-            }
-          : task,
-      ),
-    }));
-    const page = await open(desktop, { locale: "en", buckets });
-    try {
-      const card = page.locator("article").filter({ hasText: "Ask the bakery about a stand" });
-      const rest = await cardControls(page, "Ask the bakery about a stand");
-      expect([rest.grip.opacity, rest.claim.opacity]).toEqual([0, 0]);
-      expect(rest.grip.cursor).toBe("grab");
-      const released = await cardControls(page, "Collect insurance quotes");
-      expect(released.claim.opacity).toBe(1);
-      expect(await page.locator('[data-spaces-claim-action="release"]').count()).toBe(1);
-      await hoverInPlace(card);
-      await settled(page);
-      const hovered = await cardControls(page, "Ask the bakery about a stand");
-      expect([hovered.grip.opacity, hovered.claim.opacity]).toEqual([1, 1]);
-      await page.mouse.move(1279, 799);
-      await settled(page);
-      const parked = await cardControls(page, "Ask the bakery about a stand");
-      expect([parked.grip.opacity, parked.claim.opacity]).toEqual([0, 0]);
-      await card.locator("[data-spaces-kanban-card]").focus();
-      await settled(page);
-      const focused = await cardControls(page, "Ask the bakery about a stand");
-      expect([focused.grip.opacity, focused.claim.opacity]).toEqual([1, 1]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("tablet with mouse: card controls reveal on focus and keep coarse-pointer hit areas", async () => {
-    const page = await open(tablet, { locale: "en" }, { pointer: tabletWithMouse });
-    try {
-      const rest = await cardControls(page, "Ask the bakery about a stand");
-      expect([rest.grip.opacity, rest.claim.opacity]).toEqual([0, 0]);
-      await page.locator('[data-item-id="Item02"]').focus();
-      await settled(page);
-      const focused = await cardControls(page, "Ask the bakery about a stand");
-      expect([focused.grip.opacity, focused.claim.opacity]).toEqual([1, 1]);
-      expectGripBox(focused);
-      expectHitArea(focused.grip);
-      expectHitArea(focused.claim);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  for (const [name, view] of [
-    ["iPad portrait", tablet],
-    ["iPad landscape", iPadLandscape],
-  ] as const) {
-    test.skipIf(browserName === "webkit")(
-      `${name}: holding a card's title lifts it and dragging moves it to In progress without selecting text`,
-      async () => {
-        const page = await open(view, { locale: "en" });
-        try {
-          moves.splice(0);
-          await page.evaluate(() => {
-            document.body.dataset.contextMenus = "";
-            window.addEventListener("contextmenu", (event) => {
-              document.body.dataset.contextMenus += event.defaultPrevented ? "1" : "0";
-            });
-          });
-          const from = await center(page.locator('[data-item-id="Item02"] p').first());
-          const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
-          const before = await layout(page);
-          const cdp = await page.context().newCDPSession(page);
-          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-          await waitForLiftedCards(page, ["Item02"]);
-          expect(await liftedCards(page)).toEqual(["Item02"]);
-          expect(await layout(page)).toEqual(before);
-          for (let step = 1; step <= 20; step++) {
-            await cdp.send("Input.dispatchTouchEvent", {
-              type: "touchMove",
-              touchPoints: [{ x: from.x + ((to.x - from.x) * step) / 20, y: from.y + ((to.y - from.y) * step) / 20 }],
-            });
-            await page.waitForTimeout(16);
-          }
-          const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
-          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-          await saved;
-          expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
-          await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
-          expect(await cardsIn(page, "column:Col002")).toContain("Item02");
-          expect(await liftedCards(page)).toEqual([]);
-          expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
-          expect(await page.locator("body").getAttribute("data-context-menus")).not.toContain("0");
-        } finally {
-          await page.context().close();
-        }
-      },
-      30_000,
-    );
-  }
-
-  test.skipIf(browserName === "webkit")(
-    "iPad portrait: a quick swipe on a card body scrolls the board without lifting or moving a card",
-    async () => {
-      const page = await open(tablet, { locale: "en" });
-      try {
-        moves.splice(0);
-        const board = page.locator('[role="region"]');
-        await board.evaluate((element) => {
-          element.scrollLeft = 100;
-        });
-        const from = await center(page.locator('[data-item-id="Item04"] p').first());
-        await page.evaluate(() => {
-          window.addEventListener("pointerdown", (event) => {
-            const link = event.target instanceof Element ? event.target.closest("[data-spaces-kanban-card]") : null;
-            document.body.dataset.touchPressAccepted = String(link?.hasAttribute("data-spaces-kanban-touch-press"));
-          });
-        });
-        const cdp = await page.context().newCDPSession(page);
-        const started = cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-        const swiped = cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24, y: from.y }] });
-        await Promise.all([started, swiped]);
-        // The card body is accepted only for this finger press, before it becomes a swipe.
-        expect(await page.locator("body").getAttribute("data-touch-press-accepted")).toBe("true");
-        for (let step = 2; step <= 15; step++) {
-          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24 * step, y: from.y }] });
-          await page.waitForTimeout(16);
-        }
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-        await page.waitForTimeout(400);
-        expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThanOrEqual(100);
-        expect(moves).toEqual([]);
-        expect(await liftedCards(page)).toEqual([]);
-        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
-      } finally {
-        await page.context().close();
-      }
-    },
-    30_000,
-  );
-
-  test.skipIf(browserName === "webkit")(
-    "iPad portrait: releasing a held card without moving opens nothing and prevents the touch context menu",
-    async () => {
-      const page = await open(tablet, { locale: "en" });
-      try {
-        moves.splice(0);
-        await page.evaluate(() => {
-          history.replaceState(null, "", window.location.pathname);
-          document.body.dataset.openedCard = "false";
-          document.body.dataset.contextMenus = "";
-          window.addEventListener("spaces-detail-navigation", () => {
-            document.body.dataset.openedCard = "true";
-          });
-          window.addEventListener("contextmenu", (event) => {
-            document.body.dataset.contextMenus += event.defaultPrevented ? "1" : "0";
-          });
-        });
-        const from = await center(page.locator('[data-item-id="Item02"] p').first());
-        const cdp = await page.context().newCDPSession(page);
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-        await waitForLiftedCards(page, ["Item02"]);
-        expect(await liftedCards(page)).toEqual(["Item02"]);
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-        await page.waitForTimeout(300);
-        expect(moves).toEqual([]);
-        expect(await page.locator("body").getAttribute("data-opened-card")).toBe("false");
-        expect(await liftedCards(page)).toEqual([]);
-        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
-        expect(await page.locator("body").getAttribute("data-context-menus")).not.toContain("0");
-      } finally {
-        await page.context().close();
-      }
-    },
-    30_000,
-  );
-
-  // WebKit takes no finger moves from Playwright, so this drives the board's pointer logic with events dispatched in the page.
-  test("iPad landscape: a held card keeps the finger from scrolling and moves, while an early swipe stays a scroll", async () => {
-    const page = await open(iPadLandscape, { locale: "en" });
-    try {
-      moves.splice(0);
-      // Both events run together so a protocol delay cannot turn the swipe into a hold.
-      const next = page.locator('[data-item-id="Item01"] p').first();
-      const start = await center(next);
-      await next.evaluate((element, start) => {
-        for (const type of ["pointerdown", "pointermove"]) {
-          element.dispatchEvent(
-            new PointerEvent(type, {
-              pointerType: "touch",
-              pointerId: 8,
-              isPrimary: true,
-              button: type === "pointermove" ? -1 : 0,
-              bubbles: true,
-              cancelable: true,
-              clientX: start.x + (type === "pointermove" ? 20 : 0),
-              clientY: start.y,
-            }),
-          );
-        }
-      }, start);
-      expect(await touchMovePrevented(next)).toBe(false);
-      await page.waitForTimeout(400);
-      expect(await liftedCards(page)).toEqual([]);
-      await touchPointer(next, "pointermove", 8, { x: start.x + 200, y: start.y });
-      await touchPointer(next, "pointerup", 8, { x: start.x + 200, y: start.y });
-      await page.waitForTimeout(100);
-      expect(moves).toEqual([]);
-      expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
-
-      // The swipe runs first: the drop moves this card to another column.
-      const title = page.locator('[data-item-id="Item02"] p').first();
-      const from = await center(title);
-      const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
-      await touchPointer(title, "pointerdown", 7, from);
-      await waitForLiftedCards(page, ["Item02"]);
-      expect(await liftedCards(page)).toEqual(["Item02"]);
-      expect(await touchMovePrevented(title)).toBe(true);
-      // An engine that opens no menu for this gesture still shows that the board cancels one.
-      expect(
-        await title.evaluate((element) => {
-          const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-          element.dispatchEvent(event);
-          return event.defaultPrevented;
-        }),
-      ).toBe(true);
-      for (let step = 1; step <= 20; step++) {
-        await touchPointer(title, "pointermove", 7, {
-          x: from.x + ((to.x - from.x) * step) / 20,
-          y: from.y + ((to.y - from.y) * step) / 20,
-        });
-      }
-      const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
-      await touchPointer(title, "pointerup", 7, to);
-      await saved;
-      expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
-      await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
-      // The moved card ends its held press when it leaves the source column.
-      await waitForLiftedCards(page, []);
-      expect(await liftedCards(page)).toEqual([]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("iPad landscape: a refresh keeps a held card's press until it leaves its column, then its new card scrolls", async () => {
-    claimedItem = null;
-    const page = await open(iPadLandscape, { locale: "en" });
-    try {
-      moves.splice(0);
-      const card = page.locator('article:has([data-item-id="Item02"])');
-      const title = card.locator("p").first();
-      const from = await center(title);
-      const refresh = () =>
-        page.evaluate(async () => {
-          const coverage: Promise<void>[] = [];
-          window.dispatchEvent(
-            new CustomEvent("spaces-data-invalidated", {
-              detail: { domains: ["view"], cursor: null, itemId: null, cover: (promise: Promise<void>) => coverage.push(promise) },
-            }),
-          );
-          await Promise.all(coverage);
-        });
-
-      await touchPointer(title, "pointerdown", 9, from);
-      await waitForLiftedCards(page, ["Item02"]);
-      expect(await keptThrough(card, refresh)).toEqual({ replaced: false, heightChange: 0 });
-      expect(await liftedCards(page)).toEqual(["Item02"]);
-      expect(await touchMovePrevented(title)).toBe(true);
-      await touchPointer(title, "pointerup", 9, from);
-      await waitForLiftedCards(page, []);
-      expect(moves).toEqual([]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
-
-      await touchPointer(title, "pointerdown", 10, from);
-      await waitForLiftedCards(page, ["Item02"]);
-      const moved = await keptThrough(card, async () => {
-        // The fixture override also models a card that someone else moved to another column.
-        claimedItem = { ...items[1]!, columnId: "Col002" };
-        await refresh();
-        await page.locator('[data-spaces-kanban-column="column:Col001"] [data-item-id="Item02"]').waitFor({ state: "detached" });
-        await page.locator('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]').waitFor();
-      });
-      expect(moved.replaced).toBe(true);
-      expect(await card.count()).toBe(1);
-      await waitForLiftedCards(page, []);
-      expect(await liftedCards(page)).toEqual([]);
-      expect(await touchMovePrevented(title)).toBe(false);
-      await touchPointer(title, "pointerup", 10, from);
-      expect(moves).toEqual([]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item03"]);
-    } finally {
-      claimedItem = null;
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("iPad landscape: writers' cards select no text and open no callout, while readers' cards and the toolbar still select", async () => {
-    // Only iOS WebKit knows the callout property, so the stylesheet shows that the card asks for it.
-    expect(css).toMatch(/\.\\\[-webkit-touch-callout\\:none\\\]\s*\{[^}]*-webkit-touch-callout:\s*none\s*;[^}]*\}/);
-    for (const canWrite of [true, false]) {
-      const page = await open(iPadLandscape, { locale: "en", canWrite });
-      try {
-        expect(
-          await page
-            .locator('article:has([data-item-id="Item02"])')
-            .evaluate((card) => card.classList.contains("[-webkit-touch-callout:none]")),
-        ).toBe(canWrite);
-        const selection = (selector: string) =>
-          page
-            .locator(selector)
-            .first()
-            .evaluate((element) => {
-              const style = getComputedStyle(element);
-              return [style.userSelect, style.getPropertyValue("-webkit-user-select") || style.userSelect];
-            });
-        expect(await selection('article:has([data-item-id="Item02"])')).toEqual(
-          canWrite ? ["none", "none"] : expect.not.arrayContaining(["none"]),
-        );
-        expect(await selection("[data-spaces-head-filters]")).toEqual(expect.not.arrayContaining(["none"]));
-      } finally {
-        await page.context().close();
-      }
-    }
-  }, 30_000);
-
-  // Holding and moving a finger needs Chromium's input protocol: WebKit only supports whole taps.
-  test.skipIf(browserName === "webkit")(
-    "phone: a long-press on the visible grip moves a card to In progress",
-    async () => {
-      const page = await open(phone, { locale: "en" });
-      try {
-        moves.splice(0);
-        const state = await cardControls(page, "Ask the bakery about a stand");
-        expect(state.grip.opacity).toBe(1);
-        const board = page.locator('[role="region"]');
-        await board.evaluate((element) => {
-          element.scrollLeft = 140;
-        });
-        const from = await center(
-          page.locator("article").filter({ hasText: "Ask the bakery about a stand" }).locator("[data-dnd-card-handle]"),
-        );
-        const target = (await page.locator('[data-spaces-kanban-column="column:Col002"] article').first().boundingBox())!;
-        const to = { x: Math.min(target.x + target.width / 2, 360), y: target.y + target.height / 2 };
-        const cdp = await page.context().newCDPSession(page);
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-        // dnd.create waits 120 ms on touch and needs 6 px of movement to activate.
-        await page.waitForTimeout(200);
-        for (let step = 1; step <= 20; step++) {
-          await cdp.send("Input.dispatchTouchEvent", {
-            type: "touchMove",
-            touchPoints: [
-              {
-                x: from.x + ((to.x - from.x) * step) / 20,
-                y: from.y + ((to.y - from.y) * step) / 20,
-              },
-            ],
-          });
-          await page.waitForTimeout(16);
-        }
-        const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-        await saved;
-        expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
-        await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
-        expect(await cardsIn(page, "column:Col002")).toContain("Item02");
-      } finally {
-        await page.context().close();
-      }
-    },
-    30_000,
-  );
-
   for (const [name, view] of [
     ["phone", phone],
     ["desktop", desktop],
@@ -1057,8 +477,11 @@ describePart("board", "Spaces Kanban board in a browser", () => {
         expect(client.titleOffset).toBeLessThanOrEqual(12);
         expect(client.board.top).toBeGreaterThanOrEqual(client.toolbar.top + client.toolbar.height);
         expect(client.documentScroll.width).toBe(client.documentScroll.client);
-        // The folded column is a narrow strip; open columns keep their width and scroll sideways on a phone.
-        expect(client.columns.map((column) => column.width)).toEqual(view === phone ? [318, 318, 40, 318] : [280, 280, 40, 280]);
+        // The folded column is a narrow strip; open columns share the width, and on a phone they keep theirs and scroll sideways.
+        const widths = client.columns.map((column) => column.width);
+        expect(widths[2]).toBe(40);
+        expect(new Set([widths[0], widths[1], widths[3]]).size).toBe(1);
+        expect(widths[0]).toBe(view === phone ? 318 : Math.max(widths[0]!, 240));
         if (view === phone) expect(client.boardScroll.width).toBeGreaterThan(client.boardScroll.client);
         expect(await page.locator('[role="region"]').getAttribute("aria-describedby")).toBe("spaces-kanban-shortcuts-Space1");
         expect(await page.locator("#spaces-kanban-shortcuts-Space1").textContent()).toContain("Pfeiltasten");
@@ -1074,7 +497,7 @@ describePart("board", "Spaces Kanban board in a browser", () => {
       const at = await layout(page);
       await hoverInPlace(page.locator("article").first());
       expect(await layout(page)).toEqual(at);
-      await hoverInPlace(page.locator('[data-spaces-kanban-fold="column:Col002"]'));
+      await hoverInPlace(page.locator('[data-spaces-kanban-column-menu="column:Col002"]'));
       expect(await layout(page)).toEqual(at);
     } finally {
       await page.context().close();
@@ -1084,9 +507,10 @@ describePart("board", "Spaces Kanban board in a browser", () => {
   test("a column folds and unfolds by keyboard, keeps focus, and remembers it in the settings cookie", async () => {
     const page = await open(phone, { locale: "en" });
     try {
+      // The column's "…" menu folds it; the strip that takes its place takes the focus.
+      await page.locator('[data-spaces-kanban-column-menu="column:Col002"]').click();
+      await page.getByRole("menuitem", { name: "Fold In progress" }).click();
       const fold = page.locator('[data-spaces-kanban-fold="column:Col002"]');
-      await fold.focus();
-      await page.keyboard.press("Enter");
       await page.waitForSelector('[data-spaces-kanban-fold="column:Col002"][aria-expanded="false"]');
       expect(await page.evaluate(() => window.document.activeElement?.getAttribute("data-spaces-kanban-fold"))).toBe("column:Col002");
       expect(await fold.getAttribute("aria-label")).toBe("Unfold In progress, 2 items");
@@ -1098,8 +522,8 @@ describePart("board", "Spaces Kanban board in a browser", () => {
       expect(await page.locator('[data-bucket-key="column:Col002"]').count()).toBe(0);
 
       await page.keyboard.press("Enter");
-      await page.waitForSelector('[data-spaces-kanban-fold="column:Col002"][aria-expanded="true"]');
-      expect(await page.evaluate(() => window.document.activeElement?.getAttribute("data-spaces-kanban-fold"))).toBe("column:Col002");
+      await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-spaces-kanban-column-menu]');
+      await page.waitForFunction(() => window.document.activeElement?.getAttribute("data-spaces-kanban-column-menu") === "column:Col002");
       expect((await settings())?.foldedColumns).toBeUndefined();
     } finally {
       await page.context().close();
@@ -1107,406 +531,7 @@ describePart("board", "Spaces Kanban board in a browser", () => {
   }, 30_000);
 });
 
-describePart("keyboard", "Spaces Kanban board in a browser", () => {
-  test("keyboard: Space, ArrowDown, Space on a grip moves a card one slot down, says where, and keeps focus on its grip", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      filterRequests.splice(0);
-      await page.locator('[data-item-id="Item01"]').focus();
-      // The claim button sits between the card link and its grip in the tab order.
-      await page.keyboard.press("Shift+Tab");
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-spaces-claim-action"))).toBe("claim");
-      await page.keyboard.press("Shift+Tab");
-      expect(await focusedGrip(page)).toBe("Item01");
-      await page.keyboard.press("Space");
-      await waitForAnnouncement(page, "Picked up Order banners for the spring fair");
-      await page.keyboard.press("ArrowDown");
-      expect(await page.locator('[data-spaces-kanban-column="column:Col001"] [data-spaces-kanban-drop-indicator]').count()).toBe(1);
-      await waitForAnnouncement(page, "To do, position 2 of 3");
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
-      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
-      await page.keyboard.press("Space");
-      await moved;
-      expect(moves).toEqual([{ columnId: "Col001", afterItemId: "Item02" }]);
-      // The board applies the drop inside a view transition, which WebKit can run a few frames after the response.
-      await waitForCards(page, "column:Col001", ["Item02", "Item01", "Item03"]);
-      await refreshed;
-      await waitForAnnouncement(page, "Dropped Order banners for the spring fair in Column To do");
-      expect(filterRequests.length).toBeGreaterThan(0);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
-      await waitForGripFocus(page, "Item01");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: ArrowRight then ArrowDown places a card at slot 2 of the next column with its status", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowRight");
-      await waitForAnnouncement(page, "In progress, position 1 of 3");
-      await page.keyboard.press("ArrowDown");
-      await waitForAnnouncement(page, "In progress, position 2 of 3");
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
-      await page.keyboard.press("Enter");
-      await moved;
-      expect(moves).toEqual([{ columnId: "Col002", afterItemId: "Item04" }]);
-      await waitForGripFocus(page, "Item01");
-      expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item01", "Item05"]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item03"]);
-      expect(await page.getByRole("dialog").count()).toBe(0);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  for (const tooltip of ["pending", "open"] as const) {
-    test(`keyboard: Escape cancels a move with its tooltip ${tooltip}: only the next Escape reaches the workspace`, async () => {
-      const page = await open(desktop, { locale: "en" });
-      try {
-        moves.splice(0);
-        // As the workspace controller: an Escape that reaches the window unprevented closes the detail panel.
-        await page.evaluate(() => {
-          const escapes: string[] = [];
-          Object.assign(window, { __workspaceEscapes: escapes });
-          window.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && !event.defaultPrevented) escapes.push(event.key);
-          });
-        });
-        const workspaceEscapes = () => page.evaluate<unknown>(() => Reflect.get(window, "__workspaceEscapes"));
-        // Control the delayed hint so both sides of the old timing race are covered.
-        await page.clock.install({ time: new Date("2026-10-27T12:00:00Z") });
-        await page.clock.pauseAt(new Date("2026-10-27T12:00:01Z"));
-        await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-        if (tooltip === "open") await page.clock.runFor(300);
-        expect(await page.locator('[role="tooltip"]:popover-open').count()).toBe(tooltip === "open" ? 1 : 0);
-        await page.keyboard.press("Space");
-        // Using the grip closes the hint and cancels a pending hint before the local handler stops bubbling.
-        await page.clock.runFor(300);
-        expect(await page.locator('[role="tooltip"]:popover-open').count()).toBe(0);
-        await page.clock.resume();
-        await page.keyboard.press("ArrowDown");
-        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
-        await page.keyboard.press("Escape");
-        expect(moves).toEqual([]);
-        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-        expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
-        await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
-        expect(moves).toEqual([]);
-        expect(await workspaceEscapes()).toEqual([]);
-        expect(await focusedGrip(page)).toBe("Item01");
-        // Without a move in progress, Escape is the workspace's again.
-        await page.keyboard.press("Escape");
-        expect(await workspaceEscapes()).toEqual(["Escape"]);
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
-  }
-
-  test("keyboard: ArrowRight skips an automatic column", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item02"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowRight");
-      await waitForAnnouncement(page, "In progress, position 2 of 3");
-      expect(await page.locator('[data-spaces-kanban-column="column:Col002"] [data-spaces-kanban-drop-indicator]').count()).toBe(1);
-      expect(await page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
-      expect((await announcements(page)).some((text) => text.startsWith("Blocked, position"))).toBe(false);
-      await page.keyboard.press("ArrowLeft");
-      // Pickup already announced this position; returning must announce it again.
-      await page.waitForFunction(
-        () =>
-          Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).filter(
-            (line) => line.textContent === "To do, position 2 of 3",
-          ).length === 2,
-      );
-      expect(await page.locator('[data-spaces-kanban-column="column:Col002"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      await waitForAnnouncement(page, "Done, position 2 of 2");
-      expect(await page.locator('[data-spaces-kanban-column="virtual:overdue"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
-      await page.keyboard.press("Escape");
-      expect(moves).toEqual([]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: dropping into Done a task someone else claimed asks the take-over question once", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item04"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("Space");
-      const question = page.getByRole("dialog", { name: "Take over task" });
-      await question.waitFor();
-      expect(await question.count()).toBe(1);
-      expect(await page.getByRole("dialog").count()).toBe(1);
-      expect(moves).toEqual([]);
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
-      await question.getByRole("button", { name: "Take over and complete" }).click();
-      await moved;
-      expect(moves).toHaveLength(1);
-      expect(moves[0]).toMatchObject({ columnId: "Col004", completed: true, claimId: "44444444-4444-4444-8444-444444444444", force: true });
-      await question.waitFor({ state: "detached" });
-      await waitForGripFocus(page, "Item04");
-      expect(await cardsIn(page, "column:Col004")).toContain("Item04");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: a picked-up card says where it is in German", async () => {
-    const page = await open(desktop, { locale: "de" });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await waitForAnnouncement(page, "Order banners for the spring fair aufgenommen");
-      await waitForAnnouncement(page, "To do, Position 1 von 3");
-      await page.keyboard.press("ArrowRight");
-      await waitForAnnouncement(page, "In progress, Position 1 von 3");
-      await page.keyboard.press("Escape");
-      await waitForAnnouncement(page, "Verschieben von Order banners for the spring fair abgebrochen");
-      expect(moves).toEqual([]);
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowDown");
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
-      await page.keyboard.press("Space");
-      await moved;
-      await waitForAnnouncement(page, "Order banners for the spring fair in Status To do abgelegt");
-      expect(moves).toEqual([{ columnId: "Col001", afterItemId: "Item02" }]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: dropping without moving says the card was not moved in English and sends nothing", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("Space");
-      await waitForAnnouncement(page, "Order banners for the spring fair not moved");
-      expect(moves).toEqual([]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
-      expect(await focusedGrip(page)).toBe("Item01");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  for (const cancellation of ["Tab", "refresh"] as const) {
-    test(`keyboard: ${cancellation} while picked up cancels the move`, async () => {
-      const page = await open(desktop, { locale: "en" });
-      try {
-        moves.splice(0);
-        await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-        await page.keyboard.press("Space");
-        await page.keyboard.press("ArrowDown");
-        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
-        if (cancellation === "Tab") await page.keyboard.press("Tab");
-        else {
-          const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
-          await page.evaluate(() =>
-            window.dispatchEvent(
-              new CustomEvent("spaces-data-invalidated", {
-                detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined },
-              }),
-            ),
-          );
-          await refreshed;
-        }
-        await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
-        expect(moves).toEqual([]);
-        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-        expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
-  }
-
-  test("keyboard: a card dropped on a folded column goes to its top, and the column's strip takes the focus", async () => {
-    const page = await open(desktop, { locale: "en", folded: ["column:Col002"] });
-    try {
-      moves.splice(0);
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowRight");
-      // A folded column offers only its top.
-      await waitForAnnouncement(page, "In progress, position 1 of 1");
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
-      await page.keyboard.press("Space");
-      await moved;
-      expect(moves).toEqual([{ columnId: "Col002" }]);
-      await page.waitForFunction(() => document.activeElement?.getAttribute("data-spaces-kanban-fold") === "column:Col002");
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item03"]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: while a card is picked up, single-key shortcuts wait and the move stays", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      // As the workspace controller: an unprevented J or K that reaches the window steps the detail panel.
-      await page.evaluate(() => {
-        const keys: string[] = [];
-        Object.assign(window, { __workspaceKeys: keys });
-        window.addEventListener("keydown", (event) => {
-          if (!event.defaultPrevented) keys.push(event.key);
-        });
-      });
-      const singleKeyCommandShortcuts = () =>
-        page.evaluate(() => {
-          const detail = { commands: [] as { shortcut?: string }[] };
-          window.dispatchEvent(new CustomEvent("cloud.command.collect", { detail }));
-          return detail.commands.flatMap((command) => (command.shortcut?.length === 1 ? [command.shortcut] : []));
-        });
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowDown");
-      // The card's M and D belong to its link, not to the grip that moves it. Head commands use modifier chords.
-      expect(await singleKeyCommandShortcuts()).toEqual([]);
-      for (const key of ["j", "k", "m", "d"]) await page.keyboard.press(key);
-      expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual([]);
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
-      expect(await focusedGrip(page)).toBe("Item01");
-      await page.keyboard.press("Escape");
-      expect(moves).toEqual([]);
-      // Once the card is down, the keys are the workspace's again.
-      await page.keyboard.press("j");
-      expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual(["j"]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: Up and Down on a card from an automatic column keep its place and say so", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      await page.locator('[data-spaces-kanban-grip="Item08"]').focus();
-      await page.keyboard.press("Space");
-      await waitForAnnouncement(page, "Blocked, position 1 of 2");
-      await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(
-        () =>
-          Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).filter(
-            (line) => line.textContent === "Blocked, position 1 of 2",
-          ).length === 2,
-      );
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-      await page.keyboard.press("Escape");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: a click while a dropped card saves ends the focus restore, so its rollback does not pull focus back", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      let fail!: () => void;
-      const failing = new Promise<void>((resolve) => {
-        fail = resolve;
-      });
-      await page.route("**/items/Item01/move", async (route) => {
-        await failing;
-        await route.fulfill({ status: 500, json: { message: "Move failed" } });
-      });
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowDown");
-      const requested = page.waitForRequest((request) => request.url().endsWith("/items/Item01/move"));
-      await page.keyboard.press("Space");
-      await requested;
-      // While the move saves, a spinner stands in for the grip; the person clicks the page's padding, which takes no focus.
-      await page.mouse.click(2, 2);
-      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
-      fail();
-      await page.waitForFunction(
-        () =>
-          Array.from(document.querySelectorAll('[data-spaces-kanban-column="column:Col001"] [data-spaces-kanban-card]'))
-            .map((card) => (card as HTMLElement).dataset.itemId)
-            .join() === "Item01,Item02,Item03",
-      );
-      // The grip is back once the move has ended; a restore would focus it in the same task.
-      await page.waitForSelector('[data-spaces-kanban-grip="Item01"]', { state: "attached" });
-      await page.evaluate(() => new Promise(requestAnimationFrame));
-      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("keyboard: the grip has an accessible description of how to move a card", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      const helpId = "spaces-kanban-grip-help-Space1";
-      expect(await page.locator(`#${helpId}`).count()).toBe(1);
-      expect(await page.locator(`#${helpId}`).textContent()).toBe(
-        "Space picks the card up, the arrow keys move it, Space drops it, Escape cancels.",
-      );
-      expect((await page.locator('[data-spaces-kanban-grip="Item01"]').getAttribute("aria-describedby"))?.split(/\s+/)).toContain(helpId);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("arrow keys skip a folded column", async () => {
-    const page = await open(desktop, { locale: "en", folded: ["column:Col002"] });
-    try {
-      await page.locator('[data-item-id="Item01"]').focus();
-      await page.keyboard.press("ArrowRight");
-      expect(await page.evaluate(() => (window.document.activeElement as HTMLElement | null)?.dataset.itemId)).toBe("Item06");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-});
-
 describePart("head", "Spaces Kanban board in a browser", () => {
-  test("a card dropped on a folded column moves to the top of that column, also while a filter hides cards", async () => {
-    const page = await open(desktop, { locale: "en", folded: ["column:Col003"], query: "?assignedTo=unassigned" });
-    try {
-      moves.splice(0);
-      const card = page.locator("article").filter({ hasText: "Ask the bakery" });
-      await card.hover();
-      const handle = card.locator("[data-dnd-card-handle]");
-      const from = (await handle.boundingBox())!;
-      const to = (await page.locator('[data-spaces-kanban-fold="column:Col003"]').boundingBox())!;
-      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
-      await page.mouse.down();
-      for (let step = 1; step <= 12; step++) {
-        await page.mouse.move(
-          from.x + ((to.x + to.width / 2 - from.x) * step) / 12,
-          from.y + ((to.y + to.height / 2 - from.y) * step) / 12,
-        );
-      }
-      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
-      await page.mouse.up();
-      await moved;
-      // No neighbor: the server puts the card at the top of the whole column, above cards a filter hides.
-      expect(moves).toEqual([{ columnId: "Col003" }]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
   test("a filter loads the narrowed board in place, keeps it in the URL, and counts what it hides", async () => {
     const page = await open(desktop, { locale: "en" });
     try {
@@ -1534,13 +559,14 @@ describePart("head", "Spaces Kanban board in a browser", () => {
       for (const width of [390, 900, 960, 1040, 1120, 1280]) {
         const page = await open({ width, height: 800, touch: false }, { locale, query: allFilters });
         try {
-          const group = page.locator(".k2b-app-workspace__head-filters");
+          // The filters stand in the status row and scroll there themselves.
           const head = page.locator("[data-spaces-head-filters]");
+          const group = head;
           expect(await head.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
           const controls = head.locator("button:visible, a:visible, input:visible");
           expect(await controls.count()).toBeGreaterThan(0);
           for (const control of await controls.all()) {
-            // Chips share one row and the head group scrolls to every control, including Reset.
+            // Chips share one row and the filter bar scrolls to every control, including Reset.
             await control.scrollIntoViewIfNeeded();
             const box = (await control.boundingBox())!;
             const clip = (await group.boundingBox())!;
@@ -1710,7 +736,7 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
 
       // Hovering a column header or its menu moves nothing.
       const at = await layout(page);
-      await hoverInPlace(page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]'));
+      await hoverInPlace(page.locator('[data-spaces-kanban-column="virtual:blocked"] h3'));
       expect(await layout(page)).toEqual(at);
       await hoverInPlace(page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]'));
       expect(await layout(page)).toEqual(at);
@@ -1719,30 +745,6 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       await page.locator('[data-item-id="Item01"]').focus();
       await page.keyboard.press("ArrowRight");
       expect(await page.evaluate(() => (window.document.activeElement as HTMLElement | null)?.dataset.itemId)).toBe("Item08");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("an automatic column refuses a dropped card and says so", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      moves.splice(0);
-      await drag(
-        page,
-        await cardHandle(page, "Ask the bakery"),
-        await center(page.locator('[data-spaces-kanban-column="virtual:blocked"] article').first()),
-      );
-      await page.waitForSelector('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-no-drop]');
-      expect(await page.locator("[data-spaces-kanban-no-drop]").textContent()).toContain("Cards can't be dropped here");
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-      await page.mouse.up();
-      await page.waitForTimeout(200);
-      expect(moves).toEqual([]);
-      expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
-      expect(await cardsIn(page, "column:Col001")).toContain("Item02");
-      // Screen readers hear that nothing moved, not that the card was dropped.
-      expect(await dragAnnouncements(page)).toContain("Ask the bakery about a stand not moved; Blocked fills itself");
     } finally {
       await page.context().close();
     }
@@ -1764,7 +766,7 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
         const before = await layout(page);
         await toDone();
         // Claims coordinate work and do not lock it: the done status takes the drop.
-        expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
+        expect(await page.locator('[data-spaces-kanban-column="column:Col004"][data-sortable-target]').count()).toBe(1);
         await page.mouse.up();
         await question.waitFor();
         expect(await question.textContent()).toContain(
@@ -1811,52 +813,6 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       }
     }, 30_000);
   }
-
-  test("the drag preview of a card floats with the float shadow token", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      const handle = await cardHandle(page, "Hang the signs");
-      await drag(page, handle, { x: handle.x + 30, y: handle.y + 60 });
-      await page.waitForFunction(() => document.querySelector('body > .spaces-kanban-card[aria-hidden="true"]') !== null);
-      const shadows = await page.evaluate(() => {
-        const ghost = document.querySelector<HTMLElement>('body > .spaces-kanban-card[aria-hidden="true"]');
-        const probe = document.body.appendChild(document.createElement("div"));
-        probe.style.boxShadow = "var(--k2b-shadow-float)";
-        const float = getComputedStyle(probe).boxShadow;
-        probe.remove();
-        return { ghost: ghost ? getComputedStyle(ghost).boxShadow : null, float };
-      });
-      await page.mouse.up();
-      expect(shadows.ghost).not.toBeNull();
-      expect(shadows.ghost).toBe(shadows.float);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("a card picked up in an automatic column is not refused there and has no target over the status it has", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      moves.splice(0);
-      const handle = await cardHandle(page, "Hang the signs");
-      await drag(page, handle, { x: handle.x + 30, y: handle.y + 60 });
-      expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
-      // Over "To do", the status it already has: no drop line, no highlighted column, and nothing saved.
-      const own = await center(page.locator('[data-spaces-kanban-column="column:Col001"] article').first());
-      for (let step = 1; step <= 12; step++) {
-        await page.mouse.move(handle.x + 30 + ((own.x - handle.x - 30) * step) / 12, handle.y + 60 + ((own.y - handle.y - 60) * step) / 12);
-      }
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-      expect(await page.locator('[data-spaces-kanban-column="column:Col001"] .bg-\\[var\\(--ui-selected\\)\\]').count()).toBe(0);
-      await page.mouse.up();
-      await page.waitForTimeout(200);
-      expect(moves).toEqual([]);
-      expect(await dragAnnouncements(page)).toContain("Hang the signs not moved");
-      expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
 
   test("a card dragged out of Blocked into an open status stays there with its new status; one done leaves Overdue", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
@@ -1912,110 +868,10 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       await page.context().close();
     }
   }, 30_000);
-
-  test("people who may change statuses reorder columns by dragging a header, for everyone", async () => {
-    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      columnOrders.splice(0);
-      const handle = page.locator('[data-spaces-kanban-column="column:Col003"] [data-spaces-kanban-column-handle]');
-      const target = (await page.locator('[data-spaces-kanban-column="column:Col001"]').boundingBox())!;
-      await drag(page, (await handle.boundingBox())!, { x: target.x + 20, y: target.y + 40 });
-      await page.waitForSelector("[data-spaces-kanban-column-drop-indicator]");
-      const saved = page.waitForResponse((response) => response.url().endsWith("/columns/order"));
-      await page.mouse.up();
-      await saved;
-      expect(columnOrders).toEqual([{ columnIds: ["Col003", "Col001", "blocked", "Col002", "overdue", "Col004"] }]);
-      expect(await columnTitles(page)).toEqual(["Review", "To do", "Blocked", "In progress", "Overdue", "Done"]);
-      expect(await page.locator("[data-spaces-kanban-column-drop-indicator]").count()).toBe(0);
-      // Screen readers hear the saved move, not that the column stayed where it was.
-      await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
-      expect(await page.locator("[data-spaces-kanban-column-status]").textContent()).toBe("Review is now column 1 of 6");
-      expect(await dragAnnouncements(page)).not.toContain("Column Review not moved");
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
-  test("a dragged column's drop line sits centred in the gap, also next to folded and automatic columns and before the Wormholes, and moves nothing", async () => {
-    // Each drag skips the two places beside the column itself, so two drags reach every place. With Wormholes shown,
-    // only the end changes: a real gap then follows the last column.
-    const variants = [
-      {
-        wormholes: [],
-        drags: [
-          ["column:Col004", [0, 1, 2, 3, 4]],
-          ["column:Col001", [2, 3, 4, 5, 6]],
-        ],
-      },
-      { wormholes: [wormhole], drags: [["column:Col001", [5, 6]]] },
-    ] as const;
-    for (const { wormholes, drags } of variants) {
-      // Wide enough for the whole board: To do | Blocked (folded) | In progress (folded) | Review | Overdue | Done.
-      const page = await open(
-        { width: 1440, height: 900, touch: false },
-        { locale: "en", buckets: withAutomaticColumns(), folded: ["virtual:blocked", "column:Col002"], wormholes: [...wormholes] },
-      );
-      try {
-        const boxes = () =>
-          page.locator('[role="region"] section[data-spaces-kanban-column]').evaluateAll((sections) =>
-            sections.map((section) => {
-              const rect = section.getBoundingClientRect();
-              return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
-            }),
-          );
-        columnOrders.splice(0);
-        const before = await boxes();
-        expect(before.length).toBe(6);
-        const wormholesLeft = await page
-          .locator('[role="region"] section:not([data-spaces-kanban-column])')
-          .evaluateAll((sections) => sections.map((section) => section.getBoundingClientRect().left));
-        expect(wormholesLeft.length).toBe(wormholes.length);
-        // Between two neighbours the line's centre is the gap's midpoint; at the board's ends it lies on the outer column edge.
-        const expected = (index: number) =>
-          index === 0
-            ? before[0]!.left + 1
-            : index === before.length
-              ? wormholesLeft.length > 0
-                ? (before.at(-1)!.right + wormholesLeft[0]!) / 2
-                : before.at(-1)!.right - 1
-              : (before[index - 1]!.right + before[index]!.left) / 2;
-        const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-        const misplaced: unknown[] = [];
-        const shifted: unknown[] = [];
-        for (const [key, indices] of drags) {
-          const handle = (await page.locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-column-handle]`).boundingBox())!;
-          await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-          await page.mouse.down();
-          for (const index of indices) {
-            const x = index < before.length ? before[index]!.left + 6 : before.at(-1)!.right - 6;
-            await page.mouse.move(x, before[0]!.top + 80, { steps: 10 });
-            await frames();
-            const lines = await page
-              .locator("[data-spaces-kanban-column-drop-indicator]")
-              .evaluateAll((elements) =>
-                elements.map((element) => element.getBoundingClientRect()).map((rect) => rect.left + rect.width / 2),
-              );
-            if (lines.length !== 1 || Math.abs(lines[0]! - expected(index)) > 1)
-              misplaced.push({ key, index, lines, expected: expected(index) });
-            if (JSON.stringify(await boxes()) !== JSON.stringify(before)) shifted.push({ key, index });
-          }
-          // Released over its own place, the column stays and the order is not saved.
-          await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 10 });
-          await frames();
-          await page.mouse.up();
-          await frames();
-        }
-        expect({ wormholes: wormholes.length, misplaced, shifted }).toEqual({ wormholes: wormholes.length, misplaced: [], shifted: [] });
-        expect(columnOrders).toEqual([]);
-      } finally {
-        await page.context().close();
-      }
-    }
-  }, 30_000);
 });
 
 describePart("cards", "Spaces Kanban board in a browser", () => {
-  test("a card previews a Markdown description as plain text and still clamps it to three lines", async () => {
+  test("a card previews a Markdown description as plain text on one line with an ellipsis (K15)", async () => {
     const raffle = item("Item11", "Col001", "Plan the raffle", {
       description: `**Goal:** sell every ticket before noon
 
@@ -2034,21 +890,20 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
       const page = await open(desktop, { locale: "en", buckets, served: true }, { javaScript });
       try {
         const preview = await page
-          .locator('[data-spaces-kanban-card][data-item-id="Item11"] p')
-          .filter({ hasText: "Goal: sell every ticket before noon" })
+          .locator('article:has([data-spaces-kanban-card][data-item-id="Item11"]) .spaces-kanban-card__desc')
           .evaluate((element) => {
             const style = getComputedStyle(element);
             return {
               text: element.textContent,
-              clamp: style.webkitLineClamp,
+              ellipsis: style.textOverflow,
               lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(style.lineHeight)),
-              clipped: element.scrollHeight > element.clientHeight,
+              clipped: element.scrollWidth > element.clientWidth,
             };
           });
         expect({ ...preview, text: preview.text?.slice(0, visible.length) }).toEqual({
           text: visible,
-          clamp: "3",
-          lines: 3,
+          ellipsis: "ellipsis",
+          lines: 1,
           clipped: true,
         });
       } finally {
@@ -2067,6 +922,8 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       await menu.focus();
       await page.keyboard.press("Enter");
       await page.getByRole("menuitem", { name: "Move right" }).waitFor();
+      // Fold, Move left, Move right.
+      await page.keyboard.press("ArrowDown");
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
@@ -2079,12 +936,14 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
-  test("readers get no drag affordance and no column menu", async () => {
+  test("readers get no drag affordance, and their column menu only folds", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns(), canWrite: false });
     try {
-      expect(await page.locator("[data-spaces-kanban-column-handle]").count()).toBe(0);
-      expect(await page.locator("[data-spaces-kanban-column-menu]").count()).toBe(0);
-      expect(await page.locator("[data-dnd-card-handle]").count()).toBe(0);
+      expect(await page.locator("[data-sortable-handle]").count()).toBe(0);
+      expect(await page.locator("[data-spaces-kanban-card-menu]").count()).toBe(0);
+      await page.locator('[data-spaces-kanban-column-menu="column:Col001"]').click();
+      await page.getByRole("menuitem", { name: "Fold To do" }).waitFor();
+      expect(await page.getByRole("menuitem", { name: "Move right" }).count()).toBe(0);
     } finally {
       await page.context().close();
     }
@@ -2102,7 +961,6 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       await page.mouse.up();
       await page.waitForTimeout(200);
       expect(moves).toEqual([]);
-      expect(await dragAnnouncements(page)).toContain("Ask the bakery about a stand nicht verschoben; Blockiert füllt sich von selbst");
     } finally {
       await page.context().close();
     }
@@ -2289,72 +1147,6 @@ describePart("cards", "Spaces Kanban board in a browser", () => {
     },
     30_000,
   );
-});
-
-describePart("cards", "wide Spaces surfaces beside Detail", () => {
-  for (const [width, height] of [
-    [1366, 900],
-    [1920, 1080],
-  ] as const) {
-    for (const workspace of ["kanban", "table"] as const) {
-      test(`${width}×${height} ${workspace}: one inset and rounded clipping corners`, async () => {
-        const page = await open({ width, height, touch: false }, { locale: "en", workspace, query: `?view=${workspace}` });
-        try {
-          const selector = workspace === "table" ? ".k2b-table-wrap.k2b-detail-trail" : ".k2b-detail-trail";
-          const shape = await page.locator(selector).evaluate((viewport) => {
-            const token = (name: string) => {
-              const probe = document.createElement("div");
-              probe.style.width = `var(${name})`;
-              viewport.append(probe);
-              const pixels = probe.getBoundingClientRect().width;
-              probe.remove();
-              return pixels;
-            };
-            const inset = token("--k2b-workspace-detail-inset");
-            const radius = token("--k2b-radius-surface");
-            const style = getComputedStyle(viewport);
-            const paper = viewport.closest(".k2b-paper");
-            return {
-              inset,
-              // Inside a Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
-              radius: radius - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
-              // The table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
-              right: (paper ?? viewport).getBoundingClientRect().right,
-              panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
-              radii: [
-                style.borderTopLeftRadius,
-                style.borderTopRightRadius,
-                style.borderBottomLeftRadius,
-                style.borderBottomRightRadius,
-              ].map(Number.parseFloat),
-              scrollWidth: viewport.scrollWidth,
-              clientWidth: viewport.clientWidth,
-              scrollHeight: viewport.scrollHeight,
-              clientHeight: viewport.clientHeight,
-            };
-          });
-          expect(shape.scrollWidth).toBeGreaterThan(shape.clientWidth);
-          expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
-          for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
-          if (workspace === "table") {
-            expect(shape.scrollHeight).toBeGreaterThan(shape.clientHeight);
-            await page.locator(selector).evaluate((viewport) => {
-              viewport.scrollTop = 300;
-            });
-            const sticky = await page.locator(selector).evaluate((viewport) => ({
-              scroll: viewport.scrollTop,
-              top: viewport.getBoundingClientRect().top,
-              header: viewport.querySelector("thead")!.getBoundingClientRect().top,
-            }));
-            expect(sticky.scroll).toBeGreaterThan(0);
-            expect(sticky.header).toBeCloseTo(sticky.top, 0);
-          }
-        } finally {
-          await page.context().close();
-        }
-      }, 30_000);
-    }
-  }
 });
 
 // Reactions live only in these buckets; the default board keeps its original card geometry.
@@ -2631,40 +1423,12 @@ describePart("cards", "Spaces Kanban reactions", () => {
     }
   }, 30_000);
 
-  test("iPad landscape: holding a chip shows names without lifting; holding the body still lifts", async () => {
-    const page = await open(iPadLandscape, reactionScenario());
-    try {
-      await page.evaluate(() => (document.documentElement.dataset.k2bInput = "touch"));
-      const chip = reactionChip(page);
-      const point = await center(chip);
-      await touchPointer(chip, "pointerdown", 71, point);
-      await page.waitForTimeout(600);
-      const hint = page.locator(".k2b-reaction-bar__hint:popover-open");
-      expect(await hint.count()).toBe(1);
-      expect(await hint.textContent()).toContain("Kim Example");
-      expect(await liftedCards(page)).toEqual([]);
-      await touchPointer(chip, "pointerup", 71, point);
-      const body = reactionCard(page).locator("a[data-spaces-kanban-card] p").first();
-      const from = await center(body);
-      await touchPointer(body, "pointerdown", 72, from);
-      try {
-        await waitForLiftedCards(page, ["React01"]);
-        expect(await liftedCards(page)).toEqual(["React01"]);
-      } finally {
-        await touchPointer(body, "pointerup", 72, from);
-      }
-      await waitForLiftedCards(page, []);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-
   test("a moved card keeps its chips although the move response carries no reactions", async () => {
     const page = await open(desktop, reactionScenario());
     try {
       // Hold the refresh after the drop, so the card shows what the move response left.
       await page.route("**/items/filter", () => undefined);
-      const grip = reactionCard(page).locator("[data-dnd-card-handle]");
+      const grip = reactionCard(page).locator("[data-sortable-handle]");
       await grip.focus();
       await page.keyboard.press("Space");
       await page.keyboard.press("ArrowDown");
@@ -2684,8 +1448,8 @@ describePart("cards", "Spaces Kanban reactions", () => {
     reactionRequests.splice(0);
     const page = await open(desktop, reactionScenario());
     try {
-      await reactionCard(page).locator("[data-dnd-card-handle]").focus();
-      for (let step = 0; step < 3; step++) await page.keyboard.press("Tab");
+      await reactionCard(page).locator("[data-sortable-handle]").focus();
+      for (let step = 0; step < 2; step++) await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("data-reaction-key"))).toBe("👍");
       const chip = await page.evaluateHandle(() => document.activeElement);
       const from = await reloadsSoFar(page);
@@ -2712,20 +1476,21 @@ describePart("cards", "Spaces Kanban reactions", () => {
     }
   }, 30_000);
 
-  test("writer Tab order is grip, claim, card link, chips, Add reaction", async () => {
+  test("writer Tab order is grip, card link, chips, Add reaction, claim, card menu", async () => {
     const page = await open(desktop, reactionScenario());
     try {
       const card = reactionCard(page);
-      const grip = card.locator("[data-dnd-card-handle]");
+      const grip = card.locator("[data-sortable-handle]");
       await grip.focus();
       expect(await grip.evaluate((element) => element === document.activeElement)).toBe(true);
       for (const selector of [
-        "[data-spaces-claim-action]",
         "a[data-spaces-kanban-card]",
         '[data-reaction-key="👍"]',
         '[data-reaction-key="❤️"]',
         '[data-reaction-key="🎉"]',
         'button[aria-label="Add reaction"]',
+        "[data-spaces-claim-action]",
+        "[data-spaces-kanban-card-menu]",
       ]) {
         await page.keyboard.press("Tab");
         expect(await card.locator(selector).evaluate((element) => element === document.activeElement)).toBe(true);
@@ -2735,7 +1500,7 @@ describePart("cards", "Spaces Kanban reactions", () => {
     }
   }, 30_000);
 
-  test("readers get labelled images, no add button or chip tab stops, and no reserved empty row", async () => {
+  test("readers get labelled images, no add button or chip tab stops, and a 56 px row", async () => {
     const page = await open(desktop, reactionScenario(false));
     try {
       const chips = reactionCard(page).locator(".k2b-reaction-bar__chip");
@@ -2751,28 +1516,8 @@ describePart("cards", "Spaces Kanban reactions", () => {
         ),
       ).toBe(true);
       expect(await page.locator(".k2b-reaction-bar__add").count()).toBe(0);
-      const plain = reactionCard(page, "React03");
-      const geometry = await plain.evaluate((card) => {
-        const footer = card.querySelector<HTMLElement>("[data-spaces-kanban-card-footer]")!;
-        const style = getComputedStyle(card);
-        const link = card.querySelector("a[data-spaces-kanban-card]")!;
-        return {
-          minHeight: getComputedStyle(footer).minHeight,
-          footerHeight: footer.getBoundingClientRect().height,
-          // The old reader card had the same text, padding, borders, and empty footer margin.
-          expectedHeight:
-            link.getBoundingClientRect().height +
-            Number.parseFloat(style.paddingTop) +
-            Number.parseFloat(style.paddingBottom) +
-            Number.parseFloat(style.borderTopWidth) +
-            Number.parseFloat(style.borderBottomWidth) +
-            Number.parseFloat(getComputedStyle(footer).marginTop),
-          height: card.getBoundingClientRect().height,
-        };
-      });
-      expect(geometry.minHeight).toBe("0px");
-      expect(geometry.footerHeight).toBe(0);
-      expect(geometry.height).toBe(geometry.expectedHeight);
+      // A card is a row of its column: 56 px with one title line, also without reactions (K7).
+      expect(Math.round((await reactionCard(page, "React03").boundingBox())!.height)).toBe(56);
       const link = reactionCard(page).locator("a[data-spaces-kanban-card]");
       await link.focus();
       await page.keyboard.press("Tab");

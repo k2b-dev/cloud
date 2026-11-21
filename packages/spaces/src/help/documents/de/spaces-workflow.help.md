@@ -131,7 +131,7 @@ Ein Eintrag kann bis zu 20 verschiedene Emojis haben. Wenn er 20 hat, reagiere m
 - Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Termin zu erstellen.
 - Drücke **Cmd/Strg+Umschalt+K**, um den aktuellen Space zu durchsuchen.
 - Fokussiere in Kanban das Board und wechsle mit den Pfeiltasten zwischen Karten. **… → Tastenkürzel** im Kopfbereich zeigt diese Kürzel.
-- Um eine Karte zu verschieben, fokussiere ihren Griff, drücke die **Leertaste** und nutze die Pfeiltasten. Drücke die **Leertaste**, um sie abzulegen, oder **Escape**, um abzubrechen.
+- Um eine Karte zu verschieben, fokussiere ihren Griff, drücke die **Leertaste** und nutze die Pfeiltasten. Drücke **Enter**, um sie abzulegen, oder **Escape**, um abzubrechen.
 - Drücke die **Eingabetaste**, um die fokussierte Karte zu öffnen, **M**, um sie dir zuzuweisen, oder **D**, um sie zu erledigen.
 
 Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kürzel inaktiv. Die Cloud-Suche und die Layout-Hilfe zeigen die verfügbaren Aktionen und ihre Kürzel ebenfalls.

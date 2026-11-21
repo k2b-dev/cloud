@@ -59,7 +59,8 @@ export default function AssigneeAvatars(props: Props) {
     <Show when={props.assignees.length > 0 || props.claim} fallback={props.empty ?? null}>
       <div class={`flex min-w-0 items-center gap-2 ${props.class ?? ""}`} title={names() || undefined}>
         {/* The holder does not tuck under the next avatar, so its whole ring stays visible and touches the next one. */}
-        <div class="flex shrink-0 -space-x-1">
+        {/* The avatars overlap on purpose; the layout self-check skips the stack. */}
+        <div class="flex shrink-0 -space-x-1" data-layout-check="skip">
           <Show when={props.claim}>
             {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} class="me-0" />}
           </Show>

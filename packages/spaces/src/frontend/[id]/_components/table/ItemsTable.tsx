@@ -107,7 +107,7 @@ export default function ItemsTable(props: Props) {
         hoverRows
         class="min-h-0 overflow-x-auto"
         scrollClass="k2b-detail-trail"
-        tableClass="min-w-[72rem] w-full text-xs"
+        tableClass="min-w-[72rem] w-full"
         scrollPreserveKey={props.scrollPreserveKey}
         renderCell={({ row: item, col }) => {
           const column = columnsById.get(item.columnId) ?? null;
