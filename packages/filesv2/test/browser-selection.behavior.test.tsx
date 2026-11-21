@@ -103,7 +103,7 @@ test("view changes preserve selection; superseded details cannot replace current
   expect(dom.root.textContent).toContain("This folder is empty");
 });
 
-test("favorite action is beside primary actions, suppresses duplicate requests and cannot leak across bases", async () => {
+test("favorite action is in the detail head beside close, suppresses duplicate requests and cannot leak across bases", async () => {
   const dom = createDomTestHarness();
   const { default: FileInspector } = await import("../src/frontend/FileInspector");
   const [base, setBase] = createSignal(initial.base);
@@ -136,7 +136,8 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
-  expect(button().parentElement?.parentElement?.textContent).toContain("Download");
+  // K9: the head holds the title, the star, "…" and close; the framed actions follow below it.
+  expect(button().closest(".k2b-detail-panel__actions")).not.toBeNull();
   button().click();
   button().click();
   await flush();
