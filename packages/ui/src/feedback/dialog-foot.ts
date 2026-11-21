@@ -1,8 +1,4 @@
-/**
- * The custom property that lifts a centered dialog frame. The dialog core clears it whenever another level shows, so
- * each level starts centered.
- */
-export const DIALOG_LIFT = "--k2b-dialog-lift";
+import { DIALOG_LIFT } from "./dialog-core";
 
 const lifted = new WeakSet<HTMLElement>();
 

@@ -7,9 +7,14 @@ import { RenderErrorBoundary } from "../internal/render-error";
 import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogCall, notePageDisposal, pageDisposals, readDialogCall } from "./dialog-call";
-import { DIALOG_LIFT } from "./dialog-foot";
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
+
+/**
+ * The custom property that lifts a centered dialog frame so its footer stays put (`dialog-foot.ts`). The core clears
+ * it whenever another level shows, so each level starts centered.
+ */
+export const DIALOG_LIFT = "--k2b-dialog-lift";
 
 export type DialogClose<T> = (result?: T) => void;
 

@@ -1,8 +1,8 @@
-import { createComputed, createContext, createEffect, createSignal, createUniqueId, type JSX, on, Show, useContext } from "solid-js";
+import { createContext, createEffect, createRoot, createSignal, createUniqueId, type JSX, Show, useContext } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
-import { keepDialogFoot } from "../feedback/dialog-foot";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
@@ -210,38 +210,28 @@ const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => {
   );
 };
 
+type ErrorCellModule = typeof import("./panel-dialog-error");
+/** The error cell loads with the first dialog error, so dialogs without one carry none of it. */
+const [errorCell, setErrorCell] = createRoot(() => createSignal<ErrorCellModule["PanelDialogErrorCell"]>());
+let errorCellLoad: Promise<unknown> | undefined;
+
 const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
   let footer: HTMLElement | undefined;
-  const title = () => (typeof props.error === "string" ? props.error : props.error?.title);
-  const description = () => (typeof props.error === "string" ? undefined : props.error?.description);
-  // Any change of the cell, also one error replacing another, keeps the footer in place. Measured before the cell
-  // changes (computations run before the DOM updates), then kept after it.
-  const error = () => (title() ? `${title()}\n${description() ?? ""}` : "");
-  let before: number | undefined;
-  createComputed(
-    on(
-      error,
-      () => {
-        before = footer?.isConnected ? footer.getBoundingClientRect().bottom : undefined;
+  createEffect(() => {
+    if (!props.error || errorCellLoad) return;
+    errorCellLoad = import("./panel-dialog-error").then(
+      (module) => setErrorCell(() => module.PanelDialogErrorCell),
+      (error: unknown) => {
+        // The next error tries again; the footer and its buttons stay usable meanwhile.
+        errorCellLoad = undefined;
+        globalThis.reportError(error);
       },
-      { defer: true },
-    ),
-  );
-  createEffect(on(error, () => keepDialogFoot(footer, before), { defer: true }));
+    );
+  });
   // The cell is the footer's first row, so it moves with the footer, also on a sheet's edge between its rests.
   return (
     <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
-      <Show when={title()}>
-        {(text) => (
-          <div class="k2b-panel-dialog__error" role="alert">
-            <i class="ti ti-circle-x" aria-hidden="true" />
-            <div class="k2b-panel-dialog__error-copy">
-              <strong>{text()}</strong>
-              <Show when={description()}>{(detail) => <p>{detail()}</p>}</Show>
-            </div>
-          </div>
-        )}
-      </Show>
+      <Show when={errorCell()}>{(Cell) => <Dynamic component={Cell()} error={() => props.error} footer={() => footer} />}</Show>
       {props.children}
     </footer>
   );
