@@ -1450,7 +1450,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.keyboard.press("ArrowLeft");
       await settled(page);
       expect((await geometry(page)).detail.width).toBeGreaterThan(before.detail.width);
-      expect((await paint()).width).toBe(24);
+      expect((await paint()).width).toBe(1);
       await page.locator("#close").click();
       await settlePanel(page);
       await settled(page);
@@ -1458,7 +1458,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.locator("[data-app-workspace-detail-toggle]").click();
       await settlePanel(page);
       await settled(page);
-      expect((await paint()).width).toBe(24);
+      expect((await paint()).width).toBe(1);
       await page.setViewportSize({ width: 834, height: 900 });
       await settlePanel(page);
       await settled(page);
@@ -1478,7 +1478,7 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("a nested fixed Detail owns only its own column shadow", async () => {
+test("a nested fixed Detail owns only its own column line", async () => {
   const page = await load(2560, 900, "nested-shadow&card");
   try {
     await settled(page);
@@ -1491,7 +1491,7 @@ test("a nested fixed Detail owns only its own column shadow", async () => {
         }),
       );
     expect((await paints())[0]!.content).toBe("none");
-    expect((await paints())[1]!.width).toBe(24);
+    expect((await paints())[1]!.width).toBe(1);
     expect(await inner.locator('[data-app-workspace-resize="detail"]').count()).toBe(0);
     await inner.evaluate((element) => {
       element.style.width = "500px";

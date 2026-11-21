@@ -261,15 +261,15 @@ test("keyboard resizing, cookie restoration without a hydration shift, and doubl
     const initial = (await pane.boundingBox())!.width;
     await handle.focus();
     for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
-    expect(Number(await handle.getAttribute("aria-valuenow"))).toBe(initial + 24);
-    expect((await pane.boundingBox())!.width).toBe(initial + 24);
+    expect(Number(await handle.getAttribute("aria-valuenow"))).toBe(initial + 48);
+    expect((await pane.boundingBox())!.width).toBe(initial + 48);
     await page.keyboard.press("Home");
     expect(await handle.getAttribute("aria-valuenow")).toBe("200");
     await page.keyboard.press("End");
     expect(await handle.getAttribute("aria-valuenow")).toBe(await handle.getAttribute("aria-valuemax"));
     expect((await pane.boundingBox())!.width).toBe(Number(await handle.getAttribute("aria-valuemax")));
     await page.keyboard.press("Home");
-    for (let i = 0; i < 18; i++) await page.keyboard.press("ArrowRight");
+    for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowRight");
     await page.waitForFunction(
       () => JSON.parse(decodeURIComponent(document.cookie.match(/levels_layout=([^;]+)/)![1]!)).paneWidths.sections === 344,
     );
@@ -308,7 +308,7 @@ test("keyboard resizing, cookie restoration without a hydration shift, and doubl
     const itemsWidth = Math.round((await items.boundingBox())!.width);
     await page.keyboard.press("ArrowLeft");
     await frames(page);
-    expect(Math.round((await pane.boundingBox())!.width)).toBe(sectionsWidth - 8);
+    expect(Math.round((await pane.boundingBox())!.width)).toBe(sectionsWidth - 16);
     expect(Math.round((await items.boundingBox())!.width)).toBe(itemsWidth);
     const resized = await boxes(page);
     await page.goto(`${origin}/?level=item&hydrate=0`);
@@ -402,12 +402,12 @@ for (const width of [1440, 1920])
       await page.locator('[data-app-workspace-resize="pane"][data-workspace-panel-id="sections"]').focus();
       await page.keyboard.press("ArrowRight");
       await frames(page);
-      expect(await earlier()).toEqual([408, 400]);
+      expect(await earlier()).toEqual([416, 400]);
       await page.waitForFunction(
-        () => JSON.parse(decodeURIComponent(document.cookie.match(/levels_layout=([^;]+)/)![1]!)).paneWidths.sections === 408,
+        () => JSON.parse(decodeURIComponent(document.cookie.match(/levels_layout=([^;]+)/)![1]!)).paneWidths.sections === 416,
       );
       expect(JSON.parse(decodeURIComponent((await storedCookie(page, "levels_layout"))!.value)).paneWidths).toEqual({
-        sections: 408,
+        sections: 416,
         items: 400,
       });
     } finally {

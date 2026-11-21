@@ -1917,7 +1917,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     const current = currentSize(root, handle, kind);
     const { min, max } = sizeLimits(root, handle, kind);
-    const step = event.shiftKey ? 32 : 8;
+    // K13: 16 px a step, 64 px with Shift.
+    const step = event.shiftKey ? 64 : 16;
     let requested: number | null = null;
     const direction = resizeDirection(handle, kind);
     const collapsibleSidebar = kind === "sidebar" && sidebarCollapsible(root);
@@ -1928,7 +1929,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     else if (kind === "drawer" && event.key === "ArrowUp") requested = current - step * direction;
     else if (kind === "drawer" && event.key === "ArrowDown") requested = current + step * direction;
     // A collapsible sidebar is already at its minimum when the rail is the
-    // next step: without these two branches a keyboard step of 8 (or 32) is
+    // next step: without these two branches a keyboard step of 16 (or 64) is
     // clamped straight back to the minimum, so the handle is simply stuck and
     // collapse/expand is unreachable without a pointer.
     else if (kind !== "drawer" && event.key === "ArrowLeft")

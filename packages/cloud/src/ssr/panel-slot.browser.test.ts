@@ -431,31 +431,31 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     await page.waitForFunction(
       () => {
         const handle = document.querySelector(".cloud-panel__resize")!;
-        return handle.getAttribute("data-active") === "true" && getComputedStyle(handle, "::after").opacity === "1";
+        return handle.getAttribute("data-active") === "true";
       },
       undefined,
       { timeout: 3000 },
     );
+    // K13: while dragging, the grip turns blue; the separator casts no shadow, and between the two cards it draws no line.
     const cue = await page.locator(separator).evaluate((handle) => {
       const shadow = getComputedStyle(handle, "::after");
       const line = getComputedStyle(handle, "::before");
+      const grip = handle.querySelector("span")!;
+      const swatch = document.createElement("i");
+      swatch.style.color = "var(--k2b-focus-ring)";
+      handle.append(swatch);
+      const focus = getComputedStyle(swatch).color;
+      swatch.remove();
+      const box = grip.getBoundingClientRect();
       return {
         edge: handle.getAttribute("data-resize-edge"),
-        content: shadow.content,
-        opacity: shadow.opacity,
-        left: Number.parseFloat(shadow.left),
-        width: Number.parseFloat(shadow.width),
-        handleWidth: handle.getBoundingClientRect().width,
+        shadow: shadow.content !== "none" && shadow.content !== "normal",
+        grip: `${Math.round(box.width)}x${Math.round(box.height)}`,
+        blue: getComputedStyle(grip).backgroundColor === focus,
         line: line.content !== "none" && line.content !== "normal" && line.display !== "none",
       };
     });
-    expect(cue.edge).toBe("start");
-    expect(cue.content).not.toBe("none");
-    expect(cue.content).not.toBe("normal");
-    expect(cue.opacity).toBe("1");
-    expect(cue.left).toBeCloseTo(cue.handleWidth / 2, 1);
-    expect(cue.width).toBeGreaterThan(0);
-    expect(cue.line).toBe(false);
+    expect(cue).toEqual({ edge: "start", shadow: false, grip: "5x32", blue: true, line: false });
     await page.mouse.up();
     await page.waitForFunction(() => document.querySelector(".cloud-panel__resize")?.getAttribute("aria-valuenow") === "28", undefined, {
       timeout: 3000,
