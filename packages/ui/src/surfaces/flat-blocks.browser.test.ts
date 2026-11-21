@@ -10,7 +10,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "flat-blocks.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Area, Button, DataTable, NoticeCard, RowGroup, StatusBadge } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Area, Button, DataTable, NoticeCard, Placeholder, RowGroup, StatusBadge } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const row = (text) => { const div = document.createElement("div"); div.className = "row"; div.textContent = text; return div; };
 render(() => [
@@ -40,6 +40,10 @@ render(() => createComponent(DataTable, { columns, rows, surface: "plain", ariaL
 const notice = (id) => createComponent(NoticeCard, { id, tone: "warning", icon: true, title: "The receipt waits for a signature.",
   detail: "Payout starts after it is signed.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) });
 render(() => [notice("wide"), notice("narrow")], document.getElementById("notices"));
+render(() => [
+  createComponent(Placeholder, { surface: "paper", variant: "panel", icon: "ti ti-folder-off", title: "No projects yet", description: "Create the first project." }),
+  createComponent(Placeholder, { state: "error", title: "The files could not load", onRetry: () => {} }),
+], document.getElementById("empty"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the flat blocks fixture");
@@ -57,7 +61,7 @@ const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="notices"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="notices"></div><div id="empty"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#a3").waitFor();
@@ -181,6 +185,33 @@ describe("Cloud flat building blocks", () => {
         });
       expect(await layout("article#wide")).toEqual({ radius: "0px", tinted: true, beside: true, below: false });
       expect(await layout("article#narrow")).toEqual({ radius: "0px", tinted: true, beside: false, below: true });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an empty or failed area shows a round sign and no box", async () => {
+    const page = await load(1440);
+    try {
+      const looks = await page.locator("#empty .k2b-placeholder").evaluateAll((items) =>
+        items.map((item) => {
+          const own = getComputedStyle(item);
+          const sign = item.querySelector(".k2b-placeholder__icon")!;
+          const style = getComputedStyle(sign);
+          const box = sign.getBoundingClientRect();
+          return {
+            border: own.borderTopWidth === "0px" || own.borderTopColor === "rgba(0, 0, 0, 0)",
+            shadow: own.boxShadow,
+            round: Number.parseFloat(style.borderTopLeftRadius) >= box.width / 2,
+            filled: style.backgroundColor !== "rgba(0, 0, 0, 0)",
+            size: Math.round(box.width),
+          };
+        }),
+      );
+      expect(looks).toEqual([
+        { border: true, shadow: "none", round: true, filled: true, size: 40 },
+        { border: true, shadow: "none", round: true, filled: true, size: 32 },
+      ]);
     } finally {
       await page.close();
     }
