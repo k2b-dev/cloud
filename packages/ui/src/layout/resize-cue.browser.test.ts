@@ -60,7 +60,7 @@ type Edge = {
   edge: "start" | "end";
   active: "data-workspace-resize-active" | "data-active";
   drawer?: boolean;
-  /** A column or drawer handle darkens its boundary's own shadow instead of painting one. */
+  /** A column or drawer handle sits on its boundary's own hairline instead of drawing one. */
   column?: boolean;
   rtl?: boolean;
 };
@@ -148,9 +148,11 @@ async function cue(page: Page, selector: string) {
   return page.locator(selector).evaluate((handle) => {
     const shadow = getComputedStyle(handle, "::after");
     const line = getComputedStyle(handle, "::before");
-    const grip = getComputedStyle(handle.querySelector("span")!);
+    const gripElement = handle.querySelector("span")!;
+    const grip = getComputedStyle(gripElement);
+    const gripBox = gripElement.getBoundingClientRect();
     const { width, height } = handle.getBoundingClientRect();
-    // The column shadow of the boundary that the handle resizes.
+    // The hairline of the boundary that the handle resizes.
     const kind = handle.getAttribute("data-app-workspace-resize");
     const boundary =
       kind === "sidebar"
@@ -172,28 +174,31 @@ async function cue(page: Page, selector: string) {
       width,
       height,
       line: line.content !== "none" && line.content !== "normal" && line.display !== "none",
+      lineColor: line.backgroundColor,
+      lineThickness: Math.min(Number.parseFloat(line.width) || 0, Number.parseFloat(line.height) || 0),
       grip: grip.opacity,
+      gripSize: [Math.round(gripBox.width), Math.round(gripBox.height)].sort((a, b) => a - b).join("x"),
       background: grip.backgroundColor,
       focusColor: getComputedStyle(document.getElementById("focus-swatch")!).backgroundColor,
       shadowTransition: shadow.transitionDuration,
       gripTransition: grip.transitionDuration,
       columnContent: boundary?.content ?? null,
-      columnEdge: boundary?.getPropertyValue("--k2b-workspace-shade-edge") ?? null,
-      columnTransition: boundary?.transitionDuration ?? null,
+      columnEdge: boundary?.backgroundColor ?? null,
+      columnThickness: boundary ? Math.min(Number.parseFloat(boundary.width) || 0, Number.parseFloat(boundary.height) || 0) : null,
     };
   });
 }
 
-/** The drawer edge shade: where it lies relative to the drawer, and how dark it is. */
+/** The drawer's edge line: where it lies relative to the drawer, and its colour. */
 async function drawerShade(page: Page) {
-  // settled: callers wait two frames or settle before reading the paint-only shade.
+  // settled: callers wait two frames or settle before reading the paint-only line.
   return page.locator(".k2b-app-workspace__drawer").evaluate((drawer) => {
     const shade = getComputedStyle(drawer, "::before");
     return {
       content: shade.content,
       position: shade.position,
       geometry: [shade.top, shade.right, shade.left, shade.height, shade.transform].join(" "),
-      edge: shade.getPropertyValue("--k2b-workspace-shade-edge"),
+      edge: shade.backgroundColor,
     };
   });
 }
@@ -244,24 +249,26 @@ async function exercise(page: Page, spec: Edge) {
   expect(Math.abs(initial.aria - initial.rendered)).toBeLessThanOrEqual(0.5);
   const baseline = await page.evaluate(geometry);
   const idle = await cue(page, spec.selector);
-  // The cue is shown when a separate shadow appears or the column shadow darkens.
-  const shown = (state: typeof idle) => (spec.column ? state.columnEdge !== idle.columnEdge : state.opacity === "1");
+  // K13: focus and dragging turn the boundary's hairline blue; hover leaves it as it is.
+  const blueLine = (state: typeof idle) => (spec.column ? state.columnEdge : state.lineColor) === state.focusColor;
+  // No handle casts a shadow (K3).
+  expect(idle.content).toBe("none");
   if (spec.column) {
-    // A column edge keeps one shadow: the boundary's own, never a second one on the handle.
-    expect(idle.content).toBe("none");
+    // A column edge keeps one line: the boundary's own 1 px hairline, never a second one on the handle.
     expect(idle.columnContent).not.toBe("none");
     expect(idle.columnContent).not.toBe("normal");
-    expect(idle.columnTransition).toBe("0s");
+    expect(idle.columnThickness).toBe(1);
+    expect(idle.line).toBe(false);
   } else {
-    // Every standalone separator renders its own shadow (#1652).
-    expect(idle.content).not.toBe("none");
-    expect(idle.content).not.toBe("normal");
-    expect(idle.opacity).toBe("0");
-    expect(idle.shadowTransition).toBe("0s");
+    // Every standalone separator draws the hairline it sits on (#1652 asked for its own cue).
+    expect(idle.line).toBe(true);
+    expect(idle.lineThickness).toBe(1);
   }
-  expect(idle.grip).toBe("0");
+  expect(blueLine(idle)).toBe(false);
+  // The grip is visible at rest: 5 x 32 px (K13).
+  expect(idle.grip).toBe("1");
+  expect(idle.gripSize).toBe("5x32");
   expect(idle.gripTransition).toBe("0s");
-  expect(idle.line).toBe(false);
   if (spec.drawer) {
     // settled: the page settled in `away`; the drawer's edge is its surface step, not a border.
     const drawer = await page.locator(spec.selector).evaluate((handle) => {
@@ -290,12 +297,14 @@ async function exercise(page: Page, spec: Edge) {
   // settled: hover has painted for two frames; it must not move any region or handle.
   expect(await page.evaluate(geometry)).toEqual(baseline);
   const hovered = await cue(page, spec.selector);
-  expect(shown(hovered)).toBe(true);
+  // Hover darkens the grip only.
+  expect(hovered.background).not.toBe(idle.background);
+  expect(blueLine(hovered)).toBe(false);
   if (restingShade) {
-    // The drawer's one shade only darkens: same place and size as at rest.
+    // The drawer's one line keeps its place, size, and colour.
     const shade = await drawerShade(page);
     expect(shade.geometry).toBe(restingShade.geometry);
-    expect(shade.edge).not.toBe(restingShade.edge);
+    expect(shade.edge).toBe(restingShade.edge);
   }
   expect(hovered.grip).toBe("1");
   await page.mouse.down();
@@ -319,24 +328,18 @@ async function exercise(page: Page, spec: Edge) {
   await waitSize(page, spec, initial.rendered + 8);
   expect(await handle.getAttribute(spec.active)).toBe("true");
   const dragging = await cue(page, spec.selector);
-  expect(shown(dragging)).toBe(true);
+  // Dragging turns grip and line blue and casts no shadow.
+  expect(blueLine(dragging)).toBe(true);
+  expect(dragging.background).toBe(dragging.focusColor);
   expect(dragging.grip).toBe("1");
-  // No handle draws a line in any state.
-  expect(dragging.line).toBe(false);
-  if (spec.column) {
-    expect(dragging.content).toBe("none");
-  } else if (spec.axis === "width") {
-    expect(edge === "start" ? dragging.left : dragging.right).toBeCloseTo(dragging.width / 2, 1);
-    expect(dragging.shadowWidth).toBeGreaterThan(0);
-  } else {
-    expect(edge === "start" ? dragging.top : dragging.bottom).toBeCloseTo(dragging.height / 2, 1);
-    expect(dragging.shadowHeight).toBeGreaterThan(0);
-  }
+  expect(dragging.content).toBe("none");
   await page.mouse.up();
   await away(page);
   expect(await handle.getAttribute(spec.active)).toBeNull();
-  expect(shown(await cue(page, spec.selector))).toBe(false);
-  expect((await cue(page, spec.selector)).grip).toBe("0");
+  const released = await cue(page, spec.selector);
+  expect(blueLine(released)).toBe(false);
+  expect(released.background).toBe(idle.background);
+  expect(released.grip).toBe("1");
 
   await handle.dblclick();
   await waitSize(page, spec, initial.rendered);
@@ -347,7 +350,7 @@ async function exercise(page: Page, spec: Edge) {
   await workspaceFrames(page);
   const focused = await cue(page, spec.selector);
   expect(focused.grip).toBe("1");
-  expect(shown(focused)).toBe(true);
+  expect(blueLine(focused)).toBe(true);
   expect(focused.background).toBe(focused.focusColor);
   const increase = spec.axis === "width" ? (edge === "start" ? "ArrowLeft" : "ArrowRight") : edge === "start" ? "ArrowUp" : "ArrowDown";
   const decrease = spec.axis === "width" ? (edge === "start" ? "ArrowRight" : "ArrowLeft") : edge === "start" ? "ArrowDown" : "ArrowUp";
@@ -373,7 +376,6 @@ for (const group of ["workspace", "separators"] as const)
       await settled(page);
       for (const spec of edges) {
         const motion = await cue(page, spec.selector);
-        expect(spec.column ? motion.columnTransition : motion.shadowTransition).not.toBe("0s");
         expect(motion.gripTransition).not.toBe("0s");
       }
       expect(errors).toEqual([]);
@@ -395,7 +397,7 @@ test("forced colours keep the drawer's edge as a line, where both surfaces becom
 });
 
 for (const direction of ["rtl", "css-rtl", "plain-rtl"] as const)
-  test(`${direction}: separators shade and resize the logical region`, async () => {
+  test(`${direction}: separators show their grip and resize the logical region`, async () => {
     const { page, errors } = await load("separators", direction);
     try {
       for (const spec of separatorEdges) await exercise(page, { ...spec, rtl: true });

@@ -972,60 +972,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
 }
 
-/* Panes are one surface. Each boundary carries the quiet column shade of the
-   workspace, darkest at the edge and drawn on the leading pane: beside a
-   column boundary as between list and reader, above a row boundary as at the
-   drawer's edge. Its handle darkens it while hovered, focused, or dragged. It
-   is paint only and sits under the tab row and every drop target. */
-.k2b-ui .k2b-panes__split > .k2b-panes__split-child:first-child::after {
-  --k2b-panes-shade-edge: var(--k2b-shadow-column-edge);
-  --k2b-panes-shade-mid: var(--k2b-shadow-column-mid);
+/* Panes are one surface (K2): each boundary is one hairline in the middle of
+   its separator, never a shadow (K3). A boundary that moves carries the grip
+   (K13); keyboard focus and dragging turn line and grip blue. */
+.k2b-ui .k2b-panes__separator::before {
   position: absolute;
-  z-index: 1;
   content: "";
   pointer-events: none;
-  transition:
-    --k2b-panes-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
-    --k2b-panes-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  background: var(--k2b-border);
 }
 
-.k2b-ui .k2b-panes__split[data-direction="horizontal"] > .k2b-panes__split-child:first-child::after {
+.k2b-ui .k2b-panes__separator[data-direction="horizontal"]::before {
   top: 0;
-  right: 0;
   bottom: 0;
-  width: 1.5rem;
-  background: linear-gradient(to right, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
-  mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
 }
 
-.k2b-ui .k2b-panes__split[data-direction="vertical"] > .k2b-panes__split-child:first-child::after {
+.k2b-ui .k2b-panes__separator[data-direction="vertical"]::before {
+  top: 50%;
   right: 0;
-  bottom: 0;
   left: 0;
-  height: 1.5rem;
-  background: linear-gradient(to bottom, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
-  mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+  height: 1px;
+  transform: translateY(-50%);
 }
 
-.k2b-ui
-  .k2b-panes__split
-  > .k2b-panes__split-child:first-child:has(
-    + .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, :focus-visible, [data-active="true"])
-  )::after {
-  --k2b-panes-shade-edge: var(--k2b-shadow-column-active-edge);
-  --k2b-panes-shade-mid: var(--k2b-shadow-column-active-mid);
-}
-
-@property --k2b-panes-shade-edge {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: transparent;
-}
-
-@property --k2b-panes-shade-mid {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: transparent;
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:focus-visible, [data-active="true"])::before {
+  background: var(--k2b-focus-ring);
 }
 
 .k2b-ui .k2b-panes__separator {
@@ -1055,39 +1029,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: default;
 }
 
-/* The grip of the workspace's resize handles: neutral, 3 px by 2 rem, and
-   visible at rest, so the boundary says it moves. No line, no colour. */
+/* The grip of the workspace's resize handles (K13): 5 x 32 px, round, grey,
+   and visible at rest, so the boundary says it moves. */
 .k2b-ui .k2b-panes__separator > span {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 3px;
+  width: 5px;
   height: 2rem;
-  border-radius: 999px;
-  background: var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-round, 9999px);
+  background: #8a8a94;
+  box-shadow: 0 0 0 2px var(--k2b-surface);
   transform: translate(-50%, -50%);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-panes__separator[data-direction="vertical"] > span {
   width: 2rem;
-  height: 3px;
+  height: 5px;
 }
 
-/* A fixed boundary keeps its shade and has no grip. */
+/* A fixed boundary keeps its line and has no grip. */
 .k2b-ui .k2b-panes__separator[aria-disabled="true"] > span {
   display: none;
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, [data-active="true"]) > span {
-  background: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):hover > span {
+  background: #52525b;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-panes__separator:not([aria-disabled="true"]):hover > span,
+.k2b-ui.k2b-dark .k2b-panes__separator:not([aria-disabled="true"]):hover > span,
+.dark .k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):hover > span {
+  background: #d4d4d8;
 }
 
 .k2b-ui .k2b-panes__separator:focus-visible {
   outline: none;
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):focus-visible > span {
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:focus-visible, [data-active="true"]) > span {
   background: var(--k2b-focus-ring);
 }
 
