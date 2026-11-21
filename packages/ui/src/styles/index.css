@@ -232,7 +232,7 @@
   /* The text edge of a column (K5a): tabs, path, status row, and row text start
      here, or after exactly one icon. 16 px below 768 px. (`--k2b-edge` is the
      colour of a control's edge, not this inset.) */
-  --k2b-text-edge: 20px;
+  --k2b-gutter: 20px;
   /* Fixed heights (K1): head, status row, column head, rows of one, two, and
      three text lines, a dense row, a field label, a control, and the heads of
      an area and a group (K17); phone title row, tabs, and row. */
@@ -364,7 +364,7 @@
 /* On a phone the text edge is 16 px (K5a). */
 @media (max-width: 767px) {
   .k2b-ui {
-    --k2b-text-edge: 16px;
+    --k2b-gutter: 16px;
   }
 }
 
