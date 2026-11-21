@@ -16,10 +16,12 @@ export type StatusRowState = {
   next?: JSX.Element;
 };
 
-/** A selection in the list below: its count and the actions on it, in the place of the key figures and filters. */
+/** A selection in the list below: its count becomes the lead statement, its figures and actions take the places of the key figures and filters (K6). */
 export type StatusRowSelection = {
-  /** The number of chosen items. */
+  /** The number of chosen items. A check and "3 selected" take the lead statement's place. */
   count: number;
+  /** Up to three figures about the chosen items, such as their kinds or total size. */
+  facts?: readonly StatusRowFact[];
   /** Actions on the chosen items, usually small buttons. */
   actions?: JSX.Element;
 };
@@ -63,10 +65,18 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
       data-tone={mode() === "state" ? (props.state?.tone ?? "warning") : undefined}
       data-line={props.line ? "" : undefined}
     >
-      <p class="k2b-status-row__lead">{props.lead}</p>
+      <p class="k2b-status-row__lead">
+        <Show when={props.selection} fallback={props.lead}>
+          {(selection) => (
+            <>
+              <i class="ti ti-check" aria-hidden="true" /> {messages().statusSelected({ count: selection().count })}
+            </>
+          )}
+        </Show>
+      </p>
       <div class="k2b-status-row__middle">
-        <Show when={mode() === "facts"}>
-          <For each={(props.facts ?? []).slice(0, 3)}>
+        <Show when={mode() === "facts" || mode() === "selection"}>
+          <For each={((mode() === "selection" ? props.selection?.facts : props.facts) ?? []).slice(0, 3)}>
             {(fact) => (
               <span class="k2b-status-row__fact">
                 <b>{fact.value}</b> {fact.label}
@@ -86,13 +96,6 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
                   {messages().statusNextAttempt} {state().next}
                 </span>
               </Show>
-            </span>
-          )}
-        </Show>
-        <Show when={mode() === "selection" && props.selection}>
-          {(selection) => (
-            <span class="k2b-status-row__fact">
-              <b>{messages().statusSelected({ count: selection().count })}</b>
             </span>
           )}
         </Show>

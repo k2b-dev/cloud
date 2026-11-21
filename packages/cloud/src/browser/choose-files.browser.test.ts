@@ -1050,7 +1050,8 @@ describe("choosing files in a browser", () => {
         expect(await page.locator('.cloud-file-chooser__crumbs [aria-current="location"]').textContent()).toBe(longNames.schilder);
         expect(
           await page
-            .locator(".cloud-file-chooser__crumbs li:not([hidden], .k2b-breadcrumbs__more) .k2b-button")
+            // A level waiting behind "…" keeps its link in the DOM.
+            .locator(".cloud-file-chooser__crumbs li:not(.k2b-breadcrumbs__more) .k2b-button")
             .first()
             .getAttribute("data-variant"),
         ).toBe("link");
@@ -1100,7 +1101,10 @@ describe("choosing files in a browser", () => {
       await page.locator('.cloud-file-preview__frame[data-state="pdf"] .k2b-pdf-viewer').waitFor();
       await page.keyboard.press("ArrowDown");
       await page.locator('.cloud-file-preview__frame[data-state="image"]').waitFor();
-      await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Büro" }).focus();
+      // K15: beside the open preview the path is narrow, so "Büro" waits behind "…"; the keyboard reaches it there.
+      await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Levels above" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("menuitem", { name: "Büro" }).focus();
       await page.keyboard.press("Enter");
       await row(page, longNames.ablage).waitFor();
       await page.keyboard.press("Escape");

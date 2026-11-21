@@ -102,7 +102,8 @@ for (const width of [1440, 768, 390])
     try {
       const all = await Promise.all(Object.keys(rows).map((_, index) => lead(page, index)));
       // A phone row wraps its filters below the lead statement, so only the lead is compared there.
-      const same = ({ height, ...rest }: (typeof all)[number]) => (width >= 768 ? { height, ...rest } : rest);
+      // K6: the lead keeps its place and height; a selection names its count there, so only its width may change.
+      const same = ({ height, width: _width, ...rest }: (typeof all)[number]) => (width >= 768 ? { height, ...rest } : rest);
       for (const row of all) {
         expect(same(row)).toEqual(same(all[0]!));
         expect(row.cut).toBe(false);
@@ -114,7 +115,7 @@ for (const width of [1440, 768, 390])
       expect(all[0]!.left).toBe(width >= 768 ? 20 : 16);
       // At most three key figures; a state, a selection, or an announcement replaces them.
       expect(await page.locator(".k2b-status-row").nth(0).locator(".k2b-status-row__fact").count()).toBe(3);
-      expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__middle").innerText()).toBe("3 selected");
+      expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__lead").innerText()).toContain("3 selected");
       expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__end").innerText()).toBe("Move");
       expect(await page.locator(".k2b-status-row").nth(2).locator(".k2b-status-row__middle").innerText()).toContain("next attempt 14:05");
       expect(await page.locator(".k2b-status-row").nth(3).locator("[aria-live=polite]").innerText()).toBe("Moving “Invoice 12” to Done");

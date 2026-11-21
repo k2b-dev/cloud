@@ -19713,6 +19713,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Forced colours drop the fill and the edge; an underline marks the selected
    tab without changing its box, and focus takes the system outline. */
 @media (forced-colors: active) {
+  /* Shadows disappear in forced colours; the underline marks the selected tab, so the strip draws no baseline. */
+  .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list {
+    box-shadow: none;
+  }
+
   .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
     text-decoration: underline 2px;
     text-underline-offset: 0.3em;

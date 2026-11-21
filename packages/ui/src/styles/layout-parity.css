@@ -5937,6 +5937,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   padding-inline: 0.375rem;
 }
 
+/* A coarse pointer's 44 px hit area around "…" stays inside its level, so the
+   path's box holds everything it draws (K15). */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-breadcrumbs__more {
+    padding-inline: 0.5625rem;
+  }
+}
+
 /* ------------------------------------------------------------ status row */
 
 /* K6, K10, K15: the status row is the first line under a column's head,
@@ -5964,6 +5972,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-status-row__lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   flex: none;
   margin: 0;
   color: var(--k2b-text);
@@ -5995,6 +6006,8 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui :is(.k2b-status-row__fact, .k2b-status-row__state, .k2b-status-row__announcement) {
   display: inline-flex;
   min-width: 0;
+  /* A figure that wraps away lies on the hidden line; there it never reaches past the row. */
+  max-width: 100%;
   flex: none;
   align-items: center;
   gap: 0.25rem;

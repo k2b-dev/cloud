@@ -136,8 +136,9 @@ one filled main action, the head's `primary`.
 The first line under a column's head is the status row, `StatusRow` (K6, K10):
 52 px, a lead statement in 18 px bold that is never shortened, up to three key
 figures in 13 px with the number bold, and filters at the end. It shows only
-data that exists. A selection shows its count and its actions in the same
-places; a disturbance of the whole page that needs nobody keeps the lead
+data that exists. A selection puts a check and its count, such as "3 selected",
+in the lead statement's place, its figures (`selection.facts`) in the key
+figures' place, and its actions at the end; a disturbance of the whole page that needs nobody keeps the lead
 statement and shows a round sign, what is wrong, and "next attempt" with the
 time in the place of the key figures. `announcement` says in words what is
 happening right now, such as what a drag moves where, and is announced

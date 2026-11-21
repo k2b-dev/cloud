@@ -163,7 +163,17 @@ export type AppWorkspaceHeadProps = {
    * says it opens a menu, such as one a `Dropdown` with `attach` shows: server HTML then carries `aria-haspopup`, and a
    * chevron follows the label.
    */
-  primary?: { label: string; icon: string; href?: string; onClick?: (event: MouseEvent) => void; popup?: "menu" | "dialog" };
+  primary?: {
+    label: string;
+    icon: string;
+    href?: string;
+    onClick?: (event: MouseEvent) => void;
+    popup?: "menu" | "dialog";
+    /** With `popup`: whether its menu or dialog is open now, for `aria-expanded`. Defaults to closed. */
+    expanded?: boolean;
+    /** Unavailable right now; a link variant stays in place and announces it with `aria-disabled`. */
+    disabled?: boolean;
+  };
 };
 
 /** Head row slot. Must be a direct child of AppWorkspace; its parts may be islands. */
@@ -2592,7 +2602,8 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? "false" : undefined}
+                    aria-expanded={primary().popup ? String(primary().expanded ?? false) : undefined}
+                    disabled={primary().disabled}
                     onClick={primary().onClick}
                   >
                     {primaryContent()}
@@ -2606,9 +2617,10 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? "false" : undefined}
-                    href={href()}
-                    onClick={primary().onClick}
+                    aria-expanded={primary().popup ? String(primary().expanded ?? false) : undefined}
+                    aria-disabled={primary().disabled ? "true" : undefined}
+                    href={primary().disabled ? undefined : href()}
+                    onClick={primary().disabled ? undefined : primary().onClick}
                   >
                     {primaryContent()}
                   </ButtonLink>

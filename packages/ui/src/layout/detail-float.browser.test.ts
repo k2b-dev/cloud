@@ -1425,7 +1425,8 @@ for (const theme of ["light", "dark"] as const) {
           };
           const edge = (y: number) => mean(2, y) - mean(38, y);
           // Without a shade, the column before the line keeps one paint up to it.
-          const shade = (y: number) => Math.abs(mean(2, y) - mean(34, y));
+          // 14 px before the line: inside the old 24 px shade, outside Main's 8 px scrollbar track.
+          const shade = (y: number) => Math.abs(mean(2, y) - mean(26, y));
           return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4), shade: Math.max(shade(0), shade(100)) };
         },
         `data:image/png;base64,${png.toString("base64")}`,

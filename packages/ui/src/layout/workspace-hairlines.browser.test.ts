@@ -454,10 +454,11 @@ for (const { label, options } of scenarios)
           element.append(filler);
         }
         // The scrollers that now overflow, so the test knows a scrollbar is really there.
-        return elements.filter((element) => element.scrollHeight > element.clientHeight + 1).length;
+        return elements.map((element) => `${element.className.split(" ")[0]} ${element.scrollHeight > element.clientHeight + 1}`);
       }, scrollers);
       await settled(page);
-      expect(scrolled).toBeGreaterThanOrEqual(2);
+      console.info(`scrollers: ${scrolled.join(", ")}`);
+      expect(scrolled.filter((entry) => entry.endsWith("true")).length).toBeGreaterThanOrEqual(2);
       expect(await measure()).toEqual(few);
     } finally {
       await page.close();
