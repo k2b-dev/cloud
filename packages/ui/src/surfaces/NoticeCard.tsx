@@ -24,9 +24,9 @@ export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" |
      */
     layout?: "line" | "card";
     /**
-     * The direct next step: one or two `Button`s or `ButtonLink`s (`size="sm"`) in one row below the text. The primary
-     * action takes the tone's button variant; a second one is `secondary`. In a `NoticeCard.Grid` row the actions of all
-     * cards share the bottom edge.
+     * The deed: one `Button` or `ButtonLink` (`size="sm"`, `secondary`) whose words name what it does, never "Try
+     * again" (K10). A wide notice sets it beside the text, a narrow one below it. A second button is possible but
+     * rare. In a `NoticeCard.Grid` row the actions of all cards share the bottom edge.
      */
     actions?: JSX.Element;
     class?: string;
@@ -37,6 +37,7 @@ export const NOTICE_CARD_CLASSES = {
   root: "k2b-notice-card",
   icon: "k2b-notice-card__icon",
   content: "k2b-notice-card__content",
+  text: "k2b-notice-card__text",
   head: "k2b-notice-card__head",
   title: "k2b-notice-card__title",
   meta: "k2b-notice-card__meta",
@@ -96,18 +97,22 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
         )}
       </Show>
       <div class={NOTICE_CARD_CLASSES.content}>
-        <Show when={local.title}>
-          {(title) => (
-            <div class={NOTICE_CARD_CLASSES.head}>
-              <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>
-              <Show when={local.meta}>{(meta) => <span class={NOTICE_CARD_CLASSES.meta}>{meta()}</span>}</Show>
-            </div>
-          )}
-        </Show>
-        <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
-        <Show when={hasBody()}>
-          <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
-        </Show>
+        {/* The sentence and its consequence share one block, so a wide cell sets the deed beside it and a narrow
+            one below it (K10, K15). */}
+        <div class={NOTICE_CARD_CLASSES.text}>
+          <Show when={local.title}>
+            {(title) => (
+              <div class={NOTICE_CARD_CLASSES.head}>
+                <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>
+                <Show when={local.meta}>{(meta) => <span class={NOTICE_CARD_CLASSES.meta}>{meta()}</span>}</Show>
+              </div>
+            )}
+          </Show>
+          <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
+          <Show when={hasBody()}>
+            <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
+          </Show>
+        </div>
         <Show when={hasActions()}>
           <div class={NOTICE_CARD_CLASSES.actions}>{actions()}</div>
         </Show>

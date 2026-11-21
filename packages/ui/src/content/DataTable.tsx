@@ -80,6 +80,18 @@ export type DataTableColumn<T> = {
    * 2 below 420 px. Hidden values stay one tap away in the row's details.
    */
   priority?: 1 | 2 | 3;
+  /**
+   * The name column: at least 200 px and at most 560 px wide, so a value stays beside its name on a wide screen.
+   * When the table gets narrow, columns of a lower `priority` leave before it shrinks.
+   */
+  primary?: boolean;
+  /**
+   * Where the column's value goes when the table is a list. With any column given a role, a table narrower than
+   * 480 px shows each row as one entry of two lines: `title` on the first line, `meta` on the second in quiet text,
+   * and `end` at the right of both lines, such as a status or an amount. Give one column each role; columns without
+   * a role leave, so keep what matters in those three.
+   */
+  list?: "title" | "meta" | "end";
 };
 
 export type DataTableSort = { key: string; direction: "asc" | "desc" };
@@ -612,6 +624,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   data-wrap={wrapAttr(col)}
                   data-align={alignAttr(col)}
                   data-priority={priorityAttr(col)}
+                  data-primary={col.primary ? "" : undefined}
+                  data-list={col.list}
                   data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
                   data-highlighted={columnHighlighted(index())}
                   onMouseEnter={() => setHoveredColumnIfEnabled(index())}
@@ -692,6 +706,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         data-surface={surface()}
         data-has-footer={props.footer ? "true" : undefined}
         data-priorities={detailsPriority()}
+        data-list={props.columns.some((col) => col.list) ? "" : undefined}
         data-overflow-x={scrollbars().x.overflow ? "true" : undefined}
         data-overflow-y={scrollbars().y.overflow ? "true" : undefined}
         data-scrollbar-enhanced={scrollbarEnhanced() ? "true" : undefined}
@@ -728,6 +743,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
                         data-align={alignAttr(col)}
                         data-priority={priorityAttr(col)}
+                        data-primary={col.primary ? "" : undefined}
                         data-highlighted={columnHighlighted(index())}
                         aria-sort={ariaSortFor(col)}
                         onMouseEnter={() => setHoveredColumnIfEnabled(index())}
@@ -780,7 +796,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         <tr class="k2b-data-table__row" data-loading="true" aria-hidden="true">
                           <For each={props.columns}>
                             {(col) => (
-                              <td data-align={alignAttr(col)} data-priority={priorityAttr(col)}>
+                              <td data-align={alignAttr(col)} data-priority={priorityAttr(col)} data-list={col.list}>
                                 <span class="k2b-data-table__skeleton" />
                               </td>
                             )}

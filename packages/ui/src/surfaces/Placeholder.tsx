@@ -54,14 +54,8 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
     >
       <Show when={icon()}>
         {(iconClass) => (
-          // Quiet states share the chip; loading and error keep the same icon box without it.
-          <span
-            class={
-              ["empty", "no-results", "no-access"].includes(state()) && variant() !== "inline"
-                ? "k2b-placeholder__icon k2b-icon-tile"
-                : "k2b-placeholder__icon"
-            }
-          >
+          // One round sign (K10): a quiet disc for the calm states and an error; loading keeps the same box bare.
+          <span class="k2b-placeholder__icon" data-sign={state() === "loading" ? undefined : ""}>
             <i class={iconClass()} aria-hidden="true" />
           </span>
         )}

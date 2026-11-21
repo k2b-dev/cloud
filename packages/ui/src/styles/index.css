@@ -3970,26 +3970,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
-/* Section: one topic, in a panel or on a page (Section.tsx). On a page a
-   section is a card with Paper's light 1 px frame and, like Paper, an island
-   (layer 1): it reads the island shadow and surface, which every flat layer
-   (a panel, a dialog, a column beside the main content) turns off. Inside
-   another frame (a section, a group, a summary, Paper, a dialog, a settings
-   section) it stands flat, so cards and depth never nest. `sm` suits panels
-   and narrow columns, `md` the topics of a full page. */
+/* Section: one topic, in a panel or on a page (Section.tsx). Cloud flat
+   (K2, K3, K4, K9): on a full page a section has a hairline frame, square
+   corners, and no shadow; in a column (a detail panel, a dialog, another
+   frame) it stands borderless and the column separates its topics with a
+   hairline. Inside another frame (a section, a group, a summary, Paper, a
+   dialog, a settings section) it stands flat, so frames never nest (K14).
+   `sm` suits panels and narrow columns, `md` the topics of a full page. */
 .k2b-ui .k2b-section {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.5rem;
 }
 
 .k2b-ui .k2b-section[data-frame="line"] {
-  padding: 0.75rem 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-island-surface);
-  box-shadow: var(--k2b-island-shadow);
+  padding: 0.75rem var(--k2b-edge, 1.25rem) 1rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-flat, 0);
+  background: var(--k2b-surface);
+  box-shadow: none;
 }
 
 .k2b-ui .k2b-section[data-size="md"] {
@@ -3997,7 +3997,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem 1.125rem;
+  padding: 1rem var(--k2b-edge, 1.25rem);
 }
 
 .k2b-ui
@@ -4017,9 +4017,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
-/* Named tones follow the status tokens. A tone colours the frame, the title,
-   the icon, and the restricted marker, never the fill, and always comes with
-   words in the heading. */
+/* Named tones follow the status tokens. A tone colours the frame and the
+   symbol tile, never the fill or the title, and always comes with words in
+   the heading. */
 .k2b-ui .k2b-section[data-tone="success"] {
   --k2b-section-tone: var(--k2b-success-text);
 }
@@ -4044,18 +4044,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-color: color-mix(in srgb, var(--k2b-section-tone) 45%, var(--k2b-surface));
 }
 
-/* `[data-size]` keeps the tone ahead of the page title's own color below. */
-.k2b-ui
-  .k2b-section[data-tone][data-size]
-  > .k2b-section__header
-  :is(.k2b-section__title, .k2b-section__icon, .k2b-section__restricted) {
+/* K8, K17: a section named like a state carries the tone in its symbol tile,
+   never in its title text. `[data-size]` keeps the tone ahead of the icon's own color. */
+.k2b-ui .k2b-section[data-tone][data-size] > .k2b-section__header .k2b-section__icon {
   color: var(--k2b-section-tone);
 }
 
-/* One header rhythm for every section and discussion: a 20 px icon column,
-   10 px to the title, the count or state right after the title, and at most
-   one trailing control (an action or the chevron) at the end. Row text below
-   starts on the same edge as the title. */
+/* One header rhythm for every section and discussion (K9, K17): a 20 px icon
+   column, 8 px to the title, the count or state right after the title, and at
+   most two quiet controls (text buttons or the chevron) at the end. Row text
+   below starts on the same edge as the title. */
 .k2b-ui .k2b-section__header,
 .k2b-ui .k2b-section__toggle {
   display: flex;
@@ -4064,7 +4062,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.75rem;
   margin: 0;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.5rem;
   text-align: start;
 }
 
@@ -4086,11 +4084,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--k2b-text-secondary);
+  color: var(--k2b-text);
   font-family: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-row, 0.8125rem);
   font-weight: 600;
-  line-height: 1rem;
+  line-height: 1.25rem;
   letter-spacing: normal;
   text-overflow: ellipsis;
   text-transform: none;
@@ -4103,35 +4101,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.25rem;
   flex: 0 0 1.25rem;
   place-items: center;
-  color: var(--k2b-text-muted);
+  border-radius: var(--k2b-radius-mark, 0.25rem);
+  color: var(--k2b-text-subtle);
   font-size: 0.875rem;
 }
 
-/* On a page the title reads as the topic of a card, and its icon sits in a
-   neutral tile; only a tone colours the tile. */
+/* A section with an area colour or a tone (K17) sets its symbol in a 20 px
+   tile in that colour: the colour of its area lives only there. */
+.k2b-ui .k2b-section__icon[data-color] {
+  color: var(--k2b-section-icon-color);
+  background: color-mix(in srgb, var(--k2b-section-icon-color) 14%, var(--k2b-surface));
+}
+
+.k2b-ui .k2b-section[data-tone] > .k2b-section__header .k2b-section__icon {
+  background: color-mix(in srgb, var(--k2b-section-tone) 14%, var(--k2b-surface));
+}
+
+/* On a page the title is 14 px (K17 level 2); in a column 13 px (K9). */
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header,
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header > .k2b-section__toggle {
   min-height: 2rem;
-  gap: 0.75rem;
 }
 
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__title {
   color: var(--k2b-text);
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body, 0.875rem);
   line-height: 1.25rem;
-}
-
-.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__icon {
-  width: 1.75rem;
-  height: 1.75rem;
-  flex-basis: 1.75rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  font-size: 1rem;
-}
-
-.k2b-ui .k2b-section[data-size="md"][data-tone] > .k2b-section__header .k2b-section__icon {
-  background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
 }
 
 /* A heading with an action keeps its title whole. When the row is too narrow
@@ -4145,11 +4140,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
-  --k2b-section-lead: calc(1.25rem + 0.625rem);
-}
-
-.k2b-ui .k2b-section[data-size="md"][data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
-  --k2b-section-lead: calc(1.75rem + 0.75rem);
+  --k2b-section-lead: calc(1.25rem + 0.5rem);
 }
 
 .k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__copy {
@@ -4159,6 +4150,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__actions {
   margin-inline-start: auto;
+}
+
+/* A section's count is a quiet number right after its title (K9). */
+.k2b-ui .k2b-section__heading > .k2b-count-chip {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  color: var(--k2b-text-subtle);
+  background: transparent;
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-weight: 400;
+  line-height: 1.25rem;
 }
 
 /* A count is a quiet chip right after its title; zero reads as words. */
@@ -4182,8 +4185,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__meta,
 .k2b-ui .k2b-section__restricted {
   flex: 0 0 auto;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  color: var(--k2b-text-subtle);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
   font-weight: 400;
   line-height: 1rem;
   white-space: nowrap;
@@ -4198,8 +4201,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section__description {
   margin: 0.125rem 0 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  color: var(--k2b-text-subtle);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
   font-weight: 400;
   line-height: 1rem;
 }
@@ -4211,6 +4214,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
   /* A text action in a heading ends on the trailing edge, like a count or a time. */
   margin-inline-end: -0.375rem;
+}
+
+/* K8: text buttons in a section head are grey and turn dark on hover; their
+   place marks them. Blue stays for the one main action of the page. */
+.k2b-ui .k2b-section__actions .k2b-button:is([data-variant="ghost"], [data-variant="text"]) {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-section__actions .k2b-button:is([data-variant="ghost"], [data-variant="text"]):hover {
+  color: var(--k2b-text);
 }
 
 /* A collapsible section's whole heading row is one disclosure button. Flat,
@@ -4250,23 +4263,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 1.75rem);
-  margin: -0.75rem -0.875rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: calc(var(--k2b-radius-surface) - 1px);
+  width: calc(100% + 2 * var(--k2b-edge, 1.25rem));
+  margin: -0.75rem calc(-1 * var(--k2b-edge, 1.25rem)) -1rem;
+  padding: 0.75rem var(--k2b-edge, 1.25rem) 1rem;
+  border-radius: 0;
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2.25rem);
-  margin: -1rem -1.125rem;
-  padding: 1rem 1.125rem;
+  margin-block: -1rem;
+  padding-block: 1rem;
 }
 
 .k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
-  margin-bottom: -0.375rem;
-  padding-bottom: 0.375rem;
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
+  margin-bottom: -0.5rem;
+  padding-bottom: 0.5rem;
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
@@ -4347,7 +4357,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the card's edge; sections outside a panel or page, such as the form
    sections of an editor dialog, keep their full width. */
 .k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"] > .k2b-section__body {
-  padding-inline-start: 1.875rem;
+  padding-inline-start: 1.75rem;
 }
 
 .k2b-ui .k2b-section__footer {
@@ -12241,7 +12251,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table {
-  @apply w-full text-xs;
+  @apply w-full;
+  /* K11: rows and controls read at 13 px. */
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  line-height: 1.25rem;
   border-collapse: collapse;
   /* Digits share one width, so amounts, counts, and dates line up down a column. */
   font-variant-numeric: tabular-nums;
@@ -12252,52 +12265,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table :is(th, td) {
-  @apply px-3 py-2 text-left align-middle;
+  @apply text-left align-middle;
+  padding: 0.25rem 0.75rem;
 }
 
-/* Tables are the one surface that keeps lines: a grey head with a stronger
-   line under it, a line under every body row, and lighter column lines. Every
-   line is an inset shadow on its cell, so no cell changes size and a sticky
-   head lies on the same pixels as the body. A body row is 44 px (40 px
-   compact) and grows only for content that wraps; the head is 34 px. */
+/* K5: the first and the last column stand on the column's text edge. */
+.k2b-ui .k2b-data-table :is(th, td):first-child {
+  padding-inline-start: var(--k2b-edge, 1.25rem);
+}
+
+.k2b-ui .k2b-data-table :is(th, td):last-child {
+  padding-inline-end: var(--k2b-edge, 1.25rem);
+}
+
+/* K7: hairlines under the rows, nothing else. The head has no fill: grey
+   12 px words on the table's surface and one hairline under it. Every line is
+   an inset shadow on its cell, so no cell changes size and a sticky head lies
+   on the same pixels as the body. A body row is 40 px (32 px compact) and
+   grows only for content that wraps; the head is 36 px. */
 .k2b-ui .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: 2.75rem;
+  height: var(--k2b-h-row, 2.5rem);
 }
 
 .k2b-ui .k2b-data-table__head-row > th {
-  height: 2.125rem;
-  padding-block: 0.375rem;
-  color: var(--k2b-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 600;
+  height: var(--k2b-h-colhead, 2.25rem);
+  padding-block: 0.25rem;
+  color: var(--k2b-text-subtle);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-weight: 500;
   line-height: 1rem;
-  background: var(--k2b-surface-muted);
-  box-shadow: inset 0 -1px 0 var(--k2b-border-strong);
-}
-
-.k2b-ui .k2b-data-table__head-row > th + th {
-  box-shadow:
-    inset 1px 0 0 var(--k2b-border),
-    inset 0 -1px 0 var(--k2b-border-strong);
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
 .k2b-ui .k2b-data-table__row > td {
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
-.k2b-ui .k2b-data-table__row > td + td {
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent),
-    inset 0 -1px 0 var(--k2b-border);
-}
-
 /* The last row ends at the table's frame, which draws its own edge. */
 .k2b-ui .k2b-data-table__row:last-child > td {
   box-shadow: none;
-}
-
-.k2b-ui .k2b-data-table__row:last-child > td + td {
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
 }
 
 /* The column the rows are sorted by keeps full text color, so the order is legible at a glance. */
@@ -12311,26 +12318,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__foot-row > td {
-  box-shadow: inset 0 1px 0 var(--k2b-border-strong);
-}
-
-.k2b-ui .k2b-data-table__foot-row > td + td {
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent),
-    inset 0 1px 0 var(--k2b-border-strong);
+  height: var(--k2b-h-colhead, 2.25rem);
+  box-shadow: inset 0 1px 0 var(--k2b-border);
 }
 
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table :is(th, td) {
-  @apply py-1.5;
+  padding-block: 0.125rem;
 }
 
-/* The fill spacer of a `fillHeight` table keeps taking the spare height, so rows stay compact. */
+/* Dense rows (K1): 32 px. The fill spacer of a `fillHeight` table keeps taking the spare height. */
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: 2.5rem;
+  height: var(--k2b-h-row-dense, 2rem);
 }
 
 .k2b-ui .k2b-data-table td {
   @apply max-w-[260px];
+}
+
+/* K7: the name column keeps a value beside its name: at least 200 px, at most
+   560 px. When the table gets narrow, columns of a lower priority leave
+   before it shrinks. */
+.k2b-ui .k2b-data-table :is(th, td)[data-primary] {
+  min-width: 12.5rem;
+  max-width: 35rem;
 }
 
 /* Keep dates, amounts, and codes intact while headers can still wrap. */
@@ -12359,14 +12369,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply align-bottom;
 }
 
-/* Column hover: body cells take a light grey, and the head cell one step
-   darker than the grey head, never lighter. */
-.k2b-ui .k2b-data-table td[data-highlighted="true"] {
+/* Column hover: the column's cells, its head included, take one light grey;
+   the head's words turn dark. */
+.k2b-ui .k2b-data-table td[data-highlighted="true"],
+.k2b-ui .k2b-data-table__head-row > th[data-highlighted="true"] {
   background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
 }
 
 .k2b-ui .k2b-data-table__head-row > th[data-highlighted="true"] {
-  background: color-mix(in srgb, var(--k2b-text) 6%, var(--k2b-surface-muted));
+  color: var(--k2b-text);
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"],
@@ -12471,8 +12482,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table td.k2b-data-table__footer-cell {
-  @apply px-3 py-1.5 text-[11px];
-  color: var(--k2b-text-muted);
+  padding-block: 0.25rem;
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  color: var(--k2b-text-subtle);
 }
 
 .k2b-ui .k2b-data-table td.k2b-data-table__empty {
@@ -12529,15 +12541,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--stdlib-chart-c1);
 }
 
-/* Groups: a quiet row with the group's value and count heads each body. */
+/* Groups (K17 "Gruppe"): a 36 px head on the page's quiet ground with the
+   group's value in 13 px bold and its count heads each body. */
 .k2b-ui .k2b-data-table__group-row > th {
-  height: 2rem;
+  height: var(--k2b-h-group-head, 2.25rem);
   padding-block: 0;
-  color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-row, 0.8125rem);
   font-weight: 600;
   text-align: left;
-  background: var(--k2b-surface);
+  /* `--n50`, the quiet ground of the page. */
+  background: var(--k2b-surface-canvas);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -12548,9 +12562,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__group-count {
-  margin-left: 0.375rem;
-  color: var(--k2b-text-muted);
-  font-weight: 500;
+  margin-left: 0.5rem;
+  color: var(--k2b-text-subtle);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Nothing matches the host's search: one sentence and the way back, at a fixed height. */
@@ -12671,10 +12686,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
-.k2b-ui .k2b-data-table__row[data-last="true"] > td + td {
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
-}
-
 .k2b-ui .k2b-data-table__details:last-child > td {
   box-shadow: none;
 }
@@ -12683,10 +12694,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* An open row hands its line to its details, only while they show. */
   .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
     box-shadow: none;
-  }
-
-  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
-    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
   }
 
   .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
@@ -12716,10 +12723,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     box-shadow: none;
   }
 
-  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
-    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
-  }
-
   .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
     box-shadow: none;
   }
@@ -12742,6 +12745,81 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-data-table__bar-track {
     display: none;
+  }
+}
+
+/* K7 phone: a table with list roles becomes a list below 480 px. Each row is
+   one entry of two lines: the title, then its meta value in quiet 12 px text,
+   with the end value at the right of both lines. Columns without a role leave;
+   the head leaves too, as the words of the entry name what they are. */
+.k2b-ui .k2b-table-shell[data-list] {
+  container: k2b-data-table / inline-size;
+}
+
+@container k2b-data-table (max-width: 479.98px) {
+  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table, .k2b-data-table > tbody) {
+    display: block;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__head, .k2b-data-table__details, .k2b-data-table__details-toggle) {
+    display: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__group-row {
+    display: block;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__group-row > th {
+    display: flex;
+    align-items: center;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row {
+    display: grid;
+    min-height: var(--k2b-h-row-phone, 3.75rem);
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-auto-flow: dense;
+    align-content: center;
+    align-items: center;
+    column-gap: 0.75rem;
+    padding: 0.5rem var(--k2b-edge, 1rem);
+    box-shadow: inset 0 -1px 0 var(--k2b-border);
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row:last-child {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td {
+    display: none;
+    height: auto;
+    max-width: none;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td[data-list] {
+    display: block;
+    min-width: 0;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td[data-list="title"] {
+    grid-column: 1;
+    font-weight: 500;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td[data-list="meta"] {
+    grid-column: 1;
+    color: var(--k2b-text-subtle);
+    font-size: var(--k2b-font-size-meta, 0.75rem);
+    line-height: 1rem;
+  }
+
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td[data-list="end"] {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    text-align: right;
   }
 }
 

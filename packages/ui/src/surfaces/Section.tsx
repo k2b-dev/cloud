@@ -15,6 +15,12 @@ export type SectionState = "ready" | "loading" | "error";
 type SectionBaseProps = Omit<JSX.HTMLAttributes<HTMLElement>, "title" | "children" | "class"> & {
   title: JSX.Element;
   icon?: string;
+  /**
+   * The colour of the section's area as a CSS colour, such as money or goods on a dense record page (K17). It sets the
+   * icon in a 20 px tile of that colour, the one place the area colour shows. Never a status hue, never near the AI
+   * plum; a `tone` wins.
+   */
+  iconColor?: string;
   size?: SectionSize;
   frame?: SectionFrame;
   tone?: SectionTone;
@@ -47,7 +53,7 @@ export type SectionProps = SectionBaseProps &
   (
     | {
         children?: JSX.Element;
-        /** Exactly one control at the end of the heading, such as "+" or one text button. */
+        /** At most two quiet controls at the end of the heading, such as "+" or text buttons; they read grey. */
         actions?: JSX.Element;
         collapsible?: false;
         summary?: never;
@@ -97,6 +103,7 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
   const [local, rest] = splitProps(props, [
     "title",
     "icon",
+    "iconColor",
     "size",
     "frame",
     "tone",
@@ -160,7 +167,12 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
     <>
       <Show when={local.icon}>
         {(name) => (
-          <span class="k2b-section__icon" aria-hidden="true">
+          <span
+            class="k2b-section__icon"
+            aria-hidden="true"
+            data-color={local.iconColor ? "" : undefined}
+            style={local.iconColor ? { "--k2b-section-icon-color": local.iconColor } : undefined}
+          >
             <i class={name()} />
           </span>
         )}
