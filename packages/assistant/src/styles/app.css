@@ -90,9 +90,11 @@
   padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.25rem);
   border-block-end: 1px solid var(--k2b-border);
 }
+.k2b-ui .assistant-context-head__project { flex: 0 1 auto; min-width: 0; max-width: 12rem; overflow: hidden; }
+.k2b-ui .assistant-context-head__project .k2b-tag__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .assistant-context-head__title {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
@@ -173,6 +175,7 @@
   .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
   /* On a phone the head is the phone head's height and names the chat, as the app's head names only the app. */
   .k2b-ui .assistant-context-head { height: var(--k2b-h-head-phone); padding-inline: 1rem 0.5rem; }
+  .k2b-ui .assistant-context-head__project { display: none; }
 }
 
 /* The third grey for meta text (F8), light and dark. */

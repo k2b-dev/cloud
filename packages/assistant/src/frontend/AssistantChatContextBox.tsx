@@ -1,6 +1,6 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { Button, formatFileViewSize, IconButton, IconButtonLink, ResizeSeparator, Skeleton, useLocale } from "@k2b/ui";
+import { Button, formatFileViewSize, IconButton, IconButtonLink, ResizeSeparator, Skeleton, Tag, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
@@ -448,6 +448,14 @@ export function AssistantChatContextPlaces(props: {
             <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
               {title()}
             </p>
+          )}
+        </Show>
+        {/* The chat's project, as a quiet chip after the title. */}
+        <Show when={props.project}>
+          {(project) => (
+            <Tag size="sm" icon="ti ti-folders" class="assistant-context-head__project">
+              {project().name}
+            </Tag>
           )}
         </Show>
         <Button
