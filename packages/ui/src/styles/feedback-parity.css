@@ -881,7 +881,7 @@
   color: var(--k2b-feedback-tooltip-text);
   background: var(--k2b-feedback-tooltip-surface);
   box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta, 0.75rem);
   line-height: 1rem;
   white-space: normal;
   transform: none;
@@ -918,7 +918,7 @@
   width: max-content;
   max-width: min(20rem, calc(100vw - 1rem));
   margin: 0;
-  padding: 0.75rem 0.875rem;
+  padding: 0.75rem 1rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
@@ -1072,7 +1072,7 @@
   flex-direction: column;
   gap: 0.625rem;
   margin: 0;
-  padding: 0.75rem 0.875rem;
+  padding: 0.75rem 1rem;
   /* Visible, so the bridge over the gap reaches the control; a body too tall for the screen scrolls itself. */
   overflow: visible;
   border: 1px solid var(--k2b-border);
@@ -1299,7 +1299,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   grid-template-columns: 1.75rem minmax(0, 1fr) auto;
   align-items: start;
   column-gap: 0.75rem;
-  padding: 0.75rem 0.875rem 0.75rem 0.75rem;
+  padding: 0.75rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);

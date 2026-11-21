@@ -34,13 +34,3 @@ export const focusMenuRow = (items: HTMLElement[], key: string): boolean => {
   rows[(next + rows.length) % rows.length]?.focus();
   return true;
 };
-
-/**
- * The entries of one menu level matching `selector`: entries of a submenu shown inside it belong to that submenu, so
- * Up and Down never wander into it.
- */
-export const levelItems = (menu: HTMLElement | undefined, selector: string): HTMLElement[] => {
-  if (!menu) return [];
-  const own = menu.classList.contains("k2b-dropdown__submenu") ? menu : null;
-  return Array.from(menu.querySelectorAll<HTMLElement>(selector)).filter((item) => item.closest(".k2b-dropdown__submenu") === own);
-};

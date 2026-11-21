@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // K16 in a real engine: a dialog error grows the dialog upwards, menu rows reach the menu's edges, and a submenu opens
 // beside its row by pointer and keyboard, or one level at a time in the phone sheet. Invented entries only.
@@ -34,6 +34,7 @@ const items = [
             ],
           },
           { label: "Workshop", icon: "ti ti-folder", action: choose("Workshop") },
+          { label: "Shop", icon: "ti ti-folder", action: choose("Shop") },
         ],
       },
       { label: "Archive", icon: "ti ti-archive", action: choose("Archive") },
@@ -101,17 +102,17 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width = 1024, height = 768, justify = "start") => {
+const load = async (width = 1024, height = 768, justify = "start", align = "start") => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: width < 768 });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><main id="app" style="display:flex;justify-content:${justify};padding:16px"></main></body></html>`,
+    `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><main id="app" style="box-sizing:border-box;display:flex;justify-content:${justify};align-items:${align};height:100vh;padding:16px"></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator(".trigger").waitFor();
   return page;
 };
 
-const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+const focused = (page: Page) => page.evaluate(() => document.activeElement?.textContent?.trim());
 const box = async (page: Page, selector: string) => {
   const rect = await page.locator(selector).first().boundingBox();
   if (!rect) throw new Error(`${selector} has no box`);
@@ -145,7 +146,7 @@ describe("flat overlays (K16)", () => {
         }),
       );
       await page.getByRole("alert").waitFor();
-      await frames(page);
+      await settled(page);
       const after = await box(page, "dialog[open] .create");
       const frameAfter = await box(page, "dialog[open]");
       const cell = await box(page, ".k2b-panel-dialog__error");
@@ -153,15 +154,17 @@ describe("flat overlays (K16)", () => {
       expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
       expect(Math.abs(frameAfter.y + frameAfter.height - (frameBefore.y + frameBefore.height))).toBeLessThanOrEqual(1);
       expect(frameAfter.y).toBeLessThan(frameBefore.y - cell.height + 2);
-      // Edge to edge, right above the footer.
+      // Edge to edge, the footer's first row under its line, above its buttons.
       expect(Math.abs(cell.x - frameAfter.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(cell.width - frameAfter.width)).toBeLessThanOrEqual(2);
-      expect(Math.abs(cell.y + cell.height - footer.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(cell.y - footer.y - 1)).toBeLessThanOrEqual(1);
+      expect(cell.y + cell.height).toBeLessThanOrEqual(after.y - 8);
+      expect(cell.height).toBeGreaterThanOrEqual(52);
 
       // Cleared, the cell leaves and the footer still stays.
       await page.evaluate(() => (window as unknown as { setDialogError: (value: unknown) => void }).setDialogError(undefined));
       await page.locator(".k2b-panel-dialog__error").waitFor({ state: "detached" });
-      await frames(page);
+      await settled(page);
       expect(Math.abs((await box(page, "dialog[open] .create")).y - before.y)).toBeLessThanOrEqual(1);
     } finally {
       await page.close();
@@ -182,7 +185,8 @@ describe("flat overlays (K16)", () => {
 
       // Pointer: resting on the row opens its menu beside it, level with the row.
       const row = page.getByRole("menuitem", { name: "From template" });
-      await row.hover();
+      // hover: the boxes are read after the menu settled, from where it stands then.
+      await hoverInPlace(row);
       const submenu = page.getByRole("menu", { name: "From template" });
       await submenu.waitFor();
       expect(await row.getAttribute("aria-expanded")).toBe("true");
@@ -204,14 +208,14 @@ describe("flat overlays (K16)", () => {
       await page.keyboard.press("ArrowRight");
       const third = page.getByRole("menu", { name: "Office" });
       await third.waitFor();
-      await expect(page.evaluate(() => document.activeElement?.textContent?.trim())).resolves.toBe("Offer");
+      expect(await focused(page)).toBe("Offer");
       await page.keyboard.press("ArrowLeft");
       await third.waitFor({ state: "detached" });
-      await expect(page.evaluate(() => document.activeElement?.textContent?.trim())).resolves.toBe("Office");
+      expect(await focused(page)).toBe("Office");
       await page.keyboard.press("Escape");
       await submenu.waitFor({ state: "detached" });
       expect(await menu.isVisible()).toBe(true);
-      await expect(page.evaluate(() => document.activeElement?.textContent?.trim())).resolves.toBe("From template");
+      expect(await focused(page)).toBe("From template");
 
       // Enter opens, Down moves, Enter chooses the entry and the whole menu closes.
       await page.keyboard.press("Enter");
@@ -233,9 +237,28 @@ describe("flat overlays (K16)", () => {
       await page.getByRole("menuitem", { name: "From template" }).click();
       const submenu = page.getByRole("menu", { name: "From template" });
       await submenu.waitFor();
+      await settled(page);
       const subBox = (await submenu.boundingBox())!;
       expect(subBox.x + subBox.width).toBeLessThanOrEqual(menuBox.x + 2);
       expect(await submenu.getAttribute("data-side")).toBe("left");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("near the bottom edge a submenu rises until its last row is level with its row", async () => {
+    const page = await load(1024, 768, "start", "end");
+    try {
+      await page.locator(".trigger").click();
+      const row = page.getByRole("menuitem", { name: "From template" });
+      await row.click();
+      const submenu = page.getByRole("menu", { name: "From template" });
+      await submenu.waitFor();
+      await settled(page);
+      const rowBox = (await row.boundingBox())!;
+      const subBox = (await submenu.boundingBox())!;
+      expect(subBox.y).toBeLessThan(rowBox.y - 1);
+      expect(Math.abs(subBox.y + subBox.height - 1 - (rowBox.y + rowBox.height))).toBeLessThanOrEqual(1);
     } finally {
       await page.close();
     }
@@ -250,7 +273,7 @@ describe("flat overlays (K16)", () => {
       await sheet.getByRole("menuitem", { name: "From template" }).tap();
       const back = sheet.getByRole("menuitem", { name: "Back from From template" });
       await back.waitFor();
-      expect(await sheet.getByRole("menuitem").allTextContents()).toEqual(["From template", "Office", "Workshop"]);
+      expect(await sheet.getByRole("menuitem").allTextContents()).toEqual(["From template", "Office", "Workshop", "Shop"]);
       expect(await sheet.getByRole("menuitem", { name: "Upload" }).count()).toBe(0);
       await back.tap();
       await sheet.getByRole("menuitem", { name: "Upload" }).waitFor();

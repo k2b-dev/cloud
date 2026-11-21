@@ -74,6 +74,7 @@ const catalogs = {
   Toast: (await import("../feedback/toast-messages")).checkToastMessages,
   Spotlight: (await import("../actions/spotlight-messages")).checkSpotlightMessages,
   PanelDialog: (await import("../layout/panel-dialog-messages")).checkPanelDialogMessages,
+  MenuSheet: (await import("../actions/menu-sheet-messages")).checkMenuSheetMessages,
   Toolbar: (await import("../actions/toolbar-messages")).checkToolbarMessages,
   Command: (await import("../actions/command-messages")).checkCommandMessages,
   Filter: (await import("../actions/filter-messages")).checkFilterMessages,

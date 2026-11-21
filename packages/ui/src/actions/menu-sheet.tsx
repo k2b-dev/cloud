@@ -1,11 +1,11 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch, DropdownSubmenu } from "./Dropdown";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { filterDropdownItems, MenuSearch } from "./menu-search";
+import { useMenuSheetMessages } from "./menu-sheet-messages";
 
 // Kept apart so a control can check for phones without loading the sheet and its dialog imports.
 export { PHONE_SHEET_QUERY, prefersMenuSheet } from "./phone-sheet";
@@ -69,7 +69,7 @@ function SheetMenu(props: {
   icons?: "plain" | "tile";
 }): JSX.Element {
   let menu!: HTMLDivElement;
-  const messages = useUiMessages();
+  const messages = useMenuSheetMessages();
   // K16: on a phone a submenu takes the sheet's place, one level at a time, with Back at its top.
   const [levels, setLevels] = createSignal<readonly SheetLevel[]>([]);
   const current = () => levels().at(-1);

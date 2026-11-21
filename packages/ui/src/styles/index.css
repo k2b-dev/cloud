@@ -7553,10 +7553,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     color 150ms ease-out;
 }
 
+/* K8: a marked row in a menu is grey; a blue tint would say "your turn". */
 .k2b-ui .k2b-dropdown__item:hover,
 .k2b-ui .k2b-dropdown__item:focus-visible {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
   outline: none;
 }
 
@@ -7574,7 +7575,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item--submenu[data-open="true"] {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
+}
+
+/* A submenu row and its menu share an element without a role; it takes no box of its own. */
+.k2b-ui .k2b-dropdown__subgroup {
+  display: contents;
 }
 
 .k2b-ui [dir="rtl"] .k2b-dropdown__more,
@@ -7835,7 +7841,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__pair:hover,
 .k2b-ui .k2b-dropdown__pair:focus-within {
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item {
@@ -8008,7 +8014,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item[data-active] {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-dropdown__empty {
@@ -8020,6 +8026,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search {
   min-height: 2.75rem;
+  padding-inline: var(--k2b-panel-dialog-inset, 1rem);
 }
 
 /* Phones zoom into fields below 16px. */
@@ -19067,10 +19074,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   -webkit-touch-callout: default;
 }
 
+/* K16: in a phone sheet the rows reach the sheet's edges too, 44 px high, in
+ * the 13 px of every menu row (K11), on the sheet's text edge. */
 .k2b-ui .k2b-gesture-menu__sheet-menu {
   display: flex;
   flex-direction: column;
   gap: 0;
+  margin-inline: calc(-1 * var(--k2b-panel-dialog-inset, 1rem));
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu[role] .k2b-dropdown__item {
+  min-height: 2.75rem;
+  gap: 0.625rem;
+  padding: 0.5rem var(--k2b-panel-dialog-inset, 1rem);
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu[role] .k2b-dropdown__item > i {
+  font-size: 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -21212,17 +21234,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
+/* K13, K16: the grip sits 8 px below the sheet's edge in a 16 px band; its
+ * 44 px touch area reaches over the middle of the header below it. */
 .k2b-ui .k2b-bottom-sheet__handle {
+  position: relative;
+  z-index: 1;
   display: grid;
-  flex: 0 0 32px;
-  place-items: center;
+  flex: 0 0 1rem;
+  place-items: start center;
   width: 100%;
-  min-height: 44px;
-  padding: 0;
+  min-height: 1rem;
+  padding: 0.5rem 0 0;
   border: 0;
   background: transparent;
   cursor: grab;
   touch-action: none;
+}
+.k2b-ui .k2b-bottom-sheet__handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 calc(50% - 3rem) -1.75rem;
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-bottom-sheet-frame .k2b-panel-dialog__header {
+    min-height: 3rem;
+  }
 }
 .k2b-ui .k2b-bottom-sheet__handle:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
@@ -21233,7 +21269,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2rem;
   height: 5px;
   border-radius: var(--k2b-radius-round, 9999px);
-  background: var(--k2b-border-strong);
+  background: var(--k2b-neutral-400);
 }
 @keyframes k2b-bottom-sheet-enter {
   from { transform: translate(-50%, 24px); opacity: 0; }
@@ -21306,7 +21342,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     padding-bottom: 0;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
-    padding-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive .k2b-bottom-sheet__handle {
     display: none;

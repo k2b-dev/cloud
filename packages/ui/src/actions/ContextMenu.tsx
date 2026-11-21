@@ -3,8 +3,8 @@ import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { inheritUiScope } from "../internal/portal-scope";
 import { useUiMessages } from "../intl/messages";
-import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
-import { focusRowSegment, levelItems } from "./menu-rows";
+import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition, preloadSubmenus } from "./Dropdown";
+import { focusRowSegment } from "./menu-rows";
 
 export type ContextMenuProps = {
   items: readonly DropdownItem[];
@@ -29,14 +29,14 @@ const NATIVE_MENU_TARGETS = "a[href], input, textarea, select, [contenteditable]
 let closeActiveContextMenu: (() => void) | undefined;
 
 const focusableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
-  levelItems(
-    menu,
-    [
-      "[role='menuitem']:not([aria-disabled='true'])",
-      "[role='menuitemcheckbox']:not([aria-disabled='true'])",
-      "[role='menuitemradio']:not([aria-disabled='true'])",
-    ].join(", "),
-  );
+  menu
+    ? Array.from(
+        menu.querySelectorAll<HTMLElement>(
+          // An open submenu inside the menu holds its own entries.
+          ":is([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio']):not([aria-disabled='true'], .k2b-dropdown__submenu *)",
+        ),
+      )
+    : [];
 
 /** Right-click menu with keyboard invocation, one-open-at-a-time behavior, and viewport clamping. */
 export function ContextMenu(props: ContextMenuProps): JSX.Element {
@@ -194,6 +194,7 @@ export function ContextMenuBase(
   });
 
   onMount(() => {
+    preloadSubmenus(props.items);
     onCleanup(() => {
       detachOpenListeners();
       if (closeActiveContextMenu === close) closeActiveContextMenu = undefined;
