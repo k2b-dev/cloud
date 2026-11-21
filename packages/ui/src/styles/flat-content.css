@@ -214,9 +214,10 @@
   background: var(--k2b-text-subtle);
 }
 
-/* Now: the place the thing is at, a ring with a dot in the app colour ("you are here", K8). */
+/* Now: the place the thing is at, a ring with a dot in the primary role ("you are here", K8). The role follows a
+   primary scope (AI plum) and the dark theme; the accent ramp would not. */
 .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker {
-  border: 2px solid var(--k2b-accent-600);
+  border: 2px solid var(--k2b-action);
 }
 
 .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after {
@@ -224,19 +225,7 @@
   width: 8px;
   height: 8px;
   border-radius: var(--k2b-radius-round);
-  background: var(--k2b-accent-600);
-}
-
-.k2b-ui.k2b-dark .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker,
-.k2b-ui[data-theme="dark"] .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker,
-.dark .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker {
-  border-color: var(--k2b-accent-400);
-}
-
-.k2b-ui.k2b-dark .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after,
-.k2b-ui[data-theme="dark"] .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after,
-.dark .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after {
-  background: var(--k2b-accent-400);
+  background: var(--k2b-action);
 }
 
 /* A name wraps between words; only a word longer than its column breaks. */
