@@ -267,8 +267,19 @@ describe("selection colors in the browser", () => {
                 }
               if (colors) {
                 if (target.kind === "table") {
-                  // K7: a selected table row mixes 8 % of the host ink into the surface below it.
-                  const surface = before[index]!.paint.background;
+                  // K7: a selected table row mixes 8 % of the host ink into the surface it names as the one beneath it
+                  // (`--k2b-surface-beneath`, else the surface), not into whatever the fixture paints behind the table.
+                  const surface = await target.element.evaluate((row) => {
+                    const probe = document.createElement("span");
+                    probe.style.color = "var(--k2b-surface-beneath, var(--k2b-surface))";
+                    row.querySelector("td")!.append(probe);
+                    const context = document.createElement("canvas").getContext("2d")!;
+                    context.fillStyle = getComputedStyle(probe).color;
+                    context.fillRect(0, 0, 1, 1);
+                    probe.remove();
+                    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+                    return [r!, g!, b!] as [number, number, number];
+                  });
                   const ink = rgb(colors.ink);
                   selected.background.forEach((channel, i) =>
                     expect(Math.abs(channel - (ink[i]! * 0.08 + surface[i]! * 0.92)), "table fill").toBeLessThanOrEqual(1.5),
