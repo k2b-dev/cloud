@@ -36,6 +36,12 @@
       "browser": "./dist/browser/charts.js",
       "default": "./dist/ssr/charts.js"
     },
+    "./chat-decision-field": {
+      "types": "./dist/types/chat-decision-field.d.ts",
+      "browser": "./dist/browser/chat-decision-field.js",
+      "import": "./dist/ssr/chat-decision-field.js",
+      "default": "./dist/ssr/chat-decision-field.js"
+    },
     "./hover-card": {
       "types": "./dist/types/hover-card.d.ts",
       "browser": "./dist/browser/hover-card.js",

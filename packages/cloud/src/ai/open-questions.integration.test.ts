@@ -284,7 +284,7 @@ databaseSuite()("open questions", () => {
       approvalScope: "code_secret",
       resolvedEvent: null,
     });
-    expect(await f.read()).toMatchObject({ count: 1, items: [{ kind: "secret", anchor: "tool-secret-call", short: "Secret API" }] });
+    expect(await f.read()).toMatchObject({ count: 1, items: [{ kind: "secret", anchor: "tool-secret-call", short: "Enter secret: API" }] });
     expect((await other.read()).count).toBe(0);
     expect(await countAiOpenQuestions(f.userId)).toBe(1);
     expect(JSON.stringify(await f.read())).not.toContain(privateValue);

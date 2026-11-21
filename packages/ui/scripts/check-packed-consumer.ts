@@ -141,6 +141,28 @@ try {
   `;
   run([process.execPath, "--no-install", "--conditions=browser", "-e", browserSmoke], consumer);
 
+  // The on-demand field entry resolves inside the packed package in both modes and renders its labelled field on the server.
+  const fieldSmoke = `
+    const resolved = import.meta.resolve("@k2b/ui/chat-decision-field");
+    const mode = process.env.FIELD_BROWSER ? "browser" : "ssr";
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/chat-decision-field.js")) {
+      throw new Error("chat decision field did not resolve to packed dist/" + mode + "/chat-decision-field.js: " + resolved);
+    }
+    if (mode === "ssr") {
+      const { ChatDecisionField } = await import("@k2b/ui/chat-decision-field");
+      const { renderToString } = await import("solid-js/web");
+      const html = renderToString(() => ChatDecisionField({
+        label: "Packed value", value: "", onValueChange: () => {}, lines: { safe: { text: "Packed line" } }, current: "safe",
+        confirm: { label: "Save" }, decline: { label: "Decline" },
+      }));
+      if (!html.includes('aria-label="Packed value"') || !html.includes("Packed line")) {
+        throw new Error("packed ChatDecisionField did not render its field and line on the server");
+      }
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", fieldSmoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", fieldSmoke], consumer, { ...process.env, FIELD_BROWSER: "1" });
+
   const inspectionSmoke = `
     const resolved = import.meta.resolve("@k2b/ui/chart-inspection");
     if (!resolved.includes("/node_modules/@k2b/ui/dist/browser/chart-inspection.js")) {
