@@ -107,6 +107,8 @@ type DialogState = {
   connectionObserver?: MutationObserver;
   /** The level whose presentation the frame shows. */
   presented?: DialogStackEntry;
+  /** The browser carried the last Escape to the frame, as a cancel event or a close of its own. */
+  escapeRouted?: boolean;
 };
 
 const DEFAULT_PANEL_CLASS = "k2b-dialog";
@@ -433,6 +435,7 @@ export const createDialogCore = () => {
     element.onclose = () => {
       const top = state.stack[state.stack.length - 1];
       if (state.element !== element || element.open || !top) return;
+      state.escapeRouted = true;
       // The browser closed the frame on a close request without a cancel event: close watchers do so without a
       // recent user activation, and after repeated Escape (#3916). That is still the person's Escape. A level that
       // takes dismissal closes; only a level that must be answered, or whose guard decides, keeps the frame.
@@ -511,10 +514,15 @@ export const createDialogCore = () => {
     // unless something took it: a popover in front of the dialog, or a handler that prevented the key.
     if (document.querySelector(":popover-open")) return;
     const dialog = state.element;
-    setTimeout(() => {
-      if (event.defaultPrevented || state.stack[state.stack.length - 1] !== top || !dialog?.open || state.element !== dialog) return;
-      void requestDismiss(top);
-    }, 0);
+    state.escapeRouted = false;
+    // After the next frame the browser's own cancel task has run, so the fallback never asks a guard a second time.
+    schedule(() =>
+      setTimeout(() => {
+        if (state.escapeRouted || event.defaultPrevented || state.stack[state.stack.length - 1] !== top) return;
+        if (!dialog?.open || state.element !== dialog) return;
+        void requestDismiss(top);
+      }, 0),
+    );
   };
 
   const stopConnectionObserver = () => {
@@ -529,6 +537,7 @@ export const createDialogCore = () => {
     behavior: NonNullable<OpenDialogOptions["cancelBehavior"]>,
   ) => {
     dialog.oncancel = (event) => {
+      state.escapeRouted = true;
       if (behavior === "ignore") {
         event.preventDefault();
         return;
