@@ -80,7 +80,7 @@ export const flushSourceRejections = async ({
     if (rows.length) {
       const result = await db`INSERT INTO pulse.source_rejections(source_id,minute,count,last_reason,last_at)
         SELECT s.id,i.minute,i.count,left(i.reason,${REJECTION_REASON_MAX_LENGTH}),i.at
-        FROM jsonb_to_recordset((${JSON.stringify(rows)}::jsonb #>> '{}')::jsonb) AS i(short_id text,minute timestamptz,count int,reason text,at timestamptz)
+        FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) AS i(short_id text,minute timestamptz,count int,reason text,at timestamptz)
         JOIN pulse.sources s ON s.short_id=i.short_id AND NOT s.deleted
         ON CONFLICT(source_id,minute) DO UPDATE SET count=greatest(pulse.source_rejections.count,EXCLUDED.count),
           last_reason=CASE WHEN EXCLUDED.last_at>=pulse.source_rejections.last_at THEN EXCLUDED.last_reason ELSE pulse.source_rejections.last_reason END,
