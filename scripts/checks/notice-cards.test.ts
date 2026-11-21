@@ -76,3 +76,26 @@ test("control icon sizes do not exempt colours, opacity or the control's text", 
     ),
   ).toEqual([3, 4, 5, 7].map((line) => `packages/demo/src/Panel.tsx:${line}`));
 });
+
+test("reports a frame around a notice that is its only child (K10, K14)", async () => {
+  expect(
+    await findings(
+      [
+        "export const Panel = (props: { error?: string }) => (<>",
+        '  <div class="rounded-lg border p-3"><NoticeCard tone="danger" title="Sync failed" /></div>',
+        '  <Paper><Show when={props.error}><NoticeRow tone="warning" title="Check" /></Show></Paper>',
+        '  <div class="border-b px-4"><NoticeCard tone="info" title="A line below is a row line" /></div>',
+        '  <div class="rounded-lg border"><h2>Sync</h2><NoticeCard tone="info" title="A second child" /></div>',
+        '  <div class="flex gap-2"><NoticeCard tone="info" title="No frame" /></div>',
+        '  <div class="rounded-md bg-red-50">{props.error && <NoticeCard tone="danger" title="Behind a condition" />}</div>',
+        '  <Paper><div class="p-2"><NoticeCard tone="info" title="Inside a plain wrapper" /></div></Paper>',
+        "</>);",
+      ].join("\n"),
+    ),
+  ).toEqual([
+    "packages/demo/src/Panel.tsx:2",
+    "packages/demo/src/Panel.tsx:3",
+    "packages/demo/src/Panel.tsx:7",
+    "packages/demo/src/Panel.tsx:8",
+  ]);
+});

@@ -37,17 +37,23 @@ export const jmapScanStepSchema = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("query"), before: jmapUtcSecondSchema.nullable() }).strict(),
     z.object({ kind: z.literal("bucket"), second: jmapUtcSecondSchema, position: count, queryState: jmapStateSchema.nullable() }).strict(),
-    z.object({ kind: z.literal("verify"), afterEmailId: jmapIdSchema.nullable() }).strict(),
+    // The verify pass pages through local refs in (folder, Email ID) order, as their index does.
+    z.object({ kind: z.literal("verify"), after: z.object({ folderId: z.uuid(), emailId: jmapIdSchema }).strict().nullable() }).strict(),
   ])
   // Positions are only comparable within one query result (RFC 8620 §5.5).
   .refine((step) => step.kind !== "bucket" || step.position === 0 || step.queryState !== null);
 export type JmapScanStep = z.infer<typeof jmapScanStepSchema>;
 export type JmapScanPageStep = Exclude<JmapScanStep, { kind: "verify" }>;
+/**
+ * `emailState` is the Email state of the step's last get. The caller applies a step only when it
+ * equals its stored state: otherwise mail changed since the last delta, and a new message must
+ * reach the account through the delta first, as an arrival.
+ */
 export type JmapScanPage =
   /** Objects of completed seconds in query order; a second the next step reads again is left out. */
-  | { kind: "page"; objects: JmapEmailSnapshot[]; notFoundIds: string[]; next: JmapScanStep }
+  | { kind: "page"; objects: JmapEmailSnapshot[]; notFoundIds: string[]; next: JmapScanStep; emailState: string }
   /** Nothing to apply: the bucket's result list changed, or every ID of a non-final page vanished. */
-  | { kind: "restart"; next: JmapScanPageStep };
+  | { kind: "restart"; next: JmapScanPageStep; emailState: string };
 
 const emailQuerySchema = z.object({
   accountId: jmapIdSchema,
@@ -154,8 +160,13 @@ export async function readJmapScanPage(
     const parsed = emailQuerySchema.safeParse(requireJmapMethodResult(response, "scan", "Email/query"));
     if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
     const page = parsed.data;
+    const combinedGet = combined ? parseJmapEmailGet(requireJmapMethodResult(response, "objects", "Email/get"), accountId, page.ids) : null;
     if (step.kind === "bucket" && step.queryState !== null && page.queryState !== step.queryState)
-      return { kind: "restart", next: { kind: "bucket", second: step.second, position: 0, queryState: null } };
+      return {
+        kind: "restart",
+        next: { kind: "bucket", second: step.second, position: 0, queryState: null },
+        emailState: combinedGet?.state ?? (await readEmptyGetState(session, authorization, accountId, "Email/get", signal, deps)),
+      };
     const end = position + page.ids.length === page.total;
     if (
       page.position !== position ||
@@ -167,12 +178,16 @@ export async function readJmapScanPage(
       throw new JmapError("JMAP_INVALID_RESPONSE");
     let objects: JmapEmailSnapshot[];
     let notFoundIds: string[];
-    if (combined) {
-      const result = parseJmapEmailGet(requireJmapMethodResult(response, "objects", "Email/get"), accountId, page.ids);
-      objects = result.list;
-      notFoundIds = result.notFound;
+    let emailState: string;
+    if (combinedGet) {
+      objects = combinedGet.list;
+      notFoundIds = combinedGet.notFound;
+      emailState = combinedGet.state;
     } else {
-      ({ objects, notFoundIds } = await readJmapEmails(session, authorization, accountId, page.ids, signal, deps));
+      const read = await readJmapEmails(session, authorization, accountId, page.ids, signal, deps);
+      ({ objects, notFoundIds } = read);
+      // An empty final page needs no get of its IDs; an empty get still reports the state.
+      emailState = read.state ?? (await readEmptyGetState(session, authorization, accountId, "Email/get", signal, deps));
     }
     // Email/get has no defined order: check range and newest-first order in query order, by ID.
     const byId = new Map(objects.map((email) => [email.id, email]));
@@ -193,14 +208,14 @@ export async function readJmapScanPage(
     }
     if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
     // A vanished ID still counts for a bucket position, but never yields a time bound.
-    if (!end && !ordered.length) return { kind: "restart", next: step };
+    if (!end && !ordered.length) return { kind: "restart", next: step, emailState };
     let next: JmapScanStep;
     let completed = ordered;
     if (step.kind === "bucket")
       next = end
         ? { kind: "query", before: step.second }
         : { kind: "bucket", second: step.second, position: position + page.ids.length, queryState: page.queryState };
-    else if (end) next = { kind: "verify", afterEmailId: null };
+    else if (end) next = { kind: "verify", after: null };
     else {
       // The oldest second may continue beyond this page, so the next step reads it again in full.
       // Return only newer seconds: without a bucket restart, every object is returned once.
@@ -212,7 +227,7 @@ export async function readJmapScanPage(
     }
     const checked = jmapScanStepSchema.safeParse(next);
     if (!checked.success) throw new JmapError("JMAP_INVALID_RESPONSE");
-    return { kind: "page", objects: completed, notFoundIds, next: checked.data };
+    return { kind: "page", objects: completed, notFoundIds, next: checked.data, emailState };
   }
 }
 
@@ -263,16 +278,42 @@ export async function readJmapEmailExistence(
   return { foundIds: emailIds.filter((id) => found.has(id)), notFoundIds: emailIds.filter((id) => !found.has(id)) };
 }
 
-export type JmapAccountStart =
-  | { kind: "ready"; emailState: string; mailboxState: string; folders: JmapRemoteFolder[] }
-  /** A state moved during the snapshot; the caller retries on its next run. */
-  | { kind: "changed" };
 const emptyGetSchema = z.object({
   accountId: jmapIdSchema,
   state: jmapStateSchema,
   list: z.array(z.unknown()),
   notFound: z.array(z.unknown()),
 });
+/** The state of an Email/get or Mailbox/get for no IDs. */
+async function readEmptyGetState(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  name: "Email/get" | "Mailbox/get",
+  signal: AbortSignal,
+  deps: JmapTransportDependencies,
+): Promise<string> {
+  const response = await callJmap(
+    {
+      session,
+      authorization,
+      signal,
+      using: [JMAP_CORE, JMAP_MAIL],
+      methodCalls: [[name, { accountId, ids: [], properties: ["id"] }, "start"]],
+      maxBytes: JMAP_JSON_BYTES,
+    },
+    deps,
+  );
+  const parsed = emptyGetSchema.safeParse(requireJmapMethodResult(response, "start", name));
+  if (!parsed.success || parsed.data.accountId !== accountId || parsed.data.list.length || parsed.data.notFound.length)
+    throw new JmapError("JMAP_INVALID_RESPONSE");
+  return parsed.data.state;
+}
+
+export type JmapAccountStart =
+  | { kind: "ready"; emailState: string; mailboxState: string; folders: JmapRemoteFolder[] }
+  /** A state moved during the snapshot; the caller retries on its next run. */
+  | { kind: "changed" };
 
 /** Start states and a folder snapshot that all carry the same mailbox state. Never retries. */
 export async function readJmapAccountStart(
@@ -283,23 +324,7 @@ export async function readJmapAccountStart(
   deps: JmapTransportDependencies = {},
 ): Promise<JmapAccountStart> {
   requireMailAccount(session, accountId, signal);
-  const emptyGet = async (name: "Email/get" | "Mailbox/get") => {
-    const response = await callJmap(
-      {
-        session,
-        authorization,
-        signal,
-        using: [JMAP_CORE, JMAP_MAIL],
-        methodCalls: [[name, { accountId, ids: [], properties: ["id"] }, "start"]],
-        maxBytes: JMAP_JSON_BYTES,
-      },
-      deps,
-    );
-    const parsed = emptyGetSchema.safeParse(requireJmapMethodResult(response, "start", name));
-    if (!parsed.success || parsed.data.accountId !== accountId || parsed.data.list.length || parsed.data.notFound.length)
-      throw new JmapError("JMAP_INVALID_RESPONSE");
-    return parsed.data.state;
-  };
+  const emptyGet = (name: "Email/get" | "Mailbox/get") => readEmptyGetState(session, authorization, accountId, name, signal, deps);
   const emailState = await emptyGet("Email/get");
   const mailboxState = await emptyGet("Mailbox/get");
   // A mailbox destroyed after the query is a moved state for this snapshot, not an invalid response.

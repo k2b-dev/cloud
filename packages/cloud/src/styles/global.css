@@ -549,13 +549,14 @@ solid-island {
     }
   }
   .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
-    /* K2, K3, K4: the app card has a hairline frame, no shadow, and the card radius. */
-    --k2b-workspace-radius: var(--k2b-radius-card, 0.875rem);
-    border-color: var(--k2b-border);
-    box-shadow: none;
+    /* K2, K3, K4: the app card has its hairline edge (the frame ring), no shadow, and the card radius. */
+    --k2b-workspace-radius: var(--k2b-radius-card);
+    box-shadow: var(--k2b-shadow-frame);
   }
   .dark .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
+    /* One edge: the border in dark, no ring beside it. */
     border-color: var(--k2b-border);
+    box-shadow: none;
   }
 }
 

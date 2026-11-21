@@ -3008,10 +3008,11 @@ const normalizeSyncErrorCode = (error: unknown): string => {
   return providerErrorCode(error, "MAIL_SYNC_FAILED");
 };
 
-const SYNC_FOLDER_MAX_ATTEMPTS = 5;
+// The JMAP account scan shares this stall budget: as many bucket restarts, then this long a pause.
+export const SYNC_FOLDER_MAX_ATTEMPTS = 5;
 // Data the database rejects fails the same way on every attempt. The folder waits as long as an
 // errored binding waits for its next verification instead of repeating the failure every minute.
-const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
+export const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 
 // A sync requested while the folder's job runs joins that job and keeps its input. This marker
 // lets the job's next batch rank as a folder sync again, or gives the request a batch of its own

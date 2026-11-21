@@ -200,10 +200,10 @@ describe("signed-in shell", () => {
             expect(shape.shell?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
             expect(shape.rail?.box).toMatchObject({ top: 8, bottom: device.height - 8 });
             expect(shape.workspace?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
-            // K3, K4: the app card has the card radius and no shadow.
+            // K2, K3, K4: the app card has the card radius and one edge, no shadow: the 1 px frame ring in light, its border in dark.
             expect(shape.workspace?.radius).toBe("14px");
             expect(shape.workspace?.borders).toEqual([1, 1, 1, 1]);
-            expect(shape.workspace?.shadow).toBe("none");
+            expect(shape.workspace?.shadow === "none").toBe(theme === "dark");
             const rail = await page.locator(".layout-rail").evaluate((element) => ({
               radius: getComputedStyle(element).borderRadius,
               image: getComputedStyle(element).backgroundImage,
@@ -230,8 +230,8 @@ describe("signed-in shell", () => {
               for (const gap of gaps) expect(gap).toBe(6);
               expect(radius).toBe(14);
             }
-            // K3: the app card casts no shadow.
-            expect(shape.workspace?.shadow).toBe("none");
+            // K2, K3: one edge, no shadow: the 1 px frame ring in light, the border in dark.
+            expect(shape.workspace?.shadow === "none").toBe(theme === "dark");
           }
           // Sidebar, Main, and the detail draw no lines. List and reader
           // panes are apart by 12 px of space: a transparent edge, not a line.
@@ -436,7 +436,7 @@ describe("the app card keeps its rounded corners", () => {
       const signedIn = !!workspace.closest("[data-layout-authenticated]");
       probe.style.cssText = signedIn
         ? "position:absolute;pointer-events:none;width:var(--cloud-card-inset);border-radius:var(--cloud-card-radius)"
-        : "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-dialog)";
+        : "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-card)";
       workspace.append(probe);
       const expectedRadius = getComputedStyle(probe).borderTopLeftRadius;
       const shellSpacing = Number.parseFloat(getComputedStyle(probe).width);
@@ -535,18 +535,27 @@ describe("the app card keeps its rounded corners", () => {
     Math.max(...a.flatMap((pixel, index) => pixel.map((channel, rgb) => Math.abs(channel - b[index]![rgb]!))));
 
   /**
-   * Reads what the engine painted in the shell spacing below the middle of the card's bottom edge, once
-   * as served and once with the card's shadow removed. A computed `box-shadow` alone cannot tell whether
-   * a scrolling ancestor clips the shadow away.
+   * Reads what the engine painted at and below the middle of the card's bottom edge, once as served and
+   * once with the card's `box-shadow` removed: the pixel row of its 1 px edge ring (`edgeDepth`) and the
+   * shell spacing below it (`shadowDepth`). Cloud flach (K2, K3): the card draws its edge and casts no
+   * shadow. A computed `box-shadow` alone cannot tell whether a scrolling ancestor clips the edge away.
    */
   const shadowPaint = async (page: Page, box: Box, shellSpacing: number) => {
     const x = Math.round((box.left + box.right) / 2);
-    const points = Array.from({ length: Math.max(1, Math.floor(shellSpacing) - 2) }, (_, step) => ({ x, y: box.bottom + 1 + step }));
-    const painted = await pixels(page, points);
+    const edge = { x, y: Math.floor(box.bottom) };
+    const below = Array.from({ length: Math.max(1, Math.floor(shellSpacing) - 3) }, (_, step) => ({
+      x,
+      y: Math.ceil(box.bottom) + 1 + step,
+    }));
+    const painted = await pixels(page, [edge, ...below]);
     const unshadowed = await page.addStyleTag({ content: ".layout-content-main .k2b-app-workspace { box-shadow: none !important; }" });
-    const bare = await pixels(page, points);
+    const bare = await pixels(page, [edge, ...below]);
     await unshadowed.evaluate((tag) => tag.parentNode?.removeChild(tag));
-    return { painted, shadowDepth: difference(painted, bare) };
+    return {
+      painted: painted.slice(1),
+      edgeDepth: difference(painted.slice(0, 1), bare.slice(0, 1)),
+      shadowDepth: difference(painted.slice(1), bare.slice(1)),
+    };
   };
 
   /**
@@ -576,9 +585,10 @@ describe("the app card keeps its rounded corners", () => {
         const { context, page } = await open(device, path);
         try {
           const shape = await cardGeometry(page);
-          // K3: neither the flat nor the framed card paints a shadow below its box.
+          // The flat card paints the same edge and no shadow below its box, as the framed one (K2, K3).
           const shadow = await shadowPaint(page, shape.box, shape.shellSpacing);
-          expect(shadow.shadowDepth).toBe(0);
+          expect(shadow.edgeDepth).toBeGreaterThanOrEqual(2);
+          expect(shadow.shadowDepth).toBeLessThanOrEqual(1);
           if (framedShadow) expect(difference(shadow.painted, framedShadow)).toBeLessThanOrEqual(1);
           else framedShadow = shadow.painted;
           // Nothing inside the flat card paints past its rounded corners, with its content scrolled to
@@ -587,7 +597,8 @@ describe("the app card keeps its rounded corners", () => {
           expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
           expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
           for (const radius of shape.radii) expect(Number.parseFloat(radius)).toBeGreaterThan(0);
-          expect(shape.shadow).toBe("none");
+          // K2: the 1 px frame ring is the card's one edge (light).
+          expect(shape.shadow).not.toBe("none");
           expect(Math.abs(shape.shellSpacing - cardInset(device.width))).toBeLessThanOrEqual(0.05);
           for (const radius of shape.radii)
             expect(Math.abs(Number.parseFloat(radius) - cardRadius(device.width))).toBeLessThanOrEqual(0.05);
@@ -621,7 +632,7 @@ describe("the app card keeps its rounded corners", () => {
         try {
           const shape = await cardGeometry(page);
           expect(shape.radii).toEqual(Array(4).fill("14px"));
-          expect(shape.shadow).toBe("none");
+          expect(shape.shadow).not.toBe("none");
           expect(shape.box).toMatchObject({ left: shape.railRight! + 8, top: 8, right: device.width - 8, bottom: device.height - 8 });
           if (framed) expect(shape.box).toEqual(framed.box);
           else framed = shape;
@@ -643,7 +654,8 @@ describe("the app card keeps its rounded corners", () => {
     }
   });
 
-  test("1920×1080 dark: flat and framed cards share their border and paint no shadow", async () => {
+  // One line, one owner: in dark the border is the card's one edge, so no ring paints beside it (K2, K3).
+  test("1920×1080 dark: flat and framed cards share their border as their one edge, without a ring or shadow", async () => {
     const cards: { border: string; shadow: number[][] }[] = [];
     for (const { path } of pages) {
       const { context, page } = await open(desktop, path, { theme: "dark" });
@@ -654,7 +666,9 @@ describe("the app card keeps its rounded corners", () => {
           () => getComputedStyle(document.querySelector(".layout-content-main .k2b-app-workspace")!).borderTopColor,
         );
         const shadow = await shadowPaint(page, shape.box, shape.shellSpacing);
-        expect(shadow.shadowDepth).toBe(0);
+        expect(shape.shadow).toBe("none");
+        expect(shadow.edgeDepth).toBeLessThanOrEqual(1);
+        expect(shadow.shadowDepth).toBeLessThanOrEqual(1);
         if (cards[0]) expect(difference(shadow.painted, cards[0].shadow)).toBeLessThanOrEqual(1);
         cards.push({ border, shadow: shadow.painted });
       } finally {
@@ -665,15 +679,17 @@ describe("the app card keeps its rounded corners", () => {
     expect(cards[1]!.border).toBe(cards[0]!.border);
   });
 
-  test("anonymous 1024×768: a flat workspace already has the card's radius and no shadow", async () => {
+  test("anonymous 1024×768: a flat workspace already has the card's radius and edge, without a shadow", async () => {
     const { context, page } = await open({ name: "anonymous laptop", width: 1024, height: 768, touch: false }, "/public?overview=1");
     try {
       const shape = await cardGeometry(page);
       expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
       expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
       expect(shape.shellSpacing).toBe(8);
-      expect(shape.shadow).toBe("none");
-      expect((await shadowPaint(page, shape.box, shape.shellSpacing)).shadowDepth).toBe(0);
+      expect(shape.shadow).not.toBe("none");
+      const paint = await shadowPaint(page, shape.box, shape.shellSpacing);
+      expect(paint.edgeDepth).toBeGreaterThanOrEqual(2);
+      expect(paint.shadowDepth).toBeLessThanOrEqual(1);
     } finally {
       await context.close();
     }
@@ -1105,7 +1121,7 @@ describe("soft tablet and phone shell", () => {
             });
             expect(shape.workspace!.box.left - shape.rail!.box.right).toBe(8);
             expect(shape.workspace!.radius).toBe("14px");
-            expect(shape.workspace!.shadow).toBe("none");
+            expect(shape.workspace!.shadow === "none").toBe(theme === "dark");
             const rail = await page.locator(".layout-rail").evaluate((element) => ({
               radius: getComputedStyle(element).borderRadius,
               background: getComputedStyle(element).backgroundImage,

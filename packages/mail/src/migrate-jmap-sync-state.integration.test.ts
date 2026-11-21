@@ -3,12 +3,12 @@ import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "./migrate";
 import baseline from "./schema.sql" with { type: "text" };
-import { readJmapSyncState, serializeJmapSyncState } from "./service/connectors/jmap-sync-state";
+import { readJmapSyncState, serializeJmapSyncState } from "./service/connectors/jmap-account-state";
 
 const suite = suiteFor("database", "nats");
 const mailboxId = "00000000-0000-4000-8000-0000000003c1";
 const resourceId = "00000000-0000-4000-8000-0000000003c2";
-const state = serializeJmapSyncState({ version: 1, emailState: "opaque:/email", mailboxState: "opaque:/mailbox", scan: null });
+const state = serializeJmapSyncState({ version: 2, emailState: "opaque:/email", mailboxState: "opaque:/mailbox", scan: null });
 const column = () => sql<{ data_type: string; is_nullable: string; column_default: string | null }[]>`
   SELECT data_type, is_nullable, column_default FROM information_schema.columns
   WHERE table_schema = 'mail' AND table_name = 'remote_resources' AND column_name = 'sync_state'`;
@@ -81,7 +81,7 @@ suite("JMAP sync state schema", () => {
           await tx<Record<string, unknown>[]>`UPDATE mail.remote_resources SET sync_state = '[]'::jsonb WHERE id = ${resourceId}::uuid`;
         }),
       ).rejects.toMatchObject({ constraint: "remote_resources_sync_state_check" });
-      const unsupported = { ...state, version: 2 };
+      const unsupported = { ...state, version: 1 };
       await sql<
         Record<string, unknown>[]
       >`UPDATE mail.remote_resources SET sync_state = ${unsupported}::jsonb WHERE id = ${resourceId}::uuid`;

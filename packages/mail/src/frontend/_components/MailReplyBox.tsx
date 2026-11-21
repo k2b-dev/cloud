@@ -159,76 +159,10 @@ export default function MailReplyBox(props: {
   const [noteText, setNoteText] = createSignal(storedNote);
   const [noteSaving, setNoteSaving] = createSignal(false);
   // Above the conversation the box opens at one reserved height, from placeholder to loaded draft, so a late draft,
-  // signature, or suggestion never moves the messages below it (#3297). It grows to its content once the person
-  // works in it: a click, focus, or a dragged file. The reserved height remains its minimum after that interaction.
-  const [expanded, setExpanded] = createSignal(false);
-  const expand = () => {
-    if (!expanded()) setExpanded(true);
-  };
-  // A press grows the box only once it is over (#3859). Growing on the press moved Send and the quoted card from under
-  // the pointer, so their click never arrived. A press on the action bar does not grow it at all: growing would only
-  // push the bar away from the hand that just used it. Keyboard focus and a dragged file grow it at once.
-  onMount(() => {
-    const root = frame;
-    if (!root) return;
-    let press: { onBar: boolean } | null = null;
-    const pressStarted = (event: PointerEvent) => {
-      press = { onBar: event.target instanceof Element && Boolean(event.target.closest(".mail-reply-box-foot")) };
-    };
-    // After the click: the browser dispatches it in the same task as the release, before this timer.
-    const pressEnded = () => {
-      if (!press) return;
-      setTimeout(() => {
-        const ended = press;
-        press = null;
-        if (ended && !ended.onBar) expand();
-      });
-    };
-    const focused = () => {
-      if (!press) expand();
-    };
-    root.addEventListener("pointerdown", pressStarted);
-    root.addEventListener("focusin", focused);
-    root.addEventListener("dragenter", expand);
-    window.addEventListener("pointerup", pressEnded);
-    window.addEventListener("pointercancel", pressEnded);
-    onCleanup(() => {
-      root.removeEventListener("pointerdown", pressStarted);
-      root.removeEventListener("focusin", focused);
-      root.removeEventListener("dragenter", expand);
-      window.removeEventListener("pointerup", pressEnded);
-      window.removeEventListener("pointercancel", pressEnded);
-    });
-  });
-  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
-  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
-  createEffect(() => {
-    const root = frame;
-    if (expanded() || !root) return;
-    const parts = () =>
-      root.querySelectorAll<HTMLElement>(
-        "[data-mail-reply-box='mail'] > .mail-inline-draft-text, [data-mail-reply-box='mail'] > .mail-inline-draft-signature",
-      );
-    let scheduled = 0;
-    const mark = () => {
-      scheduled = 0;
-      for (const part of parts()) part.toggleAttribute("data-reply-box-clipped", part.scrollHeight > part.clientHeight + 1);
-    };
-    const schedule = () => {
-      if (!scheduled) scheduled = requestAnimationFrame(mark);
-    };
-    const observer = new MutationObserver(schedule);
-    // The signature frame grows by its style once its document reports a height.
-    observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] });
-    root.addEventListener("load", schedule, true);
-    schedule();
-    onCleanup(() => {
-      observer.disconnect();
-      root.removeEventListener("load", schedule, true);
-      if (scheduled) cancelAnimationFrame(scheduled);
-      for (const part of parts()) part.removeAttribute("data-reply-box-clipped");
-    });
-  });
+  // signature, or suggestion never moves the messages below it (#3297). The person's own input fits it to its content
+  // (createComposeFit in the composer); focus and content from outside never change it. A press never grows it either,
+  // so Send and the quote card stay under the pointer and the first click lands (#3859; guarded by the Mail shell test
+  // "one click on Send sends an untouched suggestion …").
   const [noteError, setNoteError] = createSignal<string | null>(null);
   const [noteMinHeight, setNoteMinHeight] = createSignal<number | null>(null);
   const [mount, setMount] = createSignal<Mount | null>(null);
@@ -986,13 +920,7 @@ export default function MailReplyBox(props: {
   };
 
   return (
-    <div
-      ref={frame}
-      class="mail-reply-box-frame"
-      data-mail-reply-box-frame
-      data-mode={mode()}
-      data-reply-box-expanded={expanded() ? "" : undefined}
-    >
+    <div ref={frame} class="mail-reply-box-frame" data-mail-reply-box-frame data-mode={mode()}>
       <Show when={scheduled() && detachedId() === null}>
         <section class="mail-reply-box mail-reply-box-state" data-mail-reply-box="scheduled" aria-label={t().boxLabel}>
           <i class="ti ti-clock" aria-hidden="true" />

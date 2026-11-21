@@ -1043,7 +1043,7 @@ html {
      home indicator's safe area where the workspace meets the window's bottom. */
   --k2b-workspace-inset-bottom: 0px;
   /* K4: a framed workspace is a card. */
-  --k2b-workspace-radius: var(--k2b-radius-card, 0.875rem);
+  --k2b-workspace-radius: var(--k2b-radius-card);
   position: relative;
   display: grid;
   width: 100%;
@@ -1063,21 +1063,20 @@ html {
   background: var(--k2b-surface);
 }
 
-/* K2, K3: from 48 rem the outermost workspace, the app card, has a hairline
-   frame, never a shadow; dark keeps its line at every width, where the
-   surface alone does not part from the canvas. One line, one owner: a
-   workspace inside another stands in a column whose edges the boundary lines
-   and the head line already draw, so it draws no frame of its own. */
-@media (min-width: 48rem) {
-  .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
-    border-color: var(--k2b-border);
-  }
+/* K2, K3: the outermost workspace, the app card, has one hairline edge and
+   no shadow: the 1 px frame ring (`--k2b-shadow-frame`) in light, its border
+   in dark, never both. One line, one owner: a workspace inside another
+   stands in a column whose edges the boundary lines and the head line
+   already draw, so it draws no edge of its own. */
+.k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
+  box-shadow: var(--k2b-shadow-frame);
 }
 
 .k2b-ui[data-theme="dark"] .k2b-app-workspace:not(.k2b-app-workspace *),
 .k2b-ui.k2b-dark .k2b-app-workspace:not(.k2b-app-workspace *),
 .dark .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
   border-color: var(--k2b-border);
+  box-shadow: none;
 }
 
 /* A flat workspace draws no frame. Its sidebar and content round their outer
