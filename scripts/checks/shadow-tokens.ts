@@ -16,8 +16,9 @@ import type { Finding, Rule } from "./rule";
  *
  * Cloud flach (K3, K16): only what floats above content casts a shadow, through the overlay tokens
  * (`--k2b-shadow-overlay-sm`, `-overlay-lg`, `-side`, `-sheet`, and the older `-float`, `-toast`, `-toolbar`). The layer
- * tokens of things that never float (`--k2b-shadow-surface`, `-raised`, `-frame`, `-column-*`, and the island hook
- * `--k2b-island-shadow`) draw nothing; outside @k2b/ui a use of one is a finding. Known uses live in
+ * tokens of things that never float (`--k2b-shadow-surface`, `-raised`, `-column-*`, and the island hook
+ * `--k2b-island-shadow`) draw nothing or leave with the workspace hairline; outside @k2b/ui a use of one is a finding.
+ * `--k2b-shadow-frame` is the app card's hairline edge and stays allowed. Known uses live in
  * `shadow-tokens.baseline`; migrations remove lines, the rule never adds one.
  */
 const message =
@@ -28,8 +29,13 @@ const HEADER = [
   "Lanes remove lines as they make a surface flat; the rule never adds lines.",
   "`bun scripts/check.ts shadow-tokens --fix` removes lines whose finding is gone.",
 ];
+/** The source with comments blanked to spaces of the same length, so offsets stay true. */
+const withoutComments = (source: string, css: boolean) =>
+  css
+    ? source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "))
+    : source.replace(/^[ \t]*(?:\/\/|\/\*|\*).*$/gm, (line) => " ".repeat(line.length));
 /** Layer tokens without an overlay: they resolve to nothing since Cloud flach and have no use outside @k2b/ui. */
-const layerToken = /var\(\s*(--k2b-(?:shadow-(?:surface|raised|frame|column-[\w-]+)|island-shadow))\b/g;
+const layerToken = /var\(\s*(--k2b-(?:shadow-(?:surface|raised|column-[\w-]+)|island-shadow))\b/g;
 
 /** The @k2b/ui token owners: the component scope and the classless base stylesheet that mirrors it. */
 const tokenFiles = new Set(["packages/ui/src/styles/index.css", "packages/ui/src/base/base.css"]);
@@ -193,7 +199,7 @@ export const rule: Rule = {
         const original = readFileSync(file, "utf8");
         const path = relative(workspaceRoot, file);
         if (!path.startsWith("packages/ui/"))
-          for (const use of original.matchAll(layerToken))
+          for (const use of withoutComments(original, file.endsWith(".css")).matchAll(layerToken))
             layerUses.push({
               file,
               line: lineOf(original, use.index ?? 0),

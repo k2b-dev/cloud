@@ -264,15 +264,13 @@ On Safari, diagrams need Safari 17.4 or later.
 - Use one surface to group related content; do not stack papers to manufacture
   hierarchy.
 - Follow the [flat criteria](/en/ui/surfaces/flat-criteria) (K1 to K17).
-  A shadow means only "lies above the page": menus, popovers, toasts, and
-  floating pills take the small overlay shadow, a dialog the large one over a
-  28 % scrim without blur, a drawer or sheet its directed shadow. The app card,
-  columns, cards, sections, and controls are flat and divided by hairlines.
-  Radii come from five values: 0 for what orders, 4 px for small marks, 8 px
-  for controls and overlays, round for chips, people, and pills, 14 px for the
-  app card. Shared components choose these themselves; app code never adds a
-  shadow or radius of its own (UI-30, `bun scripts/check.ts shadow-tokens
-  radius-scale`).
+  A shadow means only "lies above the page", and it comes from the overlay
+  tokens; islands such as `Paper`, cards, and the app card cast none. Radii
+  come from five values: 0 for what orders, 4 px for small marks, 8 px for
+  controls and overlays, round for chips, people, and pills, 14 px for the
+  app card. Shared components move to these step by step and choose them
+  themselves; app code never adds a shadow or radius of its own (UI-30,
+  `bun scripts/check.ts shadow-tokens radius-scale`).
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized

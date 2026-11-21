@@ -5,6 +5,7 @@ docs-site/src/ui/demo-sections/input.tsx | class | rounded-xl
 packages/accounts/src/frontend/agents/AgentPictureTrigger.island.tsx | class | rounded-[28%]
 packages/accounts/src/frontend/groups/PersonalGroupTag.tsx | class | rounded-md
 packages/assistant/src/frontend/AssistantAllChatsList.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantChatSidebar.browser-fixture.tsx | style | 1rem
 packages/assistant/src/frontend/AssistantConversationEditor.tsx | class | rounded-md
 packages/assistant/src/frontend/AssistantPrefsModals.tsx | class | rounded-md
 packages/assistant/src/frontend/AssistantPrefsModals.tsx | class | rounded-md
@@ -97,6 +98,7 @@ packages/cloud/src/styles/profile-picture.css | css | 0.75rem
 packages/cloud/src/styles/profile-picture.css | css | 28%
 packages/cloud/src/styles/profile-picture.css | css | 28%
 packages/cloud/src/styles/resource-search.css | css | 0.375rem
+packages/cloud/src/styles/tokens.css | css | 0.75rem
 packages/cloud/src/styles/utilities-feedback.css | class | rounded-md
 packages/cloud/src/styles/utilities-layout.css | css | calc(var(--ui-radius-control) - 0.125rem)
 packages/cloud/src/styles/utilities-markdown-editor.css | css | 0.42rem !important
@@ -213,6 +215,7 @@ packages/spaces/src/styles/app.css | css | .625rem
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | class | rounded-md
 packages/ui/src/base/base.css | css | 0.125rem
 packages/ui/src/base/base.css | css | 0.3rem
+packages/ui/src/base/base.css | css | 0.75rem
 packages/ui/src/base/base.css | css | 2px
 packages/ui/src/base/base.css | css | 3px
 packages/ui/src/base/base.css | css | 7px
@@ -306,6 +309,7 @@ packages/ui/src/styles/index.css | css | 0.625rem
 packages/ui/src/styles/index.css | css | 0.625rem
 packages/ui/src/styles/index.css | css | 0.65rem
 packages/ui/src/styles/index.css | css | 0.6875rem
+packages/ui/src/styles/index.css | css | 0.75rem
 packages/ui/src/styles/index.css | css | 0.75rem
 packages/ui/src/styles/index.css | css | 0.75rem
 packages/ui/src/styles/index.css | css | 0.75rem

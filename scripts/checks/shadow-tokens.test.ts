@@ -92,11 +92,13 @@ test("layer tokens that never float stay inside @k2b/ui; known uses live in the 
         ".dialog { box-shadow: 0 0 0 1px var(--k2b-border), var(--k2b-shadow-overlay-lg); }",
         ".card { box-shadow: var(--k2b-shadow-raised); }",
         ".shell { box-shadow: var(--k2b-shadow-frame); }",
+        ".tile { box-shadow: 0 0 0 1px var(--k2b-border), var(--k2b-shadow-surface); }",
         ".column { background: linear-gradient(var(--k2b-shadow-column-mid), transparent); }",
+        "/* An old note: var(--k2b-shadow-raised) is gone. */",
       ].join("\n"),
       "packages/demo/src/page.tsx": 'const a = <div class="shadow-[var(--k2b-shadow-surface)]" />;',
       "scripts/checks/shadow-tokens.baseline":
-        "# header\npackages/demo/src/app.css | --k2b-shadow-frame\npackages/demo/src/gone.css | --k2b-shadow-raised\n",
+        "# header\npackages/demo/src/app.css | --k2b-shadow-surface\npackages/demo/src/gone.css | --k2b-shadow-raised\n",
     };
     for (const [path, content] of Object.entries(files)) {
       await mkdir(dirname(join(root, path)), { recursive: true });
@@ -105,7 +107,7 @@ test("layer tokens that never float stay inside @k2b/ui; known uses live in the 
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line ?? ""}`).sort()).toEqual([
       "packages/demo/src/app.css:3",
-      "packages/demo/src/app.css:5",
+      "packages/demo/src/app.css:6",
       "packages/demo/src/page.tsx:1",
       "scripts/checks/shadow-tokens.baseline:",
     ]);

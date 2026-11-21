@@ -212,14 +212,19 @@
      marks under 24 px (check, icon tile); control 8 px for buttons and fields;
      overlay 8 px for menus, toasts, popovers, and dialogs; round for chips,
      people, dots, grips, and pills; card 14 px for the app card and the top of
-     a phone sheet. No other radius exists. `--k2b-radius-surface` and
-     `--k2b-radius-dialog` stay as names and resolve to the overlay role. */
+     a phone sheet. No other radius exists. `--k2b-radius-dialog` is the
+     overlay role. `--k2b-radius-surface` keeps its 12 px until every surface
+     that reads it has moved to a role (square sections and notices, 8 px
+     menus); `radius-scale` lists it until then. */
   --k2b-radius-flat: 0;
   --k2b-radius-mark: 4px;
   --k2b-radius-overlay: 8px;
   --k2b-radius-round: 9999px;
   --k2b-radius-card: 14px;
-  --k2b-radius-surface: var(--k2b-radius-overlay);
+  /* An icon tile is a mark below 24 px and a control from 24 px: a step on
+     its own width, never a value between 4 and 8 px. */
+  --k2b-radius-tile: clamp(var(--k2b-radius-mark), (100% - 23.5px) * 1000, var(--k2b-radius-control));
+  --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: var(--k2b-radius-overlay);
   /* Spacing (K1): every gap is one step of 4 px or a sum of steps. */
   --k2b-space-1: 4px;
@@ -306,15 +311,16 @@
      action, and a drag preview; large for a dialog; directed for a drawer
      (`-side`) and a phone sheet (`-sheet`). The scrim dims the page behind a
      dialog or sheet, without blur.
-     The layer tokens of things that never float (app card, islands,
-     surfaces) draw nothing. They stay as names, as a transparent no-op layer
+     The layer tokens of things that never float (islands, surfaces) draw
+     nothing; the app card keeps only its hairline edge. They stay as names, as a transparent no-op layer
      (`0 0 #0000`) so lists such as `ring, var(--k2b-shadow-raised)` stay
      valid. */
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
   --k2b-scrim: rgb(9 9 11 / 0.28);
   --k2b-shadow-surface: 0 0 #0000;
-  --k2b-shadow-frame: 0 0 #0000;
+  /* The app card casts no shadow; its edge is a hairline drawn inside it. */
+  --k2b-shadow-frame: inset 0 0 0 1px rgb(9 9 11 / 0.07);
   /* The quiet shadow at every workspace column boundary stays until the
      workspace draws its hairline (K2); both change together, so columns are
      never left without a divider. */
@@ -567,6 +573,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-suggestion: #c99abb;
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
+  --k2b-shadow-frame: inset 0 0 0 1px rgb(255 255 255 / 0.08);
   --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
   --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
   --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
@@ -19554,7 +19561,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: var(--k2b-radius-tile);
   background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent);
 }
 

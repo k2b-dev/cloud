@@ -773,12 +773,12 @@ const PaperDemo = () => (
 );
 
 const flatRadii = [
-  ["flat", "0", "column, band, row, section"],
-  ["mark", "4 px", "check, icon tile"],
-  ["control", "8 px", "button, field"],
-  ["overlay", "8 px", "menu, toast, dialog"],
-  ["round", "round", "chip, person, grip, pill"],
-  ["card", "14 px", "app card, phone sheet"],
+  ["flat", "0", "column, band, row, section", "var(--k2b-radius-flat)"],
+  ["mark", "4 px", "check, icon tile", "var(--k2b-radius-mark)"],
+  ["control", "8 px", "button, field", "var(--k2b-radius-control)"],
+  ["overlay", "8 px", "menu, toast, dialog", "var(--k2b-radius-overlay)"],
+  ["round", "round", "chip, person, grip, pill", "var(--k2b-radius-round)"],
+  ["card", "14 px", "app card, phone sheet", "var(--k2b-radius-card)"],
 ] as const;
 
 const FlatCriteriaDemo = () => (
@@ -793,7 +793,7 @@ const FlatCriteriaDemo = () => (
     <div style={{ display: "grid", gap: "var(--k2b-space-6)" }}>
       <div style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(9rem, 1fr))", gap: "var(--k2b-space-3)" }}>
         <For each={flatRadii}>
-          {([role, value, use]) => (
+          {([role, value, use, radius]) => (
             <div style={{ display: "grid", gap: "var(--k2b-space-2)", "font-size": "var(--k2b-font-size-row)" }}>
               <span
                 aria-hidden="true"
@@ -801,7 +801,7 @@ const FlatCriteriaDemo = () => (
                   height: "3rem",
                   border: "1px solid var(--k2b-border-strong)",
                   background: "var(--k2b-surface-muted)",
-                  "border-radius": `var(--k2b-radius-${role})`,
+                  "border-radius": radius,
                 }}
               />
               <strong>

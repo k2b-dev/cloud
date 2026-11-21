@@ -1,6 +1,9 @@
 # Known draggable edges without the shared grip (K13), one per occurrence: <file> | <separator|cursor> | <detail>.
 # Lanes remove lines as they move an edge onto ResizeSeparator; the rule never adds lines.
 # `bun scripts/check.ts resize-grips --fix` removes lines whose finding is gone.
+packages/cloud/src/desktop/solid.tsx | cursor | cursor-col-resize
+packages/cloud/src/desktop/solid.tsx | cursor | cursor-col-resize
+packages/cloud/src/desktop/solid.tsx | cursor | cursor-row-resize
 packages/cloud/src/styles/panel.css | cursor | .cloud-panel__shield col-resize
 packages/cloud/src/styles/utilities-navigation.css | cursor | .workspace-resize-handle col-resize
 packages/cloud/src/styles/utilities-navigation.css | cursor | .workspace-resize-handle-drawer row-resize

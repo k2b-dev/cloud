@@ -60,7 +60,16 @@ const drawnChildren = (element: ts.JsxElement): ts.Node[] =>
 const frameAround = (notice: ts.Node): string | undefined => {
   let child: ts.Node = notice;
   for (let parent = notice.parent; parent; parent = parent.parent) {
-    if (ts.isJsxFragment(parent) || ts.isJsxExpression(parent) || ts.isParenthesizedExpression(parent)) {
+    if (
+      ts.isJsxFragment(parent) ||
+      ts.isJsxExpression(parent) ||
+      ts.isParenthesizedExpression(parent) ||
+      ts.isConditionalExpression(parent) ||
+      (ts.isBinaryExpression(parent) &&
+        [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(
+          parent.operatorToken.kind,
+        ))
+    ) {
       child = parent;
       continue;
     }

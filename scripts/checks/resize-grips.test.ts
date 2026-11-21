@@ -15,6 +15,7 @@ test("a focusable separator and a column cursor belong to the shared grip", asyn
         'const c = <button type="button" role="separator" class="edge" />;',
         'const d = <div role="separator" tabIndex={0} />;',
         'const e = <div role="separator" tabindex="0" class="old-edge" />;',
+        'const f = <div class="w-1 cursor-col-resize" />;',
       ].join("\n"),
       "packages/demo/src/app.css": [
         ".k2b-ui .k2b-resize-separator[data-orientation=vertical] { cursor: col-resize; }",
@@ -33,6 +34,7 @@ test("a focusable separator and a column cursor belong to the shared grip", asyn
       "packages/demo/src/app.css:2",
       "packages/demo/src/page.tsx:3",
       "packages/demo/src/page.tsx:4",
+      "packages/demo/src/page.tsx:6",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -36,7 +36,7 @@ const literal = (attr: ts.JsxAttribute | undefined): string | undefined => {
 };
 
 const sourceFindings = (workspaceRoot: string, file: string, source: string): KeyedFinding[] => {
-  if (!source.includes("separator")) return [];
+  if (!source.includes("separator") && !/cursor-(?:col|row)-resize/.test(source)) return [];
   const { sourceFile, findings: unparsed } = parseSource(file, source);
   const path = relative(workspaceRoot, file);
   const findings: KeyedFinding[] = unparsed.map((finding) => ({ ...finding, file, key: `${path} | parse | ${finding.message}` }));
@@ -49,7 +49,7 @@ const sourceFindings = (workspaceRoot: string, file: string, source: string): Ke
         focusable &&
         !(attribute(node, "class")?.initializer?.getText() ?? "").includes(GRIP)
       ) {
-        const className = literal(attribute(node, "class")) || "-";
+        const className = (literal(attribute(node, "class")) || "-").trim().replace(/\s+/g, " ");
         findings.push({
           file,
           line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
@@ -61,6 +61,14 @@ const sourceFindings = (workspaceRoot: string, file: string, source: string): Ke
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
+  // A Tailwind column cursor in any string: `cursor-col-resize`, `hover:cursor-row-resize`.
+  for (const match of source.matchAll(/(?<![\w-])(?:[\w-]+:)*cursor-(col|row)-resize(?![\w-])/g))
+    findings.push({
+      file,
+      line: sourceFile.getLineAndCharacterOfPosition(match.index ?? 0).line + 1,
+      key: `${path} | cursor | ${match[0]}`,
+      message: `${match[0]}: ${message}`,
+    });
   return findings;
 };
 

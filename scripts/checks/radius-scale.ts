@@ -50,6 +50,10 @@ const parts = (value: string): string[] => {
 export const onScale = (value: string): boolean => {
   const cleaned = value.replace(/!important/gi, "").trim();
   if (/^(?:inherit|initial|unset|revert|revert-layer|none)$/i.test(cleaned)) return true;
+  // A step between two scale values on the box's own size, such as an icon tile that is a mark below 24 px and a
+  // control above: `clamp(<scale>, (100% - <n>px) * 1000, <scale>)`. The factor makes it a step, never a value between.
+  const step = cleaned.match(/^clamp\(\s*(var\([^()]*\)|[\w.%]+)\s*,\s*\(100% - [\d.]+px\) \* 1000\s*,\s*(var\([^()]*\)|[\w.%]+)\s*\)$/);
+  if (step) return onScale(step[1]!) && onScale(step[2]!);
   return parts(cleaned).every((part) => {
     if (scaleLength.test(part) || isRound(part)) return true;
     const variable = part.match(/^var\(\s*(--[\w-]+)\s*(?:,(.*))?\)$/s);
@@ -106,8 +110,9 @@ export const radiusFindings = (workspaceRoot: string, file: string, original: st
     for (const style of text.matchAll(/border(?:-[\w-]+)?-radius\s*:\s*([^;}\n"'`]+)/g))
       if (!onScale(style[1] ?? "")) add(start + (style.index ?? 0), "style", (style[1] ?? "").trim());
   }
-  for (const style of source.matchAll(/\bborder\w*Radius\s*:\s*(["'`])([^"'`]*)\1/g))
-    if (!onScale(style[2] ?? "")) add(style.index ?? 0, "style", (style[2] ?? "").trim());
+  // Style objects: `borderRadius: "6px"` and Solid's `"border-radius": "6px"`.
+  for (const style of source.matchAll(/(?:\bborder\w*Radius|(["'])border(?:-[\w-]+)?-radius\1)\s*:\s*(["'`])([^"'`]*)\2/g))
+    if (!onScale(style[3] ?? "")) add(style.index ?? 0, "style", (style[3] ?? "").trim());
   return findings;
 };
 

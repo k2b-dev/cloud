@@ -7,7 +7,13 @@ import { onScale, rule, utilityOnScale } from "./radius-scale";
 test("accepts the five K4 values and radius tokens only", () => {
   for (const value of ["0", "4px", "0.25rem", "8px", ".5rem", "14px", "9999px", "999px", "50%", "var(--k2b-radius-control)"])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: true });
-  for (const value of ["var(--k2b-radius-mark) var(--k2b-radius-mark) 0 0", "var(--ui-radius-frame, 14px)", "inherit", "8px !important"])
+  for (const value of [
+    "var(--k2b-radius-mark) var(--k2b-radius-mark) 0 0",
+    "var(--ui-radius-frame, 14px)",
+    "inherit",
+    "8px !important",
+    "clamp(var(--k2b-radius-mark), (100% - 23.5px) * 1000, var(--k2b-radius-control))",
+  ])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: true });
   for (const value of [
     "6px",
@@ -16,6 +22,8 @@ test("accepts the five K4 values and radius tokens only", () => {
     "calc(var(--k2b-radius-control) + 3px)",
     "var(--k2b-gap)",
     "var(--k2b-radius-control, 6px)",
+    "clamp(4px, 50%, 8px)",
+    "clamp(4px, (100% - 23.5px) * 1000, 12px)",
   ])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: false });
   for (const size of [undefined, "none", "sm", "lg", "full", "[8px]", "[var(--k2b-radius-card)]"]) expect(utilityOnScale(size)).toBe(true);
@@ -37,7 +45,7 @@ test("fails new findings, keeps baseline ones, and asks to remove fixed ones", a
       "packages/demo/src/page.tsx": [
         '<div class="rounded-lg md:rounded-t-xl" />',
         '<div class="rounded-full rounded-[10px]" />',
-        "<div style={{ borderRadius: '5px' }} />",
+        '<div style={{ borderRadius: \'5px\', "border-top-left-radius": "6px" }} />',
         "// rounded-md in a comment",
       ].join("\n"),
       "packages/demo/src/page.test.tsx": '<div class="rounded-md" />',
@@ -57,6 +65,7 @@ test("fails new findings, keeps baseline ones, and asks to remove fixed ones", a
       "packages/demo/src/app.css:4",
       "packages/demo/src/app.css:5",
       "packages/demo/src/page.tsx:1",
+      "packages/demo/src/page.tsx:3",
       "packages/demo/src/page.tsx:3",
       "scripts/checks/radius-scale.baseline:",
     ]);

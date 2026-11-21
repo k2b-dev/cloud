@@ -24,7 +24,7 @@
     --k2b-row-measure: 40rem;
     --k2b-font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --k2b-radius-control: 0.5rem;
-    --k2b-radius-surface: 8px;
+    --k2b-radius-surface: 0.75rem;
     --k2b-radius-dialog: 8px;
     --k2b-focus-width: 2px;
     --k2b-danger-500: #ef4444;

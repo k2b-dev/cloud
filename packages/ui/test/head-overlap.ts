@@ -82,7 +82,8 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     }
     if (box.clientWidth > 0 && box.scrollWidth > box.clientWidth + slack) {
       const masked = style.maskImage !== "none" && style.maskImage !== "";
-      const scrolls = style.overflowX === "auto" || style.overflowX === "scroll";
+      // A scroller in either direction lets a person reach its content; it is not cut.
+      const scrolls = [style.overflowX, style.overflowY].some((overflow) => overflow === "auto" || overflow === "scroll");
       if (style.overflowX === "visible") found.spill.push(`${name(box)} spills ${box.scrollWidth - box.clientWidth} px out of its box`);
       else if (!scrolls && style.textOverflow !== "ellipsis" && !masked)
         found.cut.push(`${name(box)} is cut by ${box.scrollWidth - box.clientWidth} px without an ellipsis or a fade`);
