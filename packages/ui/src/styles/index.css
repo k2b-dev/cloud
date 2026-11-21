@@ -12700,10 +12700,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  /* A scrollbar moves nothing (Valentin 21.11.): head and rows share this one
-     scroll area (the head sticks), and a classic scrollbar's room is reserved
-     whether or not it shows, so the columns and their lines keep their x. */
-  scrollbar-gutter: stable;
+}
+
+/* A scrollbar moves nothing (Valentin 21.11.): head and rows share this one
+   scroll area (the head sticks). With a fine pointer the table draws its own
+   overlay thumb and no native scrollbar takes room (below); elsewhere a
+   classic scrollbar's room is reserved whether or not it shows, so the columns
+   and their lines keep their x. The server frame and the first client frame
+   take the same branch, so hydration moves nothing either. */
+@media not ((hover: hover) and (pointer: fine)) {
+  .k2b-ui .k2b-table-wrap {
+    scrollbar-gutter: stable;
+  }
 }
 
 .k2b-ui .k2b-table-wrap:focus-visible {

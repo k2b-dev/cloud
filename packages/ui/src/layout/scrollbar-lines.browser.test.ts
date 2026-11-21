@@ -11,9 +11,9 @@ import { layoutProblems } from "../../test/head-overlap";
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const classic = `
-  .k2b-ui .k2b-table-shell .k2b-table-wrap, .k2b-ui .scroll, .k2b-ui .green { scrollbar-width: auto !important; }
-  .k2b-ui .k2b-table-wrap::-webkit-scrollbar, .k2b-ui .scroll::-webkit-scrollbar, .k2b-ui .green::-webkit-scrollbar { width: 15px !important; height: 15px !important; }
-  .k2b-ui .k2b-table-wrap::-webkit-scrollbar-thumb, .k2b-ui .scroll::-webkit-scrollbar-thumb, .k2b-ui .green::-webkit-scrollbar-thumb { background: #a1a1aa; }
+  .k2b-ui .scroll, .k2b-ui .green { scrollbar-width: auto !important; }
+  .k2b-ui .scroll::-webkit-scrollbar, .k2b-ui .green::-webkit-scrollbar { width: 15px !important; height: 15px !important; }
+  .k2b-ui .scroll::-webkit-scrollbar-thumb, .k2b-ui .green::-webkit-scrollbar-thumb { background: #a1a1aa; }
   .frame { width: 600px; height: 200px; display: flex; margin-bottom: 16px; }
   .split { width: 600px; margin-bottom: 16px; }
   .split table, .green table { width: 100%; table-layout: fixed; border-collapse: collapse; }
@@ -109,8 +109,10 @@ describe("a scrollbar moves nothing", () => {
   test("green template: a sticky head in the same scroll area with a stable gutter keeps its lines", async () => {
     const page = await load();
     try {
-      if (classicScrollbars) expect(await scrolls(page, "#green-many .green")).toBe(true);
       for (const root of ["#green-few", "#green-many"]) expect((await page.evaluate(layoutProblems, { root })).scrollbar).toEqual([]);
+      // WebKit on Linux draws classic scrollbars but keeps no gutter for them; the stable gutter is Chromium's here.
+      if (!classicScrollbars) return;
+      expect(await scrolls(page, "#green-many .green")).toBe(true);
       // Nothing moves when the scrollbar appears: the head cells stand where they stood without it.
       expect(await headEdges(page, "#green-many")).toEqual(await headEdges(page, "#green-few"));
     } finally {
@@ -118,10 +120,11 @@ describe("a scrollbar moves nothing", () => {
     }
   });
 
-  test("DataTable keeps its head over its rows and every head cell in place, with and without a classic scrollbar", async () => {
+  test("DataTable keeps its head over its rows and every head cell in place when its rows start to scroll", async () => {
     const page = await load();
     try {
-      if (classicScrollbars) expect(await scrolls(page, "#many .k2b-table-wrap")).toBe(true);
+      // With a fine pointer the table draws its own overlay thumb: the rows overflow, and no native scrollbar takes room.
+      expect(await page.locator("#many .k2b-table-shell").getAttribute("data-overflow-y")).toBe("true");
       for (const root of ["#few", "#many"]) {
         const found = await page.evaluate(layoutProblems, { root });
         expect({ root, scrollbar: found.scrollbar }).toEqual({ root, scrollbar: [] });
