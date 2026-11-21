@@ -79,6 +79,7 @@ const check = async (width: number, body: string) => {
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;font:13px sans-serif"><main id="app">${body}</main></body></html>`,
   );
+  await settled(page);
   return page.evaluate(layoutProblems, { root: "#app" });
 };
 
