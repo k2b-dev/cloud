@@ -5,7 +5,7 @@ import { pauseWorkspaceClock } from "./PulseWorkspace.browser-fixture";
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
 beforeAll(async () => {
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });
