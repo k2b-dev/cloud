@@ -294,9 +294,9 @@ describe("DetailPanel", () => {
       "";
     expect(actionHoverRule).toContain("color: var(--k2b-text);");
     expect(actionHoverRule).toContain("background: transparent;");
-    // The hover fill is a pseudo element reaching into the gutter, so the row's text never moves.
+    // The hover fill is a pseudo element reaching 6 px into the section's inset (K5), so the row's text never moves.
     const bleedRule = css.match(/\.k2b-ui \.k2b-detail-panel__action > \.k2b-button__label::before \{([^}]*)\}/)?.[1] ?? "";
-    expect(bleedRule).toContain("inset-inline: -0.5rem;");
+    expect(bleedRule).toContain("inset-inline: -0.375rem;");
     expect(bleedRule).toContain("pointer-events: none;");
     const menuHoverRule =
       css.match(

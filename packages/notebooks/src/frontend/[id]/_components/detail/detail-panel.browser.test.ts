@@ -510,7 +510,12 @@ for (const width of [320, 390, 768, 1440]) {
         expect(menu!.height).toBe(action!.height);
         expect(action!.padding).toBe(menu!.padding);
         expect(action!.fontSize).toBe(menu!.fontSize);
-        closeTo(action!.y, menu!.y);
+        if (width === 320) {
+          // K15: two actions whose labels do not fit side by side stand one below the other, never shortened; the
+          // menu starts on the action's edge, one 0.625rem row gap below it.
+          closeTo(menu!.x, action!.x);
+          closeTo(menu!.y, action!.y + action!.height + 10);
+        } else closeTo(action!.y, menu!.y);
         // The content width is independent of the room left by the view menu.
         const intrinsicWidth = await ai.evaluate((button) => {
           const style = getComputedStyle(button);
@@ -536,8 +541,11 @@ for (const width of [320, 390, 768, 1440]) {
           await settled(page);
           expect(await metrics()).toEqual(before);
         }
-        // Enter the pair from the preceding header control using the keyboard.
+        // Enter the pair from the preceding controls using the keyboard. K9: close ends the 56 px bar; the lead below
+        // it holds the meta line, whose edit time takes the focus before the actions.
         await page.getByRole("button", { name: "Notizdetails schließen", exact: true }).focus();
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.matches(".k2b-detail-panel__lead time"))).toBe(true);
         await page.keyboard.press("Tab");
         expect(await ai.evaluate((button) => button.matches(":focus-visible"))).toBe(true);
         await settled(page);

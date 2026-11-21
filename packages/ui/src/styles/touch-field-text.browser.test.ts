@@ -133,7 +133,9 @@ const measure = async (styles: string, host: Host) => {
           return { fontSize: Number.parseFloat(style.fontSize), lineHeight: style.lineHeight };
         });
         // Some fields swap their presentation for the editor on focus.
-        inputs[0]?.focus();
+        // Focus without the browser scrolling the caret into view: the caret grows with the 16 px touch text, so where
+        // the browser scrolls to reveal it differs by a pixel or two while no box moves on the page.
+        inputs[0]?.focus({ preventScroll: true });
         focused[name] = boxes();
       }
       (document.activeElement as HTMLElement | null)?.blur();

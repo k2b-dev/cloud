@@ -1952,6 +1952,15 @@ html {
   border-radius: calc(var(--k2b-radius-surface) - 1px);
 }
 
+/* A paper table draws no frame of its own (one line, one owner), so its
+   viewport has no border to sit inside: it takes the surface's full radius,
+   and the shell that clips it keeps the same corner, so a table cut beside
+   the panel still ends rounded. */
+.k2b-ui .k2b-table-shell[data-surface="paper"]:has(> .k2b-detail-trail),
+.k2b-ui .k2b-table-shell[data-surface="paper"] > .k2b-detail-trail {
+  border-radius: var(--k2b-radius-surface);
+}
+
 /* A data table keeps the width it has without the panel: its columns stay
    where they are, and it scrolls instead. Beside the panel it adds the
    nominal track: where `Main` is already at its 20 rem minimum and the grid

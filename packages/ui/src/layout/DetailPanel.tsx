@@ -166,31 +166,34 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
   const menuInActions = () => Boolean(props.menu?.length) && !props.primaryActions;
   const hasLead = () => Boolean(props.kind || props.subtitle || props.meta || props.primaryActions);
   return (
-    <header class={classNames("k2b-detail-panel__header", props.class)} data-lead={hasLead() ? "true" : undefined}>
-      {/* K9: a 56 px bar with the title, "…" and close, then a hairline. */}
-      <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
-        <Show when={props.icon}>
-          {(icon) => (
-            <span class="k2b-detail-panel__header-icon" aria-hidden="true">
-              <i class={icon()} />
-            </span>
-          )}
-        </Show>
-        <Show when={props.leading}>
-          <div class="k2b-detail-panel__header-leading">{props.leading}</div>
-        </Show>
-        <div class="k2b-detail-panel__heading">
-          {/* The name comes first, beside the close button. It never wraps: a long title ends with an ellipsis, and
+    <>
+      <header class={classNames("k2b-detail-panel__header", props.class)} data-lead={hasLead() ? "true" : undefined}>
+        {/* K9: a 56 px bar with the title, "…" and close. The panel draws the hairline under it (k2b-divided), from edge
+          to edge, also across the header's scrollbar gutter. */}
+        <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
+          <Show when={props.icon}>
+            {(icon) => (
+              <span class="k2b-detail-panel__header-icon" aria-hidden="true">
+                <i class={icon()} />
+              </span>
+            )}
+          </Show>
+          <Show when={props.leading}>
+            <div class="k2b-detail-panel__header-leading">{props.leading}</div>
+          </Show>
+          <div class="k2b-detail-panel__heading">
+            {/* The name comes first, beside the close button. It never wraps: a long title ends with an ellipsis, and
               then the native hint shows all of it. */}
-          <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
-        </div>
-        <Show when={menuInActions() || props.actions}>
-          <div class="k2b-detail-panel__actions">
-            <Show when={menuInActions()}>{menuTrigger()}</Show>
-            {props.actions}
+            <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
           </div>
-        </Show>
-      </div>
+          <Show when={menuInActions() || props.actions}>
+            <div class="k2b-detail-panel__actions">
+              <Show when={menuInActions()}>{menuTrigger()}</Show>
+              {props.actions}
+            </div>
+          </Show>
+        </div>
+      </header>
       {/* K9: the first section holds the state, one meta line, and at most two framed actions with one icon button. */}
       <Show when={hasLead()}>
         <div class="k2b-detail-panel__lead">
@@ -215,7 +218,7 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           </Show>
         </div>
       </Show>
-    </header>
+    </>
   );
 };
 

@@ -3153,7 +3153,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 500;
 }
 
-.k2b-ui .k2b-field__label-row .k2b-button:is([data-variant="ghost"], [data-variant="text"]):not(:disabled):hover {
+.k2b-ui .k2b-field__label-row .k2b-button:is([data-variant="ghost"], [data-variant="text"]):not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-action-hover);
   background: transparent;
   text-decoration: underline;
@@ -3821,10 +3821,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* K9: the header is a 56 px bar with the title, "…" and close, closed by a
-   hairline. The state, one meta line, and the framed actions follow as the
-   panel's first section, closed by the next hairline. Both stand on the
-   column's text edge; the bar's trailing icon buttons end on its 12 px edge. */
+/* K9: the header is a 56 px bar with the title, "…" and close. The state, one
+   meta line, and the framed actions follow as the panel's first section, then
+   the body. The panel divides these bands (k2b-divided), so each hairline runs
+   from edge to edge of the panel, also across a scrollbar gutter. All stand
+   on the column's text edge; the bar's trailing icon buttons end on its 12 px
+   edge. */
 .k2b-ui .k2b-detail-panel__header {
   display: flex;
   min-width: 0;
@@ -3849,7 +3851,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   column-gap: 0.5rem;
   padding: 0 0.75rem 0 var(--k2b-gutter);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
 .k2b-ui .k2b-detail-panel__header-main[data-identity="true"] {
@@ -3892,14 +3893,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: -3 / -2;
 }
 
+/* The panel divides its bands (header, first section, body) like k2b-divided,
+   with the same weight: one hairline above every shown band after the first.
+   A band's border runs across its scrollbar gutter, so each line reaches
+   from edge to edge of the panel (K2, K9). */
+.k2b-ui :where(.k2b-detail-panel) > :not([hidden]) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
+}
+
 /* The first section: the state and one meta line, then the actions. */
 .k2b-ui .k2b-detail-panel__lead {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 0 0 auto;
   padding: 0.75rem var(--k2b-gutter);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
+  padding-inline-end: calc(var(--k2b-gutter) + var(--k2b-detail-panel-scroll-inset, 0rem));
 }
 
 /* One line: the subtitle ends with an ellipsis, and `meta` keeps its place at
@@ -4061,9 +4071,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-frame="line"] {
   padding: 0.75rem var(--k2b-gutter) 1rem;
-  /* One line, one owner: a section draws no outer frame; its container draws
-     the hairline between topics (k2b-divided). */
-  border: 0;
+  /* One line, one owner: a section draws no outer frame and declares no border
+     at all, so the line its container draws between topics (k2b-divided) is
+     not overruled by this rule's weight. */
   border-radius: var(--k2b-radius-flat);
   background: var(--k2b-island-surface);
   box-shadow: var(--k2b-island-shadow);
@@ -4088,7 +4098,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   )
   .k2b-section[data-frame="line"] {
   padding: 0;
-  border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -4369,8 +4378,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.75rem;
   flex: 0 0 1.75rem;
   place-items: center;
-  /* The chevron itself ends on the trailing edge, like a count or a time. */
-  margin-inline-end: -0.5rem;
+  /* The chevron ends near the trailing edge, like a count or a time, and reaches no further out of its row than an
+     icon button at a column edge (6 px, K5). */
+  margin-inline-end: -0.375rem;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
 }
@@ -5122,15 +5132,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Other content placed straight into the body, such as guidance, a button, or
    a preview, stands on the same text edge with the body's 12 px rhythm. An
    alert cell keeps its edge-to-edge tint (K10). */
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, .k2b-notice-card, .k2b-notice-card-container) {
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container) {
   margin-inline: var(--k2b-gutter);
 }
 
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group):first-child {
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style):first-child {
   margin-top: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
+.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style) {
   margin-top: 0.75rem;
 }
 
@@ -5596,7 +5606,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The generic small-button selector is more specific than the base action
  * class, so keep the shared action explicitly flush with its section. Its
- * hover fill reaches 0.5rem past both text edges, into the panel's gutter,
+ * hover fill reaches 6 px past both text edges, into the section's inset,
  * so the text itself never moves. */
 .k2b-ui .k2b-button.k2b-detail-panel__action {
   padding: 0.375rem 0;
@@ -5606,7 +5616,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The fill lives on the label, not the button: the button's own pseudo
    elements stay reserved for touch hit areas. It covers the row's full height
-   and reaches 0.5rem past both text edges. */
+   and reaches 6 px past both text edges. */
 .k2b-ui .k2b-detail-panel__action > .k2b-button__label {
   position: relative;
   isolation: isolate;
@@ -5616,7 +5626,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: absolute;
   z-index: -1;
   inset-block: -0.375rem;
-  inset-inline: -0.5rem;
+  /* 6 px past the text edge: inside the 7 px a control may reach out of its box (K5, layoutProblems). */
+  inset-inline: -0.375rem;
   border-radius: var(--k2b-radius-control);
   background: transparent;
   content: "";
@@ -22534,7 +22545,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-ai-suggestion {
-    min-height: 1.125rem;
+    min-height: var(--k2b-h-label);
     flex-basis: 100%;
     justify-content: flex-start;
   }
@@ -22629,9 +22640,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   top: 0;
   right: 0;
   max-width: 40%;
-  height: 1.125rem;
+  height: var(--k2b-h-label);
   font-size: 0.8125rem;
-  line-height: 1.125rem;
+  line-height: var(--k2b-h-label);
   text-align: end;
 }
 

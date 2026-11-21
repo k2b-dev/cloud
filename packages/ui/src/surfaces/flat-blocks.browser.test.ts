@@ -48,6 +48,11 @@ render(() => createComponent(DetailPanel, { get children() { return createCompon
   createComponent(Section, { title: "Items", icon: "ti ti-box", count: 2, get children() { return createComponent(DataTable, { columns, rows, ariaLabel: "Panel items" }); } }),
   createComponent(Section, { title: "Notes", icon: "ti ti-notes", children: "Collect on Friday." }),
 ]; } }); } }), document.getElementById("panel"));
+// A page whose container divides its topics: each section stands on the container's one line.
+render(() => [
+  createComponent(Section, { title: "Contact", size: "md", children: "Mira Solberg" }),
+  createComponent(Section, { title: "Notes", size: "md", children: "Collect on Friday." }),
+], document.getElementById("divided"));
 render(() => createComponent(RowGroup, { title: "Today", count: 3, get children() { return [
   row("Call the carrier"),
   createComponent(NoticeCard, { tone: "yours", icon: true, title: "The receipt waits for a signature.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) }),
@@ -74,7 +79,7 @@ const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div><div id="panel" style="width:380px"></div><div id="list"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div><div id="panel" style="width:380px"></div><div id="list"></div><div id="divided" class="k2b-divided"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#a3").waitFor();
@@ -265,6 +270,25 @@ describe("Cloud flat building blocks", () => {
         await page.close();
       }
     });
+
+  test("a section in a k2b-divided container has exactly the container's one line", async () => {
+    const page = await load(1440);
+    try {
+      const lines = await page.locator("#divided > .k2b-section").evaluateAll((sections) =>
+        sections.map((section) => {
+          const style = getComputedStyle(section);
+          return [style.borderTopWidth, style.borderTopStyle, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth];
+        }),
+      );
+      expect(lines).toEqual([
+        ["0px", "none", "0px", "0px", "0px"],
+        ["1px", "solid", "0px", "0px", "0px"],
+      ]);
+      expect((await page.evaluate(layoutProblems, { root: "#divided" })).double).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
 
   test("an empty or failed area shows a round sign and no box", async () => {
     const page = await load(1440);

@@ -57,7 +57,9 @@
   --k2b-surface-beneath: var(--k2b-island-surface);
 }
 
+/* A standalone page card sits on the canvas like the app card (K4): 14 px. */
 .k2b-ui .k2b-paper[data-elevated="true"] {
+  border-radius: var(--k2b-radius-card);
   box-shadow: var(--k2b-shadow-frame);
 }
 
@@ -623,11 +625,14 @@
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) :is(.k2b-notice-card__head, .k2b-notice-card__description) { grid-column: 1; }
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-actions], [data-reserve]) { grid-template-rows: auto auto; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-reserve] { /* Two title lines + two quiet lines + their gap + a 40px action area,
-       with 12px between text and controls and the row's two 11px insets. */
+       with 12px between text and controls and the row's two 8px insets. */
     block-size: calc(2 * var(--k2b-notice-title-line) + 2 * var(--k2b-notice-detail-line) + .125rem + 2.5rem + .75rem + 1rem); }
   .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
-  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; margin: 0; padding: 0; }
+  /* K15: two actions share a row at equal width while both labels fit; when one does not, each takes a row. A label
+     never wraps. */
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions > * { flex: 1 1 calc(50% - .25rem); min-width: max-content; }
   /* A final row sizes to its contents, including stable controls. The empty third track belongs only to the
      transition reserve; keeping it here would leave 8px plus an extra row gap above a receipt's actions. */
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }

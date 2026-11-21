@@ -332,7 +332,8 @@ const measure = () => {
     },
     headerMeta: (() => {
       const meta = document.querySelector("#one .k2b-detail-panel__meta")!;
-      const subtitle = document.querySelector("#one .k2b-detail-panel__heading p")!;
+      // K9: the subtitle and meta share the panel's first section (the lead), below the 56 px bar.
+      const subtitle = document.querySelector("#one .k2b-detail-panel__supporting > p")!;
       return [style(meta).fontSize, style(subtitle).fontSize, box(meta).top === box(subtitle).top ? "one line" : "wrapped"];
     })(),
     narrowHeader: (() => {
@@ -354,6 +355,13 @@ const measure = () => {
       return {
         tint: style(document.querySelector("#hosted")!).backgroundColor,
         frame: style(document.querySelector("#hosted .k2b-detail-panel__body > .k2b-section")!).backgroundColor,
+        field: (() => {
+          const probe = document.querySelector("#hosted")!.appendChild(document.createElement("span"));
+          probe.style.backgroundColor = "var(--k2b-surface)";
+          const color = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return color;
+        })(),
         grouped: well(".k2b-detail-panel__group .k2b-input-shell"),
         lone: well(".k2b-detail-panel__body > .k2b-section .k2b-input-shell"),
         composer: well(".k2b-discussion__composer-field .k2b-markdown-editor"),
@@ -373,8 +381,14 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
             const bodyRect = body.getBoundingClientRect();
             const left = bodyRect.left + body.clientLeft;
-            // The body keeps a gutter for row hover fills; content starts after it.
-            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft);
+            // Cloud flach K5a, K9: the body has no inset; every topic stands on the column's text edge, one
+            // `--k2b-gutter` (20 px, 16 px on a phone) inside the scrollport.
+            const gutterProbe = document.createElement("span");
+            gutterProbe.style.cssText = "display:block;width:var(--k2b-gutter)";
+            body.append(gutterProbe);
+            const gutter = gutterProbe.getBoundingClientRect().width;
+            gutterProbe.remove();
+            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft) + gutter;
             const top = bodyRect.top + body.clientTop;
             const probe = document.createElement("span");
             probe.style.color = "var(--k2b-success-text)";
@@ -510,12 +524,14 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([0, 0, 0]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
           // Inside a section it starts on the section's text edge, after the icon column, and adds no inset of its own.
-          expect(result.inSection).toEqual({ left: 30, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+          // Cloud flach K9: the title's text edge is the 20 px icon column plus the 8 px gap, so 28 px.
+          expect(result.inSection).toEqual({ left: 28, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
-          // Hosted in a tinted dialog group, the lone section and the discussion are frames like a
-          // group. Their fields are white with their own edge, as on every surface.
-          expect(result.hosted.tint).not.toBe(result.hosted.frame);
-          expect(result.hosted.grouped).toBe(result.hosted.frame);
+          // Hosted in a tinted dialog group, the panel's topics stay flat (Cloud flach K9, K14: they paint no
+          // surface of their own). Their fields are white with their own edge, as on every surface.
+          expect(result.hosted.frame).toBe("rgba(0, 0, 0, 0)");
+          expect(result.hosted.tint).not.toBe(result.hosted.field);
+          expect(result.hosted.grouped).toBe(result.hosted.field);
           expect(result.hosted.lone).toBe(result.hosted.grouped);
           expect(result.hosted.composer).toBe(result.hosted.grouped);
 
@@ -528,8 +544,11 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           // The one text edge belongs to panels: a section outside one keeps its full width.
           expect(result.looseIndent).toBe("0px");
 
-          // Outside a detail panel the default discussion is its own card; bare draws nothing.
-          expect(result.standalone.border).toBe("1px");
+          // Outside a detail panel the default discussion keeps its own surface and inset, but draws no outer frame
+          // (Cloud flach "one line, one owner": a section never draws its own border); bare draws nothing.
+          expect(result.standalone.border).toBe("0px");
+          expect(result.standalone.background).not.toBe("rgba(0, 0, 0, 0)");
+          expect(result.standalone.padding).toBe("12px");
           expect(result.bare).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", padding: "0px" });
         } finally {
           await page.close();

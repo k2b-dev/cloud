@@ -93,8 +93,9 @@ describe("Section", () => {
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // One line, one owner: a page section draws no outer frame; its container draws the hairline between topics.
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border: 0;");
+    // One line, one owner: a page section draws no outer frame and declares no border, so the line a `k2b-divided`
+    // container draws between its children is not overruled by the section's own weight.
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).not.toMatch(/(^|[;\s])border(-(top|block-start|width|style|color))?:/);
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");
@@ -108,7 +109,7 @@ describe("Section", () => {
     ]) {
       expect(flatten?.[1]).toContain(host);
     }
-    expect(flatten?.[2]).toContain("border: 0;");
+    expect(flatten?.[2]).not.toMatch(/(^|[;\s])border(-(top|block-start|width|style|color))?:/);
     expect(feedbackCss).toMatch(/\.k2b-ui \.k2b-dialog \.k2b-section\[data-frame="line"\] \{[^}]*border: 0;/);
   });
 

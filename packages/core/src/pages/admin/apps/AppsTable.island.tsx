@@ -99,8 +99,9 @@ export default function AppsTable(props: {
       { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: "w-36 min-w-36" },
       { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: `w-24 ${wide}` },
       { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] ${wide}` },
-      // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail.
-      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}` },
+      // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail; where
+      // even that does not fit, the column leaves before the row grows (K15) and stays one tap away in the row's details.
+      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}`, priority: props.selected ? 3 : 1 },
     ];
     return props.selected ? all.filter((column) => column.id !== "version" && column.id !== "address") : all;
   };
