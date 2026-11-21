@@ -46,7 +46,7 @@ export const appAccessMessages = i18n.define({
       cancel: "Cancel",
       remove: "Remove",
       change: "Change",
-      add: "Add a person, group, agent or service account",
+      add: "Add a person, group or agent",
       signedIn: "All signed-in people",
       signedInDescription: "Every person with an account in this Cloud, including guests",
       group: ({ count }: { count: number }) =>
@@ -128,7 +128,7 @@ export const appAccessMessages = i18n.define({
       cancel: "Abbrechen",
       remove: "Entfernen",
       change: "Ändern",
-      add: "Person, Gruppe, Agenten oder Dienstkonto hinzufügen",
+      add: "Person, Gruppe oder Agenten hinzufügen",
       signedIn: "Alle angemeldeten Personen",
       signedInDescription: "Jede Person mit Konto in dieser Cloud, auch Gäste",
       group: ({ count }: { count: number }) =>

@@ -24,11 +24,6 @@ const ownerKeys = [
   "user.category.freeipa.enabled",
   "user.category.freeipa.visible",
 
-  "assistant.rsql_url",
-  "assistant.rsql_api_token",
-  "assistant.rsql_allowed_targets",
-  "assistant.storage_file_mib",
-  "assistant.storage_total_mib",
   "pulse.clickhouse_connection",
   "pulse.max_bases",
   "pulse.max_raw_retention_days",
@@ -77,6 +72,45 @@ test("application-owned settings retain their owning write paths through the gen
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ message: "This setting must be changed through its application API" });
+    }
+    expect(update).not.toHaveBeenCalled();
+  } finally {
+    update.mockRestore();
+  }
+});
+
+test("retired Studio settings remain unknown and cannot write through the generic settings route", async () => {
+  const retiredKeys = [
+    "assistant.rsql_url",
+    "assistant.rsql_api_token",
+    "assistant.rsql_allowed_targets",
+    "assistant.storage_file_mib",
+    "assistant.storage_total_mib",
+  ];
+  const update = spyOn(settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
+  try {
+    const user = buildProjectedUser({
+      id: "11111111-1111-4111-8111-111111111111",
+      provider: "local",
+      profile: "user",
+      effective_admin: true,
+    });
+    // Even a stale caller's allowlist must not revive a removed registry entry.
+    const app = new Hono<AuthContext>()
+      .use("*", async (c, next) => {
+        c.set("user", user);
+        c.set("credentialKind", "session");
+        return next();
+      })
+      .route("/", createSettingsOpsRoutes(retiredKeys));
+    for (const key of retiredKeys) {
+      const response = await app.request(`/${key}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: "unvalidated" }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ message: "Unknown application setting" });
     }
     expect(update).not.toHaveBeenCalled();
   } finally {

@@ -51,7 +51,10 @@ export type InvocationPrincipalClaims = Pick<
   | "mandate_revision"
   | "workload_type"
   | "workload_id"
+  | "workload_run"
+  | "workload_generation"
   | "workload_event"
+  | "workload_trigger"
   | "parent_invocation_id"
 >;
 
@@ -68,6 +71,9 @@ const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor
         mandateRevision: claims.mandate_revision,
         workloadType: claims.workload_type,
         workloadId: claims.workload_id,
+        ...(claims.workload_run ? { workloadRun: claims.workload_run } : {}),
+        ...(claims.workload_generation ? { workloadGeneration: claims.workload_generation } : {}),
+        ...(claims.workload_trigger !== undefined ? { workloadTrigger: claims.workload_trigger } : {}),
         ...(claims.workload_event ? { workloadEvent: claims.workload_event } : {}),
       }
     : {}),
@@ -137,6 +143,36 @@ export const resolveInvocationAuthority = async (
       if (!mandate) return null;
     }
   }
+  // Provider-side revalidation covers personal Code too. The signed run identifies
+  // the attempt Core admitted; no session, API key, or scope substitutes for it.
+  if (claims.workload_type === "code.version") {
+    if (
+      claims.credential_kind !== "mandate" ||
+      !claims.mandate_id ||
+      !claims.mandate_revision ||
+      !claims.workload_id ||
+      (!claims.workload_run && !claims.workload_event) ||
+      claims.scopes.length !== 0
+    )
+      return null;
+  }
+  // Keep provider/issuance admission current, but read the mandate and service
+  // principal in one statement. Personal principals retain their own projection.
+  const codeMandateCurrent =
+    claims.workload_type === "code.version"
+      ? sql`EXISTS (
+      SELECT id FROM auth.mandates
+      WHERE id=${claims.mandate_id}::uuid AND revision=${claims.mandate_revision}
+        AND owner_app_id IN ('core','runner') AND workload_type='code.version' AND workload_id=${claims.workload_id}
+        AND state='active' AND confirmed_at IS NOT NULL AND (expires_at IS NULL OR expires_at>now())
+        AND subject_kind=${claims.principal_type}
+        AND COALESCE(subject_user_id,subject_service_account_id)=${claims.sub}::uuid
+  )`
+      : sql`true`;
+  if (claims.workload_type === "code.version" && claims.principal_type === "user") {
+    const [entry] = await query`SELECT 1 WHERE ${codeMandateCurrent}`;
+    if (!entry) return null;
+  }
   const groupsAdmin = groupsAdminOverride ?? (await getIdentityRuntimeConfig()).groupsAdmin;
   const delegation = provenance(claims);
 
@@ -173,12 +209,24 @@ export const resolveInvocationAuthority = async (
     LEFT JOIN auth.users u ON u.id = sa.delegated_user_id
     ${userProjectionJoin()}
     WHERE sa.id = ${claims.sub}::uuid
-      AND sa.status = 'active'
+      AND sa.status = 'active' AND ${codeMandateCurrent}
   `;
   const row = rows[0];
   if (!row) return null;
 
   const serviceAccount = mapServiceAccount(row);
+  if (serviceAccount.kind === "code") {
+    if (
+      claims.credential_kind !== "mandate" ||
+      !claims.mandate_id ||
+      !claims.mandate_revision ||
+      claims.workload_type !== "code.version" ||
+      !claims.workload_id ||
+      claims.scopes.length !== 0
+    )
+      return null;
+  }
+
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
   if (delegatedUser && !(await isAccountAllowed(delegatedUser, query))) return null;
@@ -193,7 +241,10 @@ export const resolveInvocationAuthority = async (
     kind: "service_account",
     serviceAccount,
     delegatedUser,
-    scopes: [...claims.scopes],
+    // Legacy app resolvers intersect their live grants with actor.scopes. The mandate
+    // replaces credential scopes for Code; project only a non-admin compatibility ceiling.
+    // Signed claims and RequestAuthority.scopes stay empty. This grants no resource access.
+    scopes: serviceAccount.kind === "code" ? ["read", "write"] : [...claims.scopes],
     credentialId: claims.credential_id ?? null,
     oauthClientId: claims.oauth_client_id ?? null,
     credentialExpiresAt: new Date(

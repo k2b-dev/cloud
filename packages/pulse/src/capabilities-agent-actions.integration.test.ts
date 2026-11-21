@@ -81,7 +81,8 @@ suiteFor("database")("agent base actions enforce current policy, grants and revi
       const read = await pulseCapabilities.queries["base.read"].run({ id: made.data.data.id }, context);
       if (!read.ok) throw new Error(read.error.message);
       expect(read.data.data.updatedAt).toBe("2026-10-20T12:00:00.123456Z");
-      const destroy = { baseId: made.data.data.id, expectedUpdatedAt: read.data.data.updatedAt };
+      context.target = { type: "pulse.base", id: made.data.data.id };
+      const destroy = { expectedUpdatedAt: read.data.data.updatedAt };
       for (const name of ["base.clear_data", "base.delete"] as const) {
         const action = pulseCapabilities.actions[name];
         const review = await action.review(destroy, context);

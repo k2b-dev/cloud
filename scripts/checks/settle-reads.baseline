@@ -1,18 +1,12 @@
 # Known settle-reads findings, one per file: <file> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts settle-reads --fix` lowers counts whose findings are gone.
-packages/assistant/src/artifacts/advanced.browser.test.ts | 1
-packages/assistant/src/artifacts/apps.browser.test.ts | 1
-packages/assistant/src/artifacts/html/html-app.browser.test.ts | 4
-packages/assistant/src/artifacts/sidebar-dropdown.browser.test.ts | 2
-packages/assistant/src/artifacts/workspace.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantChatSidebar.browser.test.ts | 12
 packages/assistant/src/frontend/AssistantProjectView.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantSidebar.browser.test.ts | 1
 packages/assistant/src/frontend/composer-insert.browser.test.ts | 2
 packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/ai/chat/live-turn.browser.test.ts | 40
-packages/cloud/src/browser/CloudResourceSearch.browser.test.ts | 1
 packages/cloud/src/ssr/LayoutHeader.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHelp.browser.test.ts | 3
 packages/cloud/src/ssr/LayoutHelp.hydration.browser.test.ts | 1

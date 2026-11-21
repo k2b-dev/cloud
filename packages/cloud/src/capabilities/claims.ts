@@ -1,6 +1,6 @@
 import { sql } from "../runtime/clients";
-
 import { logger } from "../services/logging";
+import { capabilityValueDigest } from "./calls";
 
 const log = logger("capabilities:claims");
 
@@ -53,20 +53,10 @@ export const CAPABILITY_CLAIM_RETENTION_HOURS = 24;
  */
 export const CAPABILITY_CLAIM_MAX_BODY_BYTES = 256 * 1024;
 
-/** Stable JSON with sorted object keys, so equal inputs hash equally whatever order the caller sent. */
-const canonicalJson = (value: unknown): string => {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
-};
+/** Hash of a JSON value. Resource-bound request consumers use capabilityCallDigest instead. */
+export const capabilityRequestHash = capabilityValueDigest;
 
 const sha256 = (value: string): string => new Bun.CryptoHasher("sha256").update(value).digest("hex");
-
-/** Hash of the validated capability input. Two calls with the same key must carry the same hash. */
-export const capabilityRequestHash = (input: unknown): string => sha256(canonicalJson(input));
 
 export const capabilityIdempotencyKeyHash = (key: string): string => sha256(key);
 
@@ -78,10 +68,15 @@ type ClaimRow = { state: CapabilityClaimState; request_hash: string; response_st
  * or still unknown.
  */
 export const claimCapabilityIdempotency = async (scope: CapabilityClaimScope, requestHash: string): Promise<CapabilityClaimOutcome> => {
+  // A key holds for the retention window from its first claim; afterwards the same key starts a new
+  // call at once, atomically, without waiting for the retention sweep to delete the old row.
   const [inserted] = await sql<{ inserted: boolean }[]>`
     INSERT INTO capabilities.idempotency_claims (app_id, capability, principal, key_hash, request_hash, state)
     VALUES (${scope.appId}, ${scope.capability}, ${scope.principal}, ${scope.keyHash}, ${requestHash}, 'in_flight')
-    ON CONFLICT (app_id, capability, principal, key_hash) DO NOTHING
+    ON CONFLICT (app_id, capability, principal, key_hash) DO UPDATE
+      SET request_hash = EXCLUDED.request_hash, state = 'in_flight', response_status = NULL, response_body = NULL,
+        created_at = now(), updated_at = now()
+      WHERE capabilities.idempotency_claims.created_at <= now() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})
     RETURNING true AS inserted
   `;
   if (inserted) return { state: "claimed" };

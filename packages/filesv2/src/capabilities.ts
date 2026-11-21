@@ -1,3 +1,4 @@
+import type { BlockView } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CloudResourceReaderViewSchema,
@@ -5,8 +6,10 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
+import { previewSourceKind } from "@k2b/cloud/shared";
 import { FilegateError } from "@k2b/filegate";
-import { err, fail, fileIcons, ok } from "@k2b/stdlib";
+import { dates, err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { activityQueries } from "./activity-capabilities";
 import { apiError } from "./api/api-error";
@@ -23,6 +26,7 @@ import { capabilityCall } from "./files-call";
 import { filesUrl } from "./frontend/urls";
 import { ENTRY_TYPE, FOLDER_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";
+import { templateService } from "./service/templates";
 
 const EntryReadInputSchema = z
   .object({ id: z.string().min(1).max(512).describe("Entry ID from a filesv2.entry ref or search result.") })
@@ -49,6 +53,7 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
   directory ? filesUrl(baseId, path) : filesUrl(baseId, parent(path), null, path);
 
 export const filesCapabilities = defineCapabilities({
+  sdkExportName: "files",
   protocolVersion: 2,
   events: filesEvents,
   subscribes: {
@@ -62,6 +67,18 @@ export const filesCapabilities = defineCapabilities({
   },
   presentation: filesCapabilityPresentation,
   types: {
+    storage: {
+      title: "Machine storage",
+      description: "A managed machine storage base.",
+      reader: "storage.read",
+      access: { managers: (input) => listFilesManagers(input, "storage") },
+    },
+    template: {
+      title: "File template",
+      description: "A managed file template.",
+      reader: "template.read",
+      access: { managers: (input) => listFilesManagers(input, "template") },
+    },
     folder: {
       title: "Folder",
       description: "A folder or storage root whose discussion contains its entries’ threads.",
@@ -81,6 +98,44 @@ export const filesCapabilities = defineCapabilities({
   discussions: { item: "entry", containers: "folder.containers" },
   actions: fileActions,
   queries: {
+    "storage.read": {
+      title: "Read machine storage",
+      description: "Read one machine storage base after the same administrator check as its share editor.",
+      input: z.object({ id: z.uuid().describe("Machine storage ID from the administration list.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      async run(input, context) {
+        try {
+          const storage = await filesService.machineStorageById(capabilityCall(context), input.id);
+          return ok({
+            data: { view: { title: storage.owner.name, permission: "admin" as const } },
+            links: [{ rel: "open" as const, href: "/admin/filesv2?view=settings" }],
+          });
+        } catch (error) {
+          if (!(error instanceof FilesError)) throw error;
+          return fail(err.forbidden("Access denied"));
+        }
+      },
+    },
+    "template.read": {
+      title: "Read file template",
+      description: "Read template metadata after the same management check as its share dialog.",
+      input: z.object({ id: z.uuid().describe("Template ID from the template administration list or a filesv2.template ref.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      async run(input, context) {
+        try {
+          const template = await templateService.read(capabilityCall(context), input.id);
+          return ok({
+            data: { view: { title: template.name, permission: "admin" as const } },
+            links: [{ rel: "open" as const, href: "/admin/filesv2?view=templates" }],
+          });
+        } catch (error) {
+          if (!(error instanceof FilesError)) throw error;
+          return fail(err.forbidden("Access denied"));
+        }
+      },
+    },
     ...discussionQueries,
     "folder.read": {
       title: "Read discussion folder",
@@ -120,7 +175,48 @@ export const filesCapabilities = defineCapabilities({
           const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
           const t = filesCapabilityMessages(context.locale);
           const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
+          const revision = markdownRevision(result.entry);
+          // A picture comes from Files' own route, which checks the reader's access again on every request. Its 4:3
+          // place stands while the picture loads and when it cannot be shown.
+          const image =
+            !result.entry.directory && previewSourceKind(result.entry.name) === "image"
+              ? [
+                  {
+                    kind: "Image" as const,
+                    src: `/api/filesv2/entries/${encodeURIComponent(input.id)}/image?${new URLSearchParams({ rev: revision })}`,
+                    alt: result.entry.name,
+                    ratio: 4 / 3,
+                  },
+                ]
+              : [];
+          const view: BlockView = {
+            version: 1,
+            blocks: [
+              ...image,
+              {
+                kind: "Detail",
+                title: t.previewDetails,
+                items: [
+                  { label: t.size, value: result.entry.size, format: { unit: "B" } },
+                  {
+                    label: t.previewModified,
+                    // A capability carries no reader zone: the installation's (`app.timezone`), as in Mail's previews, with
+                    // the setting's own default when it is empty or invalid.
+                    value: dates.formatDateTime(result.entry.modified, {
+                      locale: context.locale,
+                      timeZone: dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "Europe/Berlin"),
+                    }),
+                  },
+                  {
+                    label: t.previewFolder,
+                    value: `${result.base.name}${parent(result.entry.path) ? ` / ${parent(result.entry.path)}` : ""}`,
+                  },
+                ],
+              },
+            ],
+          };
           return ok({
+            view,
             refs: [
               {
                 type: ENTRY_TYPE,
@@ -134,7 +230,7 @@ export const filesCapabilities = defineCapabilities({
               id: input.id,
               base: { id: result.base.id, name: result.base.name, area: result.base.area },
               ...result.entry,
-              revision: markdownRevision(result.entry),
+              revision,
               href: entryHref(result.base.id, result.entry.path, result.entry.directory),
               view: CloudResourceReaderViewSchema.required({ container: true }).parse({
                 ...result.view,
@@ -243,3 +339,5 @@ export const filesCapabilities = defineCapabilities({
   },
   fileProvider: { list: "provider.list", read: "content.read", save: "provider.save" },
 });
+
+import { listFilesManagers } from "./service/manager-recipients";

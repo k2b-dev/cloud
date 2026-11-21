@@ -8,7 +8,7 @@ import BaseSwitcher from "./BaseSwitcher.island";
 import GridsNavigation from "./GridsNavigation.island";
 import GroupedNavigation from "./GroupedNavigation.island";
 import { workspaceMessages } from "./messages";
-import { activeNavigationKey, navigationResources } from "./navigation-catalog";
+import { activeNavigationKey, navigationResources, navigationState } from "./navigation-catalog";
 import type {
   PublicOkWorkspaceState,
   PublicWorkspaceQueryResultViewRoute,
@@ -233,7 +233,7 @@ export default function GridsSidebar(props: { userId?: string; state: PublicOkWo
 
   return (
     <>
-      <GridsNavigation canCreate={Boolean(props.userId)} state={state} />
+      <GridsNavigation canCreate={Boolean(props.userId)} state={navigationState(state)} />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
           <BaseSwitcher canCreate={Boolean(props.userId)} base={{ id: state.base.id, name: state.base.name }} />

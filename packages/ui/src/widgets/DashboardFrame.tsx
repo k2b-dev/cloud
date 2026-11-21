@@ -18,6 +18,11 @@ export type DashboardFrameProps = {
    * such as `ChartExplorer` with `inset="1rem"`.
    */
   title?: string;
+  /**
+   * One quiet line under the body, in every state, such as how many rows a search finds. It keeps its place while the
+   * content loads, fails or is empty, so nothing moves when it arrives.
+   */
+  footer?: JSX.Element;
   /** One line under the title; loading and stale notes take its place, so nothing moves. */
   subtitle?: JSX.Element;
   /** Level of the title heading; defaults to 3. */
@@ -155,6 +160,11 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
               <div class="k2b-dashboard-frame__content">{props.children}</div>
             </Show>
           </div>
+        </Show>
+        <Show when={props.footer !== undefined}>
+          <p class="k2b-dashboard-frame__footer" role="status">
+            {props.footer}
+          </p>
         </Show>
       </Paper>
     </Show>

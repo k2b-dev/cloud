@@ -97,6 +97,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.panel.requiresRoles !== undefined && !isStringArray(value.panel.requiresRoles)) {
       return invalid("panel.requiresRoles", "an array of strings");
     }
+    if (value.panel.order !== undefined && !Number.isSafeInteger(value.panel.order)) return invalid("panel.order", "a safe integer");
+    if (value.panel.code !== undefined && typeof value.panel.code !== "boolean") return invalid("panel.code", "a boolean");
   }
   if (value.adminNav !== undefined) {
     if (

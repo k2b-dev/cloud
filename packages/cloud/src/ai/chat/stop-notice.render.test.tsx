@@ -15,7 +15,7 @@ const renderHistory = (messages: AiStoredMessage[], activeTurn: AiActiveTurn | n
       locale: "de",
       get children() {
         return createComponent(AiChatActionsProvider, {
-          actions: { onContinueTurn: () => {} },
+          actions: { onContinueTurn: () => {}, onRetryMessage: () => {} },
           get children() {
             const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => activeTurn });
             return createComponent(Chat.Timeline, {
@@ -36,6 +36,9 @@ test("reload SSR shows a completed max_tokens answer with the reasoning clause a
   expect(html).toContain("Die Antwort wurde abgeschnitten");
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
   expect(html).toContain("Weiterschreiben");
+  // v12 05: the notice has its sign, says what stays, and continuing is a real button, not a bare text link.
+  expect(html).toContain("ti-alert-triangle");
+  expect(html).toMatch(/<button[^>]*data-variant="secondary"[^>]*>[\s\S]*?Weiterschreiben/);
   expect(html).not.toContain("max_tokens");
   expect(messages[0]?.loopDoneReason).toBe("stop");
 });
@@ -53,4 +56,105 @@ test("an answer with no visible text still renders the truncation notice", () =>
   const html = renderHistory([{ ...truncatedAnswer, message: { role: "assistant", content: [], stopReason: "max_tokens" } }]);
   expect(html).toContain("Die Antwort wurde abgeschnitten");
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
+});
+
+test("an automatic review start keeps an early model failure visible without offering another automatic continuation", () => {
+  const start: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "review-start",
+    seq: 1,
+    message: { role: "user", content: ["Gustav startet von selbst, einmal."] },
+    stopReason: null,
+    usage: null,
+    meta: {
+      codeReviewStart: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" },
+      turnError: { code: "model_unavailable" },
+    },
+  };
+  const html = renderHistory([start]);
+  expect(html).toContain("Gustav startet von selbst");
+  expect(html).toContain("Der KI-Dienst hat nicht geantwortet.");
+  expect(html).not.toContain("Weiterschreiben");
+  const truncated = renderHistory([{ ...start, meta: { codeReviewStart: start.meta!.codeReviewStart } }, truncatedAnswer]);
+  expect(truncated).toContain("Die Antwort wurde abgeschnitten");
+  expect(truncated).not.toContain("Weiterschreiben");
+});
+
+test("a turn the person stopped shows only the quiet stopped line, never the abort notice; Cloud's own end keeps it", () => {
+  const stopped = renderHistory([
+    {
+      ...truncatedAnswer,
+      message: { role: "assistant", content: [{ type: "text", text: "Teil" }], stopReason: "aborted" },
+      stopReason: "aborted",
+      loopDoneReason: "aborted",
+      usage: null,
+    },
+  ]);
+  expect(stopped).not.toContain("Die Antwort wurde abgebrochen.");
+  expect(stopped).not.toContain("Weiterschreiben");
+  // Cloud's own end of an answer keeps its notice: here the output limit, with continuing as a button.
+  expect(renderHistory([truncatedAnswer])).toContain("Weiterschreiben");
+});
+
+test("a stopped automatic review cannot offer to answer an earlier personal message again", () => {
+  const prompt: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "previous-question",
+    loopId: "previous-turn",
+    seq: 1,
+    message: { role: "user", content: ["Prüfe meine Version."] },
+    meta: { turnError: { code: "model_unavailable" } },
+  };
+  const start: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "review-start",
+    seq: 2,
+    message: { role: "user", content: ["Gustav überarbeitet jetzt Version 5."] },
+    meta: { codeReviewStart: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" } },
+  };
+  const stopped: AiStoredMessage = {
+    ...truncatedAnswer,
+    seq: 3,
+    message: { role: "assistant", content: [{ type: "text", text: "Ich prüfe die Version." }], stopReason: "interrupted" },
+    stopReason: "interrupted",
+    loopDoneReason: "aborted",
+  };
+  expect(renderHistory([prompt, { ...stopped, loopId: prompt.loopId }])).toContain("Neu antworten");
+  const review = renderHistory([prompt, start, stopped]);
+  expect(review).toContain("Du hast gestoppt");
+  expect(review).not.toContain("Neu antworten");
+});
+test("an automatic budget stop survives reload as a grey pause and offers only explicit continuation", () => {
+  const paused: AiStoredMessage = {
+    ...truncatedAnswer,
+    stopReason: "stop",
+    message: { role: "assistant", content: [] },
+    meta: { automationTurnStop: { reason: "model_calls" } },
+  };
+  const html = renderHistory([paused]);
+  expect(html).toContain("Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.");
+  expect(html).toContain("Was bis hier steht, bleibt erhalten.");
+  // Pause v10: a note from Cloud, grey with the pause sign, never the warning colour or its triangle.
+  expect(html).toMatch(
+    /class="k2b-notice-card[^"]*ai-turn__notice[^"]*"[^>]*data-tone="neutral"|data-tone="neutral"[^>]*class="[^"]*ai-turn__notice/,
+  );
+  expect(html).toContain("ti-player-pause");
+  expect(html).not.toContain("ti-alert-triangle");
+  expect(html).not.toContain('data-tone="warning"');
+  expect(html).toMatch(/<button[^>]*data-variant="secondary"[^>]*>[\s\S]*?Weiterarbeiten/);
+  expect(html).not.toContain("Mit einer neuen Nachricht geht es weiter.");
+  expect(html).not.toContain("code_authoring");
+  // Once a newer message follows, the button is gone and one sentence says how the work goes on.
+  const next: AiStoredMessage = {
+    ...paused,
+    id: "next",
+    seq: 3,
+    loopId: "next-turn",
+    message: { role: "user", content: ["Danke"] },
+    meta: {},
+  };
+  const overtaken = renderHistory([paused, next]);
+  expect(overtaken).toContain("Was bis hier steht, bleibt erhalten. Mit einer neuen Nachricht geht es weiter.");
+  expect(overtaken).not.toContain("Weiterarbeiten");
+  expect(overtaken).not.toContain("ti-alert-triangle");
 });

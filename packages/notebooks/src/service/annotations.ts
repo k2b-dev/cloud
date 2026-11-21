@@ -34,11 +34,12 @@ import { getNotebookPermission } from "./access";
 import * as activity from "./activity";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
 import { COMMENT_MUTATION_WINDOW_MS } from "./comments";
+import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 import * as workspaceEvents from "./workspace-events";
 
 export type AnnotationContext = Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "requestId" | "signal"> &
-  Partial<Pick<CapabilityExecutionContext, "origin" | "authority">>;
+  Partial<Pick<CapabilityExecutionContext, "origin" | "authority" | "target">>;
 const messages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -118,6 +119,10 @@ export const authorize = async (noteId: string, context: AnnotationContext, writ
   context.signal.throwIfAborted();
   const note = await notes.getByShortId({ shortId: noteId });
   if (!note) return notFound(context);
+  if (context.target) {
+    const notebook = await notebooks.get({ id: note.notebookId });
+    if (context.target.type !== "notebooks.notebook" || context.target.id !== notebook?.shortId) return notFound(context);
+  }
   const subject = context.accessSubject;
   if (context.actor.kind === "service_account") {
     const account = context.actor.serviceAccount;

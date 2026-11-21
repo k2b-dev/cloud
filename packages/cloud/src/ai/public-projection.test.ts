@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { visibleMessages } from "./client/projection";
-import type { AiWireEvent } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiWireEvent, withCurrentAppNames } from "./public-projection";
+import { type AiWireEvent, buildBlocksFromMessages } from "./protocol";
+import { messagesNeedChoiceContext, projectPublicAiStoredMessages, publicAiWireEvent, withCurrentAppNames } from "./public-projection";
 import type { AiStoredMessage } from "./types";
 
 const stored = (id: string, role: Extract<Message["role"], "user" | "assistant">, loopId: string | null): AiStoredMessage => ({
@@ -96,6 +97,18 @@ describe("public AI message projection", () => {
     });
   });
 
+  test("Code run input stays with execution, never with public history or agent reads", () => {
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    const raw: AiStoredMessage = {
+      ...stored("code-call", "assistant", "internal-turn"),
+      message: { role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: source, inputPaths: [] } }] },
+    };
+    const messages = projectPublicAiStoredMessages([raw], "chat", new Map([["internal-turn", "turn"]]));
+    expect(JSON.stringify(messages)).not.toContain(source);
+    expect(buildBlocksFromMessages(messages)[0]).toMatchObject({ name: "code_run", args: { inputPaths: [] } });
+    expect(raw.message).toMatchObject({ content: [{ args: { code: source } }] });
+  });
+
   test("uses the public Turn id for message loops and hides active assistant rounds", () => {
     const messages = projectPublicAiStoredMessages(
       [stored("user-1", "user", "internal-turn"), stored("assistant-1", "assistant", "internal-turn")],
@@ -121,6 +134,30 @@ describe("public AI message projection", () => {
     );
     expect(message?.loopId).toBeNull();
   });
+});
+
+test("public message reads deliver the same bound blocks as live tool blocks while storage stays raw", () => {
+  const call: AiStoredMessage = {
+    ...stored("call", "assistant", "turn"),
+    message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "demo__query__get", args: {} }] },
+  };
+  const raw = {
+    data: { rows: [{ name: "Vase" }] },
+    view: {
+      version: 1,
+      blocks: [{ kind: "Table", title: "Objects", rows: { from: ["rows"] }, columns: [{ path: ["name"], label: "Name" }] }],
+    },
+  };
+  const result: AiStoredMessage = {
+    ...stored("result", "assistant", "turn"),
+    seq: 3,
+    message: { role: "tool_result", callId: "call-1", name: "demo__query__get", result: raw },
+  };
+  const publicMessages = projectPublicAiStoredMessages([call, result], "chat", new Map([["turn", "public-turn"]]));
+  const block = buildBlocksFromMessages(publicMessages)[0];
+  expect(block).toMatchObject({ kind: "tool", view: { version: 1, blocks: [{ kind: "Table", rows: raw.data.rows }] } });
+  expect(result.meta).toBeNull();
+  expect(result.message.role === "tool_result" ? result.message.result : null).toEqual(raw);
 });
 
 describe("app names of stored steps", () => {
@@ -167,4 +204,155 @@ describe("app names of stored steps", () => {
     });
     expect(named).toEqual(turn);
   });
+});
+
+test("public history keeps the Code approval's app name in the original review locale", async () => {
+  const raw: AiStoredMessage = {
+    ...stored("code-call", "assistant", "internal-turn"),
+    message: { role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: "export default () => 1" } }] },
+    meta: {
+      toolPresentations: {
+        run: {
+          kind: "capability",
+          appId: "notebooks",
+          appName: "Notizbücher",
+          appIcon: "ti ti-app",
+          title: "Notiz erstellen",
+          capabilityKind: "action",
+        },
+      },
+      toolReviews: { run: { ...reviewFixture(), locale: "de" } },
+    },
+  };
+  const registry = async () => ({
+    name: "Notebooks",
+    description: "Notes",
+    presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+  });
+  const messages = projectPublicAiStoredMessages(await withCurrentAppNames([raw], "en", registry), "chat", new Map());
+  expect(messages[0]!.meta!.toolPresentations!.run).toMatchObject({ appName: "Notizbücher", title: "Notiz erstellen" });
+  expect(messages[0]!.meta!.toolReviews!.run).toEqual(raw.meta!.toolReviews!.run);
+});
+
+test("public history omits lasting Code inputs, projects and source results without changing canonical messages", () => {
+  const source = "export default () => 'source-must-stay-internal'";
+  for (const name of [
+    "code_write",
+    "code_read",
+    "code_pull",
+    "code_init",
+    "code_sdk",
+    "code_diff",
+    "code_check",
+    "code_test",
+    "code_simulate",
+    "code_submit",
+  ]) {
+    const raw: AiStoredMessage[] = [
+      {
+        ...stored("call", "assistant", "turn"),
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              id: "call",
+              name,
+              args: { codeId: "ABCDEF", content: source, files: { "code.ts": source }, project: { files: { "code.ts": source } } },
+            },
+          ],
+        },
+        meta: { toolInterimResults: { call: { files: { "code.ts": source }, diagnostics: [{ code: "TS2322", message: source }] } } },
+      },
+      {
+        ...stored("result", "assistant", "turn"),
+        message: {
+          role: "tool_result",
+          callId: "call",
+          name,
+          result: {
+            version: 1,
+            files: { "code.ts": source },
+            declarations: source,
+            diagnostics: [{ code: "TS2322", message: source }],
+            warnings: [{ code: "code_warning", message: source }],
+            diff: { files: [{ path: "code.ts", lines: [{ kind: "add", text: source }] }] },
+          },
+        },
+      },
+    ];
+    const canonical = structuredClone(raw);
+    const projected = projectPublicAiStoredMessages(raw, "chat", new Map());
+    expect(JSON.stringify(projected)).not.toContain(source);
+    expect(JSON.stringify(buildBlocksFromMessages(projected))).not.toContain(source);
+    expect(raw).toEqual(canonical);
+  }
+});
+
+test("choice history stays lazy for text and thinking; stored and live choices share the same gate", () => {
+  const message = stored("ordinary", "assistant", "turn");
+  expect(messagesNeedChoiceContext([message], [{ id: "thought", kind: "thinking", text: "Private" }])).toBeFalse();
+  const choice = {
+    version: 1 as const,
+    blocks: [
+      {
+        kind: "Choice" as const,
+        id: "choice",
+        title: "Pick",
+        submit: "Choose",
+        mode: "one" as const,
+        options: { from: ["options"] },
+        option: { id: ["id"], title: ["title"] },
+        then: { query: "art.query.inspect", input: {}, field: "category" },
+      },
+    ],
+  };
+  expect(
+    messagesNeedChoiceContext(
+      [message],
+      [{ id: "tool", kind: "tool", callId: "call", name: "art__query__categories", status: "completed", result: { view: choice } }],
+    ),
+  ).toBeTrue();
+  expect(
+    messagesNeedChoiceContext([
+      { ...message, message: { role: "tool_result", callId: "call", name: "art__query__categories", result: { view: choice } } },
+    ]),
+  ).toBeTrue();
+});
+
+test("a message an automation sent shows its instruction and its data apart; the person's own text and storage stay whole", () => {
+  const text = 'Bestätige den Kontostand in einem Satz.\n\nSource context (untrusted data):\n"Geschäftskonto 4.210,18 €"';
+  const automation: AiStoredMessage = {
+    ...stored("m1", "user", "turn-1"),
+    message: { role: "user", content: [{ type: "text", text }] },
+    meta: { writerOrigin: { kind: "automation", id: "c_brief" } },
+  };
+  const person: AiStoredMessage = {
+    ...stored("m2", "user", "turn-2"),
+    message: { role: "user", content: [{ type: "text", text }] },
+    meta: { writerOrigin: { kind: "person", id: "u1" } },
+  };
+  const [sent, typed] = projectPublicAiStoredMessages([automation, person], "chat", new Map());
+  expect(sent?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige den Kontostand in einem Satz." }] });
+  expect(sent?.meta?.sourceContext).toBe("Geschäftskonto 4.210,18 €");
+  expect(typed?.message).toEqual(person.message);
+  expect(typed?.meta?.sourceContext).toBeUndefined();
+  expect(automation.message).toEqual({ role: "user", content: [{ type: "text", text }] });
+});
+
+test.each([
+  ["a text part", (text: string) => ({ type: "text" as const, text })],
+  ["a plain string part", (text: string) => text],
+])("an automation's message as %s shows its instruction; empty data adds no data line", (_name, part) => {
+  const build = (context: string) =>
+    ({
+      ...stored("m3", "user", "turn-3"),
+      message: { role: "user", content: [part(`Bestätige kurz.\n\nSource context (untrusted data):\n${JSON.stringify(context)}`)] },
+      meta: { writerOrigin: { kind: "automation", id: "c_brief" } },
+    }) as AiStoredMessage;
+  const [withData, empty] = projectPublicAiStoredMessages([build("4.210,18 €"), build("")], "chat", new Map());
+  expect(withData?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige kurz." }] });
+  expect(withData?.meta?.sourceContext).toBe("4.210,18 €");
+  expect(empty?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige kurz." }] });
+  expect(empty?.meta?.sourceContext).toBeUndefined();
 });

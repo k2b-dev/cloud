@@ -11,13 +11,17 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   getEffectivePermission,
+  lockAccessMutationAuthority,
   type Principal,
-  resolveDisplayNames,
+  updateAccess,
 } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { isAccountExpired } from "./account-model";
 import { recursiveGroupIdsSubquery } from "./accounts/group-sql";
+import { hasInstallationAdminInTransaction } from "./accounts/installation-admin";
 import { canUseApp } from "./app-access";
 import { audit } from "./audit";
+import { getFreeIpaAdminGroups } from "./freeipa-config";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
 import type { ServiceAccount } from "./service-accounts";
 import { loadJwtSession } from "./session/user";
@@ -48,6 +52,7 @@ const credentialIsEligible = (authority: RequestAuthority): boolean => {
   return (
     serviceAccount.status === "active" &&
     serviceAccount.kind !== "resource_bound" &&
+    serviceAccount.kind !== "code" &&
     (!credentialExpiresAt || new Date(credentialExpiresAt).getTime() > Date.now())
   );
 };
@@ -155,6 +160,13 @@ export const requireAppAccessManager = async (
   if (options.repair) {
     if (!canRepairAppAccess(authority))
       throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required to repair app access.");
+    const user = userFromActor(authority.actor);
+    if (
+      options.db &&
+      (!user ||
+        !(await hasInstallationAdminInTransaction(authority.actor.kind === "user" ? authority.actor : { kind: "user", user }, options.db)))
+    )
+      throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required to repair app access.");
     return;
   }
   if (!canWriteList(authority, app.id)) throw new AppAccessManagementError("FORBIDDEN", "This credential cannot manage app access.");
@@ -222,11 +234,13 @@ export const readAppAccess = async (params: {
     WHERE j.app_id = ${params.app.id} AND ${matches}`;
   const groupsAdmin = params.canManage && !params.repair ? (await getIdentityRuntimeConfig()).groupsAdmin : [];
   const presentation = await entryPresentation(params.app.id);
+  // Repair cannot evaluate app-owned restrictions, including for private presentation fields.
+  const canManageTarget = !params.repair || (!params.canManage && (await canManageAppAccess(params.authority, params.app)));
   return {
     ownEntryIds: [...own.map((entry) => entry.id), ...(inheritedSignedIn ? ["inherited-authenticated"] : [])],
     appId: params.app.id,
     name: params.app.name,
-    entries: (await resolveDisplayNames(entries)).map((entry) => ({ ...entry, ...presentation.get(entry.id) })),
+    entries: (await resolveDisplayNames(entries, { canManageTarget })).map((entry) => ({ ...entry, ...presentation.get(entry.id) })),
     configured: !!state?.configured_at,
     hasEffectiveManager: await hasEffectiveManager(
       params.app,
@@ -403,11 +417,22 @@ export const changeAppAccess = async (params: {
 }): Promise<{ entry?: AccessEntry; canUse: boolean }> => {
   const rule = requireConfigurable(params.app);
   const { app, authority, change } = params;
-  // Runtime settings use the global pool. Resolve them before reserving a connection;
-  // all grant checks, callbacks and candidate domain reads below must share db under the app lock.
-  const groupsAdmin =
-    params.canManage && !params.repair && canWriteList(authority, app.id) ? (await getIdentityRuntimeConfig()).groupsAdmin : [];
   const result = await sql.begin(async (db) => {
+    if (
+      !(await lockAccessMutationAuthority(
+        {
+          subject: authority.accessSubject,
+          ...(change.action === "grant"
+            ? { principal: change.principal }
+            : change.accessId === "inherited-authenticated"
+              ? {}
+              : { accessId: change.accessId }),
+        },
+        db,
+      ))
+    )
+      throw new AppAccessManagementError("FORBIDDEN", "Access denied.", 403);
+    const groupsAdmin = params.canManage && !params.repair && canWriteList(authority, app.id) ? await getFreeIpaAdminGroups(db) : [];
     await db`INSERT INTO auth.app_access_state (app_id) VALUES (${app.id}) ON CONFLICT DO NOTHING`;
     const [state] = await db<
       { configured_at: Date | null }[]
@@ -467,7 +492,9 @@ export const changeAppAccess = async (params: {
         if (before.principal.type === "public") throw new AppAccessManagementError("BAD_INPUT", "Public app access is not supported.", 400);
         if (before.principal.type === "authenticated" && change.permission !== "read")
           throw new AppAccessManagementError("BAD_INPUT", "Signed-in identities may only receive Use.", 400);
-        await db`UPDATE auth.access SET permission = ${change.permission}::auth.permission_level WHERE id = ${before.id}::uuid`;
+        const updated = await updateAccess({ id: before.id, permission: change.permission }, db);
+        if (!updated.ok)
+          throw new AppAccessManagementError(updated.error.code, updated.error.message, updated.error.code === "NOT_FOUND" ? 404 : 400);
         changedId = before.id;
       } else await db`DELETE FROM auth.access WHERE id = ${before.id}::uuid`;
       await record(
@@ -485,7 +512,12 @@ export const changeAppAccess = async (params: {
     return after;
   });
   wakeAppAccessChanged();
-  return { entry: result ? (await resolveDisplayNames([result]))[0] : undefined, canUse: await canUseApp(authority, app) };
+  // Do not invoke app-owned restrictions after a repair has committed.
+  const canManageTarget = !params.repair || (!params.canManage && (await canManageAppAccess(authority, app)));
+  return {
+    entry: result ? (await resolveDisplayNames([result], { canManageTarget }))[0] : undefined,
+    canUse: await canUseApp(authority, app),
+  };
 };
 
 /** Only manager names, for the intentionally limited direct-link denial page. */

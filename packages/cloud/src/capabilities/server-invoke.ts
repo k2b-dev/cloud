@@ -19,6 +19,7 @@ import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
 import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
+import { validateReceivedCapabilityView } from "./result-view";
 import { combineCapabilitySignals } from "./signals";
 import type { CapabilityCatalogClientResult, CapabilityClientError, CapabilityClientResult, CapabilityInvocation } from "./types";
 
@@ -49,7 +50,12 @@ export type CapabilityCaller = {
   /** App authority authenticated only by the configured Ed25519 app key. */
   app?: { appId: string };
   /** Durable background authority. The platform authenticates each transmission to Core. */
-  mandate?: { id: string; revision: number; callingAppId: string };
+  mandate?: {
+    id: string;
+    revision: number;
+    callingAppId: string /** Which run of this workload the call belongs to; history links reach it through your reader. */;
+    run?: string;
+  };
 };
 
 /** Call as the started application, without a person, service account token, or mandate. */
@@ -153,6 +159,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         appId: invocation.appId,
         capabilityId: invocation.capabilityId,
         input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
@@ -165,13 +173,16 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
             }
           : {}),
       });
-      return readCapabilityResponse(
-        outcome,
-        capabilityResultSchema(dataSchema, { consumer: true }),
-        CAPABILITY_MAX_RESULT_BYTES,
-        // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
-        charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
-        charged ? undefined : charge,
+      return validateReceivedCapabilityView(
+        await readCapabilityResponse(
+          outcome,
+          capabilityResultSchema(dataSchema, { consumer: true }),
+          CAPABILITY_MAX_RESULT_BYTES,
+          // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
+          charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+          charged ? undefined : charge,
+        ),
+        invocation.appId,
       );
     }
     const brokerRequest = new Request(request, {
@@ -183,7 +194,10 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
               targetApp: invocation.appId,
               capabilityId: invocation.capabilityId,
               input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
               ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
+              ...(caller.mandate?.run ? { workloadRun: caller.mandate.run } : {}),
               ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
               ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
                 ? {
@@ -196,7 +210,11 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
                   }
                 : {}),
             }
-          : { input: invocation.input },
+          : {
+              input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
+            },
       ),
     });
     const workloadAppId = caller.app?.appId ?? caller.mandate?.callingAppId ?? caller.workload?.appId;
@@ -222,12 +240,15 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         return unavailable(undefined, undefined, caller.locale ?? undefined);
       }
     }
-    return readCapabilityResponse(
-      response,
-      capabilityResultSchema(dataSchema, { consumer: true }),
-      CAPABILITY_MAX_RESULT_BYTES,
-      caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
-      caller.consumeResponseBytes,
+    return validateReceivedCapabilityView(
+      await readCapabilityResponse(
+        response,
+        capabilityResultSchema(dataSchema, { consumer: true }),
+        CAPABILITY_MAX_RESULT_BYTES,
+        caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+        caller.consumeResponseBytes,
+      ),
+      invocation.appId,
     );
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);

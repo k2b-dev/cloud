@@ -3,7 +3,7 @@ import { sql } from "../runtime/clients";
 
 import { isUniqueViolation } from "./postgres";
 
-export type ServiceAccountKind = "user_delegated" | "resource_bound" | "standalone" | "agent";
+export type ServiceAccountKind = "user_delegated" | "resource_bound" | "standalone" | "agent" | "code";
 export type ServiceAccountStatus = "active" | "disabled";
 
 /**
@@ -14,8 +14,18 @@ export type ServiceAccountStatus = "active" | "disabled";
 export type StandaloneServiceAccountKind = Extract<ServiceAccountKind, "standalone" | "agent">;
 export const STANDALONE_SERVICE_ACCOUNT_KINDS = ["standalone", "agent"] as const satisfies readonly StandaloneServiceAccountKind[];
 
-export const isStandaloneServiceAccountKind = (kind: ServiceAccountKind): kind is StandaloneServiceAccountKind =>
-  kind === "standalone" || kind === "agent";
+/** Accounts that resolve their own resource grants instead of a user or resource binding.
+ * Code accounts use only their exact account grant; other principal tiers never apply.
+ */
+export const serviceAccountUsesOwnGrants = (kind: ServiceAccountKind): kind is StandaloneServiceAccountKind | "code" =>
+  kind === "standalone" || kind === "agent" || kind === "code";
+
+/** Whether this kind may hold a credential of any kind. Code accounts never do,
+ * including API tokens, OAuth clients and app keys. Each credential also checks
+ * its own binding (app keys belong only to resource-bound cloud.app accounts).
+ */
+export const serviceAccountMayHoldCredentials = (kind: string): kind is Exclude<ServiceAccountKind, "code"> =>
+  kind === "user_delegated" || kind === "resource_bound" || kind === "standalone" || kind === "agent";
 
 export type ServiceAccount = {
   id: string;
@@ -147,7 +157,8 @@ export const createStandalone = async (params: {
   const name = trimRequired(params.name);
   if (!name) return fail(err.badInput("Service account name is required"));
   if (name.length > MAX_NAME_LENGTH) return fail(err.badInput(`Service account name must be ${MAX_NAME_LENGTH} characters or fewer`));
-  if (!isStandaloneServiceAccountKind(params.kind)) return fail(err.badInput("Service account kind must be standalone or agent"));
+  if (!(params.kind === "standalone" || params.kind === "agent"))
+    return fail(err.badInput("Service account kind must be standalone or agent"));
 
   try {
     const [row] = await sql<DbServiceAccount[]>`

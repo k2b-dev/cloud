@@ -1,3 +1,5 @@
+export { appendAiBackgroundMessage, appendAiBackgroundMessages } from "./background-message";
+
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
@@ -17,12 +19,14 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
-import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./capability-execution";
+import { sweepAiChatDone } from "./chat-done";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
+import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
+import type { ValidateQueuedChatStart } from "./message-queue";
 import {
   assertQueuedMessageQuota,
   drainQueuedMessages,
@@ -30,25 +34,42 @@ import {
   reconcileQueuedInterruptions,
   requestQueuedMessageSendNow,
 } from "./message-queue";
+import { aiModelAccess } from "./model-access";
+import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
+
+export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
+export {
+  AiMessageQueueConflict,
+  AiQueuedChatStartError,
+  AUTOMATION_QUEUE_LIMIT,
+  AUTOMATION_QUEUE_SOURCE_LIMIT,
+  enqueueAutomationChatMessage,
+  enqueueChatMessage,
+} from "./message-queue";
+export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
+export { withAiSourceContext } from "./source-context";
+
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
-import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { aiQuotas } from "./quotas";
+import type { AiMessageQuote } from "./quote-markers";
 import { parseAiResourceMarker } from "./resource-markers";
+import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiTurnInterrupt, publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { finishAiTurnAbort } from "./turn-abort";
+import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 import type {
   AiChatTurnRunConfig,
   AiClientToolId,
   AiCompactionTurnRunConfig,
   AiConversationFileSnapshot,
   AiConversationResourceObservation,
-  AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
+  AiRuntimeTool,
   AiStoredMessage,
   AiTurn,
   AiTurnFinalizedAction,
@@ -59,8 +80,8 @@ import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
 
 export { createAiTurnCodeAndClientTools } from "./default-tools";
-export { AiMessageQueueConflict } from "./message-queue";
 export type { AiStoredMessageOrigin } from "./queue-contracts";
+export { AiConversationCreationError } from "./store";
 export type { ValidateAiTurnInput } from "./validate";
 export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 
@@ -71,8 +92,6 @@ const AI_TURN_HEARTBEAT_MS = 3_000;
 // Local turn orchestration (tools and approval waits included), not a model-provider quota.
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
-
-const AI_SWEEP_INTERVAL_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Queue
@@ -96,7 +115,7 @@ const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
-  void drainQueuedMessages(enqueueAiTurn, conversationId).catch(() =>
+  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.validateQueuedChatStart).catch(() =>
     log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
   );
 };
@@ -109,9 +128,14 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
-  /** Platform-only authority and provenance, absent from request schemas. */
+  wakeup?: AiChatTurnRunConfig["wakeup"];
+  /** Platform-only authority, absent from request schemas. */
   accessSubject?: AccessSubject;
-  writerOrigin?: AiStoredMessageOrigin;
+  writerOrigin?: AiChatTurnRunConfig["writerOrigin"];
+  turnTrigger?: AiChatTurnRunConfig["turnTrigger"];
+  sourceRestricted?: true;
+  send?: AiChatTurnRunConfig["send"];
+  codeOrigin?: AiChatTurnRunConfig["codeOrigin"];
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
   /** Only a handler that saw a signed-in session (browser or Cloud app) sets this server-owned marker; see `AiChatTurnRunConfig`. */
@@ -141,12 +165,17 @@ export type SubmitAiChatTurnInput = {
   expectedDraftRevision?: number;
   expectedProjectId?: string | null;
   resources?: AiConversationResourceObservation[];
+  /** Quotes the server checked against their messages; the user message keeps them as `meta.quotes`. */
+  quotes?: AiMessageQuote[];
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
+  /** The person changed the retried text: the new message is the person's own. */
+  retryEdited?: true;
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
+  assertInteractiveChatTurn(input);
   if (input.localContext && !input.client) throw new Error("Local context requires a local client.");
   if (input.clientToolIds?.length && input.toolSource?.kind !== "default") {
     throw new Error("Optional client tools require the default tool source.");
@@ -205,6 +234,11 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
         ? { writerOrigin: { kind: "person" as const, id: input.actor.user.id } }
         : {}),
     kind: "chat",
+    turnTrigger: input.turnTrigger,
+    sourceRestricted: input.sourceRestricted,
+    send: input.send,
+    codeOrigin: input.codeOrigin,
+    wakeup: input.wakeup,
     selectedSkillIds: [
       ...new Set(
         (userMessage.role === "user" ? userMessage.content : []).flatMap((part) => {
@@ -235,6 +269,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     localContext: input.localContext,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
+    ...(input.quotes?.length ? { quotes: input.quotes } : {}),
   };
 
   return {
@@ -247,6 +282,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
+    ...(input.retryEdited ? { retryEdited: true as const } : {}),
   };
 };
 
@@ -274,49 +310,6 @@ export const sendQueuedAiChatMessageNow = async (conversationId: string, id: str
   return queuedMessageReceipt(conversationId, id);
 };
 
-export const deliverAiInterChatMessage = async (input: {
-  message: AiInterChatMessage;
-  chatId?: string;
-  actor: RequestActor;
-  locale?: string;
-  theme?: "light" | "dark";
-  timeZone?: string;
-  modelPolicy?: AiModelPolicy;
-  systemPrompt?: string;
-  project?: AiChatTurnRunConfig["project"];
-  toolSource?: AiTurnToolSource;
-  toolApprovalContext?: AiToolApprovalContext;
-}): Promise<
-  { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
-> => {
-  const text = [`Assistant message from chat ${input.message.sourceChatId} (${input.message.sourceTitle}):`, input.message.text].join(
-    "\n\n",
-  );
-  const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
-  const runConfig: AiChatTurnRunConfig = {
-    kind: "chat",
-    input: text,
-    chatId: input.chatId,
-    actor: input.actor,
-    ...(input.locale ? { locale: input.locale } : {}),
-    ...(input.theme ? { theme: input.theme } : {}),
-    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
-    modelPolicy: input.modelPolicy,
-    systemPrompt: input.systemPrompt,
-    project: input.project,
-    toolSource: input.toolSource ?? { kind: "none" },
-    toolApprovalContext: input.toolApprovalContext,
-  };
-  const delivered = await aiConversations.deliverInterChatMessage({
-    messageId: input.message.id,
-    modelId: resolved.profile.id,
-    runConfig,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
-  });
-  if (delivered.delivered) await enqueueAiTurn({ conversationId: delivered.message.targetConversationId, turnId: delivered.turn.id });
-  return delivered;
-};
-
 export type SubmitAiCompactionInput = {
   conversationId: string;
   actor?: RequestActor;
@@ -326,6 +319,7 @@ export type SubmitAiCompactionInput = {
 
 export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promise<{ turn: AiTurn }> => {
   const { resolved } = await validateAiTurnRequest({ input: "", modelPolicy: input.modelPolicy, model: input.model });
+  await aiModelAccess.assertAllowed(resolved.profile.modelId, aiChatAccessSubject(input.actor));
   const runConfig: AiCompactionTurnRunConfig = {
     kind: "compact",
     actor: input.actor,
@@ -346,12 +340,25 @@ export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promis
 // Abort
 // ---------------------------------------------------------------------------
 
+const turnAbortHandlers = new Set<(input: { conversationId: string; turnId: string }) => Promise<void>>();
+/** Hosts serialize their durable effects before cancellation becomes visible to the executor. */
+export const registerAiTurnAbortHandler = (handler: (input: { conversationId: string; turnId: string }) => Promise<void>) => {
+  turnAbortHandlers.add(handler);
+  return () => {
+    turnAbortHandlers.delete(handler);
+  };
+};
+
 export const abortAiTurn = async (input: {
   conversationId: string;
   turnId: string;
   actor: RequestActor;
   reason?: "retry";
 }): Promise<{ ok: true }> => {
+  if (turnAbortHandlers.size) {
+    const config = await aiConversations.getTurnRunConfig(input);
+    if (config?.kind === "chat" && config.codeReview) for (const handler of turnAbortHandlers) await handler(input);
+  }
   // Capture wire coordinates before the cancellation flag can wake its owner.
   const active = await aiConversations.getActiveTurn({ conversationId: input.conversationId }).catch(() => null);
   const reason = input.reason ?? (input.actor.kind === "user" ? "user" : "service_account");
@@ -365,8 +372,16 @@ export const abortAiTurn = async (input: {
 // ---------------------------------------------------------------------------
 
 export const AiTurnActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("approval_response"), approved: z.boolean(), remember: z.enum(["chat", "always"]).optional() }),
-  z.object({ type: z.literal("tool_result"), result: z.unknown() }),
+  z.strictObject({
+    type: z.literal("approval_response"),
+    approved: z.boolean(),
+    remember: z.enum(["chat", "always"]).optional(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  }),
+  z.strictObject({ type: z.literal("tool_result"), result: AiClientToolResultSchema }),
 ]);
 export type AiTurnActionInput = z.infer<typeof AiTurnActionSchema>;
 
@@ -429,13 +444,19 @@ export const submitAiTurnAction = async (input: {
       }
     }
     if (pending.approvalId) {
-      const decision = await approvals.decide(pending.approvalId, { approved: input.action.approved }, input.decidedBy);
+      const decision = await approvals.decide(
+        pending.approvalId,
+        { approved: input.action.approved, digest: input.action.digest },
+        input.decidedBy,
+      );
       if (!decision.ok)
-        return decision.code === "REJECT_ONLY"
-          ? { ok: false, status: 403, message: "Approve this request in Cloud. An editor can only reject it." }
-          : decision.code === "ALREADY_DECIDED"
-            ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
-            : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
+        return decision.code === "REVIEW_CHANGED"
+          ? { ok: false, status: 409, message: "This draft changed. Reload and review it before approving." }
+          : decision.code === "REJECT_ONLY"
+            ? { ok: false, status: 403, message: "Approve this request in Cloud. An editor can only reject it." }
+            : decision.code === "ALREADY_DECIDED"
+              ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
+              : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
     }
     if (remember && input.toolApprovalContext) {
       const toolName = pending.rememberToolName ?? pending.name;
@@ -462,6 +483,7 @@ export const submitAiTurnAction = async (input: {
 
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "approval_response", callId: input.callId, approved: input.action.approved },
     });
     if (!resolved) {
@@ -478,6 +500,7 @@ export const submitAiTurnAction = async (input: {
     }
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "tool_result", callId: input.callId, result: input.action.result },
     });
     if (!resolved) {
@@ -506,6 +529,8 @@ const runClaimedTurn = async (
   leaseOwner: string,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
+  beforeChatTurn?: ExecutorConfig["beforeChatTurn"],
 ): Promise<void> => {
   const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
   const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
@@ -531,10 +556,12 @@ const runClaimedTurn = async (
 
   const executor = new AiTurnExecutor({
     leaseOwner,
+    tools,
     heartbeatMs: AI_TURN_HEARTBEAT_MS,
     enqueueContinuation: (input) => enqueueAiTurn(input).then(() => undefined),
     onTurnFinalized,
     onApprovalRequested,
+    beforeChatTurn,
   });
   await executor.run({ conversationId: job.conversationId, turnId: job.turnId, claim, signal });
 };
@@ -544,6 +571,8 @@ const processMessage = async (
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
+  tools?: readonly AiRuntimeTool[],
+  beforeChatTurn?: ExecutorConfig["beforeChatTurn"],
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
@@ -567,7 +596,7 @@ const processMessage = async (
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
-    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested);
+    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested, tools, beforeChatTurn);
   } catch (error) {
     log.error("AI turn worker error", {
       conversationId: message.data.conversationId,
@@ -581,8 +610,8 @@ const processMessage = async (
 };
 
 const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: string }, status: "failed" | "aborted"): Promise<void> => {
-  const config = await aiConversations.getTurnRunConfig(turn);
-  if (config?.kind === "chat" && config.background) return;
+  // A legacy routine shares the conversation, but never owns its interactive stream.
+  if (isRetiredRoutineConfig(await aiConversations.getTurnRunConfig(turn))) return;
   await publishAiWireEvent({
     v: 1,
     conversationId: turn.conversationId,
@@ -603,8 +632,9 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
-  await drainQueuedMessages(enqueueAiTurn);
-  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
+  await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
+  const limit = 200; // The existing runtime sweep batch, shared with delegated-completion repair.
+  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS, limit });
   await Promise.all([
     ...sweep.requeued.map((job) =>
       enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", { code: "recovery_enqueue_failed", ...job })),
@@ -625,11 +655,13 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
   if (sweep.requeued.length || sweep.failed.length || sweep.aborted.length) {
     log.info("AI runtime sweep", { requeued: sweep.requeued.length, failed: sweep.failed.length, aborted: sweep.aborted.length });
   }
+  await sweepAiChatDone(limit);
 };
 
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
   approvalListeners: Set<ApprovalRequestedListener>;
+  validateQueuedChatStart?: ValidateQueuedChatStart;
   stop: () => void;
 };
 
@@ -638,7 +670,15 @@ let refCount = 0;
 
 export const startAiRuntime = (
   input: {
+    /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
+    tools?: readonly AiRuntimeTool[];
     concurrency?: number;
+    /** Host-owned admission after the worker resolves the executed model. */
+    beforeChatTurn?: ExecutorConfig["beforeChatTurn"];
+    /** Recover host-owned terminal bookkeeping after crashes. */
+    onSweep?: () => Promise<void>;
+    /** Host-owned admission policy; runs on the current queued snapshot under the conversation lock. */
+    validateQueuedChatStart?: ValidateQueuedChatStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
   } = {},
@@ -679,7 +719,7 @@ export const startAiRuntime = (
     signal: controller.signal,
     run: async (signal) => {
       const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
-        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested),
+        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested, input.tools, input.beforeChatTurn),
       );
       try {
         await new Promise<void>((resolve) => {
@@ -700,9 +740,9 @@ export const startAiRuntime = (
 
   const sweep = startRuntimeInterval({
     run: async () => {
-      await sweepAiRuntime(dispatchTurnFinalized);
+      await Promise.all([sweepAiRuntime(dispatchTurnFinalized), input.onSweep?.()]);
     },
-    intervalMs: AI_SWEEP_INTERVAL_MS,
+    intervalMs: AI_QUEUE_SWEEP_INTERVAL_MS,
     onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
   });
 
@@ -710,6 +750,7 @@ export const startAiRuntime = (
   const state: AiRuntimeState = {
     listeners,
     approvalListeners,
+    validateQueuedChatStart: input.validateQueuedChatStart,
     stop: () => {
       if (running !== state) return;
       controller.abort();
@@ -756,3 +797,12 @@ export const notifyAiConversationUnwatched = async (conversationId: string): Pro
 };
 
 export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };
+
+export { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
+export { editAiApprovalDraft } from "./draft-edit";
+export type AiChatTurnAdmission = NonNullable<ExecutorConfig["beforeChatTurn"]>;
+
+export { enqueueAiChatSend } from "./chat-send";
+export { AiTurnFailure } from "./turn-failure";
+
+export { markAiWakeupMissed } from "./wakeup-store";

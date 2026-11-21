@@ -87,7 +87,7 @@ const textInputs = [
   {
     name: "task create",
     schema: TaskCreateInputSchema,
-    input: { spaceId: "Spc001", columnId: "Col001", title: "Task" },
+    input: { columnId: "Col001", title: "Task" },
     field: "description",
     nullable: false,
     optional: true,
@@ -103,7 +103,7 @@ const textInputs = [
   {
     name: "event create",
     schema: EventCreateInputSchema,
-    input: { spaceId: "Spc001", columnId: "Col001", title: "Event", startsAt: "2026-10-15T09:00:00Z", endsAt: "2026-10-15T10:00:00Z" },
+    input: { columnId: "Col001", title: "Event", startsAt: "2026-10-15T09:00:00Z", endsAt: "2026-10-15T10:00:00Z" },
     field: "description",
     nullable: false,
     optional: true,
@@ -119,7 +119,7 @@ const textInputs = [
   {
     name: "template create",
     schema: TemplateCreateInputSchema,
-    input: { spaceId: "Spc001", kind: "task", name: "Template" },
+    input: { kind: "task", name: "Template" },
     field: "description",
     nullable: true,
     optional: true,
@@ -215,14 +215,14 @@ test("task capability deadline schemas accept both forms and remain JSON Schema 
   expect("deadlineAllDay" in TemplateDataSchema.shape).toBeFalse();
   for (const deadline of ["2026-10-24", "2024-02-29", "2026-10-24T17:00:00+02:00"]) {
     // Without a column the service chooses the first open one, so callers need no Read space first.
-    expect(TaskCreateInputSchema.parse({ spaceId: "Spc001", title: "Task" }).columnId).toBeUndefined();
-    expect(TaskCreateInputSchema.parse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline }).deadline).toBe(deadline);
+    expect(TaskCreateInputSchema.parse({ title: "Task" }).columnId).toBeUndefined();
+    expect(TaskCreateInputSchema.parse({ columnId: "Col001", title: "Task", deadline }).deadline).toBe(deadline);
     expect(TaskUpdateInputSchema.parse({ itemId: "Itm001", deadline }).deadline).toBe(deadline);
     expect(TaskDataSchema.shape.deadline.parse(deadline)).toBe(deadline);
     expect(TaskListItemDataSchema.shape.deadline.parse(deadline)).toBe(deadline);
   }
   for (const deadline of ["2026-02-30", "2026-02-29", "2026-13-01"]) {
-    expect(TaskCreateInputSchema.safeParse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline }).success).toBeFalse();
+    expect(TaskCreateInputSchema.safeParse({ columnId: "Col001", title: "Task", deadline }).success).toBeFalse();
     expect(TaskUpdateInputSchema.safeParse({ itemId: "Itm001", deadline }).success).toBeFalse();
   }
   expect(TaskUpdateInputSchema.parse({ itemId: "Itm001", deadline: null }).deadline).toBeNull();
@@ -235,7 +235,5 @@ test("task capability deadline schemas accept both forms and remain JSON Schema 
       { type: "string", format: "date" },
     ],
   });
-  expect(
-    z.fromJSONSchema(schema).safeParse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline: "2026-10-24" }).success,
-  ).toBeTrue();
+  expect(z.fromJSONSchema(schema).safeParse({ columnId: "Col001", title: "Task", deadline: "2026-10-24" }).success).toBeTrue();
 });

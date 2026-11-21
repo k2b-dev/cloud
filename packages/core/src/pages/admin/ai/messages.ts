@@ -192,6 +192,9 @@ export const aiAreaMessages = i18n.define({
       example: ({ p }: { p: string | number }) => `Example: ${p} for 10,000 input and 2,000 output tokens.`,
       listPrice: ({ p }: { p: string | number }) => `Provider list price: ${p}. Cloud never takes over prices automatically.`,
       unpricedWarn: "Without prices, neither budgets nor the cost brake cover this model.",
+      automationPriceRequired: "Without a price above zero, automations cannot start a Gustav turn with this model.",
+      modelLimitsRequired:
+        "Priced chat models need a context window and a maximum output token limit. Enter the limits documented by the provider before saving; alarms and automations cannot run without known limits.",
       audioNoPrice: "Audio transcription has no token prices and no budgets.",
       variants: "Variants",
       variantsSub: "Each variant is its own choice. It inherits everything from the model except the thinking level and overrides.",
@@ -775,6 +778,9 @@ export const aiAreaMessages = i18n.define({
       example: ({ p }: { p: string | number }) => `Beispiel: ${p} f\xFCr 10.000 Input- und 2.000 Output-Tokens.`,
       listPrice: ({ p }: { p: string | number }) => `Listenpreis des Anbieters: ${p}. Cloud \xFCbernimmt Preise nie automatisch.`,
       unpricedWarn: "Ohne Preise greifen für dieses Modell weder Budgets noch die Kosten-Notbremse.",
+      automationPriceRequired: "Ohne einen Preis über 0 können Automationen mit diesem Modell keinen Gustav-Zug starten.",
+      modelLimitsRequired:
+        "Chat-Modelle mit Preis brauchen ein Kontextfenster und eine maximale Ausgabe. Trage vor dem Speichern die dokumentierten Grenzen des Anbieters ein; ohne bekannte Grenzen können Wecker und Automationen nicht laufen.",
       audioNoPrice: "Audio-Transkription hat keine Tokenpreise und keine Budgets.",
       variants: "Varianten",
       variantsSub: "Jede Variante ist eine eigene Wahl. Sie übernimmt alles vom Modell außer Denkstufe und Überschriebenem.",

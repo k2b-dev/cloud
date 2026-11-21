@@ -4,27 +4,33 @@ import { spawnCanvasWorker } from "../_internal/canvas-worker";
 declare const __CLOUD_PDF_RENDER_WORKER__: string | undefined;
 let activeRenders = 0;
 export const PDF_MAX_BYTES = 10 * 1024 * 1024;
+export const PDF_MAX_PAGES = 20;
 export const PdfPages = z
   .array(z.number().int().positive())
   .min(1)
-  .max(3)
+  .max(PDF_MAX_PAGES)
   .refine((pages) => new Set(pages).size === pages.length, "Choose each page only once.");
 const RenderResult = z.object({
   totalPages: z.number().int().positive(),
   pages: z
     .array(z.object({ page: z.number().int().positive(), png: z.string() }))
     .min(1)
-    .max(3),
+    .max(PDF_MAX_PAGES),
 });
 
 /** Isolate native decoding from the server: abort/deadline kills the process. */
 export async function renderPdfPages(
   bytes: Uint8Array,
-  pages: number[] = [1],
+  pages?: number[],
   signal?: AbortSignal,
-  options: { maxInputBytes?: number } = {},
+  options: { maxPages?: number; maxInputBytes?: number } = {},
 ) {
-  PdfPages.parse(pages);
+  const maxPages = options.maxPages ?? PDF_MAX_PAGES;
+  z.number().int().positive().max(PDF_MAX_PAGES).parse(maxPages);
+  if (pages !== undefined) {
+    PdfPages.parse(pages);
+    if (pages.length > maxPages) throw new Error("PDF page token budget exceeded.");
+  }
   const maxInputBytes = options.maxInputBytes ?? PDF_MAX_BYTES;
   if (!Number.isInteger(maxInputBytes) || maxInputBytes < 1 || maxInputBytes > 50_000_000)
     throw new RangeError("PDF input limit must be at most 50 MB.");
@@ -40,7 +46,7 @@ export async function renderPdfPages(
       typeof __CLOUD_PDF_RENDER_WORKER__ === "string"
         ? new URL(__CLOUD_PDF_RENDER_WORKER__, import.meta.url)
         : new URL("./pdf-render-worker.ts", import.meta.url);
-    const header = `${JSON.stringify({ bytes: bytes.byteLength, pages, maxInputBytes })}\n`;
+    const header = `${JSON.stringify({ bytes: bytes.byteLength, pages, maxPages, maxInputBytes })}\n`;
     const child = spawnCanvasWorker(worker, "pdf-decoder", new Blob([header, new Uint8Array(bytes)]));
     const stop = () => child.kill("SIGKILL");
     boundedSignal.addEventListener("abort", stop, { once: true });

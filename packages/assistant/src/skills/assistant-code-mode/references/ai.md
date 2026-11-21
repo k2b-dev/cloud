@@ -6,9 +6,7 @@ agents: no tools, browsing, chat history, memories or files are loaded implicitl
 Read the required data first and pass it as `input`. Use ordinary code for exact
 arithmetic, filtering and aggregation.
 
-All methods return Promises. They work in Code Mode experiments, interactive chat
-presentations and authenticated Studio app runs. Public or local-only runners
-cannot use them. Calls use the executing user's permitted model and personal
+All methods return Promises. They run through the authenticated chat host. Calls use the executing user's permitted model and personal
 chat allowance; no provider key is exposed to source code. Omit `model`
 to use the person's stored choice, or balanced. Scheduled runs default to fast.
 Pass `model: { class: "thorough" }` to request a class or `model: { id: "verified-variant" }`

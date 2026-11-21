@@ -68,27 +68,31 @@ export const exportChatTasks = async (
     if (!current?.roles.includes("admin") || accounts.model.isAccountExpired(current.accountExpires))
       throw new ChatTaskExportForbiddenError("Cloud administration access is required");
   }
-  const rows = await sql<{ entry: unknown; cursor: string }[]>`
+  const [archive] = await sql<{ present: boolean }[]>`SELECT to_regclass('ai.chat_tasks') IS NOT NULL AS present`;
+  const rows = archive?.present
+    ? await sql<{ entry: unknown; cursor: string }[]>`
     SELECT task.id::text AS cursor, jsonb_build_object(
       'kind', 'chat-task', 'id', task.short_id, 'ownerUserId', task.sponsor_user_id,
       'title', task.title, 'prompt', task.prompt, 'locale', task.locale,
-      'targetChat', jsonb_build_object('id', conversation.short_id, 'title', conversation.title),
+      'targetChat', jsonb_build_object('id', COALESCE(conversation.short_id, task.conversation_id::text), 'title', COALESCE(conversation.title, '')),
       'schedule', CASE WHEN task.schedule_kind = 'once' THEN jsonb_build_object('kind', 'once', 'runAt', task.run_at)
         ELSE jsonb_build_object('kind', 'cron', 'cron', task.cron) END,
-      'timezone', task.timezone, 'grants', COALESCE(mandate.policy->'grants', '[]'::jsonb),
-      'mandateSummary', CASE WHEN mandate.id IS NULL THEN NULL ELSE jsonb_build_object(
-        'id', mandate.id, 'revision', mandate.revision, 'state', mandate.state, 'expiresAt', mandate.expires_at,
-        'apps', mandate.policy->'apps', 'operations', mandate.policy->'operations', 'actions', mandate.policy->>'actions') END,
+      'timezone', task.timezone, 'grants', COALESCE(snapshot.record->'policy'->'grants', '[]'::jsonb),
+      'mandateSummary', CASE WHEN snapshot.record IS NULL THEN NULL ELSE jsonb_build_object(
+        'id', snapshot.record->'id', 'revision', snapshot.record->'revision', 'state', snapshot.record->'state', 'expiresAt', snapshot.record->'expires_at',
+        'apps', snapshot.record->'policy'->'apps', 'operations', snapshot.record->'policy'->'operations', 'actions', snapshot.record->'policy'->>'actions') END,
       'state', task.state, 'revision', task.revision, 'reasonCode', task.reason_code,
       'createdAt', task.created_at, 'updatedAt', task.updated_at
     ) AS entry
     FROM ai.chat_tasks task
-    JOIN ai.conversations conversation ON conversation.id = task.conversation_id
+    LEFT JOIN ai.conversations conversation ON conversation.id = task.conversation_id
     LEFT JOIN auth.mandates mandate ON mandate.id = task.mandate_id
+    CROSS JOIN LATERAL (SELECT COALESCE(task.retired_mandate, to_jsonb(mandate)) AS record) snapshot
     WHERE (${input.all ?? false} OR task.sponsor_user_id = ${person.id}::uuid)
       AND (${page.after ?? null}::uuid IS NULL OR task.id > ${page.after ?? null}::uuid)
     ORDER BY task.id LIMIT ${page.limit + 1}
-  `;
+  `
+    : [];
   const selected = rows.slice(0, page.limit);
   return {
     format: "cloud.chat-tasks",

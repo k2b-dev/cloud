@@ -11,6 +11,7 @@ import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";
 import * as codeExecution from "./code-execution";
+import { codeRuntimeMessages } from "./code-runtime-messages";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 import { aiConversations } from "./store";
 
@@ -155,7 +156,7 @@ test("managed code rejects incomplete background authority before contacting a h
             },
           },
         ),
-      ).rejects.toThrow("task-scoped background authority");
+      ).rejects.toThrow("interactive Assistant turn");
     }
   } finally {
     config.mockRestore();
@@ -616,4 +617,45 @@ test("managed code retains the mobile session in both host and callback invocati
   expect(issuances).toHaveBeenCalledTimes(2);
   for (const [params] of issuances.mock.calls)
     expect(params.authority).toMatchObject({ credential_kind: "session", session_kind: "app", scopes: [] });
+});
+
+test("code_run phases read from the message catalog in the request locale, regional variants included", async () => {
+  const phases = ["starting", "running", "busy", "waiting_for_user"] as const;
+  const progressIn = async (locale: string | undefined) => {
+    const progress: string[] = [];
+    let poll = 0;
+    await waitForManagedCodeCall(
+      async () =>
+        poll < phases.length
+          ? { status: "running" as const, phase: phases[poll++], approvals: [] }
+          : { status: "done" as const, result: { status: "ok" }, approvals: [] },
+      {
+        signal: AbortSignal.timeout(5000),
+        requestApproval: async () => false,
+        ...(locale ? { locale } : {}),
+        reportProgress: async (message) => {
+          progress.push(message);
+        },
+      },
+    );
+    return progress;
+  };
+  const german = codeRuntimeMessages.resolve(["de"]).t;
+  const english = codeRuntimeMessages.resolve(["en"]).t;
+  expect(await progressIn("de-CH")).toEqual([
+    german.phase_starting,
+    german.phase_running,
+    german.phase_busy,
+    german.phase_waiting_for_user,
+  ]);
+  expect(german.phase_running).toBe("Code wird ausgeführt");
+  // A locale without its own catalog and a turn without a locale read the base language.
+  expect(await progressIn("fr-FR")).toEqual([
+    english.phase_starting,
+    english.phase_running,
+    english.phase_busy,
+    english.phase_waiting_for_user,
+  ]);
+  expect(await progressIn(undefined)).toEqual(await progressIn("en-GB"));
+  expect(codeRuntimeMessages.check()).toEqual([]);
 });

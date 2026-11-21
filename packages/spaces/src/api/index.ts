@@ -14,9 +14,10 @@ import {
   rateLimit,
   requiresAuth,
   respond,
+  userFromActor,
   v,
 } from "@k2b/cloud/server";
-import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { coreSettings, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -37,6 +38,7 @@ import {
   CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
   ErrorResponseSchema,
+  EstimateSuggestionResultSchema,
   GrantAccessSchema,
   ItemFilterResponseSchema,
   ItemFilterSchema,
@@ -122,11 +124,14 @@ import {
   SPACE_RESOURCE_TYPE,
   SPACES_APP_ID,
 } from "../service/access";
-import { InvalidActivityCursorError } from "../service/activity";
+import { InvalidActivityCursorError, type SpaceActivityIdentity } from "../service/activity";
+import { presentActivityOrigins } from "../service/activity-origins";
+import { spaceActivityRow } from "../service/activity-timeline";
 import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
+import { suggestEstimate } from "../service/estimate-suggestion";
 import { spacesLive } from "../service/live";
 import { spacesLiveChannels } from "../service/live-channels";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
@@ -249,6 +254,16 @@ const SpaceActivitySchema = z.object({
   lastOccurredAt: z.string(),
 });
 
+/** A worded history row. `origin` names the durable work behind the change, with links only for those who may follow them. */
+const SpaceActivityRowSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  icon: z.string(),
+  sentence: z.string(),
+  count: z.number().int(),
+  origin: z.object({ name: z.string(), href: z.string().nullable(), runHref: z.string().nullable() }).optional(),
+});
+
 const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
   await next();
   if (c.res.status < 400) return;
@@ -327,7 +342,7 @@ const getCommentAuthor = (c: Context<AuthContext>): Result<CommentAuthor> => {
   const user = getUserBackedActor(c);
   if (user) return ok({ kind: "user", id: user.id });
   const actor = c.get("actor");
-  if (actor.kind === "service_account" && isStandaloneServiceAccountKind(actor.serviceAccount.kind)) {
+  if (actor.kind === "service_account" && serviceAccountUsesOwnGrants(actor.serviceAccount.kind)) {
     return ok({ kind: "service_account", id: actor.serviceAccount.id });
   }
   return fail(err.forbidden("This endpoint requires a user-backed actor"));
@@ -396,7 +411,7 @@ const getScopedSpaceAccess = (c: Context<AuthContext>): Result<ScopedSpaceAccess
   }
 
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+  if (subject.serviceAccount && serviceAccountUsesOwnGrants(subject.serviceAccount.kind)) {
     if (
       subject.subject.type !== "service_account" ||
       subject.subject.serviceAccountId !== subject.serviceAccount.id ||
@@ -919,6 +934,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         loadSpaceSettingsContext({
+          locale: getLocale(c),
           user: userResult.data,
           spaceId,
           settings: parseSpaceSettings(c.req.header("Cookie"), spaceShortId),
@@ -997,6 +1013,46 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
       return respond(c, ok(await spacesService.item.checklist.list({ itemId: item.data.id })));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/estimate-suggestion",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Suggest a task estimate",
+      description:
+        "Asks the assistant for the task's duration from its title, description, and checklist, for the edit form to offer. Requires write access. The answer is a suggestion, never stored as the task's estimate; it costs the caller's assistant allowance once per task text and language.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(EstimateSuggestionResultSchema, "Suggestion, no suggestion, or why there is none"),
+        400: jsonResponse(ErrorResponseSchema, "Item is not a task"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Item not found"),
+      },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      const checklist = await spacesService.item.checklist.list({ itemId: item.data.id });
+      return respond(
+        c,
+        ok(
+          await suggestEstimate({
+            source: {
+              itemId: item.data.id,
+              title: item.data.title,
+              description: item.data.description,
+              checklist: checklist.map((entry) => entry.label),
+            },
+            subject: c.get("accessSubject"),
+            locale: getLocale(c),
+            signal: c.req.raw.signal,
+          }),
+        ),
+      );
     },
   )
   .post(
@@ -2897,7 +2953,10 @@ const app = new Hono<AuthContext>()
       summary: "Read task activity",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(z.object({ data: z.array(SpaceActivitySchema), nextCursor: z.string().nullable() }), "Activity page"),
+        200: jsonResponse(
+          z.object({ data: z.array(SpaceActivitySchema.extend({ row: SpaceActivityRowSchema })), nextCursor: z.string().nullable() }),
+          "Activity page",
+        ),
       },
     }),
     v("query", OverviewActivityQuerySchema),
@@ -2913,6 +2972,25 @@ const app = new Hono<AuthContext>()
           itemId: item.data.id,
           ...c.req.valid("query"),
         });
+        const locale = getLocale(c);
+        const authority = auth.getAuthority(c);
+        const origins = await presentActivityOrigins(
+          page.items,
+          authority,
+          {
+            cookie: c.req.header("Cookie"),
+            authorization: c.req.header("Authorization"),
+            requestId: c.req.header("X-Request-Id"),
+            traceparent: c.req.header("traceparent"),
+            tracestate: c.req.header("tracestate"),
+            signal: c.req.raw.signal,
+          },
+          locale,
+        );
+        const subject = c.get("accessSubject");
+        const viewer: SpaceActivityIdentity =
+          subject.type === "user" ? { kind: "user", id: subject.userId } : { kind: "service_account", id: subject.serviceAccountId };
+        const assigneeId = subject.type === "user" ? subject.userId : subject.serviceAccountId;
         return respond(
           c,
           ok({
@@ -2920,6 +2998,13 @@ const app = new Hono<AuthContext>()
               ...event,
               space: { id: event.space.shortId, name: event.space.name, color: event.space.color },
               item: event.item ? { id: event.item.shortId, title: event.item.title } : null,
+              row: spaceActivityRow(event, {
+                viewer,
+                assigneeId,
+                locale,
+                timeZone: getTimeZone(c),
+                origin: origins.get(event.id),
+              }),
             })),
             nextCursor: page.nextCursor,
           }),
@@ -3100,7 +3185,12 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({
+        spaceId: spaceId!,
+        canManageTarget: true,
+        cloudAdmin: userFromActor(c.get("actor"))?.roles.includes("admin"),
+        locale: getLocale(c),
+      });
       return respond(c, ok(entries.items));
     },
   )
@@ -3291,7 +3381,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      const entries = await spacesService.access.list({ spaceId: spaceId! });
+      const entries = await spacesService.access.list({ spaceId: spaceId!, cloudAdmin: true, locale: getLocale(c) });
       return respond(c, ok(entries.items));
     },
   )

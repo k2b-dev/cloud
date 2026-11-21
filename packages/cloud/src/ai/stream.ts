@@ -3,7 +3,9 @@ import { lazySync } from "../_internal/process-sync";
 import { watchAppAccess, watchCredentialExpiry } from "../server/middleware/app-access";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
+import { projectAiChoices, viewChoice } from "./choices";
 import type { AiConversationWatch } from "./conversation-watchers";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "./live-interval";
 import type { AiOriginViewer } from "./message-origin";
 import {
   type AiStreamEvent,
@@ -14,7 +16,16 @@ import {
   steerAppliedBlockId,
   steerMessageBlockId,
 } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiStoredMessages, publicAiTurnBlock, publicAiWireEvent } from "./public-projection";
+import {
+  messagesNeedChoiceContext,
+  projectPublicAiStoredMessages,
+  publicAiStoredMessages,
+  publicAiTurnBlock,
+  publicAiWireEvent,
+  withCurrentAppNames,
+} from "./public-projection";
+import { publicAiToolBlock, publicAiToolEvent } from "./public-tool-input";
+import { capabilityResultView } from "./result-view";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
 
@@ -34,7 +45,7 @@ const AI_STREAM_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
  * Interval at which a turn worker saves its live state (ai.turns.live_blocks).
  * The saved state lags the live stream by at most one interval.
  */
-export const AI_LIVE_SNAPSHOT_INTERVAL_MS = 1_000;
+export { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "./live-interval";
 
 /**
  * Reads of the saved live state a stream makes while it waits for an event it
@@ -123,7 +134,7 @@ const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => 
  */
 export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
   try {
-    await publishLiveTopicEvent(publicAiWireEvent(event));
+    await publishLiveTopicEvent(publicAiToolEvent(publicAiWireEvent(event)));
   } catch (error) {
     if (!(error instanceof PayloadTooLargeError)) throw error;
     const { v, conversationId, turnId, attempt, seq } = event;
@@ -170,7 +181,14 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   attempt: active.turn.attempt,
   status: active.turn.status,
   seq: active.liveSeq,
-  blocks: active.liveBlocks.map(publicAiTurnBlock),
+  blocks: active.liveBlocks
+    .map(publicAiToolBlock)
+    .map(publicAiTurnBlock)
+    .map((block) =>
+      block.kind === "tool" && block.status === "completed" && !block.isError
+        ? { ...block, view: capabilityResultView(block.result) ?? undefined }
+        : block,
+    ),
   modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
@@ -186,23 +204,40 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
-/** `originViewer` is the reader: names of origins, and the apps of stored steps, follow it and its `locale`. */
+/** Origins follow the viewer; Code approvals retain their review locale. Both public filters apply on every read path. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
-  viewerUserId?: string | null,
-  originViewer?: AiOriginViewer,
+  viewerUserId: string | null | undefined,
+  originViewer: AiOriginViewer & { locale: string },
 ): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId, originViewer)).state;
 
 const loadStreamSnapshot = async (
   conversation: AiConversation,
-  viewerUserId?: string | null,
-  originViewer?: AiOriginViewer,
+  viewerUserId: string | null | undefined,
+  originViewer: AiOriginViewer & { locale: string },
 ): Promise<AiStreamSnapshot> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
   ]);
   const snapshot = active ? turnSnapshotFromActive(active) : null;
+  // The choice history is read at most once, and only when the page or the running turn shows a choice.
+  const choiceContext = messagesNeedChoiceContext(page.messages, snapshot?.blocks)
+    ? await aiConversations.listChoiceMessages({ conversationId: conversation.id })
+    : [];
+  if (snapshot && choiceContext.length) {
+    const choices = projectAiChoices(choiceContext);
+    const byCall = new Map(
+      choices.flatMap((stored) =>
+        stored.loopId === active!.turn.id && stored.message.role === "tool_result" && stored.meta?.resultChoice
+          ? [[stored.message.callId, stored.meta.resultChoice] as const]
+          : [],
+      ),
+    );
+    snapshot.blocks = snapshot.blocks.map((block) =>
+      block.kind === "tool" && byCall.has(block.callId) ? { ...block, choice: byCall.get(block.callId) } : block,
+    );
+  }
   if (snapshot) {
     const [steers, resolvedActions] = await Promise.all([
       aiConversations.listTurnSteers({ conversationId: conversation.id, turnId: active!.turn.id }),
@@ -228,7 +263,7 @@ const loadStreamSnapshot = async (
     state: {
       type: "state",
       conversation: { ...conversation, id: conversation.shortId },
-      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId, originViewer),
+      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId, originViewer, choiceContext),
       hasMoreMessages: page.hasMore,
       activeTurn: snapshot,
     },
@@ -300,8 +335,8 @@ const loadStreamSnapshotWith = async (
   conversation: AiConversation,
   event: AiLiveTopicEvent,
   signal: AbortSignal,
-  viewerUserId?: string | null,
-  originViewer?: AiOriginViewer,
+  viewerUserId: string | null | undefined,
+  originViewer: AiOriginViewer & { locale: string },
 ): Promise<AiStreamSnapshot | null> => {
   for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
     const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
@@ -342,7 +377,7 @@ const loadStreamSnapshotWith = async (
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
-  originViewer?: AiOriginViewer;
+  originViewer: AiOriginViewer & { locale: string };
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
   let current: StreamPosition | null = null;
@@ -360,7 +395,11 @@ export async function* streamAiConversationEvents(input: {
     }
 
     const event = item.value.data;
-    if (needsSavedState(event, current, reloadedTurns)) {
+    const choiceChanged =
+      event.type === "message_saved" &&
+      (event.message.meta?.choice ||
+        (event.message.message.role === "tool_result" && viewChoice(capabilityResultView(event.message.message.result))));
+    if (choiceChanged || needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
       const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId, input.originViewer);
       // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
@@ -412,11 +451,18 @@ export async function* streamAiConversationEvents(input: {
     }
 
     if (event.type === "message_saved") {
-      const [message] = projectPublicAiStoredMessages([event.message], input.conversation.shortId, new Map([[event.turnId, publicTurnId]]));
+      const [message] =
+        choiceChanged || event.message.meta?.writerOrigin || event.message.meta?.agentMessage || event.message.message.role === "user"
+          ? await publicAiStoredMessages([event.message], input.conversation, input.viewerUserId, input.originViewer)
+          : projectPublicAiStoredMessages(
+              await withCurrentAppNames([event.message], input.originViewer.locale),
+              input.conversation.shortId,
+              new Map([[event.turnId, publicTurnId]]),
+            );
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }
-    yield { ...publicAiWireEvent(event), conversationId: input.conversation.shortId, turnId: publicTurnId };
+    yield publicAiToolEvent({ ...publicAiWireEvent(event), conversationId: input.conversation.shortId, turnId: publicTurnId });
   }
 }
 
@@ -426,7 +472,7 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
-  originViewer?: AiOriginViewer;
+  originViewer: AiOriginViewer & { locale: string };
   signal?: AbortSignal;
   heartbeatMs?: number;
   /** Checked at admission and on access events, never by the heartbeat. */

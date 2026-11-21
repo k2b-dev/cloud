@@ -21,7 +21,7 @@ test("explicit variants authorize the owning model", async () => {
   spyOn(settings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [aiModelFixture({ id: "chat:deep" })] }));
   const access = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
   expect(await selectAssistantAiModel(subject, { id: "chat:deep" })).toEqual({ id: "chat:deep" });
-  expect(access).toHaveBeenCalledWith("chat", subject);
+  expect(access).toHaveBeenCalledWith("chat", subject, undefined);
 });
 test("background mandates keep their own authorization", () => {
   expect(isAssistantChatTurn({ input: "chat", assistantChat: true })).toBe(true);

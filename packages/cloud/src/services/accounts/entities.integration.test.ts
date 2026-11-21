@@ -392,3 +392,94 @@ suite("service-account directory eligibility filters", () => {
     }
   });
 });
+
+suite("Code handle directory filtering", () => {
+  test("never finds Code by a name, a UUID, a prefix, or without admitted target context", async () => {
+    const handle = "code-7k2q9m4xwt";
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,handle,title,status)
+      VALUES('code:app:a2-fixture','code',${handle},'Werkstatt','active') RETURNING id`;
+    const { list } = await import("./entities");
+    try {
+      const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account!.id }, permission: "read" });
+      if (!access.ok) throw new Error(access.error.message);
+      const accessId = access.data.id;
+      await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${account!.id}::uuid`;
+      for (const search of ["Werkstatt", "a2-fixture", "code-7k2", account!.id, handle]) {
+        const result = await list({ visibility: { type: "directory" }, search, kinds: ["service_account"] });
+        expect(result.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(false);
+      }
+      const result = await list({
+        visibility: { type: "directory" },
+        search: handle,
+        codeAccountHandle: handle,
+        locale: "de",
+      });
+      const found = result.items.find((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id);
+      expect(found).toMatchObject({
+        kind: "service_account",
+        serviceAccount: {
+          id: account!.id,
+          kind: "code",
+          handle,
+          name: "Code von Werkstatt",
+          status: "disabled",
+          description: "Dienstkonto einer App · deaktiviert",
+        },
+      });
+      expect(
+        (await list({ visibility: { type: "directory" }, search: handle, codeAccountHandle: handle, serviceAccountStatus: "active" }))
+          .items,
+      ).toEqual([]);
+      expect(
+        (await list({ visibility: { type: "directory" }, search: handle, codeAccountHandle: handle, serviceAccountStatus: "disabled" }))
+          .items,
+      ).toHaveLength(1);
+      const [storedGrant] = await sql`SELECT service_account_id FROM auth.access WHERE id=${accessId}::uuid`;
+      expect(storedGrant?.service_account_id).toBe(account!.id);
+      const guest = await list({
+        visibility: { type: "self_and_effective_groups", userId: account!.id },
+        search: handle,
+        codeAccountHandle: handle,
+      });
+      expect(guest.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(true);
+      const noAdmission = await list({ visibility: { type: "self_and_effective_groups", userId: account!.id }, search: handle });
+      expect(noAdmission.items).toEqual([]);
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+      expect((await list({ visibility: { type: "directory" }, search: handle, codeAccountHandle: handle })).items).toEqual([]);
+      expect(await sql`SELECT id FROM auth.access WHERE id=${accessId}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+});
+
+suite("resource Code titles in exact handle lookup", () => {
+  test("only admitted target-manager context returns the resource title and Kennung", async () => {
+    const handle = "code-1a2b3c4d5e";
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,handle,title,status)
+      VALUES('code:demo.item:private-owner','code',${handle},'Private resource title','active') RETURNING id`;
+    const { list } = await import("./entities");
+    try {
+      for (const search of [handle, "Private resource title", "code-1a2b", account!.id]) {
+        const result = await list({ visibility: { type: "directory" }, search, kinds: ["service_account"], locale: "de" });
+        expect(JSON.stringify(result)).not.toContain("Private resource title");
+        expect(result.items.some((item) => item.kind === "service_account" && item.serviceAccount.id === account!.id)).toBe(false);
+      }
+      const managed = await list({
+        visibility: { type: "directory" },
+        search: handle,
+        codeAccountHandle: handle,
+        kinds: ["service_account"],
+        locale: "de",
+      });
+      expect(managed.items).toContainEqual(
+        expect.objectContaining({
+          kind: "service_account",
+          serviceAccount: expect.objectContaining({ id: account!.id, name: "Code von Private resource title", handle }),
+        }),
+      );
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+});

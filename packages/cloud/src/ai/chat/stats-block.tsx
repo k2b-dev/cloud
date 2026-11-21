@@ -8,11 +8,14 @@ export function CloudStatsTiles(props: { input: CloudStatsDescription; columns: 
   const locale = useLocale();
   const tiles = createMemo(() => cloudAiStatsTiles(props.input, locale()));
   return (
-    <StatGrid columns={props.columns}>
+    // Flat key figures, as an app's key figures in the conversation: no tiles.
+    <StatGrid columns={props.columns} surface="flat">
       <Index each={tiles()}>
         {(tile, index) => (
           <StatCell
             label={tile().label}
+            // The small sign before the name: its own icon or the neutral sign (`figure-sign.ts`).
+            icon={props.input.items[index]?.icon}
             deltaPlacement="below"
             value={tile().value}
             title={tile().value}

@@ -1,4 +1,4 @@
-import type { PermissionLevel, User } from "@k2b/cloud/contracts";
+import type { AccessSubject, PermissionLevel, RequestActor, User } from "@k2b/cloud/contracts";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, type ContactBookApiKey, grantBookAccess, listContactBookApiKeys } from "./access";
@@ -9,6 +9,7 @@ export const create = async (config: {
   bookId: string;
   bookName: string;
   actor: User;
+  caller: { actor: RequestActor; accessSubject: AccessSubject };
   data: {
     name: string;
     expiresAt?: string | null;
@@ -32,6 +33,10 @@ export const create = async (config: {
     bookId: config.bookId,
     principal: { type: "service_account", serviceAccountId: serviceAccount.data.id },
     permission: config.data.permission,
+    caller: { ...config.caller, authority: "grant" },
+  }).catch(async (error: unknown) => {
+    await cleanupServiceAccount();
+    throw error;
   });
   if (!access.ok) {
     await cleanupServiceAccount();

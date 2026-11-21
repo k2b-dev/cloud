@@ -6,6 +6,7 @@ import { sql } from "../runtime/clients";
 import { buildEnrichmentTranscript } from "./enrich";
 import { AiTurnExecutor } from "./executor";
 import { migrateCloudAi } from "./migrate";
+import { aiModelAccess } from "./model-access";
 import { aiModelFixture, aiSettingsFixture } from "./model-fixture";
 import * as nextMessageStore from "./next-message-store";
 import { dismissAiNextMessage, saveAiNextMessage } from "./next-message-store";
@@ -54,7 +55,9 @@ databaseSuite()("next message storage and projections", () => {
     const input = { conversationId: conversation.id, turnId, userId, text: suggestion };
     const complete = () => sql`UPDATE ai.turns SET status = 'completed', completed_at = ${frozen}::timestamptz WHERE id = ${turnId}::uuid`;
     const read = async (viewer: string | null = userId) =>
-      publicAiStoredMessages(await aiConversations.listMessages({ conversationId: conversation.id }), conversation, viewer);
+      publicAiStoredMessages(await aiConversations.listMessages({ conversationId: conversation.id }), conversation, viewer, {
+        locale: "de",
+      });
     return { userId, conversation, turnId, messageId, input, complete, read };
   };
 
@@ -112,6 +115,8 @@ databaseSuite()("next message storage and projections", () => {
         yield { type: "usage", usage: { input: 10, output: 10, total: 20 }, finishReason: "tool_use" };
       },
     };
+    // This suite covers the suggestion; model-access-turns.test.ts covers the model check before every turn.
+    const modelAccess = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
     const save = spyOn(nextMessageStore, "saveAiNextMessage");
     if (saveFails) save.mockRejectedValue(new Error("Frozen storage failure"));
     const events: AiWireEvent[] = [];
@@ -137,12 +142,14 @@ databaseSuite()("next message storage and projections", () => {
         await aiConversations.listMessages({ conversationId: conversation.id }),
         conversation,
         userId,
+        { locale: "de" },
       );
       const answer = messages.find((message) => message.message.role === "assistant");
       expect(answer?.suggestedNextMessage).toEqual(saveFails ? undefined : { text: suggestion, dismissedAt: null });
       expect(events).toContainEqual(expect.objectContaining({ type: "turn_finished", status: "completed" }));
       expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
     } finally {
+      modelAccess.mockRestore();
       save.mockRestore();
       publish.mockRestore();
     }
@@ -165,8 +172,8 @@ databaseSuite()("next message storage and projections", () => {
     expect((await f.read())[0]?.suggestedNextMessage).toEqual({ text: suggestion, dismissedAt: null });
     expect((await f.read(await person()))[0]?.suggestedNextMessage).toBeUndefined();
     expect((await f.read(null))[0]?.suggestedNextMessage).toBeUndefined();
-    expect((await loadAiStreamState(f.conversation, f.userId)).messages[0]?.suggestedNextMessage?.text).toBe(suggestion);
-    expect((await loadAiStreamState(f.conversation)).messages[0]?.suggestedNextMessage).toBeUndefined();
+    expect((await loadAiStreamState(f.conversation, f.userId, { locale: "de" })).messages[0]?.suggestedNextMessage?.text).toBe(suggestion);
+    expect((await loadAiStreamState(f.conversation, undefined, { locale: "de" })).messages[0]?.suggestedNextMessage).toBeUndefined();
   });
 
   test("a suggestion stored as a placeholder or shorter than six characters never reaches the composer", async () => {
@@ -176,7 +183,7 @@ databaseSuite()("next message storage and projections", () => {
       await saveAiNextMessage({ ...f.input, text });
       await f.complete();
       expect((await f.read())[0]?.suggestedNextMessage).toBeUndefined();
-      expect((await loadAiStreamState(f.conversation, f.userId)).messages[0]?.suggestedNextMessage).toBeUndefined();
+      expect((await loadAiStreamState(f.conversation, f.userId, { locale: "de" })).messages[0]?.suggestedNextMessage).toBeUndefined();
     }
   });
 

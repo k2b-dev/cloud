@@ -1,4 +1,3 @@
-import type { Message, Usage } from "@k2b/nessi";
 import {
   Button,
   type ChatAction,
@@ -11,39 +10,66 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
+import { importOnDemand } from "../../browser/reload";
+import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { markdown } from "../../shared";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
-import {
-  type AiForkMessageInput,
-  type AiRetryMessageInput,
-  aiToolIcon,
-  describeResponseEnd,
-  displayToolName,
-  formatWorkedDuration,
-} from "./message-utils";
+import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
+import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage, AiTurnError } from "../types";
+import type { AiForkMessageInput, AiRetryMessageInput } from "./message-utils";
 import { aiChatMessages } from "./messages";
+import type { AiSubmittedCodeVersion } from "./turn-layout";
+import type { AiWakeupLineInput } from "./wakeup-plan";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
 
-type ApprovalHandler = (request: AiTurnActionRequest, input: { approved: boolean; remember?: "chat" | "always" }) => void | Promise<void>;
+type ApprovalHandler = (
+  request: AiTurnActionRequest,
+  input: { approved: boolean; remember?: "chat" | "always"; digest?: string },
+) => void | Promise<void>;
+/** Sends a draft's edited fields; Cloud reviews the Action again and answers with the review the person now approves. */
+type EditDraftHandler = (
+  request: { turnId: string; callId: string; requestId: string },
+  values: Record<string, string>,
+  digest: string,
+) => Promise<ApprovalDraftResult>;
 type FrontendToolResultHandler = (request: AiTurnActionRequest, result: unknown) => void | Promise<void>;
 type ForkMessageHandler = (entry: AiStoredMessage, input?: AiForkMessageInput) => void | Promise<void>;
 type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput) => void | Promise<void>;
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** The host draws the chat's alarm lines with their actions; without it, a line names its fact quietly. */
+  renderWakeupLine?: (line: AiWakeupLineInput, key: string) => JSX.Element;
+  /** The host supplies a remedy for its own turn failures, using the current viewer's permissions. */
+  renderTurnErrorAction?: (error: AiTurnError) => JSX.Element;
+  /** The host supplies the authorized card jump for a durable decision fact. */
+  renderCodeDecision?: (entry: AiStoredMessage) => JSX.Element;
+  /** Host-localized authoring budget notice. Superseded receipts can release their action space; consent uses onContinueTurn. */
+  renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean, superseded: () => boolean) => JSX.Element;
   /**
    * Host-owned visualizations, persisted independently of the execution session. Called once per `code_present`
    * call, from its first event: `result()` is undefined while the call runs and the saved result afterwards, so
    * the host reserves the frame early and keeps its state when the turn ends.
    */
   renderCodePresentation?: (result: () => unknown) => JSX.Element;
+  /**
+   * Host-owned view of a version `code_submit` saved, placed after the turn's text because it is what the person acts
+   * on next. Without it, the call is a step like any other.
+   */
+  renderCodeVersion?: (version: AiSubmittedCodeVersion) => JSX.Element;
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;
+  onEditDraft?: EditDraftHandler;
+  /**
+   * Sends the person's choice in a capability view: the call's turn and id, the choice block and the chosen option ids.
+   * Resolves `false` when Cloud did not take it, such as while a response runs.
+   */
+  onChoice?: (request: { turnId: string; toolCallId: string }, blockId: string, ids: string[]) => Promise<boolean>;
   /** Revoke the approval that lets this chat read `origin` without asking; the next request asks again. */
   onRevokeWebsite?: (origin: string) => Promise<void>;
   onFrontendToolResult?: FrontendToolResultHandler;
@@ -60,14 +86,14 @@ export type AiChatActions = {
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
+  /** Quotes a message as a whole: where no text can be selected, on touch screens and from the keyboard. */
+  onQuote?: (quote: AiQuoteDraft) => void;
   /**
    * Continue after a failed turn. Send `message`, a visible request in the reader's language to pick up where the
    * turn stopped, through the host's normal send path. Without it, a failed turn shows its reason only.
    */
   onContinueTurn?: (message: string) => void | Promise<void>;
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
-  /** Open the originating background run for a delivered scheduled result. */
-  onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
   /**
@@ -86,9 +112,6 @@ export type AiChatActions = {
   onOpenReference?: (title: string, ref: CloudResourceRef) => void;
 };
 
-const assistantBlocks = (message: Message): Extract<Message, { role: "assistant" }>["content"] =>
-  message.role === "assistant" ? message.content : [];
-
 const AiChatActionContext = createContext<AiChatActions>({});
 
 export const useAiChatActions = () => useContext(AiChatActionContext);
@@ -96,168 +119,6 @@ export const useAiChatActions = () => useContext(AiChatActionContext);
 export function AiChatActionsProvider(props: { actions?: AiChatActions; children: JSX.Element }) {
   return <AiChatActionContext.Provider value={props.actions ?? {}}>{props.children}</AiChatActionContext.Provider>;
 }
-
-const usageValue = (usage: Usage | null | undefined, key: "input" | "output" | "total") => {
-  const value = (usage as Partial<Record<"input" | "output" | "total", unknown>> | null | undefined)?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-};
-
-const formatDateTime = (value: string, locale: string) =>
-  new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-
-const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
-  const t = aiChatMessages(locale);
-  const assistantEntries = entries.filter((entry) => entry.kind === "message" && entry.message.role === "assistant");
-  const entry = assistantEntries.findLast((candidate) => candidate.loopAggregate) ?? assistantEntries.at(-1) ?? entries.at(-1);
-  if (!entry) return null;
-
-  const blocks = assistantEntries.flatMap((candidate) => assistantBlocks(candidate.message));
-  const toolCalls = blocks.filter((block) => block.type === "tool_call");
-  const aggregate = entry.loopAggregate;
-  const usage = aggregate?.usage ?? entry.usage;
-  const timing = aggregate?.timing;
-
-  const meta = [
-    { label: t.infoProviderModel, value: entry.providerModel ?? t.infoUnknown },
-    { label: t.infoModelProfile, value: entry.modelId ?? t.infoUnknown },
-    { label: t.infoLoopId, value: entry.loopId ?? t.infoLegacy },
-    { label: t.infoFinished, value: describeResponseEnd(entry, locale) },
-    { label: t.infoCreated, value: formatDateTime(entry.createdAt, locale) },
-  ];
-
-  const issues = [
-    { label: t.infoIssueErrors, count: aggregate?.toolErrorCount ?? 0 },
-    { label: t.infoIssueStream, count: aggregate?.toolIssueCount ?? 0 },
-    { label: t.infoIssueMalformed, count: aggregate?.toolMalformedCount ?? 0 },
-    { label: t.infoIssueCancelled, count: aggregate?.toolCancelledCount ?? 0 },
-  ].filter((issue) => issue.count > 0);
-
-  const toolCounts = new Map<string, number>();
-  for (const tool of aggregate?.turns.flatMap((turn) => turn.toolCalls) ?? toolCalls) {
-    toolCounts.set(tool.name, (toolCounts.get(tool.name) ?? 0) + 1);
-  }
-
-  return {
-    meta,
-    timing,
-    usage: {
-      input: usageValue(usage, "input"),
-      output: usageValue(usage, "output"),
-      total: usageValue(usage, "total"),
-    },
-    turns: aggregate?.assistantMessageCount ?? 1,
-    toolCallCount: aggregate?.toolCallCount ?? toolCalls.length,
-    issues,
-    tools: [...toolCounts.entries()].map(([name, count]) => ({ name, count })),
-  };
-};
-
-/** Label and value pairs in one quiet list; a hint explains a value in muted text below it. */
-function InfoRows(props: { rows: readonly { label: string; value: string; hint?: string }[] }) {
-  return (
-    <dl class="ai-response-info__rows">
-      <For each={props.rows}>
-        {(row) => (
-          <div>
-            <dt>
-              {row.label}
-              <Show when={row.hint}>
-                <span>{row.hint}</span>
-              </Show>
-            </dt>
-            <dd title={row.value}>{row.value}</dd>
-          </div>
-        )}
-      </For>
-    </dl>
-  );
-}
-
-const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
-  const info = assistantResponseInfo(entries, locale);
-  if (!info) return;
-
-  const t = aiChatMessages(locale);
-  const number = (value: number) => value.toLocaleString(locale);
-  const tokens = (value: number | null) => (value === null ? "–" : number(value));
-  const issueSummary = info.issues.map((issue) => `${issue.count} ${issue.label}`).join(" · ");
-  const issueTotal = info.issues.reduce((sum, issue) => sum + issue.count, 0);
-
-  void dialogCore.open<void>(
-    (close) => (
-      <PanelDialog>
-        <PanelDialog.Header title={t.actionMessageInfo} subtitle={t.infoSubtitle} icon="ti ti-info-circle" close={close} />
-        <PanelDialog.Body>
-          <PanelDialog.Section title={t.infoDetails} icon="ti ti-list-details">
-            <InfoRows rows={info.meta} />
-          </PanelDialog.Section>
-
-          <Show when={info.timing}>
-            {(timing) => (
-              <PanelDialog.Section title={t.infoTiming} icon="ti ti-clock">
-                {/* Worked = writing + tool execution; waiting for approvals and answers is listed separately. */}
-                <InfoRows
-                  rows={[
-                    { label: t.infoWorked, value: formatWorkedDuration(timing().totalElapsedMs), hint: t.infoWorkedHint },
-                    { label: t.infoGeneration, value: formatWorkedDuration(timing().generationMs) },
-                    { label: t.infoToolTime, value: timing().toolExecutionMs > 0 ? formatWorkedDuration(timing().toolExecutionMs) : "–" },
-                    {
-                      label: t.infoWaiting,
-                      value: timing().actionWaitMs > 0 ? formatWorkedDuration(timing().actionWaitMs) : "–",
-                      hint: t.infoWaitingHint,
-                    },
-                    { label: t.infoWallClock, value: formatWorkedDuration(timing().wallMs) },
-                    {
-                      label: t.infoSpeed,
-                      value:
-                        timing().outputTokensPerSecond !== undefined
-                          ? t.infoTokensPerSecond({
-                              value: timing().outputTokensPerSecond!.toLocaleString(locale, { maximumFractionDigits: 1 }),
-                            })
-                          : "–",
-                    },
-                  ]}
-                />
-              </PanelDialog.Section>
-            )}
-          </Show>
-
-          <PanelDialog.Section title={t.infoUsage} icon="ti ti-chart-bar">
-            <InfoRows
-              rows={[
-                { label: t.infoInputTokens, value: tokens(info.usage.input) },
-                { label: t.infoOutputTokens, value: tokens(info.usage.output) },
-                { label: t.infoTotalTokens, value: tokens(info.usage.total) },
-                { label: t.assistantTurns, value: number(info.turns) },
-                { label: t.toolCalls, value: number(info.toolCallCount) },
-                { label: t.toolIssues, value: info.issues.length > 0 ? `${number(issueTotal)} · ${issueSummary}` : t.none },
-              ]}
-            />
-          </PanelDialog.Section>
-
-          <Show when={info.tools.length > 0}>
-            <PanelDialog.Section title={t.infoTools} icon="ti ti-tool" subtitle={t.infoToolsHint}>
-              <ul class="ai-response-info__tools">
-                <For each={info.tools}>
-                  {(tool) => (
-                    <li>
-                      <i class={aiToolIcon(tool.name)} aria-hidden="true" />
-                      {displayToolName(tool.name, locale)}
-                      <Show when={tool.count > 1}>
-                        <span class="text-dimmed tabular-nums">×{tool.count}</span>
-                      </Show>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </PanelDialog.Section>
-          </Show>
-        </PanelDialog.Body>
-      </PanelDialog>
-    ),
-    panelDialogFixedOptions,
-  );
-};
 
 const forkTitleFromText = (text: string, fallback: string): string => {
   const firstLine = text
@@ -408,6 +269,22 @@ export function createAssistantMessageActions(props: {
       { id: "details", label: t.actionMoreDetailed, icon: "ti ti-list-details", overflow: true, onSelect: retry("details") },
       { id: "concise", label: t.actionMoreConcise, icon: "ti ti-align-left", overflow: true, onSelect: retry("concise") },
     );
+  if (actions.onQuote && props.copyText)
+    result.push({
+      id: "quote",
+      label: t.actionQuote,
+      icon: "ti ti-quote",
+      overflow: true,
+      // The answer as the reader sees it, not its Markdown source: the same words a selection would quote.
+      onSelect: () =>
+        actions.onQuote!({
+          messageId: props.entry.shortId,
+          from: "assistant",
+          text: aiQuoteVisibleTextOfHtml(markdown.renderSync(props.copyText, { locale: locale() }))
+            .replace(/\s+/gu, " ")
+            .trim(),
+        }),
+    });
   if (actions.onForkMessage)
     result.push({
       id: "fork",
@@ -421,7 +298,40 @@ export function createAssistantMessageActions(props: {
     label: t.actionMessageInfo,
     icon: "ti ti-info-circle",
     overflow: true,
-    onSelect: () => openAssistantResponseInfo(props.entries, locale()),
+    onSelect: () => {
+      const [details, setDetails] = createSignal<typeof import("./message-info")>();
+      const [failed, setFailed] = createSignal(false);
+      const load = () => {
+        setFailed(false);
+        return importOnDemand(() => import("./message-info")).then((module) => {
+          if (module) setDetails(module);
+          else setFailed(true);
+        });
+      };
+      void dialogCore.open<void>(
+        (close) => (
+          <PanelDialog>
+            <PanelDialog.Header title={t.actionMessageInfo} subtitle={t.infoSubtitle} icon="ti ti-info-circle" close={close} />
+            <PanelDialog.Body>
+              <Show
+                when={details()}
+                fallback={
+                  <Show when={failed()} fallback={<p role="status">{t.viewLoading}</p>}>
+                    <Button variant="secondary" onClick={load}>
+                      {t.chartReload}
+                    </Button>
+                  </Show>
+                }
+              >
+                {(module) => module().AssistantResponseInfo({ entries: props.entries, locale: locale() })}
+              </Show>
+            </PanelDialog.Body>
+          </PanelDialog>
+        ),
+        panelDialogFixedOptions,
+      );
+      return load();
+    },
   });
   return result;
 }

@@ -5,6 +5,8 @@ import { freeipa } from "../../server/services";
 import { accountsAppService } from "../accounts/app";
 import type { AccountsNotificationSender } from "../accounts/notification-sender";
 import { transitionIpaUserToLocal } from "../accounts/switching";
+import { hasOtherApprovalAdmin } from "../approvals/policy";
+import { setProfile } from "../providers/local/users";
 import { session } from "../session";
 import * as settings from "../settings";
 import { addIpa } from "./users";
@@ -20,6 +22,7 @@ const config = {
   "freeipa.service_user": "fixture",
   "freeipa.service_password": "fixture-only",
   "freeipa.groups.base_sync": ["cloud"],
+  "freeipa.groups.admin": ["cloud-reviewers"],
   "freeipa.groups.base_ipa_realm": ["cloud-users"],
 };
 const notFound = { result: null, error: { code: 4001, name: "NotFound", message: "not found", kind: "rpc" as const }, id: 0 };
@@ -156,6 +159,41 @@ suite("FreeIPA guest reactivation through the real account services", () => {
     expect(memberships.get("cloud")?.has(uid)).toBe(true);
     expect(memberships.get("cloud-users")?.has(uid)).toBe(true);
     expect(await sql`SELECT * FROM auth.ipa_reactivations WHERE user_id=${id}::uuid`).toHaveLength(0);
+  });
+
+  test("returning the marked emergency identity to IPA ends its marker and restores reviewer eligibility", async () => {
+    await sql`UPDATE auth.users SET uid='admin',profile='user',admin=true,emergency_admin=true WHERE id=${id}::uuid`;
+    const authorId = crypto.randomUUID();
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(false);
+    const remote = remoteUsers.get(uid)!;
+    remoteUsers.clear();
+    remoteUsers.set("admin", { ...remote, uid: ["admin"] });
+    for (const members of memberships.values()) {
+      if (members.delete(uid)) members.add("admin");
+    }
+    expect(await promote()).toMatchObject({ ok: true, data: { id, uid: "admin", reactivated: true } });
+    expect([...(await sql`SELECT provider,uid,emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([
+      { provider: "ipa", uid: "admin", emergency_admin: false },
+    ]);
+    await settings.set("freeipa.groups.admin", ["cloud-users"]);
+    await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${id}::uuid,'cloud-users')`;
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(true);
+  });
+
+  test("changing the marked emergency identity to an ordinary local profile ends its marker", async () => {
+    await sql`UPDATE auth.users SET uid='admin',profile='user',admin=true,emergency_admin=true WHERE id=${id}::uuid`;
+    const authorId = crypto.randomUUID();
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(false);
+    expect(await setProfile({ id, profile: "user", accountExpires: null })).toMatchObject({ ok: true });
+    expect([...(await sql`SELECT emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([{ emergency_admin: true }]);
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(false);
+    expect(await setProfile({ id, profile: "guest", accountExpires: null })).toMatchObject({ ok: true });
+    expect([...(await sql`SELECT provider,profile,emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([
+      { provider: "local", profile: "guest", emergency_admin: false },
+    ]);
+    expect(await setProfile({ id, profile: "user", accountExpires: null })).toMatchObject({ ok: true });
+    await sql`UPDATE auth.users SET admin=true WHERE id=${id}::uuid`;
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(true);
   });
 
   test("disabled accounts are enabled and an unlimited approval clears remote expiry", async () => {

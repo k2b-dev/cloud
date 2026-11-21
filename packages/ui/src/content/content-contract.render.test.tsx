@@ -339,7 +339,7 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(code).toContain('role="region"');
     expect(code).toContain('aria-label="ts code"');
     expect(code).toContain('tabindex="0"');
-    expect(code).toContain("cd-k");
+    expect(code).toContain("hl-keyword");
     expect(code).toContain("Copy");
     expect(docs).toContain("<mark>SELECT 1</mark>");
     expect(docs).toContain("Exact contract");

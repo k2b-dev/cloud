@@ -110,31 +110,43 @@ export const spacesActionReview = (
       .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
       .slice(0, 200)
       .toWellFormed() || "—";
-  const compact = (value: string, max: number) =>
-    value
-      .replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ")
-      .slice(0, max)
-      .toWellFormed() || "—";
+  const rows = proposal.details.map(({ label, value, format }) => ({
+    label,
+    value: String(value)
+      .toWellFormed()
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, (char) => (char === "\n" || char === "\t" ? char : "")),
+    ...(format === "date" || format === "date-time" ? { format } : {}),
+  }));
   return {
-    preview: {
-      kind: "page",
-      title,
-      format: "plain",
-      body: proposal.details
-        .slice(0, 12)
-        .map(({ label, value }) => `${compact(label, 60)}: ${compact(value, 200)}`)
-        .join("\n"),
-      truncated: true,
-    },
+    consequences: rows.flatMap(({ label, value, format }) =>
+      format ? [{ text: `${label}: {at}`, slots: { at: { kind: "time" as const, start: value, format } } }] : [],
+    ),
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },
-    content: {
-      kind: "page",
-      title,
-      format: "plain",
-      body: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
-    },
+    // The question already says what happens. Short facts are rows; dates read in the reader's zone as the
+    // consequences above, never a second time as ISO text; long text such as a description reads as Markdown.
+    ...(() => {
+      // The view keeps every proposed character; only the consequences need single-line text.
+      const exact = proposal.details.map(({ label, value, display }, index) => ({
+        label,
+        value: String(value).toWellFormed(),
+        block: display === "block",
+        dated: rows[index]?.format !== undefined,
+      }));
+      const facts = exact.filter((row) => !row.dated && !row.block);
+      const texts = exact.filter((row) => !row.dated && row.block);
+      const blocks = [
+        ...(facts.length ? [{ kind: "Detail" as const, title, items: facts.map(({ label, value }) => ({ label, value })) }] : []),
+        ...texts.map(({ label, value }) => ({
+          kind: "Section" as const,
+          title: label,
+          children: [{ kind: "Text" as const, text: value, format: "markdown" as const }],
+        })),
+      ];
+      return blocks.length ? { view: { version: 1 as const, blocks } } : {};
+    })(),
     scope: proposal.scope,
     ...(proposal.ask ? { ask: proposal.ask } : {}),
     ...(proposal.links ? { links: proposal.links } : {}),

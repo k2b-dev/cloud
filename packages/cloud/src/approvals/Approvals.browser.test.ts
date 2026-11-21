@@ -27,17 +27,28 @@ const item = (id: string, overrides: Partial<PendingApproval> = {}): PendingAppr
   assurance: "confirm",
   sentence: "Mail: Send the draft “Offer Q4 – maintenance and support” to external recipients after the undo window",
   review: {
-    message: "Sends the draft after the undo window.",
-    details: [
-      { label: "To", value: "customer@example.com" },
-      { label: "Cc", value: "alex@example.com" },
-      {
-        label: "Body",
-        value:
-          "Hello,\nplease find our offer for maintenance and support in the fourth quarter attached. Prices are valid until 31 October. If you have questions, reach out to Alex or to me directly.",
-        display: "block",
-      },
-    ],
+    locale: "en",
+    sentence: { action: "Send the offer", running: "Sending the offer", done: "Offer sent", confirm: "Send offer", decline: "Don't run" },
+    slots: {},
+    ask: "sends",
+    view: {
+      version: 1,
+      blocks: [
+        {
+          kind: "Detail",
+          title: "Details",
+          items: [
+            { label: "To", value: "customer@example.com" },
+            { label: "Cc", value: "alex@example.com" },
+            {
+              label: "Body",
+              value:
+                "Hello, please find our offer for maintenance and support in the fourth quarter attached. Prices are valid until 31 October. If you have questions, reach out to Alex or to me directly.",
+            },
+          ],
+        },
+      ],
+    },
   },
   requester: { kind: "chat", appId: "assistant", title: "Offer Q4 for the customer", href: "/app/assistant?conversation=chat1" },
   remember: { chat: false, always: false, website: false },
@@ -53,12 +64,12 @@ const page: ApprovalPage = {
   elsewhere: 1,
 };
 
-const render = (locale: string, layout: "list" | "band") =>
+const render = (locale: string) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(Approvals, { app: "assistant", initial: page, layout });
+        return createComponent(Approvals, { app: "assistant", initial: page });
       },
     }),
   );
@@ -115,11 +126,11 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, locale: string, layout: "list" | "band"): Promise<Page> => {
+const open = async (width: number, locale: string): Promise<Page> => {
   const tab = await browser.newPage({ viewport: { width, height: 900 } });
   await tab.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div style="padding:16px;max-width:48rem">${render(locale, layout)}</div></body></html>`,
+      `<body class="k2b-ui"><div style="padding:16px;max-width:48rem">${render(locale)}</div></body></html>`,
   );
   return tab;
 };
@@ -127,39 +138,19 @@ const open = async (width: number, locale: string, layout: "list" | "band"): Pro
 describe("Approvals layout", () => {
   for (const width of [1280, 700, 390]) {
     test(`${width} px: each request is the chat's question card, and nothing overflows`, async () => {
-      const tab = await open(width, "en", "list");
+      const tab = await open(width, "en");
       try {
         await settled(tab);
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBe(0);
-        expect(await tab.locator("article.cloud-approval .k2b-chat-decision__card").count()).toBe(2);
-        // The answers are the shared 44 px buttons; there is no icon column and no box around the card.
-        const answer = (await tab.locator("article.cloud-approval .k2b-chat-decision__answer").first().boundingBox())!;
-        expect(answer.height).toBeGreaterThanOrEqual(44);
-        const card = tab.locator("article.cloud-approval .k2b-chat-decision__card").first();
-        expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await tab.locator("article.cloud-approval .cloud-approval-frame").count()).toBe(2);
+        // The shared card keeps its tinted surface and normal-size answers at every width.
+        const answer = (await tab.locator("article.cloud-approval .k2b-notice-card__actions .k2b-button").first().boundingBox())!;
+        // This fixture is server-only; responsive button sizing starts after mounting.
+        expect(answer.height).toBe(32);
+        const card = tab.locator("article.cloud-approval .cloud-approval-frame").first();
+        expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect(await tab.locator("article.cloud-approval .cloud-approval__icon").count()).toBe(0);
-      } finally {
-        await tab.close();
-      }
-    });
-
-    test(`${width} px: a band keeps its height as a receipt`, async () => {
-      const tab = await open(width, "de", "band");
-      try {
-        await settled(tab);
-        const heights = await tab.evaluate(() => {
-          const rows = Array.from(document.querySelectorAll<HTMLElement>("article.cloud-approval-band"));
-          const before = rows.map((row) => row.getBoundingClientRect().height);
-          for (const row of rows) {
-            const actions = row.querySelector<HTMLElement>(".cloud-approval__actions")!;
-            actions.removeAttribute("inert");
-            actions.innerHTML = '<span class="cloud-approval__receipt" data-outcome="approved"><i class="ti ti-check"></i>Approved</span>';
-            row.dataset.decided = "true";
-          }
-          return { before, after: rows.map((row) => row.getBoundingClientRect().height) };
-        });
-        expect(heights.after).toEqual(heights.before);
       } finally {
         await tab.close();
       }
@@ -167,16 +158,16 @@ describe("Approvals layout", () => {
   }
 
   test("390 px: the two answers share the row or each takes all of it", async () => {
-    const tab = await open(390, "en", "list");
+    const tab = await open(390, "en");
     try {
       await settled(tab);
       const widths = await tab.evaluate(() => {
         const row = document.querySelector<HTMLElement>("article.cloud-approval")!;
-        const answers = Array.from(row.querySelectorAll<HTMLElement>(".k2b-chat-decision__answer")).map((node) =>
+        const answers = Array.from(row.querySelectorAll<HTMLElement>(".k2b-notice-card__actions .k2b-button")).map((node) =>
           node.getBoundingClientRect(),
         );
         return {
-          row: row.querySelector(".k2b-chat-decision__answers")!.getBoundingClientRect().width,
+          row: row.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect().width,
           answers: answers.map((box) => box.width),
           top: answers.map((box) => box.top),
         };
@@ -192,7 +183,7 @@ describe("Approvals layout", () => {
 
 describe("Approvals in a browser", () => {
   const origin = "https://cloud.example.test";
-  const live = async (width: number, items: PendingApproval[], decided: string[] = [], layout: "list" | "band" = "list") => {
+  const live = async (width: number, items: PendingApproval[], decided: string[] = [], locale = "en") => {
     const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
     const tab = await context.newPage();
     const time = new Date("2026-10-11T09:00:00.000Z");
@@ -204,7 +195,7 @@ describe("Approvals in a browser", () => {
         return route.fulfill({
           contentType: "text/html; charset=utf-8",
           body:
-            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+            `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
             `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
             `<body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div><script src="/harness.js"></script></body></html>`,
         });
@@ -220,7 +211,7 @@ describe("Approvals in a browser", () => {
       }
       return route.fulfill({ status: 404 });
     });
-    await tab.goto(`${origin}/view?layout=${layout}`);
+    await tab.goto(`${origin}/view`);
     await tab.evaluate(() => document.fonts.ready);
     return { tab, close: () => context.close() };
   };
@@ -232,8 +223,11 @@ describe("Approvals in a browser", () => {
       try {
         const first = tab.locator("article.cloud-approval").first();
         await first.waitFor();
-        const top = (await first.boundingBox())!.y;
-        const confirm = first.locator(".k2b-chat-decision__answer").first();
+        const before = await first.boundingBox();
+        const top = before!.y;
+        const confirm = first.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]');
+        await tab.clock.runFor(32);
+        expect((await confirm.boundingBox())!.height).toBe(width === 390 ? 36 : 32);
         // The answers arm after half a second; a click before that does nothing.
         await confirm.click({ force: true });
         expect(decided).toEqual([]);
@@ -241,46 +235,58 @@ describe("Approvals in a browser", () => {
         await confirm.click();
         await tab.locator("article.cloud-approval[data-decided]").waitFor();
         expect(decided).toEqual([page.items[0]!.id]);
-        expect(await first.locator(".k2b-chat-decision__card").count()).toBe(0);
-        expect(await first.locator('.k2b-chat-outcome__text[data-current="true"]').textContent()).toContain("Approved.");
-        expect(await tab.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
-        // The row keeps its place; only what follows moves up, by the answer the person gave.
+        expect(await first.locator(".k2b-chat-decision__details").count()).toBe(0);
+        expect(await first.locator(".k2b-notice-card__content").textContent()).toContain("Approved.");
+        expect(await tab.evaluate(() => document.activeElement?.classList.contains("cloud-approval-frame"))).toBe(true);
+        // The row keeps its place; the following card also stays in place through the decision.
         expect((await first.boundingBox())!.y).toBe(top);
-      } finally {
-        await close();
-      }
-    });
-
-    test(`${width} px: Details on a band opens the same card in a panel and decides from there`, async () => {
-      const decided: string[] = [];
-      const { tab, close } = await live(width, page.items, decided, "band");
-      try {
-        const band = tab.locator("article.cloud-approval-band").nth(1);
-        await band.waitFor();
-        const before = (await band.boundingBox())!.height;
-        await tab.clock.runFor(600);
-        await band.getByRole("button", { name: "Details" }).click();
-        const panel = tab.getByRole("dialog");
-        await panel.waitFor();
-        expect(await panel.textContent()).toContain("This approval applies to exactly this Action.");
-        expect(await panel.textContent()).toContain("If you have questions, reach out to Alex or to me directly.");
-        expect(await panel.locator(".k2b-chat-decision__sentence").textContent()).toBe("Sends the draft after the undo window.");
-        // The panel's answers arm late too, so a quick follow-up click cannot decide the request that just opened.
-        await panel.getByRole("button", { name: "Don't run", exact: true }).click({ force: true });
-        expect(decided).toEqual([]);
-        // Advance the arming timer deliberately; host scheduling cannot consume the guarded interval.
-        await tab.clock.runFor(600);
-        await panel.getByRole("button", { name: "Don't run", exact: true }).click();
-        await tab.locator("article.cloud-approval-band[data-decided]").waitFor();
-        expect(decided).toEqual([page.items[1]!.id]);
-        expect(await tab.getByRole("dialog").count()).toBe(0);
-        expect(await band.getAttribute("data-decided")).toBe("rejected");
-        expect((await band.boundingBox())!.height).toBe(before);
+        expect((await first.boundingBox())!.height).toBe(before!.height);
       } finally {
         await close();
       }
     });
   }
+
+  for (const locale of ["en", "de"])
+    for (const width of [1280, 390]) {
+      test(`${width} px: BUSY in ${locale} keeps the approval in place and retries`, async () => {
+        const request = item("1", {
+          sentence: "Approve Report?",
+          review: { ...page.items[0]!.review!, locale },
+          requester: { kind: "code_version", appId: "core", title: "Report", href: "/code/report/" },
+        });
+        const { tab, close } = await live(width, [request, item("2")], [], locale);
+        let attempts = 0;
+        const decisions: unknown[] = [];
+        await tab.route(`${origin}/api/approvals/*/decision`, (route) => {
+          attempts++;
+          decisions.push(route.request().postDataJSON());
+          return attempts === 1 ? route.fulfill({ status: 503, json: { code: "BUSY" } }) : route.fulfill({ json: { status: "approved" } });
+        });
+        try {
+          const row = tab.locator("article.cloud-approval").first();
+          await row.waitFor();
+          await tab.clock.runFor(600);
+          const before = await row.boundingBox();
+          const next = await tab.locator("article.cloud-approval").nth(1).boundingBox();
+          await row.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]').click();
+          await row
+            .getByText(locale === "de" ? "Gerade beschäftigt – gleich nochmal versuchen" : "Busy right now – try again in a moment")
+            .waitFor();
+          expect(await row.getAttribute("data-decided")).toBeNull();
+          expect(await row.boundingBox()).toEqual(before);
+          expect(await tab.locator("article.cloud-approval").nth(1).boundingBox()).toEqual(next);
+          await row.getByRole("button", { name: locale === "de" ? "Erneut versuchen" : "Try again", exact: true }).click();
+          await row.locator('[data-state="decided"]').waitFor();
+          await row.getByText(locale === "de" ? "Freigegeben." : "Approved.", { exact: true }).waitFor();
+          expect(attempts).toBe(2);
+          expect(decisions[1]).toEqual(decisions[0]);
+          expect(await row.boundingBox()).toEqual(before);
+        } finally {
+          await close();
+        }
+      });
+    }
 
   test("an empty list says you are all set", async () => {
     const { tab, close } = await live(1280, []);

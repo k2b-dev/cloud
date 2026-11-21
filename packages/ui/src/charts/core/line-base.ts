@@ -15,6 +15,7 @@ import {
   isOnAxis,
   LINE_DASH_PATTERNS,
   linePathD,
+  linePointsSvg,
   normalizePadding,
   pickMapper,
   pointValues,
@@ -129,6 +130,7 @@ export const lineBase = (opts: LineOptions): string => {
     const cls = `stdlib-chart-line stdlib-chart-series-${i % 8}`;
     const dashAttrStr = dashAttr ? ` stroke-dasharray="${dashAttr}"` : "";
     body.push(`<path class="${cls}" d="${linePath}"${dashAttrStr}/>`);
+    if (opts.points) body.push(linePointsSvg(mapped, i));
   });
 
   // Error bars render after lines so caps don't disappear behind the stroke.

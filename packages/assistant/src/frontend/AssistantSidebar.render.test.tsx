@@ -88,8 +88,62 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
-  test("selects only the visible project or Studio despite a retained chat", () => {
-    for (const activeView of ["chat", "apps"] as const) {
+  test("the first render marks every state at the row end, and the open running chat keeps its mark instead of a Done check", async () => {
+    const rendered = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        timeZone: "UTC",
+        renderedAt,
+        conversations: () => [
+          { ...conversation("working", "Import", null), runStatus: "running" },
+          { ...conversation("waiting", "Approval", null), runStatus: "needs_attention" },
+          { ...conversation("broken", "Report", null), runStatus: "failed", runError: "Model unavailable" },
+          { ...conversation("fresh", "Answer", null), unreadCompletion: true },
+          conversation("quiet", "Notes", null),
+        ],
+        activeConversationId: () => "working",
+        live,
+      }),
+    );
+    // The desktop list, after the phone navigation snapshot that carries the same marks.
+    const html = rendered.slice(rendered.indexOf("<aside"));
+    const rows: { id?: string; unread: boolean; mark?: string; actions: string[] }[] = [];
+    for (const { attributes } of await selectHtml(
+      html,
+      "div.assistant-chat-sidebar-item, div.assistant-chat-sidebar-item > a[href], .k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker > i, div.assistant-chat-sidebar-item > button[aria-label]",
+    )) {
+      if (attributes.class?.includes("assistant-chat-sidebar-item"))
+        rows.push({ unread: attributes.class.includes("assistant-chat-sidebar-item--unread"), actions: [] });
+      else if (attributes.href) rows.at(-1)!.id = attributes.href.split("conversation=")[1];
+      else if (attributes["aria-label"]) rows.at(-1)!.actions.push(attributes["aria-label"]);
+      else rows.at(-1)!.mark = attributes.class;
+    }
+    const spinner = "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress";
+    expect(rows.map(({ actions, ...row }) => ({ ...row, done: actions.includes("Mark chat done") }))).toEqual([
+      { id: "working", unread: false, mark: spinner, done: false },
+      { id: "waiting", unread: false, mark: "assistant-chat-waiting", done: false },
+      { id: "broken", unread: false, mark: "ti ti-alert-circle assistant-chat-failed", done: true },
+      { id: "fresh", unread: true, mark: "assistant-chat-unread", done: true },
+      { id: "quiet", unread: false, mark: undefined, done: true },
+    ]);
+    expect(html).not.toContain("Stop the response before marking it done");
+    // The phone navigation starts from the same marks.
+    const snapshot = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(rendered)?.[1];
+    const phone = (JSON.parse(snapshot!) as { items: NavigationItem[] }).items.flatMap((item) => item.children ?? []);
+    expect(phone.filter((item) => item.unread).map((item) => item.id)).toEqual(["chat:fresh"]);
+    // The collapsed rail's chat menu names each status with the chat.
+    expect(rendered).toContain('aria-label="Report, Failed"');
+    expect(rendered).toContain('aria-label="Answer, New response"');
+    expect(phone.filter((item) => item.id.startsWith("chat:")).map((item) => [item.id, item.status?.icon ?? null])).toEqual([
+      ["chat:working", spinner],
+      ["chat:waiting", "assistant-chat-waiting"],
+      ["chat:broken", "ti ti-alert-circle assistant-chat-failed"],
+      ["chat:fresh", "assistant-chat-unread"],
+      ["chat:quiet", null],
+    ]);
+  });
+
+  test("selects only the visible Project or Code despite a retained chat", async () => {
+    for (const activeView of ["chat", "code"] as const) {
       const html = renderToString(() =>
         createComponent(AssistantSidebar, {
           timeZone: "UTC",
@@ -99,14 +153,15 @@ describe("Assistant sidebar", () => {
           activeConversationId: () => "retained",
           activeProjectId: project.id,
           activeView,
+          hasPersonalCode: () => true,
           live,
         }),
       );
-      const selectedRows = html.match(/<(?:a|button|div)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>/g) ?? [];
+      const selectedRows = await selectHtml(html, "a.is-active, button.is-active, div.is-active");
       expect(selectedRows.length).toBeGreaterThan(0);
-      const selectedTitle = activeView === "apps" ? "Studio" : "Projects";
-      expect(selectedRows.some((row) => row.includes(`title="${selectedTitle}"`))).toBe(true);
-      expect(selectedRows.some((row) => row.includes("conversation=retained"))).toBe(false);
+      const selectedTitle = activeView === "code" ? "My apps &amp; automations" : "Projects";
+      expect(selectedRows.some((row) => row.attributes.title === selectedTitle)).toBe(true);
+      expect(selectedRows.some((row) => row.attributes.href?.includes("conversation=retained"))).toBe(false);
     }
   });
 
@@ -186,25 +241,17 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
-  test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
+  test("shows empty chat, Done, and Project lists as inline lines where their first rows would be", async () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations: () => [], projects: [], live }),
     );
     const inline = await selectHtml(html, '.k2b-placeholder[data-variant="inline"][data-align="left"]');
     const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
 
-    // Both footers (expanded and collapsed sidebar) carry the Studio and Project menus.
-    const studio = "No apps yet. Ask Assistant to build one.";
-    expect(inline.map((placeholder) => placeholder.text)).toEqual([
-      "No chats yet",
-      "No done chats.",
-      studio,
-      "No Projects yet",
-      studio,
-      "No Projects yet",
-    ]);
-    // Chat rows are cards without a leading icon; Studio and Project lines carry their rows' icons.
-    expect(icons.map((icon) => icon.attributes.class)).toEqual(["ti ti-app-window", "ti ti-folder", "ti ti-app-window", "ti ti-folder"]);
+    // Both footers (expanded and collapsed sidebar) carry the Project menu.
+    expect(inline.map((placeholder) => placeholder.text)).toEqual(["No chats yet", "No done chats.", "No Projects yet", "No Projects yet"]);
+    // Chat rows are cards without a leading icon; Project lines carry their rows' icons.
+    expect(icons.map((icon) => icon.attributes.class)).toEqual(["ti ti-folder", "ti ti-folder"]);
     expect(await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child")).toHaveLength(2);
   });
 
@@ -245,7 +292,7 @@ describe("Assistant phone menu", () => {
           { ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" },
           { ...conversation("working", "Import", null), lastUsedAt: renderedAt, runStatus: "running" },
           { ...conversation("quiet", "Notes", null), lastUsedAt: "2026-10-07T09:00:00.000Z" },
-          { ...conversation("planned", "Weekly report", null), lastUsedAt: "2026-06-01T09:00:00.000Z", hasActiveSchedule: true },
+          { ...conversation("planned", "Weekly report", null), lastUsedAt: "2026-06-01T09:00:00.000Z" },
         ],
         live,
       }),
@@ -255,9 +302,17 @@ describe("Assistant phone menu", () => {
     const sections = items.filter((item) => item.section);
     expect(sections.map((section) => [section.label, section.children?.map((chat) => [chat.label, chat.status])])).toEqual([
       ["Pinned", [["Pinned work", null]]],
-      ["Today", [["Import", { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none", label: "Running", tone: "neutral" }]]],
+      [
+        "Today",
+        [
+          [
+            "Import",
+            { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress", label: "Running", tone: "neutral" },
+          ],
+        ],
+      ],
       ["Yesterday", [["Notes", null]]],
-      ["Older", [["Weekly report", { icon: "ti ti-clock", label: "Active schedule", tone: "neutral" }]]],
+      ["Older", [["Weekly report", null]]],
     ]);
     // Rows are plain titles like the desktop list: no per-chat icon, and no description line that comes and goes.
     const chats = sections.flatMap((section) => section.children ?? []);

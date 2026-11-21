@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import { codeOwnerDeleted, codeOwnerTitleChanged, sql } from "@k2b/cloud";
 import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
@@ -34,7 +34,6 @@ import {
 } from "./auth";
 import { sharedDraftsSupported } from "./draft-documents";
 import { setMailboxDraftEditMode } from "./draft-edit-mode";
-import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
@@ -414,7 +413,6 @@ export const updateMailbox = async (params: {
   description?: string | null;
   syncEnabled?: boolean;
   searchBackend?: Mailbox["searchBackend"];
-  automaticReplyManagementPermission?: Mailbox["automaticReplyManagementPermission"];
   composeSafety?: Mailbox["composeSafety"];
   draftEditMode?: Mailbox["draftEditMode"];
 }): Promise<Result<Mailbox>> => {
@@ -440,27 +438,14 @@ export const updateMailbox = async (params: {
         if (draftEditMode?.success && draftEditMode.data === "shared" && !(await sharedDraftsSupported())) {
           unwrap(fail({ code: "SHARED_DRAFTS_UNSUPPORTED", status: 409, message: mailDraftDocumentMessages.resolve([]).t.unsupported }));
         }
-        if (composeSafety) {
-          unwrap(
-            await validateDestructiveIncomingAutomationsForMailbox({
-              mailboxId: params.mailboxId,
-              internalDomains: composeSafety.data.internalDomains,
-              db: tx,
-            }),
-          );
-        }
         if (draftEditMode?.success) await setMailboxDraftEditMode(tx, [params.mailboxId], draftEditMode.data);
-        const [row] = await tx<DbMailbox[]>`
+        const [row] = await tx<(DbMailbox & { short_id: string })[]>`
           UPDATE mail.mailboxes
           SET
             name = COALESCE(${name ?? null}, name),
             description = CASE WHEN ${params.description !== undefined} THEN ${description} ELSE description END,
             sync_enabled = COALESCE(${params.syncEnabled ?? null}, sync_enabled),
             search_backend = COALESCE(${params.searchBackend ?? null}, search_backend),
-            automatic_reply_management_permission = COALESCE(
-              ${params.automaticReplyManagementPermission ?? null},
-              automatic_reply_management_permission
-            ),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
             draft_edit_mode_explicit = draft_edit_mode_explicit OR ${draftEditMode?.success === true},
             health = CASE
@@ -474,10 +459,11 @@ export const updateMailbox = async (params: {
               ELSE health_reason
             END
           WHERE id = ${params.mailboxId}::uuid
-          RETURNING id, name, description, health, health_reason, sync_enabled, search_backend,
+          RETURNING id, short_id, name, description, health, health_reason, sync_enabled, search_backend,
             automatic_reply_management_permission, compose_safety, draft_edit_mode, deleted_at, created_at, updated_at
         `;
         if (!row) throw new Error("Mailbox update returned no row");
+        if (name !== undefined) await codeOwnerTitleChanged(tx, { type: "mail.mailbox", id: row.short_id }, row.name);
         await audit.record(
           {
             action: "mail.mailbox.update",
@@ -506,8 +492,8 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
     async () => {
       const barrier = await withMailboxProviderOperationBarrier(mailboxId, resourceIds, async (assertLeaseActive) => {
         await sql.begin(async (tx) => {
-          const [row] = await tx<{ id: string; name: string; deleted_at: Date | string | null }[]>`
-            SELECT id, name, deleted_at FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE
+          const [row] = await tx<{ id: string; short_id: string; name: string; deleted_at: Date | string | null }[]>`
+            SELECT id, short_id, name, deleted_at FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE
           `;
           if (!row) {
             const notFound = err.notFound("Mailbox");
@@ -530,6 +516,7 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
               updated_at = now()
             WHERE id = ${mailboxId}::uuid
           `;
+          await codeOwnerDeleted(tx, { type: "mail.mailbox", id: row.short_id });
           await tx`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL WHERE mailbox_id = ${mailboxId}::uuid`;
           await tx`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid AND pinned_at IS NULL AND hidden_at IS NULL`;
           await tx`

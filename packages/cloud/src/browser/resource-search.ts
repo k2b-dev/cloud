@@ -37,3 +37,15 @@ export const filterCloudResourceSearchItems = (
       !excluded.has(refKey(item.ref)),
   );
 };
+
+/** Keep each app's localized result groups contiguous, preserving ranked order inside each group. */
+export const groupCloudResourceSearchItems = (items: readonly SearchItem[]): SearchItem[] => {
+  const groups = new Map<string, SearchItem[]>();
+  for (const item of items) {
+    const key = JSON.stringify([item.appId, item.group ?? null]);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return [...groups.values()].flat();
+};

@@ -322,7 +322,7 @@ for (const theme of ["light", "dark"] as const) {
         // Syntax token text is content colour: an accent-valued token is exempt, a blue focus ring beside it is not.
         await page.locator("#portal-trigger").evaluate((node) => {
           const token = document.createElement("span");
-          token.className = "cd-s";
+          token.className = "hl-string";
           token.id = "primary-syntax-self-test";
           token.textContent = '"text"';
           token.style.color = "#bfdbfe";
@@ -331,7 +331,7 @@ for (const theme of ["light", "dark"] as const) {
         });
         await settled(page);
         const syntaxAudit = await page.evaluate(auditPrimaryColors, "#portal-trigger, #primary-syntax-self-test");
-        expect(syntaxAudit.some((leak) => leak.startsWith("SPAN.cd-s"))).toBe(false);
+        expect(syntaxAudit.some((leak) => leak.startsWith("SPAN.hl-string"))).toBe(false);
         expect(syntaxAudit.some((leak) => leak.includes("outline-color"))).toBe(true);
         await page.locator("#portal-trigger").evaluate((node) => {
           node.style.removeProperty("outline");

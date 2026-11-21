@@ -219,6 +219,9 @@ metadata: [
 ],
 ```
 
+Set the optional `group` to a localized label when one app has distinct result groups.
+Cloud keeps those groups together within the app; omitting it uses the app name.
+
 Return results in the order the app ranks them, for example newest first.
 Cloud keeps that order within one priority and asks for one result more than
 it lists, so return up to `limit` results whenever there are that many.
@@ -309,7 +312,7 @@ unsupported-filter warning.
 **All filters** remains available while tags load and shows their loading state
 inside the filter view. It uses the same padded hover surface as **Actions**.
 
-Results are grouped by application, and each application's section appears as
+Results are grouped by application and optional `group` label, and each application's section appears as
 soon as that application answers. New sections are appended below the ones
 already shown, so nothing on screen moves and the keyboard selection stays on
 its result. Matching pages and actions come first. An action that finishes
@@ -338,6 +341,14 @@ Desktop search shows a preview beside the
 input and result list, with a hint while no result is chosen. The centered dialog keeps its width, top position, and
 height from the first search character until the input is cleared, so arriving
 results never resize it.
+When the hit's Type has a `reader` that returns a
+[view](/en/docs/platform/capability-views#search-previews), the preview shows
+its blocks, such as a contact's fields or a file's picture and facts. The
+browser asks for it 150 ms after the person rests on a hit, cancels the request
+before, keeps answers while the dialog is open, and holds the room of the
+preview while it loads. Without a reader view, on an error, or without
+access, the preview shows the search facts. Every preview ends with
+**Open in App**; the search window has no maximize control.
 On small screens, **Details** opens the preview and
 **Back to results** returns to the list. Escape first leaves filter discovery
 or mobile details, then closes the dialog. Scroll fades indicate more content.
@@ -414,11 +425,11 @@ API for these users.
 - Use `scope.ref` for the contents of a particular notebook, project, chat or mailbox.
 - Use `scope.appId` for everything searchable in an application.
 - Add `scope.tag` to select a list or search provider within that app, such as
-  Assistant projects, Studio apps or all chats. Use a tag declared by that
+  Assistant projects, all chats. Use a tag declared by that
   provider; the tag is part of the context, not another visible filter chip.
 
 For example, use `tag: "assistant-project"` with the label **Projects**,
-`tag: "studio-app"` with **Studio**, and `tag: "chat"` with **Chats**.
+`tag: "chat"` with **Chats**. The Studio app search tag is retired.
 Localize the label and give it the appropriate icon. Removing this single chip
 removes both the application and provider restriction while keeping the text.
 
@@ -556,8 +567,7 @@ Name a tag that stands for one kind of resource after that Resource Type's
 local ID, for example the tag `note` for `notebooks.note` and `contact` for
 `contacts.contact`. A narrowed slash list such as `/notiz q3` then also lists
 the person's recently sent references of that type above its search row.
-References of other types appear only in unscoped search. Assistant maps its
-own `studio-app` tag to `assistant.artifact`. Tags that filter rather than
+References of other types appear only in unscoped search. Tags that filter rather than
 name a type, such as `urgent`, never match. Spaces' `task` tag finds
 `spaces.item` resources, so recent tasks appear only in unscoped search.
 
@@ -667,7 +677,7 @@ Compose these rows and scopes with your own commands. Pass their scope words as
 `reservedWords` so a catalog tag cannot claim them. `reason` disables the insert,
 tag, and fallback rows with a visible explanation, such as a full message.
 Use `ownReaders` only for a resource type your composer reads itself, for
-example `{ "assistant:studio-app": "assistant.app" }`, and add that tag to
+example `{ "inventory:item": "inventory.item" }`, and add that tag to
 `tags` yourself when its app has no reader. That tag's picker then lists only
 this type, also without a Cloud reader, even after the person removes the scope
 chip. A word that two tags share narrows to neither, so it

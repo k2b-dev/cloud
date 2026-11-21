@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { hasCompleteSentence, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
+import { hasCompleteSentence, layoutAiTurn, storedPhase, submittedCodeVersion, waitsForUser } from "./turn-layout";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -234,12 +234,17 @@ describe("turn layout", () => {
   test("an approved call or a Cloud action that returns a table keeps its receipt and shows its table", () => {
     const table = {
       data: { rows: [{ name: "Jana" }] },
-      presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
+      view: {
+        version: 1 as const,
+        blocks: [{ kind: "Table" as const, title: "People", rows: [{ name: "Jana" }], columns: [{ path: ["name"], label: "Name" }] }],
+      },
     };
-    const approved = layoutAiTurn([tool("lookup", "crm_lookup", { approved: true, result: table })], { phase: "completed" });
+    const approved = layoutAiTurn([tool("lookup", "crm_lookup", { approved: true, result: table, view: table.view })], {
+      phase: "completed",
+    });
     expect(approved.actions.map((action) => [action.id, action.state])).toEqual([["tool-lookup", "done"]]);
     expect(ids(approved.results)).toEqual(["tool-lookup"]);
-    const action = layoutAiTurn([capability("export", "action", { result: table })], { phase: "completed" });
+    const action = layoutAiTurn([capability("export", "action", { result: table, view: table.view })], { phase: "completed" });
     expect(ids(action.actions)).toEqual(["tool-export"]);
     expect(ids(action.results)).toEqual(["tool-export"]);
   });
@@ -286,4 +291,42 @@ test("partial failed and interrupted history cannot become a completed answer wi
   expect(storedPhase([{ loopDoneReason: "error", stopReason: "error" }])).toBe("failed");
   expect(storedPhase([{ loopDoneReason: null, stopReason: "interrupted" }])).toBe("stopped");
   expect(storedPhase([{ loopDoneReason: "error", stopReason: "interrupted" }])).toBe("failed");
+});
+
+test("a saved version is a result only for a host that shows it, once per Code, and never a failed submit", () => {
+  const submitted = (id: string, number: number) =>
+    tool(id, "code_submit", {
+      args: { codeId: "c_info01" },
+      result: { version: 1, submission: { version: { id: `v-${number}`, number } } },
+    });
+  const failed = tool("bad", "code_submit", {
+    args: { codeId: "c_info01" },
+    result: { version: 1, error: { code: "code_conflict", message: "Stale", details: null } },
+  });
+  expect(layoutAiTurn([submitted("a", 5)], { phase: "completed" }).results).toEqual([]);
+  expect(layoutAiTurn([failed], { phase: "completed", codeVersions: true }).results).toEqual([]);
+  const shown = layoutAiTurn([submitted("a", 5), submitted("b", 6)], { phase: "completed", codeVersions: true }).results;
+  expect(shown).toHaveLength(1);
+  expect(submittedCodeVersion(shown[0]!.block)).toEqual({ codeId: "c_info01", versionId: "v-6", number: 6 });
+});
+
+test("a Code check's notices stand as a result until a clean check of the same Code takes their place", () => {
+  const check = (id: string, notices: unknown[]): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: "code_check",
+    status: "completed",
+    args: { codeId: "c_1234" },
+    result: { version: 1, result: { ok: notices.length === 0 }, manifest: null, permissions: [], words: { notices, mayDo: [] } },
+  });
+  const blocked = check("first", [{ severity: "block", text: "Sends mail without a person.", consequence: "Cannot be submitted." }]);
+  const failed = layoutAiTurn([blocked], { phase: "completed" });
+  expect(failed.results.map((result) => result.block.id)).toEqual(["first"]);
+  const clean = layoutAiTurn([blocked, check("second", [])], { phase: "completed" });
+  // One place per Code: the clean check replaces the old notices, so nothing that no longer holds stays visible.
+  expect(clean.results.map((result) => [result.id, result.block.id])).toEqual([["first", "second"]]);
+  // A result from before words existed shows no building block at all.
+  const old = { ...check("old", []), result: { version: 1, result: { ok: true }, manifest: null, permissions: [] } } as AiTurnBlock;
+  expect(layoutAiTurn([old], { phase: "completed" }).results).toEqual([]);
 });

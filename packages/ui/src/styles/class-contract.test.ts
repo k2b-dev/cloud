@@ -48,7 +48,7 @@ const sources = walk(resolve(packageRoot, "src"));
 /**
  * Class families the package renders but does not own the names of.
  * `ti`/`ti-*` come from the optional Tabler preset; `cd-*` are emitted by the
- * package's own code highlighter; `md-*` and `stdlib-chart-*` are emitted by
+ * package's own Markdown and SQL highlighters; `hl-*`, `md-*` and `stdlib-chart-*` are emitted by
  * `@k2b/stdlib` and cannot be renamed without forking it. `maplibregl-*` is the DOM
  * MapLibre builds inside MapView, styled by the package instead of MapLibre's stylesheet.
  * `cm-*` is CodeMirror's DOM, including its Yjs awareness binding.
@@ -57,6 +57,7 @@ const isForeignContract = (token: string) =>
   token === "ti" ||
   token.startsWith("ti-") ||
   token.startsWith("cd-") ||
+  token.startsWith("hl-") ||
   token.startsWith("md-") ||
   token.startsWith("stdlib-") ||
   token.startsWith("maplibregl-") ||
@@ -223,7 +224,10 @@ const splitTopLevel = (text: string, separator: RegExp): string[] => {
   return parts;
 };
 
-const hasRule = (token: string) => new RegExp(`\\.${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(styles);
+// Every class the shipped stylesheet names, read once: a fresh pattern over the whole stylesheet per token took
+// seconds and ran past the test timeout on a loaded machine.
+const styledClasses = new Set(Array.from(styles.matchAll(/\.([\w-]+)/g), (match) => match[1]!));
+const hasRule = (token: string) => styledClasses.has(token);
 
 describe("@k2b/ui package class contract", () => {
   test("renders no class the shipped stylesheet cannot style", () => {

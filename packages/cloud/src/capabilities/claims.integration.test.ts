@@ -8,12 +8,14 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import {
   CAPABILITY_CLAIM_RETENTION_HOURS,
+  capabilityIdempotencyKeyHash,
   capabilityRequestHash,
   claimCapabilityIdempotency,
   completeCapabilityClaim,
@@ -109,9 +111,13 @@ type UpstreamFetch = (input: string | URL | Request, init?: RequestInit) => Prom
 
 const invoke = async (options: {
   key: string;
+  entry?: CapabilityRegistryEntry;
+  target?: { type: string; id: string };
+  refs?: Record<string, { type: string; id: string }>;
   input?: unknown;
   fetch: UpstreamFetch;
   actionTimeoutMs?: number;
+  authority?: RequestAuthority;
 }): Promise<{ status: number; body: unknown }> => {
   const response = await dispatchCapability({
     request: new Request("http://cloud.test/capabilities/v1/actions/demo/add", {
@@ -123,9 +129,11 @@ const invoke = async (options: {
     appId: "demo",
     capabilityId: "add",
     input: options.input ?? { name: "first" },
-    authority,
+    target: options.target,
+    refs: options.refs,
+    authority: options.authority ?? authority,
     dependencies: {
-      getCapability: async () => registryEntry,
+      getCapability: async () => options.entry ?? registryEntry,
       fetch: options.fetch,
       withActiveSigner,
       ...(options.actionTimeoutMs === undefined ? {} : { actionTimeoutMs: options.actionTimeoutMs }),
@@ -201,6 +209,98 @@ suite("platform capability idempotency claims", () => {
     const conflict = await invoke({ key, input: { name: "second" }, fetch: succeeds });
     expect(conflict.status).toBe(409);
     expect(conflict.body).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  test("a key starts a new call once its 24-hour claim window has passed", async () => {
+    const key = `window-${crypto.randomUUID()}`;
+    expect((await invoke({ key, fetch: succeeds })).status).toBe(200);
+    // Before the retention sweep removes it, an aged claim no longer holds the key.
+    await sql`UPDATE capabilities.idempotency_claims SET created_at=now()-interval '25 hours'
+      WHERE app_id='demo' AND capability='demo.add' AND key_hash=${capabilityIdempotencyKeyHash(key)}`;
+    let forwarded = 0;
+    const next = await invoke({
+      key,
+      input: { name: "second" },
+      fetch: async (...args) => {
+        forwarded += 1;
+        return succeeds(...args);
+      },
+    });
+    // A new call reaches the app instead of a conflict or a replay of yesterday's result.
+    expect(next.status).toBe(200);
+    expect(forwarded).toBe(1);
+  });
+  test("personal Codes of one owner share the documented Action key scope", async () => {
+    const owner = crypto.randomUUID();
+    const user: User = {
+      id: owner,
+      uid: `claims-${owner}`,
+      roles: ["user"],
+      provider: "local",
+      profile: "user",
+      givenname: "Code",
+      sn: "Owner",
+      displayName: "Code Owner",
+      mail: null,
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroup: [],
+      memberofGroupIds: [],
+      manages: [],
+      managesGroupIds: [],
+    };
+    const codeCaller = (workloadId: string): RequestAuthority => ({
+      actor: {
+        kind: "user",
+        user,
+        delegation: {
+          kind: "invocation",
+          credentialKind: "mandate",
+          callingAppId: "core",
+          invocationId: crypto.randomUUID(),
+          workloadType: "code.version",
+          workloadId,
+          workloadRun: crypto.randomUUID(),
+        },
+      },
+      accessSubject: { type: "user", userId: owner },
+      credentialKind: "session",
+      scopes: [],
+    });
+    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,${user.uid},'local','user')`;
+    const key = `owner-scope-${crypto.randomUUID()}`;
+    const first = await invoke({ key, fetch: succeeds, authority: codeCaller(crypto.randomUUID()) });
+    expect(first.status).toBe(200);
+    // A second Code of the same person reuses the person's key space: a different body conflicts.
+    const other = await invoke({ key, input: { name: "second" }, fetch: succeeds, authority: codeCaller(crypto.randomUUID()) });
+    expect(other).toMatchObject({ status: 409, body: { code: "IDEMPOTENCY_CONFLICT" } });
+    await sql`DELETE FROM auth.users WHERE id=${owner}::uuid`;
+  });
+  test("the same key cannot replay an effect at another target or additional ref", async () => {
+    const entry = {
+      ...registryEntry,
+      manifest: {
+        ...compiled.manifest,
+        actions: compiled.manifest.actions.map((action) => ({ ...action, target: "item", refs: { destination: "item" } })),
+      },
+    };
+    const key = `target-conflict-${crypto.randomUUID()}`;
+    let forwarded = 0;
+    const fetch: UpstreamFetch = async (...args) => {
+      forwarded++;
+      return succeeds(...args);
+    };
+    const first = { entry, key, target: { type: "demo.item", id: "one" }, refs: { destination: { type: "demo.item", id: "two" } }, fetch };
+    expect((await invoke(first)).status).toBe(200);
+    expect((await invoke(first)).status).toBe(200);
+    for (const changed of [
+      { ...first, target: { type: "demo.item", id: "other" } },
+      { ...first, refs: { destination: { type: "demo.item", id: "other" } } },
+    ])
+      expect(await invoke(changed)).toMatchObject({ status: 409, body: { code: "IDEMPOTENCY_CONFLICT" } });
+    expect(forwarded).toBe(1);
   });
 
   test("hashes input independently of key order", async () => {

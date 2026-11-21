@@ -33,7 +33,7 @@ export const rule: Rule = {
     }
 
     const devFile = join(workspaceRoot, "compose.dev.yml");
-    const devServices = [...readFileSync(devFile, "utf8").matchAll(/^ {2}(gateway|app-[a-z0-9-]+):/gm)].map((match) => match[1]!);
+    const devServices = [...readFileSync(devFile, "utf8").matchAll(/^ {2}(gateway|runner|app-[a-z0-9-]+):/gm)].map((match) => match[1]!);
     compareSets(devFile, "compose.dev.yml", apps.map(devServiceName), devServices, findings);
 
     const prodFile = join(workspaceRoot, "compose.prod.yml");

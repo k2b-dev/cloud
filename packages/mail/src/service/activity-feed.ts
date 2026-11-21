@@ -86,8 +86,8 @@ export const activityFeedCondition = (filter: MailActivityFeedFilter) => {
   const principal = filter.concernsPrincipalId ?? null;
   const concerns = principal
     ? sql`(activity.actor_id = ${principal}::uuid
-        OR ${assigneesAt("before")} @> ${JSON.stringify([principal])}::jsonb
-        OR ${assigneesAt("after")} @> ${JSON.stringify([principal])}::jsonb
+        OR ${assigneesAt("before")} @> ${JSON.stringify([principal])}::text::jsonb
+        OR ${assigneesAt("after")} @> ${JSON.stringify([principal])}::text::jsonb
         OR EXISTS (
           SELECT 1 FROM mail.conversation_assignees concerned
           WHERE concerned.conversation_id = activity.conversation_id AND concerned.principal_id = ${principal}::uuid

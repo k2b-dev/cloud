@@ -43,6 +43,8 @@ export type StatCellProps = {
   value: string | number | JSX.Element | null;
   sub?: string;
   valueClass?: string;
+  /** Colours the figure as a result, such as a negative balance in `danger`. */
+  valueTone?: "danger" | "success";
   /** An icon in a chip before the label, in `tone`. `"in"` and `"out"` are the money colours of `FlowAmount`. */
   icon?: string;
   /**
@@ -83,6 +85,9 @@ function Body(props: StatCellProps): JSX.Element {
   // A plain figure keeps its change off the figure's line: the third line holds it with the comparison.
   const surface = useStatGridSurface();
   const plain = () => surface() === "plain";
+  // Flat chat figures reserve a support placeholder only when that line has content.
+  const supportWaits = () =>
+    surface() !== "flat" || Boolean(props.compare || props.sub || props.accent || props.stale || (props.trend && props.trend.length > 1));
   const badge = (delta: StatCellDelta) => <DeltaBadge delta={delta} compare={props.compare} />;
   const size = () => props.size ?? gridSize;
   const accent = () => props.accent;
@@ -121,6 +126,7 @@ function Body(props: StatCellProps): JSX.Element {
             <>
               <span
                 class={`k2b-stat-cell__value ${props.valueClass ?? ""}`}
+                data-tone={props.valueTone}
                 data-size={size()}
                 data-empty={empty() || undefined}
                 title={props.title}
@@ -215,7 +221,7 @@ function Body(props: StatCellProps): JSX.Element {
             </Show>
           }
         >
-          <Match when={props.status === "loading"}>
+          <Match when={props.status === "loading" && supportWaits()}>
             <span class="k2b-stat-cell__skeleton k2b-skeleton" data-part="support" aria-hidden="true" />
           </Match>
           <Match when={props.status === "error"}>
@@ -244,6 +250,8 @@ export function StatCell(props: StatCellProps): JSX.Element {
   // A plain figure has no surface; its tone colours the figure instead of only the icon chip.
   const surface = useStatGridSurface();
   const plain = () => surface() === "plain";
+  // Compact flat figures keep their support line directly below the value.
+  const compact = () => !props.delta && !props.compare && !(props.trend?.length ?? 0);
   const variant = () => (plain() ? "plain" : undefined);
   const tone = () => (plain() ? props.tone : undefined);
   return (
@@ -258,6 +266,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
           data-variant={variant()}
           data-tone={tone()}
           data-wrap={props.wrap || undefined}
+          data-plain={compact() || undefined}
           data-delta-placement={props.deltaPlacement}
           data-status={props.status}
           aria-busy={props.status === "loading" || undefined}
@@ -274,6 +283,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
         data-variant={variant()}
         data-tone={tone()}
         data-wrap={props.wrap || undefined}
+        data-plain={compact() || undefined}
         data-delta-placement={props.deltaPlacement}
       >
         <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />

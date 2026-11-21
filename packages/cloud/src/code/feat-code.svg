@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0.5 1 31 31">
+  <title>feat/code</title>
+  <style>
+    .base { fill: none; stroke: #18181b; }
+    .new { stroke: #16a34a; }
+    .head { fill: #16a34a; }
+    @media (prefers-color-scheme: dark) {
+      .base { stroke: #f4f4f5; }
+      .new { stroke: #4ade80; }
+      .head { fill: #4ade80; }
+    }
+  </style>
+  <line class="new" x1="13" y1="20" x2="20.2" y2="10.9" stroke-width="4.5"/>
+  <circle class="base" cx="10" cy="24" r="5" stroke-width="3.5"/>
+  <circle class="head" cx="22" cy="8.5" r="6.75"/>
+</svg>

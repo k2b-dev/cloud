@@ -42,11 +42,23 @@
       "import": "./dist/ssr/hover-card.js",
       "default": "./dist/ssr/hover-card.js"
     },
+    "./run-log": {
+      "types": "./dist/types/run-log.d.ts",
+      "browser": "./dist/browser/run-log.js",
+      "import": "./dist/ssr/run-log.js",
+      "default": "./dist/ssr/run-log.js"
+    },
     "./country-map": {
       "types": "./dist/types/country-map.d.ts",
       "browser": "./dist/browser/country-map.js",
       "import": "./dist/ssr/country-map.js",
       "default": "./dist/ssr/country-map.js"
+    },
+    "./code-diff": {
+      "types": "./dist/types/code-diff.d.ts",
+      "browser": "./dist/browser/code-diff.js",
+      "import": "./dist/ssr/code-diff.js",
+      "default": "./dist/ssr/code-diff.js"
     },
     "./panes": {
       "types": "./dist/types/panes.d.ts",

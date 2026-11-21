@@ -1,15 +1,16 @@
 import type {
-  AiChatTaskView,
   AiConversation,
   AiConversationPage,
   AiConversationTimelineEntry,
+  AiDraftContentPart,
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
+  AiQuoteDraft,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { aiQuotesWith, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -21,6 +22,7 @@ import {
   AiModelChooser,
   type AiModelChooserState,
   AiModelNote,
+  type AiWakeupLineInput,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -40,13 +42,15 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
-import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
-import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { askPanelConsent, closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
+import type { CodePageData } from "@k2b/cloud/ssr/code-page";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -54,6 +58,7 @@ import {
   Button,
   ButtonLink,
   Chat,
+  ChatComposerQuotes,
   type ChatMention,
   dialogCore,
   LocaleProvider,
@@ -64,23 +69,37 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from "solid-js";
 import { assistantApi } from "../api/client";
-import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
-import { revokeChatWebsite } from "../artifacts/approval-preferences";
-import { createCodeApprovals } from "../artifacts/CapabilityApproval";
-import { ChatPresentation } from "../artifacts/ChatPresentation";
-import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
-import { artifactMessages } from "../artifacts/messages";
-import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
-import { createArtifactWorkspace } from "../artifacts/workspace-controller";
-import { appTab, contextTab, fileTab, presentationTab, taskTab, webTab } from "../artifacts/workspace-state";
+import { revokeChatWebsite } from "../chat-code/approval-preferences";
+import { artifactMessages } from "../chat-code/messages";
+import { openSecretsDialog } from "../chat-code/SecretsDialog";
+import { createChatSecretRuntime } from "../chat-code/secret-runtime";
+import { createChatWorkspace } from "../chat-code/workspace-controller";
+import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { ChatWorkspaceSnapshot } from "../chat-workspace";
+import type { CodeVersionCardEntry } from "../code-version-cards";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
+import type { WaitingAutomation } from "../waiting-automations";
 import AssistantApprovalsView from "./AssistantApprovalsView";
+import AssistantAuthoringStop from "./AssistantAuthoringStop";
 import {
   AssistantChatContextContent,
   assistantChatSidebarActions,
@@ -90,16 +109,17 @@ import {
 } from "./AssistantChatContext";
 import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
+import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
+import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
 import AssistantProjectView from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
 import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
-import { openTaskRun } from "./activities-dialog";
 import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
@@ -114,6 +134,7 @@ import {
   assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
+  assistantCodeOpenFromHref,
   assistantConversationHref,
   assistantConversationIdFromHref,
   assistantMessageHref,
@@ -123,12 +144,26 @@ import {
   assistantQuestionAnchorFromHref,
   assistantQuestionHref,
 } from "./assistant-navigation";
+import {
+  type AssistantPlaceView,
+  conversationPlace,
+  createPagePlace,
+  fetchAssistantPlace,
+  type PlaceLoader,
+  panelFollowsPlace,
+  samePlace,
+} from "./assistant-place";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
+import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
+import type { CodeOverviewPage } from "./code-overview";
+import { AssistantCodeVersionCard } from "./code-version-card-deferred";
+import { createCodeVersionCardStore } from "./code-version-card-store";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
@@ -141,7 +176,6 @@ import {
   assistantRecentCommands,
   createAssistantCommandSession,
   createAssistantRecentResources,
-  createAssistantTaskRunKeys,
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
@@ -158,11 +192,14 @@ import { lazyAction } from "./lazy-action";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
+import { placeMessages } from "./place-messages";
 import { quotaText } from "./quota-messages";
-import { assistantTaskTitle } from "./scheduled-task-format";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
+import type { AssistantWakeupLineText } from "./wakeup-line";
+import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
+import type { AssistantWakeupContext } from "./wakeups";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -187,10 +224,21 @@ type InitialDetail = {
 };
 
 type Props = {
+  initialCodeVersionCards?: CodeVersionCardEntry[];
   embedded?: boolean;
   initialPanelContext?: ReturnType<typeof getContext>;
+  /** The panel's place at render time, from `loadPlaceAssistant`; null without a place or before it is known. */
+  initialPlace?: AssistantPlaceView | null;
+  /** Reads a place on navigation; tests answer it themselves. */
+  loadPlace?: PlaceLoader;
+  /** The person's chats at places at render time, for the sidebar's "At places (n)"; null when they could not be listed. */
+  initialPlaceChats?: { total: number; items: AiConversation[] } | null;
+  /** The page opened with the "At places" filter on (`?places=1`). */
+  initialPlacesFilter?: boolean;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
+  /** Current viewer may open AI administration; resolved by the server. */
+  canConfigureAi?: boolean;
   cloudUrl: string;
   status: Status;
   models: AiPeopleModels["options"];
@@ -200,6 +248,7 @@ type Props = {
   /** The server's render time, so hydration builds the same day sections as the server. */
   renderedAt: string;
   initialLiveCursor: string;
+  initialCounts?: import("@k2b/cloud/ai").AiConversationCounts;
   initialConversations: AiConversation[];
   initialDoneCount: number;
   initialConversationId: string | null;
@@ -207,6 +256,8 @@ type Props = {
   initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
+  /** The chat's alarm lines in words for the first frame, by row id. */
+  initialWakeupLines?: Record<string, AssistantWakeupLineText>;
   /** The open tabs of the initial chat as the person left them, from the server. */
   initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
   /** The hint that tabs can be arranged was dismissed. */
@@ -215,8 +266,23 @@ type Props = {
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
   initialProjectContext: AssistantProjectContextSnapshot | null;
-  /** The Assistant's open approvals at render time, and whether the page opened on the approvals view. */
-  approvals: { page: ApprovalPage; open: boolean };
+  /** Whether the page opened on the approvals view, and then its open approvals at render time. */
+  approvals: { page?: ApprovalPage; open: boolean };
+  /**
+   * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
+   * page opened on its list, and the list's first page when it did (null when Core could not list it).
+   */
+  code?: {
+    has: boolean;
+    open: boolean;
+    page?: CodeOverviewPage | null;
+    /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
+    detail?: CodePageData;
+  };
+  /** The person's own Code that waits for them, when the page opened on Waiting for you; null when Core could not answer. */
+  initialAutomations?: WaitingAutomation[] | null;
+  /** The panel's place and its Code at render time, for the "Code of …" block. */
+  initialCodeBlock?: AssistantCodeBlockInitial | null;
   /** The person's open questions at render time, for "Waiting for you" above the composer. */
   initialQuestions: AiOpenQuestions;
 };
@@ -228,9 +294,15 @@ type ProjectViewState = {
 };
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
+const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
+// "Quote" at a selection loads with the first selection in the chat; a chunk an update replaced reloads the page
+// instead of breaking the chat. A draft's quote rows render from the first frame, so a saved draft never shifts.
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
 /** Loaded once a chat has queued messages; most chats never need it. */
 const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
-const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
+// Like "Queued", the alarms' row loads on first use: it lies on the timeline's free end, so it comes without a shift.
+const AssistantWakeupDock = lazy(async () => (await importOnDemand(() => import("./wakeup-dock"))) ?? { default: () => null });
+const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -238,11 +310,11 @@ const NOTHING_USED = { input: 0, output: 0, total: 0 };
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
   const approvalsHref = `${basePath}?approvals=1`;
+  const codeHref = `${basePath}?code=1`;
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
-  const runKeys = createAssistantTaskRunKeys();
-  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref, {
+  const artifactWorkspace = createChatWorkspace(props.initialWorkspaceHref, {
     initial: props.initialTabs ?? null,
     store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
     onSaveError: () => toast.error(t().tabsNotSaved),
@@ -256,15 +328,15 @@ export default function AssistantWorkspace(props: Props) {
       : undefined;
   };
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
+  // Grows when a version card in this chat switched Code on, so the panel's block above it shows the new state.
+  const [codeRevision, setCodeRevision] = createSignal(0);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
-      view.task
-        ? taskTab(view.task.id, view.title)
-        : view.context
-          ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
-          : view.file
-            ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
-            : { ...view, kind: "view" },
+      view.context
+        ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
+        : view.file
+          ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
+          : { ...view, kind: "view" },
     );
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
@@ -280,7 +352,6 @@ export default function AssistantWorkspace(props: Props) {
           project={project}
           category={category}
           onOpenView={openContextView}
-          onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
           onJump={(target) => void jumpTo(target)}
           onOpenSecrets={openChatSecrets}
         />
@@ -297,8 +368,8 @@ export default function AssistantWorkspace(props: Props) {
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
+  const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
 
-  const codeApprovals = createCodeApprovals();
   const chat = createAiChatController({
     baseUrl: "/api/ai",
     initialConversationId: props.initialConversationId,
@@ -306,8 +377,8 @@ export default function AssistantWorkspace(props: Props) {
     initialTimeline: props.initialDetail?.timeline,
     initialError: props.status.error?.message ?? null,
     trackViewedState: true,
-    clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
-    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open, codeApprovals.ask, "chat-tool", browserHttpHost),
+    clientToolIds: ["code_secret"],
+    frontendTools: createChatSecretRuntime(),
   });
 
   const quotas = createAssistantQuota(props.initialQuotas);
@@ -324,10 +395,12 @@ export default function AssistantWorkspace(props: Props) {
     initial: {
       source: "/api/assistant/workspace/sidebar",
       data: {
+        counts: props.initialCounts ?? { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
         conversations: props.initialConversations,
         projects: props.projects,
         doneCount: props.initialDoneCount,
         questions: props.initialQuestions,
+        placeChats: props.initialPlaceChats ?? null,
       },
     },
     load: (_source, { abortSignal }) => assistantApi.loadSidebar(abortSignal),
@@ -346,15 +419,35 @@ export default function AssistantWorkspace(props: Props) {
   );
   // The approvals view replaces the chat like a Project does. Its first page comes from the server only while the page
   // still shows what it rendered; opened later, the list loads its current state.
-  const [approvalsOpen, setApprovalsOpen] = createSignal(props.approvals.open);
+  // The person's Code list replaces the chat the same way; only one of the two views is open at a time.
+  const [mainView, setMainView] = createSignal<"approvals" | "code" | null>(
+    props.approvals.open ? "approvals" : props.code?.open ? "code" : null,
+  );
+  const approvalsOpen = () => mainView() === "approvals";
+  const codeOpen = () => mainView() === "code";
   const [approvalsRendered, setApprovalsRendered] = createSignal(props.approvals.open);
+  const [codeRendered, setCodeRendered] = createSignal(Boolean(props.code?.open));
   const openApprovals = () => {
     if (approvalsOpen()) return;
     navigationRequest++;
     setProjectView(null);
     setApprovalsRendered(false);
-    setApprovalsOpen(true);
+    setMainView("approvals");
     navigate(approvalsHref, { scroll: "manual", viewTransition: false });
+  };
+  const codeDetailShown = () => codeOpen() && codeRendered() && Boolean(props.code?.detail);
+  const openCode = () => {
+    // A personal Code page leads back to the list, which the server renders with its counts.
+    if (codeDetailShown()) {
+      navigateTo(codeHref);
+      return;
+    }
+    if (codeOpen()) return;
+    navigationRequest++;
+    setProjectView(null);
+    setCodeRendered(false);
+    setMainView("code");
+    navigate(codeHref, { scroll: "manual", viewTransition: false });
   };
   const activeProject = () => {
     const projectId = projectView()?.projectId;
@@ -377,7 +470,6 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
   onMount(() => {
-    onCleanup(scheduleChartPreparation("/api/assistant/artifacts/runtime"));
     const subscription = followAssistantLive(liveHub, {
       cursor: props.initialLiveCursor,
       failing: (failing) => setLiveError(failing ? t().liveRetry : null),
@@ -485,6 +577,18 @@ export default function AssistantWorkspace(props: Props) {
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLDivElement>();
+  // "Quote" loads with the first text selected in the chat and then follows every selection there itself.
+  const [quoting, setQuoting] = createSignal(false);
+  onMount(() => {
+    const select = () => {
+      const selection = document.getSelection();
+      if (!selection || selection.isCollapsed || !timelineContent()?.contains(selection.anchorNode)) return;
+      document.removeEventListener("selectionchange", select);
+      setQuoting(true);
+    };
+    document.addEventListener("selectionchange", select);
+    onCleanup(() => document.removeEventListener("selectionchange", select));
+  });
   let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
 
   let revealRequest = 0;
@@ -584,6 +688,23 @@ export default function AssistantWorkspace(props: Props) {
   };
   const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
+  // Passages the draft quotes, saved with it like its attachments.
+  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteDraft[]>>({});
+  const quotesFor = (key: string) => composerQuotes()[key] ?? [];
+  const setQuotesFor = (key: string, quotes: readonly AiQuoteDraft[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerQuotes((all) => ({ ...all, [key]: quotes }));
+  };
+  /** A passage joins the chat's draft: a cut one or a full draft says so, and the answer is written in the field. */
+  const addQuote = (quote: AiQuoteDraft) => {
+    const key = composerSessionKey();
+    const next = aiQuotesWith(quotesFor(key), quote);
+    if (next.full) return void toast(t().quotesFull, { title: t().quotesFullTitle });
+    if (next.cut) toast(t().quoteCut, { title: t().quoteCutTitle });
+    setQuotesFor(key, next.quotes);
+    focusComposer();
+  };
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
     touchSession();
@@ -609,6 +730,7 @@ export default function AssistantWorkspace(props: Props) {
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
+    setComposerQuotes((current) => ({ ...current, [key]: restored.quotes }));
     const local = session(key);
     for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
@@ -683,13 +805,19 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
+  /** The composer's input with the draft's quotes, which the composer itself does not know. */
+  const withQuotes = (key: string, input: AiComposerSendInput): AiComposerSendInput =>
+    quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
   const composerInput = (key: string, override?: ComposerOverride) =>
-    aiComposerSendInput({
-      intent: "send",
-      text: override?.text ?? composerDraft(key),
-      mentions: override?.mentions ?? mentionsFor(key),
-      attachments: aiChatAttachments(composerAttachmentsFor(key)),
-    });
+    withQuotes(
+      key,
+      aiComposerSendInput({
+        intent: "send",
+        text: override?.text ?? composerDraft(key),
+        mentions: override?.mentions ?? mentionsFor(key),
+        attachments: aiChatAttachments(composerAttachmentsFor(key)),
+      }),
+    );
   /**
    * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
    * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
@@ -737,7 +865,16 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
-  const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  // A place chat starts with its first message: its request carries the place and that message, never a title (O2).
+  type CreationRequest = {
+    requestId: string;
+    title?: string;
+    projectId?: string;
+    place?: CloudResourceRef;
+    draft?: { content: AiDraftContentPart[] };
+  };
+  const creationRequests = new Map<string, CreationRequest>();
+  const creationComposerKey = (key: string) => (key.startsWith("place:") ? "__new__" : key);
   const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
   const [creationVersion, setCreationVersion] = createSignal(0);
   const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
@@ -777,17 +914,26 @@ export default function AssistantWorkspace(props: Props) {
   };
   const newConversation = mutation.create<
     AiConversation | null,
-    { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
+    {
+      focus: boolean;
+      projectId?: string;
+      navigate?: boolean | (() => boolean);
+      place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] };
+      background?: boolean;
+    }
   >({
-    mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
-      const key = projectId ? projectComposerKey(projectId) : "__new__";
+    mutation: async ({ focus, projectId, navigate: shouldNavigate = true, place, background = false }) => {
+      const composerKey = projectId ? projectComposerKey(projectId) : "__new__";
+      const key = place ? `place:${JSON.stringify([place.ref.type, place.ref.id])}` : composerKey;
       let request = creationRequests.get(key);
       if (!request) {
-        request = { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
+        request = place
+          ? { requestId: crypto.randomUUID(), place: { ...place.ref }, draft: { content: place.draft } }
+          : { requestId: crypto.randomUUID(), ...(projectId ? { projectId } : {}) };
         creationRequests.set(key, request);
         setCreationVersion((version) => version + 1);
       }
-      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
+      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== composerKey)));
       // A replay can find a conversation already edited in this workspace. Never replace that session.
       const collides = (conversation: AiConversation) => {
         const existing = sessions.get(conversation.id);
@@ -795,19 +941,59 @@ export default function AssistantWorkspace(props: Props) {
       };
       // The new draft moves into the chat in the same update that opens it, so the field never shows the chat without it.
       let moved = false;
-      const conversation = await chat.createConversation(
-        request,
-        projectId
-          ? undefined
-          : (created) => {
-              if (collides(created)) return;
-              migrateNewComposer(created);
-              moved = true;
-            },
-      );
+      const conversation = await chat.createConversation(request, {
+        activate: !background,
+        beforeOpen:
+          projectId || background || place
+            ? undefined
+            : (created) => {
+                if (collides(created)) return;
+                migrateNewComposer(created);
+                moved = true;
+              },
+      });
+      // A reconciliation for another view retains its original request until it succeeds.
+      if (!conversation && background) return null;
+      if (!conversation && place && chat.creationErrorStatus() === 409) {
+        creationRequests.delete(key);
+        setCreationVersion((version) => version + 1);
+        const navigation = navigationRequest;
+        try {
+          const view = await loadPlace(place.ref, new AbortController().signal);
+          pagePlace.update(view);
+          if (
+            !background &&
+            navigation === navigationRequest &&
+            samePlace(emptyPlace()?.ref, place.ref) &&
+            view.state === "available" &&
+            view.conversationId
+          ) {
+            const target = view.conversationId;
+            const local = sessions.get(target);
+            if (local && (local.dirty || local.conflict || local.saving)) {
+              chat.setError(t().panelCreateDraftCollision);
+              return null;
+            }
+            if (await openAndFocusConversation(target)) {
+              const loaded = chat.conversation();
+              if (loaded?.id === target) {
+                const own = sessions.get("__new__");
+                // An empty remote draft is safe to build on; a populated one still requires conflict review.
+                if (own && loaded.draft.content.length === 0) own.baseRevision = loaded.draft.revision;
+                migrateNewComposer(loaded);
+              }
+              commitConversationUrl(target);
+            }
+          }
+        } catch {
+          chat.setError(t().openConversationFailed);
+        }
+        // Another tab's draft is never submitted automatically. Keep this text for the person to review.
+        return null;
+      }
       if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
         creationRequests.delete(key);
-        setRejectedCreations((keys) => new Set([...keys, key]));
+        setRejectedCreations((keys) => new Set([...keys, composerKey]));
         setCreationVersion((version) => version + 1);
       }
       if (conversation && !projectId && !moved && collides(conversation)) {
@@ -819,9 +1005,12 @@ export default function AssistantWorkspace(props: Props) {
           creationRequests.delete(key);
           setCreationVersion((version) => version + 1);
           if (projectId) setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
-          else migrateNewComposer(conversation);
-          const targetKey = projectId ? key : conversation.id;
+          else if (!background) migrateNewComposer(conversation);
+          const targetKey = projectId ? composerKey : conversation.id;
           const local = session(targetKey);
+          // A place chat is created with this composer's own first message as its draft: that revision is ours, not a
+          // remote change, so the send right after builds on it instead of stopping at a draft conflict.
+          if (request.place) local.baseRevision = Math.max(local.baseRevision, conversation.draft.revision);
           setServerDrafts((all) => ({ ...all, [targetKey]: conversation.draft }));
           if (!local.dirty || observeComposerRevision(local, conversation.draft.revision) === "hydrate")
             hydrateComposer(targetKey, conversation.draft);
@@ -831,7 +1020,7 @@ export default function AssistantWorkspace(props: Props) {
         rememberPanelConversation(conversation.id);
         if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
-          setApprovalsOpen(false);
+          setMainView(null);
           commitConversationUrl(conversation.id);
         }
         if (focus) focusComposer();
@@ -842,11 +1031,19 @@ export default function AssistantWorkspace(props: Props) {
   // The draft's own save creates its chat in the background. Meanwhile the field stays editable, and whatever needs
   // the new chat, such as a send or an app command, continues in that one.
   const [draftCreation, setDraftCreation] = createSignal<Promise<AiConversation | null>>();
-  const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
-    const drafting = projectId ? undefined : draftCreation();
+  // Only the plain draft can keep editing during its own create; a place waits for its separate creation.
+  const editingDraftCreation = () => Boolean(draftCreation()) && !emptyAt() && !placeResolving();
+  const createConversation = async (
+    focus: boolean,
+    projectId?: string,
+    shouldNavigate: boolean | (() => boolean) = true,
+    place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] },
+    background = false,
+  ) => {
+    const drafting = projectId || place || background ? undefined : draftCreation();
     if (drafting) return drafting;
     if (newConversation.loading() || composerPicking() > 0) return null;
-    const outcome = await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
+    const outcome = await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
     return outcome === "success" ? newConversation.data() : null;
   };
   const createDraftConversation = () => {
@@ -862,7 +1059,9 @@ export default function AssistantWorkspace(props: Props) {
   let confirmedUnknownExit: UnknownExit | undefined;
   const unknownExitSnapshot = (): UnknownExit => ({
     revisions: { ...chat.uncertainSubmissions() },
-    generations: new Map([...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(key).editGeneration])),
+    generations: new Map(
+      [...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(creationComposerKey(key)).editGeneration]),
+    ),
     creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
   });
   const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
@@ -872,14 +1071,16 @@ export default function AssistantWorkspace(props: Props) {
   };
   const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
     const request = creationRequests.get(key);
+    const composerKey = creationComposerKey(key);
     return Boolean(
       request &&
         exit &&
         exit.creations.get(key) === request.requestId &&
-        exit.generations.get(key) === session(key).editGeneration &&
-        !composerDraft(key) &&
-        !composerAttachmentsFor(key).length &&
-        !mentionsFor(key).length,
+        exit.generations.get(key) === session(composerKey).editGeneration &&
+        !request.draft?.content.length &&
+        !composerDraft(composerKey) &&
+        !composerAttachmentsFor(composerKey).length &&
+        !mentionsFor(composerKey).length,
     );
   };
   const hasUnsavedPanelState = (exit?: UnknownExit) => {
@@ -963,10 +1164,19 @@ export default function AssistantWorkspace(props: Props) {
       }
       for (const key of [...rejectedCreations()]) {
         const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
-        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key))) return;
+        const place = projectId ? undefined : newChatPlace();
+        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key, place))) return;
       }
       for (const request of [...creationRequests.values()]) {
-        if (!(await createConversation(false, request.projectId, false))) return;
+        const place = request.place && request.draft ? { ref: request.place, draft: request.draft.content } : undefined;
+        // Opening an ordinary creation's result does not detach its pending empty composer. Replay must still
+        // migrate that draft and resolve any saved-draft conflict; only a switch to a place separates it.
+        const current = request.projectId
+          ? activeProject()?.id === request.projectId
+          : place
+            ? !chat.activeConversationId() && samePlace(place.ref, emptyPlace()?.ref)
+            : !emptyAt();
+        if (!(await createConversation(false, request.projectId, false, place, !current))) return;
       }
       for (const [original, local] of [...sessions]) {
         if (!local.dirty || local.conflict) continue;
@@ -974,7 +1184,7 @@ export default function AssistantWorkspace(props: Props) {
         let target = key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key === "__new__" ? undefined : key;
         if (!target) {
           const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
-          const created = await createConversation(false, projectId, !projectId);
+          const created = await createConversation(false, projectId, !projectId, projectId ? undefined : newChatPlace());
           if (!created) return;
           target = created.id;
           if (!projectId) key = target;
@@ -1001,7 +1211,9 @@ export default function AssistantWorkspace(props: Props) {
       }),
     );
     const selectors = new URLSearchParams(window.location.search);
-    if (!["conversation", "project", "artifact", "approvals"].some((key) => selectors.has(key))) {
+    // At a Gustav place the panel opens on the person's chat there, or on its empty chat; not on the remembered one.
+    const atPlace = props.initialPlace?.state === "available" || props.initialPlace?.state === "unavailable";
+    if (!atPlace && !["conversation", "project", "artifact", "approvals", "code"].some((key) => selectors.has(key))) {
       try {
         const selected = window.sessionStorage.getItem(panelSelectionKey);
         if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
@@ -1023,12 +1235,16 @@ export default function AssistantWorkspace(props: Props) {
     const key = composerSessionKey();
     creationVersion();
     // An unknown creation is retried only by the person's explicit Save/Retry action.
-    if (creationRequests.has(key) || rejectedCreations().has(key)) return;
+    if ([...creationRequests.keys()].some((requestKey) => creationComposerKey(requestKey) === key) || rejectedCreations().has(key)) return;
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
+    quotesFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
+    // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
+    // also while the panel still learns whether the page is a place.
+    if (!chat.activeConversationId() && (emptyAt() || placeResolving())) return;
     const target = chat.activeConversationId();
     const timer = window.setTimeout(async () => {
       if (composerSessionKey() !== key || session(key).conflict) return;
@@ -1068,11 +1284,12 @@ export default function AssistantWorkspace(props: Props) {
   };
   const createAndFocusConversation = async () => {
     if (!activeChatIsBlank()) return createConversation(true);
-    // The approvals view opens over the chat it came from; New chat returns to that empty chat instead of a new one.
+    // The approvals and Code views open over the chat they came from; New chat returns to that empty chat instead of a
+    // new one.
     const conversationId = chat.activeConversationId();
-    if (approvalsOpen() && conversationId) {
+    if (mainView() && conversationId) {
       navigationRequest++;
-      setApprovalsOpen(false);
+      setMainView(null);
       commitConversationUrl(conversationId);
     }
     focusComposer();
@@ -1109,7 +1326,7 @@ export default function AssistantWorkspace(props: Props) {
     () =>
       canUseComposer() &&
       !composerBusy() &&
-      (!newConversation.loading() || Boolean(draftCreation())) &&
+      (!newConversation.loading() || editingDraftCreation()) &&
       !chat.loadingConversation() &&
       !chat.running() &&
       !chat.activeTurn(),
@@ -1118,7 +1335,7 @@ export default function AssistantWorkspace(props: Props) {
   const openAndFocusConversation = async (conversationId: string) => {
     const requestId = ++navigationRequest;
     setProjectView(null);
-    setApprovalsOpen(false);
+    setMainView(null);
     const result = await chat.openConversation(conversationId);
     if (result === "failed") throw new Error(t().openConversationFailed);
     if (result === "stale" || requestId !== navigationRequest) return false;
@@ -1126,8 +1343,8 @@ export default function AssistantWorkspace(props: Props) {
     return true;
   };
   // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
-  const waitingConversationId = () => (projectView() || approvalsOpen() ? null : chat.activeConversationId());
-  // What stopped in the open chat and waits for the person (routines, failed app runs); set once the chat's details exist.
+  const waitingConversationId = () => (projectView() || mainView() ? null : chat.activeConversationId());
+  // What stopped in the open chat and waits for the person; set once the chat's details exist.
   const [waitingAttention, setWaitingAttention] = createSignal<() => WaitingAttention[]>(() => []);
   const waiting = createMemo(() => {
     const conversationId = waitingConversationId();
@@ -1141,14 +1358,17 @@ export default function AssistantWorkspace(props: Props) {
   });
   const waitingFocus = createWaitingQuestionFocus({
     onlyHere: () => waiting().onlyHere,
+    atEnd: () => waiting().onlyHereAtEnd,
     viewport: timelineViewport,
     content: timelineContent,
     scrollToAnchor: (anchor) => scrollToMessageAnchor?.(anchor) ?? false,
     gone: focusComposer,
   });
+  // Quiet only while this chat's one entry is in view and nothing else waits; other chats' entries keep the row.
+  const waitingQuiet = () => waitingFocus.inView() !== null && waiting().total === 1;
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor">) => {
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -1165,13 +1385,17 @@ export default function AssistantWorkspace(props: Props) {
       navigation === navigationRequest &&
       waitingConversationId() === question.conversationId;
     // The URL keeps the question, so a reload and Back land on it again.
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const href = assistantQuestionHref(window.location.href, question.conversationId, question.anchor);
     if (here) {
       navigate(href, { replace: true, scroll: "manual", viewTransition: false });
       return waitingFocus.focus(question.anchor, current);
     }
     setProjectView(null);
-    setApprovalsOpen(false);
+    setMainView(null);
     const result = await chat.openConversation(question.conversationId);
     if (navigation !== navigationRequest || jump !== questionJump || result === "stale") return;
     // The page load shows the chat, or why it cannot.
@@ -1204,7 +1428,7 @@ export default function AssistantWorkspace(props: Props) {
       assistantApi.loadProjectContext(projectId),
     ]);
     if (requestId !== navigationRequest) return false;
-    setApprovalsOpen(false);
+    setMainView(null);
     setProjectView({ projectId, page, context });
     return true;
   };
@@ -1260,7 +1484,7 @@ export default function AssistantWorkspace(props: Props) {
     const initialMessage = assistantMessageSeqFromHref(window.location.href);
     const initialQuestion = assistantQuestionAnchorFromHref(window.location.href);
     if (initialMessage !== null) void revealMessage(initialMessage).catch((error) => chat.setError(error.message));
-    else if (initialQuestion && !approvalsOpen() && !projectView()) void landOnQuestion(initialQuestion);
+    else if (initialQuestion && !mainView() && !projectView()) void landOnQuestion(initialQuestion);
     artifactWorkspace.restore();
     setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
@@ -1272,7 +1496,7 @@ export default function AssistantWorkspace(props: Props) {
     window.addEventListener("beforeunload", guardUnsaved);
     onCleanup(() => window.removeEventListener("beforeunload", guardUnsaved));
     const initialConversationId = chat.activeConversationId();
-    if (initialConversationId && !approvalsOpen()) commitConversationUrl(initialConversationId, true);
+    if (initialConversationId && !mainView()) commitConversationUrl(initialConversationId, true);
     if (props.initialArtifactPath) requestAnimationFrame(() => void openFiles(props.initialArtifactPath!));
 
     const handlePopState = () => {
@@ -1286,10 +1510,16 @@ export default function AssistantWorkspace(props: Props) {
       if (assistantApprovalsOpenFromHref(window.location.href)) {
         setProjectView(null);
         setApprovalsRendered(false);
-        setApprovalsOpen(true);
+        setMainView("approvals");
         return;
       }
-      setApprovalsOpen(false);
+      if (assistantCodeOpenFromHref(window.location.href)) {
+        setProjectView(null);
+        setCodeRendered(false);
+        setMainView("code");
+        return;
+      }
+      setMainView(null);
       if (projectId) {
         void openProject(projectId).catch(() => navigateTo(basePath));
         return;
@@ -1326,8 +1556,20 @@ export default function AssistantWorkspace(props: Props) {
     setComposerSubmitting(true);
     try {
       if (!chat.activeConversationId()) {
-        const conversation = await createConversation(false);
+        if (placeResolving()) return false;
+        // At a place, the first message creates the person's chat there; a chat another tab created meanwhile is reused
+        // with its history.
+        const place = emptyPlace();
+        const conversation = place
+          ? await createConversation(false, undefined, true, { ref: place.ref, draft: placeDraft(input) })
+          : await createConversation(false);
         if (!conversation || chat.activeConversationId() !== conversation.id) return false;
+        if (place) {
+          await chat.refreshActiveConversation();
+          pagePlace.update({ ...place, conversationId: conversation.id });
+          // The panel may have followed the page to another place meanwhile; this message belongs to the new chat only.
+          if (chat.activeConversationId() !== conversation.id) return false;
+        }
       }
       const target = chat.activeConversationId()!;
       const sent = await serializeComposer(target, async () => {
@@ -1406,11 +1648,25 @@ export default function AssistantWorkspace(props: Props) {
   const queueEntries = createMemo((): AssistantQueueEntry[] =>
     chat.activeConversationId()
       ? (queuedMessages.data() ?? []).map((message) => ({
-          id: message.id,
-          text: message.text,
-          origin: message.origin,
-          state: message.state,
-          authorIsViewer: message.authorIsViewer,
+          ...message,
+          // The person's own words and attachments; a quote is no word of theirs and stays out of the line. An entry an
+          // automation or another chat wrote shows the server's text: its instruction, without the data it brought.
+          text:
+            message.origin.kind !== "person"
+              ? message.text
+              : message.content
+                  .flatMap((part) =>
+                    part.type === "quote"
+                      ? []
+                      : [
+                          part.type === "text"
+                            ? part.text
+                            : part.type === "file" || part.type === "project-file"
+                              ? part.path
+                              : (part.title ?? part.ref.id),
+                        ],
+                  )
+                  .join(" · "),
         }))
       : [],
   );
@@ -1450,12 +1706,13 @@ export default function AssistantWorkspace(props: Props) {
     conversationId: chat.activeConversationId,
     content: (id) => queuedMessages.data()?.find((message) => message.id === id)?.content,
     reload: () => queuedMessages.refresh(),
-    hasDraft: (id) => composerDraft(id).trim().length > 0 || composerAttachmentsFor(id).length > 0,
+    hasDraft: (id) => composerDraft(id).trim().length > 0 || composerAttachmentsFor(id).length > 0 || quotesFor(id).length > 0,
     putIntoField: (id, content) => {
       const restored = aiComposerDraft(content);
       setComposerAttachmentsFor(id, restored.attachments);
       setComposerDrafts((current) => ({ ...current, [id]: restored.text }));
       setMentionsFor(id, restored.mentions);
+      setQuotesFor(id, restored.quotes);
       setComposerFocusToken((token) => token + 1);
     },
     fail: chat.setError,
@@ -1567,6 +1824,44 @@ export default function AssistantWorkspace(props: Props) {
     liveHub,
   );
   const workspaceContext = () => contextState.snapshot();
+  /** The chat's alarms from its context snapshot, so the server's first frame shows them; their actions load on use. */
+  const wakeupContext: AssistantWakeupContext = {
+    chatId: chat.activeConversationId,
+    items: () => contextState.snapshot()?.wakeups?.items ?? [],
+    limit: () => contextState.snapshot()?.wakeups?.limit ?? 5,
+    refresh: () => contextState.refresh(),
+    locale,
+    timeZone: props.timeZone,
+  };
+  /** Pencil, cross and the one way out of a line act on the chat's alarm as listed now; the actions load on use. */
+  const wakeupLineHost: AssistantWakeupLineHost = {
+    act: (action, id) => {
+      const wakeup = wakeupContext.items().find((item) => item.id === id);
+      return wakeup
+        ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup))
+        : undefined;
+    },
+    retry: (input) => importOnDemand(() => import("./wakeups")).then((module) => module?.retryWakeup(wakeupContext, input)),
+  };
+  /** The words of the alarm lines: the server's for the first frame, then this chat's own once they loaded. */
+  const [wakeupWords, setWakeupWords] = createSignal<typeof import("./wakeup-line") | null>(null);
+  let wakeupWordsLoading = false;
+  const wakeupLine = (line: AiWakeupLineInput, key: string): AssistantWakeupLineText | undefined => {
+    if (!wakeupWordsLoading && typeof window !== "undefined") {
+      wakeupWordsLoading = true;
+      void importOnDemand(() => import("./wakeup-line")).then((module) => module && setWakeupWords(() => module));
+    }
+    const words = wakeupWords();
+    return words
+      ? words.describeWakeupLine(line, {
+          canConfigureAi: props.canConfigureAi,
+          locale: locale(),
+          timeZone: props.timeZone,
+          current: contextState.snapshot()?.wakeups?.items,
+        })
+      : props.initialWakeupLines?.[key];
+  };
+
   const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
   const sidebarActions = () =>
     assistantChatSidebarActions({
@@ -1574,56 +1869,28 @@ export default function AssistantWorkspace(props: Props) {
       project: activeConversationProject(),
       copy: {
         files: artifactCopy().files,
-        apps: artifactCopy().apps,
         knowledge: contextText("Project knowledge"),
         sources: contextText("Sources"),
       },
       onOpenView: openContextView,
-      onOpenApp: (id, title) => artifactWorkspace.open(appTab(id, title)),
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
       onOpenWebPage: openWebPage(),
     });
   // "Needs attention" in this chat becomes entries of "Waiting for you", with the same targets as its details had.
-  setWaitingAttention(() => () => {
-    const snapshot = contextState.snapshot();
-    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
-    const actions = sidebarActions();
-    return [
-      ...snapshot.tasks
-        .filter((task) => task.state === "needs_attention")
-        .map((task) => ({
-          key: `task:${task.id}`,
-          kind: "routine" as const,
-          short: sidebarCopy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
-          open: () => actions.onOpenTask?.(task),
-        })),
-      ...snapshot.results.flatMap((result) =>
-        result.app?.lastRun === "error"
-          ? [
-              {
-                key: `app:${result.key}`,
-                kind: "app_run" as const,
-                short: sidebarCopy().appRunFailed({ title: result.title }),
-                open: () => actions.onOpenApp(result.app!.id, result.title),
-              },
-            ]
-          : [],
-      ),
-    ];
-  });
+  // Routines and Studio app runs no longer exist with Code; nothing in this chat's details waits for the person yet.
+  setWaitingAttention(() => () => []);
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
   const contextBoxActions = (): ContextBoxActions => ({
     onOpen: (target) => {
       const actions = sidebarActions();
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
-      else if (target.kind === "app") actions.onOpenApp(target.id, target.title);
-      else if (target.kind === "presentation") {
-        const conversationId = chat.activeConversationId();
-        if (conversationId) artifactWorkspace.open(presentationTab(conversationId, target.id, target.title));
-      } else if (target.kind === "jump") actions.onJump(target.target);
-      else window.location.assign(target.href);
+      else if (target.kind === "app") return;
+      else if (target.kind === "jump") actions.onJump(target.target);
+      else if (target.kind === "wakeup") {
+        wakeupLineHost.act("edit", target.id);
+      } else window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),
@@ -1690,6 +1957,20 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /**
+   * A prepared message from a version card, such as "Revise version 5 the way Jana wants it". An empty field sends it
+   * at once; text the person already typed stays, and the message joins it in the field instead.
+   */
+  const askGustav = (text: string) => {
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    if (current.trim() || composerAttachmentsFor(key).length > 0) {
+      setComposerDraft(key, `${current.trimEnd()}\n\n${text}`);
+      focusComposer();
+      return;
+    }
+    void send({ message: text });
+  };
   const useStarter = async (starter: AssistantStarterAction) => {
     const release = holdComposerSave();
     try {
@@ -1820,35 +2101,6 @@ export default function AssistantWorkspace(props: Props) {
     artifactWorkspace.setMobile("chat");
     focusComposer();
   };
-  const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
-    if (!(await openAndFocusConversation(task.chatId))) return;
-    const key = task.chatId;
-    const attachments = composerAttachmentsFor(key);
-    const attached = attachments.some((item) => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
-    if (!attached && composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    if (!attached)
-      setComposerAttachmentsFor(key, [
-        ...attachments,
-        {
-          kind: "resource",
-          id: `resource:core.ai.task:${task.id}`,
-          name: assistantTaskTitle(task),
-          ref: { type: "core.ai.task", id: task.id },
-          icon: "ti ti-calendar-time",
-        },
-      ]);
-    const instruction = contextText(
-      repair ? "Please review the last run of this routine with me and help me fix the problem." : "Please help me adjust this routine.",
-    );
-    const existing = composerDraft(key);
-    setComposerDraft(key, existing.trim() ? `${existing}\n\n${instruction}` : instruction);
-    artifactWorkspace.setMobile("chat");
-    focusComposer();
-  };
-
   const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
     const target = followComposerSession(sessionKey);
     const release = holdComposerSave();
@@ -1950,7 +2202,9 @@ export default function AssistantWorkspace(props: Props) {
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
   const liveDictationSource = createLiveDictationSource({ app: "assistant" });
   const dictation = createAssistantDictation({
-    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
+    // At a place the first sent message creates the chat (O2); dictation needs a chat to upload to, so it starts there
+    // once the chat exists.
+    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer() && !(emptyPlace() && !chat.activeConversationId()),
     key: dictationKey,
     target: dictationTarget,
     generation: (key) => {
@@ -2013,9 +2267,9 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
-  const QueuePart = (partProps: { layout: "line" | "chip" }) => (
+  const QueuePart = (partProps: { layout: "line" | "chip"; end?: JSX.Element }) => (
     <Suspense>
-      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} end={partProps.end} />
     </Suspense>
   );
   /**
@@ -2025,21 +2279,45 @@ export default function AssistantWorkspace(props: Props) {
    */
   const WaitingRow = (rowProps: { queue?: boolean }) => {
     const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
-    const waitingShown = () => waiting().total > 0 && !waitingFocus.quiet();
+    // Alarms share the one row (Gustav alarms v1, F1 A): alone as their own line, else as the chip at its end.
+    const alarms = () => Boolean(rowProps.queue) && wakeupContext.items().length > 0;
+    const waitingShown = () => waiting().total > 0 && !waitingQuiet();
+    const AlarmChip = () => (
+      <Suspense>
+        <AssistantWakeupDock context={wakeupContext} layout="chip" />
+      </Suspense>
+    );
     return (
       <>
         <Show when={waiting().total > 0}>
           <AssistantWaitingStrip
             view={waiting()}
             conversationId={waitingConversationId()}
-            quiet={waitingFocus.quiet()}
+            quiet={waitingQuiet()}
+            inView={waitingFocus.inView()}
             onJump={(question) => void jumpToQuestion(question)}
             onShowMore={openApprovals}
-            queue={queued() && waitingShown() ? <QueuePart layout="chip" /> : undefined}
+            queue={
+              (queued() || alarms()) && waitingShown() ? (
+                <>
+                  <Show when={queued()}>
+                    <QueuePart layout="chip" />
+                  </Show>
+                  <Show when={alarms()}>
+                    <AlarmChip />
+                  </Show>
+                </>
+              ) : undefined
+            }
           />
         </Show>
         <Show when={queued() && !waitingShown()}>
-          <QueuePart layout="line" />
+          <QueuePart layout="line" end={alarms() ? <AlarmChip /> : undefined} />
+        </Show>
+        <Show when={alarms() && !queued() && !waitingShown()}>
+          <Suspense>
+            <AssistantWakeupDock context={wakeupContext} layout="line" />
+          </Suspense>
         </Show>
       </>
     );
@@ -2226,6 +2504,13 @@ export default function AssistantWorkspace(props: Props) {
           <NoticeCard tone="warning" title={hasUnknownSends() ? t().panelUnknownSend : t().panelUnknownCreate}>
             <Show when={hasUnknownCreations()}>
               <p>{t().panelUnknownCreateHint}</p>
+              <For each={(creationVersion(), [...creationRequests.values()])}>
+                {(request) => (
+                  <For each={request.draft?.content ?? []}>
+                    {(part) => (part.type === "text" ? <p class="whitespace-pre-wrap">{part.text}</p> : null)}
+                  </For>
+                )}
+              </For>
               <Button
                 size="sm"
                 variant="secondary"
@@ -2346,6 +2631,20 @@ export default function AssistantWorkspace(props: Props) {
                   }
                 />
               </Show>
+              <Show when={quotesFor(sessionKey()).length}>
+                <ChatComposerQuotes
+                  quotes={quotesFor(sessionKey()).map((quote, index) => ({
+                    id: `${index}:${quote.text}`,
+                    author: quote.from === "user" ? t().quotedFromYou : "Gustav",
+                    text: quote.text,
+                    onRemove: () =>
+                      setQuotesFor(
+                        sessionKey(),
+                        quotesFor(sessionKey()).filter((_, position) => position !== index),
+                      ),
+                  }))}
+                />
+              </Show>
             </>
           }
           draftKey={composerIdentity(sessionKey())}
@@ -2429,7 +2728,6 @@ export default function AssistantWorkspace(props: Props) {
                 scope: search.scope,
                 session: search.opening,
                 sessionLoader: commandSession,
-                runKeys,
                 models: aiChatModelOptions(props.models),
                 selectedModelId: selectedModelId(),
                 chooseModel: setSelectedModelId,
@@ -2527,7 +2825,7 @@ export default function AssistantWorkspace(props: Props) {
             !canUseComposer() ||
             panelStorageFailed() ||
             submissionUnknown(sessionKey()) ||
-            (newConversation.loading() && !commandCreating() && !draftCreation()) ||
+            (newConversation.loading() && !commandCreating() && !editingDraftCreation()) ||
             chat.loadingConversation()
           }
           state={
@@ -2564,8 +2862,8 @@ export default function AssistantWorkspace(props: Props) {
             composerProps.projectId
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
               : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
-                ? queueMessage(aiComposerSendInput(input))
-                : send(aiComposerSendInput(input))
+                ? queueMessage(withQuotes(sessionKey(), aiComposerSendInput(input)))
+                : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
           }
           onStop={
             !projectComposer() && chat.activeTurn()
@@ -2730,31 +3028,36 @@ export default function AssistantWorkspace(props: Props) {
     });
 
     return (
-      <Chat.Timeline
-        class="ai-message-list-container h-full"
-        conversationKey={chat.activeConversationId()}
-        items={items()}
-        loading={chat.loadingConversation()}
-        hasMore={chat.hasMoreHistory()}
-        loadingOlder={chat.loadingOlder()}
-        onLoadOlder={chat.loadOlderMessages}
-        emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
-        viewportRef={setTimelineViewport}
-        contentRef={setTimelineContent}
-        scrollToAnchorRef={(scrollToAnchor) => {
-          scrollToMessageAnchor = scrollToAnchor;
-        }}
-        onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
-        navigation={
-          <AiChatTurnNavigator
-            entries={chat.timeline()}
-            loading={chat.timelineLoading()}
-            viewport={timelineViewport}
-            content={timelineContent}
-            loadThrough={chat.loadHistoryThroughSeq}
-          />
-        }
-      />
+      <>
+        <Chat.Timeline
+          class="ai-message-list-container h-full"
+          conversationKey={chat.activeConversationId()}
+          items={items()}
+          loading={chat.loadingConversation()}
+          hasMore={chat.hasMoreHistory()}
+          loadingOlder={chat.loadingOlder()}
+          onLoadOlder={chat.loadOlderMessages}
+          emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
+          viewportRef={setTimelineViewport}
+          contentRef={setTimelineContent}
+          scrollToAnchorRef={(scrollToAnchor) => {
+            scrollToMessageAnchor = scrollToAnchor;
+          }}
+          onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
+          navigation={
+            <AiChatTurnNavigator
+              entries={chat.timeline()}
+              loading={chat.timelineLoading()}
+              viewport={timelineViewport}
+              content={timelineContent}
+              loadThrough={chat.loadHistoryThroughSeq}
+            />
+          }
+        />
+        <Show when={quoting() && timelineContent()}>
+          {(root) => <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />}
+        </Show>
+      </>
     );
   };
 
@@ -2766,7 +3069,237 @@ export default function AssistantWorkspace(props: Props) {
     if (pending) return assistantConversationHref("/app/assistant", pending);
     if (project) return assistantProjectHref("/app/assistant", project.id);
     if (approvalsOpen()) return "/app/assistant?approvals=1";
+    if (codeOpen()) return "/app/assistant?code=1";
     return assistantConversationHref("/app/assistant", chat.activeConversationId());
+  };
+  // "Create in chat" leaves the Code list for the chat first, so creation progress and errors show at the composer.
+  const createFromCodeView = () => {
+    navigationRequest++;
+    setMainView(null);
+    const conversationId = chat.activeConversationId();
+    if (conversationId) commitConversationUrl(conversationId);
+    else navigate(basePath, { scroll: "manual", viewTransition: false });
+    void createAndFocusConversation();
+  };
+  const panelAttachDisabled = () =>
+    (props.embedded && !workspaceMounted()) ||
+    !canUseComposer() ||
+    panelStorageFailed() ||
+    submissionUnknown(activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey()) ||
+    composerSubmitting() ||
+    newConversation.loading() ||
+    chat.loadingConversation() ||
+    chat.running();
+  const attachPanelResource = (ref: CloudResourceRef, current: () => boolean) => {
+    const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
+    return trackComposerPicking(addResolvedComposerResource(key, ref, current));
+  };
+  // Gustav at a place (side panel only). The page's place loads on every accepted page context; the bar describes the
+  // open chat's place, or the page's place while the panel waits for the first message there.
+  const placeT = () => placeMessages.resolve([locale()]).t;
+  /** A saved draft at an empty place creates the chat there with that draft, never a chat without the place. */
+  const newChatPlace = () => {
+    const place = emptyPlace();
+    const text = composerDraft("__new__").trim();
+    return place && text ? { ref: place.ref, draft: [{ type: "text" as const, text }] } : undefined;
+  };
+  /** The first message as the place chat's initial draft: its text and references; files follow with the normal send. */
+  const placeDraft = (input: AiComposerSendInput): AiDraftContentPart[] => {
+    const parts = (input.draftContent ?? []).filter((part) => part.type === "text" || part.type === "resource");
+    if (parts.some((part) => part.type === "resource" || part.text.trim())) return parts;
+    return [{ type: "text", text: input.message?.trim() || "…" }];
+  };
+  const loadPlace = props.loadPlace ?? fetchAssistantPlace;
+  const openChatPlace = () => {
+    const id = chat.activeConversationId();
+    if (!id) return null;
+    const loaded = chat.conversation();
+    return conversationPlace(loaded?.id === id ? loaded : null) ?? conversationPlace(activeConversation());
+  };
+  const followablePlace = (view: AssistantPlaceView | null): view is Extract<AssistantPlaceView, { state: "available" | "unavailable" }> =>
+    Boolean(view && (view.state === "available" || (view.state === "unavailable" && view.conversationId)));
+  const panelShowsNothingToLose = () =>
+    !mainView() &&
+    !projectView() &&
+    (switchingPlace() ||
+      (chat.activeConversationId()
+        ? panelFollowsPlace({ conversationId: chat.activeConversationId(), empty: activeChatIsBlank(), atPlace: Boolean(openChatPlace()) })
+        : // Text typed into the empty chat is something to lose; the bar then offers the switch instead.
+          !composerDraft("__new__").trim() && composerAttachmentsFor("__new__").length === 0));
+  /** The page names a place whose answer is still out: no chat is created until the panel knows which kind. */
+  const placeResolving = () => Boolean(props.embedded && pagePlace.context()?.scope && pagePlace.state() === "loading");
+  const [switchingPlace, setSwitchingPlace] = createSignal(false);
+  /** The place the empty chat belongs to: its next message creates the person's chat there. */
+  const [emptyAt, setEmptyAt] = createSignal<Extract<AssistantPlaceView, { state: "available" }> | null>(
+    props.initialPlace?.state === "available" && !props.initialConversationId ? props.initialPlace : null,
+  );
+  /** The empty chat at a place: the next message creates the person's chat there. */
+  const showEmptyPlaceChat = (view: Extract<AssistantPlaceView, { state: "available" }>) => {
+    setEmptyAt(view);
+    navigationRequest++;
+    setMainView(null);
+    setProjectView(null);
+    if (chat.activeConversationId()) chat.setActiveConversationId(null);
+    const href = assistantConversationHref(window.location.href, null);
+    if (href !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+      navigate(href, { scroll: "manual", viewTransition: false });
+    focusComposer();
+  };
+  // Each switch has its own number; a newer page ends an older switch before its chat lands.
+  let placeSwitch = 0;
+  const switchToPlace = async (view: Extract<AssistantPlaceView, { state: "available" | "unavailable" }>) => {
+    const target = view.conversationId;
+    if (target && target === chat.activeConversationId() && !mainView() && !projectView()) return;
+    const token = ++placeSwitch;
+    setSwitchingPlace(true);
+    try {
+      if (!target) {
+        if (view.state === "available") showEmptyPlaceChat(view);
+        return;
+      }
+      if ((await openAndFocusConversation(target)) && token === placeSwitch) commitConversationUrl(target);
+    } catch (error) {
+      if (token === placeSwitch) chat.setError(error instanceof Error ? error.message : t().openConversationFailed);
+    } finally {
+      if (token === placeSwitch) setSwitchingPlace(false);
+    }
+  };
+  const pagePlace = createPagePlace({
+    context: props.embedded ? (props.initialPanelContext ?? null) : null,
+    initial: props.initialPlace ?? null,
+    load: (ref, signal) => loadPlace(ref, signal),
+    // O1: a late answer for an earlier page never arrives here (seq and pageId), so this only follows the current page.
+    onPlace: (view) => {
+      if (followablePlace(view) && panelShowsNothingToLose()) void switchToPlace(view);
+    },
+  });
+  onMount(() => {
+    if (!props.embedded) return;
+    pagePlace.receive(getContext());
+    onCleanup(
+      onContextChange((next) => {
+        // A switch still opening the previous page's chat ends here; the new page decides again.
+        if (switchingPlace() && !samePlace(next?.scope, pagePlace.context()?.scope)) {
+          placeSwitch++;
+          navigationRequest++;
+          setSwitchingPlace(false);
+          // Also invalidate the controller's in-flight open, so its late detail cannot become the active chat.
+          chat.setActiveConversationId(assistantConversationIdFromHref(window.location.href));
+        }
+        pagePlace.receive(next);
+        if (!next) retryOtherPlace();
+        // Consent arrives as a new context: the open chat's own place loads again too.
+        if (otherPlace()?.view?.state === "consent") retryOtherPlace();
+      }),
+    );
+  });
+  // A chat whose place is not the page's reads its own place once, for its bar.
+  const [otherPlace, setOtherPlace] = createSignal<{ key: string; view: AssistantPlaceView | null; failed: boolean } | null>(null);
+  const [otherRetry, setOtherRetry] = createSignal(0);
+  createEffect(
+    on(
+      () => {
+        const place = openChatPlace();
+        otherRetry();
+        return place && !samePlace(place.ref, pagePlace.view()?.ref) ? place.ref : null;
+      },
+      (ref) => {
+        if (!props.embedded || !ref) return;
+        const key = `${ref.type}:${ref.id}`;
+        if (otherPlace()?.key === key && !otherPlace()?.failed) return;
+        setOtherPlace({ key, view: null, failed: false });
+        const abort = new AbortController();
+        onCleanup(() => abort.abort());
+        loadPlace({ ...ref }, abort.signal).then(
+          (view) => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view, failed: false });
+          },
+          () => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view: null, failed: true });
+          },
+        );
+      },
+    ),
+  );
+  const retryOtherPlace = () => {
+    setOtherPlace(null);
+    setOtherRetry((count) => count + 1);
+  };
+  /** The page's place when it is the open chat's, or when the empty panel waits for its first message there. */
+  const emptyPlace = () => {
+    const at = emptyAt();
+    if (!props.embedded || !at || !pagePlace.context() || chat.activeConversationId() || mainView() || projectView() || !emptyChat())
+      return null;
+    // The page's fresher answer for the same place wins; after leaving it, the empty chat keeps its own place.
+    const page = pagePlace.view();
+    return page?.state === "available" && samePlace(page.ref, at.ref) ? page : at;
+  };
+  const placeBar = createMemo((): AssistantPlaceBarState | null => {
+    if (!props.embedded || mainView() || projectView()) return null;
+    const page = pagePlace.view();
+    const chatPlace = openChatPlace();
+    if (chatPlace) {
+      const view = samePlace(chatPlace.ref, page?.ref) ? page : otherPlace()?.view;
+      if (view?.state === "available") return { kind: "place", view };
+      // Only a place that is gone or no longer readable says so (O5); the chat stays, without the place's tools.
+      if (view?.state === "unavailable")
+        return {
+          kind: "gone",
+          view: { ...view, title: view.title ?? chatPlace.title, app: view.app ?? chatPlace.app ?? null },
+        };
+      // Without consent the place is not lost, only not shared: the shell's own question brings it back.
+      if (view?.state === "consent") return { kind: "consent", title: chatPlace.title, app: chatPlace.app ?? null, onAsk: askPanelConsent };
+      // The app no longer declares a Gustav place: a normal chat, without a bar.
+      if (view?.state === "none") return null;
+      if (samePlace(chatPlace.ref, page?.ref) ? pagePlace.state() === "failed" : otherPlace()?.failed)
+        return { kind: "failed", onRetry: samePlace(chatPlace.ref, page?.ref) ? pagePlace.retry : retryOtherPlace };
+      return { kind: "loading" };
+    }
+    const followable = panelShowsNothingToLose();
+    if (!chat.activeConversationId() && emptyAt() && !pagePlace.context())
+      return { kind: "consent", title: emptyAt()!.title, app: emptyAt()!.app, onAsk: askPanelConsent };
+    if (page?.state === "consent" && followable) return { kind: "consent", title: null, app: null, onAsk: askPanelConsent };
+    const here = emptyPlace();
+    const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;
+    if (pagePlace.state() === "loading" && followable && pagePlace.context()?.scope) return { kind: "loading" };
+    if (pagePlace.state() === "failed" && pagePlace.context()?.scope) return { kind: "failed", onRetry: pagePlace.retry };
+    if (offer && !followable)
+      return {
+        kind: "switch",
+        view: offer,
+        busy: switchingPlace(),
+        disabled: !canUseComposer(),
+        onSwitch: () => void switchToPlace(offer),
+      };
+    if (here) return { kind: "place", view: here };
+    return null;
+  });
+  // "Attach current view" stays for places whose app declares no Gustav block, and as the way out when a place failed.
+  const showsAttachPlace = () =>
+    Boolean(pagePlace.context()?.scope) && (pagePlace.view()?.state === "none" || pagePlace.state() === "failed");
+  const [startingOver, setStartingOver] = createSignal(false);
+  /** "Start over": archives the person's chat at this place; the next message there starts a new one (O2). */
+  const startOver = async () => {
+    const conversation = chat.conversation();
+    const conversationId = chat.activeConversationId();
+    if (!conversation || conversation.id !== conversationId || startingOver() || chat.activeTurn() || chat.running()) return;
+    setStartingOver(true);
+    const place = openChatPlace();
+    try {
+      await assistantApi.archiveConversation(conversationId);
+      // Only while the page is still this chat's place: a later page decided on its own.
+      const page = pagePlace.view();
+      if (place && page && (page.state === "available" || page.state === "unavailable") && samePlace(place.ref, page.ref)) {
+        pagePlace.update({ ...page, conversationId: null });
+        if (chat.activeConversationId() === conversationId && page.state === "available")
+          showEmptyPlaceChat({ ...page, conversationId: null });
+      }
+      archiveConversation(conversation);
+    } catch {
+      toast.error(placeT().startOverFailed, { title: placeT().startOverFailedTitle });
+    } finally {
+      setStartingOver(false);
+    }
   };
   const PanelAllChats = () => (
     <ButtonLink
@@ -2783,17 +3316,35 @@ export default function AssistantWorkspace(props: Props) {
   );
   // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
   // without messages (a saved draft, or a chat that failed to load).
+  // In a chat at a place, the same slot reads "Start over": a place keeps one chat per person (O2).
   const PanelNewChat = () => (
-    <Button
-      size="xs"
-      variant="ghost"
-      class="assistant-panel-link"
-      disabled={newConversation.loading() || composerPicking() > 0}
-      onClick={() => void createAndFocusConversation()}
+    <Show
+      when={openChatPlace()}
+      fallback={
+        <Button
+          size="xs"
+          variant="ghost"
+          class="assistant-panel-link"
+          disabled={newConversation.loading() || composerPicking() > 0}
+          onClick={() => void createAndFocusConversation()}
+        >
+          <i class="ti ti-plus" aria-hidden="true" />
+          {t().newChat}
+        </Button>
+      }
     >
-      <i class="ti ti-plus" aria-hidden="true" />
-      {t().newChat}
-    </Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        class="assistant-panel-link"
+        title={placeT().startOverHint}
+        disabled={startingOver() || Boolean(chat.activeTurn()) || chat.running() || composerPicking() > 0}
+        onClick={() => void startOver()}
+      >
+        <i class={startingOver() ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} aria-hidden="true" />
+        {placeT().startOver}
+      </Button>
+    </Show>
   );
   const PanelRow = () => (
     <div class="assistant-panel-row">
@@ -2821,7 +3372,7 @@ export default function AssistantWorkspace(props: Props) {
           renderedAt={props.renderedAt}
           doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
           activeConversationId={chat.activeConversationId}
-          activeView={approvalsOpen() ? "approvals" : "chat"}
+          activeView={mainView() ?? "chat"}
           projects={projects()}
           activeProjectId={activeProject()?.id ?? null}
           creatingConversation={() => newConversation.loading() || composerPicking() > 0}
@@ -2846,9 +3397,13 @@ export default function AssistantWorkspace(props: Props) {
           }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
-          pendingApprovals={props.approvals.page.count}
+          waitingCount={() => waiting().total}
           onOpenApprovals={openApprovals}
+          hasPersonalCode={() => Boolean(props.code?.has)}
+          onOpenCode={openCode}
           live={liveHub}
+          placeChats={() => sidebar.data()?.placeChats ?? null}
+          initialPlacesFilter={props.initialPlacesFilter}
         />
 
         <AppWorkspace.Content>
@@ -2860,30 +3415,59 @@ export default function AssistantWorkspace(props: Props) {
               minSize={360}
               class="assistant-chat-pane flex min-h-0 flex-col"
             >
-              <Show when={props.embedded && !approvalsOpen()}>
-                <AssistantPanelContext
-                  initial={props.initialPanelContext ?? null}
-                  disabled={
-                    (props.embedded && !workspaceMounted()) ||
-                    !canUseComposer() ||
-                    panelStorageFailed() ||
-                    submissionUnknown(activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey()) ||
-                    composerSubmitting() ||
-                    newConversation.loading() ||
-                    chat.loadingConversation() ||
-                    chat.running()
-                  }
-                  attach={(ref, current) => {
-                    const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
-                    return trackComposerPicking(addResolvedComposerResource(key, ref, current));
+              <Show when={props.embedded && !mainView()}>
+                <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
+                <AssistantCodeBlock
+                  initial={props.initialCodeBlock}
+                  timeZone={props.timeZone}
+                  chatOpen={Boolean(chat.activeConversationId() || activeProject())}
+                  disabled={panelAttachDisabled()}
+                  revision={codeRevision()}
+                  onEdit={async (ref) => {
+                    // Gustav works on a place's Code with that place in the message; the chat's tools find its Code.
+                    await attachPanelResource(ref, () => true);
+                    focusComposer();
                   }}
                 />
+                <Show when={showsAttachPlace()}>
+                  <AssistantPanelContext
+                    initial={props.initialPanelContext ?? null}
+                    disabled={panelAttachDisabled()}
+                    attach={attachPanelResource}
+                  />
+                </Show>
               </Show>
               <Show
-                when={!approvalsOpen()}
+                when={!mainView()}
                 fallback={
                   <>
-                    <AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />
+                    <Show
+                      when={codeOpen()}
+                      fallback={
+                        <AssistantApprovalsView
+                          initial={approvalsRendered() ? props.approvals.page : undefined}
+                          questions={() => waiting().entries}
+                          questionsPage={openQuestions}
+                          onJump={(question) => void jumpToQuestion(question)}
+                          initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
+                          timeZone={props.timeZone}
+                        />
+                      }
+                    >
+                      <Show
+                        when={codeRendered() && props.code?.detail}
+                        fallback={
+                          <AssistantCodeView
+                            userId={props.userId}
+                            timeZone={props.timeZone}
+                            initial={codeRendered() ? props.code?.page : undefined}
+                            onCreateInChat={createFromCodeView}
+                          />
+                        }
+                      >
+                        {(detail) => <AssistantCodeDetail data={detail()} />}
+                      </Show>
+                    </Show>
                     <Show when={props.embedded}>
                       <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
                         <PanelRow />
@@ -2905,16 +3489,31 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
-                                    renderCodePresentation: (result) => (
-                                      <ChatPresentation
-                                        result={result()}
-                                        conversationId={chat.activeConversationId()!}
-                                        httpHost={browserHttpHost}
-                                        openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
+                                    renderWakeupLine: (line, key) => (
+                                      <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />
+                                    ),
+                                    renderTurnErrorAction: (error) =>
+                                      props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
+                                    onQuote: addQuote,
+                                    renderCodeAuthoringStop: (state, continuable, superseded) => (
+                                      <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+                                    ),
+                                    renderCodeDecision: (entry) => (
+                                      <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                                    ),
+                                    renderCodeVersion: (version) => (
+                                      <AssistantCodeVersionCard
+                                        store={codeVersionCards}
+                                        {...version}
+                                        timeZone={props.timeZone}
+                                        onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                        onAsk={askGustav}
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
                                     onCheckAction: (request) => chat.checkAction(request),
+                                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
+                                    onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
                                     onShowQuestion: (anchor) => {
                                       const conversationId = chat.activeConversationId();
                                       if (conversationId) void jumpToQuestion({ conversationId, anchor });
@@ -2949,17 +3548,16 @@ export default function AssistantWorkspace(props: Props) {
                                     },
                                     onContinueTurn: async (message) => {
                                       const target = chat.activeConversationId();
-                                      if (!target) return;
+                                      if (!target) throw new Error(t().authoringContinueFailed);
                                       // Sending replaces the saved draft; what the person was writing goes back into it.
-                                      await sendBesideComposer(session(target), {
+                                      const sent = await sendBesideComposer(session(target), {
                                         send: () => send({ message }),
                                         hasContent: () =>
                                           Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
                                         save: () => saveComposer(target, target),
                                       });
+                                      if (!sent) throw new Error(t().authoringContinueFailed);
                                     },
-                                    onOpenScheduledTaskRun: (taskId, occurrenceId) =>
-                                      void openTaskRun(taskId, occurrenceId, liveHub, locale()),
                                     onOpenFile: (path) => void openFiles(path),
                                     onOpenWebLink: (href, title) => {
                                       const open = openWebPage();
@@ -2993,11 +3591,18 @@ export default function AssistantWorkspace(props: Props) {
                                 onChooseProject={() => void chooseEmptyChatProject()}
                                 onStarter={props.embedded ? undefined : useStarter}
                                 rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
+                                place={
+                                  emptyPlace()
+                                    ? {
+                                        title: emptyPlace()!.title,
+                                        appName: emptyPlace()!.app.name,
+                                        starters: emptyPlace()!.starters,
+                                        onStarter: (starter) => void useStarter({ ...starter, icon: "ti ti-sparkles" }),
+                                      }
+                                    : null
+                                }
                               />
                             </Show>
-                            <codeApprovals.View
-                              conversationTitle={(id) => conversations().find((c) => c.id === id || c.shortId === id)?.title}
-                            />
                           </section>
 
                           <Show when={!emptyChat()}>
@@ -3078,8 +3683,7 @@ export default function AssistantWorkspace(props: Props) {
                     </div>
                   }
                 >
-                  <ArtifactWorkspace
-                    onEditTask={(task, repair) => void editScheduledTask(task, repair)}
+                  <ChatWorkspace
                     onOpenView={openContextView}
                     project={activeConversationProject()}
                     conversationId={chat.activeConversationId()}

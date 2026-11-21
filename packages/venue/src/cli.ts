@@ -148,6 +148,7 @@ const venueAccessCommands = createAccessCommands({
     return {
       id: venue.id,
       label: `${venue.name} (${venue.slug})`,
+      target: { type: "venue.venue", id: venue.id },
     };
   },
   list: async (ctx, venue) => (await apiGet<{ entries: AccessEntry[] }>(ctx, `/venues/${encode(venue.id)}/access`)).entries,

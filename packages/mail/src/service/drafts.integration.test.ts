@@ -14,7 +14,6 @@ import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraft
 import { validateIdentity } from "./draft-validation";
 import {
   createDraft,
-  createWorkflowReviewReplyDraftInTransaction,
   discardDraft,
   getDraft,
   listDraftRecoveryCopies,
@@ -56,6 +55,7 @@ const userContext = (id: string, uid: string, displayName: string, mail: string)
 const draftModeTests = (draftEditMode: "shared" | "lock") => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
+  const serviceAccountIds: string[] = [];
   const accessIds: string[] = [];
   const blobIds: string[] = [];
   let mailboxId = "";
@@ -151,6 +151,9 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
     }
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+    if (serviceAccountIds.length > 0) {
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${serviceAccountIds}::jsonb))`;
     }
     await sql`DELETE FROM mail.message_part_blobs WHERE content_hash = ${fillerHash}`;
     if (blobIds.length > 0) {
@@ -298,27 +301,72 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       });
       expect(discarded.ok).toBe(true);
       if (intent === "reply") {
-        // This automation creates a draft for human review, so the same empty-recipient rule applies.
-        const review = await sql.begin((db) =>
-          createWorkflowReviewReplyDraftInTransaction({
-            db,
-            mailboxId,
-            workflowVersionId: crypto.randomUUID(),
-            draftId: crypto.randomUUID(),
+        // Workflows are retired on feat/code. Gustav's suggestion uses the same preparation and insertion
+        // as draft.create's materialization; empty recipients stay editable, but a human still cannot send them.
+        const [account] = await sql<{ id: string }[]>`
+          INSERT INTO auth.service_accounts (name, kind) VALUES ('Self-reply review agent', 'agent') RETURNING id
+        `;
+        if (!account) throw new Error("Self-reply review agent was not created");
+        serviceAccountIds.push(account.id);
+        const grant = await grantMailboxAccess({
+          context: owner,
+          mailboxId,
+          principal: { type: "service_account", serviceAccountId: account.id },
+          permission: "write",
+        });
+        if (!grant.ok) throw new Error(grant.error.message);
+        accessIds.push(grant.data.id);
+        const agent: MailRequestContext = {
+          actor: {
+            kind: "service_account",
+            serviceAccount: {
+              id: account.id,
+              name: "Self-reply review agent",
+              kind: "agent",
+              status: "active",
+              delegatedUserId: null,
+              appId: null,
+              resourceType: null,
+              resourceId: null,
+              createdBy: null,
+              createdAt: "2026-11-18T10:00:00.000Z",
+            },
+            delegatedUser: null,
+            scopes: ["mail:write"],
+            credentialId: null,
+            credentialExpiresAt: null,
+          },
+          accessSubject: { type: "service_account", serviceAccountId: account.id },
+        };
+        const review = await createDraft({
+          context: agent,
+          mailboxId,
+          input: {
             conversationId: conversation!.id,
             sourceMessageId: source!.id,
             senderIdentityId: selfIdentity!.id,
+            signatureTemplateId: null,
+            quoteSource: null,
+            intent: "reply",
+            to: [],
+            cc: [],
+            bcc: [],
+            subject: "",
             body: "Review note to self",
             format: "plain",
-          }),
-        );
+          },
+        });
         expect(review).toMatchObject({ ok: true, data: { deliveryClass: "normal" } });
+        expect(review).toMatchObject({
+          ok: true,
+          data: { createdBy: { kind: "service_account", serviceAccountId: account.id }, suggestion: true },
+        });
         if (review.ok) {
           expect(await getDraft(owner, mailboxId, review.data.id)).toMatchObject({
             ok: true,
             data: { to: [], cc: [], body: "Review note to self", intent: "reply" },
           });
-          const workflowSend = await loadSendContent({
+          const suggestionSend = await loadSendContent({
             db: sql,
             mailboxId,
             draftId: review.data.id,
@@ -326,7 +374,7 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
             actor: { kind: "user", userId: userIds[0]! },
             context: owner,
           });
-          expect(workflowSend).toMatchObject({
+          expect(suggestionSend).toMatchObject({
             ok: false,
             error: { code: "BAD_INPUT", message: "At least one recipient is required before sending" },
           });

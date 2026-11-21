@@ -6,7 +6,7 @@ import { sql } from "../runtime/clients";
 import { approvals } from "../services/approvals";
 import { AiInvalidationSchema } from "./live-events";
 import { migrateCloudAi } from "./migrate";
-import { countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
+import { type AiOpenQuestionsCursor, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 import { aiConversations } from "./store";
 
@@ -101,7 +101,8 @@ databaseSuite()("open questions", () => {
           WHERE id=${turn.id}::uuid`;
       return { id: request.id, callId };
     };
-    const read = () => listAiOpenQuestions({ ownerUserId: userId, locale: "en", timeZone: "Europe/Berlin" });
+    const read = (cursor?: AiOpenQuestionsCursor) =>
+      listAiOpenQuestions({ ownerUserId: userId, locale: "en", timeZone: "Europe/Berlin", cursor });
     return { userId, chat, turn, ask, read };
   };
 
@@ -123,6 +124,7 @@ databaseSuite()("open questions", () => {
     await approvals.cancel([cancelled.id]);
     const resolved = await owner.ask();
     await aiConversations.resolvePendingTurnAction({
+      signedInSession: true,
       conversationId: owner.chat.id,
       turnId: owner.turn.id,
       callId: resolved.callId,
@@ -135,16 +137,26 @@ databaseSuite()("open questions", () => {
     expect(await countAiOpenQuestions(owner.userId)).toBe(0);
   });
 
-  test("bounds the newest-first page while counting all questions, including timestamp ties", async () => {
+  test("bounds the oldest-first page while counting all questions, including timestamp ties", async () => {
     const f = await fixture();
     const ids: string[] = [];
     for (let i = 0; i < APPROVALS_PAGE_SIZE + 1; i++) ids.push((await f.ask()).id);
     const page = await f.read();
-    expect(page.items.map((item) => item.id)).toEqual(ids.slice(1).reverse());
+    expect(page.items.map((item) => item.id)).toEqual(ids.slice(0, APPROVALS_PAGE_SIZE));
     expect(page.count).toBe(21);
+    expect((await f.read(page.nextCursor)).items.map((item) => item.id)).toEqual(ids.slice(APPROVALS_PAGE_SIZE));
+    expect((await f.read(page.nextCursor)).nextCursor).toBeUndefined();
     expect(page.items[0]?.createdAt).toMatch(/^2026-10-17T12:/);
     await sql`UPDATE approvals.requests SET created_at=${now}::timestamptz WHERE approver_user_id=${f.userId}::uuid`;
-    expect((await f.read()).items.map((item) => item.id)).toEqual([...ids].sort().reverse().slice(0, APPROVALS_PAGE_SIZE));
+    // Different PostgreSQL microseconds within one JS millisecond must not duplicate or lose entries.
+    await sql`UPDATE approvals.requests SET created_at=created_at + interval '123 microseconds' WHERE approver_user_id=${f.userId}::uuid`;
+    const tied = await f.read();
+    expect(tied.items.map((item) => item.id)).toEqual([...ids].sort().slice(0, APPROVALS_PAGE_SIZE));
+    await approvals.cancel([tied.items.at(-1)!.id]);
+    const rest = await f.read(tied.nextCursor);
+    expect(rest.items.map((item) => item.id)).toEqual([...ids].sort().slice(APPROVALS_PAGE_SIZE));
+    expect(rest.count).toBe(20);
+    expect(rest.nextCursor).toBeUndefined();
   });
 
   test("uses the chat's tool block and card anchor for standard and custom approvals, the card's words and app, and the current chat title", async () => {
@@ -156,7 +168,7 @@ databaseSuite()("open questions", () => {
         review: { ...review, sentence: { ...review.sentence, short: "Send Meeting.pdf" } },
       }),
     });
-    const action = await f.ask({ callId: "action", block: tool("action", { review: { ...review, preview: undefined } }) });
+    const action = await f.ask({ callId: "action", block: tool("action", { review: { ...review, view: undefined } }) });
     const custom = await f.ask({
       callId: "parent-approval-1",
       kind: "custom_approval",
@@ -208,21 +220,16 @@ databaseSuite()("open questions", () => {
     const falseReview = await f.ask({ callId: "false-review", block: { ...tool("false-review"), review: false } });
     const warnings = spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      expect(await f.read()).toMatchObject({
-        count: 5,
-        items: [
-          { id: falseReview.id, anchor: "tool-false-review", short: "Send this draft" },
-          { id: incompleteReview.id, anchor: "tool-incomplete-review", short: "Send this draft" },
-          { id: badBlock.id, anchor: "tool-bad-block", short: "Send this draft" },
-          {
-            id: badReview.id,
-            anchor: "tool-bad-review",
-            short: "Send this draft",
-            app: { name: "Mail", icon: "ti ti-mail", accent: "blue" },
-          },
-          { id: valid.id, short: "Send Meeting.pdf to Lea" },
-        ],
-      });
+      const page = await f.read();
+      expect(page.count).toBe(5);
+      expect(page.items.map(({ id, anchor, short }) => ({ id, anchor, short }))).toEqual([
+        { id: valid.id, anchor: "tool-valid", short: "Send Meeting.pdf to Lea" },
+        { id: badReview.id, anchor: "tool-bad-review", short: "Send this draft" },
+        { id: badBlock.id, anchor: "tool-bad-block", short: "Send this draft" },
+        { id: incompleteReview.id, anchor: "tool-incomplete-review", short: "Send this draft" },
+        { id: falseReview.id, anchor: "tool-false-review", short: "Send this draft" },
+      ]);
+      expect(page.items[1]?.app).toEqual({ name: "Mail", icon: "ti ti-mail", accent: "blue" });
       expect(
         warnings.mock.calls.filter(
           ([source, message]) => source === "[ai:open-questions]" && message === "Failed to present open question",
@@ -243,6 +250,7 @@ databaseSuite()("open questions", () => {
     await sql`DELETE FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
     expect(await approvals.decide(first.id, { approved: false }, { userId: f.userId, via: "web_session" })).toMatchObject({ ok: true });
     await aiConversations.resolvePendingTurnAction({
+      signedInSession: true,
       conversationId: f.chat.id,
       turnId: f.turn.id,
       callId: first.callId,

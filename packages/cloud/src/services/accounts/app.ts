@@ -339,7 +339,8 @@ export const accountsAppService = {
         hasNext: result.pagination.has_next,
       };
     },
-    get: async (config: { id: string } | { uid: string }): Promise<User | null> => users.get(config),
+    get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
+      users.get(config, options),
     getMinimal: async (config: { id: string } | { uid: string }) => users.getMinimal(config),
     getAvatar: async (config: { id: string }) => users.getAvatar(config),
     setAvatar: async (config: { actor: AccountsActor; id: string; dataUrl: string }) => {
@@ -1289,6 +1290,9 @@ export const accountsAppService = {
       actor: AccountsActor;
       pagination?: PageParams;
       search?: string;
+      /** Internal: exact handle admitted by the target search route after Manage and rate-limit checks. */
+      codeAccountHandle?: string;
+      locale?: string;
       kinds?: EntityKind[];
       provider?: UserProvider;
       profile?: UserProfile;
@@ -1322,6 +1326,8 @@ export const accountsAppService = {
       const result = await entities.list({
         visibility: canSearchDirectory ? { type: "directory" } : { type: "self_and_effective_groups", userId: config.actor.userId },
         search: config.search,
+        codeAccountHandle: config.codeAccountHandle,
+        locale: config.locale,
         kinds: config.kinds,
         provider: config.provider,
         profile: config.profile,

@@ -1,17 +1,18 @@
 import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent, Tool } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
+import { z } from "zod";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
-import { getCapability, listCapabilities } from "../_internal/registry";
+import { getApp, getCapability, listCapabilities } from "../_internal/registry";
+import { capabilityCallFromTool } from "../capabilities/calls";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
-import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema, capabilityActionPolicy, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
 import { logger, trace } from "../services/logging";
-import { getMandate } from "../services/mandates";
-import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { normalizeLocale } from "../shared/locale";
 import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
@@ -23,9 +24,14 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
-import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { type AiCapabilityCatalogEntry, buildAiCapabilityCatalog, createAiToolResolver, createRunToolStore } from "./capabilities";
+import {
+  type AiCapabilityCatalogEntry,
+  aiCapabilityArguments,
+  buildAiCapabilityCatalog,
+  buildAiCapabilityHistoryCatalog,
+  createAiToolResolver,
+} from "./capabilities";
 import {
   AiCapabilityExecutionError,
   aiCapabilityCheckResult,
@@ -37,10 +43,22 @@ import {
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
+import { layoutAiTurn, showsNothing } from "./chat/turn-layout";
+import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
+import {
+  AUTOMATION_TURN_BUDGET,
+  CODE_AUTHORING_TURN_BUDGET,
+  createCodeAuthoringTurnBudget,
+  isAutomaticAiChatTurn,
+} from "./code-authoring-turn";
+import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { createCloudCompactFn } from "./compaction";
-import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
+import { cardToolResult, chartToolResult } from "./gustav-views";
+import { readAiTurnCallUsage } from "./inference-calls";
+import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
@@ -49,6 +67,9 @@ import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { readQueuedTurnInterruption, reconcileQueuedInterruptions } from "./message-queue";
 import { aiModelAccess } from "./model-access";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
+import { withPlaceAssistantContext } from "./place-prompt";
+import { loadPlaceAssistantRound } from "./place-round";
+import { rejectUnavailablePlaceCalls, resolveAiPlaceTools } from "./place-tools";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -68,8 +89,12 @@ import {
   toolBlockId,
 } from "./protocol";
 import { retryTransientProviderErrors } from "./provider-retry";
+import { publicAiToolBlock, publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
+import { aiQuotas } from "./quotas";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { capabilityResultView } from "./result-view";
+import { assertInteractiveChatTurn } from "./retired-routines";
 import { compactCapabilityReview } from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
@@ -103,6 +128,7 @@ import {
   rememberProviderErrors,
 } from "./turn-failure";
 import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
+import { installAiTurnInferenceAllocation } from "./turn-inference-budget";
 import { AiTurnInterruption, interruptedToolResult, isQueueInterruptedResult } from "./turn-interruption";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
@@ -110,6 +136,7 @@ import type {
   AiApprovalTarget,
   AiChatTurnRunConfig,
   AiFrontendToolMode,
+  AiModelProfile,
   AiPendingTurnActionRecord,
   AiRuntimeTool,
   AiStoredMessage,
@@ -122,6 +149,8 @@ import type {
 } from "./types";
 import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
+import { CLOUD_AI_VIEW_ICONS, CloudAiViewSummarySchema } from "./view-block";
+import { createAiWakeupTools } from "./wakeup-tools";
 
 const log = logger("ai:executor");
 
@@ -160,6 +189,11 @@ const lastToolRoundFailed = (messages: AiStoredMessage[], blocks: AiTurnBlock[])
     blocks.some((block) => block.kind === "tool" && callIds.has(block.callId) && isFailedTool(block))
   );
 };
+
+// The chat's rule for an ending without any answer, applied to the whole turn. Code presentations and versions count
+// as results, as in every host that shows them.
+const leavesNothingToShow = (blocks: readonly AiTurnBlock[]): boolean =>
+  showsNothing(layoutAiTurn(blocks, { phase: "completed", codePresentations: true, codeVersions: true }));
 
 const indexConversationResources = async (input: Parameters<typeof aiConversations.indexConversationResources>[0]): Promise<void> => {
   try {
@@ -222,34 +256,23 @@ const indexConversationToolSource = async (input: {
       source = { kind: "activity", key, title: query || "Web search", preview: "Searched the web", icon: "ti ti-world" };
     } else if (input.name === "present" && text(result.path)) {
       const path = text(result.path);
+      // A view records what it shows, so lists name it ("Chart") with its sign instead of a file size.
+      const view = CloudAiViewSummarySchema.safeParse(result.view);
       source = {
         kind: "result",
         key: path,
         title: text(args.title) || path.slice(path.lastIndexOf("/") + 1),
         preview: text(args.description) || undefined,
-        icon: "ti ti-file",
+        icon: view.success ? CLOUD_AI_VIEW_ICONS[view.data.view] : "ti ti-file",
       };
-    } else if (
-      input.name === "code_open" &&
-      text(args.id) &&
-      typeof input.result === "object" &&
-      input.result !== null &&
-      !("error" in input.result)
-    ) {
-      // The browser reports a failure as a result with an error, which reaches this point without isError.
+    } else if (["chart", "card", "cloud_card"].includes(input.name) && result.view) {
+      // Gustav's own chart or key figure is a result of the chat like a presented file; the box jumps to it.
       source = {
         kind: "result",
-        key: `assistant.artifact:${text(args.id)}`,
-        title: "Studio app",
-        icon: "ti ti-app-window",
-        ref: { type: "assistant.artifact", id: text(args.id) },
-      };
-    } else if (input.name === "code_present" && text(result.presentationId)) {
-      source = {
-        kind: "result",
-        key: `code_present:${input.callId}`,
-        title: text(args.title) || text(result.title) || "Visualization",
-        icon: "ti ti-chart-dots",
+        key: `view:${input.callId}`,
+        title: text(args.title) || input.name,
+        preview: text(args.subtitle) || text(args.caption) || undefined,
+        icon: input.name === "chart" ? "ti ti-chart-bar" : "ti ti-layout-cards",
       };
     } else if (input.name === "web_extract" && typeof input.result === "object" && input.result !== null) {
       const result = input.result as Record<string, unknown>;
@@ -310,12 +333,25 @@ const resourceContextForActor = (actor: RequestActor | undefined): AiResourceCon
 };
 
 export type ExecutorConfig = {
+  /** Host-owned tools added to default Assistant turns; matching names replace the platform implementation. */
+  tools?: readonly AiRuntimeTool[];
   leaseOwner: string;
   heartbeatMs: number;
   /** Re-enqueue continuation work after a suspension so any worker can resume it. */
   enqueueContinuation: (input: { conversationId: string; turnId: string }) => Promise<void>;
   /** Settings/model resolution seam — tests inject a fake so they never touch shared settings. */
   validateTurn?: typeof validateAiTurnRequest;
+  /** Host policy sees the executed profile, never a requested class or display label.
+   * Optional instructions are rebuilt once per attempt, before any model call, and are never persisted in history. */
+  beforeChatTurn?: (input: {
+    turnId: string;
+    conversationId: string;
+    leaseOwner: string;
+    runConfig: AiChatTurnRunConfig;
+    profile: AiModelProfile;
+    /** Execution cancellation, shared with model and tool work. */
+    signal: AbortSignal;
+  }) => Promise<{ systemPrompt?: string } | void>;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
   onApprovalRequested?: (event: { approvalId: string }) => Promise<void>;
@@ -341,12 +377,18 @@ const createChatSteering =
 // Baseline rebuild — reconstruct the full active-turn view from persisted rounds
 // ---------------------------------------------------------------------------
 
+const withResultView = (block: AiTurnBlock): AiTurnBlock => {
+  if (block.kind !== "tool" || block.status !== "completed" || block.isError) return block;
+  const view = capabilityResultView(block.result) ?? undefined;
+  return { ...block, view, ...(viewChoice(view ?? null) ? { choice: block.choice ?? { state: "open" } } : {}) };
+};
+
 const rebuildBlocksFromMessages = (
   messages: AiStoredMessage[],
   pending: AiPendingTurnActionRecord[],
   steers: AiTurnSteer[] = [],
 ): AiTurnBlock[] => {
-  const blocks = buildBlocksFromMessages(messages);
+  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(publicAiToolBlock).map(withResultView);
   const indexByCallId = new Map(blocks.map((block, index) => [block.kind === "tool" ? block.callId : `_${index}`, index]));
 
   for (const action of pending) {
@@ -362,12 +404,15 @@ const rebuildBlocksFromMessages = (
           action.kind === "client_tool"
             ? undefined
             : {
+                requestId: action.approvalId,
+                digest: action.digest,
                 message: action.message,
                 review: action.review,
                 allowAlways: action.allowAlways,
                 allowChat: action.allowChat ?? action.allowAlways,
                 ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { website: action.approvalScope } : {}),
               },
+        ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { presentation: undefined, review: undefined } : {}),
         frontendMode: action.frontendMode,
       };
     }
@@ -428,7 +473,8 @@ const loadChatAttemptState = async (conversationId: string, turnId: string): Pro
 
 type BlockSetOp = { type: "block_set"; block: AiTurnBlock };
 type BlockDeltaOp = { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string };
-type BlockOp = BlockSetOp | BlockDeltaOp;
+type BlockRemoveOp = { type: "block_remove"; blockId: string };
+type BlockOp = BlockSetOp | BlockDeltaOp | BlockRemoveOp;
 
 type ToolBlockPatch = Partial<Extract<AiTurnBlock, { kind: "tool" }>> & { name?: string; clearApproval?: boolean };
 
@@ -492,6 +538,10 @@ const createEventMapper = (
   const setCanonicalNames = (items: Map<string, string>) => {
     canonicalNames = items;
   };
+  let streamArgs: PreparedAiTools["streamArgs"] = new Map();
+  const setStreamArgs = (items: PreparedAiTools["streamArgs"]) => {
+    streamArgs = items;
+  };
   let approvalReviews = new Map<string, CapabilityActionReviewData>();
   let capabilityScopes: ReadonlyMap<string, string> = new Map();
   const setApprovalReviews = (items: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string> = new Map()) => {
@@ -518,6 +568,19 @@ const createEventMapper = (
   const toolStreamIds = new Set<string>();
   /** kind per open Cloud stream block id, for delta create-if-missing. */
   const streamKinds = new Map<string, "text" | "thinking">();
+  /** Calls whose tool shows its arguments while the model writes them, by call id, until the call is final. */
+  const liveCalls = new Map<string, { reader: ReturnType<typeof createLiveArgsReader>; sentAt: number }>();
+  /** Calls of a failed and retried model call; later previews of them are stale. */
+  const retiredCalls = new Set<string>();
+  /** A step that shows only arguments still being written: no final call exists for it yet. */
+  const isPreview = (callId: string) => toolBlocks.get(callId)?.liveArgs !== undefined;
+  /** Takes back a step whose call never became final, so the chat shows only calls that exist. */
+  const dropPreview = (callId: string): BlockOp[] => {
+    liveCalls.delete(callId);
+    if (!isPreview(callId)) return [];
+    toolBlocks.delete(callId);
+    return [{ type: "block_remove", blockId: toolBlockId(callId) }];
+  };
 
   const setTool = (callId: string, patch: ToolBlockPatch, displayCallId = callId): BlockOp => {
     const existing = toolBlocks.get(callId) ?? toolBlocks.get(displayCallId);
@@ -529,19 +592,35 @@ const createEventMapper = (
       kind: "tool",
       callId,
       name,
-      args: "args" in patch ? patch.args : existing?.args,
+      args: publicAiToolInput(name, "args" in patch ? patch.args : existing?.args),
+      // New arguments end the live view unless they are a live update themselves.
+      ...("args" in patch
+        ? patch.liveArgs
+          ? { liveArgs: patch.liveArgs }
+          : {}
+        : existing?.liveArgs
+          ? { liveArgs: existing.liveArgs }
+          : {}),
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
-      result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      result: publicAiToolResult(
+        name,
+        patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      ),
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
-      review: patch.review ?? existing?.review,
+      review: "review" in patch ? patch.review : existing?.review,
       check: patch.check ?? existing?.check,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
-      presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
+      presentation:
+        "presentation" in patch ? patch.presentation : (existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name)),
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
       ...(receiptsOf(displayCallId) ? { receipts: receiptsOf(displayCallId) } : {}),
     };
+    if (block.status === "completed" && !block.isError) {
+      block.view = capabilityResultView(block.result) ?? undefined;
+      if (viewChoice(block.view ?? null)) block.choice = { state: "open" };
+    }
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
   };
@@ -556,6 +635,25 @@ const createEventMapper = (
 
   const translate = (event: OutboundEvent): BlockOp[] => {
     switch (event.type) {
+      case "tool_args_delta": {
+        const keys = streamArgs.get(event.name);
+        // A call id that already names a final call is never shown as written again.
+        if (!keys || retiredCalls.has(event.callId) || (toolBlocks.has(event.callId) && !isPreview(event.callId))) return [];
+        let live = liveCalls.get(event.callId);
+        if (!live) {
+          live = { reader: createLiveArgsReader(keys), sentAt: Number.NEGATIVE_INFINITY };
+          liveCalls.set(event.callId, live);
+        }
+        live.reader.push(event.delta);
+        const now = Date.now();
+        if (now - live.sentAt < AI_LIVE_ARGS_INTERVAL_MS) return [];
+        const view = live.reader.view();
+        if (!Object.keys(view.args).length) return [];
+        live.sentAt = now;
+        return [
+          setTool(event.callId, { name: event.name, args: view.args, liveArgs: { omittedLines: view.omittedLines }, status: "running" }),
+        ];
+      }
       case "block_start": {
         if (event.kind === "tool_call") {
           toolStreamIds.add(`${event.turnIndex}:${event.blockId}`);
@@ -573,6 +671,7 @@ const createEventMapper = (
       }
       case "block_end": {
         if (event.block.type === "tool_call") {
+          liveCalls.delete(event.block.id);
           return [setTool(event.block.id, { name: event.block.name, args: event.block.args, status: "running" })];
         }
         // Converge on the final block content (covers any missed delta).
@@ -585,9 +684,12 @@ const createEventMapper = (
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const rawReview = approvalReviewForCallId(approvalReviews, event.callId);
-        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
+        const rawReview =
+          target?.toolName === AI_WEBSITE_APPROVAL_TOOL
+            ? approvalReviews.get(event.callId)
+            : approvalReviewForCallId(approvalReviews, event.callId);
+        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const allowAlways = target
           ? target.always
           : capabilityScopes.has(customApprovalParentCallId(event.callId) ?? event.callId) ||
@@ -610,6 +712,8 @@ const createEventMapper = (
                       ...(target?.toolName === AI_WEBSITE_APPROVAL_TOOL ? { website: target.approvalScope } : {}),
                     },
               frontendMode: event.kind === "client_tool" ? (frontendModes.get(event.name) ?? "client") : undefined,
+              // A website question after an app Action belongs to the website, not the earlier target app.
+              ...(target?.toolName === AI_WEBSITE_APPROVAL_TOOL ? { presentation: undefined, review: undefined } : {}),
             },
             displayCallId,
           ),
@@ -634,6 +738,8 @@ const createEventMapper = (
       case "issue": {
         const callId = "callId" in event.issue ? event.issue.callId : undefined;
         if (callId && rejectedCallIds.has(callId)) return [];
+        // A call cut off or malformed while it was written never runs; nessi records a malformed one as its own step.
+        if (callId && isPreview(callId)) return dropPreview(callId);
         if (callId && toolBlocks.has(callId)) {
           const existing = toolBlocks.get(callId);
           if (existing && existing.status !== "completed" && existing.status !== "failed") {
@@ -676,12 +782,22 @@ const createEventMapper = (
 
   return {
     translate: (event: OutboundEvent) => translate(event).filter(isVisibleAiNextMessageOp),
+    /**
+     * Takes back the steps a failed model call was writing, as its retry leaves no trace. A preview of theirs that the
+     * loop still delivers afterwards shows nothing; their final calls show as usual.
+     */
+    retirePreviews: (callIds: readonly string[]) =>
+      callIds.flatMap((callId) => {
+        retiredCalls.add(callId);
+        return dropPreview(callId);
+      }),
     setTool,
     storedMessage,
     compaction,
     setFrontendModes,
     setPresentations,
     setCanonicalNames,
+    setStreamArgs,
     setApprovalPolicies,
     setApprovalReviews,
     setApprovalTargets,
@@ -787,7 +903,6 @@ export class AiTurnExecutor {
       startSeq: claim.liveSeq,
       leaseOwner: this.config.leaseOwner,
       seedBlocks: claim.liveBlocks ?? [],
-      background: claim.runConfig?.kind !== "compact" && Boolean(claim.runConfig?.background),
       allowRememberedApprovals: aiTurnAllowsRememberedApprovals(claim.runConfig),
     });
     const runConfig = claim.runConfig;
@@ -914,12 +1029,16 @@ export class AiTurnExecutor {
     let allowedTools: string[] | null = null;
     let sourceToolNames: string[] = [];
     try {
-      if (config.background && !config.mandate) throw new Error("Background execution requires its task mandate.");
+      assertInteractiveChatTurn(config);
       const [nextMaterial, conversation] = await Promise.all([
         materializeChatConfig(config, abortController.signal, turnId),
         aiConversations.getConversation({ conversationId }),
       ]);
       material = nextMaterial;
+      if ((config.toolSource?.kind === "default" || config.codeReview) && this.config.tools?.length) {
+        material.tools = [...new Map([...material.tools, ...this.config.tools].map((tool) => [tool.def.name, tool])).values()];
+      }
+      material.tools = material.tools.filter((tool) => aiCodeReviewToolAllowed(config, tool.def.name));
       if (!conversation) throw new Error("Conversation is no longer available.");
       allowedTools = conversation.allowedTools ?? null;
       const allowed = allowedTools === null ? null : new Set(allowedTools);
@@ -943,12 +1062,21 @@ export class AiTurnExecutor {
         modelPolicy: material.modelPolicy,
         model: claim.turn.modelId ? { id: claim.turn.modelId } : material.model,
       });
-      if (isAssistantChatTurn(config)) {
-        await aiModelAccess.assertAllowed(
-          validated.resolved.profile.modelId,
-          config.accessSubject ?? accessSubjectForActor(material.actor),
-        );
-      }
+      // Every turn runs only with a model its access subject may use, however it was started.
+      await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, config.accessSubject ?? accessSubjectForActor(material.actor));
+      if ((config.codeOrigin || config.wakeup) && !this.config.beforeChatTurn)
+        throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
+      const admission = await this.config.beforeChatTurn?.({
+        turnId,
+        conversationId,
+        leaseOwner: this.config.leaseOwner,
+        runConfig: config,
+        profile: validated.resolved.profile,
+        signal: abortController.signal,
+      });
+      if (admission?.systemPrompt) material.systemPrompt = [material.systemPrompt, admission.systemPrompt].filter(Boolean).join("\n\n");
+      if (!config.codeOrigin && !config.wakeup && isAutomaticAiChatTurn(config))
+        await installAiTurnInferenceAllocation({ turnId, conversationId, leaseOwner: this.config.leaseOwner });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
       await this.finalize(
@@ -997,6 +1125,8 @@ export class AiTurnExecutor {
       return;
     }
     if (toolAuthority) material.actor = toolAuthority.actor;
+    if (aiActorUser(material.actor)?.profile === "guest")
+      material.tools = material.tools.filter((tool) => !CLOUD_AI_CODE_AUTHORING_TOOL_NAMES.has(tool.def.name));
     // Skills and Help need current authority even when application operations are disabled.
     // Keep the appTools switch responsible for exposing and executing those operations.
     const capabilityAuthority = appToolsEnabled ? toolAuthority : null;
@@ -1021,7 +1151,7 @@ export class AiTurnExecutor {
     const availableSkills = skillSubject
       ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
       : [];
-    const localClient = !config.background && !config.mandate ? config.client : undefined;
+    const localClient = config.client;
     const localContext = localClient ? config.localContext : undefined;
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
       name: skill.name,
@@ -1074,6 +1204,7 @@ export class AiTurnExecutor {
           ]
         : []),
       ...nextMessage.tools,
+      ...createAiWakeupTools(config, chatId, turnId, allowedTools),
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
@@ -1119,8 +1250,11 @@ export class AiTurnExecutor {
     const linkedApprovals = new Map<string, string>();
     const freshApprovalRequired = new Set<string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
+    const capabilityOperations = new Map<string, AiCapabilityCatalogEntry>();
     const storedReviews = new Map<string, AiStoredActionReview>();
     const dynamicToolRuntimeContext = {
+      effectiveArguments: (callId: string, name: string, args: unknown) =>
+        editedDraftArguments({ conversationId, turnId, callId, name, args }),
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
       reportToolResult: (callId: string, result: unknown) => pipeline.reportToolResult(callId, result),
@@ -1144,7 +1278,7 @@ export class AiTurnExecutor {
         const pending = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: approvalCallId });
         if (!pending?.approvalId) return "approved";
         const result = await approvals.consume(pending.approvalId, {
-          input,
+          input: capabilityApprovalArgs(capabilityOperations.get(pending.name), input, pending.args),
           review: approvalReviewForCallId(capabilityActionReviews, approvalCallId) ?? null,
           requester: { kind: "assistant_turn", ref: `${turnId}/${approvalCallId}` },
         });
@@ -1180,7 +1314,6 @@ export class AiTurnExecutor {
       actor: material.actor,
       conversationId,
     });
-    let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
     const onCapabilityReview = async (
       callId: string,
@@ -1204,9 +1337,11 @@ export class AiTurnExecutor {
     pipeline.setApprovalTargets(approvalTargets);
     pipeline.setFrontendModes(prepared.frontendModes);
     pipeline.setCanonicalNames(prepared.canonicalNames);
+    pipeline.setStreamArgs(prepared.streamArgs);
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
+    const unavailablePlaceToolNames = new Set<string>();
     const approvedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
     pipeline.setApprovalReviews(capabilityActionReviews, rememberableCapabilityApprovals);
@@ -1235,8 +1370,10 @@ export class AiTurnExecutor {
       );
       return;
     }
+    let authoringBudget: ReturnType<typeof createCodeAuthoringTurnBudget> | undefined;
     const store = aiConversations.createSessionStore({
-      background: config.background,
+      codeAuthoringStop: () => authoringBudget?.stopped() ?? null,
+      automationTurnStop: () => authoringBudget?.automationStopped() ?? null,
       onMessage: async (message) => {
         if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
         await pipeline.emitMessage(message);
@@ -1269,58 +1406,24 @@ export class AiTurnExecutor {
       pipeline.seedBaseline(rebuildAttemptBaseline({ loopMessages, pendingRecords, resolvedRecords, turnSteers }));
       await pipeline.emitTurnStarted(resolved.profile.id);
       await pipeline.emitBaseline();
+      // The choice message was committed before execution; publish it too so other tabs update its source block.
+      const choiceMessage = loopMessages.find((stored) => stored.message.role === "user" && stored.meta?.choice);
+      if (choiceMessage) await pipeline.emitMessage(choiceMessage);
     }
 
     const appliedSteers: AiTurnSteer[] = [];
 
-    let mandatePolicy: MandatePolicyV1 | null | undefined;
-    if (config.background && config.mandate) {
-      mandatePolicy = null;
-      try {
-        const mandate = await getMandate(config.mandate.id);
-        if (mandate && mandate.state === "active" && mandate.revision === config.mandate.revision) {
-          mandatePolicy = mandate.policy;
-        } else {
-          backgroundError = "Scheduled task mandate is unavailable or changed; recreate or update the task.";
-        }
-      } catch {
-        backgroundError = "Scheduled task mandate could not be loaded; retry or update the task.";
-      }
-    }
-    if (backgroundError) {
-      signal.removeEventListener("abort", onSignal);
-      await this.finalize(
+    if (config.choiceCall) {
+      await aiConversations.loadTools({
         conversationId,
-        turnId,
-        pipeline,
-        "failed",
-        { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError },
-        "chat",
-        promptLocale,
-      );
-      return;
+        names: [config.choiceCall.query],
+        maxLoadedTools: resolved.profile.maxLoadedTools,
+      });
     }
-    const authorizeBackgroundMandate =
-      config.background && config.mandate
-        ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
-            try {
-              await aiChatTasks.authorizeCapability({
-                mandate: config.mandate!,
-                appId: entry.appId,
-                capabilityId: entry.operation.localId,
-                kind: entry.kind,
-                input: args,
-                policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
-                approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-              });
-            } catch (error) {
-              if (!(error instanceof AiChatTaskAuthorityError && error.code === "MANDATE_POLICY_DENIED"))
-                backgroundError = error instanceof Error ? error.message : "Background capability access denied";
-              throw error;
-            }
-          }
-        : undefined;
-    const toolStore = config.background ? createRunToolStore(await aiConversations.getLoadedTools({ conversationId })) : aiConversations;
+    const choiceOrigin = createChoiceCapabilityOrigin(
+      config.choiceCall,
+      loopMessages.some((stored) => stored.message.role === "tool_result" && stored.message.callId === config.choiceCall?.callId),
+    );
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
@@ -1329,10 +1432,9 @@ export class AiTurnExecutor {
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
-          mandatePolicy,
           unofferedTools,
           runtimeContext: dynamicToolRuntimeContext,
-          store: toolStore,
+          store: aiConversations,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),
           onCapabilityRegistryError: (error) =>
             log.warn("AI Capability registry unavailable; continuing without app capabilities", {
@@ -1343,70 +1445,51 @@ export class AiTurnExecutor {
           maxLoadedTools: resolved.profile.maxLoadedTools,
           ...(capabilityAuthority
             ? {
-                review: (entry, args, context) =>
-                  reviewAiCapability({
+                review: (entry, args, context) => {
+                  capabilityOperations.set(entry.name, entry);
+                  return reviewAiCapability({
                     conversationId,
+                    // The review is part of this turn: the target checks the same turn authority as the run.
+                    turnId,
                     authority: capabilityAuthority!,
-                    mandate: config.mandate,
+
                     locale: promptLocale,
                     entry,
                     args,
                     context,
-                  }),
+                  });
+                },
               }
             : {}),
-          authorizeBackground: authorizeBackgroundMandate
-            ? async (entry, args, context) => {
-                const review = await authorizeBackgroundActionWith(
-                  {
-                    turnId,
-                    mandate: config.mandate!,
-                    appId: entry.appId,
-                    capabilityId: entry.operation.localId,
-                    kind: entry.kind,
-                    args,
-                    policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
-                    approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-                    hasReview: entry.kind === "action" && "review" in entry.operation && entry.operation.review === true,
-                    action: entry.display.title,
-                    review: () =>
-                      capabilityAuthority
-                        ? reviewAiCapability({
-                            conversationId,
-                            authority: capabilityAuthority,
-                            mandate: config.mandate,
-                            locale: promptLocale,
-                            entry,
-                            args,
-                            context,
-                          })
-                        : Promise.resolve(null),
-                    signal: context.signal,
-                  },
-                  () => authorizeBackgroundMandate(entry, args),
-                );
-                if (review && context.callId)
-                  await onCapabilityReview(
-                    context.callId,
-                    review,
-                    "approval" in entry.operation ? entry.operation.approval : undefined,
-                    entry,
-                  );
-              }
-            : undefined,
           onReview: onCapabilityReview,
+          place: capabilityAuthority
+            ? () =>
+                resolveAiPlaceTools({
+                  conversationId,
+                  actor: toolAuthority?.actor ?? toolActor,
+                  locale: promptLocale,
+                  signal: abortController.signal,
+                })
+            : undefined,
+          onRejected: (callId) => rejectedToolCallIds.add(callId),
+          onUnavailablePlaceTools: (snapshot) => {
+            unavailablePlaceToolNames.clear();
+            for (const name of snapshot.unavailable) unavailablePlaceToolNames.add(name);
+            rejectUnavailablePlaceCalls(loopMessages, snapshot, rejectedToolCallIds);
+          },
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    interruption.assertCanStart();
-                    await authorizeBackgroundMandate?.(entry, args);
+                    // Retired routine mandates never regain authority, including on resumed dispatch.
+                    assertInteractiveChatTurn(config);
                     interruption.assertCanStart();
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
+                      origin: choiceOrigin(entry, context.callId),
                       authority: capabilityAuthority!,
-                      mandate: config.mandate,
+
                       actionApproval:
                         entry.kind === "action" && !("approval" in entry.operation && entry.operation.approval === "none")
                           ? "approved"
@@ -1459,7 +1542,7 @@ export class AiTurnExecutor {
                             conversationId,
                             turnId,
                             authority: capabilityAuthority!,
-                            mandate: config.mandate,
+
                             // The receipt joins the review's sentence, so it is asked for in the review's language.
                             locale: review.locale,
                             entry,
@@ -1507,12 +1590,6 @@ export class AiTurnExecutor {
                     }
                     return result;
                   } catch (error) {
-                    if (
-                      config.background &&
-                      error instanceof AiCapabilityExecutionError &&
-                      (error.status === 401 || error.status === 403 || error.code === "ACTION_OUTCOME_UNKNOWN")
-                    )
-                      backgroundError = error.message;
                     const resources = collectConversationResourceObservations(args);
                     if (resources.length) {
                       await indexConversationResources({ conversationId, turnId, callId: context.callId, resources });
@@ -1526,15 +1603,18 @@ export class AiTurnExecutor {
             prepared.canonicalNames.clear();
             prepared.approvalPolicies.clear();
             prepared.frontendModes.clear();
+            prepared.streamArgs.clear();
             rememberableCapabilityApprovals.clear();
             toolPresentations.clear();
             for (const [name, canonicalName] of snapshot.canonicalNames) prepared.canonicalNames.set(name, canonicalName);
             for (const [name, policy] of snapshot.approvalPolicies) prepared.approvalPolicies.set(name, policy);
             for (const [name, mode] of snapshot.frontendModes) prepared.frontendModes.set(name, mode);
+            for (const [name, keys] of snapshot.streamArgs) prepared.streamArgs.set(name, keys);
             for (const [name, scope] of rememberableApprovals) rememberableCapabilityApprovals.set(name, scope);
             for (const [name, presentation] of presentations) toolPresentations.set(name, presentation);
             pipeline.setFrontendModes(prepared.frontendModes);
             pipeline.setCanonicalNames(prepared.canonicalNames);
+            pipeline.setStreamArgs(prepared.streamArgs);
             pipeline.setApprovalPolicies(prepared.approvalPolicies);
             pipeline.setPresentations(toolPresentations);
           },
@@ -1555,7 +1635,7 @@ export class AiTurnExecutor {
     // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
     // attempt after an approval or a scheduled run gets neither.
     let guidance: AiTurnGuidance = {};
-    if (isFresh && !config.background && defaultToolSource && user && chat) {
+    if (isFresh && defaultToolSource && user && chat) {
       try {
         guidance = await loadAiTurnGuidance(
           {
@@ -1563,6 +1643,7 @@ export class AiTurnExecutor {
             turnId,
             ownerUserId: user.id,
             input: config.input,
+            quotes: config.quotes,
             instructions: [settings.globalInstructions, config.project?.instructions, memory?.text],
             skillOffers: skillCatalogOffered && skillCreatorAvailable && loadedSkills.length === 0,
             memoryOffers: memoryToolEnabled,
@@ -1593,6 +1674,9 @@ export class AiTurnExecutor {
       turnInstructions: [
         material.systemPrompt,
         audioUnavailableInstruction,
+        user?.profile === "guest"
+          ? "This person is a guest. Code authoring is available to Cloud members only. If asked to create or change lasting Code, explain kindly that guests cannot create Code or submit versions and suggest asking a Cloud member for help."
+          : undefined,
         guidance.offerHint,
         workingPlan
           ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}`
@@ -1621,13 +1705,13 @@ export class AiTurnExecutor {
       memory: memory?.text,
       timeZone,
       locale: promptLocale,
-      interactive: !config.background,
+      interactive: true,
       skillCreatorAvailable,
       recentWork: guidance.recentWork,
     });
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
-    const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const turnBlocks = buildBlocksFromMessages(projectAiChoices(turnMessages)).map(withResultView);
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
         message.role === "assistant"
@@ -1643,19 +1727,46 @@ export class AiTurnExecutor {
     const remember = (reason: AiTurnFailureReason | null) => {
       failureReason.current = reason;
     };
+    const nonPerson = isAutomaticAiChatTurn(config);
+    const allocation = nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
+    const inputTokenCeiling = config.codeOrigin ? resolved.profile.contextWindow : undefined;
+    const usage = await readAiTurnCallUsage(turnId, inputTokenCeiling);
+    authoringBudget = createCodeAuthoringTurnBudget({
+      priorCalls: {
+        calls: usage.calls,
+        inputTokens: usage.inputTokens + usage.unknownCalls * (inputTokenCeiling ?? allocation.unknownInputTokens),
+      },
+      finishedToolCalls: turnBlocks.flatMap((block) =>
+        block.kind === "tool" && !isMalformedToolCallId(block.callId)
+          ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }]
+          : [],
+      ),
+      selected: Boolean(config.codeReview) || loadedSkills.some((skill) => skill.name === "code-authoring"),
+      nonPerson,
+      inputTokenCeiling,
+      // Only person/review chat calls with effective cost admission replace the authoring token cap.
+      billable:
+        !nonPerson &&
+        isAssistantChatTurn(config) &&
+        quotaSubject !== null &&
+        (await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id, settings)),
+      onStop: (reason) => log.info("AI chat turn reached its safety budget", { conversationId, turnId, reason }),
+    });
     const turnPolicy = applyAiTurnPolicy({
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
           rememberProviderErrors(
-            assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
+            authoringBudget.wrap(
+              assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
+            ),
             remember,
           ),
           {
             deadline,
             delaysMs: this.config.providerRetryDelaysMs,
-            onRetry: async ({ retry, delayMs, issue }) => {
+            onRetry: async ({ retry, delayMs, issue, previewedCallIds }) => {
               log.warn("AI provider call retried", { conversationId, turnId, retry, delayMs, kind: issue.kind, message: issue.message });
-              await pipeline.emitProviderRetry();
+              await pipeline.emitProviderRetry(previewedCallIds);
             },
           },
         ),
@@ -1683,7 +1794,18 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: nextMessage.wrap(turnPolicy.provider),
+      provider:
+        chat?.place && defaultToolSource
+          ? withPlaceAssistantContext(nextMessage.wrap(turnPolicy.provider), (signal) =>
+              loadPlaceAssistantRound({
+                conversationId,
+                persistedActor: material.actor,
+                skillsEnabled: activeTools.some((tool) => tool.def.name === "load_skill"),
+                locale: promptLocale,
+                signal,
+              }),
+            )
+          : nextMessage.wrap(turnPolicy.provider),
       systemPrompt,
       store,
       steering: createChatSteering({
@@ -1701,7 +1823,7 @@ export class AiTurnExecutor {
       }),
       tools: async () => {
         try {
-          const current = await turnPolicy.tools();
+          const current = authoringBudget.tools(await turnPolicy.tools()).filter((tool) => aiCodeReviewToolAllowed(config, tool.def.name));
           return current.map(
             (tool): Tool =>
               tool.kind !== "server"
@@ -1721,18 +1843,20 @@ export class AiTurnExecutor {
       },
       ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
       temperature: resolved.profile.temperature,
-      maxOutputTokens: resolved.profile.maxOutputTokens,
+      maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
       reasoningEffort: resolved.profile.reasoningEffort,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
-      compact: config.background
-        ? undefined
-        : createCloudCompactFn({
-            conversationId,
-            turnId,
-            modelId: resolved.profile.id,
-            providerType: resolved.profile.provider,
-            // Accounted as compaction, outside the chat turn's tool policy and retries.
-            provider: rememberProviderErrors(
+      // Steps of tools that declare `streamArgs` show those arguments while the model writes them.
+      toolArgsPreview: true,
+      compact: authoringBudget.compact(
+        createCloudCompactFn({
+          conversationId,
+          turnId,
+          modelId: resolved.profile.id,
+          providerType: resolved.profile.provider,
+          // Retains background accounting; shares this turn’s call/input allowance.
+          provider: authoringBudget.wrap(
+            rememberProviderErrors(
               inferenceProvider(resolved.provider, resolved.profile, {
                 subject: quotaSubject,
                 turnId,
@@ -1743,10 +1867,13 @@ export class AiTurnExecutor {
               }),
               remember,
             ),
-            additionalInstructions: settings.compactionInstructions,
-            maxOutputTokens: resolved.profile.maxOutputTokens,
-            signal: abortController.signal,
-          }),
+            "compaction",
+          ),
+          additionalInstructions: settings.compactionInstructions,
+          maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
+          signal: abortController.signal,
+        }),
+      ),
       maxToolResultChars: resolveAiToolResultMaxChars({
         contextWindow: resolved.provider.contextWindow,
         configuredMaxChars: settings.maxToolResultChars,
@@ -1769,6 +1896,7 @@ export class AiTurnExecutor {
       return this.driveChatLoop({
         loop,
         pipeline,
+        locale: promptLocale,
         initialRoundFailed: lastToolRoundFailed(turnMessages, turnBlocks),
         conversationId,
         turnId,
@@ -1779,16 +1907,20 @@ export class AiTurnExecutor {
         allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
         rememberableCapabilityApprovals,
         capabilityActionReviews,
+        capabilityOperations,
         approvalTargets,
         linkedApprovals,
         freshApprovalRequired,
         appliedSteers,
         noteToolRound: turnPolicy.noteToolRound,
-        noteToolCall: turnPolicy.noteToolCall,
-        failureReason,
-        onBackgroundBlocked: (message) => {
-          backgroundError = message;
+        noteToolCall: (call) => {
+          authoringBudget.noteToolCall(call);
+          turnPolicy.noteToolCall(call);
         },
+        stoppedWithNotice: () => Boolean(authoringBudget?.stopped() || authoringBudget?.automationStopped()),
+        failureReason,
+        rejectedToolCallIds,
+        unavailablePlaceToolNames,
       });
     })().finally(stopControls);
     signal.removeEventListener("abort", onSignal);
@@ -1817,16 +1949,7 @@ export class AiTurnExecutor {
       outcome.failure = { error: timeout.turnError(), detail: "Run time limit reached." };
     }
     await nextMessage.save(outcome.status, abortController.signal);
-    const finalized = await this.finalize(
-      conversationId,
-      turnId,
-      pipeline,
-      backgroundError ? "failed" : outcome.status,
-      // A background run keeps Cloud's own words for what its mandate blocked.
-      backgroundError ? { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError } : outcome.failure,
-      "chat",
-      promptLocale,
-    );
+    const finalized = await this.finalize(conversationId, turnId, pipeline, outcome.status, outcome.failure, "chat", promptLocale);
     if (finalized === "pending_steering" && outcome.status === "completed" && !signal.aborted) {
       await this.runChat(conversationId, turnId, claim, config, pipeline, signal, true);
       return;
@@ -1846,9 +1969,12 @@ export class AiTurnExecutor {
   }
 
   private async driveChatLoop(input: {
+    locale?: string;
     loop: NessiLoop;
     pipeline: StreamPipeline;
     initialRoundFailed: boolean;
+    rejectedToolCallIds: Set<string>;
+    unavailablePlaceToolNames?: ReadonlySet<string>;
     conversationId: string;
     turnId: string;
     abortController: AbortController;
@@ -1858,6 +1984,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: Map<string, CapabilityActionReviewData>;
+    capabilityOperations?: ReadonlyMap<string, AiCapabilityCatalogEntry>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -1865,12 +1992,16 @@ export class AiTurnExecutor {
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
     /**
+     * The turn's safety budget stopped it: its empty closing message carries the pause, which the chat shows as a
+     * notice. Such an ending is visible, so it never counts as one without any answer.
+     */
+    stoppedWithNotice?: () => boolean;
+    /**
      * Why the turn would fail now, as a model call or the turn's own checks said. A new model call starts without one,
      * so a context overflow that compaction resolved never names a later failure. Only the model calls and checks set
      * it, in the order they run; the events here arrive later than that.
      */
     failureReason: { current: AiTurnFailureReason | null };
-    onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
       loop,
@@ -1897,6 +2028,8 @@ export class AiTurnExecutor {
 
     try {
       for await (const event of loop) {
+        if (event.type === "tool_execution_start" && input.unavailablePlaceToolNames?.has(event.name))
+          input.rejectedToolCallIds.add(event.callId);
         await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
           if (input.interruption.draining) {
@@ -1909,6 +2042,7 @@ export class AiTurnExecutor {
           if (event.kind === "client_tool") input.interruption.begin(event.callId.replace(/-client-[0-9]+$/, ""));
           const suspended = await this.handleActionRequest({
             event,
+            locale: input.locale,
             interruption: input.interruption,
             loop,
             pipeline,
@@ -1919,10 +2053,10 @@ export class AiTurnExecutor {
             allowRememberedApprovals,
             rememberableCapabilityApprovals,
             capabilityActionReviews,
+            capabilityOperations: input.capabilityOperations,
             approvalTargets,
             linkedApprovals: input.linkedApprovals,
             freshApprovalRequired: input.freshApprovalRequired,
-            onBackgroundBlocked: input.onBackgroundBlocked,
             signal: abortController.signal,
           });
           if (suspended) {
@@ -1956,7 +2090,12 @@ export class AiTurnExecutor {
           // running effect before aborting, so its result remains in next-turn context.
           input.interruption.settled(event.callId);
           await aiToolAudit
-            .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
+            .noteToolCompleted({
+              turnId,
+              callId: event.callId,
+              isError: event.isError,
+              rejected: input.rejectedToolCallIds.has(event.callId),
+            })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           if (toolBlock?.kind === "tool" && isFailedTool(toolBlock)) roundFailed = true;
@@ -1993,7 +2132,16 @@ export class AiTurnExecutor {
             followedFailedRound &&
             lastResponse !== undefined &&
             !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== ""));
-          const doneReason = stoppedAfterFailure ? "error" : event.reason;
+          // A stop that leaves nothing to show fails visibly, for every reader of the turn (#3755).
+          const stoppedWithoutAnswer =
+            event.reason === "stop" &&
+            !abortController.signal.aborted &&
+            !stoppedAfterFailure &&
+            lastResponse !== undefined &&
+            !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== "")) &&
+            !input.stoppedWithNotice?.() &&
+            leavesNothingToShow(pipeline.blocks);
+          const doneReason = stoppedAfterFailure || stoppedWithoutAnswer ? "error" : event.reason;
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
           if (aggregate.assistantMessageCount > 0) {
             await aiConversations
@@ -2007,6 +2155,13 @@ export class AiTurnExecutor {
               kind: "finished",
               status: "failed",
               failure: { error: { code: "tool_failed" }, detail: "The model stopped without an answer after a failed tool call." },
+              timing,
+            };
+          if (stoppedWithoutAnswer)
+            return {
+              kind: "finished",
+              status: "failed",
+              failure: { error: { code: "provider_stopped" }, detail: "The model stopped without any answer, result, or action." },
               timing,
             };
           if (event.reason === "stop") return { kind: "finished", status: "completed", failure: null, timing };
@@ -2062,6 +2217,7 @@ export class AiTurnExecutor {
 
   /** Returns true when the turn was suspended for the action; false when resolved inline. */
   private async handleActionRequest(input: {
+    locale?: string;
     event: Extract<OutboundEvent, { type: "tool_action_request" }>;
     loop: NessiLoop;
     pipeline: StreamPipeline;
@@ -2072,15 +2228,14 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: Map<string, CapabilityActionReviewData>;
+    capabilityOperations?: ReadonlyMap<string, AiCapabilityCatalogEntry>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
-    onBackgroundBlocked?: (message: string) => void;
     signal: AbortSignal;
     interruption: AiTurnInterruption;
   }): Promise<boolean> {
     const {
-      event,
       loop,
       pipeline,
       conversationId,
@@ -2092,6 +2247,14 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       approvalTargets,
     } = input;
+    const effective = await editedDraftArguments({
+      conversationId,
+      turnId,
+      callId: customApprovalParentCallId(input.event.callId) ?? input.event.callId,
+      name: prepared.canonicalNames.get(input.event.name) ?? input.event.name,
+      args: input.event.args,
+    });
+    const event = { ...input.event, args: effective.args };
     const approvalPolicy = prepared.approvalPolicies.get(event.name);
     const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
     const frontendMode: AiFrontendToolMode | undefined =
@@ -2109,36 +2272,33 @@ export class AiTurnExecutor {
     const allowChat = allowRememberedApprovals && (target !== undefined || allowAlways);
 
     // Display-only client_view tools (cards, charts) need neither a browser nor input: Cloud answers them itself, in
-    // background runs too, whose transcript shows them later. The block goes from running straight to completed:
+    // the transcript shows them later. The block goes from running straight to completed:
     // a published awaiting_client would read as an open request to clients and remount the result in the chat.
     // nessi emits no tool_execution_end for client tools, so Cloud ends the call itself.
     if (frontendMode === "client_view") {
-      loop.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
-      await pipeline.apply({
-        type: "tool_execution_end",
+      // The stored result carries the chart or key figure as blocks, so people see it as the same island an app's
+      // result is (`gustav-views.ts`), live and after a reload. The model reads it at the provider boundary like any
+      // view: `displayed` and a short summary (`modelCapabilityMessage`). Older results without a view keep their drawing.
+      const result =
+        toolName === "chart"
+          ? chartToolResult(event.args)
+          : toolName === "card" || toolName === "cloud_card"
+            ? cardToolResult(event.args)
+            : { displayed: true };
+      loop.push({ type: "tool_result", callId: event.callId, result });
+      await pipeline.apply({ type: "tool_execution_end", callId: event.callId, name: event.name, result, isError: false } as OutboundEvent);
+      await indexConversationToolSource({
+        conversationId,
+        turnId,
         callId: event.callId,
-        name: event.name,
-        result: { displayed: true },
+        name: toolName,
+        args: event.args,
+        result,
         isError: false,
-      } as OutboundEvent);
+      });
       await aiToolAudit
         .noteToolCompleted({ turnId, callId: event.callId, isError: false })
         .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
-      return false;
-    }
-
-    const runConfig = await aiConversations.getTurnRunConfig({ conversationId, turnId });
-    if (runConfig?.kind !== "compact" && (runConfig?.background || runConfig?.mandate)) {
-      input.onBackgroundBlocked?.(
-        `Background operation ${toolName} requires ${event.kind === "client_tool" ? "an interactive browser" : "interactive approval"}. Update the task in the normal chat.`,
-      );
-      if (event.kind === "client_tool")
-        loop.push({
-          type: "tool_result",
-          callId: event.callId,
-          result: { error: "This operation requires an interactive browser and is unavailable in a background run." },
-        });
-      else loop.push({ type: "approval_response", callId: event.callId, approved: false });
       return false;
     }
 
@@ -2171,8 +2331,16 @@ export class AiTurnExecutor {
       const linked = input.linkedApprovals.get(event.callId);
       if (linked) {
         const record = await approvals.get(linked);
-        if (!record || record.status !== "pending" || record.requesterKind !== "studio_app" || record.approverUserId !== owner)
-          throw new Error("Approval does not belong to an open Studio request of the conversation owner");
+        if (
+          !record ||
+          record.status !== "pending" ||
+          record.requesterKind !== "assistant_turn" ||
+          record.requesterAppId !== "assistant" ||
+          record.approverUserId !== owner ||
+          !record.requesterRef.startsWith(`${conversationId}/code/`) ||
+          !z.uuid().safeParse(record.requesterRef.slice(`${conversationId}/code/`.length)).success
+        )
+          throw new Error("Approval does not belong to an open chat code request of the conversation owner");
         approvalId = linked;
         // The card shows the question the effect's own record holds, never the text the relay sent.
         presented = { ...event, message: record.sentence };
@@ -2181,19 +2349,42 @@ export class AiTurnExecutor {
         if (review) capabilityActionReviews.set(event.callId, review);
         else capabilityActionReviews.delete(event.callId);
         const callId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const capability = review && "sentence" in review && !review.ask ? await getCapability(record.appId).catch(() => null) : null;
+        const capability = await getCapability(record.appId).catch(() => null);
+        const target = capability
+          ? buildAiCapabilityHistoryCatalog([capability], input.locale).find(
+              (entry) => entry.kind === "action" && entry.operation.localId === record.action,
+            )
+          : undefined;
+        const app = capability
+          ? {
+              name: capability.appName,
+              description: capability.appDescription,
+              presentation: capability.appPresentation,
+              icon: capability.appIcon,
+            }
+          : await getApp(record.appId).catch(() => null);
+        const presentation: AiToolPresentation = {
+          kind: "capability",
+          appId: record.appId,
+          appName: app ? resolveAppIdentityPresentation(app, input.locale ?? "en").name : record.appId,
+          appIcon: app?.icon ?? "ti ti-app",
+          appAccent: capability?.appAccent,
+          title: target?.display.title ?? record.sentence.split("\n", 1)[0]!,
+          capabilityKind: "action",
+        };
         // Keep the original proposal on the existing tool-call message as well as the approval.
         // Its chat reference must remain readable after the approval has been consumed.
         const stored = await recordAiToolReview({
           conversationId,
           turnId,
           callId,
+          presentation,
           review: storedActionReview(
             review ?? { message: record.sentence },
             capability ? capabilityActionPolicy(capability.manifest, record.action) : undefined,
           ),
         });
-        await pipeline.setToolReview(callId, stored);
+        await pipeline.setToolReview(callId, stored, presentation);
       } else {
         const record = await approvals.request({
           ...approvalScopeFromToolName(toolName),
@@ -2204,7 +2395,7 @@ export class AiTurnExecutor {
           assurance: approvalAssurance(target !== undefined || capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy)),
           sentence: event.message ?? toolName,
           review,
-          input: event.args,
+          input: capabilityApprovalArgs(input.capabilityOperations?.get(toolName), event.args),
           expiresInMs: AI_ACTION_BUDGET_MS,
         });
         if (!record.ok) throw new Error("This approval was already decided or has expired.");
@@ -2263,6 +2454,10 @@ export class AiTurnExecutor {
     }
 
     await pipeline.apply(presented);
+    if (approvalId) {
+      const record = await approvals.get(approvalId, undefined, true);
+      await pipeline.setApprovalRequest(event.callId, approvalId, record?.reviewDigest);
+    }
     if (
       event.kind === "client_tool" &&
       frontendMode === "client" &&
@@ -2411,6 +2606,7 @@ export class AiTurnExecutor {
         modelPolicy: config.modelPolicy,
         model: config.model,
       });
+      await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(config.actor));
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
       await this.finalize(conversationId, turnId, pipeline, "failed", aiTurnFailureFromThrown(error, "AI compaction failed"), "compact");
@@ -2519,7 +2715,6 @@ class StreamPipeline {
   private readonly attempt: number;
   private readonly leaseOwner: string;
   private readonly mapper: ReturnType<typeof createEventMapper>;
-  private readonly background: boolean;
   private readonly allowRememberedApprovals: boolean;
   readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
@@ -2536,10 +2731,8 @@ class StreamPipeline {
     startSeq: number;
     leaseOwner: string;
     seedBlocks: AiTurnBlock[];
-    background?: boolean;
     allowRememberedApprovals: boolean;
   }) {
-    this.background = input.background ?? false;
     this.timing = createTurnTimingRecorder(input.turnId);
     this.conversationId = input.conversationId;
     this.turnId = input.turnId;
@@ -2587,6 +2780,10 @@ class StreamPipeline {
 
   setCanonicalNames(names: Map<string, string>): void {
     this.mapper.setCanonicalNames(names);
+  }
+
+  setStreamArgs(items: PreparedAiTools["streamArgs"]): void {
+    this.mapper.setStreamArgs(items);
   }
 
   setApprovalReviews(reviews: Map<string, CapabilityActionReviewData>, scopes: ReadonlyMap<string, string>): void {
@@ -2672,8 +2869,15 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  async setToolReview(callId: string, review: AiStoredActionReview): Promise<void> {
-    await this.emitOp(this.mapper.setTool(callId, { review }));
+  async setApprovalRequest(callId: string, requestId: string, digest?: string): Promise<void> {
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
+    if (block?.kind !== "tool" || !block.approval) return;
+    await this.emitOp({ type: "block_set", block: { ...block, approval: { ...block.approval, requestId, digest } } });
+    await this.maybeSnapshot();
+  }
+
+  async setToolReview(callId: string, review: AiStoredActionReview, presentation?: AiToolPresentation): Promise<void> {
+    await this.emitOp(this.mapper.setTool(callId, { review, ...(presentation ? { presentation } : {}) }));
     await this.maybeSnapshot();
   }
 
@@ -2704,9 +2908,7 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  private async emitOp(
-    op: { type: "block_set"; block: AiTurnBlock } | { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string },
-  ): Promise<void> {
+  private async emitOp(op: BlockOp): Promise<void> {
     const seq = this.nextSeq();
     const event = this.envelope({ ...op, seq }) as AiWireEvent;
     this.blocks = applyWireEventToBlocks(this.blocks, event);
@@ -2748,7 +2950,9 @@ class StreamPipeline {
   }
 
   /** Transient: says a model call is waiting to be retried. Snapshots never carry it. */
-  async emitProviderRetry(): Promise<void> {
+  async emitProviderRetry(previewedCallIds: readonly string[]): Promise<void> {
+    // The retried call starts its arguments over; what the failed call had written so far goes.
+    for (const op of this.mapper.retirePreviews(previewedCallIds)) await this.emitOp(op);
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
     await this.maybeSnapshot();
@@ -2760,7 +2964,6 @@ class StreamPipeline {
   }
 
   private publish(event: AiWireEvent): Promise<void> {
-    if (this.background) return Promise.resolve();
     return this.ordered(() => publishAiWireEvent(event).catch(() => undefined));
   }
 
@@ -2788,4 +2991,15 @@ export const __aiExecutorTest = {
   rebuildAttemptBaseline,
   rebuildBlocksFromMessages,
   toolRoundState,
+  capabilityApprovalArgs,
 };
+
+/** Uses the operation already loaded for this call; approvals never add a registry dependency. */
+function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, args: unknown, storedArgs?: unknown): unknown {
+  // Startup migration normalizes existing app-wide approvals too; consume that same representation.
+  // Fresh app-wide approvals keep the existing runtime contract.
+  const migrated = storedArgs !== undefined && NormalizedCapabilityCallSchema.safeParse(storedArgs).success;
+  return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined || migrated)
+    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args), entry.place)
+    : args;
+}

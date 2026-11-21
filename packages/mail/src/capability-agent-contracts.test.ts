@@ -22,7 +22,7 @@ import {
 
 describe("Mail agent contracts", () => {
   test("keep and release carry exact conversation identities without incidental revision state", () => {
-    const input = { mailboxId: "MbA123", conversationId: "CvB456" };
+    const input = { conversationId: "CvB456" };
     expect(ConversationKeepInputSchema.parse(input)).toEqual(input);
     expect(ConversationKeepReleaseInputSchema.parse({ ...input, reason: "  Policy reviewed  " })).toEqual({
       ...input,
@@ -30,7 +30,7 @@ describe("Mail agent contracts", () => {
     });
     expect(ConversationKeepReleaseInputSchema.safeParse({ ...input, reason: "x".repeat(501) }).success).toBeFalse();
 
-    expect(ConversationListInputSchema.parse({ mailboxId: "MbA123", view: "kept" }).view).toBe("kept");
+    expect(ConversationListInputSchema.parse({ view: "kept" }).view).toBe("kept");
     expect(
       ConversationKeepDataSchema.safeParse({
         conversationId: input.conversationId,
@@ -42,7 +42,7 @@ describe("Mail agent contracts", () => {
     expect(ConversationKeepReleaseDataSchema.parse({ conversationId: input.conversationId, released: true }).released).toBeTrue();
   });
   test("patch never supplies defaults for omitted draft fields", () => {
-    const value = { mailboxId: "MbA123", draftId: "DrG789", expectedRevision: 3, patch: { subject: "Updated" } };
+    const value = { draftId: "DrG789", expectedRevision: 3, patch: { subject: "Updated" } };
     expect(DraftPatchInputSchema.parse(value)).toEqual(value);
     expect(DraftPatchInputSchema.parse({ ...value, patch: { to: [] } }).patch).toEqual({ to: [] });
     expect(DraftPatchInputSchema.safeParse({ ...value, patch: {} }).success).toBeFalse();
@@ -71,10 +71,9 @@ describe("Mail agent contracts", () => {
 test("agent flag searches preserve their folder scope through Boolean expressions", () => {
   for (const type of ["unread", "flagged"] as const) {
     const expression = { type: "not" as const, expression: { type, folderId: "Fold01" } };
-    expect(ConversationSearchInputSchema.parse({ mailboxId: "MbA123", expression }).expression).toEqual(expression);
+    expect(ConversationSearchInputSchema.parse({ expression }).expression).toEqual(expression);
     expect(
       ConversationSearchInputSchema.safeParse({
-        mailboxId: "MbA123",
         expression: { type, folderId: "11111111-1111-4111-8111-111111111111" },
       }).success,
     ).toBe(false);
@@ -84,30 +83,20 @@ test("agent flag searches preserve their folder scope through Boolean expression
 describe("Mail unattended mutation contracts", () => {
   const target = { conversationId: "CvB456", sourceFolderId: "FdC345", messageId: "MsH890" };
   test("move and mark can explicitly target one message", () => {
-    expect(ConversationMarkInputSchema.parse({ mailboxId: "MbA123", target, read: true }).target).toEqual(target);
-    expect(
-      ConversationMoveInputSchema.parse({ mailboxId: "MbA123", target, destination: { kind: "role", role: "archive" } }).target,
-    ).toEqual(target);
+    expect(ConversationMarkInputSchema.parse({ target, read: true }).target).toEqual(target);
+    expect(ConversationMoveInputSchema.parse({ target, destination: { kind: "role", role: "archive" } }).target).toEqual(target);
   });
   test("published update schemas retain done and open only", () => {
     for (const status of ["waiting", "needs_action"]) {
-      expect(
-        ConversationStatusUpdateInputSchema.safeParse({ mailboxId: "MbA123", conversationId: "CvB456", expectedRevision: 3, status })
-          .success,
-      ).toBeFalse();
-      expect(
-        ConversationStatusUpdateBatchInputSchema.safeParse({ mailboxId: "MbA123", conversationIds: ["CvB456"], status }).success,
-      ).toBeFalse();
+      expect(ConversationStatusUpdateInputSchema.safeParse({ conversationId: "CvB456", expectedRevision: 3, status }).success).toBeFalse();
+      expect(ConversationStatusUpdateBatchInputSchema.safeParse({ conversationIds: ["CvB456"], status }).success).toBeFalse();
     }
   });
   test("status accepts domain states and preserves explicit revisions", () => {
     for (const status of ["needs_action", "waiting", "done", "open"] as const) {
-      expect(
-        ConversationStatusSetInputSchema.parse({ mailboxId: "MbA123", conversationId: "CvB456", expectedRevision: 3, status }).status,
-      ).toBe(status);
+      expect(ConversationStatusSetInputSchema.parse({ conversationId: "CvB456", expectedRevision: 3, status }).status).toBe(status);
       expect(
         ConversationStatusSetBatchInputSchema.parse({
-          mailboxId: "MbA123",
           conversationIds: ["CvB456"],
           expectedRevisions: { CvB456: 3 },
           status,
@@ -117,7 +106,6 @@ describe("Mail unattended mutation contracts", () => {
   });
   test("unassigned-only assignment requires a revision and a nonempty add", () => {
     const input = {
-      mailboxId: "MbA123",
       conversationId: "CvB456",
       assigneeUserIds: ["11111111-1111-4111-8111-111111111111"],
       mode: "add" as const,
@@ -131,7 +119,6 @@ describe("Mail unattended mutation contracts", () => {
   });
   test("automated summaries require both source and text revisions", () => {
     const input = {
-      mailboxId: "MbA123",
       conversationId: "CvB456",
       expectedRevision: 3,
       expectedSummaryRevision: 2,
@@ -145,8 +132,9 @@ describe("Mail unattended mutation contracts", () => {
 
 test("provider answered and draft flags require an exact-message target", () => {
   const target = { conversationId: "CvB456", sourceFolderId: "FdC345" };
-  expect(ConversationMarkInputSchema.safeParse({ mailboxId: "MbA123", target, answered: true }).success).toBeFalse();
-  expect(
-    ConversationMarkInputSchema.parse({ mailboxId: "MbA123", target: { ...target, messageId: "MsH890" }, answered: true, draft: false }),
-  ).toMatchObject({ answered: true, draft: false });
+  expect(ConversationMarkInputSchema.safeParse({ target, answered: true }).success).toBeFalse();
+  expect(ConversationMarkInputSchema.parse({ target: { ...target, messageId: "MsH890" }, answered: true, draft: false })).toMatchObject({
+    answered: true,
+    draft: false,
+  });
 });

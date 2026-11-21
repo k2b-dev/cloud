@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-11-04
+updated: 2026-11-06
 ---
 
 # Structured and background AI
@@ -87,6 +87,7 @@ model defaults. The profile thinking level does not apply. Profile
 | `traceParent` | Parent span for existing background work |
 | `appId` | Application attribution |
 | `attribution` | Optional authorized user, conversation, turn, and workflow-run identifiers for usage analysis |
+| `onUsage` | Optional server observer of each provider attempt's resolved model and canonical measured or estimated input/output usage, including failed repairs; undefined usage means unknown. Observing adds no charge. |
 
 The function resolves the model, requests structured output, validates the
 result, and records a trace span.
@@ -128,27 +129,9 @@ performance, user activity, quality feedback, and background failures over
 Do not silently turn a failed AI result into application truth. Decide whether
 the caller should retry, skip the optional enrichment, or surface the error.
 
-## Keep routine run history for 90 days
+## Retired Assistant routines
 
-The Assistant calls scheduled chat tasks routines in its interface, help, and
-notifications, while the API, capability IDs (`core.ai.task.*`), routes, tables,
-and CLI (`cld assistant tasks`) keep `task`.
-
-Core deletes a routine's finished run (completed or failed) 90 days
-after it finished, together with its background turn, tool calls, and run
-transcript. Queued and running runs stay, as does the result message the run
-delivered into its chat. A finished run also stays while its turn is still active.
-The run holding a one-off routine's scheduled time keeps its row, even after
-completion, until the routine gets a new time or is deleted, so that time never
-runs twice; its background turn and transcript still expire after 90 days.
-Memory learning runs that used an expired turn as evidence stay without it.
-If the routine was deleted, its runs' background turns, tool calls, and transcripts
-expire on the same 90-day clock, measured from when each turn finished.
-
-This window is fixed, not configurable. Core removes up to 100 runs per minute
-on the routine recovery tick. See
-[Assistant routines](/en/docs/ai/chat-runtime-and-streaming#assistant-routines)
-for the execution and access rules.
+Assistant routines no longer execute. Existing run history is a read-only archive. See [Routines became Code](/en/docs/operations/routines-to-code) before upgrading.
 
 ## Add AI to an application workflow
 
@@ -352,111 +335,6 @@ through `resolveModel`. Supply only verified server-side identities, not IDs fro
 the calculation's input. The calculations receive only the supplied prompt and
 input, with no tools or implicit conversation context.
 
-## Routine Action reviews
-
-Before each change, a routine checks its mandate first, then calls the app's
-review for every Action with `approval: "rememberable"`. An Action that needs
-approval and is not rememberable never runs in a routine, regardless of the
-review. This includes background Code Mode. A rememberable Action runs only
-when that review returns an `approvalScope`. A missing review, a review error,
-or a result without the scope refuses the call and the app's `run` never
-executes. The review only narrows a mandate; it never grants access or widens
-the routine's authority.
-
-The model gets a short `NEEDS_APPROVAL` error telling it to stop and explain
-what was missing in one sentence. The run fails and the routine becomes
-`needs_attention` with reason `needs_approval` and the action name, even if the
-model completes its reply normally. One-time routines need a new time rather
-than becoming completed. Queries and Actions with `approval: "none"` keep their
-mandate checks and skip this review gate.
-
-Core's routine hosts share the platform-owned `authorizeBackgroundAction` and
-`AiBackgroundApprovalRequiredError` exports from `@k2b/cloud/ai`. The gate records
-the first refused action on the turn; hosts cannot replace a refusal with a
-later successful model reply.
-
-## Routine names and stop reasons
-
-A routine can have a short `title` in the user's language, up to 80 characters.
-Its `name` uses that title, then the chat title, then the first prompt line
-(up to 80 characters). Lists, action reviews and notifications use this name.
-
-A stopped routine has one `reason_code` and a `reason_at` timestamp. The code
-determines its state. A database CHECK enforces this relation.
-
-| Code | State | English sentence |
-| --- | --- | --- |
-| `paused` | `paused` | Paused by you on {time}. What happens meanwhile is not caught up automatically. |
-| `chat_archived` | `paused` | Paused because the chat is archived. |
-| `owner_inactive` | `paused` | Paused because the account is inactive. |
-| `failed` | `needs_attention` | The last run failed. |
-| `rights_changed` | `needs_attention` | What it may do changed. Please confirm again. |
-| `needs_approval` | `needs_attention` | Tried to {action}. That needs your approval every time, and routines never ask. |
-
-For `needs_approval`, `reason_action` stores the first refused Action's title
-in the routine's locale. Dialogs, chat lines, and notifications include it in
-the sentence; without an action, only the second sentence appears. English
-lowercases an initial title-case word ("Create task" becomes "Tried to create
-task."); German titles and acronym starts stay unchanged. Other reason codes
-clear `reason_action`, and readers ignore it beside any other code. The pause time uses `reason_at`, the reader's locale and
-the routine's timezone. `chatTaskReasonSentence` from `@k2b/cloud/ai` renders
-these sentences in English and German. Browser code imports it from
-`@k2b/cloud/ai/browser`.
-
-Raw errors remain technical details. They are not the reason sentence.
-A failed run keeps its last model response when available and adds reason
-metadata. Without a response, the chat line uses the reason sentence.
-
-A needs-attention notification has the title **“{name}” needs you** and the
-reason sentence as its body. Paused routines do not send this notification.
-The key `routine:{task uuid}:{code}:{reason_at epoch ms}` permits one notice
-per routine and reason until the state changes. Recovery uses the newest
-failed occurrence after the notification definition was registered. It also
-recognizes legacy `occurrence:{id}` keys, so an upgrade does not resend them.
-
-Creation stores the request locale on the routine. Runs, delivered chat lines
-and notifications use that locale, then the instance setting `app.locale`,
-then `en`. Existing routines get the locale of the newest personal chat turn
-at or before creation, else the newest personal chat turn in that chat.
-Background turns do not supply this value. This backfill runs only when the
-locale column is first added. Cloud has no stored per-user locale setting.
-
-Archiving a chat through the AI routes pauses its active routines with
-`chat_archived`. Admission checks what a routine may do before it checks the
-archive, so a routine whose mandate was paused or changed keeps `paused` or
-`rights_changed` instead. Admission also pauses a routine whose chat was
-archived another way. Restoring the chat resumes only routines paused with
-`chat_archived`, and only when their mandate revision is still the one the
-archive paused. Otherwise they need attention with `rights_changed`. A
-routine that stays paused after the restore, because it is a one-time routine
-past its time or because an app session restored the chat, changes to
-`paused`, so it no longer names an archive that has ended. App sessions never
-resume background authority. If the restore's routine step fails, the routine
-recovery relabels those routines `paused` after five minutes; it never resumes
-them, so the person resumes them by hand.
-
-A one-time routine resumes only before its time. Once its time has passed, a
-run at that time already happened or was stopped, so it needs a new time
-first.
-
-Pause and delete request an immediate abort of a running turn. The occurrence
-ends as `stopped`. The chat receives one line:
-
-> Stopped while the routine was running. Already done: {list}. Nothing was undone.
-
-With no write call it can name, the line leaves the list out:
-
-> Stopped while the routine was running. Nothing was undone.
-
-It does not claim that nothing changed, because a call without wording can
-still have changed something. The list comes from stored successful calls that
-the chat words as changes: app Actions with their done sentence, or their title
-when the Action has none, and Cloud tools with a done sentence. It never comes
-from the model's prose. Reads, failed calls and rejected calls are excluded. The line's metadata stores the stop cause and the done list.
-Deleting the routine does not delete this receipt. Recovery can deliver the
-line once from a terminal deleted-routine turn completed within the last day.
-It does not deliver into an archived chat.
-
 ## Workflow inference limits and reuse
 
 Workflow inference has an absolute attempt budget, including admission and
@@ -542,7 +420,35 @@ durable consumer configuration changes.
 
 ## Ask typed decision questions
 
-Use `runAiDecision()` from `@k2b/cloud/ai` (also exported from `@k2b/cloud`)
+Gustav chat, `cld` and Code use the **query** `core.ai.decide` through the normal
+capability transport. It accepts `task`, JSON `state`, named `questions` and
+optional `files: FileRef[]` and `model: { id }`. It returns the same `answers`, `model` and
+`usage` as `runAiDecision`, including all answer probabilities. It changes no
+domain records. Any later action requires its own authorization.
+
+Core supplies the authenticated caller as `usageSubject`: a person for personal
+calls, the Code service account for resource- or app-owned Code. That account's
+model permissions and AI allowance apply. Code service accounts need direct
+model grants and, when quotas are enabled, direct allowance grants; they do not
+inherit authenticated-person defaults. There is no caller-supplied accounting
+identity, background-budget fallback or separate decision tool or Code binding.
+The Code checker classifies `core.ai.*` under **AI** (German: **KI**); the
+Cloud-Admin's Code policy decides version approval.
+
+```bash
+cld --profile development capabilities query core ai.decide --input '{"task":"mail.category","state":{"subject":"Where is my order?"},"questions":{"category":{"type":"choice","instructions":"What kind of message is this?","criteria":{"support":"Help with an order","other":"Other messages"}}}}'
+```
+
+The whole capability request and result must each fit within **256 KiB**,
+excluding file bytes, which Cloud reads through the owning application.
+FileRefs require a live Code run and the owning app rechecks the account's
+access. The decision API's question and model-context limits below also apply. Image support depends on both provider and model;
+`vision` alone does not prove that a provider processes images. See the
+[Code mail-triage example](/en/docs/platform/code-sdk#mail-triage-category-first).
+Stable decision, quota and model-access error codes are preserved; capability
+messages follow the request locale (English or German).
+
+Use `runAiDecision()` from `@k2b/cloud/ai` (not the root entry)
 for yes/no, choice and score questions answered with probabilities. It calls a
 decision model through System One. Configure the installation’s
 [decision model](/en/docs/operations/decision-models) first.
@@ -587,7 +493,8 @@ if (
 ```
 
 Authorize the mail read before calling. Read the category first and use urgency
-only within relevant categories. Urgent wording in spam can produce a high
+only within relevant categories. Ask urgency together with category or after it,
+never alone. Urgent wording in spam can produce a high
 urgency probability; urgency alone must not drive triage. Choose thresholds for
 the application’s cost of mistakes. A probability is a model estimate, not a
 guarantee. For question variables, use `satisfies DecisionQuestions` or
@@ -618,7 +525,8 @@ with base64 data without a data-URL prefix, and require `vision`. Image support
 depends on both the provider and model. Cloud trusts the administrator’s
 configured `vision` capability; it does not probe whether images are processed.
 As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
-decisions there. Existing AI limits apply: 16 images, 10 MiB per image and
+decisions there. Existing AI byte limits apply: at most 320 images
+(16 files × 20 rendered PDF pages), 10 MiB per image and
 40 MiB total.
 
 Each call has a 60-second deadline and honors `signal`. There is no automatic
@@ -813,3 +721,69 @@ operator manages `ai.workflow_budget`, `ai.workflow_attempt_timeout_ms`, and
 for new work. Changing the budget's `globalConcurrent` also changes worker
 capacity and requires restarting all AI workers. See the
 [environment migration guide](/en/docs/operations/deprecations-and-migrations).
+
+
+## Generate text and extract JSON through capabilities
+
+Use the `core.ai.generate` query to summarize content, draft text or
+extract fields. Gustav discovers it as an ordinary capability; direct `cld`
+capability calls and the generated Code SDK reach the same query. It returns
+`{ output, model, usage }`. Text output is a string; JSON output is a validated
+object. Missing token usage is returned as `null`.
+
+Read the source through its authorized capability first. Put trusted task
+instructions in `prompt` and source content in `input`. Mail bodies, quoted
+messages and previous summaries are untrusted data, even when they contain
+instructions. The model receives them separately from the task instructions.
+This boundary reduces prompt injection risk; review generated content before
+using it for a consequential action. Without Action tools, generation does not
+send or save domain data.
+
+`model` accepts the usual class or an allowed variant ID and defaults to
+`{ class: "balanced" }`. The actual caller's model grants, data boundaries and
+AI allowance apply: personal Code pays as its person; resource/application
+Code pays as its Code service account. A service account needs its own AI
+allowance. Payloads cannot select another usage subject.
+
+| Output request | Result and limits |
+| --- | --- |
+| `{ type: "text", maxChars?: number }` | String; default 4,000 characters, maximum 20,000. At most 8,192 output tokens. |
+| `{ type: "json", schema: ... }` | Strict object with 1–40 scalar or bounded list properties. At most 4,096 output tokens. |
+
+The supported JSON Schema subset uses `type: "object"`, `properties`,
+`required` (defaults to `[]`) and `additionalProperties: false`. Properties may
+be `string`, `number`, `integer` or `boolean`, with an optional description
+(up to 500 characters). String properties support `maxLength` (up to 20,000,
+also the default), `enum` (1–50 strings, each up to 200 characters) and
+`format: "date-time"` (ISO date-time with timezone). Property names start with
+a letter and contain at most 80 letters, digits or underscores. Lists require
+`type: "array"`, `maxItems` (at most 50,000) and scalar items or strict objects
+of scalar fields. Nested lists, arbitrary nested objects, references and other
+schema keywords are refused. Missing required
+values, extra properties and invalid field values fail validation.
+
+The whole request, including instructions and schema, must fit the shared
+100,000-byte UTF-8 AI task budget (`AI_TASK_REQUEST_MAX_BYTES` and
+`assertAiTaskRequestSize` from `@k2b/cloud/ai`). Instructions are limited to
+20,000 characters. Oversized input fails with `ai_input_too_large`; it is never
+silently truncated. Output beyond the schema or byte budget fails with
+`ai_invalid_output`. A permitted model must be available (`ai_model_unavailable`
+or `model_policy_mismatch`); quota errors keep their `quota_*` codes. Provider
+failure or cancellation returns `provider_error` or `provider_aborted`. Error
+texts follow the request's DE/EN locale and exclude provider diagnostics.
+
+For Code, the checker and bridge classify this query as **AI / KI**, so Code's
+per-attempt and daily budgets also apply. See the
+[SDK example](/en/docs/platform/code-sdk#generate-text-and-extract-fields) and
+[budget operations](/en/docs/operations/code-policy#set-execution-budgets).
+
+
+For Code model loops, `core.ai.generate` accepts typed SDK functions in `tools`
+and FileRefs in `files`. It offers `view_image` and `read_file` for refs already
+seen in that call, unless `fileTools: false`. Vision-capable models receive
+images and rendered PDF pages directly; text models use a charged description.
+JSON schemas may contain bounded lists of scalars or strict scalar objects.
+See [Code model loops](/en/docs/platform/code-sdk#run-a-model-loop-with-sdk-tools-and-files)
+for account, approval, page, byte and execution limits. Server applications can
+supply bounded trusted `tools` and `maxTurns` to `runAiStructured`; their tool
+implementations retain responsibility for authorization.

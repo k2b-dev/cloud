@@ -1,6 +1,12 @@
 const URL_BASE = "http://assistant.local";
 
 const relativeHref = (url: URL): string => `${url.pathname}${url.search}${url.hash}`;
+/** A personal Code page lives at /app/assistant/code/<codeId>; a chat or Project opened from it lives at the app root. */
+const leaveCodePage = (url: URL) => {
+  if (!url.pathname.startsWith("/app/assistant/code/")) return;
+  url.pathname = "/app/assistant";
+  for (const key of ["tab", "run", "version", "activated"]) url.searchParams.delete(key);
+};
 export type ConversationOpenResult = "opened" | "unchanged" | "stale";
 
 export const shouldCommitConversationNavigation = (result: ConversationOpenResult, currentHref: string, targetHref: string): boolean =>
@@ -16,11 +22,13 @@ export const shouldOpenProjectConversation = (
 
 export const assistantConversationHref = (currentHref: string, conversationId: string | null): string => {
   const url = new URL(currentHref, URL_BASE);
+  leaveCodePage(url);
   const previousConversationId = url.searchParams.get("conversation");
   if (conversationId) url.searchParams.set("conversation", conversationId);
   else url.searchParams.delete("conversation");
   url.searchParams.delete("project");
   url.searchParams.delete("approvals");
+  url.searchParams.delete("code");
   url.searchParams.delete("q");
   if (previousConversationId !== conversationId) {
     url.searchParams.delete("artifact");
@@ -32,12 +40,14 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
 
 export const assistantProjectHref = (currentHref: string, projectId: string): string => {
   const url = new URL(currentHref, URL_BASE);
+  leaveCodePage(url);
   url.searchParams.delete("conversation");
   url.searchParams.delete("message");
   url.searchParams.delete("question");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
   url.searchParams.delete("approvals");
+  url.searchParams.delete("code");
   url.searchParams.delete("q");
   return relativeHref(url);
 };
@@ -89,3 +99,12 @@ export const assistantMessageSeqFromHref = (href: string): number | null => {
 export const ASSISTANT_APPROVALS_HREF = "/app/assistant?approvals=1";
 
 export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("approvals") === "1";
+
+/** The person's own Code: `?code=1`, without a chat or project, so reload and Back keep it. */
+export const ASSISTANT_CODE_HREF = "/app/assistant?code=1";
+
+/** Same precedence as the server: a chat, a Project or the approvals view wins over the Code list. */
+export const assistantCodeOpenFromHref = (href: string): boolean => {
+  const params = new URL(href, URL_BASE).searchParams;
+  return params.get("code") === "1" && !params.has("conversation") && !params.has("project") && params.get("approvals") !== "1";
+};

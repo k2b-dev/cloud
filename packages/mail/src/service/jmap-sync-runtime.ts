@@ -1,7 +1,5 @@
 import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
-import { notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
-import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { projectJmapFolders } from "./bindings";
 import { ENVELOPE_BATCH_SIZE } from "./connectors/contract";
 import { jmapMailboxBudget } from "./connectors/jmap";
@@ -418,7 +416,6 @@ export async function commitJmapAccountBatch(
       );
       const removeRefIds = refs.filter((ref) => deletedIds.has(ref.remote_id)).map((ref) => ref.id);
       const created = new Set(batch.kind === "email" ? batch.delta.createdIds : []);
-      let wakeWorkflow = false;
       for (const email of emails) {
         assertActive(params.signal);
         const existing = byEmail.get(email.emailId) ?? [];
@@ -451,7 +448,6 @@ export async function commitJmapAccountBatch(
           });
           stats.memberships++;
           if (index === 0 && existing.length === 0) stats.imported++;
-          if (receive && index === 0) wakeWorkflow = true;
         }
       }
       // New memberships already retired stale kept copies through ingestEnvelope. Remove old ones afterwards.
@@ -534,12 +530,10 @@ export async function commitJmapAccountBatch(
       if (changed) await enqueueMailInvalidation(tx, { mailboxId: resource.mailbox_id });
       assertActive(params.signal);
       const hasMore = batch.kind === "email" || batch.kind === "mailbox" ? batch.delta.hasMoreChanges : nextState.scan !== null;
-      return { stats, changed, wakeWorkflow, hasMore };
+      return { stats, changed, hasMore };
     });
-    // Durable rows above are sufficient if the process exits before either advisory wake.
+    // Durable rows above are sufficient if the process exits before the advisory wake.
     if (result.changed) mailLive.wake();
-    // Like IMAP, the wake is advisory: shared ingest may have suppressed an outbound receipt.
-    if (result.wakeWorkflow) notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
     return { status: "committed", hasMore: result.hasMore, stats: result.stats };
   } catch (error) {
     if (error instanceof Superseded) return { status: "superseded", cause: error.reason };

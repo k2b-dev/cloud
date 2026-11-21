@@ -203,13 +203,37 @@ suite("Venue one-off shifts", () => {
     expect(ShiftDataSchema.parse(detail.data.data)).toEqual(selected);
     expect((await read.run(read.input.parse({ ...input, date: afterDays(tomorrow, 7) }), context)).ok).toBeFalse();
     const signup = venueCapabilities.actions["assignment.signup"];
-    expect((await signup.review(signup.input.parse(input), context)).ok).toBeTrue();
-    const taken = await signup.run(signup.input.parse(input), context);
+    expect(
+      (
+        await signup.review(signup.input.parse({ templateId: input.templateId, date: input.date }), {
+          ...context,
+          target: { type: "venue.venue", id: venue.id },
+        })
+      ).ok,
+    ).toBeTrue();
+    const taken = await signup.run(signup.input.parse({ templateId: input.templateId, date: input.date }), {
+      ...context,
+      target: { type: "venue.venue", id: venue.id },
+    });
     expect(taken.ok).toBeTrue();
     const booked = await dashboard(venue.id, tomorrow);
     expect(booked.slots.find((slot) => slot.template.id === template.id)?.assignedCount).toBe(1);
-    expect((await signup.review(signup.input.parse(input), context)).ok).toBeFalse();
-    expect((await signup.run(signup.input.parse({ ...input, date: afterDays(tomorrow, 7) }), context)).ok).toBeFalse();
+    expect(
+      (
+        await signup.review(signup.input.parse({ templateId: input.templateId, date: input.date }), {
+          ...context,
+          target: { type: "venue.venue", id: venue.id },
+        })
+      ).ok,
+    ).toBeFalse();
+    expect(
+      (
+        await signup.run(signup.input.parse({ templateId: input.templateId, date: afterDays(tomorrow, 7) }), {
+          ...context,
+          target: { type: "venue.venue", id: venue.id },
+        })
+      ).ok,
+    ).toBeFalse();
   });
 
   test("rejects past dates, dates beyond the horizon, and kind switches; derives weekdays when moving a one-off", async () => {
@@ -314,9 +338,9 @@ suite("Venue one-off shifts", () => {
     const historical = await read.run(read.input.parse({ venueId: venue.id, templateId: oldTemplateId, date: oldDate }), context);
     expect(historical.ok).toBeTrue();
     const signup = venueCapabilities.actions["assignment.signup"];
-    const input = signup.input.parse({ venueId: venue.id, templateId: oneOff.id, date: tomorrow });
-    expect((await signup.review(input, context)).ok).toBeTrue();
-    expect((await signup.run(input, context)).ok).toBeTrue();
+    const input = signup.input.parse({ templateId: oneOff.id, date: tomorrow });
+    expect((await signup.review(input, { ...context, target: { type: "venue.venue", id: venue.id } })).ok).toBeTrue();
+    expect((await signup.run(input, { ...context, target: { type: "venue.venue", id: venue.id } })).ok).toBeTrue();
     const pastEdit = await send("PATCH", `/api/venue/venues/${venue.id}/templates/${oldTemplateId}`, admin.cookie, {
       ...shift,
       date: oldDate,

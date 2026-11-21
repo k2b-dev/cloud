@@ -32,7 +32,7 @@ const grant = async (modelId: string, principal: Principal, db: typeof sql): Pro
   await db`INSERT INTO ai.model_access (model_id, access_id) VALUES (${modelId}, ${result.data.id}::uuid)`;
 };
 
-const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null): Promise<Set<string>> => {
+const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null, db = sql): Promise<Set<string>> => {
   if (!subject || modelIds.length === 0) return new Set();
   const match = buildAccessPrincipalCondition({
     subject,
@@ -43,7 +43,7 @@ const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null
       authenticatedOnly: sql`access.authenticated_only`,
     },
   });
-  const rows = await sql<{ model_id: string }[]>`
+  const rows = await db<{ model_id: string }[]>`
     SELECT DISTINCT model.model_id FROM ai.model_access model JOIN auth.access access ON access.id = model.access_id
     WHERE model.model_id = ANY(${toPgTextArray(modelIds)}::text[])
       AND access.permission IN ('read', 'write', 'admin') AND ${match}
@@ -51,7 +51,7 @@ const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null
   return new Set(rows.map((row) => row.model_id));
 };
 
-/** Assistant chat authorization only. Global/background model resolution does not call this service. */
+/** Model grants for every chat turn and compaction, checked for the turn's access subject. Global/background model resolution does not call this service. */
 export const aiModelAccess = {
   filterModels: async <T extends { id: string; modelId: string }>(models: T[], subject: AccessSubject | null): Promise<T[]> => {
     const allowed = await allowedModelIds(
@@ -60,9 +60,9 @@ export const aiModelAccess = {
     );
     return models.filter((model) => allowed.has(model.modelId));
   },
-  assertAllowed: async (modelId: string, subject: AccessSubject | null): Promise<void> => {
-    if ((await allowedModelIds([modelId], subject)).has(modelId)) return;
-    const message = "You do not have permission to use this model in Assistant. Choose another model.";
+  assertAllowed: async (modelId: string, subject: AccessSubject | null, db = sql): Promise<void> => {
+    if ((await allowedModelIds([modelId], subject, db)).has(modelId)) return;
+    const message = "You do not have permission to use this model. Choose another model.";
     throw Object.assign(new Error(message), {
       aiError: { code: "model_policy_mismatch", message, fields: { model: message } } satisfies AiSettingsError,
     });

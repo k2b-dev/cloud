@@ -454,11 +454,19 @@ describe("stats views", () => {
     [{ items: [{ ...item, value: " " }] }, "items[0].value"],
     [{ items: [{ ...item, value: "x".repeat(81) }] }, "80"],
     [{ items: [{ ...item, sub: " " }] }, "items[0].sub"],
+    [{ items: [{ ...item, icon: 'ti ti-x" onload' }] }, "items[0].icon"],
     [{ title: " " }, "title"],
     [{ subtitle: "x".repeat(301) }, "subtitle"],
   ])("rejects stats rules: %j", (change, path) => {
     expect(issues({ ...stats, ...change })).toContain(path);
     expect(parseCloudAiView({ ...stats, ...change })).toBeUndefined();
+  });
+  test("every key figure has a small sign before its label: the Tabler icon it names, otherwise the neutral sign", () => {
+    const view = parseCloudAiView({ ...stats, items: [{ ...item, icon: "wallet" }, item] });
+    if (!view || view.view !== "stats") throw new Error("Missing stats");
+    expect(cloudAiViewDescription(view).items.map((entry) => entry.icon)).toEqual(["ti ti-wallet", "ti ti-hash"]);
+    // The sign takes no room of its own in the summary: a tile keeps the height its summary reserved.
+    expect(cloudAiViewSummary(view)).toEqual(cloudAiViewSummary({ ...view, items: [item, item] }));
   });
   test("formats signed deltas and determines improvement without model colors", () => {
     const view = parseCloudAiView({
@@ -596,7 +604,8 @@ describe("details views and reference cells", () => {
       { label: "Time", text: "Jan 2, 2026, 12:30 PM" },
       { label: "Seconds", text: "Jan 2, 2026, 12:30:45 PM" },
       { label: "Task", text: ref.title, ref },
-      { label: "Id", text: ref.id, ref: { type: ref.type, id: ref.id } },
+      // An untitled reference never shows its bare id: Cloud names it for the reader, or it is not available.
+      { label: "Id", text: "Not available", ref: { type: ref.type, id: ref.id } },
       { label: "Empty", text: "" },
       { label: "Text", text: "Exact" },
     ]);
@@ -620,11 +629,11 @@ describe("details views and reference cells", () => {
     if (!view || view.view !== "table") throw new Error("Missing table");
     const formatted = cloudAiViewTable(view, "en-US");
     expect(formatted.rows.map((row) => row.key)).toEqual(["2", "3", "0", "1"]);
-    expect(formatted.rows.map((row) => row.cells.task)).toEqual(["Alpha", "task-3", "Zebra", ""]);
-    expect(formatted.rows.map((row) => row.values.task)).toEqual(["Alpha", "task-3", "Zebra", undefined]);
+    expect(formatted.rows.map((row) => row.cells.task)).toEqual(["Alpha", "Not available", "Zebra", ""]);
+    expect(formatted.rows.map((row) => row.values.task)).toEqual(["Alpha", "Not available", "Zebra", undefined]);
     expect(formatted.footer?.cells.task).toBe(ref.title);
     expect(formatted.footer?.values.task).toBe(ref.title);
-    expect(cloudAiTableTsv(formatted)).toBe("task\nAlpha\ntask-3\nZebra\n\nCheck invoice");
+    expect(cloudAiTableTsv(formatted)).toBe("task\nAlpha\nNot available\nZebra\n\nCheck invoice");
     expect(issues({ ...input, columns: [{ id: "task", type: "text" }] })).toContain("rows[0].task: Expected text, a number or null.");
     expect(issues({ ...input, rows: [{ task: { ...ref, href: "/task" } }] })).toContain("rows[0].task");
     expect(issues({ ...input, columns: [{ id: "task", type: "ref", format: {} }] })).toContain("Only number columns");
@@ -666,7 +675,7 @@ describe("details views and reference cells", () => {
     expect(summary.fields).toHaveLength(CLOUD_AI_DETAILS_VIEWPORT_ITEMS);
     expect(summary.fields.slice(0, 4)).toEqual([
       { label: "Order", ref: true, chars: "Chairs".length },
-      { label: "Unnamed", ref: true, chars: "item-2".length },
+      { label: "Unnamed", ref: true, chars: "Not available".length },
       { label: "Net", ref: false, chars: "€1,840.50".length },
       { label: "Note", ref: false, chars: CLOUD_AI_DETAILS_MAX_CHARS },
     ]);

@@ -1,6 +1,8 @@
+import { cardToolBlocks } from "../gustav-view-blocks";
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
-import { hasCapabilityTable } from "./capability-result";
+import { hasCapabilityView } from "./capability-result";
+import { codeStepWords } from "./code-step-words";
 import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 import { isFailedTool } from "./tool-groups";
 
@@ -18,7 +20,14 @@ export type AiTurnActionState = "open" | "interaction" | "running" | "done" | "r
 
 export type AiTurnAction = { id: string; block: ToolBlock; state: AiTurnActionState };
 
-export type AiTurnResult = { id: string; block: ToolBlock };
+/** `group` holds consecutive key figures Gustav showed one by one; they stand together in one row. */
+export type AiTurnResult = { id: string; block: ToolBlock; group?: ToolBlock[] };
+
+/** A key figure Gustav showed with the card tool whose result carries its view. */
+export const isKeyFigureResult = (block: ToolBlock): boolean =>
+  isCardToolName(block.name) &&
+  !block.isError &&
+  (block.status === "completed" ? block.view !== undefined : block.status === "running" && cardToolBlocks(block.args) !== null);
 
 /**
  * The four fixed places of one turn. Live and history use the same function on the same blocks, so a
@@ -62,14 +71,35 @@ export const waitsForUser = (block: AiTurnBlock): boolean =>
 /** A streamed status replaces the previous one only after its first sentence, so a reader never loses a sentence. */
 export const hasCompleteSentence = (text: string): boolean => /[.!?…:;](?:\s|$)|\n/.test(text);
 
+/** A version `code_submit` saved; a failed submit answers with an error instead. */
+export type AiSubmittedCodeVersion = { codeId: string; versionId: string; number: number };
+export const submittedCodeVersion = (block: ToolBlock): AiSubmittedCodeVersion | null => {
+  if (block.name !== "code_submit" || block.status !== "completed" || !isRecord(block.args) || !isRecord(block.result)) return null;
+  const submission = block.result.submission;
+  const version = isRecord(submission) ? submission.version : null;
+  if (!isRecord(version) || typeof block.args.codeId !== "string") return null;
+  return typeof version.id === "string" && typeof version.number === "number"
+    ? { codeId: block.args.codeId, versionId: version.id, number: version.number }
+    : null;
+};
+
 const resultTarget = (block: ToolBlock): string | null => {
   const args = isRecord(block.args) ? block.args : {};
+  // A turn that submits twice shows its newest version once.
+  if (block.name === "code_submit" && typeof args.codeId === "string") return `code_submit:${args.codeId}`;
+  // A turn that checks or tries examples again shows only the newest notices and examples of each kind.
+  if (["code_check", "code_test", "code_simulate"].includes(block.name) && typeof args.codeId === "string")
+    return `${block.name}:${args.codeId}`;
   if (block.name === "present" && typeof args.path === "string") return `present:${args.path.trim()}`;
   if (block.name === "code_present" && typeof args.title === "string") return `code_present:${args.title.trim().toLowerCase()}`;
   return null;
 };
 
-const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean): boolean => {
+const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean, codeVersions: boolean): boolean => {
+  if (block.name === "code_submit") return codeVersions && submittedCodeVersion(block) !== null;
+  // Notices and tried examples stand in the conversation as building blocks, also when an example failed. A clean
+  // check after a failed one takes the failed one's place, so a notice that no longer holds disappears.
+  if (block.name === "code_check" || block.name === "code_test" || block.name === "code_simulate") return codeStepWords(block) !== null;
   if (block.name === "map" && block.result && typeof block.result === "object" && "map" in block.result) return true;
   if (isFailedTool(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
   // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the
@@ -77,7 +107,7 @@ const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boole
   const delivered = block.status === "completed" || (live(phase) && block.status === "running" && block.args !== undefined);
   if (block.name === "map" || block.name === "present" || isCardToolName(block.name) || isChartToolName(block.name)) return delivered;
   if (block.name === "code_present") return codePresentations && delivered;
-  return hasCapabilityTable(block);
+  return hasCapabilityView(block);
 };
 
 const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | null => {
@@ -96,7 +126,10 @@ const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | 
  * Assign the blocks of one turn segment to the four places. Pure: the presentation renders live turns and
  * history through this one function.
  */
-export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: AiTurnPhase; codePresentations?: boolean }): AiTurnLayout {
+export function layoutAiTurn(
+  input: readonly AiTurnBlock[],
+  options: { phase: AiTurnPhase; codePresentations?: boolean; codeVersions?: boolean },
+): AiTurnLayout {
   const blocks = input.filter(isRenderableTurnBlock);
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool");
   const steps = tools.length + blocks.filter((block) => block.kind === "compaction").length;
@@ -108,10 +141,13 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     const state = actionState(block, options.phase);
     if (state) actions.push({ id: block.id, block, state });
     // An approved tool or a Cloud action can deliver a result too: it keeps its receipt and shows its result.
-    if (!isResult(block, options.phase, options.codePresentations ?? false)) continue;
+    if (!isResult(block, options.phase, options.codePresentations ?? false, options.codeVersions ?? false)) continue;
     const target = resultTarget(block);
     const index = target ? resultIndex.get(target) : undefined;
+    const previous = results.at(-1);
     if (index !== undefined) results[index] = { id: results[index]!.id, block };
+    else if (!target && isKeyFigureResult(block) && previous && isKeyFigureResult(previous.block))
+      results[results.length - 1] = { ...previous, group: [...(previous.group ?? [previous.block]), block] };
     else {
       if (target) resultIndex.set(target, results.length);
       results.push({ id: block.id, block });
@@ -156,6 +192,10 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     waitingFor,
   };
 }
+
+/** Nothing to read, look at, or act on: a finished turn like this says that it ended without any text. */
+export const showsNothing = (layout: AiTurnLayout): boolean =>
+  layout.text.length === 0 && layout.results.length === 0 && layout.actions.length === 0;
 
 /** The loop ending is authoritative; partial messages also carry their own failed or interrupted ending. */
 export const storedPhase = (entries: readonly Pick<AiStoredMessage, "loopDoneReason" | "stopReason">[]): AiTurnPhase => {

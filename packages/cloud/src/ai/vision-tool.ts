@@ -14,7 +14,7 @@ const VIEW_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 export const CloudAiViewImageInputSchema = z.object({
   path: z.string().trim().min(1).describe("Absolute stored image or PDF path. Shared Project files are available below /project."),
-  pages: PdfPages.optional().describe("PDF only: 1–3 distinct one-based page numbers; default [1]."),
+  pages: PdfPages.max(3).optional().describe("PDF only: 1–3 distinct one-based page numbers; default [1]."),
   prompt: z.string().trim().min(1).max(2_000).optional().describe("Optional guidance for what to inspect or extract."),
 });
 

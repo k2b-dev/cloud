@@ -283,3 +283,54 @@ describe("new-browser sign-in notice", () => {
       expect(prepared.html).toContain(style);
   });
 });
+
+test("Code review notices localize each outcome and link the immutable version", async () => {
+  const notice = app.notifications.codeReview;
+  const versionId = "11111111-1111-4111-8111-111111111111";
+  const base = { codeId: "c_notice", title: "Weekly report", versionId, number: 5, by: "Jana Probe" };
+  for (const [locale, outcomes] of [
+    ["de", ["freigegeben", "Änderungen an Version 5 angefordert", "abgelehnt"]],
+    ["en", ["approved", "requested changes", "rejected"]],
+  ] as const) {
+    for (const [index, outcome] of (["approved", "changes_requested", "rejected"] as const).entries()) {
+      const rendered = await notice.render({ ...base, kind: "decided", outcome }, { locale });
+      expect(rendered.title).toContain("Jana Probe");
+      expect(rendered.title).toContain(outcomes[index]!);
+      expect(rendered.targetHref).toBe(`/app/assistant/code/c_notice?tab=versions&version=${versionId}`);
+    }
+    expect((await notice.render({ ...base, kind: "submitted", outcome: null }, { locale })).targetHref).toBe(
+      `/admin/code?sec=approvals&id=${versionId}`,
+    );
+  }
+});
+
+test("page reports reach admins with the page and the automation, and the reporter once it is handled, never an admin's name", async () => {
+  // The email reads only `app.url`.
+  const get = spyOn(settings, "get").mockResolvedValue("https://cloud.example.test/");
+  try {
+    const reported = app.notifications.codePageReported;
+    expect(reported.recipient).toBe("user");
+    expect(reported.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    const data = { codeId: "c_lieferung", title: "Lieferavise der Woche", path: "/woche", reason: "security" as const, by: "Jana Probe" };
+    const de = await reported.render(data, { locale: "de" });
+    expect(de).toEqual({
+      title: "Jana Probe hat eine Seite gemeldet",
+      body: "„Lieferavise der Woche“ · /woche · Sicherheitsproblem",
+      targetHref: "/admin/code?sec=code&id=c_lieferung",
+    });
+    expect((await reported.render({ ...data, reason: null }, { locale: "en" })).body).toBe("“Lieferavise der Woche” · /woche");
+    const email = await reported.email!(data, { locale: "en" });
+    expect(email.subject).toBe("Jana Probe reported a page");
+    expect(email.content).toContain("https://cloud.example.test/code/c_lieferung/woche");
+    expect(email.content).toContain("https://cloud.example.test/admin/code?sec=code&id=c_lieferung");
+    const handled = app.notifications.codePageReportResolved;
+    for (const locale of ["de", "en"]) {
+      const rendered = await handled.render({ codeId: "c_lieferung", path: "/woche" }, { locale });
+      expect(rendered.targetHref).toBe("/code/c_lieferung/woche");
+      expect(JSON.stringify(rendered)).not.toContain("Admin ");
+    }
+    expect((await handled.render({ codeId: "c_lieferung", path: "/" }, { locale: "de" })).title).toBe("Deine Meldung ist erledigt");
+  } finally {
+    get.mockRestore();
+  }
+});

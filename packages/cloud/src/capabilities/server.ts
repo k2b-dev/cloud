@@ -1,4 +1,5 @@
 import {
+  isPersonVisibleCapabilityAction,
   isPersonVisibleCapabilityQuery,
   resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
@@ -18,6 +19,7 @@ import { combineCapabilitySignals } from "./signals";
 import type { CapabilityCatalogAppClientResult, CapabilityInvocation, CapabilityReviewClientResult } from "./types";
 
 export type { CapabilityActionWording } from "../_internal/capability-sentences";
+export { listResourceManagers } from "./resource-readers";
 export {
   appCaller,
   type CapabilityCaller,
@@ -57,6 +59,7 @@ export const getCapabilityCatalogApp = async (
               manifest: {
                 ...manifest,
                 queries: manifest.queries.filter(isPersonVisibleCapabilityQuery),
+                actions: manifest.actions.filter(isPersonVisibleCapabilityAction),
               },
             }
           : null,
@@ -102,6 +105,8 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         appId: invocation.appId,
         capabilityId: invocation.capabilityId,
         input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
@@ -121,7 +126,13 @@ export const reviewCapabilityAction = async <TInput = unknown>(
           undefined,
           invocation.signal,
         ),
-        { body: JSON.stringify({ input: invocation.input }) },
+        {
+          body: JSON.stringify({
+            input: invocation.input,
+            ...(invocation.target ? { target: invocation.target } : {}),
+            ...(invocation.refs ? { refs: invocation.refs } : {}),
+          }),
+        },
       ),
     );
     return await readCapabilityResponse(
@@ -164,6 +175,8 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
+export { signCodeOwnerRead, verifyCodeOwnerRead } from "../code/owner-proof";
+export type { CapabilityInvocationBody, NormalizedCapabilityCall } from "../contracts/capabilities";
 export {
   CALENDAR_VIEW_MAX_RANGE_MS,
   type CalendarReadResult,
@@ -180,6 +193,13 @@ export {
   listCalendarSources,
   readCalendarEvents,
 } from "./calendar-sources";
+export {
+  capabilityCallDigest,
+  capabilityCallFromTool,
+  capabilityInvocationBody,
+  capabilityToolInputSchema,
+  normalizeCapabilityCall,
+} from "./calls";
 export { type DiscussionProvider, discussionProviders } from "./discussion-providers";
 export { ResourceReaderRateLimited, type ResourceReadersResult, readResourcePrincipals } from "./resource-readers";
 export {

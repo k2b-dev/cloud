@@ -3,6 +3,7 @@ import { ok, type Result } from "@k2b/stdlib";
 import type { ConversationListDrafts } from "../contracts";
 import { draftVisibleTo, requireMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { codeAuthorLabels } from "./code-author-labels";
 
 /** One page query with the same draft visibility as the conversation's draft list. */
 export const listConversationDraftSummaries = async (params: {
@@ -63,9 +64,21 @@ export const listConversationDraftSummaries = async (params: {
       CASE WHEN counts.count = 1 THEN suggestions.suggested_by END AS suggested_by
     FROM counts LEFT JOIN editors USING (conversation_id) LEFT JOIN suggestions USING (conversation_id)
   `;
+  const label = await codeAuthorLabels({
+    mailboxId: params.mailboxId,
+    locale: params.context.locale,
+    names: rows.flatMap((row) => [row.suggested_by, ...row.editors.map((editor) => editor.displayName)]),
+  });
   return ok(
     new Map(
-      rows.map(({ conversation_id, count, editors, suggested_by }) => [conversation_id, { count, editors, suggestedBy: suggested_by }]),
+      rows.map(({ conversation_id, count, editors, suggested_by }) => [
+        conversation_id,
+        {
+          count,
+          editors: editors.map((editor) => ({ ...editor, displayName: label(editor.displayName) ?? editor.displayName })),
+          suggestedBy: label(suggested_by) ?? null,
+        },
+      ]),
     ),
   );
 };

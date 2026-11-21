@@ -17,18 +17,22 @@ describe("compression boundary", () => {
   }
 });
 
-test("the API schema tree and mounted machine operations use the same declared prefix", () => {
+test("retired Studio endpoints are absent while chat code stays mounted", () => {
   const routes = [
     ["POST", "/artifacts/machine/:id/execute"],
     ["GET", "/artifacts/machine/:id/source"],
     ["PUT", "/artifacts/machine/:id/storage/file"],
     ["POST", "/artifacts/machine/:id/database"],
     ["PUT", "/artifacts/machine/:id/access/:accessId"],
-    ["GET", "/workspace/conversations/:conversationId/tabs"],
-    ["PUT", "/workspace/conversations/:conversationId/tabs"],
   ];
+  expect(router.routes.some((route) => route.path === "/api/assistant/chat-code/runtime/capabilities")).toBe(true);
+  // The tabs beside a chat are remembered per chat.
+  for (const method of ["GET", "PUT"])
+    expect(
+      apiRoutes.routes.some((route) => route.method === method && route.path === "/workspace/conversations/:conversationId/tabs"),
+    ).toBe(true);
   for (const [method, path] of routes) {
-    expect(apiRoutes.routes.some((route) => route.method === method && route.path === path)).toBe(true);
-    expect(router.routes.some((route) => route.method === method && route.path === `/api/assistant${path}`)).toBe(true);
+    expect(apiRoutes.routes.some((route) => route.method === method && route.path === path)).toBe(false);
+    expect(router.routes.some((route) => route.method === method && route.path === `/api/assistant${path}`)).toBe(false);
   }
 });

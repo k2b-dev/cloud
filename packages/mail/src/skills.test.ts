@@ -31,7 +31,7 @@ test("Mail skill retains capability and reply guidance", async () => {
     (match) => `mail.${match[1] ?? match[2]}`,
   );
   for (const capability of mentionedCapabilities) expect(declaredCapabilities).toContain(capability);
-  for (const capability of ["mail.mailbox.browse", "mail.message.read-content", "mail.draft.patch"]) {
+  for (const capability of ["mail.mailbox.browse", "mail.message.content.read", "mail.draft.patch"]) {
     expect(mentionedCapabilities).toContain(capability);
   }
 });

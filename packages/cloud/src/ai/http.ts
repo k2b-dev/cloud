@@ -1,44 +1,67 @@
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
-import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { BLOCK_LIMITS } from "../blocks/schema";
+import { CapabilityAppIdSchema, CloudResourceRefSchema } from "../contracts/capabilities";
 import { type AuthContext, err, fail, respond } from "../server";
 import { AiModelRequestSchema } from "../shared/ai-models";
 import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { hasAiChoiceProvenance } from "./choices";
+import { AI_DRAFT_QUOTE_MAX_ITEMS, AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
 import { AiQuotaError } from "./quotas";
+import { AiQuoteDraftSchema, aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
 import { AI_MESSAGE_FEEDBACK_REASONS, type AiClientToolId, type AiDraftContentPart, type AiUserContentPart } from "./types";
 import { isAiSettingsError } from "./validate";
 
+/**
+ * Why `content` breaks the bounds of one message, or null: at most 20000 characters of text, quoted passages included,
+ * at most the attachment limit, and at most ten quotes. Drafts, edited queued messages and retries share it.
+ */
+export const aiDraftContentProblem = (content: readonly AiDraftContentPart[]): string | null => {
+  const text = content.reduce((length, part) => length + (part.type === "text" || part.type === "quote" ? part.text.length : 0), 0);
+  if (text > 20_000) return "A message holds at most 20000 characters, quotes included.";
+  if (content.filter((part) => part.type !== "text" && part.type !== "quote").length > AI_TURN_ATTACHMENT_MAX_ITEMS)
+    return `A message can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items.`;
+  if (content.filter((part) => part.type === "quote").length > AI_DRAFT_QUOTE_MAX_ITEMS)
+    return `A message can quote at most ${AI_DRAFT_QUOTE_MAX_ITEMS} passages.`;
+  return null;
+};
+
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().max(20_000) }),
-  AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }),
-  z.object({
-    type: z.literal("file"),
-    path: z.string().trim().min(1).max(500),
-    mediaType: z.string().trim().min(1).max(120),
-    size: z.number().int().min(0),
-    version: z.number().int().min(1),
+  // Typed text never passes for a quote Cloud checked.
+  z.strictObject({ type: z.literal("text"), text: z.string().max(20_000).transform(aiNeutralizeQuoteMarkers) }),
+  AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }).strict(),
+  z
+    .object({
+      type: z.literal("file"),
+      path: z.string().trim().min(1).max(500),
+      mediaType: z.string().trim().min(1).max(120),
+      size: z.number().int().min(0),
+      version: z.number().int().min(1),
+      inline: z.boolean().optional(),
+    })
+    .strict(),
+  z.strictObject({
+    type: z.literal("project-file"),
+    path: z.string().min(1).max(500).startsWith("/project/"),
     inline: z.boolean().optional(),
   }),
-  z.object({ type: z.literal("project-file"), path: z.string().min(1).max(500).startsWith("/project/"), inline: z.boolean().optional() }),
+  AiQuoteDraftSchema.extend({ type: z.literal("quote") }).strict(),
 ]);
 
 export const AiConversationDraftInputSchema = z
   .object({
-    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
+    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1 + AI_DRAFT_QUOTE_MAX_ITEMS),
   })
+  .strict()
   .superRefine((value, context) => {
-    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000)
-      context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
-    if (value.content.filter((part) => part.type !== "text").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
-    }
+    const problem = aiDraftContentProblem(value.content);
+    if (problem) context.addIssue({ code: "custom", path: ["content"], message: problem });
   });
 
 export const AiInitialConversationDraftInputSchema = z
@@ -47,6 +70,7 @@ export const AiInitialConversationDraftInputSchema = z
       .array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]]))
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
+  .strict()
   .superRefine((value, context) => {
     if (value.content.filter((part) => part.type === "resource").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
@@ -64,19 +88,35 @@ export const AiToolPreloadSchema = z.union([
   AiCapabilityRefSchema.strict(),
 ]);
 
-export const AiCreateConversationInputSchema = z.object({
-  requestId: z.uuid().optional(),
-  title: z.string().trim().min(1).max(120).optional(),
-  projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
-  draft: AiInitialConversationDraftInputSchema.optional(),
-  preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
-  allowedTools: z.array(z.string().min(1).max(200)).max(64).optional(),
-  skills: z
-    .array(z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN))
-    .max(AI_TURN_ATTACHMENT_MAX_ITEMS)
-    .optional(),
-  launchedByAppId: CapabilityAppIdSchema.optional(),
-});
+export const AiCreateConversationInputSchema = z
+  .object({
+    place: CloudResourceRefSchema.optional(),
+    requestId: z.uuid().optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
+    draft: AiInitialConversationDraftInputSchema.optional(),
+    preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
+    allowedTools: z.array(z.string().min(1).max(200)).max(64).optional(),
+    skills: z
+      .array(z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN))
+      .max(AI_TURN_ATTACHMENT_MAX_ITEMS)
+      .optional(),
+    launchedByAppId: CapabilityAppIdSchema.optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (!input.place) return;
+    if (!input.draft?.content.some((part) => part.type === "resource" || part.text.trim())) {
+      ctx.addIssue({ code: "custom", path: ["draft"], message: "A place chat starts with its first message." });
+    }
+    for (const key of ["title", "projectId", "preloadTools", "allowedTools", "skills", "launchedByAppId"] as const) {
+      if (input[key] !== undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: "Place chats use the normal Assistant catalog and the place's title. Configure the chat after creation.",
+        });
+    }
+  });
 
 export const AiMessageFeedbackInputSchema = z
   .object({
@@ -101,18 +141,23 @@ export const AiSaveConversationDraftInputSchema = AiConversationDraftInputSchema
 export type AiDraftContentPartInput = z.infer<typeof AiDraftContentPartSchema> & AiDraftContentPart;
 
 export const AiUserContentPartSchema = z.union([
-  z.string().trim().min(1).max(20000),
-  z.object({
-    type: z.literal("text"),
-    text: z.string().trim().min(1).max(20000),
-  }),
+  // Typed text never passes for a quote Cloud checked.
+  z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
+  z
+    .object({
+      type: z.literal("text"),
+      text: z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
+    })
+    .strict(),
   // Attachment already uploaded to the conversation file store.
-  z.object({
-    type: z.literal("attachment"),
-    path: z.string().trim().min(1).max(500),
-    mediaType: z.string().trim().max(120).default("application/octet-stream"),
-    size: z.number().int().min(0).default(0),
-  }),
+  z
+    .object({
+      type: z.literal("attachment"),
+      path: z.string().trim().min(1).max(500),
+      mediaType: z.string().trim().max(120).default("application/octet-stream"),
+      size: z.number().int().min(0).default(0),
+    })
+    .strict(),
 ]);
 
 export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
@@ -175,8 +220,9 @@ export const AiSubmitConversationDraftInputSchema = z
     path: ["localContext"],
   });
 
-export const AiSteerInputSchema = z.object({
-  message: z.string().trim().min(1).max(20000),
+export const AiSteerInputSchema = z.strictObject({
+  // Steered words are the person's own, like a sent message: a typed quote marker never passes for a checked quote.
+  message: z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
   clientRequestId: z.string().trim().min(1).max(120),
 });
 
@@ -220,7 +266,7 @@ export const AiMessageRetryInputSchema = z
 
 export type AiMessageRetryInput = z.infer<typeof AiMessageRetryInputSchema>;
 
-export const AiMessageForkInputSchema = z.object({
+export const AiMessageForkInputSchema = z.strictObject({
   title: z.string().trim().min(1).max(120).optional(),
 });
 
@@ -296,3 +342,15 @@ export const toAiActionFailureResponse = (
           : conflict(result.message);
   return respond(c, fail(failure));
 };
+
+export const AiChoiceInputSchema = z.strictObject({
+  turnId: z.string().regex(AI_SHORT_ID_PATTERN),
+  toolCallId: z.string().min(1).max(500),
+  blockId: z.string().min(1).max(80),
+  // The view's option count and mode are authoritative, checked under the conversation lock.
+  ids: z.array(z.string()).max(BLOCK_LIMITS.rows),
+});
+
+export const AiClientToolResultSchema = z.unknown().refine((value) => !hasAiChoiceProvenance(value), {
+  message: "Choice provenance is server-owned.",
+});

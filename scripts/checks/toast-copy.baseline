@@ -3,13 +3,6 @@
 # The rule never adds lines; `bun scripts/check.ts toast-copy --fix` removes resolved findings. This list only shrinks.
 packages/accounts/src/frontend/action-notice.tsx | untitled | messages.creationNoticeFailed
 packages/accounts/src/frontend/groups/detail/GroupActions.island.tsx | untitled | messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local })
-packages/assistant/src/artifacts/Admin.island.tsx | untitled | t().databaseCleanupQueued
-packages/assistant/src/artifacts/SecretsDialog.tsx | title | t.websiteAllowedForApp({ host })
-packages/assistant/src/artifacts/SecretsDialog.tsx | untitled | t.websiteRevokeFailed
-packages/assistant/src/artifacts/SecretsDialog.tsx | untitled | t.websiteRevoked({ host })
-packages/assistant/src/artifacts/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
-packages/assistant/src/artifacts/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
-packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
@@ -219,13 +212,10 @@ packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostAdded
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostRemoved
 packages/ipa-hosts/src/frontend/HostSettings.island.tsx | untitled | t().scheduleUpdated
 packages/mail/src/frontend/MailWorkspace.island.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
-packages/mail/src/frontend/MailWorkspace.island.tsx | title | t().undoFailed
-packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | automationText().redoFailed
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | message
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | message
-packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | message({ subject: item.conversation.subject })
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
 packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
@@ -244,12 +234,6 @@ packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().settingsRef
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
 packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
-packages/mail/src/frontend/_components/MailAdminWorkflowAi.island.tsx | untitled | t().saved
-packages/mail/src/frontend/_components/MailAutomaticReplySettings.tsx | untitled | props.configuration ? messages().automaticReplyUpdated : messages().automaticReplyCreated
-packages/mail/src/frontend/_components/MailAutomationLog.tsx | untitled | message({ subject: item.conversation.subject })
-packages/mail/src/frontend/_components/MailAutomationLog.tsx | untitled | t().errorTitle
-packages/mail/src/frontend/_components/MailAutomationLog.tsx | untitled | t().redoFailed
-packages/mail/src/frontend/_components/MailAutomationLog.tsx | untitled | t().undoFailed
 packages/mail/src/frontend/_components/MailCalendarInvitation.tsx | untitled | result.outcome === "created" ? messages().eventAdded : result.outcome === "unchanged" ? messages().eventUpToDate : messages().eventUpdated
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().providerConnectedSendingPending
 packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().readyToSend({ address: identity.fromAddress })
@@ -263,11 +247,6 @@ packages/mail/src/frontend/_components/MailFolderSettings.tsx | untitled | actio
 packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().mailboxSmtpSelected
 packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().smtpVerifiedAndSaved
 packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().verificationQueued
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.tsx | title | messages().futureMailOnly
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.tsx | title | messages().nothingToBackfill
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.tsx | untitled | messages().backfillStarted
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.tsx | untitled | messages().incomingAutomationDeleted
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.tsx | untitled | props.automation ? messages().incomingAutomationUpdated : messages().incomingAutomationCreated
 packages/mail/src/frontend/_components/MailMessageAttachments.tsx | untitled | messages.textNotCopied
 packages/mail/src/frontend/_components/MailMessageAttachments.tsx | untitled | reader().downloadAllFailed
 packages/mail/src/frontend/_components/MailMessageCard.tsx | untitled | error instanceof Error ? error.message : messages().bodyRequestFailed
@@ -284,10 +263,7 @@ packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | e
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | messages().unsubscribeRequestedFor({ name: item.name })
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | result.commandCount === 0 ? messages().noMessagesNeededMoving({ name: item.name }) : messages().messageMovesQueued({ count: result.commandCount })
-packages/mail/src/frontend/_components/MailWorkflowSettings.tsx | untitled | messages().historicalSourceRestored
-packages/mail/src/frontend/_components/MailWorkflowSettings.tsx | untitled | messages().workflowValid
 packages/mail/src/frontend/_components/MailboxMenu.tsx | untitled | messages().syncQueued
-packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | messages().automaticReplyAccessUpdated
 packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | messages().mailboxSettingsSaved
 packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied
 packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied

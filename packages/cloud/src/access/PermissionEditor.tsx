@@ -3,6 +3,7 @@ import { Avatar, announce, Button, IconButton, Placeholder, prompts, Select, Sel
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
+import type { CloudResourceRef } from "../contracts/capabilities";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
@@ -10,6 +11,7 @@ import { accessMessages } from "./messages";
 import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { principalKey } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
+import { ServiceAccountLookup } from "./ServiceAccountLookup";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -28,6 +30,8 @@ export type GrantableLevel = Exclude<PermissionLevel, "none">;
 export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
+  /** The resource being shared; targeted Kennung lookup is built in and always checked by Core. */
+  target?: CloudResourceRef;
   /** Expanded form: choose a principal and level before adding; show durable inline feedback. */
   expanded?: boolean;
   /** Mark these entries as the viewer's own grants in the expanded form. */
@@ -223,8 +227,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = (principal: Principal) =>
-    resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
+  const allowed = (principal: Principal, kind?: ServiceAccountKind) => {
+    const levels = resolveAllowedLevels(
+      typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels,
+      t(),
+    );
+    const accountKind = kind ?? entries.find((entry) => principalKey(entry.principal) === principalKey(principal))?.serviceAccountKind;
+    return accountKind === "code" ? levels.filter((option) => option.level !== "admin") : levels;
+  };
   const labelOf = (entry: AccessEntry) =>
     entry.principal.type === "authenticated" && props.signedIn ? props.signedIn.label : principalLabel(entry, locale());
 
@@ -254,7 +264,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       }
       return;
     }
-    const first = choice ?? allowed(principal)[0];
+    const first = choice ?? allowed(principal, display.serviceAccountKind)[0];
+    if (display.serviceAccountKind === "code" && first?.level === "admin") return;
     if (!first) return;
     const id = `pending:${key}`;
     let granted = false;
@@ -373,6 +384,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   };
   let editorRoot: HTMLDivElement | undefined;
   let principalPickerHost: HTMLDivElement | undefined;
+  const searchEmpty = () => <p class="font-medium text-primary">{t().searchNobody}</p>;
   const focusPrincipalPicker = () => {
     queueMicrotask(() => {
       if (!disposed && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
@@ -422,10 +434,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       if (selection && entries.some((entry) => principalKey(entry.principal) === principalKey(selection.principal))) setDraft(undefined);
     }),
   );
+  const shareEntries = () => entries;
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
-    const granted = entries.filter((entry) => entry.id !== pending());
+    const granted = shareEntries().filter((entry) => entry.id !== pending());
     const managers = (props.effectiveEntries?.(granted) ?? granted).filter((entry) => !entry.scope && isManagerEntry(entry));
     return managers.length === 1 ? managers[0]!.id : null;
   });
@@ -448,6 +461,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               when={draft()}
               fallback={
                 <PrincipalPicker
+                  target={props.target}
                   existing={entries.map((entry) => entry.principal)}
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
@@ -456,11 +470,12 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   serviceAccountStatus={props.serviceAccountStatus ?? "active"}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
+                  empty={searchEmpty()}
                   disabled={saving()}
                   onSelect={(principal, display) => {
                     if (!canStart()) return;
                     setDraft({ principal, display });
-                    setDraftLevel(allowed(principal)[0]?.key ?? "read");
+                    setDraftLevel(allowed(principal, display.serviceAccountKind)[0]?.key ?? "read");
                   }}
                 />
               }
@@ -489,7 +504,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
             aria-label={t().newPermission}
             value={draftLevel}
             disabled={saving()}
-            options={allowed(draft()?.principal ?? { type: "user", userId: "" }).map((option) => ({
+            options={allowed(draft()?.principal ?? { type: "user", userId: "" }, draft()?.display.serviceAccountKind).map((option) => ({
               value: option.key,
               label: option.label,
             }))}
@@ -507,7 +522,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 void grant(
                   selection.principal,
                   selection.display,
-                  allowed(selection.principal).find((option) => option.key === draftLevel()),
+                  allowed(selection.principal, selection.display.serviceAccountKind).find((option) => option.key === draftLevel()),
                 );
             }}
           >
@@ -527,7 +542,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       </Show>
       {/* Existing entries */}
       <div class={props.expanded ? "flex flex-col" : "flex flex-col gap-1"}>
-        <For each={entries}>
+        <For each={shareEntries()}>
           {(entry) => {
             // A row keeps its principal, so its group coverage is created once per row. Expanded rows name the
             // group's size in their subtitle instead.
@@ -558,16 +573,30 @@ export default function PermissionEditor(props: PermissionEditorProps) {
             );
           }}
         </For>
-        <Show when={entries.length === 0}>
+        <Show when={shareEntries().length === 0}>
           <Placeholder align="left" class="px-1 py-2" description={t().noDirectGrants} />
         </Show>
       </div>
 
+      <Show when={canEdit() && props.target && props.allowServiceAccounts !== false}>
+        <ServiceAccountLookup
+          empty={!entries.some((entry) => entry.serviceAccountKind === "code")}
+          target={props.target!}
+          disabled={busy()}
+          add={async (account) => {
+            await grant(account.principal, account.display);
+            return entries.some(
+              (entry) => principalKey(entry.principal) === principalKey(account.principal) && !entry.id.startsWith("pending:"),
+            );
+          }}
+        />
+      </Show>
       {/* Add access — single Combobox, granted at the lowest allowed
           level on pick. The user upgrades via the row pill if they want
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit() && !props.expanded}>
         <PrincipalPicker
+          target={props.target}
           existing={entries.map((e) => e.principal)}
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
@@ -576,6 +605,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           serviceAccountStatus={props.serviceAccountStatus ?? "active"}
           placeholder={props.placeholder}
           signedIn={props.signedIn}
+          empty={searchEmpty()}
           readOnly={grantPending()}
           disabled={updating() !== null || revoking() !== null}
           onSelect={(principal, display) => void grant(principal, display)}
@@ -831,6 +861,9 @@ function AccessEntryRow(props: {
           </Tooltip.Anchor>
         </Show>
       </div>
+      <Show when={props.entry.serviceAccountKind === "code"}>
+        <p class={props.expanded ? "pb-2 pl-11 text-[13px] text-dimmed" : "pb-1 pl-9 text-xs text-dimmed"}>{t().codeAccessAuthority}</p>
+      </Show>
       <Show when={props.expanded && props.lastManager && props.canEdit}>
         <p class="pb-2 pl-11 text-[13px] text-dimmed sm:pl-13">{t().lastManager({ level: manageLabel() })}</p>
       </Show>

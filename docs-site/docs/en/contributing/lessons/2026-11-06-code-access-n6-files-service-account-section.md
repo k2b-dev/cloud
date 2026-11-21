@@ -1,0 +1,6 @@
+### Files listed Code accounts among folder grants instead of in their own section
+
+- **What happened:** Files machine storage showed an added Code account in the mixed list of folder grants with only a badge, while every other share surface lists service accounts in their own **Service accounts** section with a count, the server's line ("Service account of a mailbox · may edit"), a level menu without Manage, and the explanation sentence. In Files, "Service accounts" was only a row with a button.
+- **Root cause:** Only the add button and the handle field were shared (`ServiceAccountLookup`). The section around them, its rows and its level menu lived inside the access dialog, so Files could not reuse them and kept its own row.
+- **Error class:** A shared surface is shared only in part; the unshared rest drifts in the consumer that cannot reach it.
+- **Guard:** The dialog and Files render the one `ServiceAccountSection` with the dialog's row parts (`AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`). `MachineStorage.browser.test.ts` checks the heading with count, the row line, the note, the empty text, adding by handle and that no row moves while a level saves, at 1280 and 390 px. The `access-editor-targets` rule now also requires `target` on `ServiceAccountSection`.

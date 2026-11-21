@@ -1,7 +1,8 @@
 import { type Accessor, createContext, type JSX, Show, useContext } from "solid-js";
 
 export type StatGridSize = "lg" | "md" | "sm";
-export type StatGridSurface = "white" | "muted";
+/** `flat` drops the tiles: figures stand side by side in the flow, such as key figures in a chat answer. */
+export type StatGridSurface = "white" | "muted" | "flat";
 export type StatGridColumns = 1 | 2 | 3 | 4 | 5 | 6;
 export type StatGridAction = { label: string; href: string };
 /** `tiles` frames each figure; `plain` sets the figures in equal columns with a thin line between, for a page head. */

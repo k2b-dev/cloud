@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-11-10
+updated: 2026-11-17
 ---
 
 # Models and providers
@@ -58,7 +58,7 @@ Choose `restricted` for a provider that makes no data-protection commitment,
 such as a free API tier that may train on its inputs. Cloud keeps its models
 away from every use by a person:
 
-- Assistant chat, the model picker, routines, workflows, code and the
+- Assistant chat, the model picker, workflows, code and the
   OpenAI-compatible API never offer or run them;
 - classes, the image tool, the audio tool and live dictation cannot be
   assigned to them, so a class request never resolves to one;
@@ -143,6 +143,19 @@ per million input and output tokens in the installation's accounting unit.
 Missing or zero prices do not consume a priced chat allowance. Audio has no
 token pricing. A variant can override its model's prices.
 
+Chat models with a positive input or output price require a known context
+window and an output limit before they can be saved. Enter the provider's
+documented `contextWindow` and either `maxOutputTokens` or the catalog's
+reported `outputTokenLimit`. The same rule applies to a variant's effective
+prices and limits. Administration flags existing incomplete models so an
+administrator can fill in the missing limits. Free models and decision models
+keep their existing rules.
+
+An alarm that cannot run because model limits are missing names that cause in
+the chat and asks for the model configuration to be completed. It does not
+report an exhausted daily budget. Code chat calls return the translated
+budget reason in the owner's locale, including the recovery step.
+
 ## Assign classes and tools
 
 ```bash
@@ -184,8 +197,20 @@ cld admin ai variants update local-chat:deep --input-file variant-patch.json --y
 A model patch can set shared prices or parameters:
 
 ```json
-{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2 }, "extraBody": { "custom": true } }
+{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2, "cacheReadPerMillion": 0.05 }, "contextWindow": 128000, "maxOutputTokens": 4096, "extraBody": { "custom": true } }
 ```
+
+Set the optional `cacheReadPerMillion` through the CLI or model API to charge
+provider-reported cache reads at their discounted price. When it exceeds
+`inputPerMillion`, Cloud discards it and uses the ordinary input rate. This keeps
+lowering an input price in Administration saveable even when a hidden cache price
+was configured through the CLI/API. Variants inherit the model cache-read price
+unless they supply their own; an inherited price above the variant input rate is
+also discarded. Input usage already includes those cached tokens; Cloud
+charges them once, at the cache-read price. If the price or measured cache count
+is absent, the ordinary input price applies. Admission reserves an uncached
+request because a future cache hit is unknown; settlement releases that reserve
+and books the measured cost. Existing calls retain their price snapshots.
 
 A variant patch can set the thinking level and override parameters or prices:
 

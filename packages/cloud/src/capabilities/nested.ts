@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import type { CapabilityExecutionContext } from "../contracts/capabilities";
+import { CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { capabilityMessages } from "../shared/capability-messages";
 import { invokeCapabilityWithDataSchema } from "./server";
 
@@ -22,7 +23,7 @@ export const createNestedCapabilityQuery =
       transport: async (request) => {
         const match = new URL(request.url).pathname.match(/^\/api\/capabilities\/v1\/queries\/([^/]+)\/([^/]+)$/);
         if (!match) throw new Error("Only a nested Query is supported");
-        const { input } = await request.json();
+        const body = CapabilityInvocationBodySchema.parse(await request.json());
         const headers = new Headers({ "content-type": "application/json" });
         const token = source.headers.get("authorization");
         if (!token) throw new Error("A parent invocation is required");
@@ -36,7 +37,7 @@ export const createNestedCapabilityQuery =
           headers,
           signal: request.signal,
           redirect: "error",
-          body: JSON.stringify({ targetApp: decodeURIComponent(match[1]!), capabilityId: decodeURIComponent(match[2]!), input }),
+          body: JSON.stringify({ targetApp: decodeURIComponent(match[1]!), capabilityId: decodeURIComponent(match[2]!), ...body }),
         });
       },
     });

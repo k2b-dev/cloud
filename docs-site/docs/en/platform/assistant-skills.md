@@ -118,7 +118,7 @@ such as `inventory.location.list`, so Assistant can load them without searching.
 List the few operations that most requests need in `load-tools`.
 `load_skill` loads them with the instructions, which saves Assistant a model
 round on every simple request. Each one still requires the person's normal
-access, and a chat's tool scope or a routine's grants still apply. Keep the
+access, and a chat's tool scope still applies. Keep the
 list short: every loaded operation adds its schema to each later model request.
 
 ```md

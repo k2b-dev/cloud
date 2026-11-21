@@ -1,4 +1,5 @@
 import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
+import type { BoundBlockView } from "../blocks/schema";
 import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import { isQueueInterruptedResult } from "./turn-interruption";
@@ -40,15 +41,25 @@ export type AiTurnBlock =
       callId: string;
       name: string;
       args?: unknown;
+      /**
+       * Present while the model still writes the call: `args` then holds only the tool's `streamArgs`, each cut to its
+       * end, and this names how many lines of each came before that end. The final arguments replace both.
+       */
+      liveArgs?: { omittedLines: Record<string, number> };
       status: AiToolBlockStatus;
       /** ISO time the call reached its outcome. */
       at?: string;
       /** Localized transient host status, without tool payload data. */
       progress?: string;
       result?: unknown;
+      /** Bound on the server from the stored raw capability result. */
+      view?: BoundBlockView;
+      choice?: import("./choice-state").AiChoiceState;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: {
+        requestId?: string;
+        digest?: string;
         message?: string;
         review?: CapabilityActionReviewPresentation;
         allowAlways: boolean;
@@ -99,6 +110,8 @@ export type AiWireEvent =
   | (AiWireEventBase & { type: "message_saved"; message: AiStoredMessage })
   | (AiWireEventBase & { type: "block_set"; block: AiTurnBlock })
   | (AiWireEventBase & { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string })
+  /** Takes a block back, such as a step whose call was still being written when it was cut off or retried. */
+  | (AiWireEventBase & { type: "block_remove"; blockId: string })
   /** A model call failed transiently and waits for its retry. Transient: the next event of the turn ends it. */
   | (AiWireEventBase & { type: "provider_retry" })
   | (AiWireEventBase & {
@@ -167,6 +180,8 @@ export const applyWireEventToBlocks = (blocks: AiTurnBlock[], event: AiWireEvent
     if (existing.kind !== "text" && existing.kind !== "thinking") return blocks;
     return [...blocks.slice(0, index), { ...existing, text: existing.text + event.delta }, ...blocks.slice(index + 1)];
   }
+
+  if (event.type === "block_remove") return blocks.filter((block) => block.id !== event.blockId);
 
   return blocks;
 };
@@ -256,6 +271,8 @@ export const buildBlocksFromMessages = (
     message: Message;
     meta?: {
       steerId?: string;
+      resultView?: BoundBlockView;
+      resultChoice?: import("./choice-state").AiChoiceState;
       toolPresentations?: Record<string, AiToolPresentation>;
       toolReviews?: Record<string, AiStoredActionReview>;
       toolChecks?: Record<string, AiActionCheck>;
@@ -320,6 +337,8 @@ export const buildBlocksFromMessages = (
               : message.isError
                 ? "failed"
                 : "completed",
+          ...(meta?.resultView ? { view: meta.resultView } : {}),
+          ...(meta?.resultChoice ? { choice: meta.resultChoice } : {}),
           result: message.isError && existing.result !== undefined ? existing.result : message.result,
           isError: !isQueueInterruptedResult(message.result) && message.isError,
           ...(createdAt ? { at: createdAt } : {}),

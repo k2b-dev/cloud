@@ -1,5 +1,6 @@
 import type { AssistantChatContextGroup, AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
 import { fileKind } from "./chat-sidebar-model";
+import { GENERIC_VIEW_ICON, viewKindMessages } from "./view-kind-messages";
 
 /** Entries a group shows in the box before "Show all". */
 export const CONTEXT_BOX_GROUP_LIMIT = 3;
@@ -15,9 +16,9 @@ export type ContextBoxJump = { messageSeq: number; callId: string | null; presen
 export type ContextBoxOpen =
   | { kind: "file"; path: string; title: string }
   | { kind: "app"; id: string; title: string }
-  | { kind: "presentation"; id: string; title: string }
   | { kind: "jump"; target: ContextBoxJump }
   | { kind: "href"; href: string }
+  | { kind: "wakeup"; id: string }
   | { kind: "none" };
 
 /** The one action that shows while the pointer rests on a row. */
@@ -44,7 +45,15 @@ export type ContextBoxRow = {
   hover: ContextBoxHover;
 };
 
-export type ContextBoxGroup = { key: string; label: string; count: number; rows: ContextBoxRow[]; more: boolean };
+export type ContextBoxGroup = {
+  key: string;
+  label: string;
+  count: number;
+  rows: ContextBoxRow[];
+  more: boolean;
+  /** Rows that unfold in place below the first ones ("2 more"), instead of "Show all" opening the tab. */
+  rest?: ContextBoxRow[];
+};
 
 export type ContextBoxModel = {
   /** Nothing to show yet: the box says what will appear here. */
@@ -100,43 +109,59 @@ export const contextBoxResultRow = (
   input: { now: string; timeZone: string; locale: string; formatSize: (bytes: number) => string; copy: Pick<ContextBoxCopy, "showInChat"> },
 ): ContextBoxRow => {
   const jump = resultJump(result);
-  const trailing = result.file
-    ? input.formatSize(result.file.size)
-    : contextBoxWhen(result.deliveredAt, input.now, input.timeZone, input.locale);
+  const open: ContextBoxOpen = result.file
+    ? { kind: "file", path: result.file.path, title: result.title }
+    : jump
+      ? { kind: "jump", target: jump }
+      : { kind: "none" };
+  // A view (chart, table …) says what it shows with its own sign; only other files have a size worth naming.
+  const view = result.view;
+  const trailing = view
+    ? viewKindMessages.resolve([input.locale]).t[view]
+    : result.file
+      ? input.formatSize(result.file.size)
+      : contextBoxWhen(result.deliveredAt, input.now, input.timeZone, input.locale);
   return {
     key: `result:${result.key}`,
-    icon: result.file ? kindIcon[fileKind(result.file.mediaType, result.file.path)] : result.icon,
+    icon: view
+      ? view === "view"
+        ? GENERIC_VIEW_ICON
+        : result.icon
+      : result.file
+        ? kindIcon[fileKind(result.file.mediaType, result.file.path)]
+        : result.icon,
     title: result.title,
     trailing,
     tooltip: result.description ? `${result.title} · ${result.description}` : result.title,
-    open: result.file
-      ? { kind: "file", path: result.file.path, title: result.title }
-      : result.app
-        ? { kind: "app", id: result.app.id, title: result.title }
-        : result.presentationId
-          ? { kind: "presentation", id: result.presentationId, title: result.title }
-          : jump
-            ? { kind: "jump", target: jump }
-            : { kind: "none" },
-    // Files download from the row; anything else shows where it came from.
-    hover: result.file
-      ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
-      : jump
-        ? { kind: "jump", target: jump }
-        : null,
+    open,
+    // Files download from the row; a view and anything else show where they came from, unless the row's own click
+    // already goes there: one action per row.
+    hover:
+      result.file && !view
+        ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
+        : jump && open.kind !== "jump"
+          ? { kind: "jump", target: jump }
+          : null,
   };
 };
 
 const groupRow = (row: AssistantChatContextGroup["rows"][number]): ContextBoxRow => ({
   key: `${row.key}`,
   icon: row.icon,
-  tile: { accent: row.accent },
+  // An app's thing carries its tile; an alarm of the chat itself its plain sign.
+  ...(row.wakeup ? {} : { tile: { accent: row.accent } }),
   title: row.title,
   trailing: row.word,
   tone: row.tone,
   attention: row.attention,
   tooltip: row.tooltip ?? `${row.title} · ${row.word}`,
-  open: row.jump ? { kind: "jump", target: row.jump } : row.href ? { kind: "href", href: row.href } : { kind: "none" },
+  open: row.wakeup
+    ? { kind: "wakeup", id: row.wakeup }
+    : row.jump
+      ? { kind: "jump", target: row.jump }
+      : row.href
+        ? { kind: "href", href: row.href }
+        : { kind: "none" },
   hover: row.action ? { kind: "href", href: row.action.href, label: row.action.label, icon: row.action.icon } : null,
 });
 
@@ -161,7 +186,14 @@ export const contextBoxSourceCounts = (snapshot: Pick<AssistantChatContextSnapsh
  */
 export const buildContextBoxModel = (
   snapshot: AssistantChatContextSnapshot,
-  input: { locale: string; formatSize: (bytes: number) => string; copy: ContextBoxCopy; project: string | null },
+  input: {
+    locale: string;
+    formatSize: (bytes: number) => string;
+    copy: ContextBoxCopy;
+    project: string | null;
+    /** The box already showed this chat's content, such as an alarm that has rung since: it stays a box, not the empty sentence. */
+    filled?: boolean;
+  },
 ): ContextBoxModel => {
   const newest = snapshot.results.toSorted((a, b) => Date.parse(b.deliveredAt) - Date.parse(a.deliveredAt) || a.key.localeCompare(b.key));
   const results: ContextBoxGroup = {
@@ -175,20 +207,38 @@ export const buildContextBoxModel = (
   };
   const counts = contextBoxSourceCounts(snapshot);
   const sources = snapshot.sourceCount > 0 ? input.copy.sourcesSummary(counts) : null;
-  const routines = snapshot.tasks.filter((task) => task.state !== "completed").length;
+  // Routines became Code; the summary keeps its slot at zero.
+  const routines = 0;
   // Always there: the tab "Context" also holds the chat's secrets and approvals.
-  const context =
-    input.copy.contextSummary({ project: input.project, skills: snapshot.skills.length, memories: snapshot.memories.length, routines }) ||
-    input.copy.contextFallback;
+  const summary = input.copy.contextSummary({
+    project: input.project,
+    skills: snapshot.skills.length,
+    memories: snapshot.memories.length,
+    routines,
+  });
+  const context = summary || input.copy.contextFallback;
   let budget = CONTEXT_BOX_ROW_LIMIT - Math.max(results.rows.length, 1) - (sources ? 1 : 0) - 1;
   const groups = (snapshot.groups ?? []).flatMap((group): ContextBoxGroup[] => {
     if (budget <= 0) return [];
     const rows = group.rows.slice(0, Math.min(CONTEXT_BOX_GROUP_LIMIT, budget)).map(groupRow);
     budget -= Math.max(rows.length, 1);
-    return [{ key: group.key, label: group.label, count: group.count, rows, more: group.count > rows.length }];
+    const rest = group.unfold ? group.rows.slice(rows.length).map(groupRow) : [];
+    return [
+      {
+        key: group.key,
+        label: group.label,
+        count: group.count,
+        rows,
+        more: !rest.length && group.count > rows.length,
+        ...(rest.length ? { rest } : {}),
+      },
+    ];
   });
   return {
-    empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources,
+    // A chat with a project, Skills or memories is not empty, and a box that showed content keeps showing its lines when
+    // the last of it goes, such as a one-off alarm that rang: it never falls back to the empty sentence under the
+    // person's eyes. A reload shows what the chat holds now.
+    empty: !input.filled && snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources && !summary,
     results,
     groups,
     sources,

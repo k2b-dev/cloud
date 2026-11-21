@@ -36,6 +36,7 @@ merged. The fixture catalog is excluded from the published UI build.
 | Notebooks browser print copy uses UI violet for the fourth series | packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts: the Book copy prints the whole note; changes at print time replace the stale copy | Covered |
 | Notes share previews rasterize line and bar charts with the UI palette | pwas/notes/server/preview.test.ts: %s standalone Notes preview rasterizes the UI blue instead of its old private palette | Covered |
 | Line: forecast and first-series band | packages/ui/src/charts/core/line-forecast.test.ts: forecast layout binds ordered bounds to the first series suffix | Covered |
+| Line: hollow points | packages/ui/src/charts/core/line-points.test.ts: points mark every value as a hollow ring in its series colour, above the line, on both line paths | Covered |
 | Line: negative zone | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
 | Line: warning threshold | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
 | Line: labelled today marker | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
@@ -128,7 +129,7 @@ merged. The fixture catalog is excluded from the published UI build.
 | Chat view files | packages/cloud/src/ai/view-block.test.ts: Phase S view files retain their original canonical shape | Covered |
 | Chat groups with linkX | packages/cloud/src/ai/view-block.test.ts: linkX only links line charts with the same kind of x | Covered |
 | Notebooks: print SVG and table | packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts: printing a chart switched to its table prints every row without overlap | Covered |
-| cloud.chart() | packages/assistant/src/artifacts/runtime/cloud-lib.test.ts: chart function formats survive validation and measured redraws | Covered |
+| Chat native charts | packages/assistant/src/chat-code/runtime/views.test.ts: canonical chart forms pass through for every kind including gauge | Covered |
 | Pulse saved chart JSON | packages/pulse/src/frontend/workspace/sql-result-chart.test.ts: adapts the first time column and numeric/Nullable series to Chart line props | Covered |
 | gateway-ops snapshots | packages/gateway-ops/src/frontend/operational-charts.test.ts: snapshots preserve units, missing samples, zero and exact counts | Covered |
 | gateway-ops timelines | packages/gateway-ops/src/observability/jobs/timeline.test.ts: gives a millisecond run a visible width without moving its start | Covered |

@@ -66,6 +66,38 @@ afterEach(() => {
   mock.restore();
 });
 
+test("Project sharing forwards the request locale for list and grant names", async () => {
+  spyOn(aiProjects, "getByShortId").mockResolvedValue({
+    id: projectId,
+    shortId: projectShortId,
+    name: "Project",
+    description: "",
+    icon: "",
+    instructions: "",
+    defaultModel: null,
+    permission: "admin",
+    revision: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  const grant = {
+    id: "aCc234",
+    shortId: "aCc234",
+    principal: { type: "authenticated" as const },
+    permission: "read" as const,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const list = spyOn(aiProjects, "listAccess").mockResolvedValue([grant]);
+  const add = spyOn(aiProjects, "grantAccess").mockResolvedValue(grant);
+  const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate });
+  const headers = { "x-cloud-locale": "de", "content-type": "application/json" };
+  expect((await routes.request(`/${projectShortId}/access`, { headers })).status).toBe(200);
+  const input = { principal: grant.principal, permission: grant.permission };
+  expect((await routes.request(`/${projectShortId}/access`, { headers, method: "POST", body: JSON.stringify(input) })).status).toBe(201);
+  expect(list.mock.calls[0]?.[2]).toBe("de");
+  expect(add.mock.calls[0]?.[3]).toBe("de");
+});
+
 describe("AI Project reference routes", () => {
   test("rejects anonymous reads and mutations before checking project access", async () => {
     const get = spyOn(aiProjects, "getByShortId");

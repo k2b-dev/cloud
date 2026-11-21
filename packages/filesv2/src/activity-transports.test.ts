@@ -291,7 +291,7 @@ test("Assistant history queries use the current user with the original authoriza
   const input = { q: "Old", limit: 2 };
   const list = filesCapabilities.queries["activity.list"];
   const result = await list.run(input, context);
-  expect(result).toEqual({ ok: true, data: { data: page } });
+  expect(result).toEqual({ ok: true, data: { data: page, page: { hasMore: true, nextCursor: "opaque-next" } } });
   expect(calls[0]).toEqual({ method: "activity", call: { ...capabilityCall(context), requestAbort: context.signal }, input });
   expect(list.data.safeParse(page).success).toBe(true);
   expect(await filesCapabilities.queries["activity.chain"].run({ activityId: id }, context)).toEqual({ ok: true, data: { data: chain } });

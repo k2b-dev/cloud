@@ -2,6 +2,9 @@ import { listCapabilities } from "../../_internal/registry";
 import { type AiStoredActionReview, isLegacyActionReview, storedActionReview } from "../../ai/action-review";
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
+import { approvalMessages } from "../../approvals/messages";
+import { presentReview } from "../../capabilities/legacy-review-view";
+import { restoreReviewSnapshot } from "../../capabilities/review-storage";
 import {
   type CapabilityActionPolicy,
   CapabilityActionReviewPresentationSchema,
@@ -22,7 +25,7 @@ import type { PendingApprovalRow } from "./list";
 export type ApprovalActionPolicy = CapabilityActionPolicy | null | undefined;
 const needsPolicy = (row: PendingApprovalRow): boolean => {
   if (row.storedReview && "sentence" in row.storedReview) return true;
-  const review = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  const review = CapabilityActionReviewPresentationSchema.safeParse(presentReview(restoreReviewSnapshot(row.details), true));
   return review.success && "sentence" in review.data;
 };
 /** Reads the registry once for the rows that need their Action's declared policy, as the approvals page does. */
@@ -45,7 +48,7 @@ export const pendingApprovalReview = (
   row: Pick<PendingApprovalRow, "storedReview" | "details">,
   policy?: ApprovalActionPolicy,
 ): AiStoredActionReview | null => {
-  const parsed = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+  const parsed = CapabilityActionReviewPresentationSchema.safeParse(presentReview(restoreReviewSnapshot(row.details), true));
   if (parsed.success && "sentence" in parsed.data)
     return storedActionReview(
       { ...parsed.data, ask: parsed.data.ask ?? (row.storedReview && "sentence" in row.storedReview ? row.storedReview.ask : undefined) },
@@ -56,8 +59,8 @@ export const pendingApprovalReview = (
 
 /**
  * Resolve the recorded question in the language and time zone of its originating turn. A review in the current form
- * carries that turn's language itself, also when the turn records none, such as an inter-chat message; Cloud Login,
- * app approval inboxes, and notifications read it in that language. Pages render the card in their reader's language.
+ * carries that turn's language itself, also when the turn records none; Cloud Login, app approval inboxes, and
+ * notifications read it in that language. Pages render the card in their reader's language.
  */
 export const pendingApprovalCard = (
   row: PendingApprovalRow,
@@ -68,9 +71,18 @@ export const pendingApprovalCard = (
   const runLocale = row.runConfig?.kind === "compact" ? fallbackLocale : (row.runConfig?.locale ?? fallbackLocale);
   const timeZone = row.runConfig?.kind === "compact" ? "UTC" : (row.runConfig?.timeZone ?? "UTC");
   const review = pendingApprovalReview(row, policy);
+  const locale = review && !isLegacyActionReview(review) ? review.locale : runLocale;
   return approvalCard(
-    { sentence: row.sentence, action: row.action, appName: appName(row.appId, runLocale), appIcon: null, review },
-    review && !isLegacyActionReview(review) ? review.locale : runLocale,
+    {
+      sentence: row.sentence,
+      action: row.action,
+      appName: appName(row.appId, runLocale),
+      appIcon: null,
+      review,
+      codeVersion: row.kind === "code_version",
+      ...(row.soleAdmin ? { soleAdminNotice: approvalMessages.resolve([locale]).t.soleAdminNotice } : {}),
+    },
+    locale,
     timeZone,
   );
 };

@@ -16,6 +16,16 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "base.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "dashboard.list": {
           input: { baseId: "ID der Base aus base.list.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Dashboards." },
           title: "Pulse-Dashboards auflisten",
@@ -114,7 +124,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
       actions: {
         "dashboard.save": {
           input: {
-            baseId: "ID der Base aus base.list.",
             dashboardId: "ID des Dashboards aus dashboard.list.",
             expectedRevision: "Aktuelle Revision aus dashboard.read.",
             name: "Name des Dashboards.",
@@ -143,7 +152,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "dashboard.publish": {
           input: {
-            baseId: "ID der Base aus base.list.",
             dashboardId: "ID des Dashboards aus dashboard.list.",
             expectedRevision: "Aktuelle Revision aus dashboard.read.",
             columns: "Genau die geprüften Ausgabespalten pro Panel-ID.",
@@ -153,7 +161,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "dashboard.unpublish": {
           input: {
-            baseId: "ID der Base aus base.list.",
             dashboardId: "ID des Dashboards aus dashboard.list.",
             expectedRevision: "Aktuelle Revision aus dashboard.read.",
           },
@@ -162,7 +169,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "dashboard.delete": {
           input: {
-            baseId: "ID der Base aus base.list.",
             dashboardId: "ID des Dashboards aus dashboard.list.",
             expectedRevision: "Aktuelle Revision aus dashboard.read.",
           },
@@ -179,19 +185,18 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Pulse-Messdaten leeren",
           description:
             "Alle Messdaten löschen; Quellen und Einstellungen bleiben. Braucht Admin-Zugriff, unveränderten Änderungsstand und jedes Mal Freigabe.",
-          input: { baseId: "ID der Base.", expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
+          input: { expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
         },
         "base.delete": {
           title: "Pulse-Base löschen",
           description: "Base, Quellen und Messdaten löschen. Braucht Admin-Zugriff, unveränderten Änderungsstand und jedes Mal Freigabe.",
-          input: { baseId: "ID der Base.", expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
+          input: { expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
         },
         "ingest.write": {
           title: "Pulse-Messdaten schreiben",
           description:
             "Höchstens 192 KiB über eine eigene HTTP-Sendequelle schreiben. Braucht Schreibzugriff und die aktuelle Quellrevision. Nach Freigabe planbar.",
           input: {
-            baseId: "ID der Base.",
             sourceId: "HTTP-Sendequelle, die die aktuelle Zugriffsidentität angelegt hat.",
             expectedRevision: "Aktuelle Revision aus source.read.",
             batch: "Messdaten als Ingest-Batch; gesamte Eingabe höchstens 192 KiB.",
@@ -240,7 +245,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine SQL-Alarmregel anlegen oder ändern. Mindestens 300 Sekunden Prüfintervall und höchstens 100 Schlüssel. Änderungen brauchen die aktuelle Revision. Nach Freigabe planbar.",
           input: {
-            baseId: "ID oder Kennung der Base.",
             ruleId: "ID zum Ändern; zum Anlegen weglassen.",
             expectedRevision: "Aktuelle Revision; beim Ändern erforderlich.",
             name: "Name der Alarmregel.",
@@ -257,7 +261,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Pulse-Alarmregel löschen",
           description: "Eine Alarmregel bei unveränderter Revision löschen. Fragt immer nach Freigabe; Messdaten bleiben erhalten.",
           input: {
-            baseId: "ID oder Kennung der Base.",
             ruleId: "ID aus alert.list.",
             expectedRevision: "Aktuelle Revision; vor dem Löschen lesen.",
           },
@@ -267,7 +270,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Abruf- oder HTTP-Sendequelle nach Freigabe anlegen. Erstellt und zeigt keine Tokens. Die Netzwerkrichtlinie gilt für Abrufe.",
           input: {
-            baseId: "ID aus base.list.",
             kind: "HTTP-Sendequelle oder Metrik-Abrufquelle.",
             name: "Name der Quelle.",
             endpointUrl: "Öffentlicher HTTPS-Endpunkt für Metriken; null bei HTTP-Sendequellen.",
@@ -282,7 +284,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Quelle nach Freigabe bei unveränderter Revision ändern. Kann eine Sendeerwartung setzen; liest und setzt keine Tokens.",
           input: {
-            baseId: "ID aus base.list.",
             sourceId: "ID aus source.list.",
             expectedRevision: "Aktuelle Konfigurationsrevision aus source.read.",
             name: "Neuer Name.",
@@ -299,7 +300,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "SQL in einer beschreibbaren Base speichern. Änderungen brauchen die aktuelle Revision. Planbar, mit Freigabe und Idempotency-Key für sichere Wiederholungen.",
           input: {
-            baseId: "ID oder Kennung der Base.",
             sql: "Lesendes SQL.",
             params: "Parameterwerte.",
             queryId: "ID zum Ändern; zum Anlegen weglassen.",
@@ -312,7 +312,6 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Gespeicherte Pulse-Abfrage löschen",
           description: "Eine Abfrage einer beschreibbaren Base löschen. Fragt immer nach Freigabe; Messdaten bleiben erhalten.",
           input: {
-            baseId: "ID oder Kennung der Base.",
             queryId: "ID aus saved_query.list.",
             expectedRevision: "Aktuelle Revision; vor dem Löschen lesen.",
           },

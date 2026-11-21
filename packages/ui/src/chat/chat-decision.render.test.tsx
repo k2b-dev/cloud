@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { Window } from "happy-dom";
+import { type HTMLInputElement, Window } from "happy-dom";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
@@ -12,7 +12,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-decision-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Chat, ReferenceChip, truncateMiddle, LocaleProvider } = await import("../index");
+const { Chat, ReferenceChip, truncateMiddle } = await import("../index");
 const window = new Window();
 const render = (content: () => JSX.Element) => {
   const body = window.document.createElement("div");
@@ -23,6 +23,8 @@ const noop = () => undefined;
 const decision = (extra: Partial<ChatDecisionProps> = {}) =>
   createComponent(Chat.Decision, {
     state: "open",
+    kind: { label: "Approval", icon: "ti ti-shield-check" },
+    source: { name: "Mail", icon: "ti ti-mail" },
     sentence: "Send the mail?",
     reason: { text: "You asked to review it." },
     confirm: { label: "Send", icon: "ti ti-send", onSelect: noop },
@@ -31,42 +33,91 @@ const decision = (extra: Partial<ChatDecisionProps> = {}) =>
   });
 
 describe("Chat.Decision SSR", () => {
-  test("names and describes its section, orders sentence, reason, preview and answers on the sentence class", () => {
-    const body = render(() => decision({ preview: createComponent(Chat.Preview, { children: "Mail preview" }) }));
+  test("names and describes itself, orders head, sentence, reason, details and answers, in its own AI scope", () => {
+    const body = render(() => decision({ details: { label: "Details from Mail", content: "Mail preview" } }));
     const section = body.querySelector("section")!;
     const sentence = body.querySelector(".k2b-chat-decision__sentence")!;
     const reason = body.querySelector(".k2b-chat-decision__reason")!;
     expect(section.getAttribute("aria-labelledby")).toBe(sentence.id);
     expect(section.getAttribute("aria-describedby")).toBe(reason.id);
+    expect(section.getAttribute("data-k2b-primary")).toBe("ai");
+    expect(section.getAttribute("data-mode")).toBe("approve");
     expect(sentence.getAttribute("tabindex")).toBe("-1");
-    expect(sentence.className).toBe("k2b-chat-decision__sentence");
     expect(Array.from(section.children).map((e) => e.className)).toEqual([
+      "k2b-chat-decision__head",
       "k2b-chat-decision__sentence",
       "k2b-chat-line k2b-chat-decision__reason",
-      "k2b-chat-preview ",
+      "k2b-chat-decision__details",
       "k2b-chat-decision__answers",
     ]);
+    expect(body.querySelector(".k2b-chat-decision__head")!.textContent).toBe("Approval·Mail");
+    expect(body.querySelector(".k2b-chat-decision__details")!.textContent).toBe("Details from MailMail preview");
     expect(reason.getAttribute("data-tone")).toBe("neutral");
     expect(reason.querySelector("i")!.className).toContain("ti-info-circle");
     const buttons = body.querySelectorAll("button");
-    expect(buttons.length).toBe(2);
-    expect(buttons[0]!.textContent).toBe("Send");
-    expect(buttons[0]!.getAttribute("data-variant")).toBe("ai");
-    expect(buttons[0]!.querySelector(".ti-send")).not.toBeNull();
-    expect(buttons[1]!.textContent).toBe("Keep draft");
-    expect(buttons[1]!.querySelector(".ti-x")).not.toBeNull();
+    expect(Array.from(buttons).map((b) => [b.textContent, b.getAttribute("data-variant")])).toEqual([
+      ["Keep draft", "secondary"],
+      ["Send", "ai"],
+    ]);
+    expect(buttons[1]!.querySelector(".ti-send")).not.toBeNull();
     expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();
+  });
+  test("edit mode keeps the box and offers to move on instead of approving", () => {
+    const body = render(() =>
+      decision({ mode: "edit", kind: { label: "Draft", icon: "ti ti-pencil" }, remember: { label: "Remember", onSelect: noop } }),
+    );
+    expect(body.querySelector("section")!.getAttribute("data-mode")).toBe("edit");
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.getAttribute("data-variant"))).toEqual(["text", "secondary"]);
+    // Remembering belongs to the approval, never to a draft.
+    expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();
+  });
+  test("back and the facts of the answer row", () => {
+    const body = render(() =>
+      decision({ back: { label: "Change", onSelect: noop }, meta: [{ text: "Expires in 9 min", icon: "ti ti-clock" }] }),
+    );
+    expect(Array.from(body.querySelectorAll("button")).map((b) => [b.textContent, b.getAttribute("data-variant")])).toEqual([
+      ["Change", "text"],
+      ["Keep draft", "secondary"],
+      ["Send", "ai"],
+    ]);
+    expect(body.querySelector(".k2b-chat-decision__meta")!.textContent).toBe("Expires in 9 min");
+  });
+  test("a frame without decline carries a link, further answers, notes and a toned fact", () => {
+    const body = render(() =>
+      decision({
+        decline: undefined,
+        link: { label: "See everything", href: "/code/1" },
+        more: [{ label: "Withdraw", onSelect: noop }],
+        details: {
+          label: "Details from Code",
+          context: "compared with version 4",
+          content: "Two changes",
+          note: { text: "Cloud checks access, not behaviour." },
+        },
+        notes: [{ text: "The admins know.", icon: "ti ti-bell" }],
+        meta: [{ text: "3 of 3 examples passed", icon: "ti ti-circle-check", tone: "success" }],
+      }),
+    );
+    const answers = Array.from(body.querySelectorAll(".k2b-chat-decision__buttons > *"));
+    expect(answers.map((a) => [a.tagName, a.textContent, a.getAttribute("data-variant")])).toEqual([
+      ["BUTTON", "Withdraw", "secondary"],
+      ["BUTTON", "Send", "ai"],
+      // Reading everything leaves the question, so it comes after the answers.
+      ["A", "See everything", "text"],
+    ]);
+    expect(answers[2]!.getAttribute("href")).toBe("/code/1");
+    // The origin of the details reads bold; what it is compared with follows quietly.
+    expect(body.querySelector(".k2b-chat-decision__details-label strong")!.textContent).toBe("Details from Code");
+    expect(body.querySelector(".k2b-chat-decision__details-context")!.textContent).toBe(" · compared with version 4");
+    expect(body.querySelector(".k2b-chat-decision__details-note")!.textContent).toBe("Cloud checks access, not behaviour.");
+    expect(body.querySelector(".k2b-chat-decision__note")!.textContent).toBe("The admins know.");
+    expect(body.querySelector(".k2b-chat-decision__fact")!.getAttribute("data-tone")).toBe("success");
   });
   for (const tone of ["neutral", "danger", "warning"] as const)
     test(`reason supports ${tone} and an icon override`, () => {
       const body = render(() => decision({ reason: { text: "Reason", tone, icon: "ti ti-shield" } }));
-      expect(body.querySelector("[data-tone]")!.getAttribute("data-tone")).toBe(tone);
+      expect(body.querySelector(".k2b-chat-decision__reason")!.getAttribute("data-tone")).toBe(tone);
       expect(body.querySelector(".k2b-chat-decision__reason i")!.className).toContain("ti-shield");
-    });
-  for (const variant of ["danger", "primary"] as const)
-    test(`confirm supports ${variant}`, () => {
-      const body = render(() => decision({ confirm: { label: "Confirm", variant, onSelect: noop } }));
-      expect(body.querySelector("button")!.getAttribute("data-variant")).toBe(variant);
     });
   test("unavailable replaces the described reason and disables only confirm and remember", () => {
     const body = render(() =>
@@ -81,8 +132,8 @@ describe("Chat.Decision SSR", () => {
     expect(body.textContent).not.toContain("You asked to review it.");
     expect(reason.getAttribute("data-tone")).toBe("warning");
     expect(reason.querySelector(".ti-alert-triangle")).not.toBeNull();
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, false, true]);
-    expect(body.querySelector(".k2b-chat-decision__remember")!.getAttribute("data-variant")).toBe("text");
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([false, true]);
+    expect(body.querySelector<HTMLInputElement>(".k2b-chat-decision__remember input")!.disabled).toBe(true);
   });
   test("waiting replaces every reason and disables every answer until it clears", () => {
     const body = render(() =>
@@ -95,21 +146,28 @@ describe("Chat.Decision SSR", () => {
     const reason = body.querySelector(".k2b-chat-decision__reason")!;
     expect(reason.textContent).toBe("Offline. You can answer again once connected.");
     expect(reason.querySelector(".ti-wifi-off")).not.toBeNull();
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, true, true]);
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, true]);
   });
-  test("remember is an optional enabled quiet answer", () => {
+  test("remember is an optional checkbox in the answer row", () => {
     const body = render(() => decision({ remember: { label: "Remember", onSelect: noop } }));
-    expect(body.querySelectorAll("button").length).toBe(3);
-    expect(body.querySelector(".k2b-chat-decision__remember")!.hasAttribute("disabled")).toBe(false);
+    expect(body.querySelectorAll("button").length).toBe(2);
+    const box = body.querySelector<HTMLInputElement>(".k2b-chat-decision__meta .k2b-chat-decision__remember input")!;
+    expect(box.type).toBe("checkbox");
+    expect(box.disabled).toBe(false);
   });
   for (const state of ["sending", "decided", "expired"] as const)
-    test(`${state} replaces the question with its outcome`, () => {
-      const body = render(() => decision({ state, outcome: "Outcome slot" }));
-      expect(body.firstElementChild!.getAttribute("data-state")).toBe(state);
+    test(`${state} keeps the head with its state and replaces the question with its outcome`, () => {
+      const body = render(() =>
+        decision({ state, outcome: "Outcome slot", status: { label: "Done", icon: "ti ti-circle-check", tone: "done" } }),
+      );
+      const section = body.firstElementChild!;
+      expect(section.getAttribute("data-state")).toBe(state);
+      expect(section.getAttribute("aria-label")).toBe("Approval · Mail: Done");
       // Busy belongs to the outcome's words; a busy ancestor would hold back its live region.
-      expect(body.firstElementChild!.hasAttribute("aria-busy")).toBe(false);
-      expect(body.textContent).toBe("Outcome slot");
-      expect(body.querySelector("button, section")).toBeNull();
+      expect(section.hasAttribute("aria-busy")).toBe(false);
+      expect(body.querySelector(".k2b-chat-decision__status")!.textContent).toBe("Done");
+      expect(body.textContent).toBe("Approval·MailDoneOutcome slot");
+      expect(body.querySelector("button")).toBeNull();
     });
 });
 
@@ -166,103 +224,6 @@ describe("Chat.Outcome SSR", () => {
     expect(entries[1]!.querySelector(".k2b-chat-outcome__actions")!.textContent).toBe("Hidden controls");
     expect(body.querySelector(".k2b-chat-outcome__icon i")!.className).toBe("ti ti-mail");
   });
-});
-
-for (const [locale, added, removed] of [
-  ["en", "new:", "removed:"],
-  ["de", "neu:", "weg:"],
-] as const)
-  test(`Preview parts and localized marks in ${locale}`, () => {
-    const body = render(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          return createComponent(Chat.Preview, {
-            get children() {
-              return [
-                createComponent(Chat.Preview.Header, {
-                  rows: [
-                    {
-                      label: "To",
-                      people: [{ name: "Lea", address: "lea@example.test" }, { address: "tom@example.test" }],
-                      value: "and others",
-                    },
-                    { label: "Bcc", emphasis: true, value: "Hidden recipient" },
-                  ],
-                  note: "Sends now",
-                }),
-                createComponent(Chat.Preview.Title, { children: "Mail title", meta: "Draft" }),
-                createComponent(Chat.Preview.Sentence, { children: "Every Friday" }),
-                createComponent(Chat.Preview.Excerpt, { children: "Hello\nThe complete draft" }),
-                createComponent(Chat.Preview.ReadMore, { href: "/draft/1", title: "This version", children: "Read draft" }),
-                createComponent(Chat.Preview.Line, { icon: "ti ti-file", accent: "red", meta: "12 KB", children: "Attachment" }),
-                createComponent(Chat.Preview.Lines, {
-                  label: "Consequences",
-                  get children() {
-                    return [
-                      createComponent(Chat.Preview.Line, { icon: "ti ti-plus", mark: "added", children: "Sends mail" }),
-                      createComponent(Chat.Preview.Line, { icon: "ti ti-minus", mark: "removed", tone: "muted", children: "Old rule" }),
-                      createComponent(Chat.Preview.Line, { icon: "ti ti-alert-triangle", tone: "warning", children: "Outside content" }),
-                    ];
-                  },
-                }),
-                createComponent(Chat.Preview.People, { people: [{ name: "Lea" }, { name: "Tom" }], children: "Lea and Tom" }),
-                createComponent(Chat.Mark, { change: "added", children: "New words" }),
-                createComponent(Chat.Mark, { change: "removed", children: "Old words" }),
-              ];
-            },
-          });
-        },
-      }),
-    );
-    expect(body.querySelector("dt")!.textContent).toBe("To");
-    expect(body.querySelector("dd b")!.textContent).toBe("Lea");
-    expect(body.querySelector("dd")!.textContent).toContain(", tom@example.test");
-    expect(body.querySelector('[data-emphasis="true"] dt')!.textContent).toBe("Bcc");
-    expect(body.querySelector('[data-alone="true"]')!.textContent).toBe("tom@example.test");
-    expect(body.querySelector(".k2b-chat-preview__header > p")!.textContent).toBe("Sends now");
-    expect(body.querySelector(".k2b-chat-preview__title")!.textContent).toBe("Mail title");
-    expect(body.querySelector(".k2b-chat-preview__title-line .k2b-chat-preview__meta")!.textContent).toBe("Draft");
-    expect(body.querySelector(".k2b-chat-preview__sentence")!.textContent).toBe("Every Friday");
-    expect(body.querySelector(".k2b-chat-preview__excerpt")!.textContent).toBe("Hello\nThe complete draft");
-    const link = body.querySelector("a")!;
-    expect([link.getAttribute("href"), link.title, link.textContent]).toEqual(["/draft/1", "This version", "Read draft"]);
-    const attachment = body.querySelector("p.k2b-chat-preview__line")!;
-    expect(attachment.querySelector("i")!.getAttribute("style")).toContain("color:red");
-    expect(attachment.querySelector(".k2b-chat-preview__meta")!.textContent).toBe("12 KB");
-    expect(body.querySelectorAll('ul[aria-label="Consequences"] > li').length).toBe(3);
-    expect(body.querySelector('li[data-tone="muted"] .k2b-chat-mark[data-change="removed"]')).not.toBeNull();
-    expect(body.querySelector('li:not([data-tone]) .k2b-chat-mark[data-change="added"] .k2b-sr-only')!.textContent).toBe(`${added} `);
-    expect(body.querySelector('li[data-tone="muted"] .k2b-chat-mark .k2b-sr-only')!.textContent).toBe(`${removed} `);
-    expect(body.querySelector('li[data-tone="warning"] .k2b-chat-mark')!.hasAttribute("data-change")).toBe(false);
-    expect(body.querySelector('li[data-tone="warning"]')!.textContent).toBe("Outside content");
-    expect(body.querySelectorAll("mark .k2b-sr-only").length).toBe(1);
-    for (const word of body.querySelectorAll("mark .k2b-sr-only")) expect(word.textContent).toBe(`${added} `);
-    for (const word of body.querySelectorAll("del .k2b-sr-only")) expect(word.textContent).toBe(`${removed} `);
-    const faces = body.querySelector(".k2b-chat-preview__faces")!;
-    expect(faces.getAttribute("aria-hidden")).toBe("true");
-    expect(faces.querySelectorAll(".k2b-avatar").length).toBe(2);
-    expect(faces.nextElementSibling!.textContent).toBe("Lea and Tom");
-  });
-
-test("an excerpt without a page of its own shows the rest in place", () => {
-  const body = render(() => [
-    createComponent(Chat.Preview.Excerpt, { id: "body-1", children: "One\nTwo\nThree\nFour" }),
-    createComponent(Chat.Preview.ShowAll, { controls: "body-1", onShow: () => undefined, children: "Read it all" }),
-    createComponent(Chat.Preview.Excerpt, { id: "body-2", expanded: true, children: "Shown whole" }),
-  ]);
-  const [closed, open] = body.querySelectorAll(".k2b-chat-preview__excerpt");
-  expect(closed!.hasAttribute("data-expanded")).toBe(false);
-  expect(closed!.hasAttribute("tabindex")).toBe(false);
-  // A shown text takes the focus from the button that leaves, so reading goes on there.
-  expect([open!.getAttribute("data-expanded"), open!.getAttribute("tabindex")]).toEqual(["true", "-1"]);
-  const button = body.querySelector("button.k2b-chat-preview__more")!;
-  expect([
-    button.getAttribute("type"),
-    button.getAttribute("aria-controls"),
-    button.getAttribute("aria-expanded"),
-    button.textContent,
-  ]).toEqual(["button", "body-1", "false", "Read it all"]);
 });
 
 describe("ReferenceChip", () => {

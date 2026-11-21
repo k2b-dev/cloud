@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { buildAiCapabilityCatalog, buildAiToolCatalog, searchAiTools } from "../packages/cloud/src/ai/capabilities";
 import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "../packages/cloud/src/capabilities/testing";
+import { generateCodeSdk } from "../packages/cloud/src/code/generator";
 import {
   type CapabilityDefinitions,
   type CapabilityManifest,
   CapabilityManifestSchema,
 } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
+import { filesCapabilities } from "../packages/filesv2/src/capabilities";
 import { gridsCapabilities } from "../packages/grids/src/capabilities";
 import { mailCapabilities } from "../packages/mail/src/capabilities";
 import { notebooksCapabilities } from "../packages/notebooks/src/capabilities";
@@ -122,6 +124,20 @@ describe("Capability v2 provider conformance", () => {
     });
   }
 
+  test("Mail status aliases remain in the manifest while only the set paths appear in the SDK", () => {
+    const manifest = compileCapabilityManifest("mail", mailCapabilities);
+    const sdk = generateCodeSdk([manifest], { mode: "personal" });
+    for (const suffix of ["", ".batch"]) {
+      const alias = `conversation.status.update${suffix}`;
+      const preferred = `conversation.status.set${suffix}`;
+      expect(manifest.actions.find((operation) => operation.localId === alias)?.code).toBe(false);
+      expect(manifest.actions.some((operation) => operation.localId === preferred)).toBe(true);
+      expect(sdk.manifest.omitted).toContainEqual(expect.objectContaining({ capability: `mail.${alias}`, reason: "code_false" }));
+      expect(sdk.manifest.operations.some((operation) => operation.capability === `mail.${preferred}`)).toBe(true);
+      expect(sdk.manifest.operations.some((operation) => operation.capability === `mail.${alias}`)).toBe(false);
+    }
+  });
+
   test("required-idempotency Actions remain an explicit inventory", () => {
     const required = providers.flatMap(({ appId, definitions }) =>
       compileCapabilityManifest(appId, definitions).actions.flatMap((action) =>
@@ -154,6 +170,8 @@ describe("Capability v2 provider conformance", () => {
       "mail.conversation.summary.write",
       "mail.delivery.cancel",
       "mail.draft.attachment.add",
+      // A retry must reuse the durable reservation and cannot attach a second copy.
+      "mail.draft.attachment.import.v1",
       "mail.draft.attachment.remove",
       "mail.draft.create",
       "mail.draft.discard",
@@ -200,6 +218,23 @@ describe("Capability v2 provider conformance", () => {
       "weather.location.create",
       "weather.location.delete",
     ]);
+    // Files was not a frozen v2 provider. Inventory its write-stream adapters and existing mutations explicitly too.
+    // Their required keys preserve upload/versioning receipts when an answer is lost, including file.save.v1.
+    expect(
+      compileCapabilityManifest("filesv2", filesCapabilities)
+        .actions.filter((action) => action.idempotency === "required")
+        .map((action) => action.localId),
+    ).toEqual([
+      "content.create",
+      "entry.copy",
+      "entry.move",
+      "entry.rename",
+      "entry.trash",
+      "file.save.v1",
+      "folder.create",
+      "provider.save",
+      "trash.restore",
+    ]);
   });
 });
 
@@ -220,7 +255,7 @@ describe("Capability v2 Assistant discovery", () => {
     ["find contact by name", "contacts", "contacts.contact.search"],
     ["list address books", "contacts", "contacts.book.list"],
     ["create a contact", "contacts", "contacts.contact.create"],
-    ["read message plain text", undefined, "mail.message.read-content"],
+    ["read message plain text", undefined, "mail.message.content.read"],
     ["mark email unread", "mail", "mail.conversation.mark"],
     ["send draft email", "mail", "mail.draft.send"],
     ["search messages", "mail", "mail.search"],

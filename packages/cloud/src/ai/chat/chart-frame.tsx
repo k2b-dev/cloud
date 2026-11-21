@@ -6,7 +6,10 @@ import {
   type createChartCursor,
   useLocale,
 } from "@k2b/ui";
+import { chartSvgWithUiPalette } from "@k2b/ui/charts/core";
 import type { JSX } from "solid-js";
+import { BlockActions, useBlockFrame, useBlockIsLarge } from "../../blocks/block-actions";
+import { blockFileName, chartImage, saveBlob } from "../../blocks/block-copy";
 import type { CloudAiChartRow, CloudAiChartTable } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
 import { aiChatMessages } from "./messages";
@@ -41,6 +44,14 @@ export function ChartFrame(props: {
   height?: number;
 }) {
   const locale = useLocale();
+  // In a chat answer the frame owns the head's controls: Copy as a picture and Maximize, no view switcher.
+  const frame = useBlockFrame();
+  const large = useBlockIsLarge();
+  const picture = () => {
+    const drawn = props.chart?.snapshot;
+    if (!drawn?.svg) throw new Error("No drawing");
+    return chartImage(chartSvgWithUiPalette(drawn.svg), { width: drawn.width, height: drawn.height });
+  };
   const columns = () =>
     props.chart
       ? props.chart.table.columns.map(
@@ -58,7 +69,8 @@ export function ChartFrame(props: {
     <ChartExplorer
       title={props.title}
       headingLevel={props.nested ? 4 : 3}
-      description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
+      // The island's head draws the subtitle in its quiet step; a colour here would outrank it.
+      description={props.subtitle}
       height={
         props.height !== undefined && props.height > 280
           ? `min(40rem, max(${chartHeight(props.kind)}, ${props.height}px))`
@@ -73,6 +85,20 @@ export function ChartFrame(props: {
       empty={props.empty}
       renderDetails={false}
       class={props.nested ? "[&_h4]:text-sm!" : undefined}
+      // In an answer the head carries Copy and Maximize only (Feinschliff v3 §5). Drawn large, the chart gets the
+      // explorer's own controls back, so its rows stay one switch away as a table; the Lightbox copies the picture.
+      headerControls={frame && !large ? "owner" : "explorer"}
+      actions={
+        frame && !large ? (
+          <BlockActions
+            kind="chart"
+            name={props.title}
+            copy={() => ({ image: picture })}
+            download={async () => saveBlob(await picture(), blockFileName(props.title, "png"))}
+            content={() => <ChartFrame {...props} />}
+          />
+        ) : undefined
+      }
     />
   );
 }

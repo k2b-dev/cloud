@@ -25,8 +25,12 @@ export const machineStorageApi = new Hono<AuthContext>()
     "/:id/grants",
     middleware.openapi({ summary: "Read storage path grants", ...requiresAdmin }),
     id,
-    v("query", z.object({ after: z.string().uuid().optional() })),
-    async (c) => respond(c, ok(await service.storageGrants(requestCall(c), c.req.valid("param").id, c.req.valid("query").after))),
+    // `accounts=code` lists only Code service accounts, `other` everyone else, so each section pages on its own.
+    v("query", z.object({ after: z.string().uuid().optional(), accounts: z.enum(["code", "other"]).optional() })),
+    async (c) => {
+      const query = c.req.valid("query");
+      return respond(c, ok(await service.storageGrants(requestCall(c), c.req.valid("param").id, query.after, query.accounts)));
+    },
   )
   .post(
     "/:id/grants",

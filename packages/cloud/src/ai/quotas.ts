@@ -57,15 +57,16 @@ export const aiQuotas = {
     const pricedModels = new Set(
       (context?.state ?? (await readAiSettingsState())).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId),
     );
-    const matches = buildAccessPrincipalCondition({
-      subject,
-      columns: {
-        userId: sql`NULLIF(g->'principal'->>'userId','')::uuid`,
-        groupId: sql`NULLIF(g->'principal'->>'groupId','')::uuid`,
-        serviceAccountId: sql`NULLIF(g->'principal'->>'serviceAccountId','')::uuid`,
-        authenticatedOnly: sql`(g->'principal'->>'type'='authenticated')`,
-      },
-    });
+    const matches = () =>
+      buildAccessPrincipalCondition({
+        subject,
+        columns: {
+          userId: sql`NULLIF(g->'principal'->>'userId','')::uuid`,
+          groupId: sql`NULLIF(g->'principal'->>'groupId','')::uuid`,
+          serviceAccountId: sql`NULLIF(g->'principal'->>'serviceAccountId','')::uuid`,
+          authenticatedOnly: sql`(g->'principal'->>'type'='authenticated')`,
+        },
+      });
     const balances: AiQuotaSnapshot["balances"] = [];
     for (const rule of config.rules.filter((r) => !model || r.scope === "*" || r.scope === model)) {
       const grants = await db<
@@ -77,7 +78,7 @@ export const aiQuotas = {
         LEFT JOIN auth.users u ON u.id=NULLIF(g->'principal'->>'userId','')::uuid
         LEFT JOIN auth.groups gr ON gr.id=NULLIF(g->'principal'->>'groupId','')::uuid
         LEFT JOIN auth.service_accounts sa ON sa.id=NULLIF(g->'principal'->>'serviceAccountId','')::uuid
-        WHERE ${matches}`;
+        WHERE ${matches()}`;
       const limit = grants.some((g) => g.limit === null) ? null : Math.max(0, ...grants.map((g) => g.limit ?? 0));
       const window = quotaWindow(rule.anchor, rule.hours, now);
       const [counts] = await db<{ input: number; output: number; used: number; unknown: number; estimated: number }[]>`
@@ -120,15 +121,15 @@ export const aiQuotas = {
       GROUP BY model_profile_id ORDER BY model_profile_id`;
     return { enabled: config.enabled, unit: config.unit ?? "EUR", balances, usage };
   },
-  async assertAllowed(subject: AccessSubject, variantId: string, providedState?: AiSettingsState) {
-    const state = providedState ?? (await readAiSettingsState());
+  async assertAllowed(subject: AccessSubject, variantId: string, providedState?: AiSettingsState, db?: SQL) {
+    const state = providedState ?? (await readAiSettingsState(db));
     const profile = state.profiles.find((profile) => profile.id === variantId);
     if (!profile || !hasBillableAiPricing(profile.pricing)) return false;
     const model = profile.modelId;
     // Fast default path: no additional identity/usage queries on unrestricted installations.
-    const config = await aiQuotas.config();
+    const config = await aiQuotas.config(db);
     if (!config.enabled || !config.rules.some((r) => r.scope === "*" || r.scope === model)) return false;
-    const snapshot = await aiQuotas.snapshot(subject, model, undefined, undefined, { state, config });
+    const snapshot = await aiQuotas.snapshot(subject, model, undefined, db, { state, config });
     for (const b of snapshot.balances) {
       if (b.bypassed || b.limit === null) continue;
       if (b.unknown)

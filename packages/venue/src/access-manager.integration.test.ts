@@ -76,6 +76,26 @@ suite("Venue keeps a manager", () => {
     expectLastManager(await venueService.access.revoke(venueId, second.access, second));
   });
 
+  test("ordinary venue sharing switches Code View/Edit and refuses Manage", async () => {
+    const venueId = await insertVenue();
+    const manager = await bindAdmin(venueId, "user");
+    const codeId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${codeId}::uuid, ${`code:venue:${venueId}`}, 'code')`;
+    created.serviceAccounts.push(codeId);
+    const createdGrant = await venueService.access.grant(venueId, { type: "service_account", serviceAccountId: codeId }, "read", manager);
+    expect(createdGrant.ok).toBe(true);
+    if (!createdGrant.ok) throw new Error(createdGrant.error.message);
+    const access = createdGrant.data;
+    for (const permission of ["read", "write"] as const) {
+      expect((await venueService.access.update(venueId, access.id, permission, manager)).ok).toBe(true);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id = ${access.id}::uuid`).toEqual([
+        { permission },
+      ]);
+    }
+    expect(await venueService.access.update(venueId, access.id, "admin", manager)).toMatchObject({ ok: false, error: { status: 400 } });
+    expect((await venueService.access.revoke(venueId, access.id, manager)).ok).toBe(true);
+  });
+
   test("of two managers removing themselves at once, exactly one succeeds", async () => {
     const venueId = await insertVenue();
     const first = await bindAdmin(venueId, "user");

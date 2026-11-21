@@ -117,6 +117,26 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "notebook.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
+        "note.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "notebook.containers": {
           title: "Diskussionsorte auflisten",
           doneTitle: "Diskussionsorte aufgelistet",
@@ -577,7 +597,6 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch, aus Inhalt oder aus einer templateId von template.list.",
           input: {
-            notebookId: "Beschreibbares Notizbuch ID.",
             parentId: "Optionale Elternnotiz ID im selben Notizbuch.",
             position:
               "Optionale 0-basierte Position; Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge. Ohne Position folgt die Notiz dem Ordnungsmodus der Ebene.",

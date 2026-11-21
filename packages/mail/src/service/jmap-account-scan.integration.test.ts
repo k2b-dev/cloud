@@ -2,8 +2,6 @@ import { afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } 
 import { sql } from "@k2b/cloud";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
-import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
-import * as workflowStore from "@k2b/cloud/workflows/store";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -73,7 +71,6 @@ const message = (
 suite("JMAP account scan", () => {
   let source: Awaited<ReturnType<typeof setup>>;
   let live: ReturnType<typeof spyOn<typeof mailLive, "wake">>;
-  let workflow: ReturnType<typeof spyOn<typeof workflowStore, "notifyWorkflowWorker">>;
   beforeAll(async () => {
     // The integration runner owns this file's disposable database.
     await migrate();
@@ -83,7 +80,6 @@ suite("JMAP account scan", () => {
     setSystemTime(at);
     createAppEventTestHarness("mail", mailCapabilities);
     live = spyOn(mailLive, "wake").mockImplementation(() => {});
-    workflow = spyOn(workflowStore, "notifyWorkflowWorker").mockImplementation(() => {});
     source = await setup();
   });
   afterEach(async () => {
@@ -91,7 +87,6 @@ suite("JMAP account scan", () => {
       await source?.f.close();
     } finally {
       live?.mockRestore();
-      workflow?.mockRestore();
       setSystemTime();
     }
   });
@@ -152,46 +147,6 @@ suite("JMAP account scan", () => {
       throw error;
     }
   }
-  async function listen() {
-    const definition = await workflowStore.createWorkflow({
-      appId: "mail",
-      scopeId: source.mailboxId,
-      key: "jmap-scan-arrival",
-      name: "JMAP scan arrival fixture",
-      author: { kind: "system" },
-    });
-    await sql<[]>`INSERT INTO mail.workflow_profile (id, mailbox_id, enabled)
-      VALUES (${definition.id}::uuid, ${source.mailboxId}::uuid, true)`;
-    const plan: WorkflowBoundPlan = {
-      schemaVersion: 2,
-      languageId: "mail",
-      languageVersion: 1,
-      sourceHash: "a".repeat(64),
-      manifestHash: "b".repeat(64),
-      catalogHash: "c".repeat(64),
-      actionPolicies: {},
-      inputs: [],
-      triggers: [],
-      steps: [],
-      bindings: {},
-    };
-    await workflowStore.publishWorkflowVersion({
-      workflowId: definition.id,
-      source: "steps: []\n",
-      plan,
-      activations: [{ key: "received", eventType: "mail.messageReceived" }],
-      activate: true,
-      author: { kind: "system" },
-    });
-  }
-  const workflowRows = async () => {
-    const [row] = await sql<{ events: number; deliveries: number }[]>`SELECT
-      (SELECT count(*)::int FROM workflows.event WHERE app_id = 'mail' AND scope_id = ${source.mailboxId}) AS events,
-      (SELECT count(*)::int FROM workflows.event_delivery delivery JOIN workflows.event event ON event.id = delivery.event_id
-        WHERE event.app_id = 'mail' AND event.scope_id = ${source.mailboxId}) AS deliveries`;
-    if (!row) throw new Error("workflow: missing aggregate");
-    return row;
-  };
   const storedState = async () => {
     const [row] = await sql<
       { sync_state: unknown }[]
@@ -419,7 +374,6 @@ suite("JMAP account scan", () => {
   }
 
   test("scan: the plan race with N=3 ends with scan = null and the server's projection", async () => {
-    await listen();
     for (const [id, at] of [
       ["A", "10"],
       ["B", "09"],
@@ -484,7 +438,6 @@ suite("JMAP account scan", () => {
     expect(await projection(), "race: projection equals the server").toEqual(serverProjection());
     expect(await scanOf(), "race: no scan left").toBeNull();
     expect(await counts(), "race: X, Y and Z each arrived once, through the delta").toMatchObject({ receipts: 3, hydration: 0 });
-    expect(await workflowRows(), "race: one durable trigger each").toEqual({ events: 3, deliveries: 3 });
     expect(
       (await runs()).filter((run) => run.state !== "completed"),
       "race: yielding steps leave no failed run",
@@ -492,7 +445,6 @@ suite("JMAP account scan", () => {
   });
 
   test("scan: mail after the start, scan before the delta: the scan yields and the mail arrives exactly once", async () => {
-    await listen();
     put(message("OLD", "10"));
     await startScan();
     await setScan({ restarts: 2 });
@@ -506,12 +458,10 @@ suite("JMAP account scan", () => {
     expect(await counts(), "delta: one arrival").toMatchObject({ contents: 1, receipts: 1 });
     await scanToEnd();
     expect(await counts(), "scan: still one arrival").toMatchObject({ contents: 2, receipts: 1 });
-    expect(await workflowRows(), "scan: one durable trigger").toEqual({ events: 1, deliveries: 1 });
     expect(await projection(), "scan: projection equals the server").toEqual(serverProjection());
   });
 
   test("start: repair keeps the Email state and takes the mailbox state from the snapshot", async () => {
-    await listen();
     put(message("OLD", "10"));
     await startScan();
     await scanToEnd();
@@ -530,7 +480,6 @@ suite("JMAP account scan", () => {
     expect(await counts(), "repair: M1 and M2 arrive once each").toMatchObject({ receipts: 2 });
     await scanToEnd();
     expect(await counts(), "repair: the scan adds no arrival").toMatchObject({ contents: 3, receipts: 2 });
-    expect(await workflowRows(), "repair: two durable triggers").toEqual({ events: 2, deliveries: 2 });
     expect(await projection(), "repair: projection equals the server").toEqual(serverProjection());
   });
 
@@ -665,7 +614,6 @@ suite("JMAP account scan", () => {
   });
 
   test("scan: known mail is brought to the read state without an arrival", async () => {
-    await listen();
     put(message("MOVED", "10"));
     put(message("SECOND", "09"));
     put(message("FLAGGED", "08"));
@@ -695,7 +643,6 @@ suite("JMAP account scan", () => {
       "known: one content per Email ID",
     ).toBeTrue();
     expect(await counts(), "known: no arrival").toMatchObject({ contents: 3, receipts: 0 });
-    expect(await workflowRows(), "known: no trigger").toEqual({ events: 0, deliveries: 0 });
   });
 
   test("scan: restarts count, the limit stalls without fence or network, and the scan resumes after the pause", async () => {
@@ -742,7 +689,6 @@ suite("JMAP account scan", () => {
   });
 
   test("scan: idle without a scan, and neither scan nor verify pass ever receives", async () => {
-    await listen();
     const token = await fenceToken();
     expect(await step(), "idle: uninitialized").toEqual({ status: "idle" });
     expect(await fenceToken(), "idle: no fence").toBe(token);
@@ -761,8 +707,6 @@ suite("JMAP account scan", () => {
     await scanToEnd();
     expect(await scanOf(), "no arrival: scan complete").toBeNull();
     expect(await counts(), "no arrival: five mails, still one receipt").toMatchObject({ contents: 5, receipts: 1 });
-    expect(await workflowRows(), "no arrival: one durable trigger").toEqual({ events: 1, deliveries: 1 });
-    expect(workflow, "no arrival: the delta's wake only").toHaveBeenCalledTimes(1);
     expect(await step(), "idle: after the verify pass").toEqual({ status: "idle" });
   });
 
