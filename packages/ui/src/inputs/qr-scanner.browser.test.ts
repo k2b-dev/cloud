@@ -42,9 +42,10 @@ type Detector = "none" | "empty" | "reject" | "transient" | "broken";
 type Camera = "fake" | "code" | "turning" | "rear-overconstrained" | "NotReadableError" | "NotAllowedError" | "NotFoundError";
 /**
  * How play() ends: as usual, refused once, as WebKit may refuse it without a gesture, or twice never, as a player that
- * stalls on the stream and once more after "Try again".
+ * stalls on the stream and once more after "Try again". Or it resolves, and the player stops at its first picture until
+ * the stream is attached again, as Playwright's WebKit did with 8 of 400 canvas streams (#3421).
  */
-type Play = "normal" | "refuse" | "hang";
+type Play = "normal" | "refuse" | "hang" | "freeze";
 type Calls = { results: string[]; errors: string[]; stops: number };
 type Probe = {
   scanner: Calls;
@@ -56,6 +57,8 @@ type Probe = {
   media: string[];
   /** Where "Try again" sat each time it appeared, read as it was inserted. */
   retryPlaces: { x: number; y: number }[];
+  /** How often a stream was attached to the preview. */
+  attaches: number;
 };
 
 /**
@@ -110,11 +113,34 @@ function stubDevice({
       },
     );
   };
+  probe.attaches = 0;
+  const srcObject = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "srcObject")!;
+  Object.defineProperty(HTMLMediaElement.prototype, "srcObject", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      return srcObject.get!.call(this);
+    },
+    set(this: HTMLMediaElement, value: MediaProvider | null) {
+      if (value) probe.attaches++;
+      srcObject.set!.call(this, value);
+    },
+  });
+  if (play === "freeze") {
+    // The first stream shows its first picture and no other: frame callbacks wait until the stream is attached again.
+    const request = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    HTMLVideoElement.prototype.requestVideoFrameCallback = function (this: HTMLVideoElement, callback: VideoFrameRequestCallback) {
+      const held: VideoFrameRequestCallback = (now, metadata) => {
+        if (probe.attaches < 2) request.call(this, held);
+        else callback(now, metadata);
+      };
+      return request.call(this, held);
+    };
+  }
   probe.detects = 0;
   probe.requests = [];
   probe.codeVisible = false;
   probe.turned = false;
-  if (play !== "normal") {
+  if (play === "refuse" || play === "hang") {
     const original = HTMLMediaElement.prototype.play;
     let failures = play === "refuse" ? 1 : 2;
     // Such a player does not start the picture by itself either, which WebKit does for autoplay.
@@ -437,6 +463,22 @@ describe("@k2b/ui QrScanner in a browser", () => {
       }
     }, 30_000);
   }
+
+  test("starts a camera picture again by itself when the player freezes on its first picture, then reads the code", async () => {
+    const page = await open({ detector: "none", camera: "code", play: "freeze", styled: true });
+    try {
+      await settled(page);
+      expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
+      // The scanner attached the stream once more without asking; "Try again" never appeared.
+      const restart = await page.evaluate(() => {
+        const { attaches, retryPlaces } = globalThis as unknown as Probe;
+        return { attaches, retryPlaces };
+      });
+      expect(restart).toEqual({ attaches: 2, retryPlaces: [] });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   test("keeps the scan frame centred on the picture when the camera turns with the device, then reads the code", async () => {
     const page = await open({ detector: "none", camera: "turning" });

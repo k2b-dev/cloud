@@ -1,10 +1,10 @@
-import type { FormatSpec } from "../../../contracts";
+import type { BarcodeFormat } from "../../../barcode-values";
 
-export { barcodeSvgForCell, barcodeUrl, barcodeValueText, canRenderBarcode } from "../../../barcode-rendering";
+export { barcodeUrl, barcodeValueText, canRenderBarcode } from "../../../barcode-values";
 
-type BarcodeFormat = Extract<FormatSpec, { kind: "barcode" }>;
+export type BarcodeSize = "table" | "detail";
 
-export const barcodeSvgForDisplay = (svg: string, format: BarcodeFormat, size: "table" | "detail") => {
+export const barcodeSvgForDisplay = (svg: string, format: BarcodeFormat, size: BarcodeSize) => {
   const isQr = format.bcid === "qrcode";
   const svgStyle =
     size === "detail"
@@ -16,3 +16,7 @@ export const barcodeSvgForDisplay = (svg: string, format: BarcodeFormat, size: "
         : "display:block;height:2.25rem;width:auto;max-width:10rem;";
   return svg.replace("<svg ", `<svg style="${svgStyle}" `);
 };
+
+/** Names one drawing in the server markup, so the browser can show it again before its drawing code has loaded. */
+export const barcodeKey = (text: string, format: BarcodeFormat, size: BarcodeSize) =>
+  `${size}:${format.bcid}:${format.showText ? 1 : 0}:${text}`;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { BarcodeRenderError, barcodeDataUrl, renderBarcodeSvg } from "./barcode-rendering";
+import { barcodeDataUrl, renderBarcodeSvg } from "./barcode-rendering";
+import { BarcodeRenderError } from "./barcode-values";
 
 const code128Format = { kind: "barcode", bcid: "code128", showText: true } as const;
 const qrFormat = { kind: "barcode", bcid: "qrcode" } as const;

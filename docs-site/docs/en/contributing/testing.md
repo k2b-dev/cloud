@@ -437,6 +437,13 @@ No commit with an open document request points to the server or network.
 A commit with an open subresource points to that request. A silent main
 thread after a commit points to a blocked page; see
 [When a WebKit page stops answering](#when-a-webkit-page-stops-answering).
+A probe that answers adds the page timing of the document it reached, named by
+that document's address: when its response ended, when DOMContentLoaded and
+load started, and its age, all from the document's navigation start. Before a
+commit, WebKit answers from the previous document, so the timing is that
+document's. A late DOMContentLoaded or load points to a slow or busy page. An
+early one that the diagnosis reports as not fired points to an event the test
+did not receive ([#3836](https://github.com/k2b-dev/cloud/issues/3836)).
 Before a commit, Chromium holds the probe until the navigation ends, so there
 silence alone proves nothing.
 A failed request with `WebKit encountered an internal error` adds a hint; see
