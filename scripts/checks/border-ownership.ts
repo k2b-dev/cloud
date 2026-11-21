@@ -40,7 +40,11 @@ const lineOf = (source: string, index: number) => source.slice(0, index).split("
 
 /** The block class a selector part ends on, such as `k2b-paper` in `.k2b-ui .k2b-paper[data-x]:hover`. */
 const rootBlock = (part: string): string | undefined => {
-  const last = part.trim().split(/[\s>+~]+/).at(-1) ?? "";
+  const last =
+    part
+      .trim()
+      .split(/[\s>+~]+/)
+      .at(-1) ?? "";
   if (/::?(?:before|after)|:(?:first|last|nth)-/.test(last)) return undefined;
   const classes = [...last.matchAll(/\.(k2b-[\w-]+)/g)].map((match) => match[1]!);
   const block = classes.at(-1);

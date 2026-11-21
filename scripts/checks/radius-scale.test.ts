@@ -7,12 +7,7 @@ import { onScale, rule, utilityOnScale } from "./radius-scale";
 test("accepts the five K4 values and radius tokens only", () => {
   for (const value of ["0", "4px", "0.25rem", "8px", ".5rem", "14px", "9999px", "999px", "50%", "var(--k2b-radius-control)"])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: true });
-  for (const value of [
-    "var(--k2b-radius-mark) var(--k2b-radius-mark) 0 0",
-    "var(--ui-radius-frame, 14px)",
-    "inherit",
-    "8px !important",
-  ])
+  for (const value of ["var(--k2b-radius-mark) var(--k2b-radius-mark) 0 0", "var(--ui-radius-frame, 14px)", "inherit", "8px !important"])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: true });
   for (const value of [
     "6px",

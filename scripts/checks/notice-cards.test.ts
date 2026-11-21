@@ -92,5 +92,10 @@ test("reports a frame around a notice that is its only child (K10, K14)", async 
         "</>);",
       ].join("\n"),
     ),
-  ).toEqual(["packages/demo/src/Panel.tsx:2", "packages/demo/src/Panel.tsx:3", "packages/demo/src/Panel.tsx:7", "packages/demo/src/Panel.tsx:8"]);
+  ).toEqual([
+    "packages/demo/src/Panel.tsx:2",
+    "packages/demo/src/Panel.tsx:3",
+    "packages/demo/src/Panel.tsx:7",
+    "packages/demo/src/Panel.tsx:8",
+  ]);
 });
