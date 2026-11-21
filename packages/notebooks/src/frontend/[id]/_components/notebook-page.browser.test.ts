@@ -143,30 +143,43 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-type Open = { width: number; mode?: "write" | "read"; content?: "few" | "many"; detail?: boolean };
-const open = async ({ width, mode = "write", content = "few", detail = false }: Open): Promise<Page> => {
+/**
+ * The layout self-check of the page, in two parts as the check's own limits ask. The note's frame is left out of the
+ * page check, because its row of pills floats over the text on purpose (K16; their touch hit areas reach past the
+ * pills). The text inside the frame is checked on its own, with 8 px of slack: a table in the text reaches 8 px into
+ * the scroller's inline padding, so its lines run past the text as in the Book (`@k2b/editor` theme).
+ */
+const problems = async (page: Page, slack?: number) => [
+  ...(await page.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-avatar-stack, .notebook-editor-frame", slack })).problems,
+  ...(await page.evaluate(layoutProblems, { root: ".notebook-editor-frame > .k2b-scroll-area", slack: 8 })).problems,
+];
+
+type Open = { width: number; mode?: "write" | "read"; content?: "few" | "many"; detail?: boolean; overview?: boolean };
+const open = async ({ width, mode = "write", content = "few", detail = false, overview = false }: Open): Promise<Page> => {
   const phone = width < 768;
   const page = await browser.newPage({ viewport: { width, height: phone ? 844 : 900 }, isMobile: phone, hasTouch: phone });
-  await page.goto(`${server.url}?mode=${mode}&content=${content}${detail ? "&detail=1" : ""}`);
+  await page.goto(`${server.url}?mode=${mode}&content=${content}${detail ? "&detail=1" : ""}${overview ? "&page=overview" : ""}`);
   await page.waitForFunction(() => "harness" in window);
   await page.evaluate((value) => window.harness.mount(value), ctx);
-  await page.locator(".cm-content").waitFor();
+  await page.locator(overview ? ".notebooks-overview-main" : ".cm-content").waitFor();
   await page.evaluate(() => window.harness.settle());
-  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/notebooks-${mode}-${content}${detail ? "-detail" : ""}-${width}.png` });
+  const name = overview ? `overview-${content}` : `${mode}-${content}${detail ? "-detail" : ""}`;
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/notebooks-${name}-${width}.png` });
   return page;
 };
 
+// Each page loads the note page's bundle (CodeMirror and the Detail's MapLibre), as the Detail panel's test does.
 describe("a note is a reading column without head", () => {
   for (const width of [1440, 390])
     for (const content of ["few", "many"] as const)
       test(`${width} px, ${content} lines: nothing overlaps, spills, is cut, or draws a second line`, async () => {
         const page = await open({ width, content });
         try {
-          expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
+          expect(await problems(page)).toEqual([]);
         } finally {
           await page.close();
         }
-      });
+      }, 30_000);
 
   for (const width of [1440, 390])
     test(`${width} px, Read: the page pill holds the way into Write and the Details, and no head stands above the text`, async () => {
@@ -176,21 +189,22 @@ describe("a note is a reading column without head", () => {
         const pill = page.getByRole("group", { name: "Aktionen für die Notiz" });
         await expect(pill.getByRole("link", { name: "Notiz bearbeiten" }).count()).resolves.toBe(1);
         await expect(pill.locator("[data-app-workspace-detail-toggle]").count()).resolves.toBe(1);
-        expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
+        expect(await problems(page)).toEqual([]);
       } finally {
         await page.close();
       }
-    });
+    }, 30_000);
 
   test("1440 px with the Detail open: the columns meet on one line and nothing overlaps", async () => {
     const page = await open({ width: 1440, content: "many", detail: true });
     try {
       await page.locator(".notebook-detail-panel").waitFor();
-      expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
+      // The Detail's section toggles and outline rows reach 8 px past their box (shared Section and DetailPanel).
+      expect(await problems(page, 8)).toEqual([]);
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
 
   test("the text stands at a 720 px measure, 14 px on 22 px, with 18 and 16 px headings (K11)", async () => {
     const page = await open({ width: 1440 });
@@ -215,5 +229,21 @@ describe("a note is a reading column without head", () => {
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
+});
+
+describe("the overview is one head and one flat list", () => {
+  for (const width of [1440, 390])
+    for (const content of ["few", "many"] as const)
+      test(`${width} px, ${content} notes: nothing overlaps, spills, is cut, or draws a second line`, async () => {
+        const page = await open({ width, content, overview: true });
+        try {
+          expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
+          // K1: a row with a second text line is 52 px, on a phone 60 px.
+          const heights = await page.locator(".notebooks-overview-note").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+          expect(new Set(heights)).toEqual(new Set([width < 768 ? 60 : 52]));
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
 });

@@ -9,6 +9,7 @@ import { render } from "solid-js/web";
 import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "../../lib/editor";
 import { notebookListOptions, notebookUrlOptions } from "../../lib/editor/notebook-options";
+import NotebooksOverview from "../../NotebooksOverview.island";
 import NotebookDetailPanel from "./detail/NotebookDetailPanel.island";
 import EditorToolbar, { pillScrollPadding } from "./editor/EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor/editor-actions";
@@ -18,8 +19,8 @@ import type { NotebookContext } from "./sidebar/types";
 
 /**
  * A whole note page of Cloud flach with fictional data: the real notebook sidebar, the note in the rich editor with
- * its pills, and the note's Detail. `?mode=write|read`, `?content=few|many`, `?detail=1`; the page's server answers the
- * sidebar's and the Detail's requests.
+ * its pills, and the note's Detail. `?mode=write|read`, `?content=few|many`, `?detail=1`; `?page=overview` shows the
+ * notebooks overview instead. The page's server answers the sidebar's and the Detail's requests.
  */
 export type NotebookPageHarness = { mount: (ctx: NotebookContext) => void; settle: () => Promise<void> };
 declare const window: Omit<Window, "harness"> & { harness: NotebookPageHarness };
@@ -165,12 +166,46 @@ function NotePage(props: { ctx: NotebookContext }) {
   );
 }
 
+const notebookNames = ["Handbuch", "Werkstatt", "Büro", "Fahrzeuge", "Lieferanten"];
+const noteTitles = ["Sicherheitsunterweisung", "Reinigungsplan", "Urlaub und Vertretung", "Angebote schreiben", "Ölwechsel"];
+
+function Overview() {
+  return (
+    <NotebooksOverview
+      notebooks={notebookNames.map((name, index) => ({
+        id: `Book0${index + 1}`,
+        name,
+        description: null,
+        icon: null,
+        noteCount: 4 + index,
+        lastEditedAt: minutesAgo(30 * (index + 1)),
+      }))}
+      templates={[]}
+      recentNotes={Array.from({ length: many ? 24 : 4 }, (_, index) => ({
+        id: `Note${String(index).padStart(2, "0")}`,
+        notebookId: `Book0${(index % notebookNames.length) + 1}`,
+        notebookName: notebookNames[index % notebookNames.length]!,
+        notebookIcon: null,
+        title: noteTitles[index % noteTitles.length]!,
+        updatedAt: minutesAgo(12 * (index + 1)),
+      }))}
+      initialActivity={{ items: [], nextCursor: null }}
+      initialActivityError={null}
+      initialPinnedNotebookIds={[]}
+      dateConfig={{ locale: "de", timeZone: "Europe/Berlin" }}
+      now={now}
+    />
+  );
+}
+
 window.harness = {
   mount(ctx) {
     render(
       () => (
         <LocaleProvider locale="de">
-          <NotePage ctx={ctx} />
+          <Show when={params.get("page") === "overview"} fallback={<NotePage ctx={ctx} />}>
+            <Overview />
+          </Show>
         </LocaleProvider>
       ),
       document.getElementById("root")!,
