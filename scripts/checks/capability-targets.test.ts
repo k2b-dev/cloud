@@ -35,6 +35,18 @@ test("reports an intentionally wrong Action and allows declared targets and app-
           ...action,
           input: z.object({ children: z.array(z.object({ itemId: z.string().describe("Resource ID.") })).describe("Children.") }).strict(),
         },
+        shared: {
+          ...action,
+          input: z
+            .object({
+              child: z
+                .object({ itemId: z.string().describe("Resource ID.") })
+                .strict()
+                .meta({ id: "CapabilityTargetsSharedChild" })
+                .describe("Child."),
+            })
+            .strict(),
+        },
         union: {
           ...action,
           input: z
@@ -47,6 +59,7 @@ test("reports an intentionally wrong Action and allows declared targets and app-
   expect(capabilityTargetGaps(manifest)).toEqual([
     "fixture.batch: children[].itemId",
     "fixture.nested: child.resource_id",
+    "fixture.shared: child.itemId",
     "fixture.union: child.itemId",
     "fixture.wrong: itemId",
   ]);

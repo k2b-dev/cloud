@@ -278,8 +278,9 @@ export const inventoryCapabilities = defineCapabilities({
 ```
 
 Translation maps use stable local IDs, stable search-tag tokens, and dotted
-schema field paths such as `filters.tags[]`. Startup rejects unknown IDs and
-paths. A locale may override only the human presentation it owns; operation
+schema field paths such as `filters.tags[]`. Paths continue through shared
+`$defs` schemas, and each path keeps its own translation. Startup rejects
+unknown IDs and paths. A locale may override only the human presentation it owns; operation
 IDs, tag tokens and aliases, schemas, schema hashes, safety flags, and result
 data remain unchanged. Catalog requests resolve exact locale, ancestor, and
 base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
@@ -1717,6 +1718,11 @@ The capability registry separately caps each complete record at 512 KiB. The
 400 KiB manifest limit reserves 112 KiB for its app ID, presentation catalog
 and JSON envelope. That reserve does not exempt large translation catalogs
 from the complete-record limit.
+
+Projection inlines a repeated subschema at every use. Give an object that
+repeats across fields or operations `.meta({ id: "UniqueName" })`: its schema
+then appears once under `$defs`, and each use refers to it and keeps its own
+description. Choose an ID that is unique in the process.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
 JSON Schema `pattern` and `patternProperties` use Unicode regular-expression

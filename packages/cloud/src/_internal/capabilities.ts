@@ -107,7 +107,7 @@ type JsonSchema = Record<string, unknown>;
  * leaving 45,945 B below the registry cap (112 KiB reserved for the whole envelope).
  * Presentation varies by app; Sync still enforces the complete-record cap independently.
  */
-const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
+export const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its
@@ -349,26 +349,41 @@ const typeCount = (count: { one: string; other: string }, localId: string) => {
   return { one: count.one.trim(), other: count.other.trim() };
 };
 
-const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
+/** The target of a local `$ref` such as `#/$defs/Format`; manifest schemas never reference other documents. */
+const localSchemaRef = (root: unknown, ref: unknown): Record<string, unknown> | undefined => {
+  if (typeof ref !== "string" || (ref !== "#" && !ref.startsWith("#/"))) return undefined;
+  let target: unknown = root;
+  for (const part of ref === "#" ? [] : ref.slice(2).split("/")) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) return undefined;
+    target = (target as Record<string, unknown>)[part.replaceAll("~1", "/").replaceAll("~0", "~")];
+  }
+  return target && typeof target === "object" && !Array.isArray(target) ? (target as Record<string, unknown>) : undefined;
+};
+
+/** Field paths of a projected schema, following local `$ref`s once per path so shared `$defs` keep their paths. */
+const schemaFieldPaths = (schema: unknown, prefix = "", root: unknown = schema, refs: ReadonlySet<string> = new Set()): Set<string> => {
   const paths = new Set<string>();
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return paths;
   const value = schema as Record<string, unknown>;
+  if (typeof value.$ref === "string" && !refs.has(value.$ref)) {
+    for (const child of schemaFieldPaths(localSchemaRef(root, value.$ref), prefix, root, new Set([...refs, value.$ref]))) paths.add(child);
+  }
   const properties = value.properties;
   if (properties && typeof properties === "object" && !Array.isArray(properties)) {
     for (const [field, definition] of Object.entries(properties)) {
       const path = prefix ? `${prefix}.${field}` : field;
       paths.add(path);
-      for (const child of schemaFieldPaths(definition, path)) paths.add(child);
+      for (const child of schemaFieldPaths(definition, path, root, refs)) paths.add(child);
     }
   }
   if (value.items) {
     const arrayPrefix = `${prefix}[]`;
-    for (const child of schemaFieldPaths(value.items, arrayPrefix)) paths.add(child);
+    for (const child of schemaFieldPaths(value.items, arrayPrefix, root, refs)) paths.add(child);
   }
   for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
     if (!Array.isArray(value[keyword])) continue;
     for (const entry of value[keyword]) {
-      for (const child of schemaFieldPaths(entry, prefix)) paths.add(child);
+      for (const child of schemaFieldPaths(entry, prefix, root, refs)) paths.add(child);
     }
   }
   return paths;
@@ -1389,9 +1404,18 @@ export const compileCapabilities = (
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
   if (!descriptions || Object.keys(descriptions).length === 0) return schema;
   const localized = structuredClone(schema);
+  const paths = Object.keys(descriptions);
   const visit = (value: unknown, prefix = ""): void => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const node = value as Record<string, unknown>;
+    // A shared `$defs` entry serves several paths. Copy it into this place only when a localized field
+    // lies below it, so one path's wording never reaches the others; the registry record stays shared.
+    const target = typeof node.$ref === "string" ? localSchemaRef(localized, node.$ref) : undefined;
+    if (target && paths.some((path) => !prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) {
+      const { $ref: _ref, ...siblings } = node;
+      delete node.$ref;
+      Object.assign(node, structuredClone(target), siblings);
+    }
     const properties = node.properties;
     if (properties && typeof properties === "object" && !Array.isArray(properties)) {
       for (const [field, definition] of Object.entries(properties)) {
