@@ -332,15 +332,17 @@ export default function FileInspector(props: {
                         </Button>
                         {/* K9: two framed actions in a row; a third stands beside them as a sign. */}
                         <Show when={props.onShare && item().actions?.share !== false}>
-                          <IconButton
-                            size="sm"
-                            variant="secondary"
-                            label={t().share}
-                            disabled={props.busy}
-                            onClick={() => props.onShare?.(item())}
-                          >
-                            <i class="ti ti-share" aria-hidden="true" />
-                          </IconButton>
+                          <Tooltip.Anchor content={t().share}>
+                            <IconButton
+                              size="sm"
+                              variant="secondary"
+                              label={t().share}
+                              disabled={props.busy}
+                              onClick={() => props.onShare?.(item())}
+                            >
+                              <i class="ti ti-share" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
                         </Show>
                       </>
                     }
