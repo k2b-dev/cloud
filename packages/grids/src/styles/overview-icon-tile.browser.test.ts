@@ -102,7 +102,8 @@ test("Grids overview icons keep shared app ink, chip geometry and platform keybo
         expect(result.shadow, label).toBe("none");
         expect(result.width, label).toBe(size);
         expect(result.height, label).toBe(size);
-        expect(result.radius, label).toBeCloseTo(size * 0.28, 2);
+        // Cloud flach (K4): a tile from 24 px has the control radius.
+        expect(result.radius, label).toBe(8);
       }
       // Establish keyboard modality before programmatic focus, including on the second theme pass.
       await page.keyboard.press("Tab");

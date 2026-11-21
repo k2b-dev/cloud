@@ -164,7 +164,7 @@ test("the overview hydrates its live cards without a console error", async () =>
   const { page, errors } = await open("/en/ui/charts", 1280);
   try {
     expect(await page.locator(".ui-charts-card").count()).toBe(chartShowcaseKinds.length);
-    // Each card is an island with the island shadow; nothing inside it casts a second one.
+    // Cloud flach (K3): no card casts a shadow, and nothing inside a card casts one.
     expect(
       await page.evaluate(() => {
         // The tokens live on `.k2b-ui`, so the probe takes the class, as each card does.
@@ -175,16 +175,21 @@ test("the overview hydrates its live cards without a console error", async () =>
         const raised = getComputedStyle(probe).boxShadow;
         probe.remove();
         const cards = Array.from(document.querySelectorAll(".ui-charts-card"));
-        const lifted = cards.filter((card) => getComputedStyle(card).boxShadow === raised).length;
+        // A layer with a blur casts depth; a ring or the transparent no-op layer does not.
+        const casts = (element: Element) =>
+          [...getComputedStyle(element).boxShadow.matchAll(/-?[\d.]+px -?[\d.]+px ([\d.]+)px/g)].some((layer) => Number(layer[1]) > 0);
+        const lifted = cards.filter(casts).length;
+        // A floating layer (a chart tooltip) keeps its overlay shadow (K16); everything in the card's flow is flat.
+        const inFlow = (element: Element) =>
+          !["fixed", "absolute"].includes(getComputedStyle(element).position) &&
+          element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
         const nested = cards
           .flatMap((card) => Array.from(card.querySelectorAll("*")))
-          .filter((element) => {
-            const shadow = getComputedStyle(element).boxShadow;
-            return shadow === raised;
-          }).length;
-        return { raised: raised !== "none", lifted: lifted === cards.length, nested };
+          .filter(inFlow)
+          .filter(casts).length;
+        return { raised: raised === "rgba(0, 0, 0, 0) 0px 0px 0px 0px", lifted, nested };
       }),
-    ).toEqual({ raised: true, lifted: true, nested: 0 });
+    ).toEqual({ raised: true, lifted: 0, nested: 0 });
     expect(errors).toEqual([]);
   } finally {
     await page.close();

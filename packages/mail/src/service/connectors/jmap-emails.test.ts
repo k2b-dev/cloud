@@ -28,7 +28,7 @@ const batches = (f: ReturnType<typeof createJmapFixture>) =>
 test("reads bounded batches with separate notFound IDs and the exact property selection", async () => {
   const { f, read } = await setup();
   const result = await read(["e0", "gone", "e1", "e2", "e3", "e4"]);
-  expect(result).toEqual({ objects: f.emails, notFoundIds: ["gone"] });
+  expect(result).toEqual({ objects: f.emails, notFoundIds: ["gone"], state: "emails-state" });
   expect(batches(f)).toEqual([
     ["e0", "gone"],
     ["e1", "e2"],
@@ -129,7 +129,7 @@ test("rejects invalid and duplicate input IDs before making any API call", async
   await expect(read(["bad/id"])).rejects.toMatchObject({ code: "JMAP_INVALID_ID" });
   await expect(read(["e0", "e0"])).rejects.toMatchObject({ code: "JMAP_INVALID_ID" });
   expect(batches(f)).toEqual([]);
-  expect(await read([])).toEqual({ objects: [], notFoundIds: [] });
+  expect(await read([])).toEqual({ objects: [], notFoundIds: [], state: null });
 });
 
 test("validates account access and mail capabilities before reading", async () => {

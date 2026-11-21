@@ -263,21 +263,20 @@ On Safari, diagrams need Safari 17.4 or later.
 
 - Use one surface to group related content; do not stack papers to manufacture
   hierarchy.
-- Take depth from the shared layers
-  ([Layers and shadows](/en/ui/surfaces/elevation)). A shadow appears only
-  where one layer lies on another: an island in the main content (a framed
-  topic, a content card, a dashboard frame) casts the soft island shadow, an
-  overlaying drawer or sheet casts the side or sheet shadow, and menus,
-  dialogs, and toasts float with the float shadow. Lists, grids, rows,
-  columns, panels, and controls are flat, and the inside of an island is flat
-  too. Shared components choose their layer themselves; app code never adds a
-  shadow of its own (UI-30, `bun scripts/check.ts shadow-tokens`).
+- Follow the [flat criteria](/en/ui/surfaces/flat-criteria) (K1 to K17).
+  A shadow means only "lies above the page", and it comes from the overlay
+  tokens; islands such as `Paper`, cards, and the app card cast none. Radii
+  come from five values: 0 for what orders, 4 px for small marks, 8 px for
+  controls and overlays, round for chips, people, and pills, 14 px for the
+  app card. Shared components move to these step by step and choose them
+  themselves; app code never adds a shadow or radius of its own (UI-30,
+  `bun scripts/check.ts shadow-tokens radius-scale`).
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized
   cards.
-- Use shared radius and spacing families. Nested frame, surface, and control
-  geometry should remain visually distinct.
+- Use the shared radius roles and the spacing scale (`--k2b-space-*`, steps
+  of 4 px).
 
 `AppWorkspace` is one clipped workbench. Sidebar, main, detail, and bottom
 drawer are sibling regions inside that frame, not adjacent cards. Use

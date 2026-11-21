@@ -2165,13 +2165,13 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     CREATE TRIGGER ai_live_pending_actions_changed
     AFTER INSERT OR UPDATE OF status ON ai.pending_actions
-    FOR EACH ROW WHEN (NEW.kind IN ('approval', 'custom_approval'))
+    FOR EACH ROW WHEN (NEW.kind IN ('approval', 'custom_approval') OR (NEW.kind='client_tool' AND NEW.tool_name='code_secret'))
     EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
   `.simple();
   await sql`
     CREATE TRIGGER ai_live_pending_actions_removed
     AFTER DELETE ON ai.pending_actions
-    FOR EACH ROW WHEN (OLD.kind IN ('approval', 'custom_approval'))
+    FOR EACH ROW WHEN (OLD.kind IN ('approval', 'custom_approval') OR (OLD.kind='client_tool' AND OLD.tool_name='code_secret'))
     EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
   `.simple();
   await sql`

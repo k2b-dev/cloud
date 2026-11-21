@@ -140,13 +140,13 @@ const read = () => {
 const noShadow = "rgba(0, 0, 0, 0) 0px 0px 0px 0px";
 
 describe("@k2b/ui layers and shadows", () => {
-  test("light: islands in the main content carry the island shadow; columns, panels, dialogs, dense collections, and islands inside islands are flat", async () => {
+  test("light: no island casts a shadow (Cloud flach K3); columns, panels, dialogs, dense collections, and islands inside islands are flat", async () => {
     const page = await open("light");
     await settled(page);
     try {
       const r = await page.evaluate(read);
-      expect(r.raised).not.toBe(noShadow);
-      for (const island of [r.mainPaper, r.mainResource, r.frame, r.mainStat, r.mainPanel]) expect(island.shadow).toBe(r.raised);
+      expect(r.raised).toBe(noShadow);
+      for (const island of [r.mainPaper, r.mainResource, r.frame, r.mainStat, r.mainPanel]) expect(island.shadow).toBe(noShadow);
       for (const flat of [
         r.nestedPaper,
         r.panelStat,
@@ -161,8 +161,9 @@ describe("@k2b/ui layers and shadows", () => {
       ])
         expect(flat.shadow).toBe(noShadow);
       expect(r.mainPaper.background).toBe(r.surface);
-      // A floating pill uses the toolbar shadow, softer than a menu's.
+      // A floating pill floats: it keeps the small overlay shadow (K16).
       expect(r.toolbar).toBe(r.toolbarToken);
+      expect(r.toolbar).not.toBe(noShadow);
     } finally {
       await page.close();
     }

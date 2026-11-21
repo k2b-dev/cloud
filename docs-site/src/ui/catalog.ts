@@ -282,6 +282,12 @@ const portableSections = [
         "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
       ),
       page(
+        "flat-criteria",
+        "Flat criteria",
+        "ti ti-ruler-2",
+        "The seventeen criteria of Cloud flach, each measured by a check or judged with one review question, and its tokens.",
+      ),
+      page(
         "elevation",
         "Layers and shadows",
         "ti ti-stack-2",
