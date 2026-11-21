@@ -1,8 +1,8 @@
 import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
-import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 export type BreadcrumbItem = {
   label: string;
@@ -28,7 +28,7 @@ export type BreadcrumbsProps = {
  * measures, a long path scrolls sideways with a fade on the side where more follows and shows its end.
  */
 export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   let nav: HTMLElement | undefined;
   let list: HTMLOListElement | undefined;
   // How many front levels wait behind "…"; the current level never does.

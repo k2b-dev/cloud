@@ -1,5 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
-import { useUiMessages } from "../intl/messages";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 /** A key figure of the status row: the number (bold) and what it counts. */
 export type StatusRowFact = { value: JSX.Element; label: JSX.Element };
@@ -56,7 +56,7 @@ const present = (value: unknown) => value !== undefined && value !== null && val
  * the next attempt in the place of the key figures. It shows only data that exists already.
  */
 export function StatusRow(props: StatusRowProps): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   const mode = () => (props.selection ? "selection" : present(props.announcement) ? "announcement" : props.state ? "state" : "facts");
   return (
     <div
