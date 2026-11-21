@@ -2996,7 +2996,12 @@ const demos: DemoSection = {
             action="Prepare handover"
             href="#task-row"
           />
-          <TaskRow icon="ti ti-file-invoice" text="Send the October statement" action="Open statement" onClick={() => announce("Statement opened")} />
+          <TaskRow
+            icon="ti ti-file-invoice"
+            text="Send the October statement"
+            action="Open statement"
+            onClick={() => announce("Statement opened")}
+          />
           <TaskRow
             icon="ti ti-truck-return"
             count={12}

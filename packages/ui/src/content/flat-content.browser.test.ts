@@ -124,6 +124,7 @@ test("task row: one target with a name, a tooltip only while cut, focus without 
   await page.locator(".k2b-task-row").nth(2).hover();
   await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Entsorgung"));
   await page.mouse.move(0, 890);
+  await settled(page);
 
   const before = await box(page, ".k2b-task-row", 2);
   await page.locator("body").evaluate((body) => (body as HTMLElement).focus());

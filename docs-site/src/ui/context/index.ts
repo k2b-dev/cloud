@@ -39,9 +39,9 @@ import contentProgressPath from "./content/progress-path.md" with { type: "text"
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
 import contentRunLog from "./content/run-log.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
-import contentTaskRow from "./content/task-row.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
+import contentTaskRow from "./content/task-row.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
 import contentTimeline from "./content/timeline.md" with { type: "text" };
 import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
