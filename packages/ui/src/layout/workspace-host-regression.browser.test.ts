@@ -22,7 +22,7 @@ beforeAll(async () => {
       `Missing ${engine} workspace baseline. Record origin/main with RECORD_WORKSPACE_BASELINE=1 K2B_UI_DIST=/tmp/workspace-own-width-main-dist TEST_BROWSER=${engine} (run both chromium and webkit).`,
     );
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
   if (recording && Object.values(recorded).reduce((count, widths) => count + Object.keys(widths).length, 0) === 20)

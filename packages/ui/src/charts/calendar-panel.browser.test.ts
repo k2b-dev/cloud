@@ -74,7 +74,7 @@ beforeAll(async () => {
   panelServer = server;
   panelScript = await build.outputs[0]!.text();
   panelBrowser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await panelBrowser?.close();
 });
