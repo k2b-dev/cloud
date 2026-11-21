@@ -118,7 +118,8 @@ beforeAll(async () => {
   const cache = { "cache-control": "public, max-age=3600" };
   staticAsset = (request) => {
     const path = new URL(request.url).pathname;
-    const script = scripts.get(path);
+    // A lazy chunk may be asked for under its source directory; every output is served by its file name.
+    const script = scripts.get(path) ?? (path.endsWith(".js") ? scripts.get(`/${basename(path)}`) : undefined);
     if (script) return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
     if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
     if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))), { headers: cache });
