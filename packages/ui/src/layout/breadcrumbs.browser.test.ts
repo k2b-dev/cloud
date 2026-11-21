@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/breadcrumbs.browser-harness";
+import { launchBrowser, settled } from "../../test/browser";
 
 // K15: a path stays on one line. When it does not fit, its front levels wait behind "…" and the current level
 // stays; when the room grows back, the levels come back.
@@ -64,7 +64,9 @@ const resize = async (page: Page, width: number) => {
 test("front levels wait behind “…” when the path is narrow and come back when it widens", async () => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 400 } });
   try {
-    await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`);
+    await page.setContent(
+      `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
+    );
     await page.addScriptTag({ content: bundle });
     await settled(page);
     await resize(page, 1100);

@@ -130,7 +130,7 @@ const spacesPage = (detail: boolean, c: Query) =>
                         { value: "2", label: "überfällig" },
                         { value: "3", label: "diese Woche" },
                       ],
-                      filters: [h(Button, { size: "sm", children: "Tag" }), h(Button, { size: "sm", children: "Zuständig" })],
+                      filters: [h(Button, { size: "sm", variant: "secondary", children: "Tag" }), h(Button, { size: "sm", variant: "secondary", children: "Zuständig" })],
                       state:
                         c.req.query("state") === "sync"
                           ? { label: "Abgleich pausiert", tone: "warning", icon: "ti ti-refresh", next: "14:05" }

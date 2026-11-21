@@ -496,9 +496,7 @@ test("resizing a narrow workspace host settles the current view again before pai
     expectVisible(resized);
     // The narrow strip still overflows, so the current view's place is a settled choice, not the whole strip
     // fitting. With 24 px between views (K6), view 5 now sits in the first screen, so no scroll is needed for it.
-    expect(
-      await page.locator(".k2b-view-tabs__list").evaluate((list) => list.scrollWidth > list.clientWidth + 0.5),
-    ).toBe(true);
+    expect(await page.locator(".k2b-view-tabs__list").evaluate((list) => list.scrollWidth > list.clientWidth + 0.5)).toBe(true);
   } finally {
     await page.close();
   }
@@ -685,7 +683,13 @@ for (const [host, width, viewport] of [
             };
           }),
       );
-      const expected = { Focus: "12", "Needs action": "12", "Assigned to me": "5", "Waiting for a customer reply": "2", "Not assigned": "4" };
+      const expected = {
+        Focus: "12",
+        "Needs action": "12",
+        "Assigned to me": "5",
+        "Waiting for a customer reply": "2",
+        "Not assigned": "4",
+      };
       expect(counts.length).toBeGreaterThan(0);
       for (const tab of counts) {
         const want = expected[tab.label as keyof typeof expected] ?? null;

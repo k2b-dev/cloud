@@ -6242,6 +6242,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   overflow: hidden;
 }
 
+/* A zero-width first item, so even the first key figure can wrap away whole. */
+.k2b-ui .k2b-status-row__middle::before {
+  content: "";
+  width: 0;
+  height: 1.25rem;
+}
+
 .k2b-ui :is(.k2b-status-row__fact, .k2b-status-row__state, .k2b-status-row__announcement) {
   display: inline-flex;
   min-width: 0;
@@ -6252,7 +6259,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-status-row__announcement {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   overflow: hidden;
   color: var(--k2b-text);
   text-overflow: ellipsis;
@@ -6264,8 +6271,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   font-variant-numeric: tabular-nums;
 }
 
+/* A state or an announcement never wraps away: it stays on the lead's line and shortens its end. */
 .k2b-ui .k2b-status-row__state {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   gap: 0.5rem;
 }
 

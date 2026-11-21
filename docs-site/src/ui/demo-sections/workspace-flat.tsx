@@ -4,7 +4,12 @@ import { DemoCard } from "../DemoCard";
 
 type Mode = "facts" | "selection" | "state";
 
-const tasks = ["Check the delivery note for hall 3", "Follow up the Hofmann offer", "Prepare the stocktaking south", "Renew the carrier contract"];
+const tasks = [
+  "Check the delivery note for hall 3",
+  "Follow up the Hofmann offer",
+  "Prepare the stocktaking south",
+  "Renew the carrier contract",
+];
 
 /** The flat shell: hairline columns with grips, the 56 px head with tab marks, the status row, and the quiet sidebar entry. */
 export function FlatWorkspaceDemo() {
@@ -127,7 +132,9 @@ export function PathHeadDemo() {
   primary={{ label: "Upload", icon: "ti ti-upload", href: "?upload" }}
 />`}
     >
-      <div style={{ height: "10rem", container: "k2b-app-area / inline-size", resize: "horizontal", overflow: "auto", "min-width": "20rem" }}>
+      <div
+        style={{ height: "10rem", container: "k2b-app-area / inline-size", resize: "horizontal", overflow: "auto", "min-width": "20rem" }}
+      >
         <AppWorkspace>
           <AppWorkspace.Head
             views={

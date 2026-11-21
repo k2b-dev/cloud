@@ -663,7 +663,9 @@ for (const theme of ["light", "dark"])
         return `${color} 0px -1px 0px 0px inset`;
       });
       // The Tabs strip renders last, after the head's view strip.
-      expect(styles.lists.map((list) => list.shadow)).toEqual(styles.lists.map((_, index) => (index === styles.lists.length - 1 ? hairline : "none")));
+      expect(styles.lists.map((list) => list.shadow)).toEqual(
+        styles.lists.map((_, index) => (index === styles.lists.length - 1 ? hairline : "none")),
+      );
       for (const list of styles.lists) {
         expect(list.background).toBe("rgba(0, 0, 0, 0)");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);

@@ -37,29 +37,21 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
     () => list,
     () => true,
   );
-  const fits = () => !list || list.scrollWidth <= list.clientWidth + 0.5;
-  const settle = () => {
-    if (!list) return;
-    // Measure from the full path, then hide front levels one by one until the rest fits.
-    let count = 0;
-    setHidden(0);
-    while (!fits() && count < props.items.length - 1) setHidden(++count);
-    if (fits()) list.scrollLeft = getComputedStyle(list).direction === "rtl" ? -list.scrollWidth : list.scrollWidth;
-  };
-  // Measure after Solid has written the hidden levels, never inside an effect, where writes wait until it ends.
-  let frame = 0;
-  const schedule = () => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(settle);
-  };
+  // The collapse measures in the browser only, so its code loads there, after the first paint.
+  let refresh: (() => void) | undefined;
   onMount(() => {
-    if (!nav || typeof ResizeObserver === "undefined") return;
-    // The nav follows its room, also when the room grows back; the list follows its own content.
-    const observer = new ResizeObserver(schedule);
-    observer.observe(nav);
+    if (!nav || !list || typeof ResizeObserver === "undefined") return;
+    let disposed = false;
+    let dispose: (() => void) | undefined;
     onCleanup(() => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
+      disposed = true;
+      dispose?.();
+    });
+    void import("./breadcrumbs-collapse").then(({ observeBreadcrumbs }) => {
+      if (disposed || !nav || !list) return;
+      const collapse = observeBreadcrumbs(nav, list, () => props.items.length, setHidden);
+      refresh = collapse.refresh;
+      dispose = collapse.dispose;
     });
   });
   // The current level is the end of the path: keep it in view after every change. Horizontal RTL counts negative.
@@ -70,7 +62,7 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
         if (!list) return;
         const rtl = getComputedStyle(list).direction === "rtl";
         list.scrollLeft = rtl ? -list.scrollWidth : list.scrollWidth;
-        schedule();
+        refresh?.();
       },
     ),
   );
@@ -103,7 +95,7 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
           {(item, index) => {
             const current = () => index() === props.items.length - 1;
             return (
-              <li class="k2b-breadcrumbs__item" hidden={index() < hidden() ? true : undefined}>
+              <li class="k2b-breadcrumbs__item" hidden={index() < hidden()}>
                 <Show when={index() > 0}>
                   <i class="ti ti-chevron-right k2b-breadcrumbs__separator" aria-hidden="true" />
                 </Show>
@@ -125,7 +117,11 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
                   >
                     {(href) => (
                       // A disabled level is no link: without `href` it neither navigates nor takes focus.
-                      <a class="k2b-breadcrumbs__link" href={props.disabled ? undefined : href()} aria-disabled={props.disabled ? "true" : undefined}>
+                      <a
+                        class="k2b-breadcrumbs__link"
+                        href={props.disabled ? undefined : href()}
+                        aria-disabled={props.disabled ? "true" : undefined}
+                      >
                         {item.label}
                       </a>
                     )}

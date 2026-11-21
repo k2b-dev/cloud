@@ -60,7 +60,7 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
     <div
       class={`k2b-status-row${props.class ? ` ${props.class}` : ""}`}
       data-mode={mode()}
-      data-tone={props.state && !props.selection ? (props.state.tone ?? "warning") : undefined}
+      data-tone={mode() === "state" ? (props.state?.tone ?? "warning") : undefined}
       data-line={props.line ? "" : undefined}
     >
       <p class="k2b-status-row__lead">{props.lead}</p>

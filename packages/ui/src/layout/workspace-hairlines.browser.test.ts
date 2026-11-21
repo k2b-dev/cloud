@@ -150,14 +150,15 @@ for (const dark of [false, true])
         });
         // No column draws a border of its own beside the line: one line per boundary (K2).
         expect(
-          await page.evaluate(() =>
-            [...document.querySelectorAll(".k2b-app-workspace__sidebar, [data-workspace-main-region], .k2b-app-workspace__detail")]
-              .map((element) => getComputedStyle(element))
-              .flatMap((style) => [
-                [style.borderLeftWidth, style.borderLeftColor],
-                [style.borderRightWidth, style.borderRightColor],
-              ])
-              .filter(([width, color]) => parseFloat(width!) > 0 && !/rgba\([^)]*, 0\)$/.test(color!)).length,
+          await page.evaluate(
+            () =>
+              [...document.querySelectorAll(".k2b-app-workspace__sidebar, [data-workspace-main-region], .k2b-app-workspace__detail")]
+                .map((element) => getComputedStyle(element))
+                .flatMap((style) => [
+                  [style.borderLeftWidth, style.borderLeftColor],
+                  [style.borderRightWidth, style.borderRightColor],
+                ])
+                .filter(([width, color]) => parseFloat(width!) > 0 && !/rgba\([^)]*, 0\)$/.test(color!)).length,
           ),
         ).toBe(0);
       } finally {
@@ -174,7 +175,9 @@ const handles = (page: Page) =>
       .map((handle, index) => ({ handle, index }))
       .filter(
         ({ handle }) =>
-          handle.getClientRects().length > 0 && getComputedStyle(handle).display !== "none" && handle.dataset.appWorkspaceResize !== "drawer",
+          handle.getClientRects().length > 0 &&
+          getComputedStyle(handle).display !== "none" &&
+          handle.dataset.appWorkspaceResize !== "drawer",
       )
       .map(({ handle, index }) => {
         const box = handle.getBoundingClientRect();
@@ -236,8 +239,8 @@ for (const { label, options } of scenarios)
                 : Math.abs(box.left + box.width / 2 - (area.left + area.width / 2)) <= 0.5,
               area: Math.round(across ? area.height : area.width),
               role: handle.getAttribute("role"),
-              aria: ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-controls", "aria-label"].every(
-                (name) => handle.hasAttribute(name),
+              aria: ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-controls", "aria-label"].every((name) =>
+                handle.hasAttribute(name),
               ),
             };
           }),

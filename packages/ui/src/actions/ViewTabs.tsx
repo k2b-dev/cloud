@@ -344,7 +344,7 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
           >
             <Dropdown.Root items={menuItems()} open={open()} onOpenChange={onOpenChange} label={messages().moreViews}>
               <Dropdown.Trigger appearance="plain" class="k2b-view-tabs__tab k2b-view-tabs__more-trigger" label={messages().moreViews}>
-                <span class="k2b-view-tabs__label">{messages().moreTabs}</span>
+                <span class="k2b-view-tabs__label">{messages().more}</span>
                 <Show when={layout().wideHidden > 0}>
                   <span class="k2b-view-tabs__more-count" data-level="wide">
                     +{layout().wideHidden}

@@ -743,7 +743,9 @@ describe("floating workspace detail", () => {
         expect(shape.main.right).toBeCloseTo(shape.root.right - shape.border, 1);
         expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
         expect(
-          await page.locator(".k2b-app-workspace__detail").evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
+          await page
+            .locator(".k2b-app-workspace__detail")
+            .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
         ).toBe("1");
       } finally {
         await page.close();

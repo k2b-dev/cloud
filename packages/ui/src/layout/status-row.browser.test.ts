@@ -38,7 +38,10 @@ const facts = [
   { value: "3", label: "overdue" },
   { value: "22 s", label: "since the last delivery" },
 ];
-const filters = () => [createComponent(Button, { size: "sm", children: "Tag" }), createComponent(Button, { size: "sm", children: "Assigned" })];
+const filters = () => [
+  createComponent(Button, { size: "sm", children: "Tag" }),
+  createComponent(Button, { size: "sm", children: "Assigned" }),
+];
 const rows: Record<string, () => JSX.Element> = {
   facts: () => createComponent(StatusRow, { lead: "12 tasks open", facts, filters: filters() }),
   selection: () =>
@@ -61,31 +64,39 @@ const rows: Record<string, () => JSX.Element> = {
 
 const open = async (width: number, body: string) => {
   const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: "reduce" });
-  await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0">${body}</body></html>`);
+  await page.setContent(
+    `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0">${body}</body></html>`,
+  );
   await settled(page);
   return page;
 };
 
 const lead = (page: Page, index: number) =>
-  page.locator(".k2b-status-row").nth(index).evaluate((row) => {
-    const lead = row.querySelector(".k2b-status-row__lead")!.getBoundingClientRect();
-    const box = row.getBoundingClientRect();
-    const text = row.querySelector(".k2b-status-row__lead")!;
-    return {
-      left: lead.left - box.left,
-      top: Math.round((lead.top - box.top) * 10) / 10,
-      width: Math.round(lead.width * 10) / 10,
-      height: box.height,
-      cut: text.scrollWidth > text.clientWidth + 0.5,
-      size: getComputedStyle(text).fontSize,
-      weight: getComputedStyle(text).fontWeight,
-    };
-  });
+  page
+    .locator(".k2b-status-row")
+    .nth(index)
+    .evaluate((row) => {
+      const lead = row.querySelector(".k2b-status-row__lead")!.getBoundingClientRect();
+      const box = row.getBoundingClientRect();
+      const text = row.querySelector(".k2b-status-row__lead")!;
+      return {
+        left: lead.left - box.left,
+        top: Math.round((lead.top - box.top) * 10) / 10,
+        width: Math.round(lead.width * 10) / 10,
+        height: box.height,
+        cut: text.scrollWidth > text.clientWidth + 0.5,
+        size: getComputedStyle(text).fontSize,
+        weight: getComputedStyle(text).fontWeight,
+      };
+    });
 
 for (const width of [1440, 768, 390])
   test(`${width}: the lead statement keeps its place and size in every state, never cut`, async () => {
     const html = Object.values(rows)
-      .map((row) => `<div style="width:${Math.min(width, 900)}px">${renderToString(() => createComponent(LocaleProvider, { locale: "en", children: row() }))}</div>`)
+      .map(
+        (row) =>
+          `<div style="width:${Math.min(width, 900)}px">${renderToString(() => createComponent(LocaleProvider, { locale: "en", children: row() }))}</div>`,
+      )
       .join("");
     const page = await open(width, html);
     try {
@@ -128,7 +139,11 @@ test("1440: a narrow row drops key figures whole before the lead statement shrin
       elements.map((element) => {
         const box = element.getBoundingClientRect();
         const clip = element.parentElement!.getBoundingClientRect();
-        return box.right <= clip.right + 0.5 && box.top >= clip.top - 0.5 && box.bottom <= clip.bottom + 0.5 ? "whole" : box.top >= clip.bottom - 0.5 ? "gone" : "half";
+        return box.right <= clip.right + 0.5 && box.top >= clip.top - 0.5 && box.bottom <= clip.bottom + 0.5
+          ? "whole"
+          : box.top >= clip.bottom - 0.5
+            ? "gone"
+            : "half";
       }),
     );
     expect(figures).not.toContain("half");
@@ -173,7 +188,9 @@ for (const width of [1440, 768, 390])
         const box = head.getBoundingClientRect();
         const current = document.querySelector('.k2b-view-tabs__tab[aria-current="page"]')!;
         const tab = current.getBoundingClientRect();
-        const tabs = [...document.querySelectorAll<HTMLElement>(".k2b-view-tabs__tab")].filter((element) => element.getClientRects().length > 0);
+        const tabs = [...document.querySelectorAll<HTMLElement>(".k2b-view-tabs__tab")].filter(
+          (element) => element.getClientRects().length > 0,
+        );
         const list = document.querySelector(".k2b-view-tabs__list")!.getBoundingClientRect();
         return {
           height: Math.round(box.height),
