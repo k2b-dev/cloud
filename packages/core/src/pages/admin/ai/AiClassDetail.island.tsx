@@ -269,7 +269,7 @@ export default function AiClassDetail(props: {
         </section>
         <section class="grid gap-2">
           <h3 class="text-sm font-semibold">{t().clsPreview}</h3>
-          <div class="max-w-[21.25rem] rounded-xl bg-(--k2b-surface-elevated) p-3 shadow-[0_0_0_1px_var(--k2b-border)]">
+          <div class="max-w-[21.25rem] rounded-[var(--k2b-radius-control)] bg-(--k2b-surface-elevated) p-3 shadow-[0_0_0_1px_var(--k2b-border)]">
             <AiModelCard stops={stops()} value={previewClass()} preview />
           </div>
         </section>

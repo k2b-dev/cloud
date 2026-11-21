@@ -52,7 +52,7 @@ export default function AccountHub(props: {
             name={props.user.displayName || props.user.uid}
             src={avatarSrc}
             size="lg"
-            class="shrink-0 bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
+            class="shrink-0 bg-zinc-100 dark:bg-zinc-800"
             style="view-transition-name: user-avatar"
           />
         )}
@@ -74,7 +74,7 @@ export default function AccountHub(props: {
         </div>
       </header>
 
-      <nav class="account-tabs flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
+      <nav class="account-tabs flex max-w-full flex-wrap gap-x-3 px-3 sm:gap-x-6" aria-label={t().accountSections}>
         {(
           [
             { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
@@ -91,8 +91,8 @@ export default function AccountHub(props: {
             <a
               href={section.href}
               aria-current={active ? "page" : undefined}
-              class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
-                active ? "" : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
+              class={`flex min-h-9 shrink-0 items-center gap-1.5 text-xs font-medium no-underline transition-colors sm:gap-2 sm:text-[0.8125rem] ${
+                active ? "" : "text-dimmed hover:text-primary"
               }`}
             >
               <i class={section.icon} aria-hidden="true" />

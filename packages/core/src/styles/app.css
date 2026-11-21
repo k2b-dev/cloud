@@ -138,7 +138,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
   border: 1px solid var(--k2b-border);
 }
@@ -147,7 +147,7 @@
   flex-direction: column;
   gap: 0.875rem;
   padding: 1rem;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
 .ai-quota-source {
@@ -155,7 +155,7 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
 }
 
@@ -168,10 +168,18 @@
 }
 
 /* Account sections are view tabs, and the notification views are a segment on
-   a grey track: the current tab takes the selected fill in the app ink like
-   `ViewTabs`, the current segment also its 1 px edge like `SegmentedControl`.
-   No shadow, and the box stays. */
-.k2b-ui .account-tabs [aria-current="page"] {
+   a grey track. The current tab is the 2 px mark in the app ink on its line and
+   the text colour, no fill and no corners, like `ViewTabs` (K2, K4, K6); the
+   current segment takes the selected fill and its 1 px edge like
+   `SegmentedControl`. No shadow, and the box stays. */
+.k2b-ui .account-tabs:not(.account-tabs--segment) a {
+  box-shadow: inset 0 -2px 0 var(--account-tab-mark, transparent);
+}
+.k2b-ui .account-tabs:not(.account-tabs--segment) [aria-current="page"] {
+  --account-tab-mark: var(--k2b-app-workspace-active);
+  color: var(--k2b-text);
+}
+.k2b-ui .account-tabs--segment [aria-current="page"] {
   color: var(--k2b-app-workspace-active);
   background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
 }
@@ -628,7 +636,7 @@ main > .code-page-host {
     display: inline;
   }
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.code-page-report-frame {
-    border-radius: 1rem 1rem 0 0;
+    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
   }
   .code-page-report {
     padding: 1.25rem 1.375rem;

@@ -438,7 +438,7 @@ export default function ProfileActions(props: Props) {
           name={props.displayName || props.uid}
           src={avatarSrc}
           size="lg"
-          class="bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
+          class="bg-zinc-100 dark:bg-zinc-800"
           style="view-transition-name: user-avatar"
         />
         <span
