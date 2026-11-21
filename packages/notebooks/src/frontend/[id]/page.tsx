@@ -171,7 +171,7 @@ export default ssr<AuthContext>(async (c) => {
           initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
         />
 
-        {/* The writable editor is the one with the toolbar and its navigation toggle. */}
+        {/* A note's pills hold the navigation toggle, in Write and in Read. */}
         <NotebookSidebar
           ctx={ctx}
           editorToolbar={showsNotePills}

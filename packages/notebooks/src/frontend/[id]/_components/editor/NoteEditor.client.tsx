@@ -91,7 +91,6 @@ import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace
 import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
-import { ReadingPills } from "./page-pill";
 import EditorToolbar, { formattingKeymap, pillScrollPadding } from "./EditorToolbar";
 import { EmptyNoteTemplates } from "./EmptyNoteTemplates";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
@@ -99,6 +98,7 @@ import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { createNotePrintCopy } from "./note-print-copy";
+import { ReadingPills } from "./page-pill";
 import { isBlankNoteText } from "./page-templates";
 import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";

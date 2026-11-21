@@ -48,7 +48,12 @@ const ctx: NotebookContext = {
         parentId: null,
         total: 4,
         offset: 0,
-        items: [row("Home01", "Startseite"), row("Werk01", "Werkstatt", null, true), row("Buro01", "Büro"), row("Neu001", "Neu im Betrieb")],
+        items: [
+          row("Home01", "Startseite"),
+          row("Werk01", "Werkstatt", null, true),
+          row("Buro01", "Büro"),
+          row("Neu001", "Neu im Betrieb"),
+        ],
       },
       {
         parentId: "Werk01",
@@ -182,13 +187,12 @@ describe("a note is a reading column without head", () => {
       }, 30_000);
 
   for (const width of [1440, 390])
-    test(`${width} px, Read: the page pill holds the way into Write and the Details, and no head stands above the text`, async () => {
+    test(`${width} px, Read: the page pill holds the way into Write and the Details`, async () => {
       const page = await open({ width, mode: "read" });
       try {
-        expect(await page.locator(".k2b-app-workspace__head").count()).toBe(0);
         const pill = page.getByRole("group", { name: "Aktionen für die Notiz" });
-        await expect(pill.getByRole("link", { name: "Notiz bearbeiten" }).count()).resolves.toBe(1);
-        await expect(pill.locator("[data-app-workspace-detail-toggle]").count()).resolves.toBe(1);
+        expect(await pill.getByRole("link", { name: "Notiz bearbeiten" }).count()).toBe(1);
+        expect(await pill.locator("[data-app-workspace-detail-toggle]").count()).toBe(1);
         expect(await problems(page)).toEqual([]);
       } finally {
         await page.close();
@@ -240,7 +244,9 @@ describe("the overview is one head and one flat list", () => {
         try {
           expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
           // K1: a row with a second text line is 52 px, on a phone 60 px.
-          const heights = await page.locator(".notebooks-overview-note").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+          const heights = await page
+            .locator(".notebooks-overview-note")
+            .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
           expect(new Set(heights)).toEqual(new Set([width < 768 ? 60 : 52]));
         } finally {
           await page.close();

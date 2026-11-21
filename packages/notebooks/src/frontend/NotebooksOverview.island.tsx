@@ -391,7 +391,9 @@ export default function NotebooksOverview(props: Props) {
         <AppWorkspace.Main class="notebooks-overview-main">
           <Show
             when={props.recentNotes.length > 0}
-            fallback={<Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-56" />}
+            fallback={
+              <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-56" />
+            }
           >
             <ol class="notebooks-overview-notes k2b-divided" aria-label={t().recentlyEdited}>
               <For each={props.recentNotes}>

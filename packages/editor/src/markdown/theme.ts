@@ -4,7 +4,7 @@ import { type CreateThemeOptions, createTheme } from "@uiw/codemirror-themes";
 
 /**
  * Layout / chrome styles — shared between rich and raw modes. Deliberately
- * font-free so each mode can pick its own type system (rich = 16px sans
+ * font-free so each mode can pick its own type system (rich = 14px sans
  * with code-mark mono override, raw = 14px mono).
  */
 const baseEditorCSS = EditorView.theme({

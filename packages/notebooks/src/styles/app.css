@@ -1006,6 +1006,11 @@
 .notebook-editor-frame[data-notebook-pills] {
   --notebook-pill-room: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px + 0.25rem + 1rem + 2rem);
 }
+/* The device-copy row stands in the flow below the scroller; the pills float over its bottom, so it keeps their room
+   free and its Retry, Keep and Discard stay reachable. */
+.notebook-editor-frame[data-notebook-pills] [data-notebook-device-state] {
+  padding-bottom: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px + 1.5rem);
+}
 .notebook-editor-endgap {
   flex: none;
   height: var(--notebook-pill-room, 0px);
@@ -2092,7 +2097,7 @@
   border-radius: 4px;
   background: #fff;
   color: #18181b;
-  /* A printed page in the dialog: an sheet with a hairline, always light like paper. */
+  /* A printed page in the dialog: a sheet with a hairline, always light like paper. */
   box-shadow: 0 0 0 1px rgb(0 0 0 / .1);
   font-size: 11.5px;
   line-height: 1.45;
