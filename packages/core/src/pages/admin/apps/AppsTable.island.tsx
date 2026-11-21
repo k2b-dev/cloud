@@ -14,6 +14,8 @@ export type AppsTableRow = {
   release: string | null;
   /** "/mail, /api/mail +2", or the reason the app has none. */
   routes: string;
+  /** When an app that never started was added; a date is never cut, so the address cell wraps it whole (K15). */
+  added: string | null;
   /** The most important hint in one line, with "+n" for more. */
   problem: string | null;
   problemTone: "neutral" | "warning" | "danger" | null;
@@ -191,7 +193,16 @@ export default function AppsTable(props: {
             );
           if (col.id === "version") return <span class="tabular-nums">{row.release ?? "–"}</span>;
           // Width 0 with a full minimum: long text never widens its column, it truncates in whatever room is left.
-          if (col.id === "address") return <span class="block w-0 min-w-full truncate text-dimmed">{row.routes}</span>;
+          if (col.id === "address")
+            return row.added ? (
+              <span class="block w-0 min-w-full text-dimmed">
+                {t().addedOn} <span class="whitespace-nowrap">{row.added}</span>
+              </span>
+            ) : (
+              <span class="block w-0 min-w-full truncate text-dimmed" title={row.routes}>
+                {row.routes}
+              </span>
+            );
           return (
             <Show when={row.problem} fallback={<span class="text-dimmed">–</span>}>
               {(problem) => (

@@ -74,6 +74,32 @@ test("the list names every app by name with its state in words and its most impo
   expect(new Set(dots).size).toBe(1);
 }, 20_000);
 
+test("key figures and dates are never cut: figures leave whole on a phone, an added date wraps whole (K15)", async () => {
+  await open("", 390);
+  const figures = await page.locator("[data-apps-summary]").evaluate((summary) => {
+    const box = summary.getBoundingClientRect();
+    return Array.from(summary.children).map((figure) => {
+      const rect = figure.getBoundingClientRect();
+      // A figure is either whole on the line or wholly on the hidden next line, never cut at the end.
+      return rect.top >= box.bottom - 0.5 ? "hidden" : rect.right <= box.right + 0.5 ? "whole" : "cut";
+    });
+  });
+  expect(figures[0]).toBe("whole");
+  expect(figures).not.toContain("cut");
+  await open("", 1440);
+  const added = await row("inventar")
+    .locator("td")
+    .evaluateAll((cells) => {
+      const cell = cells.find((element) => element.textContent?.includes("2026"))!;
+      const date = cell.querySelector(".whitespace-nowrap")!;
+      const box = cell.getBoundingClientRect();
+      const rect = date.getBoundingClientRect();
+      return { text: date.textContent, inside: rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5 };
+    });
+  expect(added.text).toMatch(/2026$/);
+  expect(added.inside).toBe(true);
+});
+
 test("the old app address opens the app, and every hint has exactly one way out to its column", async () => {
   await open("?app=grids");
   const hints = page.locator("[data-app-hints] [data-hint]");
