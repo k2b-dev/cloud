@@ -31,7 +31,6 @@ export const sqlTestQuery: SavedQuery = {
   name: "CPU",
   sql: "SELECT :host",
   params: { host: "web-01" },
-  pinned: false,
   revision: 2,
   createdBy: null,
   updatedBy: null,
