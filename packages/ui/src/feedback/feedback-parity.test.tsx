@@ -37,15 +37,19 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const header = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__header \{([^}]*)\}/)?.[1] ?? "";
     const title = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading h2 \{([^}]*)\}/g)?.at(-1) ?? "";
     const subtitle = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading p \{([^}]*)\}/)?.[1] ?? "";
-    expect(header).toContain("padding: 1.25rem 1.25rem 1rem var(--k2b-panel-dialog-inset, 1.5rem)");
+    // K16: the head is a 56 px band with a hairline below, on the text edge (K5).
+    expect(header).toContain("min-height: var(--k2b-h-head, 3.5rem)");
+    expect(header).toContain("padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem)");
+    expect(header).toContain("border-bottom: 1px solid var(--k2b-border)");
     expect(header).not.toContain("background");
-    expect(title).toContain("font-size: 1.25rem");
+    // K11: a title in a head is 14 px.
+    expect(title).toContain("font-size: var(--k2b-font-size-body, 0.875rem)");
     expect(title).toContain("font-weight: 600");
     // A title never wraps: one line that ends with an ellipsis, so a long name moves nothing.
     expect(title).toContain("white-space: nowrap");
     expect(title).toContain("text-overflow: ellipsis");
-    expect(subtitle).toContain("margin-top: 0.375rem");
-    expect(subtitle).toContain("font-size: 0.8125rem");
+    // K11: the subtitle is meta, 12 px.
+    expect(subtitle).toContain("font-size: var(--k2b-font-size-meta, 0.75rem)");
 
     // Prompt dialogs share the flat header and keep a long title on one line like it.
     const promptTitle = feedbackCss.match(/\.k2b-ui \.k2b-dialog__header h2 \{([^}]*)\}/)?.[1] ?? "";
@@ -238,7 +242,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(feedbackCss).toContain("var(--k2b-dialog-available-height)");
     expect(feedbackCss).toContain("[popover].k2b-tooltip");
     expect(feedbackCss).toContain("[data-k2b-toast-container]");
-    expect(feedbackCss).toContain("box-shadow: var(--k2b-shadow-toast)");
+    // K16: a toast casts the small overlay shadow; the toast token stays for consumers.
+    expect(feedbackCss).toMatch(/\[data-k2b-toast-container\] \.k2b-toast \{[^}]*box-shadow: var\(--k2b-shadow-overlay-sm[,)]/);
     expect(indexCss).toContain("--k2b-shadow-toast:");
     expect(feedbackCss).not.toContain("#ui-toast-container");
     expect(feedbackCss).toContain(".dark .k2b-ui");
@@ -336,7 +341,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const adaptive =
       indexCss.match(/@media \(min-width: 48rem\) \{\s*(\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive[\s\S]*?)\n\}/)?.[1] ??
       "";
-    expect(adaptive).toMatch(/\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*50%;/);
+    // Centered, lifted by what grew under its footer (K16).
+    expect(adaptive).toMatch(/\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*calc\(50% - var\(--k2b-dialog-lift, 0px\)\);/);
     expect(adaptive).toMatch(/\.k2b-bottom-sheet-frame\.is-adaptive \.k2b-bottom-sheet__handle \{\s*display:\s*none;/);
     expect(indexCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame \{\s*animation:\s*none;/,

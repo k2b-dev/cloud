@@ -7580,6 +7580,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transform: scaleX(-1);
 }
 
+/* A submenu is a menu like the one it opens from, in the top layer beside its row. */
+.k2b-ui .k2b-dropdown__submenu {
+  min-width: min(13.5rem, 100vw - 2rem);
+}
+
 /* On a phone a submenu takes the sheet's place; its first row leads back, a band with a hairline below. */
 .k2b-ui .k2b-dropdown__back {
   border-bottom: 1px solid var(--k2b-border);
@@ -21203,7 +21208,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-bottom: 0;
 }
 .k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
-  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 .k2b-ui .k2b-bottom-sheet__handle {
   display: grid;
