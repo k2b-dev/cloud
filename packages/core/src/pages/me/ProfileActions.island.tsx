@@ -442,7 +442,7 @@ export default function ProfileActions(props: Props) {
           style="view-transition-name: user-avatar"
         />
         <span
-          class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-surface)] text-secondary shadow-[var(--ui-shadow-surface)] transition-colors group-hover:text-primary group-focus-visible:text-primary"
+          class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-surface)] text-secondary shadow-[0_0_0_1px_var(--k2b-border)] transition-colors group-hover:text-primary group-focus-visible:text-primary"
           aria-hidden="true"
         >
           <i class="ti ti-pencil text-xs" />
