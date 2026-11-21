@@ -71,7 +71,7 @@ export function FactGroup(props: FactGroupProps): JSX.Element {
             <div class="k2b-fact-group__fact">
               <dt>{item.label}</dt>
               <dd>
-                <span class="k2b-fact-group__value">{item.value}</span>
+                {item.value}
                 <Show when={item.detail}>
                   <small class="k2b-fact-group__detail">{item.detail}</small>
                 </Show>

@@ -38,7 +38,10 @@ test("one bleed drives the timeline's margin, row padding, rail and day line, so
 test("an embedded timeline's row surface keeps at least 6px from a framed section's edge", () => {
   const rem = (value: string) => Number.parseFloat(value) * (value.endsWith("rem") ? 16 : 1);
   const bleed = /--k2b-activity-bleed:\s*([\d.]+(?:rem|px))/.exec(body(".k2b-ui :is(.k2b-activity, .k2b-activity-dialog__list)"))?.[1];
-  const padding = /padding:\s*[\d.]+(?:rem|px)\s+([\d.]+(?:rem|px))/.exec(body('.k2b-ui .k2b-section[data-frame="line"]'))?.[1];
+  // The inline padding is the column's text edge, `var(--k2b-gutter, <fallback>)` (K5).
+  const padding = /padding:\s*[\d.]+(?:rem|px)\s+(?:var\(--k2b-gutter,\s*)?([\d.]+(?:rem|px))/.exec(
+    body('.k2b-ui .k2b-section[data-frame="line"]'),
+  )?.[1];
   expect(bleed).toBeDefined();
   expect(padding).toBeDefined();
   expect(rem(padding!) - rem(bleed!)).toBeGreaterThanOrEqual(6);

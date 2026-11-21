@@ -502,7 +502,7 @@
   --k2b-notice-ink: var(--k2b-text-secondary);
   --k2b-notice-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent);
   display: block;
-  padding: 0.75rem var(--k2b-edge, 1.25rem);
+  padding: 0.75rem var(--k2b-gutter, 1.25rem);
   border: 1px solid transparent;
   border-radius: var(--k2b-radius-flat, 0);
   color: var(--k2b-text-secondary);
@@ -588,7 +588,7 @@
   align-items: center;
   gap: .125rem .75rem;
   block-size: var(--k2b-h-row-2, 3.25rem);
-  padding: .5rem var(--k2b-edge, 1.25rem);
+  padding: .5rem var(--k2b-gutter, 1.25rem);
   border: 0;
   border-radius: var(--k2b-radius-flat, 0);
 }
@@ -639,7 +639,7 @@
   min-height: var(--k2b-h-row-2, 3.25rem);
   align-items: center;
   gap: 0.75rem;
-  padding: calc(0.625rem - 1px) calc(var(--k2b-edge, 1.25rem) - 1px);
+  padding: calc(0.625rem - 1px) calc(var(--k2b-gutter, 1.25rem) - 1px);
   border-radius: var(--k2b-radius-flat, 0);
 }
 .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) > .k2b-notice-card__content { flex: 1 1 auto; }

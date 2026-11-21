@@ -22,7 +22,7 @@ const rule = (selector: string) => {
 };
 
 describe("Section", () => {
-  test("is a named region with a heading; a page section is one level up and draws a neutral tile", () => {
+  test("is a named region with a heading; a page section is one level up; an area colour draws a 20 px tile", () => {
     const panel = renderToString(() => createComponent(Section, { title: "Customer", icon: "ti ti-user", children: "K-10482" }));
     const page = renderToString(() => createComponent(Section, { title: "Details", icon: "ti ti-id", size: "md", children: "Born 1961" }));
 
@@ -32,9 +32,17 @@ describe("Section", () => {
     expect(panel).toMatch(/<h3[^>]*id="k2b-section-[^"]+-title"[^>]*>Customer<\/h3>/);
     expect(page).toContain('data-size="md"');
     expect(page).toMatch(/<h2[^>]*>Details<\/h2>/);
-    expect(rule('.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__icon')).toContain(
-      "background: var(--k2b-surface-muted)",
+    // K17: the symbol sits in a 20 px tile with the mark radius; only an area colour or a tone fills it.
+    expect(rule(".k2b-ui .k2b-section__icon")).toContain("width: 1.25rem");
+    expect(rule(".k2b-ui .k2b-section__icon")).toContain("border-radius: var(--k2b-radius-mark, 0.25rem)");
+    expect(rule(".k2b-ui .k2b-section__icon")).not.toContain("background");
+    expect(rule(".k2b-ui .k2b-section__icon[data-color]")).toContain(
+      "background: color-mix(in srgb, var(--k2b-section-icon-color) 14%, var(--k2b-surface))",
     );
+    const money = renderToString(() =>
+      createComponent(Section, { title: "Money", icon: "ti ti-coins", iconColor: "#4d7c0f", size: "md", children: "…" }),
+    );
+    expect(money).toMatch(/class="k2b-section__icon" aria-hidden="true" data-color="" style="--k2b-section-icon-color:\s*#4d7c0f"/);
   });
 
   test("names tones after the status tokens and marks restricted visibility with a lock and words", () => {
@@ -64,12 +72,13 @@ describe("Section", () => {
     ]) {
       expect(rule(`.k2b-ui .k2b-section[data-tone="${tone}"]`)).toContain(`--k2b-section-tone: var(${token})`);
     }
-    // A tone colours the frame, never the fill.
+    // A tone colours the frame and the symbol tile, never the section's fill or its title (K8, K17).
     expect(rule('.k2b-ui .k2b-section[data-tone][data-frame="line"]')).toContain("border-color");
-    expect(css).not.toMatch(/\.k2b-section\[data-tone[^{]*\{[^}]*background:/);
+    expect(css).not.toMatch(/\.k2b-section\[data-tone[^\]]*\](?:\[[^\]]*\])* \{[^}]*background:/);
+    expect(css).not.toMatch(/\.k2b-section\[data-tone[^{]*\.k2b-section__title[^{]*\{[^}]*color:/);
   });
 
-  test("is a card on a page, flat in a detail panel, and never a card inside another frame", async () => {
+  test("is a frame on a page, flat in a detail panel, and never a frame inside another frame", async () => {
     const { default: DetailPanel } = await import("../layout/DetailPanel");
     const page = renderToString(() => createComponent(Section, { title: "Details", size: "md", children: "…" }));
     const panel = renderToString(() =>
@@ -87,10 +96,11 @@ describe("Section", () => {
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // The card is Paper's light frame and an island: shadow and surface come only from the layer hooks.
+    // On a full page the frame is Paper's hairline with square corners and no shadow (K2-K4).
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain(paperBorder!);
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat, 0)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: none");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-surface)");
     for (const host of [
       ".k2b-section",
       ".k2b-detail-panel__group",

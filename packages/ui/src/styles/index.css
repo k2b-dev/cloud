@@ -3743,7 +3743,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 0.5rem;
-  padding: 0 0.75rem 0 var(--k2b-edge, 1.25rem);
+  padding: 0 0.75rem 0 var(--k2b-gutter, 1.25rem);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -3793,7 +3793,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.75rem var(--k2b-edge, 1.25rem);
+  padding: 0.75rem var(--k2b-gutter, 1.25rem);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -3952,7 +3952,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] {
-  padding: 0.75rem var(--k2b-edge, 1.25rem) 1rem;
+  padding: 0.75rem var(--k2b-gutter, 1.25rem) 1rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-flat, 0);
   background: var(--k2b-surface);
@@ -3964,7 +3964,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem var(--k2b-edge, 1.25rem);
+  padding: 1rem var(--k2b-gutter, 1.25rem);
 }
 
 .k2b-ui
@@ -4230,9 +4230,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2 * var(--k2b-edge, 1.25rem));
-  margin: -0.75rem calc(-1 * var(--k2b-edge, 1.25rem)) -1rem;
-  padding: 0.75rem var(--k2b-edge, 1.25rem) 1rem;
+  width: calc(100% + 2 * var(--k2b-gutter, 1.25rem));
+  margin: -0.75rem calc(-1 * var(--k2b-gutter, 1.25rem)) -1rem;
+  padding: 0.75rem var(--k2b-gutter, 1.25rem) 1rem;
   border-radius: 0;
 }
 
@@ -4471,7 +4471,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: var(--k2b-h-group-head, 2.25rem);
   align-items: center;
   gap: 0.5rem;
-  padding-inline: var(--k2b-edge, 1.25rem) 0.75rem;
+  padding-inline: var(--k2b-gutter, 1.25rem) 0.75rem;
   background: var(--k2b-surface-canvas);
   box-shadow:
     inset 0 1px 0 var(--k2b-border),
@@ -4547,7 +4547,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template-columns: 1.25rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0 0.75rem;
-  padding: 0 0.75rem 0 var(--k2b-edge, 1.25rem);
+  padding: 0 0.75rem 0 var(--k2b-gutter, 1.25rem);
 }
 
 .k2b-ui .k2b-area[data-collapsible="true"] > .k2b-area__head {
@@ -4631,6 +4631,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
+.k2b-ui .k2b-button.k2b-area__chevron {
+  color: var(--k2b-text-subtle);
+}
+
 /* A framed button in the head keeps the page surface on the quiet ground. */
 .k2b-ui .k2b-area__actions .k2b-button[data-variant="secondary"] {
   background: var(--k2b-surface);
@@ -4655,7 +4659,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-area__body {
   position: relative;
   min-width: 0;
-  padding-inline-start: calc(var(--k2b-edge, 1.25rem) + 2rem);
+  padding-inline-start: calc(var(--k2b-gutter, 1.25rem) + 2rem);
 }
 
 .k2b-ui .k2b-area__body:empty {
@@ -4667,7 +4671,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: absolute;
   top: 0;
   bottom: 1.25rem;
-  inset-inline-start: calc(var(--k2b-edge, 1.25rem) + 0.625rem - 0.5px);
+  inset-inline-start: calc(var(--k2b-gutter, 1.25rem) + 0.625rem - 0.5px);
   width: 1px;
   background: var(--k2b-border-strong);
 }
@@ -4710,7 +4714,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    without lines; below 360 px the label stands above its value. */
 .k2b-ui .k2b-fact-group {
   min-width: 0;
-  padding: 0.75rem var(--k2b-edge, 1.25rem) 0.25rem;
+  padding: 0.75rem var(--k2b-gutter, 1.25rem) 0.25rem;
   container: k2b-fact-group / inline-size;
 }
 
@@ -4943,7 +4947,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section) {
-  padding: 1rem var(--k2b-edge, 1.25rem);
+  padding: 1rem var(--k2b-gutter, 1.25rem);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -5393,11 +5397,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__group-title {
-  padding: 0 var(--k2b-edge, 1.25rem) 0.25rem;
+  padding: 0 var(--k2b-gutter, 1.25rem) 0.25rem;
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section {
-  padding-inline: var(--k2b-edge, 1.25rem);
+  padding-inline: var(--k2b-gutter, 1.25rem);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -12645,11 +12649,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* K5: the first and the last column stand on the column's text edge. */
 .k2b-ui .k2b-data-table :is(th, td):first-child {
-  padding-inline-start: var(--k2b-edge, 1.25rem);
+  padding-inline-start: var(--k2b-gutter, 1.25rem);
 }
 
 .k2b-ui .k2b-data-table :is(th, td):last-child {
-  padding-inline-end: var(--k2b-edge, 1.25rem);
+  padding-inline-end: var(--k2b-gutter, 1.25rem);
 }
 
 /* K7: hairlines under the rows, nothing else. The head has no fill: grey
@@ -12745,13 +12749,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Column hover: the column's cells, its head included, take one light grey;
    the head's words turn dark. */
-.k2b-ui .k2b-data-table td[data-highlighted="true"],
-.k2b-ui .k2b-data-table__head-row > th[data-highlighted="true"] {
+.k2b-ui .k2b-data-table td[data-highlighted="true"] {
   background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
 }
 
 .k2b-ui .k2b-data-table__head-row > th[data-highlighted="true"] {
   color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"],
@@ -13156,7 +13160,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     align-content: center;
     align-items: center;
     column-gap: 0.75rem;
-    padding: 0.5rem var(--k2b-edge, 1rem);
+    padding: 0.5rem var(--k2b-gutter, 1rem);
     box-shadow: inset 0 -1px 0 var(--k2b-border);
   }
 

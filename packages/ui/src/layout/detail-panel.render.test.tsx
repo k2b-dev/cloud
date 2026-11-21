@@ -122,12 +122,14 @@ describe("DetailPanel", () => {
     expect(sectionRule).not.toContain("border");
     expect(sectionRule).not.toContain("background");
     expect(sectionRule).not.toContain("box-shadow");
-    expect(summaryRule).toContain("background: var(--k2b-surface)");
+    // K9: one flat column; the summary is no card either.
+    expect(summaryRule).not.toContain("background");
     expect(summaryRule).not.toContain("box-shadow");
-    expect(headerRule).toContain("padding: 0.875rem 0.5rem 0.75rem");
+    // The 56 px bar carries its own insets; the header itself has none.
+    expect(headerRule).toContain("padding: 0;");
     expect(bodyRule).toContain("overflow-y: auto");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
-    expect(bodyRule).toContain("padding: 0.25rem 0.5rem 1rem");
+    expect(bodyRule).toContain("padding: 0 0 1rem");
   });
 
   test("absorbs its stable scrollbar gutter into the workspace trailing inset", async () => {
@@ -142,7 +144,8 @@ describe("DetailPanel", () => {
     expect(workspaceDetailRule).toContain("padding: 0 0.5rem env(safe-area-inset-bottom, 0px)");
     expect(panelRule).toContain("width: calc(100% + var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
-    expect(headerRule).toContain("padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem)");
+    expect(headerRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
+    expect(bodyRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
   });
 
@@ -193,10 +196,12 @@ describe("DetailPanel", () => {
     );
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const groupRule = css.match(/\.k2b-ui \.k2b-detail-panel__group \{([^}]*)\}/)?.[1];
-    // A group and a section placed directly in the body (a discussion is one) share one frame rule.
-    const frame = css.match(/\.k2b-ui\s*:is\(\s*(\.k2b-detail-panel__group,[^)]*)\)\s*\{([^}]*)\}/);
-    const groupedSectionRule = css.match(/\.k2b-ui \.k2b-detail-panel__group > \.k2b-section \{([^}]*)\}/)?.[1];
-    const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
+    // K9: a summary, a group, and a section placed directly in the body (a discussion is one) share one flat rule,
+    // and one hairline separates each from the one before.
+    const topic = ".k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section)";
+    const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const frame = css.match(new RegExp(`${escaped} \\{([^}]*)\\}`))?.[1];
+    const separator = css.match(new RegExp(`${escaped}:not\\(:first-child\\) \\{([^}]*)\\}`))?.[1];
     const sectionIconRule = css.match(/\.k2b-ui \.k2b-section__icon \{([^}]*)\}/)?.[1];
 
     expect(html).toContain('class="k2b-detail-panel__header-icon"');
@@ -205,13 +210,13 @@ describe("DetailPanel", () => {
     expect(html).toContain('data-tone="warning"');
     // In a panel, sections stand flat: the panel frames them.
     expect(html).not.toContain('data-frame="line"');
-    // One quiet surface like the summary: no border, no 1px rules between sections.
+    // A group's own sections stay together without rules; the column's topics stand borderless on its text edge.
     expect(groupRule).not.toContain("gap: 1px");
-    expect(groupRule).not.toContain("border:");
-    expect(frame?.[1]).toContain(".k2b-detail-panel__body > .k2b-section");
-    expect(frame?.[2]).toContain("border: 0;");
-    expect(frame?.[2]?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
-    expect(groupedSectionRule).not.toContain("background");
+    expect(groupRule).not.toContain("border");
+    expect(frame).toContain("padding: 1rem var(--k2b-gutter, 1.25rem)");
+    expect(frame).toContain("border: 0;");
+    expect(frame).toContain("background: transparent");
+    expect(separator).toContain("border-top: 1px solid var(--k2b-border)");
     expect(sectionIconRule).not.toContain("background");
   });
 

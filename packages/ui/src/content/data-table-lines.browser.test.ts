@@ -41,7 +41,7 @@ afterAll(async () => {
 const load = async (theme: string, params = "") => {
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style></head><style>.fill-frame{height:400px}</style><body class="k2b-ui" data-theme="${theme}"><div id="app"></div><span id="probe-secondary" style="color:var(--k2b-text-secondary)"></span><span id="probe-muted" style="background:var(--k2b-surface-muted)"></span><span id="probe-strong" style="color:var(--k2b-border-strong)"></span><span id="probe-border" style="color:var(--k2b-border)"></span><span id="probe-action" style="color:var(--k2b-app-workspace-active)"></span><span id="probe-surface" style="background:var(--k2b-surface)"></span></body></html>`,
+    `<!doctype html><html><head><style>${css}</style></head><style>.fill-frame{height:400px}</style><body class="k2b-ui" data-theme="${theme}"><div id="app"></div><span id="probe-secondary" style="color:var(--k2b-text-subtle)"></span><span id="probe-muted" style="background:var(--k2b-surface-muted)"></span><span id="probe-strong" style="color:var(--k2b-border-strong)"></span><span id="probe-border" style="color:var(--k2b-border)"></span><span id="probe-action" style="color:var(--k2b-app-workspace-active)"></span><span id="probe-surface" style="background:var(--k2b-surface)"></span></body></html>`,
   );
   await page.evaluate((params) => {
     location.hash = params;
@@ -110,7 +110,8 @@ const rgbOf = (value: string) => value.split(",").slice(0, 3).map(Number);
 
 for (const theme of ["light", "dark"])
   describe(`table lines in ${theme}`, () => {
-    test("a grey head with a strong line, a line under each row but the last, and lighter column lines", async () => {
+    // K7: the head has no fill, grey 12 px words and one hairline under it; lines only under the rows.
+    test("a head without fill, a hairline under the head and under each row but the last, no column lines", async () => {
       const page = await load(theme);
       try {
         await page.waitForSelector("tbody tr.k2b-data-table__row");
@@ -118,11 +119,11 @@ for (const theme of ["light", "dark"])
         const p = await paints(page);
         const column = (line: string) => line.startsWith("1,0:");
         expect(p.headColor).toBe(p.secondary);
-        expect(p.headWeight).toBe("600");
-        for (const [i, th] of p.head.entries()) {
-          expect(th.background).toBe(p.muted);
-          expect(th.lines).toContain(`0,-1:${p.strong}`);
-          expect(th.lines.some(column)).toBe(i > 0);
+        expect(p.headWeight).toBe("500");
+        for (const th of p.head) {
+          expect(transparent(th.background) || th.background.endsWith(",0")).toBe(true);
+          expect(th.lines).toEqual([`0,-1:${p.border}`]);
+          expect(th.lines.some(column)).toBe(false);
           // Lines are shadows inside the cell; no cell gets a border that could change its size.
           expect(th.border).toEqual(["0px", "0px", "0px", "0px"]);
         }
@@ -130,23 +131,17 @@ for (const theme of ["light", "dark"])
           expect(transparent(row.background) || row.background.endsWith(",0")).toBe(true);
           for (const [i, td] of row.cells.entries()) {
             expect(td.lines.includes(`0,-1:${p.border}`), `row ${r} line`).toBe(r < p.rows.length - 1);
-            const columnLine = td.lines.find(column);
-            if (i === 0) expect(columnLine).toBeUndefined();
-            else {
-              // 70 % of the row line: lighter than it, still visible.
-              expect(columnLine).toBeDefined();
-              expect(columnLine).not.toBe(`1,0:${p.border}`);
-            }
+            expect(td.lines.some(column), `row ${r} cell ${i} column line`).toBe(false);
             expect(td.border).toEqual(["0px", "0px", "0px", "0px"]);
           }
         }
         const { rows } = await geometry(page);
-        for (const row of rows) expect(row.height).toBe(44);
+        for (const row of rows) expect(row.height).toBe(40);
         const head = await page
           .locator("thead th")
           .first()
           .evaluate((th) => th.getBoundingClientRect().height);
-        expect(head).toBe(34);
+        expect(head).toBe(36);
       } finally {
         await page.context().close();
       }
@@ -162,16 +157,14 @@ for (const theme of ["light", "dark"])
         const rest = await paints(page);
         const restBoxes = await boxes(page);
 
-        // Column hover: the head cell gets darker than the grey head, body cells a light grey, not the blue hover.
+        // Column hover: the head cell and the body cells take the same light grey, not the blue hover.
         await hoverInPlace(page.locator("tbody tr").nth(1).locator("td").nth(1));
         await page.waitForSelector('th[data-highlighted="true"]');
         await settled(page);
         const hovered = await paints(page);
         expect(await boxes(page)).toEqual(restBoxes);
-        const headFill = rgbOf(hovered.head[1]!.background);
-        const headRest = rgbOf(rest.head[1]!.background);
-        const darker = theme === "light" ? headFill[0]! < headRest[0]! : headFill[0]! > headRest[0]!;
-        expect(darker).toBe(true);
+        expect(hovered.head[1]!.background).not.toBe(rest.head[1]!.background);
+        expect(hovered.head[1]!.background).toBe(hovered.rows[0]!.cells[1]!.background);
         expect(hovered.head[0]!.background).toBe(rest.head[0]!.background);
         const cell = rgbOf(hovered.rows[0]!.cells[1]!.background);
         expect(cell[0]).toBe(cell[2]);
@@ -225,8 +218,8 @@ for (const theme of ["light", "dark"])
 
     test("a fill-height table keeps its rows at their height and gives the spare room to the spacer", async () => {
       for (const [density, height] of [
-        ["normal", 44],
-        ["compact", 40],
+        ["normal", 40],
+        ["compact", 32],
       ] as const) {
         const page = await load(theme, `fill=1${density === "compact" ? "&compact=1" : ""}`);
         try {
@@ -249,13 +242,13 @@ for (const theme of ["light", "dark"])
         await settled(page);
         const rows = () =>
           page.locator("tbody tr.k2b-data-table__row").evaluateAll((items) => items.map((row) => row.getBoundingClientRect().height));
-        expect(await rows()).toEqual([44, 44, 44]);
+        expect(await rows()).toEqual([40, 40, 40]);
         await page.waitForFunction(() =>
           document.querySelector('[data-k2b-live] [aria-live="polite"]')?.textContent?.includes("Loading rows"),
         );
         await page.evaluate("window.showRows()");
         await page.waitForFunction(() => !document.querySelector("[data-loading]"));
-        expect(await rows()).toEqual([44, 44, 44]);
+        expect(await rows()).toEqual([40, 40, 40]);
       } finally {
         await page.context().close();
       }
@@ -263,8 +256,8 @@ for (const theme of ["light", "dark"])
 
     test("loading and real rows share geometry in normal and compact density", async () => {
       for (const [density, height] of [
-        ["normal", 44],
-        ["compact", 40],
+        ["normal", 40],
+        ["compact", 32],
       ] as const) {
         const page = await load(theme, `loading=1${density === "compact" ? "&compact=1" : ""}`);
         try {

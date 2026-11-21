@@ -516,7 +516,8 @@ describe("@k2b/ui Cloud content contract", () => {
   test("keeps table hover subtle without weakening the selected row", () => {
     expect(uiCss).toMatch(/\.k2b-data-table td\[data-highlighted="true"\] \{[^}]*var\(--k2b-text\) 3%, transparent/s);
     expect(uiCss).toMatch(
-      /\.k2b-data-table__head-row > th\[data-highlighted="true"\] \{[^}]*var\(--k2b-text\) 6%, var\(--k2b-surface-muted\)/s,
+      // K7: the head has no fill; under column hover it takes the column's light grey and dark words.
+      /\.k2b-data-table__head-row > th\[data-highlighted="true"\] \{[^}]*color: var\(--k2b-text\);[^}]*var\(--k2b-text\) 3%, transparent/s,
     );
     expect(uiCss).toMatch(
       /\.k2b-data-table__row\[data-hover="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*var\(--k2b-hover\) 50%, transparent/s,
