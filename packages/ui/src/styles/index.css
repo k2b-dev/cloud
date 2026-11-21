@@ -21634,8 +21634,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     opacity: var(--k2b-sheet-dim, 1);
     transition: none;
   }
+  /* The same footer as a phone dialog's: 12 px below the buttons, or the safe area where it is larger, so the body
+     keeps every pixel it had (the pairing dialog's steps fit a 320 x 568 phone without scrolling). */
   .k2b-ui .k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame) > .k2b-panel-dialog-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
   }
 }
 /* Turned to 48rem and wider while open, the dialog is centered again; its grip has no use there. */
