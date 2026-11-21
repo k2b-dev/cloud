@@ -1423,7 +1423,8 @@ html {
   gap: 0.75rem;
   overflow: auto;
   padding: 0 0.5rem env(safe-area-inset-bottom, 0px);
-  border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+  /* K16: a sheet below 768 px has the app card's 14 px at the top. */
+  border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
   /* The detail as a sheet overlays the page: layer 2. */

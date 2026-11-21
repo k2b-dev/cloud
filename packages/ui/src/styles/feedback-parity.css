@@ -18,7 +18,8 @@
   --k2b-feedback-tooltip-surface: var(--k2b-neutral-900);
   --k2b-feedback-tooltip-border: var(--k2b-neutral-800);
   --k2b-feedback-tooltip-text: #fff;
-  --k2b-feedback-backdrop: rgb(0 0 0 / 0.45);
+  /* K16: one scrim, 28 %, without blur, only behind what locks the page (dialog, sheet). */
+  --k2b-feedback-backdrop: var(--k2b-scrim, rgb(9 9 11 / 0.28));
 }
 
 .k2b-ui[data-theme="dark"],
@@ -27,7 +28,7 @@
   --k2b-feedback-tooltip-surface: var(--k2b-neutral-800);
   --k2b-feedback-tooltip-border: var(--k2b-neutral-700);
   --k2b-feedback-tooltip-text: var(--k2b-neutral-100);
-  --k2b-feedback-backdrop: rgb(0 0 0 / 0.35);
+  --k2b-feedback-backdrop: var(--k2b-scrim, rgb(9 9 11 / 0.28));
 }
 
 /* ---------------------------------------------------------------- dialog */
@@ -52,17 +53,19 @@
 
 .k2b-ui .k2b-dialog {
   position: fixed;
-  top: 50%;
+  /* A centered frame lifts by what grew under its footer, so the footer stays put (K16, `dialog-foot.ts`). */
+  top: calc(50% - var(--k2b-dialog-lift, 0px));
   left: 50%;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  border: 1px solid var(--k2b-border-strong);
-  border-radius: var(--k2b-radius-dialog);
+  border: 1px solid var(--k2b-border);
+  /* K16, variant B: round like a control, the large shadow, flat inside. */
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-lg, 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32));
   transform: translate(-50%, -50%);
 }
 
@@ -303,17 +306,11 @@
   box-shadow: none;
 }
 
+/* K16: the page behind is locked, so it darkens a little and stays readable; it
+ * never blurs. `::backdrop` does not inherit custom properties in every engine;
+ * there the fallback is the same 28 %. */
 .k2b-ui .k2b-dialog::backdrop {
-  background: var(--k2b-feedback-backdrop);
-  backdrop-filter: blur(8px);
-}
-
-/* `::backdrop` does not inherit from the dialog in every engine, so the dark
- * value is restated instead of relying on the custom property alone. */
-.k2b-ui[data-theme="dark"] .k2b-dialog::backdrop,
-.k2b-ui.k2b-dark .k2b-dialog::backdrop,
-.dark .k2b-ui .k2b-dialog::backdrop {
-  background: rgb(0 0 0 / 0.35);
+  background: var(--k2b-scrim, rgb(9 9 11 / 0.28));
 }
 
 .k2b-ui .k2b-dialog__viewport {
@@ -338,12 +335,15 @@
   height: 100%;
 }
 
+/* K16: inside, a dialog is flat: a head band (56 px) and a foot band, each
+ * set off by one hairline, around a body on the text edge. The bands own their
+ * padding, so a line runs from edge to edge of the frame. */
 .k2b-ui .k2b-dialog__panel {
   display: flex;
   min-height: 0;
   flex-direction: column;
   gap: 0;
-  padding: 1rem;
+  padding: 0;
   border-radius: inherit;
   background: inherit;
 }
@@ -352,8 +352,7 @@
  * frame, handle and motion around the prompt's own panel. The handle gives the
  * top its room, and the last row stays clear of the home indicator. */
 .k2b-ui .k2b-prompt-sheet .k2b-dialog__panel {
-  padding-top: 0;
-  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* The question is the decision: on a phone, where no pointer shows a cut
@@ -379,7 +378,7 @@
 /* Custom `prompts.dialog` bodies are arbitrary markup with no `__body`
  * padding, so the stack supplies Cloud's `gap-4` between header and body. */
 .k2b-ui .k2b-dialog__stack {
-  gap: 1rem;
+  gap: 0;
 }
 
 /* The scroll region around a custom `prompts.dialog` body. The body keeps the
@@ -399,19 +398,27 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  margin: 0 -0.625rem -0.625rem;
-  padding: 0 0.625rem 0.625rem;
+  margin: 0;
+  padding: 1rem var(--k2b-edge, 1.25rem) 1.25rem;
   overflow-y: auto;
+}
+
+/* A custom body that brings its own panel (head, body, foot) owns its bands. */
+.k2b-ui .k2b-dialog__content:has(> .k2b-dialog__panel) {
+  padding: 0;
 }
 
 .k2b-ui .k2b-dialog__header {
   display: flex;
+  box-sizing: border-box;
   flex: none;
   min-width: 0;
+  min-height: var(--k2b-h-head, 3.5rem);
   align-items: center;
   justify-content: flex-start;
-  gap: 1rem;
-  padding: 0 0 0.5rem;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0 var(--k2b-edge, 1.25rem);
+  border-bottom: 1px solid var(--k2b-border);
 }
 
 /* Same header as PanelDialog: flat on the dialog surface, a quiet icon, the
@@ -487,8 +494,9 @@
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-body, 0.875rem);
   font-weight: 600;
+  line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -562,8 +570,7 @@
 .k2b-ui .k2b-dialog__body {
   min-height: 0;
   overflow-y: auto;
-  margin-inline: -0.625rem;
-  padding: 1rem 0.625rem;
+  padding: 1rem var(--k2b-edge, 1.25rem);
   font-size: 0.875rem;
   white-space: pre-wrap;
 }
@@ -577,8 +584,9 @@
   display: flex;
   flex: none;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 0;
+  gap: 0.5rem;
+  padding: 0.75rem var(--k2b-edge, 1.25rem);
+  border-top: 1px solid var(--k2b-border);
   background: transparent;
 }
 
@@ -653,11 +661,11 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--k2b-border-strong);
-  border-radius: var(--k2b-radius-dialog);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-lg, 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32));
 }
 
 .k2b-ui .k2b-prompt-search__input {
@@ -869,10 +877,10 @@
   margin: 0;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--k2b-feedback-tooltip-border);
-  border-radius: var(--k2b-radius-control);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-feedback-tooltip-text);
   background: var(--k2b-feedback-tooltip-surface);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   font-size: 0.6875rem;
   line-height: 1rem;
   white-space: normal;
@@ -912,10 +920,10 @@
   margin: 0;
   padding: 0.75rem 0.875rem;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   font-size: 0.8125rem;
   line-height: 1.25rem;
   white-space: normal;
@@ -969,11 +977,11 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.5;
@@ -1067,11 +1075,11 @@
   padding: 0.75rem 0.875rem;
   /* Visible, so the bridge over the gap reaches the control; a body too tall for the screen scrolls itself. */
   overflow: visible;
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.25rem;
@@ -1118,12 +1126,12 @@
   max-height: calc(100dvh - 3rem);
   padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
   border-width: 1px 0 0;
-  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+  border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
   box-shadow: var(--k2b-shadow-sheet);
 }
 
 .k2b-ui [popover].k2b-hover-card[data-sheet]::backdrop {
-  background: var(--k2b-feedback-backdrop);
+  background: var(--k2b-scrim, rgb(9 9 11 / 0.28));
 }
 
 .k2b-ui .k2b-hover-card__head {
@@ -1233,7 +1241,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 .k2b-ui [data-k2b-toast-container]:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
-  border-radius: calc(var(--k2b-radius-surface) + 0.5rem);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
 }
 
 /* The stack: every toast lies in a slot at the rail's edge, and the script
@@ -1278,7 +1286,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 .k2b-ui [data-k2b-toast-container] > .k2b-toast-slot[data-behind] {
   overflow: hidden;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   background: var(--k2b-surface-elevated);
 }
 
@@ -1293,10 +1301,10 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   column-gap: 0.75rem;
   padding: 0.75rem 0.875rem 0.75rem 0.75rem;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay, 0.5rem);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toast);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
   pointer-events: auto;
   touch-action: none;
@@ -1337,9 +1345,11 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 }
 
 /* The tone's glyph in the shared icon tile; each tone has its own shape. */
+/* K16: the tile has the toast's own 8 px. */
 .k2b-ui .k2b-toast__icon {
   width: 1.75rem;
   height: 1.75rem;
+  border-radius: var(--k2b-radius-control);
   font-size: 1rem;
   line-height: 1;
 }
@@ -1403,7 +1413,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 }
 
 .k2b-ui .k2b-toast__title {
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-row, 0.8125rem);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: -0.006em;
@@ -1419,7 +1429,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-row, 0.8125rem);
   font-weight: 400;
   line-height: 1.25rem;
 }
@@ -1434,8 +1444,8 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
 .k2b-ui .k2b-toast__title:not([hidden]) ~ .k2b-toast__description {
   margin-top: calc(0.0625rem - 2px);
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  line-height: 1rem;
 }
 
 .k2b-ui .k2b-toast__link {
@@ -1479,7 +1489,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   justify-content: center;
   padding: 0 0.625rem;
   border: 1px solid var(--k2b-control-border-soft);
-  border-radius: 0.4375rem;
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: var(--k2b-surface);
   font: inherit;

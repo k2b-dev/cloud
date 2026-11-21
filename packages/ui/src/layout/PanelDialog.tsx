@@ -1,10 +1,11 @@
-import { createContext, createEffect, createSignal, createUniqueId, type JSX, Show, useContext } from "solid-js";
+import { createComputed, createContext, createEffect, createSignal, createUniqueId, type JSX, on, Show, useContext } from "solid-js";
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
+import { keepDialogFoot } from "../feedback/dialog-foot";
 import { SuccessCheck } from "../feedback/success-check";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { useUiMessages } from "../intl/messages";
@@ -46,8 +47,17 @@ export type PanelDialogBodyProps = {
   scrollFade?: boolean;
 };
 
+/** Why the dialog's action failed, with what follows from it, such as "Your entries stay". */
+export type PanelDialogError = string | { title: string; description?: string };
+
 export type PanelDialogFooterProps = {
   children: JSX.Element;
+  /**
+   * Shows why the action failed as a tinted cell directly above the footer, edge to edge, and announces it. The
+   * footer keeps its place on the screen: the dialog grows upwards, so the button under the pointer does not move.
+   * Keep the entries; clear the error when the person tries again.
+   */
+  error?: PanelDialogError;
 };
 
 export type PanelDialogSectionProps = {
@@ -200,11 +210,41 @@ const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => {
   );
 };
 
-const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => (
-  <footer class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
-    {props.children}
-  </footer>
-);
+const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
+  let footer: HTMLElement | undefined;
+  const title = () => (typeof props.error === "string" ? props.error : props.error?.title);
+  const description = () => (typeof props.error === "string" ? undefined : props.error?.description);
+  // Measured before the cell enters or leaves the page (computations run before the DOM updates), then kept after it.
+  let before: number | undefined;
+  createComputed(
+    on(
+      () => Boolean(title()),
+      () => {
+        before = footer?.isConnected ? footer.getBoundingClientRect().bottom : undefined;
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(on(() => Boolean(title()), () => keepDialogFoot(footer, before), { defer: true }));
+  return (
+    <>
+      <Show when={title()}>
+        {(text) => (
+          <div class="k2b-panel-dialog__error" role="alert">
+            <i class="ti ti-circle-x" aria-hidden="true" />
+            <div class="k2b-panel-dialog__error-copy">
+              <strong>{text()}</strong>
+              <Show when={description()}>{(detail) => <p>{detail()}</p>}</Show>
+            </div>
+          </div>
+        )}
+      </Show>
+      <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
+        {props.children}
+      </footer>
+    </>
+  );
+};
 
 const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
   const id = `k2b-panel-dialog-section-${createUniqueId()}`;

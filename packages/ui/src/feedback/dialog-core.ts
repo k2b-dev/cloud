@@ -7,6 +7,7 @@ import { RenderErrorBoundary } from "../internal/render-error";
 import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogCall, notePageDisposal, pageDisposals, readDialogCall } from "./dialog-call";
+import { DIALOG_LIFT } from "./dialog-foot";
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
 
@@ -99,6 +100,8 @@ type DialogState = {
   previousHtmlOverflow?: string;
   mouseDownOnDialog?: boolean;
   connectionObserver?: MutationObserver;
+  /** The level whose presentation the frame shows. */
+  presented?: DialogStackEntry;
 };
 
 const DEFAULT_PANEL_CLASS = "k2b-dialog";
@@ -458,6 +461,9 @@ export const createDialogCore = () => {
   const applyPresentation = (entry: DialogStackEntry) => {
     const dialog = state.element;
     if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
+    // Each level starts centered: a lift that kept another level's footer in place does not carry over (K16).
+    if (state.presented !== entry) dialog.style.removeProperty(DIALOG_LIFT);
+    state.presented = entry;
     if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
@@ -589,6 +595,7 @@ export const createDialogCore = () => {
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
       state.element = undefined;
+      state.presented = undefined;
       stopConnectionObserver();
       unlockPageScroll();
       let left = false;
@@ -622,6 +629,7 @@ export const createDialogCore = () => {
     state.motion?.stop();
     state.motion = undefined;
     state.element = undefined;
+    state.presented = undefined;
     stopConnectionObserver();
     dialog?.remove();
     unlockPageScroll();
