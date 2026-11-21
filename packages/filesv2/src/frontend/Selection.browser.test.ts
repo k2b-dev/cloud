@@ -119,7 +119,9 @@ let assets: Map<string, [string, Buffer]>;
 let css: string;
 beforeAll(async () => {
   [assets, css] = await Promise.all([buildHarness(), appHostCss(resolve(import.meta.dir, "../styles/app.css"))]);
-  browser = await launchBrowser();
+  // Classic scrollbars that take room in the layout (coordinator 21.11.): with hidden ones a column that scrolls sideways
+  // or a head that wraps went unnoticed. Every layout check in this file runs with them.
+  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 90_000);
 afterAll(async () => {
   await browser?.close();
@@ -595,12 +597,19 @@ describe("Files folder states", () => {
         ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target, .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-breadcrumbs__more, .k2b-section__header",
     });
   // K12: the tablet and the very wide screen keep one head row, the name column's cap and every line once.
-  for (const width of [768, 1920])
-    test(`${width} px with many files: nothing overlaps, spills, is cut, or draws a double line`, async () => {
+  for (const width of [768, 1100, 1920])
+    test(`${width} px with many files${width === 1100 ? " and the detail column open" : ""}: nothing overlaps, spills, is cut, or draws a double line`, async () => {
       const { tab, errors } = await open({ viewport: { width, height: 900 } }, "", "en", many());
       try {
-        if (shots) await tab.screenshot({ path: `${shots}/folder-many-light-${width}.png` });
+        if (width === 1100) {
+          await row(tab, "Beleg-2026-002").click();
+          await tab.locator(".k2b-detail-panel h2").first().waitFor();
+          await settled(tab);
+        }
+        if (shots) await tab.screenshot({ path: `${shots}/${width === 1100 ? "detail" : "folder"}-many-light-${width}.png` });
         expect((await problems(tab)).problems).toEqual([]);
+        // The head stays one 56 px row (K6).
+        expect(Math.round((await tab.locator(".k2b-app-workspace__head").first().boundingBox())!.height)).toBeLessThanOrEqual(57);
         expect(errors).toEqual([]);
       } finally {
         await tab.context().close();
