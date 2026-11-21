@@ -86,7 +86,7 @@ describe("Pulse flat base page", () => {
     test(`${width} px: Sources with a source in detail, with few and with many rows`, async () => {
       for (const props of [flatStates.error, many(flatStates.error)]) {
         const tab = await open(width, props);
-        await tab.getByText("Was nicht ankommt").first().waitFor();
+        await tab.getByText("Anfragen abgelehnt, zuletzt", { exact: false }).first().waitFor();
         if (props === flatStates.error) await shoot(tab, "02-quelle-fehler", width);
         expect(await problems(tab)).toEqual([]);
         await tab.close();

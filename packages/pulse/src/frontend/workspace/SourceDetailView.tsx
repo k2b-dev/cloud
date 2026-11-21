@@ -246,13 +246,15 @@ export default function SourceDetailView(props: Props) {
       <DetailPanel.Body>
         {/* Something that needs a person is a tinted cell where the thing stands (K10): the source's detail. */}
         <Show when={problem() === "rejected" || problem() === "error"}>
-          <Section title={t().whatNotArrives} icon="ti ti-circle-x">
+          <div class="pulse-not-arriving" role="group" aria-label={t().whatNotArrives}>
             <Show
               when={problem() === "rejected" && status().rejected}
               fallback={
                 <NoticeRow
                   tone="danger"
                   icon
+                  reserve={false}
+                  detailTitle={localizedSourceError(status().lastError, t()) ?? undefined}
                   detail={localizedSourceError(status().lastError, t())}
                   action={
                     props.source.kind === "metrics" ? (
@@ -272,7 +274,11 @@ export default function SourceDetailView(props: Props) {
                 <NoticeRow
                   tone="danger"
                   icon
+                  reserve={false}
                   detailLines={2}
+                  detailTitle={[t().refusedExplain, rejected().lastReason ? t().lastReason({ reason: rejected().lastReason! }) : null]
+                    .filter(Boolean)
+                    .join(" ")}
                   detail={[t().refusedExplain, rejected().lastReason ? t().lastReason({ reason: rejected().lastReason! }) : null]
                     .filter(Boolean)
                     .join(" ")}
@@ -284,7 +290,7 @@ export default function SourceDetailView(props: Props) {
                 </NoticeRow>
               )}
             </Show>
-          </Section>
+          </div>
         </Show>
         <Section title={t().arrivalTitle} icon="ti ti-inbox">
           <DescriptionList

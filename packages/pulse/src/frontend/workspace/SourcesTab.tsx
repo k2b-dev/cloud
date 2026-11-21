@@ -37,8 +37,11 @@ export const ago = (value: string, context: PulseDateContext) => {
   const seconds = Math.max(0, Math.round((new Date(now(context)).getTime() - Date.parse(value)) / 1000));
   // Arrivals are seconds or minutes old; "this minute" would hide that a source sends every 10 s.
   if (seconds < 3600) {
-    const format = new Intl.RelativeTimeFormat(context.locale ?? "en", { style: "narrow", numeric: "always" });
-    return seconds < 60 ? format.format(-seconds, "second") : format.format(-Math.floor(seconds / 60), "minute");
+    // "vor 22 s", "vor 39 Min.": the narrow minute ("39 m") reads like metres.
+    const locale = context.locale ?? "en";
+    return seconds < 60
+      ? new Intl.RelativeTimeFormat(locale, { style: "narrow", numeric: "always" }).format(-seconds, "second")
+      : new Intl.RelativeTimeFormat(locale, { style: "short", numeric: "always" }).format(-Math.floor(seconds / 60), "minute");
   }
   return dates.formatTimeSpan(value, { ...context, base: now(context) });
 };

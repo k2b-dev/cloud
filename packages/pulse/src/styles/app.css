@@ -182,9 +182,6 @@
 .pulse-usage-name { display: inline-flex; align-items: center; gap: var(--k2b-space-2, 8px); font-weight: 600; }
 .pulse-usage-name > i { color: var(--k2b-text-muted); font-size: 16px; font-weight: 400; }
 .pulse-detail-text { margin: 0 0 var(--k2b-space-2, 8px); color: var(--k2b-text); font-size: var(--k2b-font-size-row, 13px); overflow-wrap: anywhere; }
-.pulse-not-arriving { display: grid; gap: var(--k2b-space-1, 4px); color: var(--k2b-danger-text); font-size: var(--k2b-font-size-row, 13px); line-height: 20px; overflow-wrap: anywhere; }
-.pulse-not-arriving > p { margin: 0; }
-.pulse-not-arriving__lead { font-weight: 600; }
 .pulse-run-kbd { margin-inline-start: var(--k2b-space-1, 4px); }
 .pulse-no-access { padding-top: var(--k2b-space-4, 16px); }
 .pulse-no-access__lead { margin: 0; padding: 0 var(--k2b-gutter) var(--k2b-space-1, 4px); font-size: var(--k2b-font-size-body, 14px); font-weight: 600; }
