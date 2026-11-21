@@ -2762,10 +2762,11 @@ html {
     flex: 1 1 0;
   }
 
+  /* K1, K15: the views share the one row with the title and the actions;
+     their zero basis never pushes the row to wrap, and the strip moves what
+     does not fit into More (ViewTabs `fit`). */
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
-    /* Reserve one control before distributing the row. A zero basis can
-       otherwise collapse the strip beside the full-width filter row. */
-    flex: 1 1 var(--k2b-workspace-head-line);
+    flex: 1 1 0;
     margin-inline-start: -1rem;
   }
 
@@ -2782,16 +2783,16 @@ html {
     margin-inline: -1rem;
   }
 
-  /* A visible title takes the first row with the actions; the views move to
-     their own row. The title shows here only on a page with a way up that
-     does not render its own `PageTitle`. */
+  /* A visible title shares the row: it keeps at most half of it and ends in
+     an ellipsis, the views take the rest. The title shows here only on a page
+     with a way up that does not render its own `PageTitle`. */
   .k2b-ui
     .k2b-app-workspace__head[data-row][data-trail="up"]
     > .k2b-app-workspace__head-lead
-    > .k2b-app-workspace__head-views:not([data-k2b-own-title][data-k2b-own-title] *) {
-    order: 2;
-    flex: 1 1 100%;
-    margin-inline: -1rem;
+    > .k2b-page-title:not([data-k2b-own-title][data-k2b-own-title] *) {
+    min-width: 0;
+    max-width: 50%;
+    flex: 0 1 auto;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > .k2b-view-tabs,
@@ -2816,11 +2817,6 @@ html {
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__item[data-compact-hidden] {
     display: none;
-  }
-
-  /* The phone's view strip scrolls; a fitting strip keeps every view it shows here (see ViewTabs `fit`). */
-  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__list {
-    --k2b-view-tabs-fit: none;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__more {
