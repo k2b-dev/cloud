@@ -2463,9 +2463,11 @@ html {
 }
 
 /* The head row (`AppWorkspace.Head`): views, filters, and actions in one
-   row while they fit. Otherwise the filters wrap to a second row; the
-   workspace's width decides, not the window's, and flex wrapping decides it
-   in the first frame. The row is there in every layout; only its title
+   row that never wraps from 48 rem (K1, K15), so the selected view's mark
+   always lies on the head line. When room runs short, the quiet count goes
+   first, then the actions give way (below), then the views compact into
+   "More +n", and the filters scroll sideways with a fade. The workspace's
+   width decides, not the window's, in the first frame. The row is there in every layout; only its title
    follows the head's rules above and below: it shows only where the old head
    showed it, and beside a sidebar that marks the page it is gone, with a
    visually hidden `h1` when Main has none. K1, K2, K5, K6: the first line
@@ -2485,7 +2487,7 @@ html {
   height: max-content;
   min-height: var(--k2b-workspace-head-line);
   container: k2b-head / inline-size;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin: 0;
   align-items: flex-start;
   gap: 0 0.75rem;
@@ -2534,10 +2536,16 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
-  min-width: min(100%, 18rem);
-  flex-wrap: wrap;
+  min-width: 0;
+  flex-wrap: nowrap;
   gap: 0.25rem 0.5rem;
   container: k2b-head-lead / inline-size;
+}
+
+/* In the one row the filters give way before the views: they shrink first
+   and scroll sideways. */
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+  flex-shrink: 1000;
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
