@@ -269,6 +269,7 @@ describe("selection colors in the browser", () => {
                 if (target.kind === "table") {
                   // K7: a selected table row mixes 8 % of the host ink into the surface it names as the one beneath it
                   // (`--k2b-surface-beneath`, else the surface), not into whatever the fixture paints behind the table.
+                  // settled: resolves a colour token, which no frame or transition changes.
                   const surface = await target.element.evaluate((row) => {
                     const probe = document.createElement("span");
                     probe.style.color = "var(--k2b-surface-beneath, var(--k2b-surface))";
