@@ -22,6 +22,7 @@ export type {
   DropdownReturnFocus,
   DropdownSearch,
   DropdownSection,
+  DropdownSubmenu,
   DropdownTriggerProps,
 } from "./Dropdown";
 export { Dropdown, DropdownItem, dropdownPosition } from "./Dropdown";

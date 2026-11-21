@@ -1,6 +1,7 @@
 import {
   createContext,
   createEffect,
+  createRoot,
   createSignal,
   createUniqueId,
   type JSX,
@@ -12,7 +13,7 @@ import {
   untrack,
   useContext,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
@@ -88,7 +89,22 @@ export type DropdownAction =
       action?: never;
       href?: never;
       external?: never;
-    });
+    })
+  | DropdownSubmenu;
+
+/**
+ * A row that opens a further menu beside it, marked with "▸" (K16). The submenu stands level with its row and turns
+ * to the other side or upwards where room ends. It opens after the pointer rests on the row for 150 ms, on click, and
+ * with Right or Enter; Left and Escape close one level. Moving the pointer towards it closes nothing. On a phone the
+ * sheet shows one level at a time, with Back at its top. A menu has at most three levels: a submenu row on the third
+ * level is not offered.
+ */
+export type DropdownSubmenu = DropdownActionBase & {
+  submenu: readonly DropdownItem[];
+  action?: never;
+  href?: never;
+  external?: never;
+};
 
 /** A second, smaller action at the end of a row, such as "Only" beside a checkbox; it keeps the menu open. */
 export type DropdownSecondaryAction = {
@@ -241,10 +257,14 @@ export type DropdownItemProps = {
   class?: string;
 };
 
-type MenuContextValue = {
+export type MenuContextValue = {
   close: (restoreFocus?: boolean) => void;
   /** `option` inside a searchable menu's list box, whose field keeps the focus. */
   role: "menuitem" | "option";
+  /** 1 for the menu itself, 2 and 3 for its submenus. */
+  depth: number;
+  /** In a phone sheet, a submenu row shows its entries in place of the sheet's instead of a menu beside it. */
+  drill?: (item: DropdownSubmenu, row: HTMLElement) => void;
 };
 
 type DropdownContextValue = {
@@ -260,22 +280,19 @@ type DropdownContextValue = {
 const MenuContext = createContext<MenuContextValue>();
 const DropdownContext = createContext<DropdownContextValue>();
 
-const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
+/** The entries of one menu level that take focus. */
+const menuEntries = (menu: HTMLElement | undefined): HTMLElement[] =>
   menu
     ? Array.from(
         menu.querySelectorAll<HTMLElement>(
-          [
-            "[role='menuitem']:not([aria-disabled='true'])",
-            "[role='menuitemcheckbox']:not([aria-disabled='true'])",
-            "[role='menuitemradio']:not([aria-disabled='true'])",
-            "[role='option']:not([aria-disabled='true'])",
-          ].join(", "),
+          // An open submenu inside the menu holds its own entries.
+          ":is([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='option']):not([aria-disabled='true'], .k2b-dropdown__submenu *)",
         ),
       )
     : [];
 
 const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
-  const items = actionableItems(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
+  const items = menuEntries(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
 };
@@ -303,7 +320,7 @@ export const dropdownPosition = (
   };
 };
 
-const itemContent = (props: {
+export const itemContent = (props: {
   description?: string;
   descriptionVisual?: () => JSX.Element;
   icon?: string;
@@ -488,12 +505,33 @@ export function DropdownItems(props: {
   items: readonly DropdownItem[];
   close: (restoreFocus?: boolean) => void;
   role?: "menuitem" | "option";
+  /** Internal: the level of a submenu's entries, 1 for the menu itself. */
+  depth?: number;
+  /** Internal: a phone sheet shows a submenu's entries in its own place. */
+  drill?: (item: DropdownSubmenu, row: HTMLElement) => void;
 }): JSX.Element {
   const messages = useUiMessages();
+  const depth = untrack(() => props.depth ?? 1);
+  // One object per level: an open submenu's code keeps the level's state under it.
+  const context: MenuContextValue = {
+    close: (restoreFocus) => props.close(restoreFocus),
+    role: untrack(() => props.role ?? "menuitem"),
+    depth,
+    drill: untrack(() => props.drill),
+  };
   // Rows read their current item: a host that rebuilds equal items while the menu is open keeps each row element (#2140).
   const renderItem = (item: () => DropdownAction | DropdownChoice): JSX.Element => {
     const initial = untrack(item);
     if ("choice" in initial) return <DropdownChoiceItem {...mergeProps(() => item() as DropdownChoice)} />;
+    if ("submenu" in initial) {
+      const submenu = () => item() as DropdownSubmenu;
+      loadSubmenus();
+      return (
+        <Show when={submenuRow()}>
+          {(Row) => <Dynamic component={Row()} item={submenu()} menu={context} Items={DropdownItems} content={itemContent} />}
+        </Show>
+      );
+    }
     const action = () => item() as DropdownAction;
     return (
       <DropdownItem
@@ -517,8 +555,8 @@ export function DropdownItems(props: {
   };
 
   return (
-    <MenuContext.Provider value={{ close: props.close, role: props.role ?? "menuitem" }}>
-      <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : `item:${item.label}`)}>
+    <MenuContext.Provider value={context}>
+      <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : rowKey(item))}>
         {(current, index) => {
           const item = current();
           return (
@@ -550,13 +588,13 @@ export function DropdownItems(props: {
                 <Show
                   when={(current() as DropdownSection).layout}
                   fallback={
-                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                    <KeyedFor each={(current() as DropdownSection).items} by={rowKey}>
                       {renderItem}
                     </KeyedFor>
                   }
                 >
                   <div class={(current() as DropdownSection).layout === "tiles" ? "k2b-dropdown__tiles" : "k2b-dropdown__row"}>
-                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                    <KeyedFor each={(current() as DropdownSection).items} by={rowKey}>
                       {renderItem}
                     </KeyedFor>
                   </div>
@@ -569,6 +607,31 @@ export function DropdownItems(props: {
     </MenuContext.Provider>
   );
 }
+
+/** A row's key names its kind too: an entry that turns from an action into a submenu row is built anew. */
+const rowKey = (item: DropdownAction | DropdownChoice) =>
+  `${"submenu" in item ? "submenu" : "choice" in item ? "choice" : "item"}:${item.label}`;
+
+type SubmenuRowModule = typeof import("./menu-submenu-panel");
+/**
+ * A submenu row and its menu load with the first menu that has one, so a menu without one carries none of it. A
+ * signal rather than `lazy`: the server and the first browser frame both show no row, and a Suspense boundary of the
+ * page around the menu never shows its fallback while it loads.
+ */
+const [submenuRow, setSubmenuRow] = createRoot(() => createSignal<SubmenuRowModule["SubmenuRow"]>());
+let submenuLoad: Promise<unknown> | undefined;
+/** Starts loading the submenu code, once, as the first submenu row renders. */
+const loadSubmenus = (): void => {
+  if (isServer || submenuLoad) return;
+  submenuLoad = import("./menu-submenu-panel").then(
+    (module) => setSubmenuRow(() => module.SubmenuRow),
+    (error: unknown) => {
+      // The next menu tries again.
+      submenuLoad = undefined;
+      globalThis.reportError(error);
+    },
+  );
+};
 
 function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
   const context = useContext(DropdownContext);
@@ -848,7 +911,7 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
     else close(false);
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
-    const items = actionableItems(menuRef);
+    const items = menuEntries(menuRef);
     // A searchable menu's field keeps the focus and moves the marked entry itself.
     if (!props.search && !props.body && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
       event.preventDefault();

@@ -1,7 +1,8 @@
 # Progress path
 
-`ProgressPath` shows the stages of one thing in order, each with a word and a
-quiet line, such as where an order or a returned item is on its way.
+`ProgressPath` shows the way of one thing through its stages: dots on one
+line, each stage with a name and a quiet line, such as where an order or a
+returned item is on its way. A stage is done, current, or open.
 
 ## Use ProgressPath
 
@@ -25,22 +26,33 @@ import { ProgressPath, type ProgressPathStep } from "@k2b/ui";
 | `class` | `string` | Extra class on the root. |
 
 Each step has a `label`, an optional `detail` line such as a day or "not yet",
-`done` when it happened, and an optional Tabler `icon` that an open stage shows
-in its circle. A done stage shows a check instead.
+`done` when it happened, `current` for the one stage the thing is at now, and
+an optional Tabler `icon` that an open stage shows in its dot. A done stage
+shows a check in a quiet grey dot. The current stage is a ring with a dot in the app
+color, and its name is bold. `current` wins over `done` and `icon`.
 
 ## Layout
 
-In a container at least 26rem wide, the stages stand side by side in equal
-columns with a line between their circles. A narrower container, such as a
-phone sheet, lists them one below the other with the line running down. The
-switch follows the container, not the viewport. The line after a done stage is
-green; the circle of a done stage has a green edge and a check.
+In a container at least 360 px wide, the stages stand side by side in equal
+columns with a line between their dots. A narrower container, such as a phone
+sheet, lists them one below the other with the line running down. The switch
+follows the container, not the viewport. Dots are 20 px. The first dot starts
+on the left edge of the container, so the path stands on the text edge of its
+column. Names and detail lines wrap between words instead of being cut. One
+below the other, a stage with a detail line is 52 px high, one without 40 px.
+
+The path keeps 12 px clear above and below, so the ring of a dot never touches
+a hairline of its container (one line, one owner). The line between the dots is
+the only line in the flat design that does not structure the page. It connects the stages. It is 2 px and uses the color of a
+field edge, like every other strong line. The state is in the form of the dot
+and in words, never in color alone.
 
 ## Accessibility
 
-The stages are an ordered list. Each label carries a hidden "done" or "not yet"
-in the request's locale, so the state never depends on color or the check
-alone. Icons are decorative.
+The stages are an ordered list. Each label carries a hidden "done",
+"current step", or "not yet" in the request's locale, so the state never
+depends on color or the dot alone. The current stage has no `aria-current` in
+addition, so screen readers say "current step" once. Icons are decorative.
 
 ## Example
 
@@ -49,7 +61,7 @@ alone. Icons are decorative.
   label="Order 2026-0418"
   steps={[
     { label: "Ordered", detail: "Nov 3", done: true },
-    { label: "Shipped", detail: "Nov 5", done: true },
+    { label: "Shipped", detail: "Nov 5", current: true },
     { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
   ]}
 />

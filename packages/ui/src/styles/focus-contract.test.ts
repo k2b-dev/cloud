@@ -119,6 +119,7 @@ describe("@k2b/ui focus and color contract", () => {
       "layout-parity.css",
       "surfaces-widgets-parity.css",
       "content-parity.css",
+      "flat-content.css",
       "editors-parity.css",
       "print.css",
       "text-editor.css",

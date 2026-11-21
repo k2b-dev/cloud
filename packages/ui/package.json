@@ -66,6 +66,11 @@
       "import": "./dist/ssr/code-diff.js",
       "default": "./dist/ssr/code-diff.js"
     },
+    "./layout-check": {
+      "types": "./dist/types/layout-check.d.ts",
+      "import": "./dist/ssr/layout-check.js",
+      "default": "./dist/ssr/layout-check.js"
+    },
     "./panes": {
       "types": "./dist/types/panes.d.ts",
       "browser": "./dist/browser/panes.js",

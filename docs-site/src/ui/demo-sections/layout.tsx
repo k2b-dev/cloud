@@ -31,6 +31,7 @@ import {
   PageTrailProvider,
   Pagination,
   PanelDialog,
+  type PanelDialogError,
   PanelHeader,
   Panes,
   type PanesItem,
@@ -1553,6 +1554,64 @@ const PanelToneDemo = () => (
   </DemoCard>
 );
 
+/** Creating fails until the connection is back: the error cell stands above the footer, which keeps its place. */
+const openErrorDialog = () => {
+  const [error, setError] = createSignal<PanelDialogError>();
+  const [title, setTitle] = createSignal("Order photos for the product pages");
+  let attempts = 0;
+  void dialogCore.open<void>(
+    (close, context) => (
+      <BottomSheet onDismiss={() => context.requestDismiss()}>
+        <PanelDialog.Header title="New task" close={() => close()} />
+        <PanelDialog.Body>
+          <TextInput label="Title" value={title()} onValueChange={setTitle} />
+        </PanelDialog.Body>
+        <PanelDialog.Footer error={error()}>
+          <span />
+          <div class="ui-demo-row">
+            <Button variant="secondary" onClick={() => close()}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                attempts += 1;
+                if (attempts % 2 === 0) return close();
+                setError({ title: "The task was not created", description: "No connection to the server. Your entries stay." });
+              }}
+            >
+              Create
+            </Button>
+          </div>
+        </PanelDialog.Footer>
+      </BottomSheet>
+    ),
+    bottomSheetAdaptiveOptions,
+  );
+};
+
+const PanelErrorDemo = () => (
+  <DemoCard
+    id="panel-dialog-error"
+    chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
+    description="An error in a dialog is a tinted, square cell right above the footer, edge to edge, and is announced. The footer keeps its place: the dialog grows upwards, so Create stays under the pointer. Press Create twice: the first try fails, the second closes. Phones show the same dialog as a sheet."
+    code={`const [error, setError] = createSignal<PanelDialogError>();
+
+<PanelDialog.Footer error={error()}>
+  <Button variant="secondary" onClick={() => close()}>Cancel</Button>
+  <Button onClick={() => void create().catch(() => setError({
+    title: "The task was not created",
+    description: "No connection to the server. Your entries stay.",
+  }))}>Create</Button>
+</PanelDialog.Footer>`}
+  >
+    <div class="ui-demo-row">
+      <Button variant="secondary" onClick={openErrorDialog}>
+        New task
+      </Button>
+    </div>
+  </DemoCard>
+);
+
 const DiscussionDemo = () => {
   const [composerOpen, setComposerOpen] = createSignal(false);
 
@@ -2726,6 +2785,7 @@ const items = [
     <DemoGrid columns="one">
       <PanelToneDemo />
       <PanelDemo />
+      <PanelErrorDemo />
     </DemoGrid>
   ),
   "detail-panel": () => (

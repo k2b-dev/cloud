@@ -122,7 +122,8 @@ describe("@k2b/ui fields with a description", () => {
         // Stacked: the label above the control, and the field as wide as the dialog's content, also as a phone sheet.
         const stack = await page.evaluate(() => {
           const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-          const panel = document.querySelector<HTMLElement>("dialog .k2b-dialog__panel")!;
+          // K16: the body band holds the content edge; the panel itself has no padding.
+          const panel = document.querySelector<HTMLElement>("dialog .k2b-dialog__body")!;
           const style = getComputedStyle(panel);
           return {
             labelAbove: box("dialog .k2b-field__label").bottom <= box("dialog .k2b-field textarea").top,
