@@ -233,7 +233,7 @@
 .k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__body > :is(.assistant-context-box__empty, .assistant-context-box__loading, .assistant-context-box__failed) {
   padding-inline: var(--k2b-gutter);
 }
-.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__lines { margin: 0; border-block-start: 0; }
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__lines { margin: 0; border-block-start-color: var(--k2b-border); }
 .k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__label {
   height: 2rem;
   margin: 0;

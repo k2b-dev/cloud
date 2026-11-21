@@ -757,8 +757,9 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       await page.waitForFunction(() => document.activeElement?.classList.contains("assistant-context-button"));
       const closed = await layout(page);
       expect(closed.island).toBeNull();
-      // The chat takes the room; the head row keeps its height.
-      expect(closed.timeline!.width).toBeGreaterThan(docked.timeline!.width);
+      // The chat takes the room.
+      const chatWidth = () => page.evaluate(() => document.querySelector(".assistant-chat-messages")!.getBoundingClientRect().width);
+      expect(await chatWidth()).toBe(1440);
       await button.click();
       await page.locator(".assistant-context-boxcol .assistant-context-box__row").first().waitFor();
       await page.waitForFunction(() => document.activeElement?.id === "assistant-chat-context-title");
@@ -773,7 +774,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       await frames(page);
       const widest = (await layout(page)).island!.width;
       expect(widest).toBeLessThanOrEqual(480);
-      expect((await layout(page)).timeline!.width).toBeGreaterThanOrEqual(400);
+      expect(await chatWidth()).toBeGreaterThanOrEqual(400);
     } finally {
       await page.close();
     }
