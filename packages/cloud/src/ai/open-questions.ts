@@ -73,6 +73,46 @@ const ownedRequests = (ownerUserId: string) => sql`
       AND c.created_by_user_id=${ownerUserId}::uuid
   )`;
 
+const ownedSecretQuestions = (ownerUserId: string) => sql`
+  SELECT p.id, p.created_at, p.call_id, p.args->>'name' AS name, c.short_id, c.title
+  FROM ai.pending_actions p JOIN ai.conversations c ON c.id=p.conversation_id
+    JOIN ai.turns t ON t.id=p.turn_id
+  WHERE c.created_by_user_id=${ownerUserId}::uuid AND c.archived_at IS NULL
+    AND p.kind='client_tool' AND p.tool_name='code_secret' AND p.status='pending'
+    AND t.status='waiting_for_action'
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(t.live_blocks)='array' THEN t.live_blocks ELSE '[]'::jsonb END) b
+      WHERE b->>'kind'='tool' AND b->>'name'='code_secret' AND b->>'callId'=p.call_id AND b->>'status'='awaiting_client')`;
+const countSecretQuestions = async (ownerUserId: string): Promise<number> => {
+  const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${ownedSecretQuestions(ownerUserId)}) q`;
+  return row?.count ?? 0;
+};
+/** Metadata-only projection: never copy tool args/results into the waiting list. */
+export const secretOpenQuestion = (row: {
+  id: string;
+  created_at: Date;
+  call_id: string;
+  name: string;
+  short_id: string;
+  title: string | null;
+}): AiOpenQuestion => ({
+  id: row.id,
+  kind: "secret",
+  conversationId: row.short_id,
+  conversationTitle: row.title === null ? null : boundedText(row.title, 200),
+  anchor: toolBlockId(row.call_id),
+  short: `Secret ${/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/.test(row.name) ? row.name : ""}`.trim(),
+  app: { name: "Gustav", icon: "ti ti-key" },
+  createdAt: row.created_at.toISOString(),
+});
+const listSecretQuestions = async (input: { ownerUserId: string; cursor?: AiOpenQuestionsCursor }): Promise<AiOpenQuestions> => {
+  const count = await countSecretQuestions(input.ownerUserId);
+  const rows = await sql<Parameters<typeof secretOpenQuestion>[0][]>`
+    SELECT * FROM (${ownedSecretQuestions(input.ownerUserId)}) q
+    WHERE ${input.cursor ? sql`(date_trunc('milliseconds',q.created_at),q.id::text COLLATE "C") > (${input.cursor.createdAt}::timestamptz,${input.cursor.id}::text COLLATE "C")` : sql`TRUE`}
+    ORDER BY date_trunc('milliseconds',q.created_at),q.id LIMIT ${APPROVALS_PAGE_SIZE + 1}`;
+  return aiOpenQuestionsPage(rows.map(secretOpenQuestion), count);
+};
+
 /** How many questions wait for their owner's answer, such as a badge on the Assistant; the same rows as the list. */
 const countApprovalQuestions = async (ownerUserId: string): Promise<number> => {
   const [counts] = await sql<{ count: number }[]>`
@@ -87,7 +127,7 @@ export const countAiOpenQuestions = async (
 ): Promise<number> =>
   options?.authority || options?.caller
     ? (await listAiOpenQuestions({ ownerUserId, locale: "en", timeZone: "UTC", ...options })).count
-    : countApprovalQuestions(ownerUserId);
+    : (await countApprovalQuestions(ownerUserId)) + (await countSecretQuestions(ownerUserId));
 
 export const listAiOpenQuestions = async (input: {
   ownerUserId: string;
@@ -150,7 +190,10 @@ export const listAiOpenQuestions = async (input: {
     ) question ON true
     ORDER BY date_trunc('milliseconds', r.created_at) ASC, r.id ASC`;
 
-  const sources = await Promise.all((input.sources ?? []).map((source) => source(input)));
+  const sources = await Promise.all([
+    ...(input.sources ?? []).map((source) => source(input)),
+    ...(!input.kind || input.kind === "secret" ? [listSecretQuestions(input)] : []),
+  ]);
   return aiOpenQuestionsPage(
     [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)].filter(
       (item) => (!input.kind || item.kind === input.kind) && (!input.cursor || compareAiOpenQuestions(item, input.cursor) > 0),

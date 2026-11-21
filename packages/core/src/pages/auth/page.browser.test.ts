@@ -343,8 +343,8 @@ describe("sign-in page in a browser", () => {
       expect(page.surface, context).toEqual({
         border: "1px",
         radius: "16px",
-        // A standalone page card sits on the canvas like the app card: the frame shadow (layers and shadows).
-        shadow: expect.stringContaining("rgba(15, 23, 19, 0.22) 0px 14px 36px -32px"),
+        // A standalone page card sits on the canvas with its 1 px edge and no shadow (Cloud flach K3).
+        shadow: "none",
         background: "rgb(255, 255, 255)",
       });
       expect(page.aside, context).toBe("flex");

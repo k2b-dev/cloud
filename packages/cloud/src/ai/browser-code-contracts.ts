@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeSecretBindingSchema, CodeSecretNameSchema } from "../contracts/code-secrets";
 
 export const CodeResourceId = z
   .string()
@@ -35,12 +36,36 @@ export const CodeExportInput = z
 
 export const CodeSecretInput = z
   .object({
-    name: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/),
+    name: z
+      .string()
+      .regex(/^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$/)
+      .describe("With target: ASCII identifier, at most 64 characters; otherwise the chat secret name."),
     origin: z.string().url().max(2000).describe("Exact HTTPS origin allowed to receive the secret."),
     header: z.string().min(1).max(80).default("authorization"),
     prefix: z.string().max(160).default("Bearer "),
+    target: z.object({ code: CodeResourceId, pathPrefix: z.string() }).strict().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const name = input.target ? CodeSecretNameSchema : z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/);
+    if (!name.safeParse(input.name).success) ctx.addIssue({ code: "custom", path: ["name"], message: "Invalid secret name." });
+    if (!input.target) return;
+    if (input.prefix !== "")
+      ctx.addIssue({ code: "custom", path: ["prefix"], message: "With target, prefix must be empty; add it in Code." });
+    const binding = CodeSecretBindingSchema.safeParse({
+      origin: input.origin,
+      pathPrefix: input.target.pathPrefix,
+      headers: [input.header.toLowerCase()],
+    });
+    if (!binding.success)
+      for (const issue of binding.error.issues)
+        ctx.addIssue({
+          code: "custom",
+          path: issue.path[0] === "pathPrefix" ? ["target", "pathPrefix"] : [issue.path[0] === "headers" ? "header" : "origin"],
+          message: issue.message,
+        });
+  })
+  .overwrite((input) => (input.target ? { ...input, header: input.header.toLowerCase() } : input));
 
 /**
  * A runtime call that did not complete: rejected input, timeout, lost run or host failure.
@@ -56,7 +81,7 @@ export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeRunInput.safeExtend({ operation: z.literal("run") }),
   CodeInspectInput.extend({ operation: z.literal("inspect") }),
   CodeStopInput.extend({ operation: z.literal("stop") }),
-  CodeSecretInput.extend({ operation: z.literal("secret") }),
+  CodeSecretInput.safeExtend({ operation: z.literal("secret") }),
   CodeExportInput.extend({ operation: z.literal("export") }),
 ]);
 export type CodeRuntimeInput = z.infer<typeof CodeRuntimeInput>;
