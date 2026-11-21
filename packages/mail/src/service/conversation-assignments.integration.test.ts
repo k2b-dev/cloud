@@ -808,8 +808,9 @@ suite("mail conversation assignment", () => {
       ...alphabetical.filter((name) => name !== amy.displayName),
     ]);
 
-    // Others' history is never read: the index seeks this person's latest rows and stops at the window.
-    await insertAssignments(writer.id, zed.id, 2_000);
+    // Others' history is never read: the index seeks this person's latest rows and stops at the window. 20,000 newer
+    // changes by someone else make any read in the mailbox's id order skip them all; only this index avoids that.
+    await insertAssignments(writer.id, zed.id, 20_000);
     expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
     await sql`ANALYZE mail.activity_events`;
     const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan }] }[]>`
