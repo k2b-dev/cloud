@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
+import { layoutProblems } from "../../test/head-overlap";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -61,7 +62,8 @@ render(() => createComponent(LocaleProvider, { locale: window.LOCALE || "en", ge
       return row;
     },
   }));
-  const columns = document.createElement("div"); columns.className = "board";
+  // One line, one owner: the board draws the lines between columns, each list the lines between its cards.
+  const columns = document.createElement("div"); columns.className = "board k2b-divided-inline";
   for (const column of ["open", "doing", "done"]) {
     const section = document.createElement("section"); section.className = "column"; section.dataset.sortableColumn = ""; section.dataset.column = column;
     const head = document.createElement("div"); head.className = "head"; head.dataset.sortableColumnHead = ""; head.textContent = NAMES[column];
@@ -74,6 +76,7 @@ render(() => createComponent(LocaleProvider, { locale: window.LOCALE || "en", ge
       group: "board",
       listKey: column,
       dragBy: "row",
+      class: "k2b-divided",
       placement: column === "done" ? byTitle : undefined,
       onMove: moveCard,
       children: (key, handle) => {
@@ -115,11 +118,12 @@ const open = async ({ width = 1100, locale = "en" }: { width?: number; locale?: 
     .status { grid-column: 1 / -1; height: 20px; margin: 0 0 12px; }
     .row { display: flex; align-items: center; gap: 8px; height: 44px; padding-inline: 4px; }
     .board { display: flex; min-width: 0; --k2b-sortable-gap: 0px; }
-    .column { width: 240px; flex: none; border-inline-end: 1px solid #e4e4e7; }
+    .board { overflow-x: auto; }
+    .column { width: 240px; flex: none; }
     .head { height: 36px; display: flex; align-items: center; padding: 0 12px; font-weight: 600; border-bottom: 1px solid #e4e4e7; }
     .scroll { max-height: 290px; overflow: auto; }
     @media (max-width: 600px) { #app { grid-template-columns: 1fr; } .single { margin-bottom: 20px; } }
-    .card { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 0 12px 0 4px; border-bottom: 1px solid #e4e4e7; box-sizing: border-box; }
+    .card { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 0 12px 0 4px; box-sizing: border-box; }
     </style><script>window.LOCALE = ${JSON.stringify(locale)};</script></head><body class="k2b-ui"><div id="app"></div></body></html>`);
   await page.addScriptTag({ content: script });
   await page.locator('[data-card="o1"]').waitFor();
@@ -436,4 +440,50 @@ describe(`sortable list in ${browserName}`, () => {
       await context.close();
     }
   });
+
+  for (const width of [1440, 390])
+    test(`${width} px: no double line, overlap, or spill at rest and while a card is dragged, and the line covers the hairline`, async () => {
+      const { page, context } = await open({ width });
+      try {
+        await settled(page);
+        expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
+        if (width < 768) {
+          // A phone does not drag grouped lists; the single list still drags by its grip.
+          const grip = await center(page, '[data-sortable-handle="alpha"]');
+          const beta = await center(page, ".single .k2b-sortable-list__item >> nth=2");
+          await page.mouse.move(grip.x, grip.y);
+          await page.mouse.down();
+          await page.mouse.move(beta.x, beta.y - 6, { steps: 4 });
+        } else {
+          await settled(page);
+          await lift(page, "o2");
+          const target = await center(page, '[data-card="d2"]');
+          await page.mouse.move(target.x, target.y - 12, { steps: 3 });
+        }
+        await page.waitForFunction(() => document.querySelector("[data-sortable-line]") !== null);
+        await settled(page);
+        expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
+        // The 2 px line lies over the row's hairline (or the gap), never as a second line beside it.
+        const band = await page.evaluate(() => {
+          const row = document.querySelector<HTMLElement>("[data-sortable-line='before']")!;
+          const box = row.getBoundingClientRect();
+          const style = getComputedStyle(row);
+          const line = getComputedStyle(row, "::before");
+          const top = box.top + parseFloat(style.borderTopWidth) + parseFloat(line.top);
+          const previous = row.previousElementSibling?.getBoundingClientRect();
+          // The hairline the line meets: the row's own top border, else the space up to the row before.
+          const hairline =
+            parseFloat(style.borderTopWidth) > 0
+              ? [box.top, box.top + parseFloat(style.borderTopWidth)]
+              : [previous?.bottom ?? box.top, box.top];
+          return { line: [top, top + parseFloat(line.height)], hairline };
+        });
+        expect(band.line[0]).toBeLessThanOrEqual(band.hairline[0]!);
+        expect(band.line[1]).toBeGreaterThanOrEqual(band.hairline[1]!);
+        await page.keyboard.press("Escape");
+        await page.mouse.up();
+      } finally {
+        await context.close();
+      }
+    });
 });

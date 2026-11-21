@@ -19336,7 +19336,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::before {
   position: absolute;
   z-index: 2;
-  inset-inline: var(--k2b-sortable-line-inset, var(--k2b-space-2, 8px));
+  inset-inline: var(--k2b-sortable-line-inset, var(--k2b-space-2));
   height: 2px;
   border-radius: 1px;
   background: var(--k2b-action-solid);
@@ -19349,10 +19349,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::after {
   position: absolute;
   z-index: 2;
-  inset-inline-start: calc(var(--k2b-sortable-line-inset, var(--k2b-space-2, 8px)) - 4px);
+  inset-inline-start: calc(var(--k2b-sortable-line-inset, var(--k2b-space-2)) - 4px);
   width: 8px;
   height: 8px;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   background: var(--k2b-action-solid);
   content: "";
   pointer-events: none;
@@ -19447,9 +19447,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 0.8rem;
-  border-radius: var(--k2b-radius-overlay, 8px);
+  border-radius: var(--k2b-radius-overlay);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 0 0 1px rgb(9 9 11 / 0.08), 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
   color: var(--k2b-text);
   font-size: 0.8125rem;
   font-weight: 500;

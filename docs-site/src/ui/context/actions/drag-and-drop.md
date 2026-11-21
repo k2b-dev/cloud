@@ -52,7 +52,7 @@ floats with the small overlay shadow and hangs below the pointer, so it never
 covers the target under it. [SortableList](./sortable-list) shows a copy of
 the row instead.
 
-**Touch and pen.** Hold still for `HOLD_MS = 300` ms, then move at least 10 px
+**Touch and pen.** Hold still for `HOLD_MS = 500` ms (a `SortableList` row: 300 ms), then move at least 10 px
 from the original point. Moving 10 px before the hold abandons the press and
 lets the browser scroll. Once held, the page stays still under the finger,
 also for a source without a `GestureMenu`. A platform long press that arrives

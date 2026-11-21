@@ -1842,7 +1842,9 @@
 }
 
 /* Board demo (K7): columns are narrow tables, cards are rows between
-   hairlines. The status line keeps one height, so nothing moves while a
+   hairlines. One line, one owner: the board draws the lines between columns
+   (k2b-divided-inline), each list the lines between its cards
+   (k2b-divided). The status line keeps one height, so nothing moves while a
    card is dragged. */
 .ui-sortable-board__status {
   display: flex;
@@ -1890,11 +1892,6 @@
 .ui-sortable-board__column {
   min-width: 0;
   min-height: 16rem;
-  border-inline-end: 1px solid var(--k2b-border);
-}
-
-.ui-sortable-board__column:last-child {
-  border-inline-end: 0;
 }
 
 .ui-sortable-board__head {
@@ -1931,7 +1928,6 @@
   column-gap: 0.5rem;
   min-height: 3.5rem;
   padding: 0.25rem 0.25rem 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--k2b-border);
   background: var(--k2b-surface);
   font-size: 0.8125rem;
   line-height: 1.25rem;

@@ -18,8 +18,8 @@ export type DragPayload<Type extends string = string> = {
 
 const SLOP = 10;
 const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]";
-/** K7: a finger held this long lifts the item; before that it scrolls. */
-const HOLD_MS = 300;
+/** A finger held this long lifts the item; before that it scrolls. Sortable rows lift sooner (K7). */
+const HOLD_MS = 500;
 const AUTOSCROLL_EDGE = 32;
 /**
  * Signals are made on first use, so the module has no side effects and a bundle that imports `@k2b/ui` without drag and
@@ -332,6 +332,8 @@ export const bindDragSource = (
     messages: DragAndDropMessages;
     /** Internal: the element the preview shows a copy of, such as a sortable row; else the preview is a label. */
     preview?: HTMLElement;
+    /** Internal: how long a finger holds before it lifts, in ms; `HOLD_MS` by default. */
+    hold?: number;
   },
 ): (() => void) => {
   const doc = source.ownerDocument;
@@ -630,7 +632,7 @@ export const bindDragSource = (
       // A held finger drags: it selects no text, and Android's long-press menu does not open, also before the hold fires.
       source.dataset.pressing = "";
       win.addEventListener("contextmenu", preventContext, true);
-      timer = win.setTimeout(hold, HOLD_MS);
+      timer = win.setTimeout(hold, read().hold ?? HOLD_MS);
     }
   };
   announcerFor(source);

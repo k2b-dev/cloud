@@ -319,6 +319,8 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                     disabled: pointerOff(),
                     messages: dragMessages(),
                     preview: row,
+                    // K7: a held finger lifts a row after 300 ms; before that it scrolls.
+                    hold: 300,
                   })),
                 ),
               );

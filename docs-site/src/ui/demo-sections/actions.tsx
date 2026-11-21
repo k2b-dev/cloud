@@ -871,7 +871,7 @@ const SortableBoardDemo = () => {
           <span class="ui-sortable-board__state">{board().open!.length} open</span>
         )}
       </p>
-      <div class="ui-sortable-board">
+      <div class="ui-sortable-board k2b-divided-inline">
         <For each={boardColumns}>
           {(column) => (
             <section class="ui-sortable-board__column" data-sortable-column>
@@ -886,6 +886,7 @@ const SortableBoardDemo = () => {
                 label={column.label}
                 listLabel={column.label}
                 dragBy="row"
+                class="k2b-divided"
                 items={board()[column.key]!}
                 itemKey={(key) => key}
                 itemLabel={(key) => boardCards[key]!.title}
