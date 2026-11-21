@@ -19477,6 +19477,207 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   visibility: hidden;
 }
 
+/* DropOverlay (S7): drop targets cover the host's main area while an item
+   is dragged. The overlay lies over the list and takes no space, so nothing
+   moves. Tiles are framed targets; the one under the pointer takes the
+   platform fill. Resting on a tile with a level fills its ring. */
+.k2b-ui .k2b-drop-overlay-anchor {
+  display: none;
+}
+
+.k2b-ui .k2b-drop-overlay {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--k2b-space-3);
+  padding: var(--k2b-space-4) var(--k2b-gutter);
+  overflow: auto;
+  background: color-mix(in srgb, var(--k2b-surface) 94%, transparent);
+  contain: layout paint;
+  animation: k2b-drop-overlay-in var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+@keyframes k2b-drop-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.k2b-ui .k2b-drop-overlay__top {
+  display: flex;
+  min-height: var(--k2b-h-control);
+  align-items: center;
+  gap: var(--k2b-space-3);
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-row);
+}
+
+.k2b-ui .k2b-drop-overlay__top > i {
+  font-size: 1.25rem;
+}
+
+.k2b-ui .k2b-drop-overlay__what {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-drop-overlay__help {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-drop-overlay__title {
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-drop-overlay__grid {
+  display: grid;
+  flex: 1 0 auto;
+  align-content: start;
+  gap: var(--k2b-space-3);
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+}
+
+.k2b-ui .k2b-drop-overlay[data-level="root"] .k2b-drop-overlay__grid {
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+}
+
+/* At least 72 px to hit, 112 px on the first level (S7). */
+.k2b-ui .k2b-drop-overlay__tile {
+  position: relative;
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: var(--k2b-space-3);
+  padding: var(--k2b-space-3) var(--k2b-space-4);
+  border: 1px solid var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
+  user-select: none;
+}
+
+.k2b-ui .k2b-drop-overlay[data-level="root"] .k2b-drop-overlay__tile:not([data-back]) {
+  min-height: 112px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--k2b-space-2);
+  text-align: center;
+}
+
+.k2b-ui .k2b-drop-overlay__icon {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 1.375rem;
+}
+
+.k2b-ui .k2b-drop-overlay__text {
+  display: grid;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-drop-overlay__label,
+.k2b-ui .k2b-drop-overlay__description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-drop-overlay__description {
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-drop-overlay__tile[data-drop="over"] {
+  border-color: var(--k2b-action-solid);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-drop-overlay__tile[data-drop="over"] .k2b-drop-overlay__icon {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-drop-overlay__tile[aria-disabled="true"] {
+  border-color: var(--k2b-border);
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-muted);
+}
+
+@property --k2b-drop-ring {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.k2b-ui .k2b-drop-overlay__ring {
+  position: absolute;
+  top: var(--k2b-space-2);
+  right: var(--k2b-space-2);
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--k2b-radius-round);
+  background: conic-gradient(var(--k2b-action-solid) calc(var(--k2b-drop-ring) * 1turn), var(--k2b-selected) 0);
+  opacity: 0;
+}
+
+.k2b-ui .k2b-drop-overlay__tile[data-dwell] .k2b-drop-overlay__ring {
+  opacity: 1;
+  animation: k2b-drop-dwell var(--k2b-drop-dwell) linear forwards;
+}
+
+@keyframes k2b-drop-dwell {
+  to {
+    --k2b-drop-ring: 1;
+  }
+}
+
+.k2b-ui .k2b-drop-overlay__cancel {
+  display: flex;
+  min-height: 72px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--k2b-space-2);
+  border: 1px dashed var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface);
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-drop-overlay__cancel[data-drop="over"] {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+/* Reduced motion: the ring shows that resting opens the level, full and
+   still; the timer runs as before. */
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-drop-overlay__tile[data-dwell] .k2b-drop-overlay__ring {
+    --k2b-drop-ring: 1;
+    animation: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-drop-overlay__tile[data-dwell] .k2b-drop-overlay__ring {
+  --k2b-drop-ring: 1;
+  animation: none;
+}
+
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > i {
   flex: none;
   color: var(--k2b-action);

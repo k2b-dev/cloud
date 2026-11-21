@@ -10,6 +10,13 @@ export type DragSourceProps<Type extends string = string> = {
   /** Read when the drag starts, so a selection can decide what is dragged. */
   payload: DragPayload<Type>;
   disabled?: boolean;
+  /** How far the mouse or pen moves before the drag starts, in px; 10 by default, 6 for a `DropOverlay` (S7). */
+  threshold?: number;
+  /**
+   * "none": a finger never drags this source, so a long press stays with the host, such as the menu of a
+   * `GestureMenu`; the mouse and a pen still drag. "drag" (default): a held finger drags.
+   */
+  touch?: "drag" | "none";
   class?: string;
   children: JSX.Element;
 };
@@ -28,7 +35,17 @@ export type DropTargetProps<Type extends string = string> = {
 export function DragSource<Type extends string = string>(props: DragSourceProps<Type>): JSX.Element {
   const messages = useDragAndDropMessages();
   let source!: HTMLDivElement;
-  onMount(() => onCleanup(bindDragSource(source, () => ({ payload: props.payload, disabled: props.disabled, messages: messages() }))));
+  onMount(() =>
+    onCleanup(
+      bindDragSource(source, () => ({
+        payload: props.payload,
+        disabled: props.disabled,
+        messages: messages(),
+        threshold: props.threshold,
+        touch: props.touch,
+      })),
+    ),
+  );
   return (
     <div ref={source} class={`k2b-drag-source${props.class ? ` ${props.class}` : ""}`} data-drag-disabled={props.disabled ? "" : undefined}>
       {props.children}

@@ -9,8 +9,9 @@ The library never interprets the reference or moves application data itself.
 
 ```tsx
 import {
-  DragSource, DropTarget, useKeyboardDrag, activeDrag, dragStatus,
+  DragSource, DropTarget, DropOverlay, useKeyboardDrag, activeDrag, dragStatus,
   type DragPayload, type DragSourceProps, type DragStatus, type DropTargetProps,
+  type DropOverlayProps, type DropOverlayLevel, type DropOverlayTile,
 } from "@k2b/ui";
 ```
 
@@ -118,6 +119,63 @@ returns to the origin, or to its nearest focusable ancestor such as the
 `GestureMenu` into a drag, focus returns from the closed menu to its group.
 Starting another keyboard pickup cancels the previous drag first.
 
+## Drop overlay
+
+`DropOverlay` covers the host's main area with large drop targets while an
+item it takes is dragged, such as "Assign to me" or "Move to folder" for a
+mail. Place it in a positioned box over the list it serves; it lies above the
+list, takes no space, and moves nothing. Targets elsewhere, such as folders in
+a sidebar, stay `DropTarget`s of the same drag.
+
+```tsx
+<main style={{ position: "relative" }}>
+  <For each={mails()}>
+    {(mail) => (
+      <DragSource threshold={6} touch="none" payload={{ type: "mail", value: mail.id, label: mail.subject }}>
+        <MailRow mail={mail} />
+      </DragSource>
+    )}
+  </For>
+  <DropOverlay
+    accept={["mail"]}
+    hint="Folders on the left work too"
+    level={(id) =>
+      id === "folders"
+        ? { title: "Move to folder", tiles: folders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder", onDrop: (item) => move(item.value, folder.id) })) }
+        : { tiles: [
+            { id: "me", label: "Assign to me", icon: "ti ti-user-plus", onDrop: (item) => assignToMe(item.value) },
+            { id: "folder", label: "Move to folder", icon: "ti ti-folder-symlink", opens: "folders" },
+          ] }
+    }
+  />
+</main>
+```
+
+- **Levels.** `level(id, payload)` returns the tiles of a level, starting with
+  `"root"`, from data the page already has: the overlay asks for nothing over
+  the network. Tiles on the first level are at least 112 px high, others
+  72 px.
+- **Resting.** A tile with `opens` fills a ring while the pointer rests on it;
+  after 450 ms its level opens, and "Back" returns. Sweeping over it opens
+  nothing. A tile with `opens` and `onDrop` takes a drop as well, such as
+  "Assign to someone else" opening a person search.
+- **Arming.** New tiles take nothing for 220 ms, so a tile that appears under
+  the pointer is never hit by accident; then the target under the resting
+  pointer is found again.
+- **Nothing happens.** The area "Drop here: nothing happens", the overlay
+  around the tiles, and a tile with `disabled` (its reason shows in place of
+  the description) change nothing, like Escape, leaving the window, or a
+  cancelled pointer.
+- **Touch.** Give the rows `touch="none"`: a finger never drags them, and a
+  long press opens the row's `GestureMenu` with the same targets.
+  `threshold={6}` starts a mouse drag after 6 px.
+- **Loading.** The overlay's code loads on demand: while the page is idle
+  after the overlay mounts, and on every press of a drag source. The first
+  drag shows it at once; when loading fails, the live region says so and the
+  menu remains.
+
+The overlay is for the pointer; every target also needs a menu entry.
+
 ## Status line
 
 `dragStatus()` is reactive and defined while a drag or a keyboard pickup
@@ -182,6 +240,8 @@ export type DragPayload<Type extends string = string> = {
 export type DragSourceProps<Type extends string = string> = {
   payload: DragPayload<Type>;
   disabled?: boolean;
+  threshold?: number;
+  touch?: "drag" | "none";
   class?: string;
   children: JSX.Element;
 };
@@ -197,6 +257,24 @@ export function DragSource<Type extends string = string>(props: DragSourceProps<
 export function DropTarget<Type extends string = string>(props: DropTargetProps<Type>): JSX.Element;
 export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) => void;
 export function activeDrag(): DragPayload | undefined;
+export type DropOverlayTile = {
+  id: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  leading?: JSX.Element;
+  disabled?: string;
+  opens?: string;
+  onDrop?: (payload: DragPayload) => void;
+};
+export type DropOverlayLevel = { title?: string; tiles: readonly DropOverlayTile[] };
+export type DropOverlayProps = {
+  accept: readonly string[];
+  level: (id: string, payload: DragPayload) => DropOverlayLevel;
+  hint?: string;
+  class?: string;
+};
+export function DropOverlay(props: DropOverlayProps): JSX.Element;
 export type DragStatus = { lead: string; detail: string };
 export function dragStatus(): DragStatus | undefined;
 ```

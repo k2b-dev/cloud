@@ -1,0 +1,101 @@
+import { createComponent, createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { activeDrag, announce, type DragPayload, onPointerPress } from "./drag-and-drop";
+import { useDragAndDropMessages } from "./drag-and-drop-messages";
+
+/** One place to drop on, in a level of a `DropOverlay`. */
+export type DropOverlayTile = {
+  /** Stable within its level. */
+  id: string;
+  label: string;
+  /** A short second line, such as "Others stay responsible". */
+  description?: string;
+  /** Tabler class, such as "ti ti-folder". */
+  icon?: string;
+  /** Drawn in place of the icon, such as a person's avatar. */
+  leading?: JSX.Element;
+  /** The tile takes nothing now, and this says why, such as "Already here"; it is shown in place of `description`. */
+  disabled?: string;
+  /** Resting on the tile opens this level; "Back" returns. */
+  opens?: string;
+  /** Runs when the item is dropped on the tile. Without it, the tile only opens its level. */
+  onDrop?: (payload: DragPayload) => void;
+};
+
+export type DropOverlayLevel = {
+  /** Names the level above its tiles, such as "Move to folder · Recently used"; the first level needs none. */
+  title?: string;
+  tiles: readonly DropOverlayTile[];
+};
+
+export type DropOverlayProps = {
+  /** The payload types the overlay takes; it shows while such an item is dragged. */
+  accept: readonly string[];
+  /** The tiles of a level for the dragged item; the overlay starts with "root". */
+  level: (id: string, payload: DragPayload) => DropOverlayLevel;
+  /** Added to the help line, such as "Folders on the left work too". */
+  hint?: string;
+  class?: string;
+};
+
+type View = typeof import("./drop-overlay-view");
+let view: View | undefined;
+let loading: Promise<View> | undefined;
+const load = () => {
+  loading ??= import("./drop-overlay-view").then(
+    (module) => (view = module),
+    (error: unknown) => {
+      loading = undefined;
+      throw error;
+    },
+  );
+  return loading;
+};
+
+/**
+ * Drop targets that cover the host's main area while an item it takes is dragged: levels of large tiles, resting on a
+ * tile opens the next level, and an area where letting go changes nothing. Place it in a positioned box over the list
+ * it serves; it takes no space and moves nothing. The overlay is for the pointer; give every target a menu entry too.
+ * Its code loads while the page is idle and on every press of a drag source, so the first drag shows it at once.
+ */
+export function DropOverlay(props: DropOverlayProps): JSX.Element {
+  const messages = useDragAndDropMessages();
+  const [ready, setReady] = createSignal(view);
+  let anchor!: HTMLSpanElement;
+  let failed = false;
+  const preload = () => {
+    if (ready() || failed) return;
+    load().then(setReady, () => {
+      failed = true;
+      announce(anchor, messages().overlayUnavailable);
+    });
+  };
+  onMount(() => {
+    onCleanup(onPointerPress(preload));
+    const win = anchor.ownerDocument.defaultView!;
+    if (typeof win.requestIdleCallback === "function") {
+      const idle = win.requestIdleCallback(preload, { timeout: 2000 });
+      onCleanup(() => win.cancelIdleCallback(idle));
+    } else {
+      const timer = win.setTimeout(preload, 200);
+      onCleanup(() => win.clearTimeout(timer));
+    }
+  });
+  const payload = () => {
+    const drag = activeDrag();
+    return drag && props.accept.includes(drag.type) ? drag : undefined;
+  };
+  // A drag that starts before the idle load still gets the overlay, a moment later.
+  createEffect(() => {
+    if (payload()) preload();
+  });
+  return (
+    <>
+      <span ref={anchor} class="k2b-drop-overlay-anchor" hidden />
+      <Show when={ready()}>
+        {(module) => (
+          <Show when={payload()}>{(dragged) => createComponent(module().DropOverlayView, { overlay: props, payload: dragged })}</Show>
+        )}
+      </Show>
+    </>
+  );
+}

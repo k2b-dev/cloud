@@ -10,6 +10,8 @@ import {
   Disclosure,
   DragSource,
   Dropdown,
+  DropOverlay,
+  type DropOverlayLevel,
   DropTarget,
   dragStatus,
   FilterChip,
@@ -709,6 +711,93 @@ const DragAndDropDemo = () => {
           {activeDrag() ? "Drop on Archive or Later, or press Escape to cancel." : "The row menu moves a message without dragging."}
         </p>
       </div>
+    </DemoCard>
+  );
+};
+
+const dropOverlayExample = `import { DragSource, DropOverlay, DropTarget } from "@k2b/ui";
+
+<main style={{ position: "relative" }}>
+  {mails.map((mail) => (
+    <DragSource threshold={6} touch="none" payload={{ type: "mail", value: mail.id, label: mail.subject }}>
+      <div class="row">{mail.subject}</div>
+    </DragSource>
+  ))}
+  <DropOverlay accept={["mail"]} level={level} hint="Folders on the left work too" />
+</main>
+`;
+
+const overlayMails = [
+  { id: "quote", subject: "Quote for the trade fair stand" },
+  { id: "invoice", subject: "Invoice 2026-117 is overdue" },
+  { id: "delivery", subject: "Delivery of the chairs is delayed" },
+];
+
+const DropOverlayDemo = () => {
+  const [last, setLast] = createSignal("Nothing yet");
+  const done = (target: string) => (payload: { label: string }) => setLast(`${payload.label} → ${target}`);
+  const level = (id: string): DropOverlayLevel => {
+    if (id === "people")
+      return {
+        title: "Assign to someone else · Frequent",
+        tiles: ["Nora Weber", "Tobias Brandt", "Mira Frank"].map((name) => ({
+          id: name,
+          label: name,
+          icon: "ti ti-user",
+          onDrop: done(name),
+        })),
+      };
+    if (id === "folders")
+      return {
+        title: "Move to folder · Recently used",
+        tiles: ["Complaints", "Invoices", "Trade fair"].map((name) => ({
+          id: name,
+          label: name,
+          icon: "ti ti-folder",
+          onDrop: done(name),
+        })),
+      };
+    return {
+      tiles: [
+        { id: "me", label: "Assign to me", icon: "ti ti-user-plus", description: "Others stay responsible", onDrop: done("me") },
+        { id: "other", label: "Assign to someone else", icon: "ti ti-users", opens: "people", onDrop: done("person search") },
+        { id: "folder", label: "Move to folder", icon: "ti ti-folder-symlink", opens: "folders" },
+        { id: "done", label: "Mark as done", icon: "ti ti-check", disabled: "Already done" },
+      ],
+    };
+  };
+  return (
+    <DemoCard
+      id="drop-overlay"
+      chip={[{ kind: "component", name: "DropOverlay", from: "@k2b/ui" }]}
+      description="Drag a mail with the mouse: large targets cover the list. Rest on a target with a level to open it, or let go on the dashed area to change nothing. A finger does not drag; a long press opens the row's menu."
+      code={dropOverlayExample}
+    >
+      <div class="ui-drop-overlay-demo">
+        <div class="ui-drop-overlay-demo__side">
+          <DropTarget accept={["ui-demo.mail"]} label="Archive" onDrop={done("Archive")} class="ui-dnd-demo__target">
+            <i class="ti ti-archive" aria-hidden="true" />
+            Archive
+          </DropTarget>
+        </div>
+        <div class="ui-drop-overlay-demo__main k2b-divided">
+          <For each={overlayMails}>
+            {(mail) => (
+              <DragSource
+                threshold={6}
+                touch="none"
+                payload={{ type: "ui-demo.mail", value: mail.id, label: mail.subject, icon: "ti ti-mail" }}
+              >
+                <div class="ui-drop-overlay-demo__row">{mail.subject}</div>
+              </DragSource>
+            )}
+          </For>
+          <DropOverlay accept={["ui-demo.mail"]} level={level} hint="Archive on the left works too" />
+        </div>
+      </div>
+      <p class="ui-dnd-demo__status" aria-live="polite">
+        Last: {last()}
+      </p>
     </DemoCard>
   );
 };
@@ -1625,6 +1714,7 @@ const demos: DemoSection = {
   "drag-and-drop": () => (
     <DemoGrid columns="one">
       <DragAndDropDemo />
+      <DropOverlayDemo />
     </DemoGrid>
   ),
   "sortable-list": () => (

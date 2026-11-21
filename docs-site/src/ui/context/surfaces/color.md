@@ -247,6 +247,7 @@ Drop targets and other control states keep the platform fill.
 | --- | --- | --- |
 | File over a dropzone | `FileDropzone` | `k2b-dropzone` |
 | Item over a drop target | `DropTarget` | `k2b-drop-target` |
+| Item over a tile of a drop overlay | `DropOverlay` | `k2b-drop-overlay` |
 | Files over a page or region | `FileDropTarget` | `k2b-file-drop` |
 | Item over a folder | `FileTree` | `k2b-content-file-tree` |
 | Event over a day while it moves | `Calendar` | `k2b-calendar-month` |

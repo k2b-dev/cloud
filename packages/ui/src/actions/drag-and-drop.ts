@@ -45,6 +45,12 @@ export const dragStatus = (): DragStatus | undefined => readDragStatus();
 export const setDragStatus = (status: DragStatus | undefined) => writeDragStatus(status);
 const dragStartListeners = new Set<(pointerId: number) => void>();
 /** Internal hand-over to the gesture menu that owns this press. */
+const pressListeners = new Set<() => void>();
+/** Internal: told about every press on a drag source, before any drag, so code a drag needs can load in time. */
+export const onPointerPress = (listener: () => void): (() => void) => {
+  pressListeners.add(listener);
+  return () => pressListeners.delete(listener);
+};
 export const onPointerDragStart = (listener: (pointerId: number) => void): (() => void) => {
   dragStartListeners.add(listener);
   return () => dragStartListeners.delete(listener);
@@ -62,6 +68,8 @@ export type Target = {
    * return the viewport y of a line it shows, which the preview then keeps clear of.
    */
   hover?: (point: { x: number; y: number } | undefined) => number | undefined;
+  /** Internal: letting go here changes nothing, like letting go outside every target; for a "Drop here: nothing happens" area. */
+  cancels?: boolean;
 };
 export type Session = {
   payload: DragPayload;
@@ -169,7 +177,7 @@ export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "
 
 export const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: Target): DragStatus => ({
   lead: messages.statusLead({ label: payload.label, count: payload.count ?? 1 }),
-  detail: over ? messages.statusOver({ target: over.label }) : messages.statusIdle,
+  detail: over && !over.cancels ? messages.statusOver({ target: over.label }) : messages.statusIdle,
 });
 
 /** Attributes that mark the dragged row itself; its copy in the preview shows the row as it was. */
@@ -334,6 +342,10 @@ export const bindDragSource = (
     preview?: HTMLElement;
     /** Internal: how long a finger holds before it lifts, in ms; `HOLD_MS` by default. */
     hold?: number;
+    /** How far the mouse or pen moves before the drag starts, in px; `SLOP` by default. */
+    threshold?: number;
+    /** "none": a finger never drags this source; its press stays with the host, such as a long-press menu. */
+    touch?: "drag" | "none";
   },
 ): (() => void) => {
   const doc = source.ownerDocument;
@@ -368,6 +380,9 @@ export const bindDragSource = (
     if (!event.isPrimary || event.button !== 0 || engine.session || read().disabled) return;
     if (!(event.target instanceof Element) || event.target.closest(".k2b-drag-source") !== source) return;
     if (ignored(event.target)) return;
+    if (event.pointerType === "touch" && read().touch === "none") return;
+    for (const listener of pressListeners) listener();
+    const slop = read().threshold ?? SLOP;
     engine.abandonPress?.();
     // Ready before the drag starts, so its first announcement is read.
     announcerFor(source);
@@ -572,7 +587,7 @@ export const bindDragSource = (
     const move = (event: PointerEvent) => {
       if (event.pointerId !== id || finished) return;
       point = { x: event.clientX, y: event.clientY };
-      if (!session && Math.hypot(point.x - start.x, point.y - start.y) >= SLOP) {
+      if (!session && Math.hypot(point.x - start.x, point.y - start.y) >= slop) {
         if (event.pointerType !== "mouse" && !held) {
           cancel();
           return;
@@ -590,7 +605,8 @@ export const bindDragSource = (
       }
       point = { x: event.clientX, y: event.clientY };
       hitTest();
-      const target = over;
+      // A target that means "nothing happens" ends the drag like letting go outside.
+      const target = over?.cancels ? undefined : over;
       const payload = session.payload;
       const result = target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload);
       const drop = target?.drop;

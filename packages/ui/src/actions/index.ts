@@ -25,6 +25,8 @@ export type {
   DropdownTriggerProps,
 } from "./Dropdown";
 export { Dropdown, DropdownItem, dropdownPosition } from "./Dropdown";
+export type { DropOverlayLevel, DropOverlayProps, DropOverlayTile } from "./DropOverlay";
+export { DropOverlay } from "./DropOverlay";
 export type { FilterChipOption, FilterChipProps, FilterChipSection, FilterToggleProps } from "./FilterChip";
 export { FilterChip, FilterToggle } from "./FilterChip";
 export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";

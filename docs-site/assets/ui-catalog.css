@@ -1832,6 +1832,32 @@
   gap: 0.75rem;
 }
 
+/* Drop overlay demo: the overlay covers the positioned main area, never the
+   side; the line between them belongs to the main area's edge. */
+.ui-drop-overlay-demo {
+  display: grid;
+  min-height: 26rem;
+  grid-template-columns: 10rem minmax(0, 1fr);
+}
+
+.ui-drop-overlay-demo__side {
+  padding: 0.75rem;
+}
+
+.ui-drop-overlay-demo__main {
+  position: relative;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--k2b-border);
+}
+
+.ui-drop-overlay-demo__row {
+  display: flex;
+  height: 3rem;
+  align-items: center;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+
 .ui-sortable-demo__row {
   display: flex;
   min-height: 2.75rem;

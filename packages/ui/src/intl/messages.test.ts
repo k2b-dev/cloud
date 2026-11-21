@@ -29,6 +29,7 @@ const catalogs = {
   SortableList: (await import("../actions/sortable-list-messages")).checkSortableListMessages,
   SortableKeyboard: (await import("../actions/sortable-keyboard")).checkSortableKeyboardMessages,
   DragKeyboard: (await import("../actions/drag-and-drop-keyboard")).checkDragKeyboardMessages,
+  DropOverlay: (await import("../actions/drop-overlay-view")).checkDropOverlayMessages,
   FileDrop: (await import("../inputs/file-drop-messages")).checkFileDropMessages,
   Pdf: (await import("../content/pdf-messages")).checkPdfMessages,
   MarkdownInfoBlock: (await import("../content/markdown-info-block-messages")).checkMarkdownInfoBlockMessages,

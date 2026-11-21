@@ -176,7 +176,7 @@ const portableSections = [
         "drag-and-drop",
         "Drag and drop",
         "ti ti-drag-drop-2",
-        "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
+        "Drag rows, tasks, and paragraphs onto targets or a drop overlay, with hold-then-drag on touch and a keyboard path.",
       ),
       page(
         "sortable-list",
