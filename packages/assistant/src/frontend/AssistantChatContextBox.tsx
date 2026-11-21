@@ -7,6 +7,7 @@ import {
   IconButton,
   IconButtonLink,
   NoticeCard,
+  Placeholder,
   ResizeSeparator,
   Skeleton,
   Tag,
@@ -337,7 +338,20 @@ export function AssistantChatContextBox(props: {
           }
         >
           {(box) => (
-            <Show when={!box().empty} fallback={<p class="assistant-context-box__empty">{copy().boxEmpty}</p>}>
+            <Show
+              when={!box().empty}
+              fallback={
+                // K10: no box, one round sign and one sentence; the chat itself is the way on.
+                <Placeholder
+                  class="assistant-context-box__empty"
+                  state="empty"
+                  variant="inline"
+                  align="left"
+                  icon="ti ti-layout-list"
+                  title={copy().boxEmpty}
+                />
+              }
+            >
               <BoxGroup group={box().results} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
               <For each={box().groups}>
                 {(group) => (
