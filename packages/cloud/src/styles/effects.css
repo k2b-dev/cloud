@@ -1947,6 +1947,11 @@ dialog:has(.launchpad-panel)::backdrop {
   vertical-align: 2px;
 }
 
+/* A line never breaks between a chip, the word before it, and the punctuation after it. */
+.k2b-ui .assistant-markdown-block .ai-cite-run {
+  white-space: nowrap;
+}
+
 .k2b-ui .assistant-markdown-block a.ai-cite:hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);

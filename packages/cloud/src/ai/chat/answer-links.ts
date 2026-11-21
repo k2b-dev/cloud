@@ -4,7 +4,8 @@
  *
  * A citation is a link whose whole text is a number from 1 to 99, as the system prompt asks Gustav to write it right
  * after a statement: `[1](/open/mail.thread/~…)`. It keeps its destination and opens like any link, but reads as a
- * small grey chip with the number (`.ai-cite`); `citeLabel` names it for screen readers ("Source 1").
+ * small grey chip with the number (`.ai-cite`); `citeLabel` names it for screen readers ("Source 1"). A chip sits right at
+ * the word it follows and keeps that word and the punctuation after it on its line (`.ai-cite-run`).
  */
 export function rootResourceLinks(html: string, citeLabel?: (number: string) => string): string {
   // sanitize-html emits double-quoted attributes with ", <, and > escaped in values.
@@ -18,11 +19,26 @@ export function rootResourceLinks(html: string, citeLabel?: (number: string) => 
     if (!destinations.has(number)) destinations.set(number, kept);
     return chip(kept, number);
   });
-  return markBareCitations(linked, (number) => {
+  const marked = markBareCitations(linked, (number) => {
     const kept = destinations.get(number);
     return kept === undefined ? null : chip(kept, number);
   });
+  return marked.replace(CITATION_RUN, (_run, word: string, chips: string, punctuation = "") =>
+    `<span class="ai-cite-run">${word}${chips.replace(/>\s+</g, "><")}${punctuation.trim()}</span>`,
+  );
 }
+
+/**
+ * A chip is an inline block, and a line may break before and after an inline block even with no space around it. So
+ * the word before a chip, the chip, further chips, and the punctuation after them form one run that does not wrap
+ * (`.ai-cite-run`), and the space a model writes before a chip or before that punctuation ("Uhr [1] .") goes away.
+ */
+const CHIP = String.raw`<a\b[^>]*\sclass="ai-cite"[^>]*>[1-9]\d?<\/a>`;
+const CLOSING_PUNCTUATION = String.raw`(?:[.,;:!?…)\]}»”’]|&quot;|&#39;)`;
+const CITATION_RUN = new RegExp(
+  String.raw`([^\s<>]*)\s*((?:${CHIP}\s*)*${CHIP})(\s*${CLOSING_PUNCTUATION}+)?`,
+  "g",
+);
 
 /** A link's own attributes without what made it a reference or an inline link: its destination and how it opens. */
 const linkAttributes = (attributes: string) => attributes.replace(/\s(?:class|data-reference|data-link|aria-label)="[^"]*"/g, "");
