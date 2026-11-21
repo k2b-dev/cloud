@@ -214,10 +214,15 @@
   font-size: 0.8125rem;
 }
 /* In the sheet, the text edge sits 16 px from the screen's edge, like the concept's. */
-.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; margin-inline: -0.5rem; }
-/* In the sheet, too, the head owns the line under it and the sections stand between hairlines. */
-.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__head { height: 3rem; border-block-end: 1px solid var(--k2b-border); }
-.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__body > * { padding-block: 0.5rem 0.625rem; }
+/* In the sheet, too, the head owns the line under it and the sections stand between hairlines that reach the sheet's
+   edges; the text keeps the sheet's 16 px edge. */
+.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; margin-inline: -1rem; }
+.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__head {
+  height: 3rem;
+  padding-inline: 1rem 0.5rem;
+  border-block-end: 1px solid var(--k2b-border);
+}
+.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__body > * { padding: 0.5rem 0.5rem 0.625rem; }
 .k2b-ui .assistant-context-box__head {
   display: flex;
   height: 2rem;
