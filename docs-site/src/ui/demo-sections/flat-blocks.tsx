@@ -39,7 +39,7 @@ export const GroupAreaDemo = () => (
       { kind: "component", name: "Area", from: "@k2b/ui" },
     ]}
     description="A group sorts the rows of one list and disappears when it is empty. An area is a thing the rows hang on: open it has a 56 px head and a rail, closed it is one 40 px row, and an empty area says so. Opening or closing moves only what lies below its head."
-    code={`<Section size="md" icon="ti ti-stack-2" iconColor="#4f46e5" title="Stacks and lists" count={3}>
+    code={`<Section size="md" icon="ti ti-stack-2" iconColor="#0d9488" title="Stacks and lists" count={3}>
   <Area name="Stack 1" marker={1} collapsible meta="2 lists · 2 of 2 photographed"
     state={<StatusBadge tone="ok" label="All lists in" />}
     actions={<Button size="sm" variant="secondary">Reopen</Button>}>…</Area>
@@ -52,7 +52,7 @@ export const GroupAreaDemo = () => (
 <RowGroup title="Done" count={0} />`}
   >
     <div class="ui-flat-demo-stack">
-      <Section size="md" icon="ti ti-stack-2" iconColor="#4f46e5" title="Stacks and lists" count={3}>
+      <Section size="md" icon="ti ti-stack-2" iconColor="#0d9488" title="Stacks and lists" count={3}>
         <Area
           name="Stack 1"
           marker={1}

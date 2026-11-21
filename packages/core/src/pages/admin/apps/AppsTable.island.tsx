@@ -96,13 +96,13 @@ export default function AppsTable(props: {
     const wide = props.selected ? "" : "hidden md:table-cell";
     const all: DataTableColumn<AppsTableRow>[] = [
       { id: "app", header: t().columnApp, value: "name" },
-      { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: "w-36 min-w-36" },
+      // Beside an open app the state takes only its badge's width, so name, state and problem fit the narrow list (K5's
+      // gutter stands at both ends of the row).
+      { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: props.selected ? undefined : "w-36 min-w-36" },
       { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: `w-24 ${wide}` },
       { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] ${wide}` },
-      // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail. Where
-      // the list beside the detail is narrower than 420 px, the column leaves before the row grows (K15) and stays one tap
-      // away in the row's details.
-      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}`, priority: props.selected ? 2 : 1 },
+      // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail.
+      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}` },
     ];
     return props.selected ? all.filter((column) => column.id !== "version" && column.id !== "address") : all;
   };
@@ -162,7 +162,7 @@ export default function AppsTable(props: {
             return (
               <a
                 href={href(row.id)}
-                class="flex min-w-0 items-center gap-2.5 py-1"
+                class="flex min-w-0 items-center gap-2 py-1"
                 aria-current={row.id === props.selected ? "true" : undefined}
                 data-app={row.id}
               >
