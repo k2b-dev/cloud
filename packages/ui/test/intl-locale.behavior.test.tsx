@@ -109,7 +109,8 @@ describe("@k2b/ui intl browser behavior", () => {
     input.value = "3.14";
     input.setSelectionRange(2, 2);
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(input.value).toBe("3,14");
+    // A dot that cannot group reads as the decimal separator; the text stays as typed until commit.
+    expect(input.value).toBe("3.14");
     expect(input.selectionStart).toBe(2);
     expect(input.selectionEnd).toBe(2);
     expect(changes.at(-1)).toBe(3.14);
@@ -283,27 +284,27 @@ describe("@k2b/ui intl browser behavior", () => {
       dispose();
     }
 
-    // Six fraction digits: the step decides, no explicit `decimalPlaces` needed.
+    // Six fraction digits: the step decides, no explicit `decimalPlaces` needed. Extra digits round on commit.
     const [price, setPrice] = createSignal<number | null>(null);
     const disposePrice = render(
       () => createComponent(NumberInput, { label: "Preis", step: 0.000001, value: price, onValueChange: setPrice }),
       dom.root,
     );
     type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,123456789");
-    expect(price()).toBe(0.123456);
+    expect(price()).toBe(0.123457);
     disposePrice();
 
-    // An explicit `decimalPlaces` stays authoritative over the step: the second fraction digit is dropped while typing.
+    // An explicit `decimalPlaces` stays authoritative over the step: the second fraction digit rounds away on commit.
     const [explicit, setExplicit] = createSignal<number | null>(null);
     const disposeExplicit = render(
       () => createComponent(NumberInput, { label: "Preis", step: 0.01, decimalPlaces: 1, value: explicit, onValueChange: setExplicit }),
       dom.root,
     );
-    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,15");
-    expect(explicit()).toBe(0.1);
+    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,16");
+    expect(explicit()).toBe(0.2);
     disposeExplicit();
 
-    // An integer step still rejects the separator.
+    // An integer step rounds a typed decimal to a whole number instead of dropping its separator.
     const [count, setCount] = createSignal<number | null>(null);
     const disposeCount = render(
       () => createComponent(NumberInput, { label: "Anzahl", step: 1, value: count, onValueChange: setCount }),
@@ -311,9 +312,9 @@ describe("@k2b/ui intl browser behavior", () => {
     );
     const integer = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
     expect(integer.getAttribute("inputmode")).toBe("numeric");
-    type(integer, "0,15");
-    expect(integer.value).toBe("15");
-    expect(count()).toBe(15);
+    type(integer, "2,5");
+    expect(integer.value).toBe("3");
+    expect(count()).toBe(3);
     disposeCount();
 
     dom.cleanup();

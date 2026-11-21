@@ -22,17 +22,41 @@ an omitted value render as empty; callbacks emit `null` when the field is
 cleared.
 
 `onValueChange` receives the parsed value while the user types.
-`onValueCommit` receives the normalized value after blur, a stepper click, or
-the default clear action.
+`onValueCommit` receives the normalized value after blur, Enter, a stepper
+click, or the default clear action. Enter commits before an enclosing form
+submits, so the form sends the normalized number.
 
-The component keeps the raw text while focused, so intermediate input is not lost. A trailing decimal separator survives only when the effective `decimalPlaces` is greater than `0`; with an integer step a typed `12.` is normalized to `12`.
+The component keeps the typed text, separators included, until commit, so
+intermediate input is not lost. A typed `12.` commits as `12`.
+
+## Typed and pasted amounts
+
+The effective locale decides which mark separates decimals and which groups
+thousands. In German `2.977,17` commits `2977.17`; in English `2,977.17` does.
+
+- Grouping marks count only in their places: one to three digits first, then
+  groups of exactly three. `2.977` is `2977` in German, `2,977` in English.
+- The other mark, where it cannot group, still reads as the decimal
+  separator: `3.14` in German commits `3.14`, while `3.140` commits `3140`.
+  The committed text shows which reading the field took.
+- Text that fits neither reading stays in the field: `2,977.17` in German,
+  `12,34,567` in English, a minus that is not leading such as `1.234,56-`,
+  separators or a minus alone, and numbers too large to represent. The field
+  shows its error state with an example of the expected form and commits
+  nothing; Enter does not submit the form. Form validation reports the text as
+  invalid already while it is typed. While the text is invalid,
+  `onValueChange` reports the value from before the edit. Correcting the text,
+  or a new `value` from the parent while the field is not focused, clears the
+  error.
+- Characters that cannot belong to a number, such as a currency sign or
+  spaces, are dropped as they are typed or pasted.
 
 ## Numeric rules
 
 - `decimalPlaces` defaults to the fraction digits of `step` (`step={0.01}` accepts two decimals, the default `step={1}` accepts none). Set it explicitly when the accepted precision differs from the step grid; an explicit value always wins.
-- The visible decimal separator follows the effective locale (`locale` prop, then `LocaleProvider`, then `<html lang>`, then `"en"`); both comma and dot are accepted while typing. The controlled value stays a canonical JavaScript number and `aria-valuenow` stays numeric.
-- Committed and unfocused values show exactly `decimalPlaces` fraction digits, including trailing zeros: `321.4` with `step={0.01}` displays as `321.40` in English and `321,40` in German. Typing keeps the raw text until commit.
-- Editable text never shows grouping separators.
+- The visible decimal separator follows the effective locale (`locale` prop, then `LocaleProvider`, then `<html lang>`, then `"en"`). The controlled value stays a canonical JavaScript number and `aria-valuenow` stays numeric.
+- Committed and unfocused values show exactly `decimalPlaces` fraction digits, including trailing zeros: `321.4` with `step={0.01}` displays as `321.40` in English and `321,40` in German. Extra typed fraction digits round on commit.
+- Committed text never shows grouping separators.
 - `allowNegative` defaults to `true`.
 - `min` and `max` clamp committed values.
 - `step` defaults to `1` and snaps committed values to its grid.
@@ -113,11 +137,11 @@ type NumberInputProps = Omit<
 
 Prefer a visible `label`. Without one, the placeholder becomes the accessible name, with **Enter number** as the final fallback.
 
-The input exposes spinbutton semantics and finite minimum, maximum, and current values. Its value text includes a string `suffix`, such as **45 min**, or the `formatValue` text; an explicit `aria-valuetext` wins. The stepper and clear controls have accessible names; override them per instance with `increaseLabel`, `decreaseLabel`, and `clearLabel` when the surrounding product is not English. Descriptions and reactive errors are connected to the field.
+The input exposes spinbutton semantics and finite minimum, maximum, and current values. Refused text sets `aria-invalid` and announces its error like a reactive `error`. Its value text includes a string `suffix`, such as **45 min**, or the `formatValue` text; an explicit `aria-valuetext` wins. The stepper and clear controls have accessible names; override them per instance with `increaseLabel`, `decreaseLabel`, and `clearLabel` when the surrounding product is not English. Descriptions and reactive errors are connected to the field.
 
 ## Runtime
 
-The field renders in server HTML. Input filtering, raw-text preservation, steppers, clearing, and callbacks require browser code.
+The field renders in server HTML. Input filtering, raw-text preservation, refusing unreadable text, steppers, clearing, and callbacks require browser code.
 
 ## Example
 
