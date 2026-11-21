@@ -10,7 +10,12 @@ import {
   Disclosure,
   DragSource,
   Dropdown,
+  type DropdownItem,
+  DropOverlay,
+  type DropOverlayLevel,
   DropTarget,
+  dragStatus,
+  dropOverlayPages,
   FilterChip,
   FilterToggle,
   GestureMenu,
@@ -26,13 +31,17 @@ import {
   SelectionToolbar,
   SlashCommands,
   SortableList,
+  type SortableMove,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
   Tabs,
+  type ToastHandle,
   Toolbar,
   ToolbarDock,
+  toast,
   useKeyboardDrag,
+  useSortableMoveMenu,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -492,6 +501,32 @@ const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atSt
   );
 };
 
+/** Invented folders of invented templates, three levels deep, for the submenu examples. */
+const submenuItems: DropdownItem[] = [
+  { label: "Upload", icon: "ti ti-upload", action: () => {} },
+  { label: "New folder", icon: "ti ti-folder-plus", action: () => {} },
+  {
+    items: [
+      {
+        label: "From template",
+        icon: "ti ti-template",
+        submenu: [
+          {
+            label: "Office",
+            icon: "ti ti-folder",
+            submenu: ["Offer", "Invoice", "Letter"].map((label) => ({ label, icon: "ti ti-file-text", action: () => {} })),
+          },
+          {
+            label: "Workshop",
+            icon: "ti ti-folder",
+            submenu: ["Repair order", "Parts list"].map((label) => ({ label, icon: "ti ti-file-text", action: () => {} })),
+          },
+        ],
+      },
+    ],
+  },
+];
+
 const MenusDemo = () => (
   <DemoCard
     id="menus"
@@ -518,6 +553,17 @@ const MenusDemo = () => (
 {/* A search field above many entries */}
 <Dropdown.Root items={templates} label="New task" icons="tile" search={{ label: "Find template" }}>
   <Dropdown.Trigger variant="secondary">New task</Dropdown.Trigger>
+</Dropdown.Root>
+
+{/* A row with \`submenu\` opens a menu beside it; on a phone the sheet shows one level at a time */}
+<Dropdown.Root items={[
+  { label: "Upload", icon: "ti ti-upload", action: upload },
+  { label: "From template", icon: "ti ti-template", submenu: [
+    { label: "Office", icon: "ti ti-folder", submenu: officeTemplates },
+    { label: "Workshop", icon: "ti ti-folder", submenu: workshopTemplates },
+  ] },
+]} phone="sheet">
+  <Dropdown.Trigger variant="secondary">New</Dropdown.Trigger>
 </Dropdown.Root>
 
 <ContextMenu label="Record actions" items={items}>
@@ -597,6 +643,15 @@ const MenusDemo = () => (
       >
         <div class="ui-demo-context-target">Right click or press Shift+F10</div>
       </ContextMenu>
+      <Dropdown.Root label="New" phone="sheet" items={submenuItems}>
+        <Dropdown.Trigger variant="secondary">With submenus</Dropdown.Trigger>
+      </Dropdown.Root>
+      {/* At the right edge the submenus turn to the left. */}
+      <span style={{ "margin-inline-start": "auto" }}>
+        <Dropdown.Root label="New" phone="sheet" align="end" items={submenuItems}>
+          <Dropdown.Trigger variant="secondary">Submenus at the edge</Dropdown.Trigger>
+        </Dropdown.Root>
+      </span>
     </div>
   </DemoCard>
 );
@@ -708,6 +763,121 @@ const DragAndDropDemo = () => {
   );
 };
 
+const dropOverlayExample = `import { DragSource, DropOverlay, DropTarget } from "@k2b/ui";
+
+<main style={{ position: "relative" }}>
+  {mails.map((mail) => (
+    <DragSource threshold={6} touch="none" payload={{ type: "mail", value: mail.id, label: mail.subject }}>
+      <div class="row">{mail.subject}</div>
+    </DragSource>
+  ))}
+  <DropOverlay accept={["mail"]} level={level} hint="Folders on the left work too" />
+</main>
+`;
+
+const overlayMails = [
+  { id: "quote", subject: "Quote for the trade fair stand" },
+  { id: "invoice", subject: "Invoice 2026-117 is overdue" },
+  { id: "delivery", subject: "Delivery of the chairs is delayed" },
+];
+
+const DropOverlayDemo = () => {
+  const [last, setLast] = createSignal("Nothing yet");
+  const done = (target: string) => (payload: { label: string }) => setLast(`${payload.label} → ${target}`);
+  const names = [
+    "Nora",
+    "Tobias",
+    "Mira",
+    "Jonas",
+    "Lea",
+    "Paul",
+    "Anna",
+    "Ben",
+    "Clara",
+    "David",
+    "Emma",
+    "Felix",
+    "Greta",
+    "Hugo",
+    "Ida",
+    "Jan",
+  ];
+  const people = dropOverlayPages(
+    "people",
+    names.map((name) => ({ id: name, label: `${name} Example`, icon: "ti ti-user", onDrop: done(name) })),
+    {
+      title: "Assign to someone else · Frequent",
+      moreTitle: "Assign to someone else · More",
+      more: (count) => `More ${count} people`,
+      range: (first, last) => `${first} – ${last}`,
+    },
+  );
+  const level = (id: string): DropOverlayLevel => {
+    const page = people(id);
+    if (page) return page;
+    if (id === "folders")
+      return {
+        title: "Move to folder · Recently used",
+        tiles: ["Complaints", "Invoices", "Trade fair"].map((name) => ({
+          id: name,
+          label: name,
+          icon: "ti ti-folder",
+          onDrop: done(name),
+        })),
+      };
+    return {
+      tiles: [
+        { id: "me", label: "Assign to me", icon: "ti ti-user-plus", description: "Others stay responsible", onDrop: done("me") },
+        { id: "other", label: "Assign to someone else", icon: "ti ti-users", opens: "people", onDrop: done("person search") },
+        { id: "folder", label: "Move to folder", icon: "ti ti-folder-symlink", opens: "folders" },
+        { id: "done", label: "Mark as done", icon: "ti ti-check", disabled: "Already done" },
+      ],
+    };
+  };
+  return (
+    <DemoCard
+      id="drop-overlay"
+      chip={[{ kind: "component", name: "DropOverlay", from: "@k2b/ui" }]}
+      description="Drag a mail with the mouse: large targets cover the list. Rest on a target with a level to open it, or let go on the dashed area to change nothing. A finger does not drag; a long press opens the row's menu."
+      code={dropOverlayExample}
+    >
+      <div class="ui-drop-overlay-demo">
+        <div class="ui-drop-overlay-demo__side">
+          <DropTarget accept={["ui-demo.mail"]} label="Archive" onDrop={done("Archive")} class="ui-dnd-demo__target">
+            <i class="ti ti-archive" aria-hidden="true" />
+            Archive
+          </DropTarget>
+        </div>
+        <div class="ui-drop-overlay-demo__main">
+          <div class="k2b-divided">
+            <For each={overlayMails}>
+              {(mail) => (
+                <DragSource
+                  threshold={6}
+                  touch="none"
+                  onLongPress={() => setLast(`Menu of ${mail.subject}`)}
+                  payload={{ type: "ui-demo.mail", value: mail.id, label: mail.subject, icon: "ti ti-mail" }}
+                >
+                  <div class="ui-drop-overlay-demo__row">{mail.subject}</div>
+                </DragSource>
+              )}
+            </For>
+          </div>
+          <DropOverlay
+            accept={["ui-demo.mail"]}
+            level={level}
+            hint="Archive on the left works too"
+            onCancel={() => setLast("Cancelled, nothing changed")}
+          />
+        </div>
+      </div>
+      <p class="ui-dnd-demo__status" aria-live="polite">
+        Last: {last()}
+      </p>
+    </DemoCard>
+  );
+};
+
 const sortableListExample = `import { SortableList } from "@k2b/ui";
 import { createSignal } from "solid-js";
 
@@ -746,7 +916,7 @@ const SortableListDemo = () => {
     <DemoCard
       id="sortable-list"
       chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
-      description="Drag a row by its grip, or focus the grip and use the arrow keys, Home, or End. The line shows where the row lands."
+      description="Drag a row by its grip, or focus the grip, press Space, choose the place with the arrow keys, and press Enter. The line shows where the row lands."
       code={sortableListExample}
     >
       <SortableList
@@ -771,6 +941,151 @@ const SortableListDemo = () => {
           .map((entry) => entry.title)
           .join(", ")}
       </p>
+    </DemoCard>
+  );
+};
+
+const sortableBoardExample = `import { SortableList, toast, useSortableMoveMenu, type SortableMove } from "@k2b/ui";
+
+// Columns of one group exchange cards. The host owns every column and saves each move.
+const [board, setBoard] = createSignal<Record<string, string[]>>({ open: [...], doing: [...], done: [...] });
+const move = (key: string, index: number, move: SortableMove) => {
+  setBoard((all) => {
+    const next = { ...all, [move.from]: all[move.from].filter((other) => other !== key) };
+    const to = next[move.to].filter((other) => other !== key);
+    to.splice(index, 0, key);
+    return { ...next, [move.to]: to };
+  });
+  toast("Moved", { action: { label: "Undo", variant: "ghost", onClick: move.undo } });
+};
+const moveMenu = useSortableMoveMenu("board");
+
+<section data-sortable-column>
+  <header data-sortable-column-head>In progress</header>
+  <SortableList
+    group="board" listKey="doing" listLabel="In progress" dragBy="row"
+    items={board().doing} itemKey={(id) => id} itemLabel={title} onMove={move}
+    // A sorted column: the line shows where the card lands.
+    placement={column === "done" ? byTitle : undefined}
+  >
+    {(id, handle) => <Card id={id()} grip={handle} menu={[moveMenu(id())]} />}
+  </SortableList>
+</section>
+`;
+
+type BoardCard = { title: string; due: string; tag: string; priority: "high" | "normal" | "low" };
+const boardCards: Record<string, BoardCard> = {
+  c1: { title: "Impressum und Datenschutz prüfen lassen", due: "Fri, 21 Nov", tag: "Legal", priority: "high" },
+  c2: { title: "Startseite: Texte gegenlesen", due: "Mon, 23 Nov", tag: "Content", priority: "high" },
+  c3: { title: "Bilder für die Teamseite auswählen", due: "Wed, 25 Nov", tag: "Content", priority: "normal" },
+  c4: { title: "Kontaktformular testen", due: "Fri, 27 Nov", tag: "Tech", priority: "normal" },
+  c5: { title: "Navigation und Seitenstruktur festlegen", due: "Tue, 24 Nov", tag: "Structure", priority: "high" },
+  c6: { title: "Produktseiten umziehen", due: "Mon, 30 Nov", tag: "Content", priority: "high" },
+  c7: { title: "Farben und Schriften übernehmen", due: "Thu, 26 Nov", tag: "Design", priority: "normal" },
+  c8: { title: "Hosting-Angebote vergleichen", due: "Fri, 13 Nov", tag: "Tech", priority: "normal" },
+  c9: { title: "Zielgruppen festhalten", due: "Tue, 10 Nov", tag: "Structure", priority: "low" },
+};
+const boardColumns = [
+  { key: "open", label: "Open", dot: "var(--k2b-text-muted)" },
+  { key: "doing", label: "In progress", dot: "var(--k2b-action-solid)" },
+  { key: "done", label: "Done · by title", dot: "var(--k2b-success-text)" },
+] as const;
+const priorityIcon = { high: "ti ti-arrow-up", normal: "ti ti-minus", low: "ti ti-arrow-down" };
+
+const SortableBoardDemo = () => {
+  const [board, setBoard] = createSignal<Record<string, string[]>>({
+    open: ["c1", "c2", "c3", "c4"],
+    doing: ["c5", "c6", "c7"],
+    done: ["c8", "c9"],
+  });
+  const moveMenu = useSortableMoveMenu("ui-demo-board");
+  const byTitle = (key: string) =>
+    board().done.filter((other) => other !== key && boardCards[other]!.title.localeCompare(boardCards[key]!.title) < 0).length;
+  // One "Undo" at a time: the next move replaces the toast of the last one.
+  let undoToast: ToastHandle | undefined;
+  const move = (key: string, index: number, move: SortableMove) => {
+    undoToast?.dismiss();
+    undoToast = undefined;
+    setBoard((all) => {
+      const next = { ...all, [move.from]: all[move.from]!.filter((other) => other !== key) };
+      const to = next[move.to]!.filter((other) => other !== key);
+      to.splice(index, 0, key);
+      return { ...next, [move.to]: to };
+    });
+    if (move.from !== move.to)
+      undoToast = toast(`“${boardCards[key]!.title}” moved to “${boardColumns.find((column) => column.key === move.to)?.label}”`, {
+        action: { label: "Undo", variant: "ghost", onClick: move.undo },
+      });
+  };
+  return (
+    <DemoCard
+      id="sortable-board"
+      chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
+      description="Columns of one group exchange cards. Drag a card; it stays dimmed in place while the line and the tinted column head show where it lands. Space on a grip lifts, arrows choose, Enter drops. On a phone the card menu moves it."
+      code={sortableBoardExample}
+    >
+      {/* The count keeps its place; the drag status takes the place of the key figures beside it (K6, K7). */}
+      <p class="ui-sortable-board__status" aria-hidden="true">
+        <b class="ui-sortable-board__lead">{Object.values(board()).flat().length} cards</b>
+        {dragStatus() ? (
+          <span class="ui-sortable-board__state">
+            <i class="ti ti-hand-grab" />
+            <b>{dragStatus()!.lead}</b> {dragStatus()!.detail}
+          </span>
+        ) : (
+          <span class="ui-sortable-board__state">{board().open!.length} open</span>
+        )}
+      </p>
+      <div class="ui-sortable-board k2b-divided-inline">
+        <For each={boardColumns}>
+          {(column) => (
+            <section class="ui-sortable-board__column" data-sortable-column>
+              <header class="ui-sortable-board__head" data-sortable-column-head>
+                <span class="ui-sortable-board__dot" style={{ background: column.dot }} aria-hidden="true" />
+                <b>{column.label}</b>
+                <span class="ui-sortable-board__count">{board()[column.key]!.length}</span>
+              </header>
+              <SortableList
+                group="ui-demo-board"
+                listKey={column.key}
+                label={column.label}
+                listLabel={column.label}
+                dragBy="row"
+                class="k2b-divided"
+                items={board()[column.key]!}
+                itemKey={(key) => key}
+                itemLabel={(key) => boardCards[key]!.title}
+                placement={column.key === "done" ? byTitle : undefined}
+                onMove={move}
+              >
+                {(key, handle) => {
+                  const card = () => boardCards[key()]!;
+                  const menu = () => [moveMenu(key())].filter((section) => section !== undefined);
+                  return (
+                    <div class="ui-sortable-board__card">
+                      {handle}
+                      <i
+                        class={`${priorityIcon[card().priority]} ui-sortable-board__priority`}
+                        data-priority={card().priority}
+                        aria-hidden="true"
+                      />
+                      <span class="ui-sortable-board__title">{card().title}</span>
+                      <Dropdown.Root items={menu()} label={`${card().title}: actions`}>
+                        <Dropdown.Trigger iconOnly label={`${card().title}: more actions`}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
+                      <span class="ui-sortable-board__meta">
+                        {card().due} · <span class="ui-sortable-board__tag">{card().tag}</span>
+                      </span>
+                    </div>
+                  );
+                }}
+              </SortableList>
+            </section>
+          )}
+        </For>
+      </div>
     </DemoCard>
   );
 };
@@ -1475,11 +1790,13 @@ const demos: DemoSection = {
   "drag-and-drop": () => (
     <DemoGrid columns="one">
       <DragAndDropDemo />
+      <DropOverlayDemo />
     </DemoGrid>
   ),
   "sortable-list": () => (
     <DemoGrid columns="one">
       <SortableListDemo />
+      <SortableBoardDemo />
     </DemoGrid>
   ),
   gestures: () => (

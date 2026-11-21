@@ -4,7 +4,8 @@ import { ADDRESS, LOCALES, type Locale, PAGES } from "./content";
 import { Page } from "./Page";
 import { LOGO_SVG, SITE_CSS } from "./style";
 
-type Head = { locale: Locale; origin: string };
+// `lang` also selects the island build of the page language.
+type Head = { lang: Locale; origin: string };
 
 const LOGO_PATH = `/assets/logo.${Bun.hash(LOGO_SVG).toString(36)}.svg`;
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -14,7 +15,7 @@ const HTML_CACHE = "public, max-age=60";
 const escape = (value: string) => Bun.escapeHTML(value);
 const url = (origin: string, locale: Locale) => `${origin}${PAGES[locale].path}`;
 
-const head = ({ locale, origin }: Head): string => {
+const head = ({ lang: locale, origin }: Head): string => {
   const page = PAGES[locale];
   const canonical = url(origin, locale);
   const alternates = LOCALES.map((other) => `<link rel="alternate" hreflang="${other}" href="${escape(url(origin, other))}">`).join("");
@@ -50,8 +51,8 @@ const head = ({ locale, origin }: Head): string => {
 };
 
 const site = app.publicSsr<Head>(
-  ({ body, scripts, locale, origin }) =>
-    `<!doctype html><html lang="${locale}"><head>${head({ locale, origin })}</head><body>${body}${scripts}</body></html>`,
+  ({ body, scripts, lang, origin }) =>
+    `<!doctype html><html lang="${lang}"><head>${head({ lang, origin })}</head><body>${body}${scripts}</body></html>`,
 );
 
 app.public.use("*", etag());
@@ -63,7 +64,7 @@ for (const locale of LOCALES) {
     const other = locale === "en" ? "de" : "en";
     const response = await site.html(
       () => <Page content={PAGES[locale]} canonical={url(origin, locale)} alternate={PAGES[other].path} logo={LOGO_PATH} />,
-      { locale, origin },
+      { lang: locale, origin },
     );
     response.headers.set("Cache-Control", HTML_CACHE);
     return response;

@@ -143,7 +143,7 @@ light-dismiss popover itself. Browser code registers the anchors
 and positions the card in the top layer; it never changes the layout of the
 anchors or anything around them. The card floats on layer 3 of
 [Layers and shadows](/en/ui/surfaces/elevation): the elevated surface, a light
-1 px edge, `--k2b-shadow-float` outside, and no divider lines. Content that
+1 px edge, 8 px radius, `--k2b-shadow-overlay-sm` outside, and no divider lines. Content that
 does not fit fades out with a mask to the surface, never with a dark inner
 shadow. It fades in and out unless reduced motion is requested.
 

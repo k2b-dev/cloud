@@ -277,13 +277,14 @@ test("the first line has one type: a title or a short message alone is semibold,
     const folded = await read();
     expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
       // A short message alone reads in the title's type: semibold in the text colour.
-      { title: null, message: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false }, link: null },
+      // K11: 13 px for the toast's lines, 12 px for its meta line.
+      { title: null, message: { fontWeight: "600", fontSize: "13px", lineHeight: "20px", muted: false }, link: null },
       // A longer one without a title stays calm body text; its link keeps that weight and differs only by colour.
-      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
+      { title: null, message: { fontWeight: "400", fontSize: "13px", lineHeight: "20px", muted: false }, link: "400" },
       // With a title, the message is the description: the smaller, muted line under it.
       {
-        title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
-        message: { fontWeight: "400", fontSize: "13px", lineHeight: "18px", muted: true },
+        title: { fontWeight: "600", fontSize: "13px", lineHeight: "20px", muted: false },
+        message: { fontWeight: "400", fontSize: "12px", lineHeight: "16px", muted: true },
         link: null,
       },
     ]);

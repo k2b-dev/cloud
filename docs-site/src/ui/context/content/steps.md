@@ -4,7 +4,9 @@
 
 ## Use Steps
 
-Use it when the reader follows a sequence.
+Use it when the reader follows a sequence, such as setup instructions or a
+help article. To show where one thing is on its way, with stages that are done,
+current, or open, use `ProgressPath`.
 
 ## Import
 
