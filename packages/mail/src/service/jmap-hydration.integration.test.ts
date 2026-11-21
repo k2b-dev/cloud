@@ -24,6 +24,7 @@ import { createMailbox } from "./mailboxes";
 import { requestMessageBody } from "./message-body-request";
 import { hydrateMessageFromSource, JMAP_HYDRATION_INTERRUPTED } from "./message-hydration";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
+import { providerBreakerOpenForMs } from "./provider-operation-lock";
 import * as syncRuntime from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -165,9 +166,14 @@ suite("JMAP body hydration", () => {
       captureWorkflowTriggers: false,
     };
     /** Serves the source as the Email's blob, in two chunks. */
-    const email = (id: string, source: Buffer, mailboxes: Record<string, boolean> = { a: true }): JmapEmailSnapshot => {
+    const email = (
+      id: string,
+      source: Buffer,
+      mailboxes: Record<string, boolean> = { a: true },
+      receivedAt = "2026-11-19T10:00:00Z",
+    ): JmapEmailSnapshot => {
       f.blobs.set(`blob-${id}`, [source.subarray(0, 40), source.subarray(40)]);
-      return { ...fixtureEmail(id), mailboxIds: mailboxes, size: source.byteLength, subject: id };
+      return { ...fixtureEmail(id), mailboxIds: mailboxes, size: source.byteLength, subject: id, receivedAt };
     };
     /** Projects the Emails through account deltas, as the account job will. */
     const arrive = async (emails: JmapEmailSnapshot[]) => {
@@ -363,32 +369,22 @@ suite("JMAP body hydration", () => {
     }
   }, 30_000);
 
-  test("retry: a source that breaks off counts an attempt; the reader's retry loads it", async () => {
+  test("retry: a refused download counts an attempt; the reader's retry loads it", async () => {
     const s = await setup("retry");
     await s.arrive([s.email("flaky", rfc822(`flaky-${suffix}`))]);
     const id = await s.messageOf("flaky");
-    // The network idle deadline expires once the source started: a broken transfer, not an interruption.
-    let expired = false;
-    const breaking: JmapTransportDependencies = {
-      ...s.f.dependencies,
-      downloadTimer: (expire, milliseconds) => {
-        if (milliseconds === 60_000 && !expired) {
-          expired = true;
-          queueMicrotask(expire);
-        }
-        return () => undefined;
-      },
-    };
-    const failure = await s.hydrate({ messageId: id }, breaking).then(
+    s.f.download.status = 403;
+    const failure = await s.hydrate({ messageId: id }).then(
       () => null,
       (error: unknown) => error,
     );
-    expect(codeOf(failure), "retry: the requested message fails").toBe("JMAP_TIMEOUT");
+    expect(codeOf(failure), "retry: the requested message fails").toBe("JMAP_HTTP");
     const failed = await stateOf(id);
     expect(
       { status: failed?.hydration_status, attempt: failed?.hydration_attempt, code: failed?.hydration_error_code },
       "retry: one attempt",
-    ).toEqual({ status: "failed", attempt: 1, code: "JMAP_TIMEOUT" });
+    ).toEqual({ status: "failed", attempt: 1, code: "JMAP_HTTP" });
+    s.f.download.status = undefined;
     const retried = await requestMessageBody({ context: owner, mailboxId: s.mailboxId, messageId: id, retry: true });
     expect(retried.ok && retried.data.state, "retry: requested again").toBe("requested");
     expect(await s.hydrate({ messageId: id }), "retry: loaded").toEqual({ hydrated: true });
@@ -511,50 +507,208 @@ suite("JMAP body hydration", () => {
     });
   }, 30_000);
 
-  test("provider failures: 429, 401, a timeout and a changed Session count no attempt", async () => {
-    const s = await setup("failures");
-    await s.arrive([s.email("throttled", rfc822(`throttled-${suffix}`))]);
+  /** One resource per case: a timeout opens that resource's breaker, which would turn later cases into SYNC_BUSY. */
+  const failureCase = async (label: string, prepare: (s: Fixture) => JmapTransportDependencies | undefined) => {
+    const s = await setup(`failure ${label}`);
+    await s.arrive([s.email("throttled", rfc822(`throttled-${label}-${suffix}`))]);
     const id = await s.messageOf("throttled");
-    const attempt = async (label: string, transport: JmapTransportDependencies = s.f.dependencies) => {
-      const failure = await s.hydrate({ messageId: id }, transport).then(
-        () => null,
-        (error: unknown) => error,
-      );
-      const state = await stateOf(id);
-      expect({ status: state?.hydration_status, attempt: state?.hydration_attempt }, `${label}: no attempt`).toEqual({
-        status: "envelope",
-        attempt: 0,
-      });
-      return failure;
-    };
-    s.f.download.status = 429;
-    const throttled = await attempt("download 429");
-    expect([codeOf(throttled), throttled instanceof Error && Reflect.get(throttled, "retryAfterMs")], "429: waits").toEqual([
-      "MAIL_RATE_LIMITED",
-      30_000,
+    const transport = prepare(s);
+    const failure = await s.hydrate({ messageId: id }, transport).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const state = await stateOf(id);
+    expect({ status: state?.hydration_status, attempt: state?.hydration_attempt }, `${label}: no attempt`).toEqual({
+      status: "envelope",
+      attempt: 0,
+    });
+    return { failure, breakerMs: await providerBreakerOpenForMs(s.remoteResourceId) };
+  };
+
+  test("provider failures: 429, 401, a timeout and a changed Session count no attempt", async () => {
+    const throttled = await failureCase("download-429", (s) => {
+      s.f.download.status = 429;
+      return undefined;
+    });
+    expect(
+      [codeOf(throttled.failure), throttled.failure instanceof Error && Reflect.get(throttled.failure, "retryAfterMs")],
+      "429: waits",
+    ).toEqual(["MAIL_RATE_LIMITED", 30_000]);
+    const refused = await failureCase("download-401", (s) => {
+      s.f.download.status = 401;
+      return undefined;
+    });
+    expect([codeOf(refused.failure), refused.failure instanceof Error && Reflect.get(refused.failure, "status")], "401: refused").toEqual([
+      "JMAP_HTTP",
+      401,
     ]);
-    s.f.download.status = 401;
-    const refused = await attempt("download 401");
-    expect([codeOf(refused), refused instanceof Error && Reflect.get(refused, "status")], "401: refused").toEqual(["JMAP_HTTP", 401]);
-    s.f.download.status = undefined;
-    const timedOut = await attempt("connect timeout", {
+    const listThrottled = await failureCase("list-429", (s) => {
+      s.f.controls.apiStatus = 429;
+      return undefined;
+    });
+    expect(codeOf(listThrottled.failure), "Email/get 429: waits").toBe("MAIL_RATE_LIMITED");
+    const moved = await failureCase("session-moved", (s) => {
+      s.f.controls.handle = async (request) => {
+        if (request.method === "POST") s.f.session.state = "session-state-moved";
+        return undefined;
+      };
+      return undefined;
+    });
+    expect(codeOf(moved.failure), "Session changed: ends the batch").toBe("JMAP_SESSION_CHANGED");
+    const timedOut = await failureCase("connect-timeout", (s) => ({
       ...s.f.dependencies,
       downloadTimer: (expire) => {
         queueMicrotask(expire);
         return () => undefined;
       },
+    }));
+    expect(codeOf(timedOut.failure), "timeout: before the source").toBe("JMAP_TIMEOUT");
+    // Wanted: the timeout reaches the provider's breaker, as an IMAP timeout does.
+    expect(timedOut.breakerMs, "timeout: breaker open").toBeGreaterThan(0);
+    expect(throttled.breakerMs + refused.breakerMs, "429 and 401: breaker closed").toBe(0);
+  }, 60_000);
+
+  /** Three fresh messages of one resource, newest first: `first`, `second`, `third`. */
+  const threeMessages = async (label: string) => {
+    const s = await setup(label);
+    await s.arrive([
+      s.email("first", rfc822(`first-${label}-${suffix}`), { a: true }, "2026-11-19T12:00:00Z"),
+      s.email("second", rfc822(`second-${label}-${suffix}`), { a: true }, "2026-11-19T11:00:00Z"),
+      s.email("third", rfc822(`third-${label}-${suffix}`), { a: true }, "2026-11-19T10:00:00Z"),
+    ]);
+    const ids = { first: await s.messageOf("first"), second: await s.messageOf("second"), third: await s.messageOf("third") };
+    const attempts = async () => ({
+      first: (await stateOf(ids.first))?.hydration_attempt,
+      second: (await stateOf(ids.second))?.hydration_attempt,
+      third: (await stateOf(ids.third))?.hydration_attempt,
     });
-    expect(codeOf(timedOut), "timeout: before the source").toBe("JMAP_TIMEOUT");
-    s.f.controls.apiStatus = 429;
-    const listThrottled = await attempt("Email/get 429");
-    expect(codeOf(listThrottled), "Email/get 429: waits").toBe("MAIL_RATE_LIMITED");
-    s.f.controls.apiStatus = null;
+    const rejected = (transport?: JmapTransportDependencies) =>
+      s.hydrate({ mailboxId: s.mailboxId }, transport).then(
+        () => null,
+        (error: unknown) => error,
+      );
+    return { s, ids, attempts, rejected };
+  };
+  /** The download of each named blob answers with the given HTTP status. */
+  const answerFor = (s: Fixture, blobs: Record<string, number>) => {
     s.f.controls.handle = async (request) => {
-      if (request.method === "POST") s.f.session.state = "session-state-moved";
-      return undefined;
+      const path = new URL(request.url).pathname;
+      if (!path.startsWith("/jmap/download/")) return undefined;
+      const status = blobs[path.split("/")[4] ?? ""];
+      return status === undefined ? undefined : new Response("", { status });
     };
-    const moved = await attempt("Session changed");
-    expect(codeOf(moved), "Session changed: ends the batch").toBe("JMAP_SESSION_CHANGED");
+  };
+
+  test("one message: a server failure on its download counts its attempt and ends the batch; fresh mail goes first next", async () => {
+    const t = await threeMessages("server-failure");
+    answerFor(t.s, { "blob-first": 500 });
+    const failure = await t.rejected();
+    expect([codeOf(failure), failure instanceof Error && Reflect.get(failure, "status")], "500: the batch ends with the failure").toEqual([
+      "JMAP_HTTP",
+      500,
+    ]);
+    expect(t.s.downloads(), "500: no download after it").toEqual(["blob-first"]);
+    expect(await t.attempts(), "500: one attempt for that message only").toEqual({ first: 1, second: 0, third: 0 });
+    const first = await stateOf(t.ids.first);
+    expect({ status: first?.hydration_status, code: first?.hydration_error_code }, "500: recorded by the parser").toEqual({
+      status: "failed",
+      code: "JMAP_HTTP",
+    });
+    expect(await t.s.hydrate({ mailboxId: t.s.mailboxId }), "next run: the fresh bodies load").toEqual({ hydrated: true });
+    expect(t.s.downloads(), "next run: fresh first, the failed one waits").toEqual(["blob-first", "blob-second", "blob-third"]);
+    expect((await stateOf(t.ids.second))?.hydration_status, "next run: second complete").toBe("complete");
+    expect((await stateOf(t.ids.third))?.hydration_status, "next run: third complete").toBe("complete");
+    expect((await stateOf(t.ids.first))?.hydration_attempt, "next run: first keeps one attempt").toBe(1);
+  }, 30_000);
+
+  test("one message: a refused download (403 or another 4xx) counts its attempt; the batch goes on", async () => {
+    const t = await threeMessages("refused");
+    answerFor(t.s, { "blob-first": 403, "blob-second": 410 });
+    expect(await t.s.hydrate({ mailboxId: t.s.mailboxId }), "refused: the batch goes on").toEqual({ hydrated: true });
+    expect(t.s.downloads(), "refused: every source asked for").toEqual(["blob-first", "blob-second", "blob-third"]);
+    expect(await t.attempts(), "refused: one attempt each").toEqual({ first: 1, second: 1, third: 1 });
+    for (const id of [t.ids.first, t.ids.second]) {
+      const state = await stateOf(id);
+      expect({ status: state?.hydration_status, code: state?.hydration_error_code }, "refused: recorded by the parser").toEqual({
+        status: "failed",
+        code: "JMAP_HTTP",
+      });
+    }
+    expect((await stateOf(t.ids.third))?.hydration_status, "refused: the next message loads").toBe("complete");
+  }, 30_000);
+
+  test("missing source: counted even when a later message ends the batch", async () => {
+    const t = await threeMessages("missing-then-throttled");
+    t.s.f.emails.splice(
+      t.s.f.emails.findIndex((item) => item.id === "first"),
+      1,
+    );
+    answerFor(t.s, { "blob-second": 429 });
+    const failure = await t.rejected();
+    expect(codeOf(failure), "throttled: the batch ends").toBe("MAIL_RATE_LIMITED");
+    expect(await t.attempts(), "throttled: the missing source counts, the throttled message does not").toEqual({
+      first: 1,
+      second: 0,
+      third: 0,
+    });
+    expect((await stateOf(t.ids.first))?.hydration_error_code, "missing: recorded").toBe("MESSAGE_SOURCE_MISSING");
+  }, 30_000);
+
+  test("mid-stream: a broken connection counts that message's attempt and ends the batch", async () => {
+    const t = await threeMessages("broken");
+    const factory = t.s.f.dependencies.request;
+    if (!factory) throw new Error("broken: fixture request factory missing");
+    // The connection of the first source closes after its first bytes.
+    const breaking: JmapTransportDependencies = {
+      ...t.s.f.dependencies,
+      request: (options, callback) =>
+        factory(options, (response) => {
+          if (options.path?.includes("/blob-first/")) response.once("data", () => response.destroy());
+          callback(response);
+        }),
+    };
+    const failure = await t.rejected(breaking);
+    expect(codeOf(failure), "broken: the batch ends with the failure").toBe("JMAP_TRANSPORT");
+    expect(t.s.downloads(), "broken: no download after it").toEqual(["blob-first"]);
+    expect(await t.attempts(), "broken: one attempt for that message only").toEqual({ first: 1, second: 0, third: 0 });
+    expect((await stateOf(t.ids.first))?.hydration_error_code, "broken: recorded").toBe("JMAP_TRANSPORT");
+  }, 30_000);
+
+  test("mid-stream: an idle deadline counts that message's attempt, ends the batch and opens the breaker", async () => {
+    const t = await threeMessages("idle");
+    // The network idle deadline expires once the first source started.
+    let expired = false;
+    const idle: JmapTransportDependencies = {
+      ...t.s.f.dependencies,
+      downloadTimer: (expire, milliseconds) => {
+        if (milliseconds === 60_000 && !expired) {
+          expired = true;
+          queueMicrotask(expire);
+        }
+        return () => undefined;
+      },
+    };
+    const failure = await t.rejected(idle);
+    expect(codeOf(failure), "idle: the batch ends with the timeout").toBe("JMAP_TIMEOUT");
+    expect(t.s.downloads(), "idle: no download after it").toEqual(["blob-first"]);
+    expect(await t.attempts(), "idle: one attempt for that message only").toEqual({ first: 1, second: 0, third: 0 });
+    expect((await stateOf(t.ids.first))?.hydration_error_code, "idle: recorded").toBe("JMAP_TIMEOUT");
+    expect(await providerBreakerOpenForMs(t.s.remoteResourceId), "idle: breaker open").toBeGreaterThan(0);
+  }, 30_000);
+
+  test("not ready: a job for a JMAP message whose binding is not active ends without a mark or an attempt", async () => {
+    const s = await setup("not-ready");
+    await s.arrive([s.email("waiting", rfc822(`waiting-${suffix}`))]);
+    const id = await s.messageOf("waiting");
+    await sql`UPDATE mail.provider_bindings SET state = 'pending' WHERE id = ${s.bindingId}::uuid`;
+    expect(await syncRuntime.canHydrateMessage(id), "not ready: nothing to fetch").toBe(false);
+    expect(await s.hydrate({ messageId: id }), "not ready: nothing done").toEqual({ hydrated: false });
+    expect(s.downloads(), "not ready: no download").toEqual([]);
+    const state = await stateOf(id);
+    expect(
+      { status: state?.hydration_status, attempt: state?.hydration_attempt, code: state?.hydration_error_code },
+      "not ready: unchanged",
+    ).toEqual({ status: "envelope", attempt: 0, code: null });
   }, 30_000);
 
   test("DATA-13: a JMAP batch costs the IMAP statements per message and the loader's two reads", async () => {
@@ -578,4 +732,76 @@ suite("JMAP body hydration", () => {
       await meter.close();
     }
   }, 60_000);
+
+  // Last in the file: it leaves 160,000 pending bodies behind in two mailboxes of their own.
+  test("candidate plan: each status probe follows the hydration queue index among 160,000 pending bodies", async () => {
+    const limit = 20;
+    const fill = async (s: Fixture, prefix: string) => {
+      const folderId = s.folderIds.get("a");
+      if (!folderId) throw new Error("plan: folder missing");
+      await sql`INSERT INTO mail.message_contents (short_id, mailbox_id, subject, internal_date, content_hash, hydration_status)
+        SELECT ${prefix} || lpad(item::text, 5, '0'), ${s.mailboxId}::uuid, 'Plan', ${at}::timestamptz - make_interval(secs => item),
+          md5(${prefix} || item::text) || md5(item::text), 'envelope'
+        FROM generate_series(0, 79999) AS item`;
+      await sql`INSERT INTO mail.remote_message_refs (folder_id, message_id, remote_id)
+        SELECT ${folderId}::uuid, mc.id, 'E' || mc.short_id FROM mail.message_contents mc WHERE mc.mailbox_id = ${s.mailboxId}::uuid`;
+    };
+    const s = await setup("plan");
+    const other = await setup("plan-other");
+    await fill(s, "P");
+    await fill(other, "Q");
+    await sql`ANALYZE mail.message_contents`;
+    await sql`ANALYZE mail.remote_message_refs`;
+    const [newest] = await sql<{ id: string }[]>`SELECT id FROM mail.message_contents WHERE short_id = 'P00000'`;
+    if (!newest) throw new Error("plan: newest body missing");
+    const params = {
+      mailboxId: s.mailboxId,
+      remoteResourceId: s.remoteResourceId,
+      bindingId: s.bindingId,
+      targetId: newest.id,
+      takesRetries: false,
+      limit,
+    };
+    const rows = await syncRuntime.jmapHydrationCandidatesQuery(sql, params);
+    expect(
+      rows.map((row) => row.email_id),
+      "plan: the newest bodies, the target first",
+    ).toEqual(Array.from({ length: limit }, (_, index) => `EP${String(index).padStart(5, "0")}`));
+    type Plan = {
+      "Node Type": string;
+      "Actual Rows"?: number;
+      "Actual Loops"?: number;
+      "Rows Removed by Filter"?: number;
+      "Relation Name"?: string;
+      "Index Name"?: string;
+      Plans?: Plan[];
+    };
+    const nodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(nodes)];
+    const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan; "Execution Time": number }] }[]>`
+      EXPLAIN (ANALYZE, FORMAT JSON) ${syncRuntime.jmapHydrationCandidatesQuery(sql, params)}`;
+    const plan = explained?.["QUERY PLAN"][0];
+    if (!plan) throw new Error("plan: missing");
+    const all = nodes(plan.Plan);
+    const read = (node: Plan) => (node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0);
+    const probes = all.filter((node) => node["Index Name"] === "message_contents_hydration_queue_idx");
+    // One line for the driver; no expectation on time.
+    console.info(
+      "JMAP_HYDRATION_PLAN",
+      JSON.stringify({
+        nodes: all.map((node) => node["Node Type"] + (node["Index Name"] ? `(${node["Index Name"]})` : "")),
+        probeRowsPerLoop: probes.map(read),
+        probeLoops: probes.map((node) => node["Actual Loops"] ?? 1),
+        rowsRead: all.filter((node) => node["Relation Name"]).reduce((sum, node) => sum + read(node) * (node["Actual Loops"] ?? 1), 0),
+        rows: plan.Plan["Actual Rows"],
+        executionMs: plan["Execution Time"],
+      }),
+    );
+    expect(plan.Plan["Actual Rows"] ?? Number.POSITIVE_INFINITY, "plan: at most one batch of rows").toBeLessThanOrEqual(limit);
+    expect(
+      all.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "message_contents"),
+      "plan: no sequential scan of the bodies",
+    ).toBeFalse();
+    expect(probes.length, "plan: the hydration queue index").toBeGreaterThan(0);
+    for (const probe of probes) expect(read(probe), "plan: each status probe reads about one batch").toBeLessThanOrEqual(4 * limit);
+  }, 120_000);
 });

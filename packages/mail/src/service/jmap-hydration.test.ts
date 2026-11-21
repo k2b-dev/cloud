@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { once } from "node:events";
 import { PassThrough } from "node:stream";
 import { JmapError } from "./connectors/jmap-client";
-import { checkJmapHttp, JmapHttpError, JmapRateLimitError } from "./connectors/jmap-http";
+import { checkJmapHttp, JmapHttpError, JmapRateLimitError, JmapRequestError } from "./connectors/jmap-http";
 import { JmapTransportError } from "./connectors/jmap-transport";
-import { classifyJmapSourceFailure, interruptibleJmapSource } from "./jmap-hydration";
+import { classifyJmapSourceFailure, endsJmapBatch, interruptibleJmapSource } from "./jmap-hydration";
 import { JMAP_HYDRATION_INTERRUPTED } from "./message-hydration";
 
 // A fixed clock: no result depends on the day the test runs.
@@ -30,8 +30,6 @@ describe("a download that never reached the parser", () => {
 
   for (const [label, error] of [
     ["a refused login", new JmapHttpError(401)],
-    ["a forbidden account", new JmapHttpError(403)],
-    ["a server failure", new JmapHttpError(503)],
     ["a timeout", new JmapTransportError("JMAP_TIMEOUT")],
     ["a broken connection", new JmapTransportError("JMAP_TRANSPORT")],
     ["an abort", new JmapTransportError("JMAP_ABORTED")],
@@ -40,6 +38,43 @@ describe("a download that never reached the parser", () => {
   ] as const) {
     test(`${label} ends the batch without an attempt`, () => {
       expect(classifyJmapSourceFailure(error, now)).toEqual({ kind: "stop" });
+    });
+  }
+
+  for (const [label, error] of [
+    ["a server failure", new JmapHttpError(500)],
+    ["an unavailable server", new JmapHttpError(503)],
+  ] as const) {
+    test(`${label} on one source counts its attempt and ends the batch`, () => {
+      expect(classifyJmapSourceFailure(error, now)).toEqual({ kind: "attempt", endsBatch: true });
+    });
+  }
+
+  for (const [label, error] of [
+    ["a forbidden source", new JmapHttpError(403)],
+    ["a gone source", new JmapHttpError(410)],
+    ["a rejected request", new JmapRequestError("unknown")],
+    ["a redirect", new JmapTransportError("JMAP_REDIRECT")],
+    ["a source too large for the budget", new JmapTransportError("JMAP_TOO_LARGE")],
+    ["a bad download template", new JmapError("JMAP_DOWNLOAD_TEMPLATE")],
+  ] as const) {
+    test(`${label} counts that message's attempt and the batch goes on`, () => {
+      expect(classifyJmapSourceFailure(error, now)).toEqual({ kind: "attempt", endsBatch: false });
+    });
+  }
+});
+
+describe("a failure the parser recorded as an attempt", () => {
+  for (const [label, error, ends] of [
+    ["a server failure", new JmapHttpError(502), true],
+    ["a connection that broke off mid-stream", new JmapTransportError("JMAP_TRANSPORT"), true],
+    ["an idle deadline mid-stream", new JmapTransportError("JMAP_TIMEOUT"), true],
+    ["a refused source", new JmapHttpError(403), false],
+    ["a broken message", Object.assign(new Error("bad MIME"), { code: "MIME_HYDRATION_FAILED" }), false],
+    ["a too large source", new JmapTransportError("JMAP_TOO_LARGE"), false],
+  ] as const) {
+    test(`${label} ${ends ? "ends" : "does not end"} the batch`, () => {
+      expect(endsJmapBatch(error)).toBe(ends);
     });
   }
 });

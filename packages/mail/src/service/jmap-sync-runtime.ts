@@ -1,5 +1,4 @@
 import { sql } from "@k2b/cloud";
-import { logger } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { projectJmapFolders } from "./bindings";
 import { ENVELOPE_BATCH_SIZE } from "./connectors/contract";
@@ -29,17 +28,8 @@ import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { isTrashOrJunkFolder } from "./follow-up-scope";
 import { requestMailboxHydration } from "./hydration-work";
 import { enqueueMailInvalidation, mailLive } from "./live";
-import { providerErrorCode } from "./provider-errors";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
-import {
-  claimFence,
-  ingestEnvelope,
-  SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
-  SYNC_FOLDER_MAX_ATTEMPTS,
-  wakeMailboxHydration,
-} from "./sync-runtime";
-
-const log = logger("mail:jmap-sync");
+import { claimFence, ingestEnvelope, SYNC_FOLDER_DATA_ERROR_RECHECK_MS, SYNC_FOLDER_MAX_ATTEMPTS } from "./sync-runtime";
 
 type Account = {
   db?: typeof sql;
@@ -63,7 +53,13 @@ type Batch =
   | { kind: "verify"; checked: JmapVerifyRef[]; notFoundIds: string[] };
 type Stats = { imported: number; memberships: number; flagsUpdated: number; removed: number; folders: number; skippedDrafts: number };
 type SupersededResult = { status: "superseded"; cause: "account_changed" | "folders_required" };
-export type JmapAccountCommitResult = { status: "committed"; hasMore: boolean; stats: Stats } | SupersededResult;
+/**
+ * `hydrationRequested`: the commit stored a body request for new memberships. The caller wakes
+ * hydration after it released the provider lease (`wakeMailboxHydration`), as the IMAP sync does.
+ */
+export type JmapAccountCommitResult =
+  | { status: "committed"; hasMore: boolean; stats: Stats; hydrationRequested: boolean }
+  | SupersededResult;
 export type JmapAccountSyncResult =
   | JmapAccountCommitResult
   /** `axis` names the rejected state: a mailbox state calls for a repair, an Email state for a reconciliation. */
@@ -71,7 +67,7 @@ export type JmapAccountSyncResult =
 /** `retry`: a state moved while the start snapshot was read; nothing was written. */
 export type JmapAccountScanStartResult = { status: "committed"; stats: Stats } | SupersededResult | { status: "retry" };
 export type JmapAccountScanResult =
-  | { status: "committed"; scanComplete: boolean; stats: Stats }
+  | { status: "committed"; scanComplete: boolean; stats: Stats; hydrationRequested: boolean }
   | SupersededResult
   /** No scan is running. */
   | { status: "idle" }
@@ -222,7 +218,8 @@ function validateBatch(params: Account & { beforeState: JmapSyncState | null; ba
 
 /**
  * One reader page, no network. The resource serializes all account writes. A page with new
- * memberships asks for their bodies once, in the same transaction, as an IMAP folder batch does.
+ * memberships stores one body request in the same transaction, as an IMAP folder batch does; the
+ * caller wakes hydration once it released the provider lease.
  */
 export async function commitJmapAccountBatch(
   params: Account & {
@@ -552,18 +549,11 @@ export async function commitJmapAccountBatch(
       if (changed) await enqueueMailInvalidation(tx, { mailboxId: resource.mailbox_id });
       assertActive(params.signal);
       const hasMore = batch.kind === "email" || batch.kind === "mailbox" ? batch.delta.hasMoreChanges : nextState.scan !== null;
-      return { stats, changed, hasMore, hydration, mailboxId: resource.mailbox_id };
+      return { stats, changed, hasMore, hydration };
     });
-    // Durable rows above are sufficient if the process exits before the advisory wakes.
+    // Durable rows above are sufficient if the process exits before the advisory wake.
     if (result.changed) mailLive.wake();
-    if (result.hydration)
-      await wakeMailboxHydration(result.mailboxId).catch((error: unknown) => {
-        log.warn("Mail could not publish JMAP body hydration; the publisher retries", {
-          mailboxId: result.mailboxId,
-          code: providerErrorCode(error, "HYDRATION_PUBLISH_FAILED"),
-        });
-      });
-    return { status: "committed", hasMore: result.hasMore, stats: result.stats };
+    return { status: "committed", hasMore: result.hasMore, stats: result.stats, hydrationRequested: result.hydration };
   } catch (error) {
     if (error instanceof Superseded) return { status: "superseded", cause: error.reason };
     throw error;
@@ -785,7 +775,7 @@ export async function syncJmapAccountScan(params: Account & Network): Promise<Jm
     }
     if (batch.kind === "scan" && batch.page.kind === "restart" && jmapScanRestarts(scan, batch.page) >= JMAP_SCAN_RESTART_LIMIT)
       return { status: "stalled" };
-    return { status: "committed", scanComplete: !result.hasMore, stats: result.stats };
+    return { status: "committed", scanComplete: !result.hasMore, stats: result.stats, hydrationRequested: result.hydrationRequested };
   } catch (error) {
     await finish("JMAP_SYNC_FAILED", "failed");
     throw error;

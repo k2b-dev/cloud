@@ -26,15 +26,16 @@ const initial: JmapSyncState = { version: 2, emailState: "Email:0", mailboxState
 // Measured in the gate, BEGIN and COMMIT included. A quiet commit is the transaction, four locks
 // (resource, binding, connection, mailbox), the checkpoint and the run. A page with changes adds
 // the refs, the folders, one batch statement for its kind, binding usage and the live invalidation.
-// Only a new membership costs per message: the 18 statements of the shared ingestEnvelope.
+// Only a new membership costs per message: the 18 statements of the shared ingestEnvelope. A page
+// with new memberships adds one fixed statement, its body request.
 const STATEMENT_BUDGET: Record<
   "unchanged" | "statesOnly" | "new1" | "new7" | "flags1" | "flags7" | "remove1" | "remove7" | "folders",
   number
 > = {
   unchanged: 8,
   statesOnly: 8,
-  new1: 31,
-  new7: 139,
+  new1: 32,
+  new7: 140,
   flags1: 13,
   flags7: 13,
   remove1: 14,
@@ -958,21 +959,27 @@ suite("JMAP account commit", () => {
       );
     };
     live.mockImplementation(observe);
+    // The commit stores the body request and leaves its wake to the caller, after the lease.
+    const hydrationWake = spyOn(syncRuntime, "wakeMailboxHydration");
     change(message("durable"));
-    await run();
+    try {
+      expect(await run(), "durable: body request reported").toMatchObject({ status: "committed", hydrationRequested: true });
+    } finally {
+      hydrationWake.mockRestore();
+    }
     await Promise.all(observations);
     expect(live, "wake: once").toHaveBeenCalledTimes(1);
+    expect(hydrationWake, "wake: no hydration wake from the commit").not.toHaveBeenCalled();
     expect(await counts(), "lost wakes: rows persist without publishing").toMatchObject({ receipts: 1, live: 1, hydration: 1 });
   });
-  test("hydration: new memberships ask once per batch, durably before the wake; flags, removal and quiet commits ask nothing", async () => {
+  test("hydration: new memberships ask once per batch and report it; flags, removal and quiet commits ask nothing", async () => {
     const requests = spyOn(hydrationWork, "requestMailboxHydration");
-    const woken: Array<{ foreground: boolean | null }> = [];
-    // The wake runs after the commit; another connection already sees the request.
-    const wake = spyOn(syncRuntime, "wakeMailboxHydration").mockImplementation(async (mailboxId) => {
+    const wake = spyOn(syncRuntime, "wakeMailboxHydration");
+    const foreground = async () => {
       const [row] = await sql<{ foreground_requested: boolean }[]>`
-        SELECT foreground_requested FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid`;
-      woken.push({ foreground: row?.foreground_requested ?? null });
-    });
+        SELECT foreground_requested FROM mail.hydration_work WHERE mailbox_id = ${source.mailboxId}::uuid`;
+      return row?.foreground_requested ?? null;
+    };
     try {
       // Two Emails per page: the first page has more changes to read, the second completes the delta.
       const paged = { ...source.args, session: { ...source.args.session, core: { ...source.args.session.core, maxObjectsInGet: 2 } } };
@@ -981,24 +988,35 @@ suite("JMAP account commit", () => {
         status: "committed",
         hasMore: true,
         stats: { memberships: 2 },
+        hydrationRequested: true,
       });
+      expect(await foreground(), "first page: durable background request").toBe(false);
       expect(await syncJmapAccountDelta(paged), "second page: one membership").toMatchObject({
         status: "committed",
         hasMore: false,
         stats: { memberships: 1 },
+        hydrationRequested: true,
       });
+      expect(await foreground(), "second page: the completed delta ranks with arrivals").toBe(true);
       expect(
         requests.mock.calls.map((call) => call[2]),
         "pages: once each; only the completed delta ranks with arrivals",
       ).toEqual([{ foreground: false }, { foreground: true }]);
-      expect(woken, "pages: each wake after its durable request").toEqual([{ foreground: false }, { foreground: true }]);
       change(message("hydrate0", { a: true }, { $seen: true }), "updated");
-      expect(await run(), "flags: committed").toMatchObject({ status: "committed", stats: { flagsUpdated: 1, memberships: 0 } });
+      expect(await run(), "flags: committed").toMatchObject({
+        status: "committed",
+        stats: { flagsUpdated: 1, memberships: 0 },
+        hydrationRequested: false,
+      });
       source.f.journal.Email.push({ id: "hydrate1", kind: "destroyed" });
-      expect(await run(), "removal: committed").toMatchObject({ status: "committed", stats: { removed: 1, memberships: 0 } });
-      expect(await run(), "quiet: committed").toMatchObject({ status: "committed", stats: { memberships: 0 } });
+      expect(await run(), "removal: committed").toMatchObject({
+        status: "committed",
+        stats: { removed: 1, memberships: 0 },
+        hydrationRequested: false,
+      });
+      expect(await run(), "quiet: committed").toMatchObject({ status: "committed", stats: { memberships: 0 }, hydrationRequested: false });
       expect(requests, "flags, removal, quiet: no request").toHaveBeenCalledTimes(2);
-      expect(wake, "flags, removal, quiet: no wake").toHaveBeenCalledTimes(2);
+      expect(wake, "no commit wakes hydration").not.toHaveBeenCalled();
     } finally {
       requests.mockRestore();
       wake.mockRestore();
@@ -1074,8 +1092,9 @@ suite("JMAP account commit", () => {
       // The line names the measured values when a budget fails.
       console.info("JMAP_STATEMENTS", JSON.stringify(measured));
       expect(measured, "budget: exact statement counts").toEqual(STATEMENT_BUDGET);
+      // A batch with new memberships adds one fixed statement, the body request; it does not grow per message.
       expect(measured.new7 - measured.new1, "budget: only the shared ingest grows with new messages").toBe(
-        6 * (measured.new1 - measured.flags1),
+        6 * (measured.new1 - measured.flags1 - 1),
       );
     } finally {
       await meter.close();

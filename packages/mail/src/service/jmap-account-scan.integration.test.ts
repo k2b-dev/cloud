@@ -31,7 +31,8 @@ const at = new Date("2026-11-20T00:00:00Z");
 // Measured in the gate, BEGIN and COMMIT included, for the commit of one step (the reads before it
 // are outside the window). A quiet step is the transaction, four locks, the checkpoint and the run
 // (8); a page with changes adds refs, folders, flags, binding usage and the invalidation (13). Only
-// a new membership costs per message: the 18 statements of the shared ingestEnvelope. A start is 17
+// a new membership costs per message: the 18 statements of the shared ingestEnvelope, plus one
+// fixed body request for a page with new memberships. A start is 17
 // fixed statements (12 in the commit, 5 in projectJmapFolders) plus 5 per new folder (savepoint,
 // insert and release, the binding ref, the parent) or 3 per known one; 5 new folders make 42.
 const STATEMENT_BUDGET: Record<
@@ -39,8 +40,8 @@ const STATEMENT_BUDGET: Record<
   number
 > = {
   start5: 42,
-  new1: 31,
-  new7: 139,
+  new1: 32,
+  new7: 140,
   known7: 11,
   flags7: 13,
   restart: 8,
@@ -718,8 +719,18 @@ suite("JMAP account scan", () => {
       put(message("BODYB", "09"));
       await startScan();
       expect(requests, "start: no bodies to ask for").not.toHaveBeenCalled();
-      await scanToEnd();
+      const trace = await scanToEnd();
       expect(await scanOf(), "scan: complete, verify pass included").toBeNull();
+      expect(
+        trace.map(({ result }) => (result.status === "committed" ? [result.stats.memberships > 0, result.hydrationRequested] : null)),
+        "scan: only the page with new memberships reports a body request",
+      ).toEqual(
+        trace.map(({ result }) => (result.status === "committed" ? [result.stats.memberships > 0, result.stats.memberships > 0] : null)),
+      );
+      expect(
+        trace.some(({ result }) => result.status === "committed" && result.hydrationRequested),
+        "scan: one page reports it",
+      ).toBeTrue();
       expect(
         requests.mock.calls.map((call) => call[2]),
         "scan: the one page with new mail asks once, in the background",
@@ -1042,8 +1053,9 @@ suite("JMAP account scan", () => {
       // The line names the measured values for the budget.
       console.info("JMAP_SCAN_STATEMENTS", JSON.stringify(measured));
       expect(measured, "budget: exact statement counts").toEqual(STATEMENT_BUDGET);
+      // A page with new memberships adds one fixed statement, the body request; it does not grow per message.
       expect(measured.new7 - measured.new1, "budget: only the shared ingest grows with new messages").toBe(
-        6 * (measured.new1 - measured.flags7),
+        6 * (measured.new1 - measured.flags7 - 1),
       );
       expect(measured.known7, "budget: a page of known, unchanged mail writes less than a changed one").toBeLessThan(measured.flags7);
       expect(measured.verify7, "budget: removal is one batch for any count").toBe(measured.verify1);
