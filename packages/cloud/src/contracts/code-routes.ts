@@ -23,7 +23,7 @@ export const CodeRouteSchema = z
       ),
     layout: z.literal("plain").optional().describe("Pages of this route render without the Cloud layout; omitted, they render inside it."),
     // Kept short: Core's capability manifest repeats this schema and sits near the registry limit.
-    audience: z.literal("owner-data").optional().describe("Turns off the visitor read check (G1)."),
+    audience: z.literal("owner-data").optional().describe("Skips the visitor read check."),
   })
   .strict();
 export type CodeRoute = z.infer<typeof CodeRouteSchema>;

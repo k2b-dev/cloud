@@ -272,11 +272,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   cause?: { requestId: string }; data: Data;
 };`,
       `export type CodeEvents = { ${events.join("; ")} };`,
-      `/**
- * \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone.
- * Cloud delivers a route only to visitors who may read every resource it read (a target, a ref, or a type's reader);
- * \`audience: "owner-data"\` turns that check off, so everyone who opens the route sees data read with the owner's rights.
- */
+      `/** \`public\` admits visitors without sign-in; \`layout: "plain"\` renders pages alone; \`audience: "owner-data"\` skips the read check. */
 export type CodeRouteOptions = { public?: boolean; layout?: "plain"; audience?: "owner-data" };`,
       `export type CodeApp<Variables extends object = {}> = {
   /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
