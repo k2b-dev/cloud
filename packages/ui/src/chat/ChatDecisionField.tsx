@@ -175,7 +175,12 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
             error={props.invalid ? props.lines[props.current]?.text : undefined}
             externalErrorId={props.invalid ? lineId(props.current) : undefined}
             aria-describedby={props.invalid ? undefined : lineId(props.current)}
-            autocomplete="off"
+            // A new secret, never a saved password: browsers do not fill it, and password managers neither fill nor offer to keep it.
+            autocomplete="new-password"
+            data-1p-ignore=""
+            data-lpignore="true"
+            data-bwignore=""
+            data-form-type="other"
             spellcheck={false}
             ref={(element: HTMLInputElement) => {
               input = element;

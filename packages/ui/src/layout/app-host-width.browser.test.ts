@@ -37,7 +37,7 @@ beforeAll(async () => {
     },
   });
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);

@@ -180,8 +180,9 @@ Pass `entry={<ChatDecisionField … />}` when the answer is one value the person
 types, such as a key. `entry` takes the answer row's place, so the question's
 own `meta`, `back`, `more`, `link`, `remember`, `confirm`, and `decline` are not
 shown; `ChatDecisionField` brings its `confirm` and `decline`. It is a named
-export of `@k2b/ui`, not a member of `Chat`, so a page loads it only where such
-a question appears. Its `facts`, each a `ChatDecisionReason` with its icon,
+export of `@k2b/ui`, not a member of `Chat`. Code that loads such a question on
+demand imports it from `@k2b/ui/chat-decision-field`, so it stays out of the
+page's first JavaScript. Its `facts`, each a `ChatDecisionReason` with its icon,
 such as where the value goes, lie on the surface colour like `details`, without
 a label. Under them sits the field with the filled `confirm` beside it, one line
 under the field with a quiet `decline` in the AI colour beside that. The field

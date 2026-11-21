@@ -246,8 +246,9 @@ Use semantic values for numbers and time, then format at the rendering owner:
 - `@k2b/stdlib` `text` and `dates` helpers in non-Solid server code;
 - `i18n.plural()` and `i18n.formatList()` for locale-sensitive composition.
 
-Do not format a number in advance merely to choose `,` or `.`. `NumberInput` accepts and
-displays the separator for its inherited locale. Keep timezone separate from
+Do not format a number in advance merely to choose `,` or `.`. `NumberInput` displays the
+decimal separator for its inherited locale and reads grouped input such as
+`2.977,17` with that locale's marks. Keep timezone separate from
 language and pass `getDateConfig(c)` when a date also needs the request timezone.
 
 Do not call `toLocaleString()`, `toLocaleDateString()`, or

@@ -7,6 +7,7 @@ import type { Context } from "hono";
 import type { CodeQueryInvoke } from "../code-summary";
 import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { app, ssr } from "../config";
+import { chatSecretTitleRefs, loadSecretTitles } from "../secret-titles";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller } from "../sidebar";
 import { ALL_CHATS_PAGE } from "./AllChats";
 import AssistantPwa, { type AssistantPwaProps } from "./AssistantPwa.island";
@@ -80,11 +81,15 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
       signal: c.req.raw.signal,
       requestId: c.req.header("x-request-id"),
     });
-  const initialCodeVersionCards = detail
-    ? await loadCodeVersionCards(invokeCode, chatCodeVersionRefs(detail.messages, detail.activeTurn))
-    : [];
+  const [initialCodeVersionCards, initialSecretTitles] = detail
+    ? await Promise.all([
+        loadCodeVersionCards(invokeCode, chatCodeVersionRefs(detail.messages, detail.activeTurn)),
+        loadSecretTitles(invokeCode, chatSecretTitleRefs(detail.messages, detail.activeTurn)),
+      ])
+    : [[], {}];
   const props: AssistantPwaProps = {
     initialCodeVersionCards,
+    initialSecretTitles,
     userId: user.id,
     name: part.name,
     icon: part.icon,

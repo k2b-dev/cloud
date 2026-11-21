@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   type Browser,
   type BrowserContext,
@@ -10,6 +11,7 @@ import {
   type Request,
   webkit,
 } from "playwright";
+import { launchBudgetMs, launchHookMs } from "./browser-budget";
 
 /**
  * The engine that Playwright tests run in, chosen with `TEST_BROWSER`:
@@ -47,6 +49,8 @@ const profileWaitMs = 250;
 const slowLaunchMs = 4000;
 const processPollMs = 25;
 
+export { launchBudgetMs, launchHookMs };
+
 /** The process of a browser that this test process launched: the leader of its own process group. */
 type BrowserProcess = { pid: number; kill: () => Promise<unknown> };
 
@@ -77,11 +81,14 @@ const browserProcessOf = (browser: Browser): BrowserProcess => {
   return { pid, kill: async () => kill.call(browserProcess) };
 };
 
-let lastClose: { durationMs: number; killed: boolean } | undefined;
-const previousCloseSummary = () =>
-  lastClose
-    ? `previous close took ${lastClose.durationMs} ms, ${lastClose.killed ? "needed a kill" : "no kill needed"}`
-    : "no earlier browser";
+let lastClose: { durationMs: number; killed: boolean; failedLaunch?: boolean } | undefined;
+const previousCloseSummary = () => {
+  if (!lastClose) return "no earlier browser";
+  if (lastClose.failedLaunch) {
+    return `previous launch failed, its cleanup took ${lastClose.durationMs} ms, ${lastClose.killed ? "needed a kill" : "no process left"}`;
+  }
+  return `previous close took ${lastClose.durationMs} ms, ${lastClose.killed ? "needed a kill" : "no kill needed"}`;
+};
 
 /** Bounds a wait while keeping a handler on any late rejection (#1473). */
 const within = async (promise: Promise<unknown>, timeoutMs: number): Promise<boolean> => {
@@ -175,11 +182,60 @@ const closeStarted = (started: StartedBrowser, options: Parameters<Browser["clos
   return started.closing;
 };
 
+// Each local launch carries its own mark in the browser's environment, so a failed launch finds exactly its own processes.
+const launchMark = "CLOUD_TEST_BROWSER_LAUNCH";
+let launches = 0;
+
+/**
+ * The process groups that the launch `mark` left behind: children of this test process that lead their own group and carry
+ * the mark in their environment, read from `/proc`. Without `/proc`, nothing is found.
+ */
+const launchLeftovers = (mark: string): number[] => {
+  const result = Bun.spawnSync(["ps", "-eo", "pid=,ppid=,pgid=,stat="], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`Cannot list the processes of the failed launch: ${result.stderr.toString()}`);
+  return result.stdout
+    .toString()
+    .trim()
+    .split("\n")
+    .flatMap((line) => {
+      const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line);
+      if (!match || Number(match[2]) !== process.pid || match[1] !== match[3] || /^[ZX]/.test(match[4]!)) return [];
+      try {
+        return readFileSync(`/proc/${match[1]}/environ`, "utf8").split("\0").includes(`${launchMark}=${mark}`) ? [Number(match[1])] : [];
+      } catch {
+        return [];
+      }
+    });
+};
+
+/**
+ * After a launch timeout, Playwright 1.65 closes the browser in the background and can wait 30 s before it kills it, beside the
+ * next launch. Kill the failed launch's own process groups now, within the kill budget, and note the failure for the next launch (#3874).
+ */
+const killFailedLaunch = async (mark: string): Promise<string> => {
+  const began = Date.now();
+  let killed = false;
+  try {
+    const groups = launchLeftovers(mark);
+    for (const pid of groups) {
+      killed = true;
+      await killProcessGroup({ pid, kill: async () => {} }, 0);
+    }
+    return groups.length ? `; killed its process group ${groups.join(", ")}, gone after ${Date.now() - began} ms` : "";
+  } catch (error) {
+    return `; ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    lastClose = { durationMs: Date.now() - began, killed, failedLaunch: true };
+  }
+};
+
 const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
   const type = browserName === "webkit" ? webkit : chromium;
   const endpoint = process.env.TEST_BROWSER_ENDPOINT?.trim();
   const began = Date.now();
   const previous = previousCloseSummary();
+  const timeout = options.timeout ?? launchBudgetMs;
+  const mark = `${process.pid}-${++launches}`;
   let slow = false;
   const timer = setTimeout(() => {
     slow = true;
@@ -190,12 +246,14 @@ const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
     if (endpoint) {
       started = {
         browser: await type.connect(endpoint, {
-          timeout: options.timeout,
+          timeout,
           headers: { "x-playwright-launch-options": JSON.stringify(options) },
         }),
       };
     } else {
-      const browser = await type.launch(options);
+      const env =
+        options.env ?? Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+      const browser = await type.launch({ ...options, timeout, env: { ...env, [launchMark]: mark } });
       try {
         started = { browser, process: browserProcessOf(browser) };
       } catch (error) {
@@ -206,7 +264,9 @@ const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
     if (slow) console.error(`launchBrowser: ${browserName} launch completed after ${Date.now() - began} ms; ${previous}`);
     return started;
   } catch (error) {
-    const diagnosis = `launchBrowser: ${browserName} launch failed after ${Date.now() - began} ms; ${previous}`;
+    const failedMs = Date.now() - began;
+    const cleanup = endpoint ? "" : await killFailedLaunch(mark);
+    const diagnosis = `launchBrowser: ${browserName} launch failed after ${failedMs} ms of its ${timeout} ms budget; ${previous}${cleanup}`;
     if (!(error instanceof Error)) throw new Error(`${String(error)}\n\n${diagnosis}`, { cause: error });
     error.message += `\n\n${diagnosis}`;
     throw error;
@@ -492,6 +552,8 @@ const wrapContext = async (context: BrowserContext, servesShellCatalog: boolean)
  * Failed requests carry their error, and WebKit's internal error names a crashed network process as one cause (#1431).
  * Close waits at most 2 s gracefully and 2 s for a killed local process group; a surviving group fails cleanup.
  * A forced close, a launch pending after 4 s, and a failed launch carry timing evidence (#1473).
+ * A launch fails with its own error after `launchBudgetMs`, and a failed local launch kills its own process group first;
+ * a hook that launches keeps at least `launchHookMs` (#3874).
  */
 export const launchBrowser = async ({
   serveShellCatalog = false,

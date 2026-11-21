@@ -169,7 +169,7 @@ test("secret requests use their timeline anchor and stop waiting as soon as this
     conversationId: "chat",
     conversationTitle: "Automation",
     anchor: "tool-secret",
-    short: "Secret API",
+    short: "Enter secret: API",
     app: { name: "Gustav", icon: "ti ti-key" },
     createdAt: "2026-11-03T12:00:00.000Z",
   };

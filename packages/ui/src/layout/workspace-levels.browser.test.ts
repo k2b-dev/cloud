@@ -152,7 +152,7 @@ beforeAll(async () => {
     },
   });
   origin = `http://127.0.0.1:${server.port}`;
-});
+}, 30_000);
 afterAll(async () => {
   try {
     await browser?.close();

@@ -1,10 +1,11 @@
-import { parseCodeToolInput } from "@k2b/cloud/ai/browser";
+import { CODE_SECRET_ERRORS, parseCodeToolInput } from "@k2b/cloud/ai/browser";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { z } from "zod";
 import { chatCodeRequest } from "./client";
 import { openSecretsDialog } from "./SecretsDialog";
 import type { SecretRequestController } from "./secret-request";
+import { registerSecretRequest } from "./secret-request-registry";
 
 const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("execute") }),
@@ -12,7 +13,7 @@ const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("interrupted") }),
   z.object({ status: z.literal("done"), result: z.json() }),
 ]);
-const failed = () => ({ failed: true as const, error: "Secret entry was interrupted. No entry was replayed." });
+const failed = () => ({ failed: true as const, error: CODE_SECRET_ERRORS.interrupted });
 /** The only output crossing into a tool result: no exception text or extra browser fields. */
 const resultSchema = z.union([
   z.object({ configured: z.boolean(), name: z.string() }),
@@ -75,7 +76,7 @@ export function secretRuntimeHandlers(
         if (signal.aborted) controller.expire();
         if (controller.state.state !== "unavailable") {
           if (claim.status === "pending") controller.held();
-          unregister = loaded.request.registerSecretRequest({ conversationId, turnId, callId }, controller);
+          unregister = registerSecretRequest({ conversationId, turnId, callId }, controller);
           options.present?.(controller, callId);
         }
       }
