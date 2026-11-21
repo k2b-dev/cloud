@@ -3,7 +3,7 @@ import { useLocale } from "../intl/locale";
 
 type Place = { position: number; count: number; list: string };
 
-const sortableListMessages = i18n.define({
+const sortableListMessages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
   messages: {
     en: {

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, type Signal } from "solid-js";
 import { getK2bPortalRoot } from "../internal/portal";
 import { suppressTextSelection } from "../internal/text-selection";
 import type { DragAndDropMessages } from "./drag-and-drop-messages";
@@ -21,7 +21,14 @@ const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable=
 /** K7: a finger held this long lifts the item; before that it scrolls. */
 const HOLD_MS = 300;
 const AUTOSCROLL_EDGE = 32;
-const [readActiveDrag, setActiveDrag] = createSignal<DragPayload>();
+/**
+ * Signals are made on first use, so the module has no side effects and a bundle that imports `@k2b/ui` without drag and
+ * drop drops it.
+ */
+let signals: { drag: Signal<DragPayload | undefined>; status: Signal<DragStatus | undefined> } | undefined;
+const shared = () => (signals ??= { drag: createSignal<DragPayload>(), status: createSignal<DragStatus>() });
+const readActiveDrag = () => shared().drag[0]();
+const setActiveDrag = (payload: DragPayload | undefined) => shared().drag[1](payload);
 /** Reactive payload of the drag in progress, or undefined. */
 export const activeDrag = (): DragPayload | undefined => readActiveDrag();
 
@@ -30,7 +37,8 @@ export const activeDrag = (): DragPayload | undefined => readActiveDrag();
  * readers through the live region. `lead` names what moves, `detail` where it goes and how to cancel.
  */
 export type DragStatus = { lead: string; detail: string };
-const [readDragStatus, writeDragStatus] = createSignal<DragStatus>();
+const readDragStatus = () => shared().status[0]();
+const writeDragStatus = (status: DragStatus | undefined) => shared().status[1](status);
 /** Reactive status of the drag in progress, for a status line; undefined while nothing is dragged. */
 export const dragStatus = (): DragStatus | undefined => readDragStatus();
 /** Internal: SortableList states the exact place, which a plain target cannot. */

@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-const dragAndDropMessages = i18n.define({
+const dragAndDropMessages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
   messages: {
     en: {
