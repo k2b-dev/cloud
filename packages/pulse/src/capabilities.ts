@@ -15,6 +15,7 @@ import {
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { DashboardSchema } from "./api/dashboard-schemas";
+import { schemaReadQuery } from "./capabilities-schema";
 import {
   AlertDataSchema,
   AlertDeleteInputSchema,
@@ -917,6 +918,7 @@ export const pulseCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runSavedQueryList(input, baseTargetId(context), context),
     },
+    "schema.read": schemaReadQuery,
     "base.source.list": {
       target: "base",
       title: "List sources of a Pulse base",

@@ -21,16 +21,35 @@ test("declares SQL and saved query capabilities with base and source readers", (
   expect(Object.keys(pulseCapabilities.queries).sort()).toEqual([
     "alert.list",
     "alert.read",
+    "base.alert.list",
+    "base.alert.read",
     "base.list",
     "base.read",
+    "base.saved_query.list",
     "base.search",
+    "base.source.list",
+    "base.sql.run",
     "dashboard.list",
     "dashboard.read",
     "saved_query.list",
+    "schema.read",
     "source.list",
     "source.read",
     "sql.run",
   ]);
+  // G1: Code reads base data only through a pulse.base target, which Cloud checks for each page visitor.
+  for (const id of ["alert.list", "alert.read", "dashboard.list", "dashboard.read", "saved_query.list", "source.list", "sql.run"] as const)
+    expect(pulseCapabilities.queries[id].code).toBe(false);
+  for (const id of [
+    "base.alert.list",
+    "base.alert.read",
+    "base.saved_query.list",
+    "base.source.list",
+    "base.sql.run",
+    "schema.read",
+  ] as const)
+    expect(pulseCapabilities.queries[id].target).toBe("base");
+  expect(pulseCapabilities.code?.noPublicRoutes).toEqual(["base", "dashboard", "source"]);
   expect(Object.keys(pulseCapabilities.actions).sort()).toEqual([
     "alert.delete",
     "alert.save",

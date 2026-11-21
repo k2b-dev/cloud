@@ -33,9 +33,22 @@ Cloud administrators can restrict creation; every service account counts as an
 agent under the people-only policy. Source-bound credentials cannot create bases.
 Base access and credential scopes both constrain later operations.
 
+## Know what a base contains
+
+Before you write SQL or a page, read the base's data kinds with
+`cld pulse schema <base>` or `pulse.schema.read` on the `pulse.base` target:
+metrics with type, unit and dimensions, event kinds with attribute fields
+(type and fill rate from the newest events), and state keys. Pass `kind` for
+the five newest entries of one kind. Confidential event data never appears.
+
 ## Ask with read-only SQL
 
-`pulse.sql.run` accepts `{baseId, sql, params?}`. Resolve the base first; read
+`pulse.sql.run` accepts `{baseId, sql, params?, cursor?}`; a full page returns a
+cursor for the next one, so use `ORDER BY` for stable pages. Code pages and
+automations read through the base target instead:
+`pulse.base(baseId).sql.run({ sql })` (also `.source.list`, `.alert.list`,
+`.savedQuery.list`, `.schema.read`). Cloud then shows a page only to people
+who may read that base. The app-wide forms are not available to Code. Resolve the base first; read
 grants and credential scopes apply equally to agents and people. Query only
 that base's `samples`, `rollups`, `series`, `events`, `states`, and `sources`
 views. There is no access to sensitive fields, payloads, internal tables,
