@@ -1,6 +1,7 @@
 import {
   createContext,
   createEffect,
+  createRoot,
   createSignal,
   createUniqueId,
   type JSX,
@@ -17,14 +18,13 @@ import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Too
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
-import { inheritUiScope } from "../internal/portal-scope";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 import { focusMenuRow, focusRowSegment, levelItems } from "./menu-rows";
 import { MenuSearch, type MenuSearchApi } from "./menu-search";
 import { menuSheetReady, openMenuSheet } from "./menu-sheet-open";
-import { createMenuLevel, MAX_MENU_DEPTH, type MenuLevel, placeSubmenu } from "./menu-submenu";
+import { createMenuLevel, MAX_MENU_DEPTH, type MenuLevel } from "./menu-submenu";
 import { prefersMenuSheet } from "./phone-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
@@ -295,7 +295,8 @@ type DropdownContextValue = {
 const MenuContext = createContext<MenuContextValue>();
 const DropdownContext = createContext<DropdownContextValue>();
 
-const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
+/** Internal: the entries of one menu level that take focus. */
+export const menuEntries = (menu: HTMLElement | undefined): HTMLElement[] =>
   levelItems(
     menu,
     [
@@ -307,7 +308,7 @@ const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
   );
 
 const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
-  const items = actionableItems(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
+  const items = menuEntries(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
 };
@@ -580,7 +581,7 @@ export function DropdownItems(props: {
 
   return (
     <MenuContext.Provider value={{ close: props.close, role: props.role ?? "menuitem", depth, level, drill: props.drill }}>
-      <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : `item:${item.label}`)}>
+      <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : rowKey(item))}>
         {(current, index) => {
           const item = current();
           return (
@@ -612,13 +613,13 @@ export function DropdownItems(props: {
                 <Show
                   when={(current() as DropdownSection).layout}
                   fallback={
-                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                    <KeyedFor each={(current() as DropdownSection).items} by={rowKey}>
                       {renderItem}
                     </KeyedFor>
                   }
                 >
                   <div class={(current() as DropdownSection).layout === "tiles" ? "k2b-dropdown__tiles" : "k2b-dropdown__row"}>
-                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                    <KeyedFor each={(current() as DropdownSection).items} by={rowKey}>
                       {renderItem}
                     </KeyedFor>
                   </div>
@@ -632,9 +633,29 @@ export function DropdownItems(props: {
   );
 }
 
+/** A row's key names its kind too: an entry that turns from an action into a submenu row is built anew. */
+const rowKey = (item: DropdownAction | DropdownChoice) => `${"submenu" in item ? "submenu" : "item"}:${item.label}`;
+
 /** The actions and choices of a menu and its submenus, without sections or submenu rows. */
 const flatEntries = (items: readonly DropdownItem[]): (DropdownAction | DropdownChoice)[] =>
   items.flatMap((item) => ("items" in item ? flatEntries(item.items) : "submenu" in item ? flatEntries(item.submenu) : [item]));
+
+type SubmenuPanelModule = typeof import("./menu-submenu-panel");
+/**
+ * The open submenu's code loads with the first submenu row, so a menu without one carries none of it. A signal rather
+ * than `lazy`: a Suspense boundary of the page around the menu never shows its fallback while it loads.
+ */
+const [submenuPanel, setSubmenuPanel] = createRoot(() => createSignal<SubmenuPanelModule["default"]>());
+let submenuPanelLoad: Promise<unknown> | undefined;
+const loadSubmenuPanel = () =>
+  (submenuPanelLoad ??= import("./menu-submenu-panel").then(
+    (module) => setSubmenuPanel(() => module.default),
+    (error: unknown) => {
+      // The next submenu row tries again.
+      submenuPanelLoad = undefined;
+      globalThis.reportError(error);
+    },
+  ));
 
 function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
   const menu = useContext(MenuContext);
@@ -644,68 +665,26 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
   const open = () => menu.level.open() === id;
   // A fourth level is not offered (K16): its row stays, but cannot open.
   const disabled = () => Boolean(props.item.disabled) || menu.depth >= MAX_MENU_DEPTH;
+  const [focus, setFocus] = createSignal(0);
   let row!: HTMLButtonElement;
-  let panel: HTMLDivElement | undefined;
-  let focusFirst = false;
-  const rtl = () => getComputedStyle(row).direction === "rtl";
   const show = (moveFocus: boolean) => {
     if (disabled()) return;
     if (menu.drill) return menu.drill(props.item, row);
-    focusFirst = moveFocus;
-    if (open() && moveFocus) focusMenuRow(actionableItems(panel), "Home");
+    if (moveFocus) setFocus((request) => request + 1);
     menu.level.set(id);
   };
-  const hide = () => {
-    menu.level.set(undefined);
-    row.focus();
-  };
-  const place = () => {
-    if (!panel?.isConnected) return;
-    const host = row.closest<HTMLElement>("[role='menu'], [role='dialog'], [role='listbox']") ?? row;
-    const at = placeSubmenu(
-      row.getBoundingClientRect(),
-      host.getBoundingClientRect(),
-      panel.getBoundingClientRect(),
-      { width: window.innerWidth, height: window.innerHeight },
-      rtl(),
-    );
-    panel.style.left = `${at.left}px`;
-    panel.style.top = `${at.top}px`;
-    panel.dataset.side = at.side;
-  };
   const onRowKey = (event: KeyboardEvent) => {
-    if (event.key !== (rtl() ? "ArrowLeft" : "ArrowRight")) return;
+    if (event.key !== (getComputedStyle(row).direction === "rtl" ? "ArrowLeft" : "ArrowRight")) return;
     event.preventDefault();
     event.stopPropagation();
     show(true);
   };
-  const onPanelKey = (event: KeyboardEvent) => {
-    const items = actionableItems(panel);
-    if (focusMenuRow(items, event.key) || focusRowSegment(items, event.key)) {
-      event.preventDefault();
-      event.stopPropagation();
-    } else if (event.key === "Escape" || event.key === (rtl() ? "ArrowRight" : "ArrowLeft")) {
-      // Only this level closes; the menu around it stays, as the browser's own Escape would close it.
-      event.preventDefault();
-      event.stopPropagation();
-      hide();
-    }
-  };
-  /** While open: the menu around it closing or the window changing size closes it too. */
-  const watchClose = () => {
-    const host = row.parentElement?.closest<HTMLElement>("[popover]");
-    const closed = (event: Event) => {
-      if (event.type === "resize" || (event as ToggleEvent).newState === "closed") menu.level.set(undefined);
-    };
-    host?.addEventListener("toggle", closed);
-    window.addEventListener("resize", closed);
-    onCleanup(() => {
-      host?.removeEventListener("toggle", closed);
-      window.removeEventListener("resize", closed);
-    });
-  };
+  onMount(() => {
+    if (!menu.drill) void loadSubmenuPanel();
+  });
+  // The row and its submenu stand together in an element without a role, as a menu holds only its entries.
   return (
-    <>
+    <div role="none" class="k2b-dropdown__subgroup">
       <button
         ref={row}
         type="button"
@@ -735,38 +714,26 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
         {itemContent({ ...props.item, children: props.item.label })}
         <i class="ti ti-chevron-right k2b-dropdown__more" aria-hidden="true" />
       </button>
-      <Show when={open()}>
-        {(_open) => {
-          watchClose();
-          return (
-            <div
-              ref={(element) => {
-                panel = element;
-                inheritUiScope(element, row);
-                queueMicrotask(() => {
-                  if (!element.isConnected) return;
-                  if (typeof element.showPopover === "function") element.showPopover();
-                  place();
-                  if (focusFirst) focusMenuRow(actionableItems(element), "Home");
-                  focusFirst = false;
-                });
-              }}
-              id={`${id}-menu`}
-              popover="manual"
-              role="menu"
-              aria-label={props.item.label}
-              class="k2b-dropdown__menu k2b-dropdown__submenu"
-              data-depth={menu.depth + 1}
-              on:keydown={onPanelKey}
-              onPointerEnter={() => menu.level.hold()}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <DropdownItems items={props.item.submenu} close={menu.close} depth={menu.depth + 1} />
-            </div>
-          );
-        }}
+      <Show when={open() && submenuPanel()}>
+        {(Panel) => (
+          <Dynamic
+            component={Panel()}
+            id={id}
+            row={row}
+            label={props.item.label}
+            items={props.item.submenu}
+            depth={menu.depth + 1}
+            close={menu.close}
+            level={menu.level}
+            focus={focus}
+            hide={() => {
+              menu.level.set(undefined);
+              row.focus();
+            }}
+          />
+        )}
       </Show>
-    </>
+    </div>
   );
 }
 
@@ -1048,7 +1015,7 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
     else close(false);
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
-    const items = actionableItems(menuRef);
+    const items = menuEntries(menuRef);
     // A searchable menu's field keeps the focus and moves the marked entry itself.
     if (!props.search && !props.body && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
       event.preventDefault();

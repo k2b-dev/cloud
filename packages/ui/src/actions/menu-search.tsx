@@ -21,7 +21,7 @@ export const filterDropdownItems = (items: readonly DropdownItem[], query: strin
   const needle = query.trim().toLocaleLowerCase(locale);
   const matches = (entry: Entry) => `${entry.label} ${entry.description ?? ""}`.toLocaleLowerCase(locale).includes(needle);
   const submenu = (entry: Entry & { submenu: readonly DropdownItem[] }): DropdownItem[] => {
-    const kept = leavesOf(entry.submenu).filter(matches);
+    const kept = matches(entry) ? leavesOf(entry.submenu) : leavesOf(entry.submenu).filter(matches);
     return kept.length ? [{ sectionLabel: entry.label, items: kept }] : [];
   };
   return items.flatMap((item): DropdownItem[] => {

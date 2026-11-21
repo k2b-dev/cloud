@@ -15,13 +15,16 @@ const EDGE = 8;
 export const keepDialogFoot = (footer: HTMLElement | undefined, before: number | undefined): void => {
   if (!footer?.isConnected || before === undefined) return;
   const frame = footer.closest("dialog");
-  if (!frame || frame.style.inset) return;
+  // A frame placed by the page keeps its place; a frame that follows its content folds from its top edge on its own.
+  if (!frame || frame.style.inset || frame.hasAttribute("data-k2b-follow-content")) return;
   const delta = footer.getBoundingClientRect().bottom - before;
   if (Math.abs(delta) < 0.5) return;
   const top = frame.getBoundingClientRect().top;
   // Never past the top edge: a frame at its full height scrolls its body instead.
   const shift = delta > 0 ? Math.min(delta, Math.max(0, top - EDGE)) : delta;
   const lift = (Number.parseFloat(frame.style.getPropertyValue(DIALOG_LIFT)) || 0) + shift;
-  if (Math.abs(lift) < 0.5) frame.style.removeProperty(DIALOG_LIFT);
-  else frame.style.setProperty(DIALOG_LIFT, `${lift}px`);
+  if (Math.abs(lift) < 0.5) return void frame.style.removeProperty(DIALOG_LIFT);
+  frame.style.setProperty(DIALOG_LIFT, `${Math.round(lift)}px`);
+  // A new window size centers the frame again, so a lift never pushes its header off a smaller screen.
+  window.addEventListener("resize", () => frame.style.removeProperty(DIALOG_LIFT), { once: true });
 };

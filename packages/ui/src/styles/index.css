@@ -5827,16 +5827,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* K10, K16: an error in a dialog is the tinted, square cell right above the
-   footer, edge to edge: sign, what failed, what follows. It takes the
-   footer's line; the dialog grows upwards (`dialog-foot.ts`). */
-.k2b-ui .k2b-panel-dialog__error {
+   footer's buttons, edge to edge: sign, what failed, what follows. It is the
+   footer's first row, under the footer's own line, so it moves with the
+   footer; the dialog grows upwards (`dialog-foot.ts`). */
+.k2b-ui .k2b-panel-dialog__footer > .k2b-panel-dialog__error {
   display: grid;
+  box-sizing: border-box;
   flex: none;
+  width: calc(100% + 2 * var(--k2b-panel-dialog-inset, 1.25rem));
+  max-width: none;
+  min-height: var(--k2b-h-status, 3.25rem);
   grid-template-columns: 1rem minmax(0, 1fr);
   gap: 0.75rem;
-  align-items: start;
-  padding: 0.75rem var(--k2b-panel-dialog-inset, 1.25rem);
-  border-top: 1px solid var(--k2b-border);
+  align-items: center;
+  /* The footer's 0.75rem above and its row gap below are the cell's; 0.25rem more keeps 0.75rem to the buttons. */
+  margin: -0.75rem calc(-1 * var(--k2b-panel-dialog-inset, 1.25rem)) 0.25rem;
+  padding: 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
   color: var(--k2b-text);
   background: var(--k2b-danger-surface);
   font-size: var(--k2b-font-size-row, 0.8125rem);
@@ -5852,7 +5858,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog__error > i {
   color: var(--k2b-danger-text);
   font-size: 1rem;
-  line-height: 1.25rem;
+  line-height: 1;
 }
 
 .k2b-ui .k2b-panel-dialog__error-copy {
@@ -5870,10 +5876,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta, 0.75rem);
   line-height: 1rem;
-}
-
-.k2b-ui .k2b-panel-dialog__error + .k2b-panel-dialog__footer {
-  border-top: 0;
 }
 
 @media (max-width: 47.999rem) {

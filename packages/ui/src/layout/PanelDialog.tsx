@@ -214,11 +214,13 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
   let footer: HTMLElement | undefined;
   const title = () => (typeof props.error === "string" ? props.error : props.error?.title);
   const description = () => (typeof props.error === "string" ? undefined : props.error?.description);
-  // Measured before the cell enters or leaves the page (computations run before the DOM updates), then kept after it.
+  // Any change of the cell, also one error replacing another, keeps the footer in place. Measured before the cell
+  // changes (computations run before the DOM updates), then kept after it.
+  const error = () => (title() ? `${title()}\n${description() ?? ""}` : "");
   let before: number | undefined;
   createComputed(
     on(
-      () => Boolean(title()),
+      error,
       () => {
         before = footer?.isConnected ? footer.getBoundingClientRect().bottom : undefined;
       },
@@ -227,13 +229,14 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
   );
   createEffect(
     on(
-      () => Boolean(title()),
+      error,
       () => keepDialogFoot(footer, before),
       { defer: true },
     ),
   );
+  // The cell is the footer's first row, so it moves with the footer, also on a sheet's edge between its rests.
   return (
-    <>
+    <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
       <Show when={title()}>
         {(text) => (
           <div class="k2b-panel-dialog__error" role="alert">
@@ -245,10 +248,8 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
           </div>
         )}
       </Show>
-      <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
-        {props.children}
-      </footer>
-    </>
+      {props.children}
+    </footer>
   );
 };
 

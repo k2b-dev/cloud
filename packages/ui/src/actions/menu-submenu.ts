@@ -6,38 +6,11 @@ export const SUBMENU_DELAY = 150;
 export const SUBMENU_CORRIDOR_DELAY = 300;
 /** A menu, its submenu, and one more: deeper entries are not offered (K16). */
 export const MAX_MENU_DEPTH = 3;
-/** The least room a menu keeps from the viewport's edge, as every menu does. */
+/** The least room above and below a submenu that still counts as on the way to it. */
 const EDGE = 8;
 
 type Point = { x: number; y: number };
 type Box = Pick<DOMRect, "left" | "top" | "right" | "bottom">;
-
-/**
- * Where a submenu stands: beside its row, its first row level with it, on the side that has room; without room on
- * either side it keeps to the viewport. Too low, it rises until its last row is level with its row's bottom.
- */
-export const placeSubmenu = (
-  row: Box,
-  parent: Pick<DOMRect, "left" | "right">,
-  menu: { width: number; height: number },
-  viewport: { width: number; height: number },
-  rtl = false,
-): { left: number; top: number; side: "left" | "right" } => {
-  const right = parent.right - 1;
-  const left = parent.left - menu.width + 1;
-  const fitsRight = right + menu.width <= viewport.width - EDGE;
-  const fitsLeft = left >= EDGE;
-  const side: "left" | "right" = rtl ? (fitsLeft || !fitsRight ? "left" : "right") : fitsRight || !fitsLeft ? "right" : "left";
-  const x = side === "right" ? right : left;
-  // The menu's 1 px edge stands above the row, so its first row lines up with the row that opened it.
-  let top = row.top - 1;
-  if (top + menu.height > viewport.height - EDGE) top = row.bottom + 1 - menu.height;
-  return {
-    left: Math.max(EDGE, Math.min(x, viewport.width - menu.width - EDGE)),
-    top: Math.max(EDGE, Math.min(top, viewport.height - menu.height - EDGE)),
-    side,
-  };
-};
 
 const sign = (p: Point, a: Point, b: Point) => (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
 
