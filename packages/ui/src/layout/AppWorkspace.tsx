@@ -1060,7 +1060,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   const minWidth = () => props.minWidth ?? APP_WORKSPACE_DETAIL_MIN;
   const maxWidth = () => Math.max(minWidth(), props.maxWidth ?? APP_WORKSPACE_DETAIL_MAX);
   const resizable = () => props.resizable ?? rootResizable;
-  const size = () => (resizable() ? `var(${variable()}, ${defaultWidth()}px)` : `${defaultWidth()}px`);
+  // K12: from 1920 px of host width the start width grows by `--k2b-workspace-detail-wide` (CSS).
+  const start = () => `calc(${defaultWidth()}px + var(--k2b-workspace-detail-wide, 0px))`;
+  const size = () => (resizable() ? `var(${variable()}, ${start()})` : start());
   const sizeStyle = () => ({
     "--k2b-workspace-panel-size": size(),
     "--k2b-workspace-panel-min": `${minWidth()}px`,

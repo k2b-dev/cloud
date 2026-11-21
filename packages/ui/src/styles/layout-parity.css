@@ -1042,7 +1042,8 @@ html {
   /* Space a host keeps clear along the workspace's bottom edge, such as the
      home indicator's safe area where the workspace meets the window's bottom. */
   --k2b-workspace-inset-bottom: 0px;
-  --k2b-workspace-radius: var(--k2b-radius-dialog);
+  /* K4: a framed workspace is a card. */
+  --k2b-workspace-radius: var(--k2b-radius-card, 0.875rem);
   position: relative;
   display: grid;
   width: 100%;
@@ -1060,7 +1061,14 @@ html {
   border: 1px solid transparent;
   border-radius: var(--k2b-workspace-radius);
   background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-frame);
+}
+
+/* K2, K3: from 48 rem the frame is a hairline, never a shadow; dark keeps its
+   line at every width, where the surface alone does not part from the canvas. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace {
+    border-color: var(--k2b-border);
+  }
 }
 
 .k2b-ui[data-theme="dark"] .k2b-app-workspace,
@@ -1256,7 +1264,7 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
-  left: var(--k2b-workspace-sidebar-width, 13rem);
+  left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
@@ -2260,7 +2268,7 @@ html {
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
       )
     ) {
-    --k2b-workspace-sidebar-space: var(--k2b-workspace-sidebar-width, 13rem);
+    --k2b-workspace-sidebar-space: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
   }
 
   /* A stacked sidebar is an overview's object list and has no overlay form,
@@ -2275,7 +2283,7 @@ html {
 
   .k2b-ui .k2b-app-workspace__sidebar {
     display: flex;
-    width: var(--k2b-workspace-sidebar-width, 13rem);
+    width: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
     grid-area: sidebar;
   }
 
@@ -2301,7 +2309,7 @@ html {
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
-    left: var(--k2b-workspace-sidebar-width, 13rem);
+    left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
   }
 }
 
@@ -6020,5 +6028,15 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     justify-content: flex-start;
     overflow: auto hidden;
     scrollbar-width: none;
+  }
+}
+
+/* K12: from 1920 px of host width the sidebar and Detail start wider (32 and
+   60 px more), so wide screens give the columns room instead of stretching
+   rows. A width someone dragged stays as it is. */
+@container k2b-app-area (min-width: 120rem) {
+  .k2b-ui .k2b-app-workspace {
+    --k2b-workspace-sidebar-wide: 2rem;
+    --k2b-workspace-detail-wide: 3.75rem;
   }
 }
