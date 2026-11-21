@@ -286,7 +286,7 @@ export default function SourceDetailView(props: Props) {
               },
               ...(props.source.todayCount == null
                 ? []
-                : [{ term: t().columnToday, description: props.source.todayCount.toLocaleString() }]),
+                : [{ term: t().columnToday, description: props.source.todayCount.toLocaleString(props.dateContext.locale) }]),
               {
                 term: t().expectation,
                 description: props.source.expectEverySeconds

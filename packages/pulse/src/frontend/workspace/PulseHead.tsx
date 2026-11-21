@@ -58,7 +58,7 @@ export default function PulseHead(props: PulseHeadProps) {
           />
         }
         actions={
-          <>
+          <span class="pulse-head__actions">
             <Button
               class="pulse-head__assistant"
               variant="ai"
@@ -87,7 +87,7 @@ export default function PulseHead(props: PulseHeadProps) {
                 <i class="ti ti-dots" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>
-          </>
+          </span>
         }
         primary={
           props.canWrite

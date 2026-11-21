@@ -293,6 +293,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
             denied()
               ? []
               : [
+                  { id: "assistant", label: t().askGustav, icon: "ti ti-sparkles", action: "assistant", disabled: assistantPending() },
                   { id: "settings", label: t().baseSettings, icon: "ti ti-settings", action: "settings", disabled: !selectedBase() },
                   {
                     id: "overview",
@@ -308,7 +309,13 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                   },
                 ]
           }
-          onMenu={(action) => (action === "settings" ? openSettings() : undefined)}
+          onMenu={(action) =>
+            action === "settings"
+              ? openSettings()
+              : action === "assistant"
+                ? (sqlAssistant?.launch ?? (() => void askAssistant()))()
+                : undefined
+          }
         />
         <PulseHead
           baseId={props.initialBaseId}
