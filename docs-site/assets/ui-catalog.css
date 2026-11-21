@@ -1489,6 +1489,18 @@
   margin-top: 1.5rem;
 }
 
+.ui-task-row-demo {
+  border-block: 1px solid var(--k2b-border);
+}
+
+.ui-task-row-demo + .ui-task-row-demo {
+  margin-top: 1.5rem;
+}
+
+.ui-task-row-demo__narrow {
+  max-width: 390px;
+}
+
 .ui-tooltip-demo {
   display: flex;
   flex-wrap: wrap;
