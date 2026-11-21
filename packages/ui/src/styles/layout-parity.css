@@ -3573,15 +3573,22 @@ html {
   border-right: 0;
 }
 
-/* The head: one row of the workspace head's height, no line under it. The
-   back step sits at its start in whichever level shows first. */
+/* The head: one row of the workspace head's height (56 px, K1), no line under
+   it; its text starts on the column's text edge (K2). The back step sits at
+   its start in whichever level shows first. */
 .k2b-ui .k2b-app-workspace__level-head {
   display: flex;
   min-width: 0;
-  min-height: 2.875rem;
+  min-height: var(--k2b-h-head);
   flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
+  padding-inline: var(--k2b-gutter);
+}
+
+/* A level of navigation groups keeps the sidebar's inset (see its body), so
+   its title lines up with the group titles 1rem from the edge. */
+.k2b-ui [data-workspace-level]:has(> .k2b-app-workspace__level-body > .k2b-app-workspace__sidebar-section) > .k2b-app-workspace__level-head {
   padding-inline: 1rem;
 }
 
@@ -3736,16 +3743,22 @@ html {
   gap: 0.25rem;
 }
 
-/* A level keeps 0.5rem inside both side edges, as the sidebar does: a row's
-   fill stops 0.5rem before either edge, and its text lines up with the
-   head's. An inset ScrollArea does the same inside an application's column. */
+/* A level's rows and their hairlines reach both column edges (K2); each row
+   starts its text on the text edge itself. A level of navigation groups keeps
+   0.5rem inside both side edges, as the sidebar does: a row's fill stops 0.5rem
+   before either edge. An inset ScrollArea does the same inside an
+   application's column. */
 .k2b-ui .k2b-app-workspace__level-body {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  padding-inline: 0.5rem;
+  padding-inline: 0;
   scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-app-workspace__level-body:has(> .k2b-app-workspace__sidebar-section) {
+  padding-inline: 0.5rem;
 }
 
 .k2b-ui .k2b-scroll-area[data-inset="true"] {
@@ -3756,7 +3769,7 @@ html {
    inset, so a form, a frame or a table needs none of its own. A MobileShell
    pads its levels itself and keeps its rule. */
 .k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-body {
-  padding-inline: 1rem;
+  padding-inline: var(--k2b-gutter);
   padding-top: 0.5rem;
 }
 
@@ -3811,9 +3824,9 @@ html {
       scrollbar-gutter: stable;
     }
 
-    /* A page level keeps its 1rem end edge: 0.5rem padding and the 0.5rem track. */
+    /* A page level keeps its text edge at the end: the padding and the 0.5rem track. */
     .k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *) {
-      padding-inline-end: 0.5rem;
+      padding-inline-end: calc(var(--k2b-gutter) - 0.5rem);
     }
 
     /* Every shared scroller that exists to scroll keeps the same
@@ -6013,6 +6026,12 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   align-items: center;
   gap: 0.25rem;
   white-space: nowrap;
+}
+
+/* A key figure stands on the lead's line only whole; on the hidden line it is held to the row and shortens there. */
+.k2b-ui .k2b-status-row__fact {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-status-row__announcement {

@@ -451,7 +451,8 @@ for (const { label, options } of scenarios)
         const elements = [...document.querySelectorAll<HTMLElement>(selector)].filter((element) => element.getClientRects().length > 0);
         for (const element of elements) {
           const filler = document.createElement("div");
-          filler.style.height = "4000px";
+          // A flex column would shrink an empty box to the free height, so the filler keeps its height.
+          filler.style.cssText = "height: 4000px; flex: none";
           element.append(filler);
         }
         // The scrollers that now overflow, so the test knows a scrollbar is really there.

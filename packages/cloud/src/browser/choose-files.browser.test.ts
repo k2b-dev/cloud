@@ -949,8 +949,13 @@ describe("choosing files in a browser", () => {
       await row(page, "scan.pdf").waitFor();
       expect(await sourceNames(page)).toEqual(["This device", "Drive", "Scanner"]);
       expect(await page.locator('dialog .cloud-file-dialog__source[aria-current="true"] i').getAttribute("class")).toBe("ti ti-scan");
-      // Chevrons part the levels; they are icons without text.
+      // K15: beside the open preview the path is narrow, so the levels above wait behind "…" and the current one stays
+      // whole. Chevrons part the levels; they are icons without text.
+      await page.waitForFunction(() => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more") !== null);
       expect(await page.locator(".cloud-file-chooser__crumbs li:not([hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual([
+        longNames.ablage,
+      ]);
+      expect(await page.locator(".cloud-file-chooser__crumbs li:not(.k2b-breadcrumbs__more)").allTextContents()).toEqual([
         "Scanner",
         "Büro",
         longNames.ablage,
@@ -1056,15 +1061,10 @@ describe("choosing files in a browser", () => {
             .getAttribute("data-variant"),
         ).toBe("link");
         expect(await page.locator('.cloud-file-chooser__toolbar [aria-label="Up"]').count()).toBe(0);
-        // Scrolled back to the start, the fade moves to the end.
-        await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
-          list.scrollLeft = 0;
-        });
-        await page.waitForFunction(
-          () => document.querySelector(".cloud-file-chooser__crumbs ol")?.getAttribute("data-scroll-fade") === "bottom",
-        );
 
-        await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: longNames.ablage }).click();
+        // A level behind "…" opens from its menu.
+        await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Levels above" }).click();
+        await page.getByRole("menuitem", { name: longNames.ablage }).click();
         await row(page, "scan.pdf").waitFor();
         if (view === phone) {
           // A phone shows no preview column and reads nothing for it.
