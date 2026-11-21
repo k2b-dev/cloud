@@ -1,6 +1,17 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { Button, formatFileViewSize, IconButton, IconButtonLink, ResizeSeparator, Skeleton, Tag, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  Button,
+  formatFileViewSize,
+  IconButton,
+  IconButtonLink,
+  NoticeCard,
+  ResizeSeparator,
+  Skeleton,
+  Tag,
+  useLocale,
+} from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
@@ -308,15 +319,20 @@ export function AssistantChatContextBox(props: {
                 </div>
               }
             >
-              <div class="assistant-context-box__failed" role="alert">
-                <p>
-                  {copy().boxFailed}
-                  <span class="assistant-context-box__meta">{copy().boxFailedDetail}</span>
-                </p>
-                <button type="button" class="assistant-context-box__retry" onClick={() => void props.state.refresh()}>
-                  {copy().retry}
-                </button>
-              </div>
+              <NoticeCard
+                class="assistant-context-box__failed"
+                role="alert"
+                tone="danger"
+                icon="ti ti-alert-circle"
+                layout="card"
+                title={copy().boxFailed}
+                detail={copy().boxFailedDetail}
+                actions={
+                  <Button size="sm" variant="secondary" onClick={() => void props.state.refresh()}>
+                    {copy().boxReload}
+                  </Button>
+                }
+              />
             </Show>
           }
         >
@@ -463,6 +479,8 @@ export function AssistantChatContextPlaces(props: {
       {/* The chat's head row: its title and, while the column is not docked, the button. The timeline scrolls below it,
           so no message passes under the button. */}
       <div class="assistant-context-head">
+        {/* Where the chat list is an overlay, its button leads this head, and the workspace's own head row yields. */}
+        <AppWorkspace.SidebarToggle size="sm" />
         <Show when={props.title}>
           {(title) => (
             <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
@@ -484,7 +502,6 @@ export function AssistantChatContextPlaces(props: {
             host.buttonRef(element);
           }}
           class="assistant-context-button"
-          data-k2b-primary="ai"
           size="sm"
           variant="secondary"
           aria-label={copy().title}

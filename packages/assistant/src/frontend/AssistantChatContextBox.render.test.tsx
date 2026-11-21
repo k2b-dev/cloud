@@ -149,7 +149,9 @@ describe('Box "In this chat", server render', () => {
     const failed = renderBox(null, { error: new Error("offline") });
     expect(failed).toContain("„In diesem Chat“ konnte nicht geladen werden.");
     expect(failed).toContain("Der Chat selbst ist davon nicht betroffen.");
-    expect(failed).toContain(">Erneut versuchen<");
+    // K10: a tinted cell whose button names the deed.
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain(">Neu laden<");
   });
 
   test("renders English copy for an English reader", () => {

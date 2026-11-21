@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
@@ -588,7 +588,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("a flat column: no shadow, no corners, a 56 px head, sections between hairlines, rows of 36 px, signs on one axis", async () => {
+  test("a flat column: no shadow, no corners, a 56 px head, sections between hairlines, rows of 36 and 52 px, signs on one axis", async () => {
     const page = await boxPage(1440, sidebarSnapshot({ groups: [automationsGroup()] }));
     try {
       const paint = await page.locator(".assistant-context-boxcol").evaluate((column) => {
@@ -625,12 +625,17 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       expect(paint.sections[0]).toBe("0px");
       expect(paint.sections.slice(1).every((width) => width === "1px")).toBe(true);
       expect(Math.abs(paint.grip)).toBeLessThanOrEqual(1);
-      expect(new Set(paint.rows)).toEqual(new Set([36]));
+      // A result is one line of 36 px; an automation two lines of 52 px, its state as a dot and a word (K7).
+      expect(new Set(paint.rows)).toEqual(new Set([36, 52]));
       expect(paint.rows.length).toBeLessThanOrEqual(10);
       expect(paint.signWidth).toBe(18);
       expect(paint.trailing).toBe("12px");
+      const dot = await page
+        .locator('[data-group="automations"] .assistant-context-box__trailing[data-tone="ok"]')
+        .evaluate((element) => getComputedStyle(element, "::before").backgroundColor);
+      expect(dot).not.toBe("rgba(0, 0, 0, 0)");
       const type = await typeOf(page, ".assistant-context-boxcol > .assistant-context-box");
-      expect(type.styles).toEqual(["12/400", "13/400", "13/600", "14/600"]);
+      expect(type.styles).toEqual(["12/400", "13/400", "13/500", "13/600", "14/600"]);
       expect(type.axes).toHaveLength(1);
       // A state word is in colour, not bold; the thing that waits for the person has a ring on its tile.
       const word = await page
@@ -768,12 +773,11 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       const grip = page.getByRole("separator", { name: "Breite von „In diesem Chat“" });
       await grip.focus();
       await page.keyboard.press("ArrowLeft");
-      await frames(page);
+      await settled(page);
       expect((await layout(page)).island!.width).toBe(336);
       await page.keyboard.press("End");
-      await frames(page);
-      const widest = (await layout(page)).island!.width;
-      expect(widest).toBeLessThanOrEqual(480);
+      await settled(page);
+      expect((await layout(page)).island!.width).toBe(480);
       expect(await chatWidth()).toBeGreaterThanOrEqual(400);
     } finally {
       await page.close();
@@ -813,8 +817,9 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       await sheet.locator(".assistant-context-sheet").getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
       expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
       const type = await typeOf(page, ".assistant-context-sheet .assistant-context-box");
-      expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
-      // As high as the box, and the chat behind it stays as bright as before (v12, picture 66).
+      expect(type.styles).toEqual(["12/400", "13/400", "13/500", "13/600"]);
+      expect(await sheet.getByRole("button", { name: "„In diesem Chat“ schließen" }).count()).toBe(1);
+      // As high as the box, over the chat behind the shared scrim without blur (Gustav flat v3, K16).
       const fit = await page.evaluate(() => {
         const frame = document.querySelector(".k2b-bottom-sheet-frame")!;
         const box = document.querySelector(".assistant-context-sheet")!.getBoundingClientRect();
@@ -827,7 +832,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
         };
       });
       expect(fit.frame - fit.box).toBeLessThan(96);
-      expect(fit.dim).toBe("rgba(0, 0, 0, 0)");
+      expect(fit.dim).not.toBe("rgba(0, 0, 0, 0)");
       expect(fit.blur).toBe("none");
       await sheet.getByRole("button", { name: /^Kontext/ }).click();
       await sheet.waitFor({ state: "detached" });
