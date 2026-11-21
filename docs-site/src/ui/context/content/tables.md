@@ -102,7 +102,8 @@ For a complete set of rows that a reader searches in the browser:
 
 Pass `groupBy` with a column id: each group becomes its own `<tbody>` under a
 row-group header (`scope="rowgroup"`) with the group's shown value and its
-count, in the order the groups first appear. Pass the search text as `query`
+count, in the order the groups first appear. The header is a group (K17): 36 px
+on the page's quiet ground, the value in 13 px bold, the count in grey. Pass the search text as `query`
 and a way back as `onClearQuery`: with no row left, the table says “No row
 matches “…”.” and offers **Clear search** at a fixed height instead of `empty`. Clearing removes the button the
 reader pressed, so move focus back to the search field in `onClearQuery`.
@@ -150,7 +151,36 @@ always shows; `3` hides below a table width of 560 px and `2` below 420 px. The
 table measures its own width, not the window's. Once a column is hidden, each
 row shows a details button at its end; it opens a line under the row with
 exactly the values that are hidden at that width. The button names what it
-does, exposes `aria-expanded`, and controls the details line.
+does, exposes `aria-expanded`, and controls the details line. Columns leave;
+they never shrink (K7).
+
+Mark the name column with `primary`: it keeps at least 200 px and grows to at
+most 560 px, so on a wide screen a value stays beside its name.
+
+### List on a phone
+
+Give columns a `list` role to show the table as a list of two-line entries
+below 480 px of table width (K7): `title` on the first line, `meta` on the
+second line in quiet 12 px text, and `end`, such as a status or an amount, at
+the right of both lines. Each entry is at least 60 px high. Columns without a
+role and the head leave, so give each role to one column and keep what matters
+in those three; the row opens its detail for the rest.
+
+```tsx
+const columns = [
+  { id: "name", header: "Name", value: "name", primary: true, list: "title" },
+  { id: "place", header: "Place", value: "place", list: "meta" },
+  { id: "owner", header: "Owner", value: "owner" },
+  { id: "amount", header: "Amount", value: "amount", type: "amount", format: { currency: "EUR" }, list: "end" },
+];
+```
+
+### File names
+
+Show a file name in a cell with `FileName`: it stays on one line and shortens
+before its ending, so `Quarterly report 2026.pdf` reads `Quarterly rep….pdf`
+(K15). The whole name is its hint. `splitFileName(name)` returns `stem` and
+`ext` for a cell of your own.
 
 ## Add a header and controls
 
@@ -215,18 +245,19 @@ Do not filter or sort a paginated result in the browser. The client does not own
 
 ## Presentation
 
-Tables are the one surface that keeps lines, so values can be read across
-and down:
+Hairlines under the rows, nothing else (Cloud flat, K7):
 
-- The head is grey (`--k2b-surface-muted`), with small semibold secondary text
-  and a stronger line (`--k2b-border-strong`) below it.
-- Every body row has a line below it (`--k2b-border`), except the last, which
-  ends at the table's frame. Columns are separated by a lighter line (70 % of
-  the row line). A totals footer has the head's stronger line above it.
-- Rows are 44px (40px compact); numbers align right with tabular figures; no
-  zebra striping.
-- Hovering a row tints it; hovering a column turns its body cells light grey
-  and its head cell one step darker than the grey head.
+- The head is 36 px without a fill: 12 px grey words and one hairline
+  (`--k2b-border`) below it.
+- Every body row has a hairline below it, except the last, which ends at the
+  table's frame. There are no column lines. A totals footer has a hairline
+  above it.
+- Rows are 40 px (32 px with `density="compact"`) and 13 px; a second text line
+  grows a row in steps. Numbers align right with tabular figures and are never
+  shortened; no zebra striping.
+- The first and the last column stand on the column's 20 px text edge.
+- Hovering a row tints it; hovering a column turns its cells, the head
+  included, light grey, and its head words dark.
 - A selected row is a fill only: 16 % of the app ink on the surface, never a
   line or bar in the app colour. In forced colors it takes the system highlight.
 
@@ -271,7 +302,7 @@ type DataTableColumn<T> = {
   align?: "left" | "center" | "right"; nowrap?: boolean; sortable?: boolean | string;
   type?: DataTableColumnType; format?: DataTableNumberFormat; states?: Record<string, DataTableStatusState>;
   max?: number; timeZone?: string; delta?: { unit?: "ratio" | "points"; better?: "up" | "down" };
-  priority?: 1 | 2 | 3;
+  priority?: 1 | 2 | 3; primary?: boolean; list?: "title" | "meta" | "end";
 };
 
 type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";

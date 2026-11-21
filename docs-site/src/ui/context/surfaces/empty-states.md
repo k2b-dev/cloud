@@ -18,12 +18,11 @@ where the first row would be.
 control layout independently. Name non-default layout choices in examples so
 different states are not mistaken for different component implementations.
 
-Use `surface="paper"` only when the placeholder stands alone in a page area,
-such as an empty list that replaces a table. Inside a surface that already
-frames it, such as a section, dialog, detail panel, or `Paper`, leave
-`surface` at its default. One frame per surface: a paper placeholder inside
-`Paper`, `SettingsSection`, `PanelDialog`, a prompt dialog, or `DetailPanel`
-keeps its layout but draws no border, background, or shadow of its own.
+An empty or unavailable area shows one round sign, one sentence, and one way
+out, without a box (Cloud flat, K10): a quiet grey disc for empty, no results,
+and no access, the danger tint for an error, and the bare spinning glyph while
+loading. `surface="paper"` keeps its place in existing pages but no longer
+draws a frame anywhere; leave `surface` at its default in new code.
 
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
 a code such as `404` only when it accurately describes the result.

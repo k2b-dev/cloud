@@ -99,6 +99,7 @@ import { DemoCard } from "../DemoCard";
 import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
 import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
+import { FlatTableDemo } from "./flat-blocks";
 import { PaginationDemo } from "./layout";
 import { RunLogDemos } from "./run-log";
 import { CalendarDemo } from "./surfaces";
@@ -3027,6 +3028,7 @@ const demos: DemoSection = {
   tables: () => (
     <DemoGrid columns="one">
       <TableDemo />
+      <FlatTableDemo />
       <TypedTableDemo />
       <ProfessionalTableDemo />
     </DemoGrid>

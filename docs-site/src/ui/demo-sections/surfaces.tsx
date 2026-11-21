@@ -56,6 +56,7 @@ import baseCss from "@k2b/ui/base.css" with { type: "text" };
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { type ColorDemoHost, colorDemoHosts } from "./color-hosts";
+import { AlertCellDemo, FactsFieldsDemo, GroupAreaDemo } from "./flat-blocks";
 import { DemoGrid, type DemoSection } from "./types";
 
 const violetTheme = {
@@ -2035,11 +2036,14 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <SectionPageDemo />
       <SectionStatesDemo />
+      <GroupAreaDemo />
+      <FactsFieldsDemo />
     </DemoGrid>
   ),
   "empty-states": () => (
     <DemoGrid columns="one">
       <EmptyDemo />
+      <AlertCellDemo />
     </DemoGrid>
   ),
   cards: () => (
