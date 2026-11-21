@@ -90,9 +90,10 @@ locale.
 | Block | Code page | Result | Approval | Search preview |
 | --- | --- | --- | --- | --- |
 | `Section`, `Text`, `Heading`, `Notice` | yes | yes | yes | yes |
-| `Stats`, `Table`, `Detail`, `Chart`, `Cards`, `Image` | yes | yes | yes | yes |
+| `Stats`, `Table`, `Detail`, `Chart` | yes | yes | yes | yes |
+| `Cards`, `Image` | no | yes | yes | yes |
 | `Link` | own Code paths | Cloud paths of the app, resource links, `https:` | Cloud paths | Cloud paths |
-| `Form`, `Button`, `Action` | yes | no | no | no |
+| `Form`, `Button` | yes | no | no | no |
 | `Choice` | no | yes | no | no |
 | `Draft` | no | no | yes | no |
 

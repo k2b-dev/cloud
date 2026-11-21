@@ -1106,7 +1106,12 @@ A loop that ends normally but whose final response has no text and no tool call
 right after a round with a failed tool call fails with `tool_failed`;
 rejected approvals do not count as failures. Worker recovery restores this
 state from the latest stored assistant round, including repaired malformed
-calls. A later text answer still completes the turn.
+calls. A later text answer still completes the turn. A loop that ends normally
+also fails with `provider_stopped` when its final response has no text and no
+tool call and the whole turn shows no text, result, or action. A pause from
+the turn's safety budget is a visible ending and keeps the turn completed. The stored
+status, the completion line in a chat that delegated the work, and `cld` then
+report a failure, not a success that nobody can read.
 
 Each model `turn_start` has one `turn_end`, including errors and cancellation.
 `turn_end` carries the partial assistant message with `stopReason: "error"` or
@@ -1123,7 +1128,7 @@ stable and never translated; clients word it in their reader's language:
 
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
-| `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal | yes |
+| `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal, or the turn ended without any text, result, or action | yes |
 | `tool_failed` | A tool call failed and the model's next response ended without text or a tool call | yes |
 | `model_unavailable` | The model service failed or timed out, also after its retries | yes |
 | `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |

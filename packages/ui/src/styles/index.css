@@ -3101,9 +3101,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-field__label-row {
   display: flex;
+  min-height: 1.125rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+/* A label row is as tall as a label alone, whatever it carries beside the
+   label: a suggestion's status, Accept, a slider's value. Fields side by side
+   keep their controls level only if no label row grows, so a button in it is
+   no taller than the label's line. On a coarse pointer its hit area still
+   reaches 2.75rem through the shared touch rule. */
+.k2b-ui .k2b-field__label-row .k2b-button {
+  min-height: 0;
+  height: 1.125rem;
+  padding-block: 0;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-field__description,
@@ -21676,17 +21689,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    read from a document, shows inside the empty field as a strong placeholder
    in the AI colour, never as the value. The status line beside the label is
    reserved whenever a field takes suggestions, so nothing moves when a
-   suggestion arrives, is accepted, is overruled, or goes away. These rules
-   come last so they win over each control's own placeholder colour. */
-.k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
-  min-height: 1.5rem;
-}
-
-@media (any-pointer: coarse) {
-  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
-    min-height: 2rem;
-  }
-}
+   suggestion arrives, is accepted, is overruled, or goes away. It keeps the
+   label row's height, so a field with a suggestion stays level with one
+   without. These rules come last so they win over each control's own
+   placeholder colour. */
 
 /* The label keeps its width whatever the status says, so it never wraps
    differently between states; a long label wraps the same way in every state,
@@ -21712,7 +21718,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-ai-suggestion {
-    min-height: 1.5rem;
+    min-height: 1.125rem;
     flex-basis: 100%;
     justify-content: flex-start;
   }
@@ -21807,17 +21813,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   top: 0;
   right: 0;
   max-width: 40%;
-  height: 1.5rem;
+  height: 1.125rem;
   font-size: 0.8125rem;
-  line-height: 1.5rem;
+  line-height: 1.125rem;
   text-align: end;
-}
-
-@media (any-pointer: coarse) {
-  .k2b-ui .k2b-ai-suggestion-field:has(> .k2b-field__label-row) > .k2b-date-field > .k2b-date-status {
-    height: 2rem;
-    line-height: 2rem;
-  }
 }
 
 .k2b-ui .k2b-ai-suggestion-field:has(> .k2b-date-field > .k2b-date-status:not(:empty)) > .k2b-field__label-row > .k2b-ai-suggestion {

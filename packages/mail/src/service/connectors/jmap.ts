@@ -116,15 +116,37 @@ export function jmapMailboxBudget(session: JmapSession, accountId: string) {
 export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
   const session = await fetchJmapSession(input, deps);
   const { accountId } = primaryMailAccount(session);
+  const inventory = await readJmapMailboxInventory(session, input.authorization, accountId, input.signal, deps);
+  // Discovery has no snapshot contract: a moved query or mailbox state stays an invalid response.
+  if (inventory.kind === "changed") throw new JmapError("JMAP_INVALID_RESPONSE");
+  return mapJmapMailboxes(session, accountId, inventory.mailboxes);
+}
+
+export type JmapMailbox = z.infer<typeof mailboxSchema>;
+export type JmapMailboxInventory = { kind: "inventory"; mailboxes: Map<string, JmapMailbox> } | { kind: "changed" };
+
+/**
+ * The bounded folder inventory shared by discovery and the account snapshot. Every query page
+ * shares one queryState and every get one state; otherwise `changed`. With `expectedState`,
+ * the first get must already carry that state.
+ */
+export async function readJmapMailboxInventory(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+  expectedState?: string,
+): Promise<JmapMailboxInventory> {
   const { nameBytes, objectBytes, batchSize } = jmapMailboxBudget(session, accountId);
   const method = async (name: string, args: Record<string, unknown>, maxBytes: number) => {
-    input.signal.throwIfAborted();
+    signal.throwIfAborted();
     const response = await callJmap(
       {
         session,
         maxBytes,
-        authorization: input.authorization,
-        signal: input.signal,
+        authorization,
+        signal,
         using: [JMAP_CORE, JMAP_MAIL],
         methodCalls: [[name, { accountId, ...args }, "folders"]],
       },
@@ -148,14 +170,9 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
     );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
     const page = parsed.data;
-    if (
-      page.accountId !== accountId ||
-      page.position !== ids.length ||
-      (queryState !== undefined && page.queryState !== queryState) ||
-      (total !== undefined && page.total !== total) ||
-      page.ids.length > batchSize
-    )
-      throw new JmapError("JMAP_INVALID_RESPONSE");
+    if (page.accountId !== accountId || page.position !== ids.length) throw new JmapError("JMAP_INVALID_RESPONSE");
+    if (queryState !== undefined && page.queryState !== queryState) return { kind: "changed" };
+    if ((total !== undefined && page.total !== total) || page.ids.length > batchSize) throw new JmapError("JMAP_INVALID_RESPONSE");
     queryState = page.queryState;
     total = page.total;
     if (!page.ids.length && ids.length < total) throw new JmapError("JMAP_INVALID_RESPONSE");
@@ -167,8 +184,8 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
     if (ids.length > total) throw new JmapError("JMAP_INVALID_RESPONSE");
   } while (ids.length < total);
 
-  const mailboxes = new Map<string, z.infer<typeof mailboxSchema>>();
-  let state: string | undefined;
+  const mailboxes = new Map<string, JmapMailbox>();
+  let state = expectedState;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
     const parsed = mailboxGetSchema.safeParse(
@@ -176,13 +193,9 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
     );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
     const page = parsed.data;
-    if (
-      page.accountId !== accountId ||
-      page.notFound.length ||
-      (state !== undefined && page.state !== state) ||
-      page.list.length !== batch.length
-    )
-      throw new JmapError("JMAP_INVALID_RESPONSE");
+    if (page.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+    if (state !== undefined && page.state !== state) return { kind: "changed" };
+    if (page.notFound.length || page.list.length !== batch.length) throw new JmapError("JMAP_INVALID_RESPONSE");
     state = page.state;
     for (const mailbox of page.list) {
       if (Buffer.byteLength(mailbox.name) > nameBytes) throw new JmapError("JMAP_DISCOVERY_LIMIT");
@@ -190,15 +203,10 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       mailboxes.set(mailbox.id, mailbox);
     }
   }
-
-  return mapJmapMailboxes(session, accountId, mailboxes);
+  return { kind: "inventory", mailboxes };
 }
 
-export function mapJmapMailboxes(
-  session: JmapSession,
-  accountId: string,
-  mailboxes: ReadonlyMap<string, z.infer<typeof mailboxSchema>>,
-): JmapRemoteFolder[] {
+export function mapJmapMailboxes(session: JmapSession, accountId: string, mailboxes: ReadonlyMap<string, JmapMailbox>): JmapRemoteFolder[] {
   const paths = new Map<string, string>();
   for (const mailbox of mailboxes.values()) {
     const chain: z.infer<typeof mailboxSchema>[] = [];

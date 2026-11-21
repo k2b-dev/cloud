@@ -9,6 +9,27 @@
     opacity 160ms ease-out;
 }
 
+/* The veil lies over all of it in the top layer, above every stacking context, sticky bar and dialog that opened
+   before it: a tint and a blur of what is behind hide every pixel the same, also parts that carry no blur of their
+   own, such as the fill of a selected row whose children cover in its place. It takes no input, so clicks and keys
+   reach the page's own handling as before; the runtime cuts the islands out of it. */
+.cloud-privacy-veil {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k2b-surface-canvas) 55%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(0.7);
+  backdrop-filter: blur(24px) saturate(0.7);
+  pointer-events: none;
+}
+
 /* The runtime sets the countdown's remaining share and the app area's middle; these are the values before it does. */
 :root {
   --cloud-privacy-rest: 1;
@@ -237,6 +258,9 @@
 @media (forced-colors: active) {
   [data-cloud-privacy-covered] {
     /* Where the system colours replace the blur's look, an opaque ground still hides the content. */
+    background: Canvas;
+  }
+  .cloud-privacy-veil {
     background: Canvas;
   }
   .cloud-privacy-hint {

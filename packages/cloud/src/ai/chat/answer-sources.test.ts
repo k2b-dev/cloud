@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { answerCitations, rootResourceLinks } from "./answer-links";
@@ -17,6 +19,26 @@ describe("citations", () => {
     // The type icon of a reference and the arrow of a web link do not come along.
     expect(rendered).not.toContain("k2b-reference__icon");
     expect(rendered).not.toContain("k2b-text-link__external");
+  });
+
+  test("a chip sits at the word before it and keeps that word and the punctuation after it on its line", () => {
+    const chip = (number: string, href: string) =>
+      `<a href="${href}" target="_blank" rel="noopener noreferrer" class="ai-cite" data-cite="${number}" aria-label="Quelle ${number}">${number}</a>`;
+    const one = chip("1", "/open/a/~1");
+    // As asked, with a space before the chip, and with spaces before the punctuation as well.
+    for (const source of ["ab 17 Uhr[1](/open/a/~1).", "ab 17 Uhr [1](/open/a/~1).", "ab 17 Uhr [1](/open/a/~1) ."])
+      expect(html(source)).toBe(`<p>ab 17 <span class="ai-cite-run">Uhr${one}.</span></p>\n`);
+    // Several chips, closing brackets and quotes, and a comma before more text.
+    expect(html("(siehe Plan [1](/open/a/~1) [2](/open/b/~2))! Und [1](/open/a/~1), dann")).toBe(
+      `<p>(siehe <span class="ai-cite-run">Plan${one}${chip("2", "/open/b/~2")})!</span> <span class="ai-cite-run">Und${one},</span> dann</p>\n`,
+    );
+    // Bare numbers that take their destination from the model's sources paragraph glue the same way.
+    expect(html("Gezählt [1] .\n\nQuellen: [1] [Lager](/open/a/~1)")).toBe(`<p><span class="ai-cite-run">Gezählt${one}.</span></p>`);
+    // After formatting, the space before the chip goes and the chip keeps its punctuation.
+    expect(html("**Halle B6** [1](/open/a/~1).")).toBe(`<p><strong>Halle B6</strong><span class="ai-cite-run">${one}.</span></p>\n`);
+    // The run does not wrap: no line break between the word, the chip, and the punctuation.
+    const effects = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
+    expect(effects).toMatch(/\.assistant-markdown-block \.ai-cite-run \{\s*white-space: nowrap;\s*\}/);
   });
 
   test("a titled link stays a reference and a three-digit number stays text", () => {

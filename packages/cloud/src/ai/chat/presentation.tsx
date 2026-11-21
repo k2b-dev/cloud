@@ -29,7 +29,7 @@ import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
-import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
+import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, showsNothing, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
@@ -417,8 +417,12 @@ const storedItems = (
 
     const actionEntry = item.actionEntry?.compactedAt ? null : item.actionEntry;
     const lastOfLoop = !item.loopId || lastItemOfLoop.get(item.loopId) === itemIndex;
-    const turnError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
-    const phase = turnError ? "failed" : lastOfLoop ? storedPhase(item.entries) : "completed";
+    const storedError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
+    // Cloud fails a turn that stopped after its steps with nothing to show (#3755); the chat keeps its notice for it.
+    const whole = storedError?.code === "provider_stopped" ? layoutAiTurn(item.blocks, { phase: "completed" }) : null;
+    const unanswered = Boolean(whole && whole.steps > 0 && showsNothing(whole));
+    const turnError = unanswered ? undefined : storedError;
+    const phase = turnError ? "failed" : unanswered || !lastOfLoop ? "completed" : storedPhase(item.entries);
     const segments = splitSurveyResults(item.blocks);
     // A turn that failed after an accepted answer ends with its notice where the live turn showed its progress, below
     // the answer and under the same id, as activeItems() places it.
@@ -465,16 +469,7 @@ const storedItems = (
       const storedNotice =
         index === lastAssistant && lastMessage && !byPerson && !queueInterrupted ? aiMessageStopNotice(lastMessage) : null;
       // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
-      const silent =
-        last &&
-        segmentPhase === "completed" &&
-        !error &&
-        !storedNotice &&
-        !task &&
-        layout.steps > 0 &&
-        layout.text.length === 0 &&
-        layout.results.length === 0 &&
-        layout.actions.length === 0;
+      const silent = last && segmentPhase === "completed" && !error && !storedNotice && !task && layout.steps > 0 && showsNothing(layout);
       const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;

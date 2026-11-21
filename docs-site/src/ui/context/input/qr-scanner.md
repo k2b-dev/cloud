@@ -62,7 +62,10 @@ const cameraMessages: Record<QrScannerError, string> = {
   or the browser refuses to play it, the scanner says so and offers "Try
   again" in place. This happens most often in Safari or an installed web app
   on iPhone and iPad. The button attaches the camera again and plays it from
-  the click; the camera stays on meanwhile, and `onError` is not called.
+  the click; the camera stays on meanwhile, and `onError` is not called. A
+  picture that shows once and then stands still has not started either: the
+  scanner first attaches the camera again by itself, since a playing picture
+  needs no click, and offers "Try again" only when it still does not move.
 - `instructions` replaces the generic hint shown while the camera runs.
 
 Each mount owns one camera session. Unmounting stops the camera at once, even
