@@ -3,6 +3,13 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.84.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.83.0...cloud-v0.84.0) (2026-11-21)
+
+
+### Features
+
+* **mail:** load JMAP account runtime access ([#3869](https://github.com/k2b-dev/cloud/issues/3869)) ([6b3d940](https://github.com/k2b-dev/cloud/commit/6b3d9400a1e1f2730ac2a12ac9408dc25f74fb48))
+
 ## [0.83.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.82.0...cloud-v0.83.0) (2026-11-21)
 
 
