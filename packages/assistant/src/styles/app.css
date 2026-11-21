@@ -161,7 +161,7 @@
     box-shadow: var(--k2b-shadow-side);
   }
 }
-/* A drawer has no grip (K13: drawers are not resized). */
+/* A drawer has no grip; only the docked column is resized (concept: grips on the two docked edges). */
 .k2b-ui .assistant-chat-layout[data-tabs="open"] .assistant-context-grip { display: none; }
 @container assistant-chat (max-width: 55.999rem) {
   .k2b-ui .assistant-context-grip { display: none; }
