@@ -43,5 +43,8 @@ test("K15: in a narrowing head the actions give way before the views", () => {
   };
   // The primary turns into its icon while the head is still 48 rem wide; the views compact only below 32 rem of lead.
   expect(query(".k2b-ui .k2b-app-workspace__head-primary-label {\n    position: absolute;")).toEqual({ name: "k2b-head", rem: 48 });
-  expect(query(".k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden]")).toEqual({ name: "k2b-head-lead", rem: 32 });
+  expect(query(".k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden]")).toEqual({
+    name: "k2b-head-lead",
+    rem: 32,
+  });
 });
