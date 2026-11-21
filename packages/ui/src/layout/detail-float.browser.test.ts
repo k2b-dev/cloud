@@ -152,7 +152,7 @@ const load = async (width: number, height: number, params = "", options: Browser
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
         : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
-    }.fixture-main{padding:var(--k2b-workspace-detail-inset)}.fixture-date{width:1px}${
+    }.fixture-main{padding:0.5rem}.fixture-date{width:1px}${
       new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
     }${
       new URLSearchParams(params).has("responsive-control")
@@ -207,10 +207,11 @@ const openRow = async (page: Page, id = "row-0") => {
   await page.locator(`#${id}`).click();
   await settlePanel(page);
 };
+// K2, K5a: the Detail column is flush with the workspace's top, end, and bottom edges; its hairline parts it from Main.
 const expectInset = (shape: Awaited<ReturnType<typeof geometry>>) => {
-  expect(shape.detail.top - shape.root.top - shape.border).toBeCloseTo(8, 1);
-  expect(shape.root.right - shape.border - shape.detail.right).toBeCloseTo(8, 1);
-  expect(shape.root.bottom - shape.border - shape.detail.bottom).toBeCloseTo(8, 1);
+  expect(shape.detail.top - shape.root.top - shape.border).toBeCloseTo(0, 1);
+  expect(shape.root.right - shape.border - shape.detail.right).toBeCloseTo(0, 1);
+  expect(shape.root.bottom - shape.border - shape.detail.bottom).toBeCloseTo(0, 1);
 };
 
 describe("floating workspace detail", () => {
@@ -733,15 +734,13 @@ describe("floating workspace detail", () => {
     }
   });
   for (const fixed of [false, true]) {
-    test(`820×1180: a fitting ${fixed ? "permanent" : "closable"} detail is a column even with touch`, async () => {
+    // K12: on a tablet a Detail is a drawer whatever its token, so Main keeps the whole width.
+    test(`820×1180: a ${fixed ? "permanent" : "closable"} detail opens as a drawer on a tablet, also with touch`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
       try {
         await openRow(page);
-        const shape = await geometry(page);
-        expectInset(shape);
-        expect(shape.main.width).toBeCloseTo(shape.root.width - shape.detail.width - 8, 1);
-        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
-        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
+        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
+        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
       } finally {
         await page.close();
       }
@@ -910,7 +909,7 @@ describe("floating workspace detail", () => {
       await openRow(page);
       expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
       expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
-      expect((await geometry(page)).detail.top).toBe(8);
+      expect((await geometry(page)).detail.top).toBe(0);
       expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
       expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
       await page.keyboard.press("Escape");
