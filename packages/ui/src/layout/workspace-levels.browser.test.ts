@@ -234,7 +234,7 @@ for (const width of [390, 768, 1024, 1440, 1920])
           expect(box.height).toBeGreaterThanOrEqual(44);
           expect(
             await back.evaluate((element) => element.getBoundingClientRect().top - element.closest("section")!.getBoundingClientRect().top),
-          ).toBe(9); // the 8 px top inset every level shares, then the 44 px target centred in the 46 px head
+          ).toBe(14); // the 8 px top inset every level shares, then the 44 px target centred in the 56 px head (K1)
           await Promise.all([page.waitForURL("**/?level=items"), back.click()]);
           expect(new URL(page.url()).searchParams.get("level")).toBe("items");
           expect(await visibleIds(page)).toEqual(width < 768 ? ["items"] : ["sections", "items"]);
