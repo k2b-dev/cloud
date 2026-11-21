@@ -1048,7 +1048,9 @@ describe("@k2b/ui action geometry parity", () => {
   test("menu rows reach the menu's edges and sections part with one hairline", () => {
     const item = rule(".k2b-ui .k2b-dropdown__item");
     const filterOption = rule(".k2b-ui .k2b-filter-chip__option");
-    const section = rule('.k2b-ui .k2b-dropdown__section[data-divided="true"]');
+    const section = rule(
+      ".k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section",
+    );
 
     expect(item).toContain("gap: 0.625rem");
     // K1, K16: a 36 px row that reaches every edge of the menu, square, so the menu's radius clips it.
@@ -1058,8 +1060,8 @@ describe("@k2b/ui action geometry parity", () => {
     expect(item).toContain("font-size: 0.8125rem");
     expect(item).toContain("line-height: 1rem");
     expect(filterOption).toContain("line-height: 1rem");
-    // K2, K16: one hairline from edge to edge separates sections, with no white strip beside it.
-    expect(section).toContain("border-top: 1px solid var(--k2b-border)");
+    // K2, K16, one line one owner: the menu draws one hairline from edge to edge above a section that is not first.
+    expect(section).toContain("border-block-start: 1px solid var(--k2b-border)");
     expect(section).not.toContain("margin-top");
     expect(rule(".k2b-ui .k2b-dropdown__menu")).toContain("padding: 0;");
   });

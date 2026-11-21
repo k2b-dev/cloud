@@ -5754,12 +5754,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.75rem;
   padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
   align-items: center;
-  border-bottom: 1px solid var(--k2b-border);
 }
 
-/* Over a picture the header floats as glass chips; it draws no line. */
-.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__header {
-  border-bottom: 0;
+/* One line, one owner: the dialog draws the hairline between its bands
+   (header, tabs, body, footer), as `k2b-divided` does; no band draws its own,
+   so two lines never meet. A sheet's grip is no band. Over a picture the
+   header floats as glass chips and there are no lines. */
+.k2b-ui .k2b-panel-dialog:not([data-media]) > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* The header icon sits in a soft chip of the app accent hook. */
@@ -5823,7 +5825,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.75rem var(--k2b-panel-dialog-inset, 1.25rem);
-  border-top: 1px solid var(--k2b-border);
 }
 
 /* K10, K16: an error in a dialog is the tinted, square cell right above the
@@ -7595,9 +7596,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* On a phone a submenu takes the sheet's place; its first row leads back, a band with a hairline below. */
 .k2b-ui .k2b-dropdown__back {
-  border-bottom: 1px solid var(--k2b-border);
   color: var(--k2b-text);
   font-weight: 600;
+}
+
+/* The sheet's menu draws the line below its back row. */
+.k2b-ui .k2b-gesture-menu__sheet-menu > .k2b-dropdown__back + :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__item[data-danger="true"]:is(:hover, :focus-visible) {
@@ -7695,9 +7700,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0;
 }
 
-/* K2, K16: one hairline from edge to edge separates two sections. */
-.k2b-ui .k2b-dropdown__section[data-divided="true"] {
-  border-top: 1px solid var(--k2b-border);
+/* K2, K16, one line one owner: the menu draws one hairline from edge to edge
+   above every section that is not its first child; rows and sections draw
+   none, so no line meets the menu's own edge. */
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__label {
@@ -7976,7 +7983,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
 }
 
-/* The search field is the menu's head band: a hairline below it, rows below that. */
+/* The search field is the menu's head band; the menu draws the hairline below it. */
 .k2b-ui .k2b-dropdown__search {
   display: flex;
   min-height: var(--k2b-h-control, 2.25rem);
@@ -7985,10 +7992,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding: 0 0.75rem;
   margin: 0;
-  border-bottom: 1px solid var(--k2b-border);
   border-radius: 0;
   color: var(--k2b-text-muted);
   background: transparent;
+}
+
+/* The menu draws the line between its search band and the entries. */
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-gesture-menu__sheet-menu)[data-search] > .k2b-dropdown__search ~ .k2b-dropdown__list {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__search:focus-within {

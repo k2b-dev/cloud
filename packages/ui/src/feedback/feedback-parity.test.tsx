@@ -40,7 +40,11 @@ describe("@k2b/ui Cloud feedback parity", () => {
     // K16: the head is a 56 px band with a hairline below, on the text edge (K5).
     expect(header).toContain("min-height: var(--k2b-h-head, 3.5rem)");
     expect(header).toContain("padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem)");
-    expect(header).toContain("border-bottom: 1px solid var(--k2b-border)");
+    // One line, one owner: the dialog draws the line between its bands; the header draws none.
+    expect(header).not.toMatch(/border(-(top|bottom|block[-a-z]*))?:/);
+    expect(indexCss).toContain(
+      ".k2b-ui .k2b-panel-dialog:not([data-media]) > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {\n  border-block-start: 1px solid var(--k2b-border);",
+    );
     expect(header).not.toContain("background");
     // K11: a title in a head is 14 px.
     expect(title).toContain("font-size: var(--k2b-font-size-body, 0.875rem)");

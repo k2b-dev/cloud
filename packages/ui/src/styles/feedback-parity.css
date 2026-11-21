@@ -418,7 +418,6 @@
   justify-content: flex-start;
   gap: 0.75rem;
   padding: 0 0.75rem 0 var(--k2b-gutter, 1.25rem);
-  border-bottom: 1px solid var(--k2b-border);
 }
 
 /* Same header as PanelDialog: flat on the dialog surface, a quiet icon, the
@@ -586,8 +585,14 @@
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem var(--k2b-gutter, 1.25rem);
-  border-top: 1px solid var(--k2b-border);
   background: transparent;
+}
+
+/* One line, one owner: the panel draws the hairline between its bands (head,
+ * body, foot), as `k2b-divided` does; no band draws its own, so two lines
+ * never meet. A sheet's grip is no band and draws none. */
+.k2b-ui .k2b-dialog__panel > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* ----------------------------------------------------------- prompt form */
