@@ -24,7 +24,8 @@ export function PanelDialogErrorCell(props: {
   onMount(() => {
     measure();
     setShown(text(props.error()));
-    keepDialogFoot(props.footer(), before);
+    // The cell shows with this update's DOM changes, which run after this effect.
+    queueMicrotask(() => keepDialogFoot(props.footer(), before));
     // One computation: it reads the footer's place, then hands the cell its new text, which shows with the next DOM
     // update; the footer is kept right after it, before the frame paints.
     createComputed(

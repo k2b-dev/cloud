@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { layoutProblems } from "../../test/head-overlap";
 
 // K16 in a real engine: a dialog error grows the dialog upwards, menu rows reach the menu's edges, and a submenu opens
 // beside its row by pointer and keyboard, or one level at a time in the phone sheet. Invented entries only.
@@ -112,35 +113,6 @@ const load = async (width = 1024, height = 768, justify = "start", align = "star
   return page;
 };
 
-/**
- * Horizontal lines inside `selector` that touch another one (at most 1 px apart, overlapping sideways): one line, one
- * owner. Until the shared `layoutProblems` "double line" check lands with the token PR, this local one stands in.
- */
-const doubleLines = (page: Page, selector: string) =>
-  page.evaluate((selector) => {
-    const lines: { y: number; left: number; right: number; owner: string }[] = [];
-    for (const root of document.querySelectorAll<HTMLElement>(selector))
-      for (const element of [root, ...root.querySelectorAll<HTMLElement>("*")]) {
-        const style = getComputedStyle(element);
-        const box = element.getBoundingClientRect();
-        if (box.width === 0 || style.display === "none" || style.visibility === "hidden") continue;
-        const owner = `${element.tagName.toLowerCase()}.${element.className}`;
-        const visible = (width: string, kind: string, color: string) =>
-          Number.parseFloat(width) > 0 && kind !== "none" && !/rgba\(.*, 0\)$|transparent/.test(color);
-        if (visible(style.borderTopWidth, style.borderTopStyle, style.borderTopColor))
-          lines.push({ y: box.top, left: box.left, right: box.right, owner });
-        if (visible(style.borderBottomWidth, style.borderBottomStyle, style.borderBottomColor))
-          lines.push({ y: box.bottom, left: box.left, right: box.right, owner });
-      }
-    const found: string[] = [];
-    lines.forEach((a, i) => {
-      for (const b of lines.slice(i + 1))
-        if (a.owner !== b.owner && Math.abs(a.y - b.y) <= 1 && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1)
-          found.push(`${a.owner} / ${b.owner} at ${Math.round(a.y)}`);
-    });
-    return found;
-  }, selector);
-
 const focused = (page: Page) => page.evaluate(() => document.activeElement?.textContent?.trim());
 const box = async (page: Page, selector: string) => {
   const rect = await page.locator(selector).first().boundingBox();
@@ -189,7 +161,8 @@ describe("flat overlays (K16)", () => {
       expect(Math.abs(cell.y - footer.y - 1)).toBeLessThanOrEqual(1);
       expect(cell.y + cell.height).toBeLessThanOrEqual(after.y - 8);
       expect(cell.height).toBeGreaterThanOrEqual(52);
-      expect(await doubleLines(page, "dialog[open]")).toEqual([]);
+      // Nothing overlaps, spills, is cut, or draws a double line (one line, one owner).
+      expect((await page.evaluate(layoutProblems, { root: "dialog[open]" })).problems).toEqual([]);
 
       // Cleared, the cell leaves and the footer still stays.
       await page.evaluate(() => (window as unknown as { setDialogError: (value: unknown) => void }).setDialogError(undefined));
@@ -201,7 +174,7 @@ describe("flat overlays (K16)", () => {
     }
   });
 
-  test("menu rows reach every edge; a submenu opens beside its row by pointer and keyboard", async () => {
+  test("menu rows reach every edge; a submenu opens beside its row by pointer", async () => {
     const page = await load();
     try {
       await page.locator(".trigger").click();
@@ -224,7 +197,7 @@ describe("flat overlays (K16)", () => {
       const subBox = (await submenu.boundingBox())!;
       expect(Math.abs(subBox.y + 1 - rowBox.y)).toBeLessThanOrEqual(1);
       expect(subBox.x).toBeGreaterThanOrEqual(menuBox.x + menuBox.width - 2);
-      expect(await doubleLines(page, ".k2b-dropdown__menu:popover-open")).toEqual([]);
+      expect((await page.evaluate(layoutProblems, { root: ".k2b-dropdown__menu:popover-open" })).problems).toEqual([]);
 
       // The way to the submenu crosses "Archive" below the row and closes nothing.
       const archive = (await page.getByRole("menuitem", { name: "Archive" }).boundingBox())!;
@@ -233,8 +206,25 @@ describe("flat overlays (K16)", () => {
       await page.mouse.move(subBox.x + 20, subBox.y + 40, { steps: 4 });
       await page.waitForTimeout(400);
       expect(await submenu.isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
 
-      // Keyboard: Right opens the third level and moves into it; Left closes one level; Escape closes the next.
+  test("a submenu opens and closes one level at a time from the keyboard", async () => {
+    const page = await load();
+    try {
+      await page.locator(".trigger").click();
+      const menu = page.locator(".k2b-dropdown__menu:popover-open").first();
+      await menu.waitFor();
+      const row = page.getByRole("menuitem", { name: "From template" });
+      await row.focus();
+      await page.keyboard.press("ArrowRight");
+      const submenu = page.getByRole("menu", { name: "From template" });
+      await submenu.waitFor();
+      expect(await focused(page)).toBe("Office");
+
+      // Right opens the third level and moves into it; Left closes one level; Escape closes the next.
       await page.getByRole("menuitem", { name: "Office" }).focus();
       await page.keyboard.press("ArrowRight");
       const third = page.getByRole("menu", { name: "Office" });

@@ -38,7 +38,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const title = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading h2 \{([^}]*)\}/g)?.at(-1) ?? "";
     const subtitle = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading p \{([^}]*)\}/)?.[1] ?? "";
     // K16: the head is a 56 px band with a hairline below, on the text edge (K5).
-    expect(header).toContain("min-height: var(--k2b-h-head, 3.5rem)");
+    expect(header).toContain("min-height: var(--k2b-h-head)");
     expect(header).toContain("padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem)");
     // One line, one owner: the dialog draws the line between its bands; the header draws none.
     expect(header).not.toMatch(/border(-(top|bottom|block[-a-z]*))?:/);
@@ -47,13 +47,13 @@ describe("@k2b/ui Cloud feedback parity", () => {
     );
     expect(header).not.toContain("background");
     // K11: a title in a head is 14 px.
-    expect(title).toContain("font-size: var(--k2b-font-size-body, 0.875rem)");
+    expect(title).toContain("font-size: var(--k2b-font-size-body)");
     expect(title).toContain("font-weight: 600");
     // A title never wraps: one line that ends with an ellipsis, so a long name moves nothing.
     expect(title).toContain("white-space: nowrap");
     expect(title).toContain("text-overflow: ellipsis");
     // K11: the subtitle is meta, 12 px.
-    expect(subtitle).toContain("font-size: var(--k2b-font-size-meta, 0.75rem)");
+    expect(subtitle).toContain("font-size: var(--k2b-font-size-meta)");
 
     // Prompt dialogs share the flat header and keep a long title on one line like it.
     const promptTitle = feedbackCss.match(/\.k2b-ui \.k2b-dialog__header h2 \{([^}]*)\}/)?.[1] ?? "";

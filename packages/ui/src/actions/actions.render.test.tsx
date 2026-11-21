@@ -1048,13 +1048,14 @@ describe("@k2b/ui action geometry parity", () => {
   test("menu rows reach the menu's edges and sections part with one hairline", () => {
     const item = rule(".k2b-ui .k2b-dropdown__item");
     const filterOption = rule(".k2b-ui .k2b-filter-chip__option");
-    const section = rule(
-      ".k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section",
-    );
+    // The menu's rule for its sections, which it shares with the line below a ContextMenu title.
+    const sectionSelector =
+      ".k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section";
+    const section = actionsCss.slice(actionsCss.indexOf(sectionSelector), actionsCss.indexOf("}", actionsCss.indexOf(sectionSelector)));
 
     expect(item).toContain("gap: 0.625rem");
     // K1, K16: a 36 px row that reaches every edge of the menu, square, so the menu's radius clips it.
-    expect(item).toContain("min-height: var(--k2b-h-control, 2.25rem)");
+    expect(item).toContain("min-height: var(--k2b-h-control)");
     expect(item).toContain("padding: 0.5rem 0.75rem");
     expect(item).toContain("border-radius: 0");
     expect(item).toContain("font-size: 0.8125rem");

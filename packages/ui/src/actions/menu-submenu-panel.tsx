@@ -20,6 +20,7 @@ const MAX_DEPTH = 3;
 
 /** The least room a menu keeps from the viewport's edge, as every menu does. */
 const EDGE = 8;
+const GAP = 4;
 type Box = Pick<DOMRect, "left" | "top" | "right" | "bottom">;
 
 /**
@@ -33,8 +34,9 @@ export const placeSubmenu = (
   viewport: { width: number; height: number },
   rtl = false,
 ): { left: number; top: number; side: "left" | "right" } => {
-  const right = parent.right - 1;
-  const left = parent.left - menu.width + 1;
+  // Two objects side by side, 4 px apart as a menu stands from its trigger: their edges never meet (one line, one owner).
+  const right = parent.right + GAP;
+  const left = parent.left - menu.width - GAP;
   const fitsRight = right + menu.width <= viewport.width - EDGE;
   const fitsLeft = left >= EDGE;
   const side: "left" | "right" = rtl ? (fitsLeft || !fitsRight ? "left" : "right") : fitsRight || !fitsLeft ? "right" : "left";
@@ -130,6 +132,9 @@ const levelOf = (menu: MenuContextValue, row: HTMLElement): MenuLevel => {
     return entry && entry.closest(".k2b-dropdown__submenu") === own ? entry : undefined;
   };
   host?.addEventListener("pointermove", (event) => {
+    // The browser repeats a move when the layout changes under a resting pointer; only a real move counts, so a
+    // submenu closed with the keyboard does not open again under it.
+    if (last && last.x === event.clientX && last.y === event.clientY) return;
     before = last;
     last = { x: event.clientX, y: event.clientY };
     const entry = rowOf(event.target);
@@ -175,12 +180,15 @@ function SubmenuPanel(props: {
   Items: typeof DropdownItems;
 }): JSX.Element {
   let panel!: HTMLDivElement;
-  const rtl = () => getComputedStyle(props.row).direction === "rtl";
+  // Read once: `level` comes from the <Show> around the panel, whose value is gone by the time the panel cleans up.
+  const level = props.level;
+  const row = props.row;
+  const rtl = () => getComputedStyle(row).direction === "rtl";
   const place = () => {
     if (!panel.isConnected) return;
-    const host = props.row.closest<HTMLElement>("[role='menu'], [role='dialog'], [role='listbox']") ?? props.row;
+    const host = row.closest<HTMLElement>("[role='menu'], [role='dialog'], [role='listbox']") ?? row;
     const at = placeSubmenu(
-      props.row.getBoundingClientRect(),
+      row.getBoundingClientRect(),
       host.getBoundingClientRect(),
       panel.getBoundingClientRect(),
       { width: window.innerWidth, height: window.innerHeight },
@@ -204,10 +212,10 @@ function SubmenuPanel(props: {
   };
   // The menu around it closing, the window changing size, or a scroll outside it closes it too: it would come loose
   // from its row.
-  const host = props.row.parentElement?.closest<HTMLElement>("[popover]");
+  const host = row.parentElement?.closest<HTMLElement>("[popover]");
   const closed = (event: Event) => {
     if (event.type === "scroll" && event.target instanceof Node && panel.contains(event.target)) return;
-    if (event.type !== "toggle" || (event as ToggleEvent).newState === "closed") props.level.set(undefined);
+    if (event.type !== "toggle" || (event as ToggleEvent).newState === "closed") level.set(undefined);
   };
   host?.addEventListener("toggle", closed);
   window.addEventListener("resize", closed);
@@ -219,13 +227,13 @@ function SubmenuPanel(props: {
     // Closed by the pointer resting elsewhere or by a resize, with the keyboard inside: the focus goes back to its row
     // rather than to the page.
     // Another row's submenu opening takes the focus to that row instead, so the move does not close it again.
-    if (panel.contains(document.activeElement)) (props.level.open() ?? props.row).focus();
+    if (panel.contains(document.activeElement)) (level.open() ?? row).focus();
   });
   return (
     <div
       ref={(element) => {
         panel = element;
-        inheritUiScope(element, props.row);
+        inheritUiScope(element, row);
         queueMicrotask(() => {
           if (!element.isConnected) return;
           if (typeof element.showPopover === "function") element.showPopover();
@@ -240,7 +248,7 @@ function SubmenuPanel(props: {
       class="k2b-dropdown__menu k2b-dropdown__submenu"
       data-depth={props.depth}
       on:keydown={onKey}
-      onPointerEnter={() => props.level.hold()}
+      onPointerEnter={() => level.hold()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <props.Items items={props.items} close={props.close} depth={props.depth} />

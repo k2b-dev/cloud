@@ -5829,12 +5829,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: var(--k2b-surface);
   /* K5: the text edge, 20 px, 16 px on a phone. */
-  --k2b-panel-dialog-inset: var(--k2b-gutter, 1.25rem);
+  --k2b-panel-dialog-inset: var(--k2b-gutter);
 }
 
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-panel-dialog {
-    --k2b-panel-dialog-inset: var(--k2b-gutter, 1rem);
+    --k2b-panel-dialog-inset: var(--k2b-gutter);
   }
 }
 
@@ -5842,7 +5842,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    white section cards, so header and footer share that grey. */
 .k2b-ui .k2b-panel-dialog[data-surface="floating"] {
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-overlay, 0.5rem);
+  border-radius: var(--k2b-radius-overlay);
   background: var(--k2b-surface-muted);
 }
 
@@ -5856,7 +5856,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-panel-dialog__header {
   box-sizing: border-box;
-  min-height: var(--k2b-h-head, 3.5rem);
+  min-height: var(--k2b-h-head);
   gap: 0.75rem;
   padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
   align-items: center;
@@ -5910,7 +5910,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog__heading h2 {
   overflow: hidden;
   /* K11: a title in a head is 14 px. */
-  font-size: var(--k2b-font-size-body, 0.875rem);
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -5919,7 +5919,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-panel-dialog__heading p {
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   overflow-wrap: anywhere;
 }
@@ -5947,7 +5947,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   width: calc(100% + 2 * var(--k2b-panel-dialog-inset, 1.25rem));
   max-width: none;
-  min-height: var(--k2b-h-status, 3.25rem);
+  min-height: var(--k2b-h-status);
   grid-template-columns: 1rem minmax(0, 1fr);
   gap: 0.75rem;
   align-items: center;
@@ -5956,7 +5956,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
   color: var(--k2b-text);
   background: var(--k2b-danger-surface);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -5985,7 +5985,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog__error-copy > p {
   margin: 0;
   color: var(--k2b-text-secondary);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -7630,11 +7630,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
   padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-overlay, 0.5rem);
+  border-radius: var(--k2b-radius-overlay);
   margin: 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
   /* Selection and action menus close synchronously. Host-level popover
      transitions must not retain a stale top-layer frame after hidePopover. */
   transition: none;
@@ -7646,7 +7646,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item {
   display: flex;
-  min-height: var(--k2b-h-control, 2.25rem);
+  min-height: var(--k2b-h-control);
   align-items: center;
   gap: 0.625rem;
   width: 100%;
@@ -8098,7 +8098,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The search field is the menu's head band; the menu draws the hairline below it. */
 .k2b-ui .k2b-dropdown__search {
   display: flex;
-  min-height: var(--k2b-h-control, 2.25rem);
+  min-height: var(--k2b-h-control);
   flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
@@ -13355,10 +13355,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: none;
   resize: none;
   border: 1px solid color-mix(in srgb, var(--k2b-window-accent, var(--k2b-border-strong)) 28%, var(--k2b-border-strong));
-  border-radius: var(--k2b-radius-overlay, 0.5rem);
+  border-radius: var(--k2b-radius-overlay);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 /* The title bar is the one tinted band of the window, as tall as the bar a minimized window becomes. */
@@ -13381,7 +13381,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* A minimized window is its title bar: the whole bar restores it. */
 .k2b-ui .k2b-floating-window[data-state="minimized"] {
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 .k2b-ui .k2b-floating-window[data-state="minimized"] > header {
@@ -18451,10 +18451,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
   padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-overlay, 0.5rem);
+  border-radius: var(--k2b-radius-overlay);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
   outline: none;
 }
 
@@ -18473,7 +18473,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: calc(100dvh - 3rem);
   padding-bottom: env(safe-area-inset-bottom);
   border-width: 1px 0 0;
-  border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+  border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
   box-shadow: var(--k2b-shadow-sheet);
 }
 
@@ -19214,11 +19214,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
   padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-overlay, 0.5rem);
+  border-radius: var(--k2b-radius-overlay);
   margin: 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm, 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 .k2b-ui.k2b-context-menu .k2b-dropdown__section {
@@ -19335,7 +19335,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2.75rem;
   gap: 0.625rem;
   padding: 0.5rem var(--k2b-panel-dialog-inset, 1rem);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -21426,7 +21426,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: min(92dvh, var(--k2b-dialog-available-height));
   border-bottom: 0;
   /* K16: a sheet has the app card's 14 px at the top and casts its shadow upwards. */
-  border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+  border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
   box-shadow: var(--k2b-shadow-sheet);
   overflow: clip;
   animation: k2b-bottom-sheet-enter 160ms ease-out;
@@ -21516,7 +21516,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet__handle > span {
   width: 2rem;
   height: 5px;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   background: var(--k2b-neutral-400);
 }
 @keyframes k2b-bottom-sheet-enter {
@@ -21536,8 +21536,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     width: min(var(--k2b-dialog-available-width), 32rem);
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border);
-    border-radius: var(--k2b-radius-overlay, 0.5rem);
-    box-shadow: var(--k2b-shadow-overlay-lg, 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32));
+    border-radius: var(--k2b-radius-overlay);
+    box-shadow: var(--k2b-shadow-overlay-lg);
     /* As a dialog it rises and fades like every dialog (feedback-parity.css), not as a sheet. */
     animation: none;
     opacity: 0;
