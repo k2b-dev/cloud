@@ -512,6 +512,12 @@ const many = (): Item[] =>
     fill: "#1d4ed8",
   }));
 
+/**
+ * A phone without touch for the layout self-check: on touch every button grows an invisible 44 px hit area (`::after`),
+ * which the check would count as content spilling out of its box. The hit area is no layout.
+ */
+const phoneLayout: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true };
+
 describe("Files folder is flat (K1–K15)", () => {
   // Valentin 21.11.: no two borders on one edge, nothing overlaps or is cut, and a scrollbar moves no line.
   const problems = (tab: Page) =>
@@ -524,7 +530,7 @@ describe("Files folder is flat (K1–K15)", () => {
     });
   for (const [options, width] of [
     [desktop, 1440],
-    [phone, 390],
+    [phoneLayout, 390],
   ] as const)
     for (const [amount, items] of [
       ["few", few],
@@ -549,7 +555,7 @@ describe("Files folder is flat (K1–K15)", () => {
 
   for (const [device, options, width] of [
     ["desktop", desktop, 1440],
-    ["phone", phone, 390],
+    ["phone", phoneLayout, 390],
   ] as const)
     test(`${device}: choosing several moves no row, and Done brings the status row back`, async () => {
       const { tab, errors } = await open(options, "", "en", many());
