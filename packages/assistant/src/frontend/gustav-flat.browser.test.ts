@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
 import type { Browser } from "playwright";
 import { galleryScenes } from "../../../cloud/src/ai/chat/chat-gallery.fixtures";
@@ -102,8 +102,10 @@ beforeAll(async () => {
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the Gustav flat workspace.");
   const entryOutput = build.outputs.find((output) => output.kind === "entry-point")!;
-  const scripts = new Map(build.outputs.map((output) => [`/${basename(output.path)}`, output]));
-  entryUrl = `/${basename(entryOutput.path)}`;
+  // Each output by its path in the build, as chunks import each other relatively; the entry loads under its own path.
+  const url = (path: string) => `/${path.replace(/^\.\//, "")}`;
+  const scripts = new Map(build.outputs.map((output) => [url(output.path), output]));
+  entryUrl = url(entryOutput.path);
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
   const styles: string[] = [];
   for (const path of [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")]) {
@@ -120,8 +122,7 @@ beforeAll(async () => {
   const cache = { "cache-control": "public, max-age=3600" };
   staticAsset = (request) => {
     const path = new URL(request.url).pathname;
-    // A lazy chunk may ask for a module under its source directory; every output is served by its file name.
-    const script = scripts.get(path) ?? (path.endsWith(".js") ? scripts.get(`/${basename(path)}`) : undefined);
+    const script = scripts.get(path);
     if (script) return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
     if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
     if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))), { headers: cache });
