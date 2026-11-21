@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { workspacePackages } from "../workspace";
+import { compareBaseline, type KeyedFinding } from "./baseline";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
@@ -12,9 +13,23 @@ import type { Finding, Rule } from "./rule";
  * edges, not depth, and stay allowed. Only @k2b/ui's token blocks define shadow
  * values. A justified exception names its reason in a comment on the line above:
  * `shadow-tokens: allow <reason>`.
+ *
+ * Cloud flach (K3, K16): only what floats above content casts a shadow, through the overlay tokens
+ * (`--k2b-shadow-overlay-sm`, `-overlay-lg`, `-side`, `-sheet`, and the older `-float`, `-toast`, `-toolbar`). The layer
+ * tokens of things that never float (`--k2b-shadow-surface`, `-raised`, `-frame`, `-column-*`, and the island hook
+ * `--k2b-island-shadow`) draw nothing; outside @k2b/ui a use of one is a finding. Known uses live in
+ * `shadow-tokens.baseline`; migrations remove lines, the rule never adds one.
  */
 const message =
-  "use a layer token instead (`--k2b-island-shadow` for islands via Paper, Section, or the hook; `--k2b-shadow-toolbar`, `-side`, `-sheet`, `-float`, `-toast`); see /en/ui/surfaces/elevation";
+  "use an overlay token for something that floats (`--k2b-shadow-overlay-sm`, `-overlay-lg`, `-side`, `-sheet`); anything else is flat; see /en/ui/surfaces/flat-criteria (K3)";
+const RULE = "shadow-tokens";
+const HEADER = [
+  "Known uses of layer shadow tokens that never float (K3) outside @k2b/ui, one per occurrence: <file> | <token>.",
+  "Lanes remove lines as they make a surface flat; the rule never adds lines.",
+  "`bun scripts/check.ts shadow-tokens --fix` removes lines whose finding is gone.",
+];
+/** Layer tokens without an overlay: they resolve to nothing since Cloud flach and have no use outside @k2b/ui. */
+const layerToken = /var\(\s*(--k2b-(?:shadow-(?:surface|raised|frame|column-[\w-]+)|island-shadow))\b/g;
 
 /** The @k2b/ui token owners: the component scope and the classless base stylesheet that mirrors it. */
 const tokenFiles = new Set(["packages/ui/src/styles/index.css", "packages/ui/src/base/base.css"]);
@@ -167,20 +182,30 @@ const checkSource = (original: string, report: (index: number, detail: string) =
 };
 
 export const rule: Rule = {
-  name: "shadow-tokens",
-  description: "Shadows come only from the @k2b/ui layer tokens; rings and hairlines stay allowed",
-  run: async ({ workspaceRoot }) => {
+  name: RULE,
+  description: "Shadows come only from the @k2b/ui overlay tokens; layer tokens stay inside @k2b/ui; rings and hairlines stay allowed",
+  run: async ({ workspaceRoot, fix }) => {
     const findings: Finding[] = [];
+    const layerUses: KeyedFinding[] = [];
     for (const pkg of workspacePackages(workspaceRoot)) {
       for (const file of listFiles(join(workspaceRoot, pkg, "src"), /\.(?:ts|tsx|css)$/)) {
         if (isTestFile(file) || /\.(?:browser|behavior|render|contract)\.test\.tsx?$|browser-harness|browser-suite/.test(file)) continue;
         const original = readFileSync(file, "utf8");
+        const path = relative(workspaceRoot, file);
+        if (!path.startsWith("packages/ui/"))
+          for (const use of original.matchAll(layerToken))
+            layerUses.push({
+              file,
+              line: lineOf(original, use.index ?? 0),
+              key: `${path} | ${use[1]}`,
+              message: `${use[1]} is a layer token that never floats: ${message}`,
+            });
         const report = (index: number, detail: string) =>
           findings.push({ file, line: lineOf(original, index), message: `${detail}: ${message}` });
-        if (file.endsWith(".css")) checkCss(original, tokenFiles.has(relative(workspaceRoot, file)), report);
+        if (file.endsWith(".css")) checkCss(original, tokenFiles.has(path), report);
         else checkSource(original, report);
       }
     }
-    return findings;
+    return [...findings, ...compareBaseline(workspaceRoot, RULE, HEADER, layerUses, fix)];
   },
 };
