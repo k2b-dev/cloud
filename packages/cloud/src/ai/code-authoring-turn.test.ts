@@ -156,6 +156,8 @@ test("the executor ends a model that keeps changing failing fixtures, after two 
         guard.noteToolCall(call);
         policy.noteToolCall(call);
       },
+      // Wired as the executor wires it: the budget's stop is the turn's visible ending.
+      stoppedWithNotice: () => Boolean(guard.stopped() || guard.automationStopped()),
       failureReason: { current: null },
     });
     expect(outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });

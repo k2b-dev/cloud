@@ -337,6 +337,31 @@ databaseSuite()("personal Code chat binding", () => {
       context(),
     );
     expect(await codeChatMissing(unused.id)).toBe(false);
+    // P6 n02: Code that creates its own chat writes there; it lacks no chat and nobody is told so.
+    const creating = await code("Creates its own chat");
+    const created = await createCodeVersion(
+      {
+        codeId: creating.id,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          permissions: [
+            { operation: "core.ai.chat.create", target: null, file: "code.ts", line: 1 },
+            { operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 2 },
+          ],
+          policyRows: ["ai"],
+        },
+        baseVersionId: null,
+      },
+      context(),
+    );
+    expect(await codeChatMissing(creating.id)).toBe(false);
+    expect(await getCodeChatBinding({ codeId: creating.id }, context())).toMatchObject({ used: false, chat: null });
+    const createdWords = await loadCodeVersionReadModel({ codeId: creating.id, versionId: created.id }, context());
+    expect(createdWords.notices.items.map((notice) => notice.code)).not.toContain("chat_missing");
+    expect((await readCodeAttention({ owner: creating.owner }, context())).items).toContainEqual({ codeId: creating.id, reasons: [] });
+    expect((await waiting()).items.map((row) => row.id)).not.toContain(`code-attention:${creating.id}`);
   });
 
   test.each(["page", "Chat app"])("an archived init binding is irrelevant to Code using only %s", async (kind) => {

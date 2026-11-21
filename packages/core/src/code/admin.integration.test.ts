@@ -401,8 +401,11 @@ databaseSuite()("C22 Administration › Code read model", () => {
     });
     // One explanation per version and language: the second read costs nothing, and a failure stores nothing.
     let asked = 0;
-    const generate = (async () => {
+    const generate = (async (request: { systemPrompt?: string }) => {
       asked++;
+      // P6 m02: the description reads as words for people, never as the code's identifiers (v12 #38).
+      expect(request.systemPrompt).toContain("one or two short sentences of everyday words");
+      expect(request.systemPrompt).toContain("no IDs, no function, tool, method or API names");
       return { output: { explanation: "Zählt einmal pro Woche." } };
     }) as unknown as Parameters<typeof explainCodeVersion>[2];
     await expect(

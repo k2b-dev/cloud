@@ -239,14 +239,24 @@ const probeMainThread = async (page: Page): Promise<string> => {
   try {
     return await Promise.race([
       page
-        .evaluate(() => ({
-          state: document.readyState,
-          // An enhanced link moves history only from inside its view transition's update.
-          transition: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
-        }))
+        .evaluate(() => {
+          // The document's own clock tells a page that reached an event late from an event the test never received.
+          // Its entry names the document's own load, also after history moved to another address.
+          const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+          const at = (time: number) => (time ? `${Math.round(time)} ms` : "not yet");
+          const now = `now ${Math.round(performance.now())} ms`;
+          return {
+            state: document.readyState,
+            // An enhanced link moves history only from inside its view transition's update.
+            transition: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
+            timing: entry
+              ? `Page timing of ${entry.name}: response ${at(entry.responseEnd)}, DOMContentLoaded ${at(entry.domContentLoadedEventStart)}, load ${at(entry.loadEventStart)}, ${now}`
+              : `Page timing of ${location.href}: no navigation entry, ${now}`,
+          };
+        })
         .then(
-          ({ state, transition }) =>
-            `Main thread: answered in ${Date.now() - started} ms, readyState ${state}, view transition ${transition ? "active" : "none"}`,
+          ({ state, transition, timing }) =>
+            `Main thread: answered in ${Date.now() - started} ms, readyState ${state}, view transition ${transition ? "active" : "none"}\n${timing}`,
         ),
       new Promise<string>((resolve) => {
         // Before a commit, Chromium holds page.evaluate until the pending navigation ends, so silence alone does not prove a blocked page there.

@@ -558,6 +558,11 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 
 // Bun SQL may return historical JSON payloads as string-encoded JSON.
 const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
+/** Both stores are read by name, so a column only one of them has cannot break the union. */
+const turnMessageColumns = () => sql`id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id,
+  provider_model, usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at, meta,
+  feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at`;
+
 const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
 /** Copies retain plans, reviews/checks and host facts so their display and model trust boundary stay the same. */
@@ -2813,7 +2818,7 @@ export const aiConversations: AiConversationService = {
         usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
         feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
         ${compactReviewMetaSql(todoMetaJson())} AS meta
-      FROM (SELECT * FROM ai.messages UNION ALL SELECT * FROM ai.task_messages) messages
+      FROM (SELECT ${turnMessageColumns()} FROM ai.messages UNION ALL SELECT ${turnMessageColumns()} FROM ai.task_messages) messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)

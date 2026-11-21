@@ -1,4 +1,5 @@
-import { type LaunchAssistantInput, launchAssistant } from "@k2b/cloud/ai/browser";
+import type { LaunchAssistantInput } from "@k2b/cloud/ai/browser";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 
 /** This ceiling is persisted by Cloud; preloading alone does not restrict a chat. */
 export const GRIDS_QUERY_TOOLS = [
@@ -67,4 +68,14 @@ export const queryAssistantInput = (input: {
   },
 });
 
-export const launchQueryAssistant = (input: Parameters<typeof queryAssistantInput>[0]) => launchAssistant(queryAssistantInput(input));
+/** The Assistant client is only needed when the person asks for help, so the query page does not carry it up front. */
+const loadAssistant = () => import("@k2b/cloud/ai/browser");
+
+/** Warms the Assistant client silently once the pointer or focus reaches the button; a failure waits for the click. */
+export const preloadQueryAssistant = () => void loadAssistant().catch(() => undefined);
+
+/** Resolves `undefined` when the Assistant client cannot load; `importOnDemand` then offers a reload. */
+export const launchQueryAssistant = async (input: Parameters<typeof queryAssistantInput>[0]) => {
+  const assistant = await importOnDemand(loadAssistant);
+  return assistant?.launchAssistant(queryAssistantInput(input));
+};
