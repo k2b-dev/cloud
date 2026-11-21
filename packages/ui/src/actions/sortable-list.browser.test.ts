@@ -284,6 +284,19 @@ describe(`sortable list in ${browserName}`, () => {
       await page.mouse.up();
       await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview"));
       expect(await board(page)).toEqual(start);
+      // A press that first moves sideways over the text selects nothing once the drag starts.
+      await settled(page);
+      const box = (await page.locator('#app [data-card="o3"] .title').boundingBox())!;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + 4, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 12, y, { steps: 4 });
+      await page.mouse.move(box.x + 12, y + 40, { steps: 4 });
+      await page.locator(".k2b-drag-preview").waitFor();
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview"));
+      expect(await page.evaluate(() => document.getSelection()?.isCollapsed ?? true)).toBe(true);
     } finally {
       await context.close();
     }

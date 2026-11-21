@@ -34,7 +34,7 @@ const sortableKeyboardMessages = /* @__PURE__ */ i18n.define({
         `${label} dropped, position ${position} of ${count} in “${list}”.`,
       cancelled: ({ label }: { label: string }) => `Cancelled. ${label} stays where it was.`,
       status: ({ position, list }: { position: number; list: string }) => `to “${list}”, place ${position} · Enter drops, Esc cancels`,
-      stay: "stays where it is · arrow keys choose a place, Esc cancels",
+      stay: "stays put · arrows choose, Esc cancels",
     },
     de: {
       lifted: ({ label, position, count, list }: Place & { label: string }) =>
@@ -44,7 +44,7 @@ const sortableKeyboardMessages = /* @__PURE__ */ i18n.define({
       cancelled: ({ label }: { label: string }) => `Abgebrochen. ${label} bleibt an seinem Platz.`,
       status: ({ position, list }: { position: number; list: string }) =>
         `nach „${list}“, Platz ${position} · Enter legt ab, Esc bricht ab`,
-      stay: "bleibt an seinem Platz · Pfeiltasten wählen den Platz, Esc bricht ab",
+      stay: "bleibt am Platz · Pfeile wählen, Esc bricht ab",
     },
   },
 });

@@ -565,6 +565,9 @@ export const bindDragSource = (
       source.dataset.dragging = "";
       win.addEventListener("contextmenu", preventContext, true);
       releaseSelection = suppressTextSelection(id);
+      // A mouse that moved sideways before the threshold may have begun selecting the row's text; the drag ends that.
+      const selection = doc.getSelection();
+      if (selection && !selection.isCollapsed && selection.anchorNode && source.contains(selection.anchorNode)) selection.removeAllRanges();
       // Captured, the mouse's moves and release reach this drag also over an iframe, such as a PDF preview. A finger
       // or pen is captured by the browser already.
       if (mouse)
