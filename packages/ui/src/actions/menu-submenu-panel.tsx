@@ -119,12 +119,17 @@ const levelOf = (menu: MenuContextValue, row: HTMLElement): MenuLevel => {
   let last: Point | undefined;
   let before: Point | undefined;
   let hovered: Element | undefined;
-  const hold = () => {
+  const clear = () => {
     clearTimeout(timer);
     timer = undefined;
   };
+  // In the submenu, nothing pending changes it; back on any row of this level, that row counts again.
+  const hold = () => {
+    clear();
+    hovered = undefined;
+  };
   const set = (next: HTMLElement | undefined) => {
-    hold();
+    clear();
     setOpen(() => next);
   };
   const level: MenuLevel = { open, set, hold };
@@ -142,7 +147,7 @@ const levelOf = (menu: MenuContextValue, row: HTMLElement): MenuLevel => {
     const entry = rowOf(event.target);
     if (event.pointerType === "touch" || !entry || entry === hovered) return;
     hovered = entry;
-    hold();
+    clear();
     const current = open();
     if (current === entry) return;
     const panel = current ? document.getElementById(`${current.id}-menu`) : null;
