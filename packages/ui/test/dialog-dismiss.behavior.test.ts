@@ -255,7 +255,9 @@ describe("initial focus in a held first frame", () => {
     });
     try {
       const result = core.open(() => content);
-      expect(dom.document.activeElement).toBe(close);
+      // At once, before any frame: the native pick, a control whose hint opens on visible focus, never keeps the
+      // focus while a key such as Escape arrives (#3916).
+      expect(dom.document.activeElement).toBe(first);
       frames.release();
       expect(dom.document.activeElement).toBe(first);
       core.close();
