@@ -1067,9 +1067,9 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
   const domId = () => appWorkspaceDetailElementId(props.id);
   const variable = () => appWorkspacePanelVariable("detail", panelId());
-  // Start widths of 20, 26, 30, and 34 rem. They feed `aria-valuenow` and the
+  // Start widths of 20, 23.75 (K9), 30, and 34 rem. They feed `aria-valuenow` and the
   // `var(…, Npx)` first-paint fallback, so they are behaviour, not taste.
-  const widths = { sm: 320, md: 416, lg: 480, xl: 544 };
+  const widths = { sm: 320, md: 380, lg: 480, xl: 544 };
   const defaultWidth = () => widths[props.width ?? "md"] ?? APP_WORKSPACE_DETAIL_DEFAULT;
   const minWidth = () => props.minWidth ?? APP_WORKSPACE_DETAIL_MIN;
   const maxWidth = () => Math.max(minWidth(), props.maxWidth ?? APP_WORKSPACE_DETAIL_MAX);

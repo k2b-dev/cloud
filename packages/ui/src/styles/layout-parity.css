@@ -1026,9 +1026,10 @@ html {
   --k2b-workspace-level-class: 1;
   /* K13: the area that grabs a grip, 25 px for a coarse pointer (below). */
   --k2b-workspace-resize-hit-size: 13px;
-  /* The detail panel's distance from the workspace's edges, and its gap to a
-     surface beside it. */
-  --k2b-workspace-detail-inset: 0.5rem;
+  /* The detail column's distance from the workspace's edges. Flat (K2, K5a):
+     none; the column reaches the head line and the edges, and its hairline
+     alone parts it from Main. */
+  --k2b-workspace-detail-inset: 0px;
   --k2b-workspace-detail-track: 0px;
   /* The width `Main` keeps beside the sidebar and an open detail.
      `AppWorkspace.Main` raises it with `minWidth`. */
@@ -1391,12 +1392,12 @@ html {
    the window. From 48 rem the rule is, in this order: `Main` keeps its
    minimum (20 rem, or `AppWorkspace.Main` `minWidth`); a detail that fits
    beside it is a column at the workspace's end, part of the same surface,
-   spanning its full height 0.5 rem inside the top, right, and bottom edges;
-   otherwise it waits behind the head's Details button, which opens it as a
+   spanning its full height from edge to edge; otherwise it waits behind the head's Details button, which opens it as a
    drawer flush with the workspace's end edge. The decision measures the
    content region beside the sidebar, at every host width, by width alone. */
-/* The host keeps 0.5rem and the panel's own gutter the other 0.5rem, so
-   text sits 1rem from the edge and row hover fills have room to bleed. */
+/* As a sheet, the host keeps 0.5rem beside the panel. As a column (from
+   48 rem, below) it adds nothing: the panel owns its text edge (K5a, 20 px)
+   and its scroll inset, so its head is 56 px and its lines run edge to edge. */
 .k2b-ui .k2b-app-workspace__detail {
   --k2b-workspace-detail-waiting: 0;
   --k2b-detail-panel-scroll-inset: 0.5rem;
@@ -1498,12 +1499,9 @@ html {
   border-top: 1px solid var(--k2b-border);
 }
 
-/* The body's scrollbar sits on the panel's edge, and its content keeps the
-   panel's inset inside the scrollport, so overlay scrollbars never leave the
-   text against the rounded edge. */
+/* The panel keeps its own inline padding: its text edge is the panel's. */
 .k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
   gap: 1.25rem;
-  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
 }
 
 @media (max-width: 47.999rem) {
@@ -1656,14 +1654,14 @@ html {
   }
 
   /* Each width token's fit beside the 20 rem the content box keeps for
-     `Main`: the token and the inset. The waiting blocks below query the same
-     sums. */
+     `Main`: the token alone, the column has no inset. The waiting blocks
+     below query the same sums. */
   .k2b-ui
     .k2b-app-workspace:has(
       > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="sm"]:not([hidden]),
       > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="sm"]:not([hidden])
     ) {
-    --k2b-workspace-detail-fit: 40.5rem;
+    --k2b-workspace-detail-fit: 40rem;
   }
 
   .k2b-ui
@@ -1671,7 +1669,7 @@ html {
       > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="md"]:not([hidden]),
       > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="md"]:not([hidden])
     ) {
-    --k2b-workspace-detail-fit: 46.5rem;
+    --k2b-workspace-detail-fit: 43.75rem;
   }
 
   .k2b-ui
@@ -1679,7 +1677,7 @@ html {
       > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="lg"]:not([hidden]),
       > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="lg"]:not([hidden])
     ) {
-    --k2b-workspace-detail-fit: 50.5rem;
+    --k2b-workspace-detail-fit: 50rem;
   }
 
   .k2b-ui
@@ -1687,12 +1685,14 @@ html {
       > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-width="xl"]:not([hidden]),
       > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-width="xl"]:not([hidden])
     ) {
-    --k2b-workspace-detail-fit: 54.5rem;
+    --k2b-workspace-detail-fit: 54rem;
   }
 
-  /* The column shares the workspace surface. Its paint-only leading shade
-     is attached to Content below, outside the panel's inset scrollport. */
+  /* The column shares the workspace surface, flush with its edges and without
+     padding or a scroll inset of its own (K5a, K9: 380 px by default). Its
+     hairline is attached to Content below. */
   .k2b-ui .k2b-app-workspace__detail {
+    --k2b-detail-panel-scroll-inset: 0rem;
     position: absolute;
     top: var(--k2b-workspace-detail-inset);
     right: var(--k2b-workspace-detail-inset);
@@ -1701,7 +1701,7 @@ html {
     width: max(var(--k2b-workspace-panel-min), 100% - var(--k2b-workspace-detail-inset));
     height: auto;
     grid-area: detail;
-    padding-bottom: 0;
+    padding: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
@@ -4170,7 +4170,7 @@ html {
    at the token's fit. While a detail waits, its column is gone, the head row
    shows its Details button, and an opened drawer covers `Main` flush with
    the workspace's end edge, below the head. */
-@container k2b-workspace (width < 40.5rem) {
+@container k2b-workspace (width < 40rem) {
   .k2b-ui .k2b-app-workspace__detail[data-width="sm"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;
@@ -4232,7 +4232,7 @@ html {
   }
 }
 
-@container k2b-workspace (width < 46.5rem) {
+@container k2b-workspace (width < 43.75rem) {
   .k2b-ui .k2b-app-workspace__detail[data-width="md"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;
@@ -4294,7 +4294,7 @@ html {
   }
 }
 
-@container k2b-workspace (width < 50.5rem) {
+@container k2b-workspace (width < 50rem) {
   .k2b-ui .k2b-app-workspace__detail[data-width="lg"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;
@@ -4356,7 +4356,7 @@ html {
   }
 }
 
-@container k2b-workspace (width < 54.5rem) {
+@container k2b-workspace (width < 54rem) {
   .k2b-ui .k2b-app-workspace__detail[data-width="xl"]:not([hidden]) {
     --k2b-workspace-detail-waiting: 1;
     display: none;

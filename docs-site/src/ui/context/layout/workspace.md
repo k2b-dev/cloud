@@ -346,7 +346,7 @@ is 0. The surfaces on that edge still reach it and fill the inset with their
 own background: the sidebar, `Main` or each of its panes, and an open
 `BottomDrawer`. Their content ends above the inset, so the last row clears the
 home indicator. A scrolling `Main` or pane fades its last rows above the
-inset, and the inset keeps the end of that fade. A Detail column keeps its 0.5 rem inset above it. Cloud
+inset, and the inset keeps the end of that fade. A Detail column ends above the inset. Cloud
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
 
@@ -644,14 +644,14 @@ after it attaches, which moves them once after the server frame.
 
 Waiting depends on the width of the content region beside the sidebar at
 every host width and with every input device. Column fit requires Main's
-minimum plus the Detail width token plus an 8 px inset:
+minimum plus the Detail width token; the column has no inset:
 
 | Detail width | Fits with the default 320 px Main |
 | --- | --- |
-| `sm` (320 px) | 648 px |
-| `md` (416 px) | 744 px |
-| `lg` (480 px) | 808 px |
-| `xl` (544 px) | 872 px |
+| `sm` (320 px) | 640 px |
+| `md` (380 px) | 700 px |
+| `lg` (480 px) | 800 px |
+| `xl` (544 px) | 864 px |
 
 An open waiting drawer rounds its top-left corner with `--k2b-radius-surface`.
 Its `--k2b-shadow-side` shadow extends toward the covered content and above the
@@ -660,8 +660,10 @@ Main stay unchanged.
 
 The column shares the workspace surface without its own fill, frame, or radius.
 Its boundary has the workspace's column hairline, from the workspace's top to
-its bottom (see [Column boundaries](#column-boundaries)). The panel content
-keeps its 8 px top, right, and bottom inset. The line disappears when Detail
+its bottom (see [Column boundaries](#column-boundaries)). The column adds no
+inset or padding of its own (K5a): the panel's head line lies on Main's head
+line, its text starts on the panel's own 20 px edge, and its lines run from
+edge to edge. The line disappears when Detail
 closes or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
@@ -1532,10 +1534,10 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
 | MainPane (peer pane or hierarchy level) | 320 | 240 | 640 |
-| Detail | 416 | 320 | 640 |
+| Detail | 380 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width (raised with `Main minWidth`, in pixels or a workspace width share) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). `MainPane.defaultSize` also accepts a workspace width share. Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width (raised with `Main minWidth`, in pixels or a workspace width share) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/380/480/544px (default md; from 1920 px of host width the start width grows by 60 px, K12); Drawer heights `sm/md/lg` are 192/240/320px (default md). `MainPane.defaultSize` also accepts a workspace width share. Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
