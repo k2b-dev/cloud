@@ -222,7 +222,7 @@ export default function FileList(props: {
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--operation">
                   <For each={row.operation!.actions}>
                     {(action) => (
-                      <Button size="xs" variant="link" onClick={action.onClick}>
+                      <Button size="sm" variant="secondary" onClick={action.onClick}>
                         {action.label}
                       </Button>
                     )}

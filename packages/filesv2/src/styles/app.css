@@ -318,6 +318,17 @@
 .filesv2-list__info {
   color: var(--k2b-text-muted);
 }
+.filesv2-list__info i {
+  font-size: 1rem;
+}
+/* The column head is one grey; its cells do not take the body's column colours (K7). */
+.filesv2-list__head .filesv2-list__cell {
+  color: inherit;
+}
+/* A placeholder that does not fit ends with an ellipsis instead of being cut (K15). */
+.k2b-ui .filesv2-search input {
+  text-overflow: ellipsis;
+}
 /* K7: the name column ends at 560 px, so a size or date stays beside its name. */
 .filesv2-list__cell--name {
   flex: 1 1 auto;
@@ -355,8 +366,14 @@
 }
 /* A new file in the making: its name, and below it the progress or the
    reason it failed, in the row's usual height; its commands at the end. */
+/* K1, K10: a file in the making has two lines (52 px); a failure needs a person, so its row is the tinted cell with
+   framed buttons that name the deed. */
 .filesv2-list__row--operation {
+  min-height: var(--k2b-h-row-2);
   cursor: default;
+}
+.filesv2-list__row--operation[data-state="failed"] {
+  background: var(--k2b-danger-surface);
 }
 .filesv2-list__row--operation .filesv2-list__cell--name {
   flex-direction: column;

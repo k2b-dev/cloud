@@ -2095,10 +2095,8 @@ export default function Browser(props: {
                   <Show when={props.directory.items.length}>
                     {/* Both states keep the button's place, so the row cannot move when a search starts. */}
                     <Button
-                      size="sm"
                       variant="secondary"
-                      class="filesv2-select-start"
-                      classList={{ invisible: !!props.pendingSearch }}
+                      class={props.pendingSearch ? "filesv2-select-start invisible" : "filesv2-select-start"}
                       onClick={() => toggleSelecting(true)}
                     >
                       <i class="ti ti-checkbox" aria-hidden="true" />
@@ -2461,7 +2459,7 @@ export default function Browser(props: {
                                   <span class="filesv2-grid-operation__actions">
                                     <For each={row.operation.actions}>
                                       {(action) => (
-                                        <Button size="xs" variant="link" onClick={action.onClick}>
+                                        <Button size="xs" variant="secondary" onClick={action.onClick}>
                                           {action.label}
                                         </Button>
                                       )}
