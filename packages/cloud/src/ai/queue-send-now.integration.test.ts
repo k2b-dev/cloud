@@ -8,6 +8,7 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   migrateAiMessageQueue,
   queuedMessageReceipt,
   readQueuedTurnInterruption,
@@ -30,6 +31,8 @@ const fixture = async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,mail,given_name,sn)
     VALUES (${crypto.randomUUID()},'local','user','Queue owner','queue-owner@example.test','Queue','Owner') RETURNING id`;
   const chat = await aiConversations.createConversation({ ownerUserId: user!.id });
+  const { actor: author } = userResourceContext({ type: "user", userId: user!.id });
+  if (author.kind !== "user") throw new Error("fixture actor must be a user");
   const input = (text: string, origin: AiStoredMessageOrigin = { kind: "person", id: user!.id }): Submission => ({
     conversationId: chat.id,
     modelId: "fixture",
@@ -50,6 +53,7 @@ const fixture = async () => {
   return {
     chat,
     userId: user!.id,
+    author,
     input,
     add,
     async close() {
@@ -74,10 +78,12 @@ integration("one FIFO combines people, automations and chats; only the person's 
     expect(entries[2]?.origin).toMatchObject({ name: f.chat.title, href: `/app/assistant?conversation=${f.chat.shortId}` });
     const hidden = await listQueuedMessages(f.chat.id, { userId: "00000000-0000-4000-8000-000000000099" });
     expect(hidden[2]?.origin).toEqual({ kind: "chat", id: f.chat.shortId, name: f.chat.title });
-    const { actor: author } = userResourceContext({ type: "user", userId: f.userId });
-    if (author.kind !== "user") throw new Error("fixture actor must be a user");
-    expect(await editQueuedMessage(f.chat.id, automation, "Changed", author)).toBe("not_found");
-    expect(await editQueuedMessage(f.chat.id, person, "Edited", author)).toBe("edited");
+    expect(await editQueuedMessage(f.chat.id, automation, "Changed", { signedInSession: true, author: f.author })).toBe("not_found");
+    expect(await editQueuedMessage(f.chat.id, person, "Edited", { signedInSession: true, author: f.author })).toBe("edited");
+    // An automation entry runs as its owner, so a phone app session may not retry it or send it now.
+    await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,actor}',(${JSON.stringify(f.author)}::text)::jsonb) WHERE id=${automation}::uuid`;
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, { ...f.author, sessionKind: "app" })).toBe(false);
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, f.author)).toBe(true);
     expect(await updateQueuedMessage(f.chat.id, automation, "cancel")).toBe(true);
     const jobs: Array<{ conversationId: string; turnId: string }> = [];
     await drainQueuedMessages(async (job) => {
@@ -106,6 +112,28 @@ integration("the personal queue limit retains legacy entries above the limit", a
     expect(await listQueuedMessages(f.chat.id)).toHaveLength(AI_MESSAGE_QUEUE_LIMIT + 1);
     await expect(f.add("Still full")).rejects.toThrow("full");
     expect((await listQueuedMessages(f.chat.id, { userId: f.userId })).at(-1)).toMatchObject({ id: legacy, authorIsViewer: true });
+  } finally {
+    await f.close();
+  }
+});
+
+integration("legacy queue backfill keeps non-person authorship and its separate capacity", async () => {
+  const f = await fixture();
+  try {
+    const id = crypto.randomUUID();
+    const origin = { kind: "automation" as const, id: "legacy-code", runId: "legacy-run" };
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,origin,author_user_id)
+      VALUES (${id}::uuid,${f.chat.id}::uuid,${JSON.stringify(f.input("Legacy Code", origin))}::text::jsonb,'[]'::jsonb,NULL,NULL)`;
+    await migrateAiMessageQueue();
+    await migrateAiMessageQueue();
+    const [stored] = await sql<{ origin: AiStoredMessageOrigin; author_user_id: string | null; automation_source: string }[]>`
+      SELECT origin,author_user_id,automation_source FROM ai.queued_messages WHERE id=${id}::uuid`;
+    expect(stored).toEqual({ origin, author_user_id: null, automation_source: "automation:legacy-code" });
+    expect((await listQueuedMessages(f.chat.id, { userId: f.userId }))[0]).toMatchObject({ id, authorIsViewer: false });
+    expect(await editQueuedMessage(f.chat.id, id, "Changed", { signedInSession: true, author: f.author })).toBe("not_found");
+    await expect(f.add("Same source", origin)).rejects.toThrow("no free slot for this source");
+    for (let n = 0; n < AI_MESSAGE_QUEUE_LIMIT; n++) await f.add(`Person ${n}`);
+    expect(await listQueuedMessages(f.chat.id)).toHaveLength(AI_MESSAGE_QUEUE_LIMIT + 1);
   } finally {
     await f.close();
   }
@@ -262,6 +290,7 @@ for (const outcome of ["finished", "expired", "unknown"] as const) {
           conversationId: f.chat.id,
           turnId: turn.id,
           callId: "local-call",
+          signedInSession: false,
           event: {
             type: "tool_result",
             callId: "local-call",
@@ -500,6 +529,57 @@ integration("a queue interrupt never changes a time-limit failure to a successfu
       code: "time_limit",
       limitMinutes: 1,
     });
+  } finally {
+    await f.close();
+  }
+});
+
+integration("send now preserves restricted quoted input and starts no later effect", async () => {
+  const f = await fixture();
+  try {
+    const { turn } = await aiConversations.submitChatTurn(f.input("Existing effect"));
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+    const target = { conversationId: f.chat.id, turnId: turn.id, callId: "already-started", toolName: "write_file" };
+    expect(await aiToolAudit.noteToolStarted(target)).toBeTrue();
+    const store = aiConversations.createSessionStore({ conversationId: f.chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({ role: "tool_result", callId: target.callId, name: target.toolName, result: { written: true } });
+    const id = crypto.randomUUID();
+    const quotes = [{ messageId: "Quote01", from: "assistant" as const, text: "Checked passage" }];
+    const submission = f.input("Urgent");
+    submission.runConfig.quotes = quotes;
+    submission.runConfig.turnTrigger = { kind: "person", id: f.userId };
+    submission.runConfig.send = { id, accountId: f.userId, keyHash: "c1-key", requestHash: "c1-input" };
+    await enqueueChatMessage(id, submission, [
+      { type: "text", text: "Urgent" },
+      { type: "quote", messageId: "Quote01", text: "Checked passage" },
+    ]);
+    expect(await editQueuedMessage(f.chat.id, id, "Edited", { signedInSession: false, author: f.author })).toBe("edited");
+    expect(await editQueuedMessage(f.chat.id, id, "Current", { signedInSession: true, author: f.author })).toBe("edited");
+    const nonPerson = await f.add("Automation", { kind: "automation", id: "c1-code" });
+    expect(await editQueuedMessage(f.chat.id, nonPerson, "Forged", { signedInSession: true, author: f.author })).toBe("not_found");
+    await requestQueuedMessageSendNow(f.chat.id, id);
+    expect(await aiToolAudit.noteToolStarted({ ...target, callId: "later-effect" })).toBeFalse();
+    expect(await aiToolAudit.noteCapabilityDispatch({ ...target, callId: "nested-effect", requestId: crypto.randomUUID() })).toBeFalse();
+    await reconcileQueuedInterruptions(f.chat.id);
+    const jobs: { turnId: string }[] = [];
+    await drainQueuedMessages(async (job) => {
+      jobs.push(job);
+    }, f.chat.id);
+    expect(jobs).toHaveLength(1);
+    expect(await aiConversations.getTurnRunConfig({ conversationId: f.chat.id, turnId: jobs[0]!.turnId })).toMatchObject({
+      sourceRestricted: true,
+      quotes,
+      writerOrigin: { kind: "person", id: f.userId },
+      turnTrigger: { kind: "person", id: f.userId },
+      send: { id },
+    });
+    const history = await aiConversations.listMessages({ conversationId: f.chat.id });
+    expect(history.filter(({ message }) => message.role === "tool_result" && message.callId === target.callId)).toHaveLength(1);
+    expect(history.find((message) => message.loopId === jobs[0]!.turnId)?.meta).toMatchObject({
+      quotes,
+      writerOrigin: { kind: "person", id: f.userId },
+    });
+    expect((await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id }))?.status).toBe("aborted");
   } finally {
     await f.close();
   }

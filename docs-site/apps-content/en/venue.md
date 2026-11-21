@@ -162,8 +162,9 @@ its own date and, as for weekly shifts, skips a date the user already has or
 that is full: the answer is `201` with the sign-ups it made, possibly none.
 
 The `shift.list` and `shift.read` capabilities return `recurring: true` for
-weekly shifts and `false` for one-offs. Pass the returned `venueId`,
-`templateId`, and `date` to `assignment.signup` for either kind. The capability
+weekly shifts and `false` for one-offs. Select the returned `venueId` as the
+`venue.venue` target and pass `templateId` and `date` in `input` to
+`assignment.signup` for either kind. The capability
 limit of 100 active templates applies to weekly templates and one-offs in the
 requested date range, so old one-offs do not prevent listing upcoming shifts;
 when that range exceeds the limit, `shift.list` asks for fewer days.
@@ -236,3 +237,11 @@ Venues runs one scheduler, `venue:shift-notices`, every 15 minutes on the
 installation's NATS; after downtime it runs once for the missed time. Each run
 scans the next 24 hours in batches of 100 venues and sign-ups and hands the
 notices to Cloud's notification delivery. It needs no new configuration.
+
+## Capability action targets
+
+`assignment.signup`, `assignment.signup_free` and `assignment.cancel` target
+`venue.venue`. Pass the venue ref as `target`; their `input` no longer includes
+`venueId`. Chat tools and MCP use the flat field `venue`. Template and
+assignment IDs remain in `input` and must belong to the target venue in both
+review and execution. Queries retain their existing inputs.

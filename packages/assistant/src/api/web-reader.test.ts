@@ -4,7 +4,7 @@ import * as ai from "@k2b/cloud/ai";
 import { oauthTokens } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { testIdentity } from "../artifacts/test-identity";
+import { testIdentity } from "../chat-code/test-identity";
 import api from ".";
 
 useUnitClients();

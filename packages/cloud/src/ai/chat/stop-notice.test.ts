@@ -45,3 +45,9 @@ test("only the person's stop request counts as stopped by the person; a turn Clo
   expect(stoppedByPerson([{ loopDoneReason: null, stopReason: "aborted" }])).toBe(true);
   expect(stoppedByPerson([{ loopDoneReason: "stop", stopReason: "stop" }])).toBe(false);
 });
+test("automatic input and call bounds are visible even on an empty normal terminal answer", () => {
+  for (const reason of ["model_calls", "input_tokens"] as const)
+    expect(aiMessageStopNotice({ ...truncatedAnswer, stopReason: "stop", meta: { automationTurnStop: { reason } } })).toEqual({
+      kind: "automation",
+    });
+});

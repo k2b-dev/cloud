@@ -21,6 +21,8 @@ test("the Mail workspace island keeps its composer, viewer and dialogs outside i
     // Each language's build ships its own messages and not the other language's.
     expect(size.eagerText).toContain(shipped);
     expect(size.eagerText).not.toContain(other);
+    // The sidebar's Code status needs only its own label, never the Code page's full catalog.
+    expect(size.eagerInputs.filter((input) => /\/code-page\/messages\.ts$/.test(input))).toEqual([]);
     for (const onDemand of [
       /\/MailComposer\.tsx$/,
       /\/MailComposerEditor\.tsx$/,

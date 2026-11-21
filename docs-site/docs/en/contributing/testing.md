@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-17
+updated: 2026-11-19
 ---
 
 # Testing
@@ -353,10 +353,8 @@ const browser = await launchBrowser();
 engine of Safari and of every browser on iOS. `bun run check` fails when a test
 starts a Playwright browser type directly, or when a Playwright test does not
 import the launcher directly as `.../test/browser`, without a file extension:
-`bun run test --browser` finds the tests by that import. The Assistant artifact
-suites are the only exception: the ones that still start Google Chrome run only
-nightly. The artifact suites that import the launcher run like any other browser
-test.
+`bun run test --browser` finds the tests by that import. The former nightly
+Studio browser suites have been retired; Assistant tests use the shared launcher.
 
 `bun run test --browser` runs only these tests, each file in a process of its
 own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
@@ -871,7 +869,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_JMAP_URL` | `http://admin:cloud_jmap_test@127.0.0.1:8080` (dedicated test server) |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
-| `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+| `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8081` |
 | `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
 | `CLOUD_TEST_S3_BUCKET` | `cloud-test` (must end in `-test`) |
 | `CLOUD_TEST_S3_ACCESS_KEY_ID` | Test-only S3 access key |
@@ -1377,7 +1375,14 @@ Leave measured room below the target for new files. A recommendation that only
 just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
-script, and together they must run the same files. An integration suite that
+script, and together they must run the same files. Cloud runs `src/ssr` and
+`src/ai` as separate `ssr` and `ai` parts; its `rest` part excludes both trees,
+and browser behavior tests keep their separate suite. When splitting a suite,
+the importer cannot divide its old aggregate measurement between new names.
+Derive initial weights from completed file-group timestamps, account for
+process overhead, and record the source run and calculation in the pull request.
+The next completed run replaces those estimates through the normal importer.
+An integration suite that
 a package runs through its own script splits with `test:integration:list`,
 which turns each listed file into a suite of its own; the runner test fails
 when a single integration suite is weighted above 10 minutes. Commit the

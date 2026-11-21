@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
+import { type Accessor, createComponent, createRoot, createSignal, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
+import { CodeCheckResultSchema } from "../../code/checker-contract";
+import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
+import { CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "../default-tool-contracts";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import type { AiTurnPhase } from "./turn-layout";
@@ -15,8 +18,21 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { toolActionCard } = await import("./action-card");
+const { legacyOutcomeWords } = await import("./tool-action-words");
+const { ApprovalDetails } = await import("../../approvals/ui");
+const renderApprovalDetails = (value: AiTurnBlock, locale = "en") => {
+  if (value.kind !== "tool") throw new Error("tool block missing");
+  const card = toolActionCard(value, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(value, locale, "UTC") });
+  return renderToString(() => createComponent(ApprovalDetails, { card }));
+};
+const quietReceipt = (html: string) =>
+  (html.match(/<p class="k2b-notice-card__description"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "").replace(/<[^>]*>/g, "");
+
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
+const { capabilityResultView } = await import("../result-view");
+const { cardToolResult, chartToolResult } = await import("../gustav-views");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
 const { AiTurnView } = await import("./turn-view");
@@ -24,6 +40,8 @@ const { layoutAiTurn } = await import("./turn-layout");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 const { Chat, LocaleProvider } = await import("@k2b/ui");
+const { ViewFrame } = await import("./capability-view");
+const { useBlockFrame } = await import("../../blocks/block-actions");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
 const hasOpenDetailsContaining = (html: string, text: string): boolean => {
@@ -77,23 +95,64 @@ const block = (status: "running" | "awaiting_approval" | "completed" | "failed")
   },
 });
 
+describe("Gustav's own charts", () => {
+  const revenue = {
+    kind: "bar",
+    title: "Revenue per month",
+    subtitle: "EUR, 2026",
+    data: [
+      { label: "Jan", value: 1200 },
+      { label: "Feb", value: 980 },
+    ],
+  };
+  const chartBlock = (result: unknown): AiTurnBlock => ({
+    id: "tool-chart",
+    kind: "tool",
+    callId: "chart-1",
+    name: "chart",
+    args: revenue,
+    status: "completed",
+    result,
+    view: capabilityResultView(result) ?? undefined,
+  });
+  test("a chart whose result carries its view stands as an island without an origin line above it", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
+    expect(html).toContain('class="cloud-capability-view"');
+    // No origin line above the block (Feinschliff v3): the chart's own head carries its title and actions.
+    expect(html).not.toContain("<strong>Gustav</strong>");
+    expect(html).not.toContain('aria-label="Open large"');
+    expect(html.split("Revenue per month").length - 1).toBeGreaterThan(0);
+    expect(html).toContain('data-kind="Chart"');
+    // No step row of its own above the view.
+    expect(html).not.toContain("k2b-chat-activity");
+  });
+  test("an older stored chart without a view keeps its own drawing", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock({ displayed: true }), turnId: "turn-1" }));
+    expect(html).not.toContain("cloud-capability-view");
+    expect(html).toContain("Revenue per month");
+  });
+});
+
 describe("capability tool presentation", () => {
-  test("table preview handles empty, capped, invalid and failed results honestly", () => {
+  test("a result shows the view the server bound, and an old table converts on read; unknown, unbound and failed results show none", () => {
+    // The server binds `view` on every completed result (`capabilityResultView`); an old stored `presentation` converts there.
     const render = (result: unknown, failed = false) => {
       const completed = block(failed ? "failed" : "completed");
       if (completed.kind !== "tool") throw new Error("tool expected");
       completed.result = result;
+      completed.view = capabilityResultView(result) ?? undefined;
       return renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
     };
     const presentation = { kind: "table", rowsPath: [], columns: [{ path: ["name"], label: "Name" }] };
-    expect(render({ data: [], presentation })).toContain("No matching rows");
     const many = Array.from({ length: 101 }, (_, index) => ({ name: `item-${index}` }));
-    expect(render({ data: many, presentation })).toContain("first 100 returned rows");
+    const shown = render({ data: many, presentation });
+    expect(shown).toContain("<table");
+    expect(shown).toContain("item-99");
     expect(render({ data: [], presentation: { ...presentation, kind: "future" } })).not.toContain("<table");
     expect(render({ data: {}, presentation })).not.toContain("<table");
-    expect(render({ data: [], presentation }, true)).not.toContain("<table");
+    expect(render({ data: many, presentation }, true)).not.toContain("<table");
   });
-  test("renders metadata from actual values, including exact decimals, safe links and partial results", () => {
+  test("an old table keeps exact decimals and its safe row links", () => {
     const completed = block("completed");
     if (completed.kind !== "tool") throw new Error("tool expected");
     completed.result = {
@@ -106,16 +165,12 @@ describe("capability tool presentation", () => {
       },
       page: { hasMore: true },
       summary: "Query preview",
-      links: [{ rel: "open", href: "/app/grids/Base01/query?q=test", title: "Open query editor" }],
     };
+    completed.view = capabilityResultView(completed.result) ?? undefined;
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
     expect(html).toContain("12345678901234567890.123400");
     expect(html).toContain("<table");
-    expect(html).toContain("/app/grids/Base01");
-    expect(html).toContain("More rows");
-    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01")(?=[^>]*target="_blank")[^>]*>/);
-    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01\/query\?q=test")(?=[^>]*target="_blank")[^>]*>/);
-    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('href="/app/grids/Base01"');
   });
   test("renders compact capability rows with only the capability title", () => {
     for (const status of ["running", "completed", "failed"] as const) {
@@ -685,10 +740,12 @@ describe("capability tool presentation", () => {
     const storedHtml = renderSegment(blocks, { workedMs: 190_000 });
     const liveHtml = renderSegment(blocks, { phase: "running" });
 
-    expect(storedHtml).toContain("Worked 3 min");
-    expect(storedHtml).toContain("3 steps");
-    // The work line says what the turn did, then how long and how many steps.
-    expect(storedHtml).toContain('aria-label="Created files. Worked 3 minutes, 3 steps"');
+    // Presenting a file stores nothing new, so there is no confirmed outcome to name: the sentence says the turn worked,
+    // and its steps and time stand right in their own column (Feinschliff 4).
+    expect(storedHtml).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Worked</);
+    expect(storedHtml).toMatch(/ai-turn-work__count[^>]*>(?:<!--[^>]*-->)*3 steps/);
+    expect(storedHtml).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*3 min/);
+    expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
     for (const html of [storedHtml, liveHtml]) {
       expect(html).not.toContain("Before tool");
@@ -747,6 +804,30 @@ describe("capability tool presentation", () => {
     expect(expanded).toContain('aria-label="Details: Unknown tool"');
     expect(expanded).not.toContain("Mailbox is required");
     expect(expanded).not.toContain("VALIDATION_FAILED");
+  });
+
+  test("a code run or inspection that reported an error is a failed step like any other, with no special case", () => {
+    const step = (name: string, status: "error" | "completed"): AiTurnBlock => ({
+      id: `tool-${name}-${status}`,
+      kind: "tool",
+      callId: `${name}-${status}`,
+      name,
+      args: { title: "report.ts" },
+      status: "completed",
+      result: { status, output: "" },
+    });
+    const disclosureState = createAiToolDisclosureState();
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    const html = renderSegment(
+      [step("code_run", "error"), step("code_inspect", "error"), step("code_run", "completed"), { id: "t", kind: "text", text: "Done." }],
+      { disclosureState },
+    );
+    const rows = html
+      .split("<details")
+      .slice(2)
+      .map((part) => part.slice(0, part.indexOf("</summary>")));
+    expect(rows.map((part) => part.includes('data-tone="danger"'))).toEqual([true, true, false]);
+    expect(rows.slice(0, 2).every((part) => part.includes("ti-alert-circle") && !/\sopen(?:=""|(?=[\s>]))/.test(part))).toBe(true);
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -850,21 +931,23 @@ describe("capability tool presentation", () => {
           },
         }),
       );
-    // A call without a review asks Cloud's sentence for it, in card v4: no tinted card, no split button.
+    // The v10 frame names the app accessibly; the full input is deferred to the shared detail dialog.
     const html = renderApproval(block("awaiting_approval"));
-    expect(html).toContain("k2b-chat-decision__sentence");
+    expect(html).toContain('aria-label="Approval · Contacts"');
+    expect(html).toContain('data-approval-frame=""');
     expect(html).toContain("List contacts?");
     expect(html).toContain("I'm asking because Contacts always asks for this.");
     expect(html).toContain('data-variant="ai"');
-    expect(html).toContain("List contacts</span>");
-    expect(html).toContain("Don't run</span>");
+    expect(html).toContain("List contacts");
+    expect(html).toContain("Don't run");
     expect(html).not.toContain("Contacts: List contacts");
     expect(html).not.toContain("Review the validated arguments");
     expect(html).not.toContain("ai-approval");
     expect(html).not.toContain("k2b-split-button");
     expect(html).not.toContain("Always approve");
-    // The call's input stays one click away when the question has nothing else to show.
-    expect(html).toContain("Show input");
+    // A question with nothing else to show shows the call's input in its details, as plain text.
+    expect(html).not.toContain("cloud-action-details");
+    expect(renderApprovalDetails(block("awaiting_approval"))).toContain('<p class="cloud-blocks__text">{\n  "limit": 10\n}</p>');
 
     const rememberable = block("awaiting_approval");
     if (rememberable.kind !== "tool" || !rememberable.approval) throw new Error("approval block missing");
@@ -889,25 +972,25 @@ describe("capability tool presentation", () => {
       ],
       approvalScope: "book:default",
     };
-    const customHtml = renderApproval(customReview);
-    // The old message is the question as it is; every detail is a row, Markdown is one block.
-    expect(customHtml).toContain("The draft includes an external recipient.");
-    expect(customHtml).toContain("<strong>Read calendar</strong>");
-    expect(customHtml).toContain("Spaces · Read only");
-    expect(customHtml).toContain("<dt>Subject</dt>");
-    expect(customHtml).toContain("Release follow-up");
-    expect(customHtml).toContain("<dt>Recipients</dt>");
-    expect(customHtml).toContain('<time datetime="2026-08-20">');
-    expect(customHtml).toContain('<time datetime="2026-08-20T09:00:00+02:00">');
-    expect(customHtml).toContain("<dt>Proposed body</dt>");
-    expect(customHtml).toContain("Hello **Ada**");
+    const compactHtml = renderApproval(customReview);
+    const customHtml = renderApprovalDetails(customReview);
+    expect(compactHtml).toContain("The draft includes an external recipient.");
+    expect(compactHtml).toContain("See everything");
+    expect(compactHtml).not.toContain("Release follow-up");
+    // The old message is the question as it is; its details read as its lines did, as plain text, and times read in
+    // the reader's zone instead of as ISO text.
+    expect(customHtml).toContain("Subject: Release follow-up\nRecipients: Ada\nSend on: Aug 20, 2026\nSend at: Aug 20, 2026, 07:00");
+    expect(customHtml).toContain("Proposed body: Hello **Ada**");
     expect(customHtml).toContain("&lt;script>alert('plain text')&lt;/script>");
+    expect(customHtml).toContain("Spaces · Read only");
+    expect(customHtml).not.toContain("<strong>Read calendar</strong>");
     expect(customHtml).not.toContain("<strong>Ada</strong>");
+    expect(customHtml).not.toContain("<script>");
     // Read it all opens the thing the review links, and every other link of the review stays before the answer.
     expect(customHtml).toContain('href="/app/contacts"');
     expect(customHtml).toContain('href="/app/mail/MbA123/drafts/DrG789"');
     expect(customHtml).toContain(">Edit draft</a>");
-    expect(customHtml.indexOf(">Edit draft</a>")).toBeLessThan(customHtml.indexOf("k2b-chat-decision__answers"));
+    expect(customHtml).not.toContain("data-approval-primary");
     expect(customHtml).not.toMatch(/border-[ty]\b/);
     expect(customHtml).not.toContain("book:default");
   });
@@ -944,8 +1027,8 @@ describe("capability tool presentation", () => {
     const approval = render(german("awaiting_approval"), "de");
     expect(approval).toContain("Mail-Entwurf erstellen?");
     expect(approval).toContain("Ich frage, weil E-Mail hier jedes Mal fragt.");
-    expect(approval).toContain("Nicht ausführen</span>");
-    expect(approval).toContain("Mail-Entwurf erstellen</span>");
+    expect(approval).toContain("Nicht ausführen");
+    expect(approval).toContain("Mail-Entwurf erstellen");
     expect(approval).not.toContain("Immer freigeben");
     expect(approval).not.toContain("E-Mail: Mail-Entwurf erstellen");
     expect(approval).not.toMatch(/(Action|Reject|Always approve|Don't run)<\/span>/);
@@ -960,7 +1043,8 @@ describe("capability tool presentation", () => {
     };
     const reviewedHtml = render(reviewed, "de");
     expect(reviewedHtml).toContain("Entwurf im Postfach Vertrieb speichern.");
-    expect(reviewedHtml).toContain("<dt>Betreff</dt>");
+    expect(reviewedHtml).not.toContain("Betreff: Angebot");
+    expect(renderApprovalDetails(reviewed, "de")).toContain("Betreff: Angebot");
 
     // An app Action's outcome is one line in the same place: running, done, failed, rejected.
     const running = render(german("running"), "de");
@@ -989,10 +1073,10 @@ describe("capability tool presentation", () => {
     // English readers keep the English chrome around whatever title the server presented.
     const english = render(block("awaiting_approval"), "en");
     expect(english).toContain("List contacts?");
-    expect(english).toContain("Don't run</span>");
+    expect(english).toContain("Don't run");
     expect(english).not.toContain("Nicht ausführen");
   });
-  test("offers the chat link where remembering for the chat exists, never Always, and names a website for a code run's request", () => {
+  test("defers remembering to the detail dialog, never offers Always, and keeps the full website request in its details", () => {
     const render = (approval: NonNullable<Extract<AiTurnBlock, { kind: "tool" }>["approval"]>, locale = "en") =>
       renderToString(() =>
         createComponent(LocaleProvider, {
@@ -1019,22 +1103,36 @@ describe("capability tool presentation", () => {
         }),
       );
     const action = render({ message: "Spaces: Create task", allowAlways: true, allowChat: true });
-    expect(action).toContain("Yes, and don't ask again in this chat");
+    expect(action).not.toContain("Don't ask again in this chat");
+    expect(action).toContain("See everything");
     expect(action).not.toContain("Always approve");
-    const website = render({
+    const websiteApproval = {
       message: "HTTP request: GET https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA",
       allowAlways: false,
       allowChat: true,
       website: "https://query1.finance.yahoo.com",
-    });
-    expect(website).toContain("Yes, and allow this website in this chat");
-    expect(website).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
+    };
+    const website = render(websiteApproval);
+    expect(website).not.toContain("Allow this website in this chat");
+    expect(website).toContain("See everything");
+    expect(
+      renderApprovalDetails({
+        id: "run",
+        kind: "tool",
+        callId: "run-approval-0",
+        name: "code_run",
+        args: {},
+        status: "awaiting_approval",
+        approval: websiteApproval,
+      }),
+    ).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
     expect(website).not.toContain("Always approve");
-    expect(website).not.toContain("don't ask again in this chat");
+    expect(website).not.toContain("ask again in this chat");
     expect(render({ message: "POST", allowAlways: false, allowChat: false })).not.toContain("k2b-chat-decision__remember");
     const german = render({ message: "GET", allowAlways: false, allowChat: true, website: "https://example.com" }, "de");
-    expect(german).toContain("Ja, und diese Website in diesem Chat erlauben");
-    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).toContain("Ja, und in diesem Chat nicht mehr fragen");
+    expect(german).not.toContain("Diese Website in diesem Chat erlauben");
+    expect(german).toContain("Alles ansehen");
+    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).not.toContain("In diesem Chat nicht mehr fragen");
   });
   test("shows every request a website approval let through with its full URL and a revoke action", () => {
     const run: AiTurnBlock = {
@@ -1118,8 +1216,9 @@ describe("capability tool presentation", () => {
 
     expect(html).toContain("Rejected: List contacts");
     expect(html).toContain("You declined.");
-    expect(html).toContain('class="k2b-chat-outcome');
-    expect(html).toContain('data-tone="off"');
+    expect(html).toContain('data-approval-frame=""');
+    expect(html).toContain('data-state="decided"');
+    expect(html).toContain('data-outcome-tone="off"');
     expect(html).not.toContain("Capability Action was rejected by the user.");
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
@@ -1197,7 +1296,7 @@ describe("live tool disclosure stability", () => {
 });
 
 describe("survey presentation", () => {
-  test("uses a neutral action sheet with vertical choices and a bottom action footer", () => {
+  test("is a flat choice like a view's: no hull, flat option cards, the state and one quiet answer below", () => {
     const html = renderToString(() =>
       createComponent(CloudSurveyBlock, {
         args: {
@@ -1228,15 +1327,69 @@ describe("survey presentation", () => {
     );
 
     expect(html).toContain("Choose a follow-up time");
-    expect(html).toContain('class="w-full min-w-0 overflow-hidden');
-    expect(html).toContain('class="mt-2 grid gap-1.5"');
-    expect(html).toContain('type="radio"');
+    // The same parts as a view's Choice block, never a box around boxes.
+    expect(html).toContain('class="cloud-blocks__choice');
+    expect(html).toContain('class="cloud-blocks__question"');
+    expect(html).toContain("k2b-choice-list");
+    expect(html).toContain('role="radio"');
     expect(html).toContain('class="k2b-slider"');
-    expect(html).toContain("var(--k2b-surface-muted)");
+    expect(html).not.toContain("rounded-xl border");
+    expect(html).not.toContain(">Survey</p>");
     expect(html).toContain("Tomorrow morning");
     expect(html).toContain("Friday afternoon");
     expect(html).not.toMatch(/border-t\b/);
-    expect(html).toContain("k2b-button ml-auto");
+    expect(html).toContain('class="cloud-blocks__choice-foot"');
+    expect(html).toMatch(/data-variant="secondary"[^>]*>(?:(?!<\/button>).)*Submit/s);
+    expect(html).not.toContain('data-variant="ai"');
+  });
+
+  test("speaks the reader's language and labels a text answer with its question", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CloudSurveyBlock, {
+            args: { title: "Ablage", questions: [{ id: "folder", type: "text", label: "In welchen Ordner?" }] },
+            onSubmit: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain("Absenden");
+    // The input is named by its visible question, not by a copy that can drift from it.
+    const labelledBy = /<input[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`id="${labelledBy}" class="text-xs font-medium text-primary">In welchen Ordner?`);
+    expect(html).not.toMatch(/>Survey<|>Submit</);
+  });
+
+  test("names each answer by its own question even when answer keys hold spaces or repeat", () => {
+    const html = renderToString(() =>
+      createComponent(CloudSurveyBlock, {
+        args: CloudAiSurveyInputSchema.parse({
+          title: "Kontakt",
+          questions: [
+            { id: "contact name", type: "text", label: "Name" },
+            {
+              id: "contact name",
+              type: "single",
+              label: "Rolle",
+              options: [
+                { label: "Kunde", value: "customer" },
+                { label: "Lieferant", value: "supplier" },
+              ],
+            },
+          ],
+        }),
+        onSubmit: () => {},
+      }),
+    );
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const references = [...html.matchAll(/aria-labelledby="([^"]+)"/g)].map((match) => match[1]!);
+    expect(references).toHaveLength(2);
+    for (const reference of references) expect(ids).toContain(reference);
+    // Without a label from the model, the button speaks the reader's language.
     expect(html).toContain("Submit");
   });
 
@@ -1435,6 +1588,48 @@ describe("text editor presentation", () => {
     expect(html).toContain("20,000");
   });
 
+  test("speaks the reader's language in the editor and in its receipt", () => {
+    const inGerman = (render: () => JSX.Element) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return render();
+          },
+        }),
+      );
+    const editor = inGerman(() =>
+      createComponent(CloudTextEditorBlock, {
+        // Parsed like a real call, so a schema default cannot put English back.
+        args: CloudAiTextEditorInputSchema.parse({ title: "Antwort", content: "Hallo" }),
+        onSubmit: async () => undefined,
+      }),
+    );
+    expect(editor).toContain('aria-label="Antwort"');
+    expect(editor).toContain("Änderungen vorschlagen");
+    expect(editor).toContain("Weiter");
+    expect(editor).not.toMatch(/Suggest changes|Review text|>Continue</);
+    const receipt = inGerman(() =>
+      createComponent(AiTurnBlockView, {
+        block: {
+          id: "text-editor-call",
+          kind: "tool",
+          callId: "call-3",
+          name: "text_editor",
+          args: { content: "Hallo" },
+          status: "completed",
+          frontendMode: "client_interaction",
+          result: { submitted: false, feedback: "Kürzer, bitte." },
+        },
+        turnId: "turn-1",
+      }),
+    );
+    expect(receipt).toContain("Texteditor");
+    expect(receipt).toContain("Text prüfen · Änderungen gewünscht");
+    expect(receipt).toContain("Rückmeldung");
+    expect(receipt).not.toMatch(/text editor|changes requested|Feedback</);
+  });
+
   test("collapses accepted text immediately and keeps the exact source in details", () => {
     const completed: AiTurnBlock = {
       id: "text-editor-call",
@@ -1454,7 +1649,7 @@ describe("text editor presentation", () => {
     expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
-    expect(activeHtml).not.toContain("Waiting for the assistant to continue");
+    expect(activeHtml).not.toContain("Waiting for Gustav to continue");
     expect(historicalHtml).toContain("Review mail · submitted");
   });
 
@@ -1503,7 +1698,7 @@ describe("scheduled result presentation", () => {
     };
     const html = renderToString(() =>
       createComponent(AiChatActionsProvider, {
-        actions: { onOpenScheduledTaskRun: () => undefined },
+        actions: {},
         get children() {
           const items = createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })();
           return items.map((item) => item.content);
@@ -1512,6 +1707,7 @@ describe("scheduled result presentation", () => {
     );
     expect(html).toContain("The morning overview is ready.");
     expect(html).toContain("Background run");
+    expect(html).not.toContain("<button");
     expect(html).toContain("ti-calendar-time");
     expect(html).not.toContain("Scheduled task task");
   });
@@ -1540,7 +1736,7 @@ describe("scheduled result presentation", () => {
         locale,
         get children() {
           return createComponent(AiChatActionsProvider, {
-            actions: { onOpenScheduledTaskRun: () => undefined },
+            actions: {},
             get children() {
               return createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })().map((item) => item.content);
             },
@@ -1551,23 +1747,23 @@ describe("scheduled result presentation", () => {
   };
   const run = { taskId: "tSk234", occurrenceId: "rUn234", scheduledFor: "2026-10-16T14:30:00Z", trigger: "scheduled" as const };
 
-  test("a stopped run shows one system line in the reader's language with what was already done", () => {
+  test("a retired stopped run preserves its original text without executable controls", () => {
     const html = routineLine(
       "Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.",
       { ...run, stop: { cause: "paused", done: ["Notiz „Woche“ angelegt"] } },
       "de",
     );
-    expect(html).toContain(
-      "Angehalten, während die Routine lief. Schon erledigt: Notiz „Woche“ angelegt. Nichts wurde rückgängig gemacht.",
-    );
-    expect(html).toContain("ti-player-stop");
-    // The stored English text is not shown a second time.
-    expect(html).not.toContain("Stopped while the routine was running");
+    expect(html).toContain("Stopped while the routine was running. Already done: Created note Weekly; Nothing was undone.");
+    expect(html).not.toContain("<button");
     expect(html).not.toContain("tSk234");
   });
 
   test("a stop before any change says so", () => {
-    const html = routineLine("x", { ...run, stop: { cause: "deleted", done: [] } }, "en");
+    const html = routineLine(
+      "Stopped while the routine was running. Nothing was undone.",
+      { ...run, stop: { cause: "deleted", done: [] } },
+      "en",
+    );
     expect(html).toContain("Stopped while the routine was running. Nothing was undone.");
   });
 
@@ -1577,8 +1773,8 @@ describe("scheduled result presentation", () => {
       { ...run, reason: { code: "rights_changed", at: "2026-10-16T14:30:00Z" }, reasonOnly: true },
       "en",
     );
-    expect(reasonOnly).toContain("What it may do changed. Please confirm again.");
-    expect(reasonOnly).not.toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).toContain("Der letzte Lauf ist fehlgeschlagen.");
+    expect(reasonOnly).not.toContain("<button");
     const withAnswer = routineLine(
       "I updated two of three invoices.",
       { ...run, reason: { code: "failed", at: "2026-10-16T14:30:00Z" } },
@@ -1586,6 +1782,7 @@ describe("scheduled result presentation", () => {
     );
     expect(withAnswer).toContain("I updated two of three invoices.");
     expect(withAnswer).toContain("The last run failed.");
+    expect(withAnswer).not.toContain("<button");
   });
 });
 
@@ -1710,23 +1907,26 @@ describe("turn places in the reader's language", () => {
   test.each(["en", "de"])("receipt outcome times stay on one line in %s, absent while running or unavailable", (locale) => {
     const at = "2026-10-07T10:23:45.000Z";
     const receipt = { ...mail({ summary: "Sent email" }), approved: true };
-    /** The visible line of an outcome; the other lines of its flow only reserve their height. */
-    const current = (html: string) => {
-      const start = html.indexOf('data-current="true"');
-      return html.slice(start, html.indexOf("</div>", start));
-    };
     for (const status of ["completed", "failed", "rejected"] as const) {
       const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });
-      expect(current(html)).toContain('<span class="k2b-chat-outcome__time">12:23</span>');
-      expect(html.match(/class="k2b-chat-outcome /g)).toHaveLength(1);
+      expect(quietReceipt(html)).toContain("12:23");
+      expect(quietReceipt(html)).not.toMatch(/^\s*·/);
+      expect(html.match(/data-approval-frame=""/g)).toHaveLength(1);
     }
     // Outside a browser and without a reader time zone, the time stays in UTC.
-    expect(current(renderPlaces([{ ...receipt, at }], { locale }))).toContain(">10:23</span>");
+    expect(quietReceipt(renderPlaces([{ ...receipt, at }], { locale }))).toContain("10:23");
     expect(renderPlaces([receipt], { locale, timeZone: "Europe/Berlin" })).not.toContain("12:23");
     const running = renderPlaces([{ ...receipt, status: "running" }], { locale, phase: "running", timeZone: "Europe/Berlin" });
-    expect(current(running)).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
-    expect(current(running)).not.toContain("k2b-chat-outcome__time");
+    expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
+    expect(quietReceipt(running)).not.toMatch(/\d{2}:\d{2}/);
   });
+  test.each(["en", "de"])("an expired chat approval names the reason once in %s", (locale) => {
+    const expired = locale === "de" ? "Die Frage ist abgelaufen." : "The question expired.";
+    const html = renderPlaces([{ ...mail({}), status: "running", approved: false }], { locale, phase: "completed" });
+    expect(html.split(expired)).toHaveLength(2);
+    expect(quietReceipt(html)).toBe("");
+  });
+
   test("server-rendered history shows the receipt time in the reader's time zone", () => {
     const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
       id: `stored-${seq}`,
@@ -1764,7 +1964,7 @@ describe("turn places in the reader's language", () => {
         },
       }),
     );
-    expect(html).toContain('<span class="k2b-chat-outcome__time">12:23</span>');
+    expect(quietReceipt(html)).toContain("12:23");
   });
 
   test("labels receipt links without a title in the reader's language", () => {
@@ -1783,7 +1983,106 @@ describe("turn places in the reader's language", () => {
     expect(renderPlaces([mail(result)], { locale: "en" })).toContain(">Open</span>");
   });
 
-  test("keeps the summary and links of a query table above it, and shows them once for an action", () => {
+  test("Gustav's key figures stand flat in one row under one head, his chart as an island; older ones keep their drawing", () => {
+    const card = (id: string, args: Record<string, unknown>, stored = true): AiTurnBlock => {
+      const result = stored ? cardToolResult(args) : { displayed: true };
+      return {
+        id,
+        kind: "tool",
+        callId: id,
+        name: "card",
+        args,
+        status: "completed",
+        result,
+        view: capabilityResultView(result) ?? undefined,
+      };
+    };
+    const figures = [
+      card("c1", { title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
+      card("c2", { title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
+      card("c3", { title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
+    ];
+    const chartArgs = {
+      kind: "bar",
+      title: "Ausgaben",
+      data: [
+        { label: "Okt", value: 3 },
+        { label: "Nov", value: 4 },
+      ],
+    };
+    const chartResult = chartToolResult(chartArgs);
+    const chart: AiTurnBlock = {
+      id: "g1",
+      kind: "tool",
+      callId: "g1",
+      name: "chart",
+      args: chartArgs,
+      status: "completed",
+      result: chartResult,
+      view: capabilityResultView(chartResult) ?? undefined,
+    };
+    const html = renderPlaces([...figures, chart], { locale: "de" });
+    // No origin line above either; the figures are one flat row with Copy and Maximize at its end.
+    expect(html).not.toContain("<strong>Gustav</strong>");
+    expect(html.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(html).toContain('class="cloud-block-figures"');
+    expect(html).toContain('aria-label="Kennzahlen kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
+    // The tiles' code loads after the first frame, like an app's key figures: the labels stand, the figures wait in place.
+    for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
+    expect(html).toContain('data-kind="Chart"');
+    expect(html).not.toContain("ti ti-mood");
+    // The frame reads the time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin. The
+    // Lightbox names it ("Gustav · Diagramm · Stand 15.11., 11:47").
+    const Probe = () => useBlockFrame()?.asOf ?? "";
+    const berlin = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiReaderTimeZoneProvider, {
+            value: "Europe/Berlin",
+            get children() {
+              return createComponent(ViewFrame, {
+                origin: { name: "Gustav", icon: "ti ti-moustache" },
+                title: "Diagramm",
+                at: "2026-11-15T10:47:00.000Z",
+                data: {},
+                get children() {
+                  return createComponent(Probe, {});
+                },
+              });
+            },
+          });
+        },
+      }),
+    );
+    expect(berlin).toContain("Stand 15.11., 11:47");
+    expect(berlin).not.toContain("10:47");
+    // An older stored card or chart without a view keeps the tool's own drawing.
+    const old = renderPlaces([card("o1", { title: "Girokonto", value: "2.481,20 €" }, false)], { locale: "de" });
+    expect(old).not.toContain("cloud-capability-view");
+    expect(old).toContain("2.481,20 €");
+    // Key figures asked for as `stat` charts stand as the same flat row under the head "Kennzahlen", not as islands.
+    const statArgs = {
+      title: "Logistik – Kennzahlen",
+      layout: "grid",
+      charts: [
+        { kind: "stat", title: "Offene Aufgaben", value: 1366 },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11." },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363 },
+      ],
+    };
+    const statResult = chartToolResult(statArgs);
+    const stats = renderPlaces(
+      [{ ...chart, id: "s1", callId: "s1", args: statArgs, result: statResult, view: capabilityResultView(statResult) ?? undefined }],
+      { locale: "de" },
+    );
+    expect(stats.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(stats).not.toContain('data-kind="Chart"');
+    for (const label of ["Offene Aufgaben", "Diese Woche fällig", "Ohne Fälligkeit"]) expect(stats).toContain(`>${label}</span>`);
+  });
+
+  test("a query's table stands under Cloud's head, and an action's table shows its summary and links once", () => {
     const query: AiTurnBlock = {
       id: "tool-query",
       kind: "tool",
@@ -1791,6 +2090,7 @@ describe("turn places in the reader's language", () => {
       name: "grids__query__gql_dot_execute",
       status: "completed",
       result: table("3 Zeilen aus Inventar"),
+      view: capabilityResultView(table("3 Zeilen aus Inventar")) ?? undefined,
       presentation: {
         kind: "capability",
         appId: "grids",
@@ -1801,14 +2101,17 @@ describe("turn places in the reader's language", () => {
       },
     };
     const html = renderPlaces([query], { locale: "de" });
-    expect(html).toContain("3 Zeilen aus Inventar");
-    expect(html).toContain('href="/app/grids/query?id=q1"');
-    expect(html).toContain(">Öffnen</span>");
+    // No origin line: the table's own head carries Copy and Maximize; the Lightbox names Grids.
+    expect(html).not.toContain("<strong>Grids</strong>");
+    expect(html).toContain('aria-label="Tabelle kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
     expect(html).toContain("<table");
-    expect(html.indexOf("3 Zeilen aus Inventar")).toBeLessThan(html.indexOf("<table"));
 
     // An action that returns a table shows its summary and links in its receipt, not twice.
-    const action = renderPlaces([mail(table("Export erstellt"))], { locale: "de" });
+    const action = renderPlaces(
+      [{ ...mail(table("Export erstellt")), view: capabilityResultView(table("Export erstellt")) ?? undefined }],
+      { locale: "de" },
+    );
     expect(action.split("Export erstellt").length).toBe(2);
     expect(action.split('href="/app/grids/query?id=q1"').length).toBe(2);
     expect(action).toContain("<table");
@@ -1821,27 +2124,61 @@ describe("turn places in the reader's language", () => {
       { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
-    expect(english).toContain("Worked 4 min · interrupted");
+    expect(english).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Interrupted</);
+    expect(english).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*4 min/);
     expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
     expect(english).not.toContain("Now I build the dashboard.");
-    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toContain("4 Min. gearbeitet · abgebrochen");
-    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toContain("Worked 4 min · stopped");
+    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(
+      /ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Abgebrochen</,
+    );
+    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Stopped</);
     expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
   });
 });
 
-describe("Studio check steps", () => {
+describe("Code check steps", () => {
   const check = (id: string, result: unknown, isError = false): AiTurnBlock => ({
     id,
     kind: "tool",
     callId: id,
     name: "code_check",
-    args: { id: "app-1" },
+    args: { codeId: "c_1234" },
     status: "completed",
     result,
     isError,
   });
-  const issue = (severity: "error" | "warning") => ({ severity, kind: "layout", message: "Row is misaligned" });
+  /** Core's check result around the checker's own contract, with no manifest while it has diagnostics. */
+  const checked = (diagnostics: number) => ({
+    version: 1,
+    result: CodeCheckResultSchema.parse(
+      diagnostics === 0
+        ? {
+            ok: true,
+            diagnostics: [],
+            bundle: "export {};",
+            manifest: {
+              version: 1,
+              entrypoints: [],
+              permissions: [],
+              ai: false,
+              hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+            },
+            permissions: [],
+          }
+        : {
+            ok: false,
+            diagnostics: Array.from({ length: diagnostics }, (_, index) => ({
+              code: "TS2339",
+              message: "Property does not exist.",
+              file: "code.ts",
+              line: index + 1,
+              column: 1,
+            })),
+          },
+    ),
+    manifest: null,
+    permissions: [],
+  });
   const viewed = (path: string, mediaType = "image/png", status: "completed" | "failed" = "completed"): AiTurnBlock => ({
     id: `view-${path}`,
     kind: "tool",
@@ -1927,35 +2264,65 @@ describe("Studio check steps", () => {
 
   test("names the outcome of a check in words and with its own icon", () => {
     const blocks = [
-      check("check-failed", { passed: false, issues: [issue("error"), issue("error"), issue("error"), issue("warning")] }),
-      check("check-passed", { passed: true, issues: [issue("warning"), issue("warning")] }),
-      check("check-clean", { passed: true, issues: [] }),
+      check("check-failed", checked(3)),
+      check("check-passed", checked(0)),
       { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
-    expect(english).toContain("App check");
-    expect(english).toContain("3 findings · 1 warning");
-    expect(english).toContain("passed · 2 warnings");
-    expect(english).toContain('<strong title="App check">App check</strong><small>passed</small>');
+    expect(english).toContain("3 findings");
+    expect(english).toContain('<strong title="Checks">Checks</strong><small>successful</small>');
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
 
     const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
-    expect(german).toContain("App-Prüfung");
-    expect(german).toContain("3 Befunde · 1 Warnung");
-    expect(german).toContain("bestanden · 2 Warnungen");
-    expect(german).not.toMatch(/App check|findings|passed/);
+    expect(german).toContain("Prüft");
+    expect(german).toContain("3 Befunde");
+    expect(german).toContain("erfolgreich");
+    expect(german).not.toMatch(/Checks|findings|successful/);
 
-    // A check that did not pass without a counted finding still says so; a check that failed to run is a failed step.
-    expect(renderExpanded([check("check-steps", { passed: false, issues: [] })])).toContain("not passed");
-    const broken = renderExpanded([check("check-broken", { failed: true, error: "Host unavailable" }, true)]);
+    // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
+    const broken = renderExpanded([
+      check("check-broken", {
+        version: 1,
+        error: { code: "BAD_INPUT", message: "Code request exceeds the checker budget.", details: null },
+      }),
+    ]);
     expect(broken).toContain("failed");
     expect(broken).not.toMatch(/passed|findings/);
   });
 
-  test("names every Studio step in the reader's language", () => {
-    const blocks: AiTurnBlock[] = ["code_write", "code_import", "code_check", "code_present"].map((name) => ({
+  test("a failed step shows the error sign in danger instead of the feat/code sign; a passed step keeps its sign", () => {
+    const step = (id: string, name: string, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result,
+    });
+    const html = renderExpanded(
+      [
+        step("tested", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
+        step("written", "code_write", { version: 1 }),
+        { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
+      ],
+      { locale: "de", open: ["group:tested"] },
+    );
+    const rows = html.split("<details").slice(1);
+    const failed = rows.find((row) => row.includes("Probiert Beispiele aus"))!;
+    const written = rows.find((row) => row.includes("Schreibt die Änderung"))!;
+    expect(failed).toContain("ti-alert-circle");
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain("fehlgeschlagen");
+    expect(failed).not.toContain("cloud-featcode");
+    expect(written).not.toContain('data-tone="danger"');
+    expect(written).toContain("cloud-featcode");
+  });
+
+  test("names every Code step by what happens in the reader's language", () => {
+    const blocks: AiTurnBlock[] = ["code_init", "code_sdk", "code_write", "code_test", "code_check"].map((name) => ({
       id: `tool-${name}`,
       kind: "tool",
       callId: name,
@@ -1964,10 +2331,30 @@ describe("Studio check steps", () => {
       status: "completed",
       result: {},
     }));
-    const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
-    for (const label of ["App-Datei speichern", "App-Dateien importieren", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"])
+    const submit: AiTurnBlock = {
+      id: "tool-submit",
+      kind: "tool",
+      callId: "submit",
+      name: "code_submit",
+      args: { codeId: "c_1234" },
+      status: "completed",
+      result: { version: 1, submission: { version: { id: "v-3", number: 3 } } },
+    };
+    // Inspect every label independently: a long work list renders only its newest six rows until opened further.
+    const german = [...blocks, submit, viewed("/checks/abc/desktop.png")]
+      .map((block) => renderExpanded([block], { locale: "de" }))
+      .join("");
+    for (const label of [
+      "Legt die Automation an",
+      "Schlägt nach, was Apps anbieten",
+      "Schreibt die Änderung",
+      "Probiert Beispiele aus",
+      "Prüft",
+      "Reicht Version 3 ein",
+      "Bild ansehen",
+    ])
       expect(german).toContain(label);
-    expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
+    expect(german).not.toMatch(/Code init|Code sdk|Code write|Code submit|App-Prüfung|View image/);
   });
 
   test("names built-in tools a tool search found in the reader's language and keeps capability titles", () => {
@@ -1993,7 +2380,7 @@ describe("Studio check steps", () => {
         },
       }),
     );
-    expect(german).toContain("App-Prüfung");
+    expect(german).toContain("Prüft");
     expect(german).toContain("Kontakte suchen");
     expect(german).not.toContain("Code Check");
   });
@@ -2102,6 +2489,36 @@ test("a presented explorer reserves its title, control rows and 18rem viewport b
     }
     expect(html).not.toContain("data-chart-datum");
   }
+});
+
+test("a view file stands as an island with its own head, like an app's result, and still loads on demand", () => {
+  const path = "/views/orders-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "view",
+    kind: "tool",
+    name: "present",
+    callId: "view",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "table", title: "Orders", rows: 3, columns: 2, footer: false } },
+  };
+  const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+  expect(html).toContain('class="cloud-capability-view"');
+  // No origin line: the table's head holds Copy and Maximize from the first frame, while the file still loads.
+  expect(html).not.toContain("<strong>Gustav</strong>");
+  expect(html).toContain('aria-label="Copy table"');
+  expect(html).toContain('aria-label="Maximize"');
+  expect(html).toContain(`data-view-path="${path}"`);
+  expect(html).toContain("Loading");
+  // A table or chart from a file is an island like an app's (v12 section 9).
+  expect(html).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
+  const chart = renderToString(() =>
+    createComponent(AiTurnBlockView, {
+      block: { ...block, result: { path, view: { view: "chart", kind: "line", title: "Orders" } } },
+      turnId: "turn",
+    }),
+  );
+  expect(chart).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
 });
 
 test("present without a valid view reference stays a file chip", () => {
@@ -2245,6 +2662,73 @@ test("the series filter shows chart colors only when the shown view colors its s
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
   // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
+});
+
+test("Code-started turns show their localized origin beside the prompt", () => {
+  const entry: AiStoredMessage = {
+    id: "code-input",
+    shortId: "Input2",
+    conversationId: "chat",
+    seq: 1,
+    kind: "message",
+    message: { role: "user", content: [{ type: "text", text: "Review my open work." }] },
+    loopId: "turn",
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-07T09:00:00Z",
+    meta: null,
+  };
+  // The origin stands in the message's source chip (v6 F11), named from the turn's Code record when no writer origin was
+  // stored with it; the prompt stays the message's text.
+  for (const [title, label] of [
+    ["Morning review", "Started by Code Morning review"],
+    ["Morgenübersicht", "Gestartet von Code Morgenübersicht"],
+  ] as const) {
+    const attributed = {
+      ...entry,
+      meta: { codeOrigin: { codeId: "c_morning", title, runId: "run", requestId: "request", label } },
+    };
+    const html = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: {},
+        get children() {
+          return createAiChatTimeline({ messages: () => [attributed], activeTurn: () => null })().map((item) =>
+            item.kind === "message" ? [item.source, item.content] : item.content,
+          );
+        },
+      }),
+    );
+    expect(html).toContain(`From automation “${title}”`);
+    expect(html).toContain('data-kind="automation"');
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("Review my open work.");
+  }
+  renderToString(() =>
+    createComponent(AiChatActionsProvider, {
+      actions: {},
+      get children() {
+        const imageOnly: AiStoredMessage = {
+          ...entry,
+          message: {
+            role: "user",
+            content: [{ type: "text", text: aiAttachmentMarker({ path: "/image.png", mediaType: "image/png", size: 32 }) }],
+          },
+        };
+        const item = createAiChatTimeline({ messages: () => [imageOnly], activeTurn: () => null })()[0];
+        expect(item?.kind).toBe("message");
+        if (item?.kind === "message") {
+          expect(item.content).toBeUndefined();
+          expect(item.attachments).toMatchObject([{ name: "image.png", kind: "image" }]);
+        }
+        return undefined;
+      },
+    }),
+  );
 });
 
 test("the server renders a quiet status already limited, and the answer whole", () => {

@@ -4,6 +4,7 @@ import { createContext, type JSX, useContext } from "solid-js";
 
 export type AssistantLiveInvalidation = {
   domains: ReadonlySet<AiInvalidationDomain>;
+  codeIds?: ReadonlySet<string> | null;
   /** `null`: every conversation. */
   conversationIds: ReadonlySet<string> | null;
   /** `null`: every Project. */
@@ -17,6 +18,7 @@ type Invalidator = {
 
 const ofEvent = (event: AiInvalidation): AssistantLiveInvalidation => ({
   domains: new Set(event.domains),
+  codeIds: event.codeId ? new Set([event.codeId]) : null,
   conversationIds: event.conversationId ? new Set([event.conversationId]) : null,
   projectIds: event.projectId ? new Set([event.projectId]) : null,
 });
@@ -34,8 +36,19 @@ export const createAssistantLiveHub = () => {
   const run = async (invalidations: readonly AssistantLiveInvalidation[]) => {
     const reloads: Promise<void>[] = [];
     for (const invalidator of invalidators) {
-      const match = invalidations.find((invalidation) => invalidator.matches(invalidation));
-      if (match) reloads.push(invalidator.invalidate(match));
+      const matches = invalidations.filter((invalidation) => invalidator.matches(invalidation));
+      if (matches.length) {
+        const union = (key: "conversationIds" | "projectIds" | "codeIds") =>
+          matches.some((match) => !match[key]) ? null : new Set(matches.flatMap((match) => [...(match[key] ?? [])]));
+        reloads.push(
+          invalidator.invalidate({
+            domains: new Set(matches.flatMap((match) => [...match.domains])),
+            conversationIds: union("conversationIds"),
+            projectIds: union("projectIds"),
+            codeIds: union("codeIds"),
+          }),
+        );
+      }
     }
     await Promise.all(reloads);
   };

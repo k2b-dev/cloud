@@ -22,6 +22,7 @@ const openPermissionDialog = async (props: AdminBookActionsProps, locale: string
   // Set by every saved change, also when a later one fails and the person discards the rest.
   let wrote = false;
   await openAccessDialog({
+    target: { type: "contacts.book", id: props.bookId },
     resourceName: props.bookName,
     subtitle: t.accessDialogSubtitle,
     initialEntries,

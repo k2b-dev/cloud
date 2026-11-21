@@ -52,3 +52,10 @@ test("consumers retain reference identity and known fields when a provider adds 
   ]);
   expect(capabilityResultSchema(z.null()).safeParse({ data: null, refs: [reference] }).success).toBeFalse();
 });
+
+test("search groups are omitted when unset and survive only when supplied", () => {
+  const view = { ref, title: "Deploy", links: [{ rel: "open" as const, href: "/app/spaces" }] };
+  expect(CloudResourceViewSchema.parse(view)).toEqual(view);
+  expect(Object.hasOwn(CloudResourceViewSchema.parse(view), "group")).toBe(false);
+  expect(CloudResourceViewSchema.parse({ ...view, group: "An Orten" })).toEqual({ ...view, group: "An Orten" });
+});

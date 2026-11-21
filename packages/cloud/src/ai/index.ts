@@ -32,25 +32,12 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
-export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
+/** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
+export { resolveAiCapabilityActor } from "./capability-execution";
+export { type AiChatOrigin, AiChatOriginSchema, type AiChatTurnTrigger } from "./chat-origin";
 export { getAiChatQuotas } from "./chat-quotas";
-export {
-  type AiChatTaskOccurrenceView,
-  type AiChatTaskView,
-  AiConversationIdSchema,
-  ChatTaskGrantsSchema,
-  ChatTaskIdSchema,
-  ChatTaskOccurrenceIdSchema,
-  ChatTaskScheduleInputSchema,
-  chatTaskCreateFingerprint,
-  chatTaskName,
-  getChatTaskTimezone,
-  normalizeChatTaskSchedule,
-  toAiChatTaskOccurrenceView,
-  toAiChatTaskView,
-} from "./chat-task-contracts";
 export {
   ChatTaskExportEntrySchema,
   ChatTaskExportForbiddenError,
@@ -59,25 +46,7 @@ export {
   ChatTaskExportQuerySchema,
   exportChatTasks,
 } from "./chat-task-export";
-export {
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReason,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
-  chatTaskReasonState,
-  chatTaskStopSentence,
-} from "./chat-task-reasons";
-export {
-  type AiChatTask,
-  AiChatTaskIdempotencyConflictError,
-  type AiChatTaskOccurrence,
-  type AiChatTaskOccurrenceState,
-  type AiChatTaskSchedule,
-  type AiChatTaskState,
-  aiChatTasks,
-} from "./chat-tasks";
+export type { AiChoiceCall, AiChoiceProvenance, AiChoiceState, AiChoiceTarget } from "./choices";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
@@ -86,7 +55,7 @@ export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contra
 export { type AiConversationWatch, aiApprovalUnwatched, watchAiConversation } from "./conversation-watchers";
 export { listAiCredentialProviderIds } from "./credentials";
 export type { AiDecisionErrorCode, AiDecisionUsage, RunAiDecisionInput, RunAiDecisionResult } from "./decision";
-export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, runAiDecision } from "./decision";
+export { AI_DECISION_MAX_QUESTIONS, AiDecisionError, resolveAiDecisionModel, runAiDecision } from "./decision";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -151,6 +120,7 @@ export {
   loadAiConversationFileOverview,
   normalizeAiFilePath,
   readAiConversationFile,
+  statAiConversationFile,
   writeAiConversationFile,
 } from "./files-store";
 export {
@@ -286,13 +256,23 @@ export {
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
 export {
+  AI_OPEN_QUESTION_KINDS,
   type AiOpenQuestion,
+  type AiOpenQuestionCodeReason,
   type AiOpenQuestionKind,
+  type AiOpenQuestionSource,
   type AiOpenQuestions,
+  type AiOpenQuestionsCursor,
+  AiOpenQuestionsCursorSchema,
+  AiOpenQuestionsSchema,
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
   countAiOpenQuestions,
   listAiOpenQuestions,
 } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
+/** Trusted platform host: read current place context as the person. */
+export { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
@@ -338,9 +318,11 @@ export {
   type AiSendQueuedMessageResult,
 } from "./queue-contracts";
 export { AiQuotaError } from "./quotas";
+export type { AiMessageQuote, AiQuoteDraft, AiQuoteSource } from "./quote-markers";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";
+export { type AiRunFileRef, AiRunReadInput, AiRunViewInput, createAiRunFiles } from "./run-files";
 export {
   isAiVisionModelConfigured,
   listAiModels,
@@ -414,7 +396,13 @@ export {
   runAiStructured,
 } from "./structured";
 export { aiGlobalInstructionsContext, composeAiSystemPrompt, renderAiGlobalInstructions } from "./system-prompt";
-export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
+export {
+  AI_TASK_REQUEST_MAX_BYTES,
+  type AiTaskRequest,
+  type AiTaskRequestInput,
+  AiTaskRequestSchema,
+  assertAiTaskRequestSize,
+} from "./task-contracts";
 export { executeAiTask } from "./task-execution";
 export { type AiToolApprovalState, type AiToolCallLocation, aiToolAudit } from "./tool-audit";
 export { defineAiTool, isFrontendToolMode, type PreparedAiTools, prepareAiTools } from "./tools";
@@ -425,14 +413,20 @@ export {
   resolveAiAudioModel,
   runAiTranscription,
 } from "./transcription";
+export { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 export type {
   AiAccessResult,
   AiApprovalTarget,
+  AiAutomationTurnStop,
   AiCapabilityToolPresentation,
   AiClientToolId,
+  AiCodeAuthoringStop,
   AiConversation,
+  AiConversationCounts,
   AiConversationDraft,
   AiConversationPage,
+  AiConversationPlace,
+  AiConversationPlaceFilter,
   AiConversationResourceOccurrence,
   AiConversationResourceRef,
   AiConversationRunStatus,
@@ -452,7 +446,6 @@ export type {
   AiEnrichmentStatus,
   AiEnrichmentTrigger,
   AiFrontendToolMode,
-  AiInterChatMessage,
   AiMessageFeedback,
   AiMessageFeedbackReason,
   AiModelCapability,
@@ -488,6 +481,7 @@ export {
   CLOUD_AI_TABLE_MAX_COLUMNS,
   CLOUD_AI_TABLE_MAX_ROWS,
   CLOUD_AI_VIEW_DIRECTORY,
+  CLOUD_AI_VIEW_ICONS,
   CLOUD_AI_VIEW_MAX_BYTES,
   CLOUD_AI_VIEW_SUFFIX,
   type CloudAiChartView,
@@ -498,6 +492,7 @@ export {
   type CloudAiStatsView,
   type CloudAiTableView,
   type CloudAiView,
+  type CloudAiViewKind,
   type CloudAiViewReference,
   type CloudAiViewSummary,
   CloudAiViewSummarySchema,
@@ -517,6 +512,7 @@ export {
   cloudAiStatsTiles,
   cloudAiTableTsv,
   cloudAiViewDescription,
+  cloudAiViewKindOfIcon,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,
@@ -531,4 +527,25 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+export {
+  AI_WAKEUP_CHAT_LIMIT,
+  AI_WAKEUP_LIFETIME_DAYS,
+  AI_WAKEUP_MAX_YEARS,
+  AI_WAKEUP_MIN_INTERVAL_MINUTES,
+  AI_WAKEUP_MISSED_DAYS,
+  AI_WAKEUP_NOTE_CHARACTERS,
+  AI_WAKEUP_SNOOZE_LIMIT,
+  AI_WAKEUP_TICK_BATCH,
+  type AiWakeup,
+  type AiWakeupEvent,
+  type AiWakeupInput,
+  AiWakeupInputSchema,
+  type AiWakeupNoteSource,
+  type AiWakeupOccurrence,
+  type AiWakeupPatch,
+  AiWakeupPatchSchema,
+  AiWakeupSchema,
+} from "./wakeup-contracts";
+export { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "./wakeup-tick";
+export { AiWakeupError, aiWakeups } from "./wakeups";
 export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";

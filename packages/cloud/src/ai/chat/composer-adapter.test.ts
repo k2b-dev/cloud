@@ -39,6 +39,15 @@ describe("Cloud chat composer adapter", () => {
     expect(serialized.draftContent).toEqual(content);
     expect(serialized.resources).toBeUndefined();
   });
+  test("a saved draft brings its quoted passages back above the field, apart from its text", () => {
+    const draft = aiComposerDraft([
+      { type: "text", text: "Was heißt das?" },
+      { type: "quote", messageId: "Ans001", from: "assistant", text: "Strom wird nach Verbrauch berechnet." },
+    ]);
+    expect(draft.text).toBe("Was heißt das?");
+    expect(draft.quotes).toEqual([{ messageId: "Ans001", from: "assistant", text: "Strom wird nach Verbrauch berechnet." }]);
+    expect(draft.attachments).toEqual([]);
+  });
   test("promotes long or overflowing pasted text to one plain-text file", () => {
     expect(shouldAttachAiPastedText("short", 0)).toBe(false);
     expect(shouldAttachAiPastedText("x".repeat(AI_PASTED_TEXT_ATTACHMENT_THRESHOLD), 0)).toBe(true);

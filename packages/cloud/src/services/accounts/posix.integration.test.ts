@@ -34,7 +34,7 @@ suite("isolated Linux identity migration and provisioning", () => {
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), uid TEXT UNIQUE NOT NULL, provider TEXT NOT NULL, profile TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '')`.simple();
-    await db`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS mail TEXT, ADD COLUMN IF NOT EXISTS given_name TEXT, ADD COLUMN IF NOT EXISTS sn TEXT, ADD COLUMN IF NOT EXISTS admin BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS account_expires TIMESTAMPTZ`.simple();
+    await db`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS mail TEXT, ADD COLUMN IF NOT EXISTS given_name TEXT, ADD COLUMN IF NOT EXISTS sn TEXT, ADD COLUMN IF NOT EXISTS admin BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS emergency_admin BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS account_expires TIMESTAMPTZ`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.user_ipa_data(user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, uid_number INTEGER)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.groups(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), cn TEXT UNIQUE NOT NULL, name TEXT NOT NULL, provider TEXT NOT NULL, gid_number INTEGER, UNIQUE(provider,name))`.simple();
     await db`ALTER TABLE auth.groups ADD COLUMN IF NOT EXISTS description TEXT, ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`.simple();

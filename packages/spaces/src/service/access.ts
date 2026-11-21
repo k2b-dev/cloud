@@ -2,15 +2,17 @@ import { sql } from "@k2b/cloud";
 import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
-  type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
+  type CodeAccountDisplayContext,
+  codeAccountPresenter,
   createAccess,
   deleteAccess,
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
   getMemberPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -19,15 +21,17 @@ import {
   userFromActor,
 } from "@k2b/cloud/server";
 import {
+  accounts,
   audit,
-  isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
   serviceAccountCredentials,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
+import type { AccessEntry } from "../contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
@@ -48,6 +52,9 @@ type DbSpaceAccess = {
   user_avatar_hash: string | null;
   group_name: string | null;
   service_account_name: string | null;
+  service_account_title: string | null;
+  service_account_handle: string | null;
+  service_account_status: string | null;
 };
 
 export const SPACES_APP_ID = "spaces";
@@ -94,9 +101,15 @@ const authorizeAccessMutation = async (
   caller: SpaceAccessCaller | undefined,
   db: SQL,
 ): Promise<boolean> => {
+  if (caller?.actor.kind === "service_account" && caller.actor.serviceAccount.kind === "code") return false;
   if (!caller) return true;
   const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
-  if (caller.authority === "administration") return Boolean(user && hasRole(user, "admin"));
+  if (caller.authority === "administration")
+    return Boolean(
+      user &&
+        hasRole(user, "admin") &&
+        (await accounts.users.hasInstallationAdminInTransaction(caller.actor.kind === "user" ? caller.actor : { kind: "user", user }, db)),
+    );
   const account = caller.actor.kind === "service_account" ? caller.actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -131,13 +144,13 @@ export const buildSpacePrincipalCondition = (subject: AccessSubject) =>
 export const mayReadAcrossSpaces = async (subject: AccessSubject, boundSpaceId: string | null | undefined): Promise<boolean> => {
   if (subject.type !== "service_account" || isSpaceResourceId(boundSpaceId)) return true;
   const account = await serviceAccounts.get({ id: subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 /**
  * List all access entries for a space with resolved display names.
  */
-export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<AccessEntry[]> => {
+export const listSpaceAccess = async (spaceId: string, db: SQL = sql, display: CodeAccountDisplayContext = {}): Promise<AccessEntry[]> => {
   const rows = await db<DbSpaceAccess[]>`
     SELECT
       a.id as access_id,
@@ -152,7 +165,8 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
       u.uid AS user_uid,
       u.avatar_hash AS user_avatar_hash,
       g.name AS group_name,
-      account.name AS service_account_name
+      account.name AS service_account_name,
+      account.title AS service_account_title, account.handle AS service_account_handle, account.status AS service_account_status
     FROM spaces.space_access sa
     JOIN auth.access a ON sa.access_id = a.id
     LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
@@ -192,7 +206,23 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
     ...(row.user_id ? { avatarHash: row.user_avatar_hash } : {}),
   }));
 
-  return entries;
+  const presentCode = codeAccountPresenter(display);
+  return Promise.all(
+    entries.map(async (entry, index) => {
+      const row = rows[index]!;
+      return row.service_account_kind === "code"
+        ? {
+            ...entry,
+            ...(await presentCode({
+              name: row.service_account_name ?? "",
+              title: row.service_account_title,
+              status: row.service_account_status ?? "active",
+              handle: row.service_account_handle,
+            })),
+          }
+        : entry;
+    }),
+  );
 };
 
 /**
@@ -200,15 +230,20 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
  */
 export const addSpaceAccess = async (spaceId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx): Promise<Result<void>> => {
+      // Code manager checks hold a shared target lock until their write completes.
+      if (!(await lockAccessMutationAuthority({ subject: null, accessId }, tx))) return fail(err.forbidden("Access denied"));
+      const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
+      if (!resource) return fail(err.notFound("Space"));
       await tx`
         INSERT INTO spaces.space_access (space_id, access_id)
         VALUES (${spaceId}::uuid, ${accessId}::uuid)
       `;
       await publishSpaceChange(tx, { type: "access.changed", spaceId });
+      return ok();
     });
-    spacesLive.wake();
-    return ok();
+    if (result.ok) spacesLive.wake();
+    return result;
   } catch (e: unknown) {
     const error = e as { code?: string };
     if (error.code === "23505") {
@@ -249,11 +284,14 @@ const mutateSpaceAccess = async (params: {
   caller?: SpaceAccessCaller;
 }): Promise<Result<void>> => {
   const result = await sql.begin(async (tx): Promise<Result<void>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, accessId: params.accessId }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${params.spaceId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Space"));
     const before = await listSpaceAccess(params.spaceId, tx);
     if (!(await authorizeAccessMutation(params.spaceId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
-    if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry for this space"));
+    const current = before.find((entry) => entry.id === params.accessId);
+    if (!current) return fail(err.notFound("Access entry for this space"));
     const permission = params.permission;
     const after =
       permission === undefined
@@ -392,6 +430,8 @@ export const grantSpaceAccess = async (params: {
 }): Promise<Result<AccessEntry>> => {
   const { spaceId, principal, permission } = params;
   const result = await sql.begin(async (tx): Promise<Result<string>> => {
+    if (!(await lockAccessMutationAuthority({ subject: params.caller?.accessSubject ?? null, principal }, tx)))
+      return fail(err.forbidden("Access denied"));
     const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Space"));
     const before = await listSpaceAccess(spaceId, tx);
@@ -433,7 +473,13 @@ export const grantSpaceAccess = async (params: {
   });
   if (!result.ok) return result;
   spacesLive.wake();
-  const created = (await listSpaceAccess(spaceId)).find((entry) => entry.id === result.data);
+  const created = (
+    await listSpaceAccess(spaceId, sql, {
+      canManageTarget: Boolean(params.caller && params.caller.authority !== "administration"),
+      cloudAdmin: params.caller ? userFromActor(params.caller.actor)?.roles.includes("admin") : false,
+      locale: params.caller?.locale,
+    })
+  ).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
 

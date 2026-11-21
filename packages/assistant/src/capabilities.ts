@@ -1,31 +1,16 @@
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { chatAttachmentReadQuery } from "./chat-code/attachment-stream";
 import { ChatComposeInputSchema } from "./commands";
-import { searchAssistant, searchAssistantApps, searchAssistantProjects } from "./search";
+import { searchAssistant, searchAssistantProjects } from "./search";
 export const assistantCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
-    app: { title: "Studio app", description: "An accessible reusable Studio app.", icon: "ti ti-app-window" },
     project: { title: "Project", description: "An accessible Assistant project with shared context and chats.", icon: "ti ti-folders" },
     chat: { title: "Chat", description: "An Assistant conversation owned by the current user.", icon: "ti ti-messages" },
     message: { title: "Chat message", description: "A message in an accessible Assistant chat.", icon: "ti ti-message" },
   },
   queries: {
-    "app.search": {
-      title: "Search Studio apps",
-      description: "Find accessible Studio apps by title or description.",
-      input: UniversalSearchInputSchema,
-      data: UniversalSearchDataSchema,
-      openWorld: false,
-      universalSearch: {
-        tags: [
-          { tag: "studio-app", title: "Studio apps", description: "Find accessible Studio apps.", aliases: ["studio-apps", "studio"] },
-        ],
-      },
-      run: async (input, context) => {
-        const { artifacts } = await import("./artifacts/service");
-        return searchAssistantApps(input, context, artifacts);
-      },
-    },
+    "chat.file.read.v1": chatAttachmentReadQuery,
     "project.search": {
       title: "Search projects",
       description: "Find accessible Assistant projects by name or description. Returns projects, not their chats.",
@@ -45,6 +30,24 @@ export const assistantCapabilities = defineCapabilities({
       run: async (input, context) => {
         const { aiProjects } = await import("@k2b/cloud/ai");
         return searchAssistantProjects(input, context, aiProjects);
+      },
+    },
+    "place.search": {
+      title: "At places",
+      description: "Find your private place chats by title or message content.",
+      input: UniversalSearchInputSchema,
+      data: UniversalSearchDataSchema,
+      openWorld: false,
+      universalSearch: {
+        tags: [
+          { tag: "assistant-place", title: "At places", description: "Search your Assistant chats at places.", aliases: ["places"] },
+          { tag: "chat", title: "Chats", description: "Search Assistant chat titles and messages.", aliases: ["chats", "assistant"] },
+        ],
+        scopeTypes: ["project"],
+      },
+      run: async (input, context) => {
+        const { aiConversations, aiProjects } = await import("@k2b/cloud/ai");
+        return searchAssistant(input, context, aiConversations, aiProjects, true);
       },
     },
     "chat.search": {
@@ -77,21 +80,28 @@ export const assistantCapabilities = defineCapabilities({
     translations: {
       de: {
         types: {
-          app: { title: "Studio-App", description: "Eine zugängliche, wiederverwendbare Studio-App." },
           project: { title: "Projekt", description: "Ein zugängliches Assistenten-Projekt mit gemeinsamem Kontext und Chats." },
           chat: { title: "Chat", description: "Eine Unterhaltung mit dem Assistenten, die dir gehört." },
           message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistenten-Chat." },
         },
         queries: {
-          "app.search": {
-            title: "Studio-Apps durchsuchen",
-            description: "Zugängliche Studio-Apps nach Titel oder Beschreibung finden.",
-            searchTags: { "studio-app": { title: "Studio-Apps", description: "Zugängliche Studio-Apps finden." } },
+          "chat.file.read.v1": {
+            title: "Chat-Anhang lesen",
+            description:
+              "Eine Datei aus deinem Gustav-Chat einmalig innerhalb von zehn Minuten übertragen. Chat- und Projektzugriff werden bei der Übertragung erneut geprüft.",
           },
           "project.search": {
             title: "Projekte durchsuchen",
             description: "Zugängliche Assistenten-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",
             searchTags: { "assistant-project": { title: "Assistenten-Projekte", description: "Zugängliche Assistenten-Projekte finden." } },
+          },
+          "place.search": {
+            title: "An Orten",
+            description: "Eigene private Ort-Chats anhand von Titel und Nachrichteninhalt finden.",
+            searchTags: {
+              "assistant-place": { title: "An Orten", description: "Eigene Assistenten-Chats an Orten durchsuchen." },
+              chat: { title: "Chats", description: "Titel und Nachrichten in Assistenten-Chats durchsuchen." },
+            },
           },
           "chat.search": {
             title: "Chats durchsuchen",

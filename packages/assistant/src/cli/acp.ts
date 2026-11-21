@@ -65,6 +65,7 @@ import {
   toolContent,
 } from "./acp-updates";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
+import { assistantChoiceText, openAssistantChoices } from "./choices";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
 import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
@@ -734,7 +735,12 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
           }
           if (choice !== "once" && choice !== "chat" && choice !== "reject")
             throw RequestError.invalidParams(undefined, "Unknown approval choice.");
-          body = { type: "approval_response", approved: choice !== "reject", ...(choice === "chat" ? { remember: "chat" } : {}) };
+          body = {
+            type: "approval_response",
+            digest: action.digest,
+            approved: choice !== "reject",
+            ...(choice === "chat" ? { remember: "chat" } : {}),
+          };
         } else if (action.name === "survey" || action.name === "cloud_survey") {
           const input = CloudAiSurveyInputSchema.parse(action.args);
           const response = forms
@@ -762,6 +768,9 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       return result;
     };
     const finish = async (result: AssistantTurnStreamResult) => {
+      if (result.status === "completed" && !abort.signal.aborted)
+        for (const choice of openAssistantChoices(result.messages))
+          await message(s, terminalSafeText(assistantChoiceText(choice, chatLink(s))) + "\n");
       if (result.title !== undefined) title = result.title;
       if (result.status === "failed") throw RequestError.internalError(undefined, result.error ?? "Assistant turn failed.");
       if (result.status === "aborted") return cancelled(s);
@@ -924,7 +933,6 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         ...streamOptions(),
         path: conversationPath(s.chat, "/turns"),
         watch: true,
-        codeHost: false,
         detail: current,
         body: {
           message: text,

@@ -474,6 +474,7 @@ databaseSuite()("aiSkills (integration)", () => {
 
   test("more concurrent Skill changes and loads than pool connections all finish", async () => {
     const userId = await insertUser("pool");
+    const readerId = await insertUser("pool-reader");
     const owner = { type: "user" as const, userId };
     // Each call holds one connection for its transaction; one more lookup per call would wait for the pool forever.
     const count = (sql.options.max ?? 10) + 2;
@@ -492,6 +493,16 @@ databaseSuite()("aiSkills (integration)", () => {
       ),
     );
     try {
+      // Grant/list presentation must run after commit, including the recovery route.
+      for (const grant of [
+        (id: string) =>
+          aiSkills.grantAccess(id, userResourceContext(owner), { principal: { type: "user", userId: readerId }, permission: "read" }),
+        (id: string) => aiSkills.admin.grantAccess(id, { principal: { type: "authenticated" }, permission: "read" }),
+      ]) {
+        expect((await Promise.all(skills.map((skill) => grant(skill.id)))).every(Boolean)).toBe(true);
+      }
+      const lists = await Promise.all(skills.map((skill) => aiSkills.listAccess(skill.id, userResourceContext(owner))));
+      expect(lists.map((entries) => entries?.length)).toEqual(skills.map(() => 3));
       const updated = await Promise.all(
         skills.map((skill) =>
           aiSkills.update(skill.id, userResourceContext(owner), { ...skill, instructions: "Updated.", expectedRevision: skill.revision }),
@@ -506,7 +517,7 @@ databaseSuite()("aiSkills (integration)", () => {
     } finally {
       for (const skill of skills) await aiSkills.admin.delete(skill.id);
       await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid,${readerId}::uuid)`;
     }
   }, 30_000);
 

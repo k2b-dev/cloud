@@ -35,6 +35,7 @@ const openPermissionDialog = async (props: Props, locale: string, signal: AbortS
     subtitle: t.projectAccessSubtitle,
     initialEntries,
     allowPublic: false,
+    target: { type: "core.ai.project", id: props.projectId },
     signal,
     grantAccess: async (principal, permission) => {
       const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({

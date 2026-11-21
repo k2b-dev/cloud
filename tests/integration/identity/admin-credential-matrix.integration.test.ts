@@ -30,6 +30,7 @@ import {
 } from "../../../packages/cloud/src/services/session/session.test-fixture";
 import { loadCurrentUser } from "../../../packages/cloud/src/services/session/user";
 import * as settings from "../../../packages/cloud/src/services/settings";
+import { useTestSettings } from "../../../packages/cloud/src/services/settings/settings.test-fixture";
 import oauthAdminRoutes from "../../../packages/oauth/src/api";
 import type { OAuthScope } from "../../../packages/oauth/src/contracts";
 import oauthRoutes from "../../../packages/oauth/src/oauth";
@@ -141,6 +142,7 @@ const expected = {
 };
 
 suite("Admin credential matrix", () => {
+  useTestSettings({ "app.url": "http://localhost:3000" });
   const prefix = `admin-matrix-${crypto.randomUUID()}`;
   const adminId = crypto.randomUUID();
   const expiredAdminId = crypto.randomUUID();
@@ -173,6 +175,10 @@ suite("Admin credential matrix", () => {
         (${targetId}::uuid, ${`${prefix}-target`}, 'local', 'user', 'Matrix target', ${`${prefix}-target@example.test`}, 'Matrix', 'Target', false)
     `;
     const { groupsAdmin, issuer } = await getIdentityRuntimeConfig();
+    expect(issuer).toBe("http://localhost:3000");
+    // Force the shared cache miss that can otherwise occur midway through setup.
+    // Issuance must still read the same durable issuer as the cached verifier.
+    await redis.del("settings:app.url");
     const admin = await loadCurrentUser({ userId: adminId, groupsAdmin });
     const expiredAdmin = await loadCurrentUser({ userId: expiredAdminId, groupsAdmin });
     if (!admin || !expiredAdmin) throw new Error("Admin fixture projection is missing");
@@ -209,6 +215,7 @@ suite("Admin credential matrix", () => {
         throw new Error("CLI refresh did not return an access token");
       }
       const claims = decodeJwt(body.access_token);
+      expect(claims.iss).toBe(issuer);
       expect(claims.client_id).toBe("cloud-cli");
       expect(claims.sub).toBe(userId);
       return body.access_token;

@@ -26,7 +26,7 @@ export const openCommand = async (
   options: CommandOptions = {},
   signal?: AbortSignal,
 ): Promise<boolean> => {
-  const modules = await importOnDemand(() => Promise.all([import("../contracts/commands"), import("../capabilities/client")]));
+  const modules = await importOnDemand(() => Promise.all([import("../contracts/commands"), import("../capabilities/resolve-command")]));
   if (!modules || signal?.aborted) return false;
   const [contracts, capabilities] = modules;
   const parsedOptions = contracts.CommandOptionsSchema.parse(options);

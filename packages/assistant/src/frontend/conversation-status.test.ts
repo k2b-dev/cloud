@@ -29,7 +29,7 @@ const conversation = (overrides: Partial<AiConversation> = {}): AiConversation =
 describe("Assistant conversation status", () => {
   test("browser work never asks for human attention", () => {
     const waiting = conversation({ runStatus: "waiting_for_browser" });
-    expect(conversationStatusPresentation(waiting)?.icon).toBe("ti ti-browser");
+    expect(conversationStatusPresentation(waiting)?.icon).toBe("ti ti-browser assistant-chat-progress");
     expect(conversationStatusPresentation(waiting, "en", true)?.label).toBe("Running");
     expect(conversationStatusPresentation(waiting, "de")?.label).toBe("Wartet auf Browser-Ausführung");
   });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { logger, trace } from "../services/logging";
+import { aiUserWordsForModel } from "./chat/message-utils";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { aiConversations } from "./store";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
@@ -57,7 +58,7 @@ export const buildEnrichmentTranscript = (messages: AiStoredMessage[], maxChars 
     if (entry.kind !== "message") continue;
     const role = entry.message.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = assistantVisibleTextFromMessage(entry.message) || textOfUserMessage(entry);
+    const text = assistantVisibleTextFromMessage(entry.message) || aiUserWordsForModel(entry);
     if (!text) continue;
     const line = `${role}: ${text}`;
     if (used + line.length > maxChars) {
@@ -68,14 +69,6 @@ export const buildEnrichmentTranscript = (messages: AiStoredMessage[], maxChars 
     used += line.length + 1;
   }
   return lines.reverse().join("\n");
-};
-
-const textOfUserMessage = (entry: AiStoredMessage): string => {
-  if (entry.message.role !== "user") return "";
-  return entry.message.content
-    .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
-    .join("")
-    .trim();
 };
 
 const buildEnrichmentInput = (conversation: AiConversation, transcript: string): string =>

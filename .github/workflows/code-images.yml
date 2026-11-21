@@ -1,0 +1,52 @@
+name: Code branch images
+
+# Builds every image for each push to the long-lived feat/code branch, so the
+# Gustav test installation runs immutable `sha-<12>` images instead of local
+# builds. Never tags a version and never runs release-please. Inert on any
+# other branch; delete this file when feat/code reaches main.
+
+on:
+  push:
+    branches: [feat/code]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the newest commit matters; an older build still running is cancelled.
+concurrency:
+  group: code-images
+  cancel-in-progress: true
+
+jobs:
+  context:
+    if: github.ref == 'refs/heads/feat/code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha12: ${{ steps.context.outputs.sha12 }}
+      version: ${{ steps.context.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: context
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          {
+            echo "sha12=${sha:0:12}"
+            echo "version=$(jq -r '."."' .release-please-manifest.json)-code.${sha:0:12}"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  images:
+    needs: context
+    uses: ./.github/workflows/build-images.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    secrets: inherit
+    with:
+      version: ${{ needs.context.outputs.version }}
+      release: sha-${{ needs.context.outputs.sha12 }}
+      push: true

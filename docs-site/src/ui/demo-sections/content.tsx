@@ -51,6 +51,7 @@ import {
   MatchText,
   MessageEventGroup,
   MessageEventRow,
+  MessageQuote,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
@@ -91,6 +92,7 @@ import {
   type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
+import { CodeDiff, type CodeDiffFile, type CodeDiffLocation } from "@k2b/ui/code-diff";
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
@@ -687,6 +689,135 @@ const CodeDemo = () => (
     <CodeDisplay title="component.tsx" language="tsx" code={'export const Status = () => <span data-ready="true">Ready</span>;'} />
   </DemoCard>
 );
+
+// Fictional automation that answers callback requests; version 2 against version 3.
+const diffFiles: CodeDiffFile[] = [
+  {
+    path: "index.ts",
+    lines: [
+      { kind: "same", text: 'import { app, ai, owner } from "@sdk";' },
+      { kind: "same", text: "" },
+      { kind: "same", text: "// Answers callback requests in info@" },
+      { kind: "same", text: "" },
+      { kind: "same", text: 'app.on("mail.message.received", async (event) => {' },
+      { kind: "same", text: "  const msg = await owner.message.get({ id: event.messageId });" },
+      { kind: "add", text: "  if (msg.from.noReply) return; // never answer no-reply addresses" },
+      { kind: "same", text: '  const kind = await ai.classify({ text: msg.text, labels: ["Callback", "Other"] });' },
+      { kind: "same", text: '  if (kind !== "Callback") return;' },
+      { kind: "same", text: "" },
+      {
+        kind: "same",
+        text: '  const text = await ai.write({ prompt: "Confirm the callback and offer two time slots.", context: msg.text });',
+      },
+      { kind: "del", text: "  await owner.draft.create({ replyTo: msg.id, text });" },
+      { kind: "add", text: "  // The recipient comes from the event: the sender of this mail" },
+      { kind: "add", text: "  await owner.message.reply({ messageId: event.messageId, text });" },
+      { kind: "same", text: "});" },
+    ],
+  },
+  {
+    path: "callback.test.ts",
+    lines: [
+      { kind: "same", text: 'test("confirms a callback", async () => {' },
+      { kind: "del", text: "  expect(drafts).toHaveLength(1);" },
+      { kind: "add", text: "  expect(sent).toHaveLength(1);" },
+      { kind: "add", text: '  expect(sent[0].to).toBe("sender@example.com");' },
+      { kind: "same", text: "});" },
+    ],
+  },
+  {
+    path: "params.ts",
+    lines: [
+      { kind: "same", text: "export const params = {" },
+      { kind: "same", text: "  slots: 2," },
+      { kind: "same", text: "};" },
+    ],
+  },
+];
+
+const CodeDiffDemo = () => {
+  const [state, setState] = createSignal<"diff" | "marked" | "new" | "loading" | "error">("diff");
+  return (
+    <DemoCard
+      id="code-diff"
+      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui/code-diff" }}
+      description="A change between two versions, line by line: file tabs, folded unchanged lines, a marked line, whole code for a first version, loading, and error with retry."
+      code={`<CodeDiff files={files} mark={{ path: "index.ts", line: 13 }} />
+<CodeDiff files={[]} status="error" errorDescription="Nothing was decided." onRetry={reload} />`}
+    >
+      <SegmentedControl
+        value={state}
+        onValueChange={(value) => setState(value)}
+        label="State"
+        size="sm"
+        options={[
+          { value: "diff", label: "Diff" },
+          { value: "marked", label: "Marked line" },
+          { value: "new", label: "First version" },
+          { value: "loading", label: "Loading" },
+          { value: "error", label: "Error" },
+        ]}
+      />
+      <CodeDiff
+        files={
+          state() === "new"
+            ? diffFiles.map((file) => ({
+                ...file,
+                lines: file.lines.filter((line) => line.kind !== "del").map((line) => ({ kind: "add" as const, text: line.text })),
+              }))
+            : diffFiles
+        }
+        mark={state() === "marked" ? { path: "index.ts", line: 13 } : undefined}
+        status={state() === "loading" ? "loading" : state() === "error" ? "error" : undefined}
+        errorDescription="Nothing was approved or rejected. Try again to see the code."
+        onRetry={() => setState("diff")}
+      />
+    </DemoCard>
+  );
+};
+
+// The same review with an action on every line: a note opens below the line and closes back to its action.
+const CodeDiffLinesDemo = () => {
+  const [notes, setNotes] = createSignal<CodeDiffLocation[]>([{ path: "index.ts", line: 14 }]);
+  const close = (location: CodeDiffLocation) => {
+    setNotes((current) => current.filter((note) => note.path !== location.path || note.line !== location.line));
+    // The host returns the focus to the line's action once the note has gone.
+    setTimeout(() => document.querySelector<HTMLElement>(`#code-diff-lines [data-action-line="${location.line}"]`)?.focus());
+  };
+  return (
+    <DemoCard
+      id="code-diff-lines"
+      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui/code-diff" }}
+      description="An action at the start of every line and a place below it: hover or Tab into the code, arrow keys choose the line, Enter opens a note below it; closing returns the focus to that line."
+      code={`<CodeDiff
+  files={files}
+  lineAction={{ label: ({ line }) => \`Comment on line \${line}\`, onSelect: open }}
+  slotLines={notes()}
+  lineSlot={(location) => <Note location={location} onClose={() => close(location)} />}
+/>`}
+    >
+      <CodeDiff
+        files={diffFiles}
+        lineAction={{
+          label: ({ line }) => `Comment on line ${line}`,
+          onSelect: (location) =>
+            setNotes((current) =>
+              current.some((note) => note.path === location.path && note.line === location.line) ? current : [...current, location],
+            ),
+        }}
+        slotLines={notes()}
+        lineSlot={(location) => (
+          <p class="flex items-center gap-3 py-1 text-sm">
+            <span>Note on line {location.line}</span>
+            <Button size="sm" variant="ghost" onClick={() => close(location)}>
+              Close
+            </Button>
+          </p>
+        )}
+      />
+    </DemoCard>
+  );
+};
 
 const LogsDemo = () => (
   <DemoCard
@@ -1955,6 +2086,41 @@ const MessageRowsDemo = () => {
   );
 };
 
+/** One quoted passage outside a MessageRow, as an assistant chat shows it: author and passage, a long one, one to jump back from. */
+const MessageQuoteDemo = () => {
+  const [jumps, setJumps] = createSignal(0);
+  const long =
+    "The stand gets one power socket with 3 kW, included in the offer. Internet comes from the fair, billed separately per day, and the cable run to the stand is ordered with it no later than two weeks before the build-up starts.";
+  return (
+    <DemoCard
+      id="message-quote"
+      chip={{ kind: "component", name: "MessageQuote", from: "@k2b/ui" }}
+      description="A quoted passage for a message that is not a MessageRow. It shows the passage in at most two lines and its author below; a long passage ends with an ellipsis. With onSelect it is a button that jumps back to the original."
+      code={`<div class="k2b-message-quotes">
+  <MessageQuote quote={{ author: "Gustav", text: passage }} />
+  <MessageQuote quote={{ author: "Lea Muster", text: passage, onSelect: () => jumpTo(id) }} />
+</div>`}
+    >
+      <div style={{ display: "grid", gap: "0.75rem", "max-width": "28rem" }}>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Gustav", text: "The power socket with 3 kW is included in the offer." }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Lea Muster", text: long }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote
+            quote={{ author: "Ben Schulz", text: "I send my notes by four.", onSelect: () => setJumps((count) => count + 1) }}
+          />
+        </div>
+        <p class="text-xs text-dimmed" aria-live="polite">
+          {jumps() ? `Jumped back to the original ${jumps()} times.` : "Select the last quote to jump back to its original."}
+        </p>
+      </div>
+    </DemoCard>
+  );
+};
+
 type QuoteEntry = { id: string; author: string; own?: boolean; text: string; quotes?: { id: string; author: string; text: string }[] };
 /** Select part of a message, quote it, and answer: the quotes stand above the field and then above the sent text. */
 const MessageQuotesDemo = () => {
@@ -2878,6 +3044,8 @@ const demos: DemoSection = {
   code: () => (
     <DemoGrid columns="one">
       <CodeDemo />
+      <CodeDiffDemo />
+      <CodeDiffLinesDemo />
     </DemoGrid>
   ),
   logs: () => (
@@ -2915,6 +3083,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <MessageRowsDemo />
       <MessageQuotesDemo />
+      <MessageQuoteDemo />
     </DemoGrid>
   ),
   "reaction-bar": () => <ReactionBarDemos />,

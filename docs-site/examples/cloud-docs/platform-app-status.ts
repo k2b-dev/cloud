@@ -53,6 +53,7 @@ export const monitoringCapabilities = defineCapabilities({
   },
   actions: {
     "status.forget": {
+      code: false,
       title: "Forget app status",
       description: "Forget status records for an offline app.",
       input: AppStatusForgetInputSchema,

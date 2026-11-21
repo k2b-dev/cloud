@@ -46,6 +46,38 @@ const fixture = async () => {
 };
 
 suite("Notebook manager mutation invariants", () => {
+  test("an app without a Code declaration grants and switches a Dienstkonto through its normal service", async () => {
+    const f = await fixture();
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+      VALUES (${`notebooks-code-${crypto.randomUUID()}`}, 'code') RETURNING id`;
+    if (!account) throw new Error("Missing Code account");
+    try {
+      const { notebooksCapabilities } = await import("../capabilities");
+      expect("code" in notebooksCapabilities).toBe(false);
+      const granted = await grantNotebookAccess({
+        notebookId: f.notebookId,
+        principal: { type: "service_account", serviceAccountId: account.id },
+        permission: "read",
+        caller: f.caller,
+      });
+      if (!granted.ok) throw new Error(granted.error.message);
+      expect(granted.data.serviceAccountKind).toBe("code");
+      for (const permission of ["write", "read"] as const) {
+        expect((await updateNotebookAccess({ notebookId: f.notebookId, accessId: granted.data.id, permission, caller: f.caller })).ok).toBe(
+          true,
+        );
+        expect((await listNotebookAccess(f.notebookId)).find((entry) => entry.id === granted.data.id)?.permission).toBe(permission);
+      }
+      expect(
+        await updateNotebookAccess({ notebookId: f.notebookId, accessId: granted.data.id, permission: "admin", caller: f.caller }),
+      ).toMatchObject({ ok: false, error: { status: 400 } });
+      expect((await removeNotebookAccess(f.notebookId, granted.data.id)).ok).toBe(true);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
+      await f.cleanup();
+    }
+  });
+
   test("public and resource-bound admin entries cannot replace the final independent manager, including adapter removal", async () => {
     const f = await fixture();
     try {

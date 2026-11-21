@@ -4,7 +4,12 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { authorizeCodeExecution } from "../ai/code-execution";
-import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../contracts/capabilities";
+import {
+  CAPABILITY_MAX_REQUEST_BYTES,
+  CapabilityAppIdSchema,
+  CapabilityInvocationBodySchema,
+  CapabilityLocalIdSchema,
+} from "../contracts/capabilities";
 import {
   isNestedSourceCurrent,
   matchesInvocationSubject,
@@ -18,7 +23,7 @@ const Input = z
   .object({
     targetApp: CapabilityAppIdSchema,
     capabilityId: CapabilityLocalIdSchema,
-    input: z.unknown(),
+    ...CapabilityInvocationBodySchema.shape,
   })
   .strict()
   .refine((value) => Object.hasOwn(value, "input"));
@@ -79,7 +84,13 @@ export function createIdentityChildInvocationRoutes(
         if (`app:${input.data.targetApp}` === parent.aud) return denied();
         c.req.raw.signal.throwIfAborted();
         const lease = await deadline.wait(() => leases.take(parent.jti));
-        if (!lease || `app:${lease.appId}` !== parent.aud) return denied();
+        // Missing/consumed exchange state says nothing about the target resource's permissions.
+        if (!lease)
+          return Response.json(
+            { code: "APP_UNAVAILABLE", message: "No child Query is available for this invocation; start a new parent invocation" },
+            { status: 503, headers: { "cache-control": "no-store" } },
+          );
+        if (`app:${lease.appId}` !== parent.aud) return denied();
         deadline.clear();
         deadline = createCapabilityDeadline(Math.max(0, Math.min(lease.deadline, parent.exp * 1000) - Date.now()), c.req.raw.signal);
         const authority = await deadline.wait(() => (dependencies.resolve ?? resolveInvocationAuthority)(parent));
@@ -87,10 +98,11 @@ export function createIdentityChildInvocationRoutes(
         if (
           parent.credential_kind !== "mandate" &&
           lease.origin !== "assistant" &&
+          lease.origin !== "choice" &&
           (!lease.proof || !(await deadline.wait(() => (dependencies.sourceCurrent ?? isNestedSourceCurrent)(lease.proof!, parent))))
         )
           return denied();
-        if (lease.origin === "assistant") {
+        if (lease.origin === "assistant" || lease.origin === "choice") {
           if (!lease.assistantTurn || parent.principal_type !== "user") return denied();
           if (
             !(await deadline.wait(() =>
@@ -118,6 +130,8 @@ export function createIdentityChildInvocationRoutes(
           appId: input.data.targetApp,
           capabilityId: input.data.capabilityId,
           input: input.data.input,
+          target: input.data.target,
+          refs: input.data.refs,
           ...(parent.credential_kind === "mandate" && !parent.workload_event
             ? {
                 mandate: {

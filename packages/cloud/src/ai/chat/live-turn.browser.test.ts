@@ -1,11 +1,14 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors } from "../../../../ui/test/browser";
+import { chartToolResult } from "../gustav-views";
 import type { AiWireEvent } from "../protocol";
+import { capabilityResultView } from "../result-view";
 import type { AiStoredMessage } from "../types";
+import { actionFixtures } from "./action-question.fixtures";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
 
 // Whether the live turn moves while it reconnects depends on real layout, fonts and themes, so this
@@ -528,7 +531,9 @@ for (const view of [
         expect(notice![1]!).toBeGreaterThanOrEqual(resultBefore![1]! + resultBefore![3]!);
         expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
         const text = await page.locator(".ai-turn__notice").innerText();
-        expect(text).toContain(de ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
+        expect(await page.locator(".ai-turn__notice .k2b-notice-card__title").innerText()).toBe(
+          de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.",
+        );
         expect(text).toContain(
           failedStep
             ? de
@@ -542,20 +547,21 @@ for (const view of [
           await page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild === document.querySelector(".ai-turn__notice")),
         ).toBe(true);
         expect(await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue", exact: true }).isVisible()).toBe(true);
-        // The line says what the turn did, how many steps, and how long it worked. A turn whose only read failed did
-        // nothing to name, so it says how long it worked and that a step failed.
-        const sentence = await page.locator(".ai-turn-work .ai-turn-work__sentence").textContent();
+        // The line says what the turn did; its steps and how long it worked stand right in their own columns. A turn whose
+        // only read failed did nothing to name, so its sentence says only that it worked, and the step that failed is red.
+        const sentence = (await page.locator(".ai-turn-work .ai-turn-work__sentence").textContent())?.trim();
         const steps = (await page.locator(".ai-turn-work .ai-turn-work__steps").innerText()).replace(/\s+/g, " ").trim();
         if (failureCode === "tool_failed") {
-          expect(sentence).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
+          expect(sentence).toBe(de ? "Gearbeitet" : "Worked");
           // On a phone the plain count gives way beside a status.
           const failed = de ? "1 fehlgeschlagen" : "1 failed";
           expect(steps).toBe(view.width < 768 ? failed : `${de ? "2 Schritte" : "2 steps"} · ${failed}`);
+          expect(await page.locator(".ai-turn-work__steps [data-tone]").getAttribute("data-tone")).toBe("danger");
         } else {
-          expect(sentence).toContain(de ? "Dateien gelesen" : "Read files");
+          expect(sentence).toBe(de ? "Dateien gelesen" : "Read files");
           expect(steps).toBe(de ? "2 Schritte" : "2 steps");
-          expect(await page.locator(".ai-turn-work .k2b-chat-activity__duration").first().innerText()).toBe(de ? "4 Min." : "4 min");
         }
+        expect(await page.locator(".ai-turn-work .k2b-chat-activity__duration").first().innerText()).toBe(de ? "4 Min." : "4 min");
         if (failedStep) expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
         else expect(await page.locator(".ai-turn__text").innerText()).toContain("Now I build the report.");
         expect(
@@ -591,14 +597,11 @@ for (const view of [
         await page.addInitScript(pinPageDate, testNow);
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
-        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { id: "budget" } };
-        const issues = [
-          { severity: "error", kind: "layout", message: "Row is misaligned" },
-          { severity: "warning", kind: "layout", message: "Value is cut off" },
-        ];
+        const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+        const diagnostics = [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 1 }];
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
-        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft die App" : "Checking the app");
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft" : "Checking");
         await page.locator(".ai-turn-work > summary").click();
         await frames(page);
         // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
@@ -614,13 +617,17 @@ for (const view of [
           ...base,
           seq: 3,
           type: "block_set",
-          block: { ...check, status: "completed", result: { passed: false, issues } },
+          block: {
+            ...check,
+            status: "completed",
+            result: { version: 1, result: { ok: false, diagnostics }, manifest: null, permissions: [] },
+          },
         });
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
         const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
-        expect(await row.innerText()).toContain(de ? "App-Prüfung" : "App check");
-        expect(await row.innerText()).toContain(de ? "1 Befund · 1 Warnung" : "1 finding · 1 warning");
+        expect(await row.innerText()).toContain(de ? "Prüft" : "Checks");
+        expect(await row.innerText()).toContain(de ? "1 Befund" : "1 finding");
         expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
         expect(checked.overflowX).toBeLessThanOrEqual(0);
 
@@ -861,7 +868,7 @@ for (const view of [
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
   for (const theme of ["light", "dark"] as const)
-    test(`a pending question collapses to its outcome line in place, also when the turn ends (${view.name}, ${theme})`, async () => {
+    test(`a pending question keeps its compact frame through the outcome and turn end (${view.name}, ${theme})`, async () => {
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -921,47 +928,57 @@ for (const view of [
             },
           },
         });
-        const card = ".ai-turn__action .k2b-chat-decision__card";
+        const card = ".ai-turn__action .cloud-approval-frame";
         await settled(page, ".ai-turn");
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
-        // Card v4: the old message is the question, Cloud says why, and there is no box around it.
-        expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toBe("Send the offer to Jana Berger.");
-        expect(await page.locator(`${card} .k2b-chat-decision__reason`).innerText()).toBe(
+        // The approval frame: the old message is the question, Cloud says why, on the AI ground with 12 px corners.
+        expect(await page.locator(`${card} .k2b-notice-card__title`).innerText()).toBe("Send the offer to Jana Berger.");
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain(
           de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
         );
-        expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopLeftRadius)).toBe("12px");
+        // The shared row has no border in either mode.
         expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
-        const approve = page.locator(`${card} .k2b-chat-decision__answer`).first();
-        const decline = page.locator(`${card} .k2b-chat-decision__answer`).nth(1);
+        // The filled answer stands last; the other answer before it.
+        const approve = page.locator(`${card} [data-approval-primary]`);
+        const decline = page.locator(`${card} .k2b-notice-card__actions button:not([data-approval-primary])`);
         const approveBox = (await approve.boundingBox())!;
         const declineBox = (await decline.boundingBox())!;
         expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
-        expect(approveBox.height).toBeGreaterThanOrEqual(44);
+        expect(await approve.getAttribute("data-size")).toBe(view.touch ? "md" : "sm");
+        if (view.touch) {
+          // On a phone the answer's hit area reaches 44 px around its 32 px box.
+          const hit = await approve.evaluate((node) => parseFloat(getComputedStyle(node, "::after").height));
+          expect(hit).toBe(44);
+        }
         expect(declineBox.y).toBe(approveBox.y);
         if (view.touch) {
           // Phones let the two answers share the row.
-          const answers = (await page.locator(`${card} .k2b-chat-decision__answers`).boundingBox())!;
+          const answers = (await page.locator(`${card} .k2b-notice-card__actions`).boundingBox())!;
           expect(approveBox.width + declineBox.width).toBeGreaterThan(answers.width - 12);
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-        // Approving collapses the card at once to its outcome line in its place, with focus on it; nothing above moves.
+        // Approving changes the sentence in the same frame, moves focus to the result and preserves everything above it.
+        const sentenceBox = (await viewportBox(page, `${card} .k2b-notice-card__title`))!;
         await approve.click();
         await settled(page, ".ai-turn");
         expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
           { callId: "send", approved: true },
         ]);
-        expect(await page.locator(card).count()).toBe(0);
-        const receipt = ".ai-turn__action .k2b-chat-outcome";
-        const current = `${receipt} .k2b-chat-outcome__text[data-current="true"]`;
+        expect(await page.locator(`${card}[data-state="open"]`).count()).toBe(0);
+        const receipt = card;
+        const current = `${receipt} .k2b-notice-card__title [role=status]`;
         const receiptBox = (await viewportBox(page, receipt))!;
-        expect(receiptBox[1]).toBe(cardBox[1]);
-        expect(receiptBox[3]).toBeLessThanOrEqual(48);
+        expect((await viewportBox(page, card))![1]).toBe(cardBox[1]);
+        expect(receiptBox).toEqual(cardBox);
+        expect((await viewportBox(page, `${card} .k2b-notice-card__title`))![1]).toBe(sentenceBox[1]);
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(workBox);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(textBox);
-        expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("cloud-approval-frame"))).toBe(true);
         expect(await page.locator(current).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
 
         // The turn reports the decision and the outcome: only the line's words change, by 0 px.
@@ -976,7 +993,8 @@ for (const view of [
           type: "block_set",
           block: { ...send, status: "completed", approved: true, result: { summary: sent }, at },
         });
-        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
+        expect(await page.locator(current).innerText()).toBe(sent);
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain("12:23");
         expect(await viewportBox(page, receipt)).toEqual(receiptBox);
         await emit(page, {
           ...base,
@@ -1030,7 +1048,8 @@ for (const view of [
           ],
         });
         await frames(page);
-        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
+        expect(await page.locator(current).innerText()).toBe(sent);
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain("12:23");
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(settledBoxes.work);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(settledBoxes.text);
         expect(await viewportBox(page, receipt)).toEqual(settledBoxes.receipt);
@@ -1152,7 +1171,7 @@ for (const view of [
       const text = "The chart API returns the totals per month. I send the summary to Jana Berger now.";
       const sent = "Email to Jana Berger sent";
       const place = ".ai-turn__text";
-      const receipt = ".ai-turn__action .k2b-chat-outcome";
+      const receipt = ".ai-turn__action [data-approval-frame]";
       // The chat opens while the action after the text runs: the text never showed as the answer before it is quiet.
       await emit(page, {
         ...base,
@@ -1217,7 +1236,8 @@ for (const view of [
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
       await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
-      expect(await page.locator(`${receipt} .k2b-chat-outcome__text[data-current="true"]`).innerText()).toBe(`${sent}10:00`);
+      expect(await page.locator(`${receipt} [role="status"]`).innerText()).toBe(sent);
+      expect(await page.locator(`${receipt} .k2b-notice-card__detail-text`).innerText()).toBe("10:00");
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
     } finally {
@@ -1283,11 +1303,11 @@ for (const width of [390, 320])
           approval: { allowAlways: false, message: "Einstellungen: " + title },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision__card";
+      const card = ".ai-turn__action .cloud-approval-frame";
       await settled(page, ".ai-turn");
       const boxes = await page.evaluate((query) => {
         const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
-        const answers = Array.from(document.querySelectorAll(`${query} .k2b-chat-decision__answer`)).map((node) =>
+        const answers = Array.from(document.querySelectorAll(`${query} .k2b-notice-card__actions button`)).map((node) =>
           node.getBoundingClientRect(),
         );
         return {
@@ -1304,7 +1324,7 @@ for (const width of [390, 320])
       expect(boxes.document).toBeLessThanOrEqual(0);
       expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
       // The sentence reads the title in full, and the answer names it.
-      expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toContain(title);
+      expect(await page.locator(`${card} .k2b-notice-card__title`).innerText()).toContain(title);
       expect(await page.getByRole("button", { name: title, exact: true }).count()).toBe(1);
     } finally {
       await context.close();
@@ -1370,7 +1390,14 @@ for (const view of [
           ...base,
           seq: 5,
           type: "block_set",
-          block: { ...chart, args, status: "completed", result: { displayed: true } },
+          // The server stores the chart's view with the result; it is the island the running call already showed.
+          block: {
+            ...chart,
+            args,
+            status: "completed",
+            result: chartToolResult(args),
+            view: capabilityResultView(chartToolResult(args)) ?? undefined,
+          },
         });
         await emit(page, {
           ...base,
@@ -1386,7 +1413,10 @@ for (const view of [
         // The section is named by its title, and the chart can be explored by keyboard.
         expect(await page.getByRole("region", { name: "Orders per region" }).count()).toBe(1);
         expect(await page.locator(".k2b-chart[tabindex='0']").count()).toBe(1);
-        expect(await page.getByRole("button", { name: german ? "Daten kopieren" : "Copy data" }).count()).toBe(1);
+        // In an answer the chart's head carries Copy as a picture and Maximize (Feinschliff v3 §5), not the explorer's own.
+        expect(await page.getByRole("button", { name: german ? "Diagramm als Bild kopieren" : "Copy chart as image" }).count()).toBe(1);
+        expect(await page.getByRole("button", { name: german ? "Maximieren" : "Maximize" }).count()).toBe(1);
+        expect(await page.getByRole("button", { name: german ? "Daten kopieren" : "Copy data" }).count()).toBe(0);
         // Tick labels stay inside the chart, also for long values on a phone.
         const ticks = await page.evaluate(() => {
           const frame = document.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
@@ -1401,13 +1431,18 @@ for (const view of [
           expect(tick.right).toBeGreaterThanOrEqual(-1);
         }
 
-        // The data table replaces the chart in the same height.
-        await page.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view" }).click();
+        // Drawn large, the chart has the explorer's own controls again: its rows are one switch away as a table, in the
+        // chart's height. The answer's chart stays as it was.
+        await page.getByRole("button", { name: german ? "Maximieren" : "Maximize" }).click();
+        const large = page.locator(".k2b-lightbox[open] .k2b-lightbox__view");
+        await large.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view" }).click();
         await page.getByRole("menuitemradio", { name: german ? "Tabelle" : "Table" }).click();
         await frames(page);
-        expect(await page.locator(".k2b-chart-explorer__viewport table").count()).toBe(1);
-        const table = await page.locator(".k2b-chart-explorer__viewport").innerText();
+        expect(await large.locator(".k2b-chart-explorer__viewport table").count()).toBe(1);
+        const table = await large.locator(".k2b-chart-explorer__viewport").innerText();
         for (const label of ["North", "South", "East", "West", german ? "1.250.000" : "1,250,000"]) expect(table).toContain(label);
+        await page.keyboard.press("Escape");
+        await frames(page);
         expect({ section: await section.boundingBox(), viewport: await viewport.boundingBox() }).toEqual(shown);
       } finally {
         await context.close();
@@ -1447,11 +1482,15 @@ for (const view of [
           },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision__card";
-      expect(await page.locator(card).innerText()).toContain(url);
+      const card = ".ai-turn__action .cloud-approval-frame";
       // The quiet third answer remembers this website for the chat; Always is no longer offered.
       expect(await page.locator(card).innerText()).not.toContain("Always approve");
-      await page.getByRole("button", { name: "Yes, and allow this website in this chat", exact: true }).click();
+      const approveLabel = await page.locator(`${card} [data-approval-primary]`).innerText();
+      // Remembering is a box in the complete proposal before the answer.
+      await page.locator(card).getByRole("button", { name: "See everything", exact: true }).click();
+      expect(await page.getByRole("dialog").innerText()).toContain(url);
+      await page.getByRole("checkbox", { name: "Allow this website in this chat", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: approveLabel, exact: true }).click();
       await frames(page);
       expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
         { callId: "run-approval-0", approved: true, remember: "chat" },
@@ -1686,6 +1725,236 @@ for (const view of [
         await context.close();
       }
     }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a decision line at the end of the chat is one row with its action as a real small button at the right (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const decision = storedMessage(
+        1,
+        "decision",
+        { role: "assistant", content: [{ type: "text", text: "Jana Probe hat Version 5 freigegeben." }] },
+        {
+          loopId: null,
+          meta: {
+            codeDecision: {
+              codeId: "c_info01",
+              versionId: "66666666-6666-4666-8666-666666666666",
+              number: 5,
+              outcome: "approved",
+              person: { id: null, name: "Jana Probe" },
+              anchor: "code-version-66666666-6666-4666-8666-666666666666",
+            },
+          },
+        },
+      );
+      // Cloud writes the line outside any turn; the projection takes it like a finished turn's saved message.
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "turn_finished", status: "completed", error: null, messages: [decision] });
+      const line = page.locator(".ai-code-decision-line");
+      await line.waitFor();
+      // The activity lends only its place: no second sign, the line fills the row.
+      expect(await line.locator(".k2b-chat-activity__leading").isVisible()).toBe(false);
+      const action = line.getByRole("button", { name: "Zur Karte" });
+      const look = await action.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { border: style.borderTopWidth, background: style.backgroundColor, height: Math.round(node.getBoundingClientRect().height) };
+      });
+      expect(look.border).not.toBe("0px");
+      expect(look.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(look.height).toBeGreaterThanOrEqual(28);
+      const right = await page.evaluate(() => {
+        const row = document.querySelector(".ai-code-decision-line")!.getBoundingClientRect();
+        const button = document.querySelector(".ai-code-decision-line .k2b-button")!.getBoundingClientRect();
+        return Math.round(row.right - button.right);
+      });
+      expect(right).toBeLessThanOrEqual(8);
+      mkdirSync("/tmp/gustav-code-chat-shots-8", { recursive: true });
+      await page.screenshot({ path: `/tmp/gustav-code-chat-shots-8/ereigniszeile-chat-light-${width}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
+  test(`Gustav writing Code shows no source, no file name and no line, and the work line keeps its height (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const source = Array.from({ length: 30 }, (_, index) =>
+        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
+      ).join("\n");
+      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          ...write,
+          status: "running",
+          args: { path: "code.ts", content: source },
+          liveArgs: { omittedLines: { path: 0, content: 0 } },
+        },
+      });
+      await settled(page, ".ai-turn-work");
+      const work = page.locator(".ai-turn-work > summary");
+      expect(await work.innerText()).toContain("Schreibt die Änderung");
+      expect(await work.innerText()).not.toContain("code.ts");
+      const running = await work.evaluate((node) => node.getBoundingClientRect().height);
+      await work.click();
+      await frames(page);
+      await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+      await frames(page);
+      expect(await page.locator(".ai-code-step__source, .k2b-content-code-display, details.ai-code-step__raw").count()).toBe(0);
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      await settled(page, ".ai-turn-work");
+      // The work line is as high running as finished: the building blocks below it never move.
+      expect(await work.evaluate((node) => node.getBoundingClientRect().height)).toBe(running);
+      const shown = await page.locator(".ai-turn").first().innerText();
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /spaces\.task\.create/, /"version"/])
+        expect(shown).not.toMatch(pattern);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a check's notices and the tried examples stand in the conversation as words, with a result word of fixed width (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          ...check,
+          status: "completed",
+          result: {
+            version: 1,
+            result: {
+              ok: true,
+              diagnostics: [],
+              warnings: [
+                { code: "code_route_unchecked", message: "Diese Seite prüft c.user nicht.", file: "code.ts", line: 12, column: 1 },
+              ],
+            },
+            manifest: null,
+            permissions: [
+              {
+                operation: "spaces.task.create",
+                target: { type: "spaces.space", id: "sp_team" },
+                title: "Team",
+                typeTitle: "Space",
+                own: false,
+                file: "code.ts",
+                line: 2,
+                status: "new",
+              },
+            ],
+            words: {
+              notices: [
+                {
+                  severity: "warning",
+                  text: "Die Seite „Rückruf bestätigen“ ist für alle Angemeldeten offen.",
+                  consequence: "Jede Person in eurer Cloud kann sie aufrufen, nicht nur dein Team.",
+                },
+              ],
+              mayDo: [{ text: "Aufgabe anlegen · Space", isNew: true }],
+            },
+          },
+        },
+      });
+      const example = (name: string, ok: boolean) => ({
+        name,
+        modelLabel: "✦",
+        state: ok ? "succeeded" : "failed",
+        status: ok ? "Erfolgreich" : "Fehlgeschlagen",
+        sentence: ok ? "Aufgabe anlegen · 1 im Beispiel erfolgreich" : "Weicht von der Erwartung ab",
+        differences: ok
+          ? []
+          : [{ subject: "Aufrufe", expected: "Keine Aufrufe aufgezeichnet", actual: "Datei ablegen · 1 im Beispiel erfolgreich" }],
+      });
+      const test = { id: "tool-test", kind: "tool" as const, callId: "test", name: "code_test", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...test,
+          status: "completed",
+          result: {
+            version: 1,
+            mode: "test",
+            ok: false,
+            error: null,
+            diagnostics: [],
+            cases: [
+              { name: "Montag", file: "test/montag.json", ok: true, runs: [] },
+              { name: "Leere Woche", file: "test/leer.json", ok: false, runs: [] },
+            ],
+            words: {
+              notices: [],
+              examples: {
+                passed: 1,
+                total: 2,
+                summary: "1 von 2 Beispielen erfolgreich",
+                explanation: "Erfolgreich heißt: Die Automation hat getan, was Gustav für den Fall erwartet hat.",
+                items: [example("Lieferavis mit Lieferschein im Anhang", true), example("Lieferavis ohne Anhang", false)],
+              },
+            },
+          },
+        },
+      });
+      await settled(page, ".ai-turn-work");
+      const turn = page.locator(".ai-turn").first();
+      // Both stand in the conversation without opening anything.
+      expect(await turn.locator(".k2b-notice-card").count()).toBe(1);
+      expect(await turn.locator(".k2b-notice-card").innerText()).toContain("Folge: Jede Person in eurer Cloud");
+      const examples = turn.locator(".ai-code-examples");
+      expect(await examples.innerText()).toContain("1 von 2 erfolgreich");
+      expect(await examples.innerText()).toContain("Erwartet");
+      // The result word has the width of the longest one, so the text beside it starts and ends at one edge.
+      const statuses = await examples
+        .locator(".ai-code-examples__status")
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+      expect(Math.min(...statuses)).toBeGreaterThanOrEqual(120);
+      const names = await examples
+        .locator(".ai-code-examples__name")
+        .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().right)));
+      expect(new Set(names).size).toBe(1);
+      const shown = await turn.innerText();
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /code_[a-z_]+/, /test\/\S+\.json/, /\$\.calls/])
+        expect(shown).not.toMatch(pattern);
+      await page.locator(".ai-turn-work > summary").click();
+      await frames(page);
+      await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: "Prüft" }).last().locator("summary").first().click();
+      await frames(page);
+      expect(await page.locator(".ai-turn-steps").first().innerText()).toContain("Aufgabe anlegen · Space");
+      expect(await page.locator("details.ai-code-step__raw").count()).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      mkdirSync("/tmp/gustav-code-chat-shots", { recursive: true });
+      await page.screenshot({ path: `/tmp/gustav-code-chat-shots/code-steps-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
 /** What a model writes between two steps: paragraphs, a list and a code block, far longer than three lines. */
 const longStatus = [
@@ -2046,6 +2315,114 @@ test("a link in the visible lines keeps a clamped text closed, and one in the hi
     await context.close();
   }
 }, 30_000);
+
+describe("a step's card", () => {
+  const sendLost = {
+    ...actionFixtures("de").mail!.block,
+    id: "tool-send",
+    kind: "tool" as const,
+    callId: "send",
+    name: "mail__action__send",
+    args: {},
+    status: "failed" as const,
+    isError: true,
+    result: "ACTION_OUTCOME_UNKNOWN: The Action response was lost.",
+  };
+  for (const view of [
+    { name: "desktop", width: 1280, height: 800, touch: false },
+    { name: "phone", width: 390, height: 844, touch: true },
+  ])
+    test(`says in meta that Cloud could not see a step's outcome, and offers Check status only on a press or Enter (${view.name})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        hasTouch: view.touch,
+        isMobile: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        const errors = pageErrors(page);
+        await page.addInitScript(pinPageDate, testNow);
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "block_set", block: sendLost });
+        await emit(page, { ...base, seq: 3, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Fertig." });
+        await page.locator(".ai-turn-work > summary").click();
+        await page.locator(".ai-turn-steps").waitFor();
+        await settled(page, ".ai-turn-work");
+        const step = page.locator(".ai-turn-steps > .k2b-chat-activity").first();
+        const meta = step.locator(".k2b-chat-activity__meta");
+        expect(await meta.innerText()).toBe("Ausgang unklar");
+        expect(await meta.getAttribute("data-tone")).toBe("warning");
+        const info = step.getByRole("button", { name: /^Details: / });
+        expect(await info.getAttribute("aria-haspopup")).toBe("dialog");
+        const card = page.locator(".k2b-hover-card:popover-open");
+        if (view.touch) {
+          // A tap opens the card as a sheet from below.
+          await info.tap();
+          await card.waitFor();
+          expect(await card.getAttribute("data-sheet")).toBe("");
+        } else {
+          // A resting pointer opens no card with an action; Enter does, and the focus moves in.
+          await info.hover();
+          await page.waitForTimeout(700); // fixed wait: nothing may open, so there is no event to await
+          expect(await card.count()).toBe(0);
+          await info.focus();
+          await page.keyboard.press("Enter");
+          await card.waitFor();
+        }
+        expect(await card.innerText()).toContain("Ob das geschehen ist, steht nicht fest.");
+        await card.getByRole("button", { name: "Stand prüfen" }).click();
+        await page.waitForFunction(() => (window as unknown as { checks: string[] }).checks.length === 1);
+        // The check found it done: the card says so, the row's outcome word is gone, and the focus stayed in the card.
+        await card.getByText("Geprüft: Es ist geschehen.").waitFor();
+        expect(await meta.count()).toBe(0);
+        expect(await page.evaluate(() => document.querySelector(".k2b-hover-card:popover-open")?.contains(document.activeElement))).toBe(
+          true,
+        );
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.querySelector(".k2b-hover-card:popover-open") === null);
+        expect(await info.evaluate((node) => node === document.activeElement)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+  test("of a step that waits for an approval leads to it", async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.addInitScript(pinPageDate, testNow);
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "block_set", block: tool(1, "completed") });
+      await emit(page, {
+        ...base,
+        seq: 3,
+        type: "block_set",
+        block: {
+          ...actionFixtures("de").mail!.block,
+          id: "tool-run",
+          callId: "run",
+          status: "awaiting_approval",
+        },
+      });
+      await page.locator(".ai-turn-work > summary").click();
+      await page.locator(".ai-turn-steps").waitFor();
+      const step = page.locator(".ai-turn-steps > .k2b-chat-activity", { has: page.locator('.k2b-chat-activity__meta[data-tone="ai"]') });
+      expect(await step.locator(".k2b-chat-activity__meta").innerText()).toBe("Wartet auf dich");
+      await step.getByRole("button", { name: /^Details: / }).click();
+      const card = page.locator(".k2b-hover-card:popover-open");
+      await card.waitFor();
+      await card.getByRole("button", { name: "Zur Freigabe" }).click();
+      // The host lands on the question's anchor, the step's block id, with the landing of "Waiting for you".
+      expect(await page.evaluate(() => (window as unknown as { shownQuestions: string[] }).shownQuestions)).toEqual(["tool-run"]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+});
 
 for (const language of ["de", "en"] as const)
   for (const width of [390, 1280])

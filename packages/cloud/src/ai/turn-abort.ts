@@ -2,7 +2,7 @@ import { aiConversations } from "./store";
 import { publishAiTurnAbort, publishAiWireEvent } from "./stream";
 import type { AiTurnAbortRequest } from "./types";
 
-/** Finish a committed cancellation request; shared by interactive and routine cancellation. */
+/** Finish a committed cancellation request; used by chat cancellation. */
 export const finishAiTurnAbort = async (
   input: { conversationId: string; turnId: string },
   request: AiTurnAbortRequest,

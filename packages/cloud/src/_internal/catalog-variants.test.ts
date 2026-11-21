@@ -117,11 +117,11 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
           slots: {},
           ask: "sends",
           sentence: { action: "Nachricht senden", running: "Wird gesendet …", done: "Gesendet.", confirm: "Senden", decline: "Nicht senden" },
-          preview: { kind: "message", from: { name: "Team Ops", address: "ops@example.com" }, to: [{ name: "Lea Berg", address: "lea@example.com" }], subject: "Wartung", body: "Body text", format: "plain" },
+          view: { version: 1, blocks: [{ kind: "Text", text: "Body text" }] },
         } as const;
         const cardText = (locale: string) => {
           const text = actionCardText(reviewActionCard(review, { locale, timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
-          return [text.question, ...text.rows.map((row) => row.label + ": " + row.value)].join(" / ");
+          return [text.question, text.reason, ...text.rows.map((row) => row.value)].join(" / ");
         };
         const fixture = i18n.define({
           baseLocale: "en",
@@ -194,8 +194,8 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
       expect(probeText("de")).toStartWith("Seite nicht gefunden | Hallo | 2 Einträge | Only English | ");
       expect(probeText("fr")).toStartWith("Page not found | Hello | 2 items | Only English | ");
       expect(probeText("en")).toContain("Nachricht senden");
-      expect(probeText("en")).toContain(" / To: Lea Berg");
-      expect(probeText("de")).toContain(" / An: Lea Berg");
+      expect(probeText("en")).toContain(" / I'm asking because this leaves Cloud. / Body text");
+      expect(probeText("de")).toContain(" / Ich frage, weil das Cloud verlässt. / Body text");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

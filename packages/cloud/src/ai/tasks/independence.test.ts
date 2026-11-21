@@ -5,7 +5,7 @@ import { wakeWorkflowAiTask } from "./store";
 
 test("retained AI entrypoints bundle without the workflow engine", async () => {
   const result = await Bun.build({
-    entrypoints: ["./index.ts", "../application-tasks.ts", "../chat-task-contracts.ts"].map((path) => resolve(import.meta.dir, path)),
+    entrypoints: ["./index.ts", "../application-tasks.ts"].map((path) => resolve(import.meta.dir, path)),
     target: "bun",
     packages: "external",
     plugins: [
@@ -21,7 +21,7 @@ test("retained AI entrypoints bundle without the workflow engine", async () => {
   });
   expect(result.logs.filter((log) => log.level === "error")).toEqual([]);
   expect(result.success).toBe(true);
-  expect(result.outputs).toHaveLength(3);
+  expect(result.outputs).toHaveLength(2);
 });
 
 test("application task settlement needs no workflow wake adapter", async () => {

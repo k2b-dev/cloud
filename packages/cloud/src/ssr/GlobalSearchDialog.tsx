@@ -13,6 +13,15 @@ import { loadSearchCommands, type PaletteCommand } from "../browser/search-comma
 import { attachSpotlightPosition } from "../browser/spotlight-position";
 import { resolveCommand } from "../capabilities/client";
 
+const MAXIMIZED_KEY = "cloud.search.maximized.v1";
+const readMaximized = () => {
+  try {
+    return window.localStorage.getItem(MAXIMIZED_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
 type GlobalSearchDialogProps = {
   request?: GlobalSearchOptions;
   close: () => void;
@@ -80,6 +89,18 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
       toast.error(error instanceof Error && error.message ? error.message : messages().commandFailed);
     }
   };
+  // The browser remembers the size the person chose last.
+  const [maximized, setMaximized] = createSignal(readMaximized());
+  const toggleMaximized = () => {
+    const next = !maximized();
+    setMaximized(next);
+    try {
+      if (next) window.localStorage.setItem(MAXIMIZED_KEY, "true");
+      else window.localStorage.removeItem(MAXIMIZED_KEY);
+    } catch {
+      /* Without storage the size holds for this opening only. */
+    }
+  };
   let host!: HTMLDivElement;
   onMount(() => {
     if (props.context) onCleanup(attachSpotlightPosition(host, props.context, messages));
@@ -116,7 +137,7 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
     }
   };
   return (
-    <div ref={host} class="cloud-global-search">
+    <div ref={host} class="cloud-global-search" data-maximized={maximized() ? "true" : undefined}>
       <CloudResourceSearch
         commands={[
           ...contextCommands(),
@@ -131,6 +152,7 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
         navigationItems={props.searchLinks}
         searchResources={props.searchResources}
         onClose={props.close}
+        maximize={{ on: maximized(), toggle: toggleMaximized }}
         onSelect={(item) => void openItem(item)}
         onOpenInNewTab={openInNewTab}
       />

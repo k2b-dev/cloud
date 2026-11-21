@@ -25,8 +25,7 @@ export const gridsActionReview = (
     { operation: { kind: "object", title } },
     {
       ...(scope ? { scope } : {}),
-      content: { kind: "page", title, body, format: "plain" },
-      preview: { kind: "page", title, body: body.slice(0, 10000), format: "plain", truncated: body.length > 10000 },
+      view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: body }] },
     },
   );
 };

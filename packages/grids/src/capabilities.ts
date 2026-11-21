@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import { BLOCK_LIMITS, BlockViewSchema, bindView, validateBlocks } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
-  CapabilityTablePresentationSchema,
   type CloudResourceReference,
   type CloudResourceView,
   capabilityPage,
@@ -70,6 +69,7 @@ import {
   ViewCreateInputSchema,
   ViewReadInputSchema,
 } from "./capability-contracts";
+import { externalUpsertRequestHash, capabilityOperationKey as operationKey } from "./capability-idempotency";
 import { capabilityMessagesFor } from "./capability-messages";
 import { gridsCapabilityPresentation } from "./capability-presentation";
 import { DslQueryExecuteBodySchema, type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
@@ -157,7 +157,6 @@ const authorizer = (baseId: string, context: CapabilityExecutionContext) => asyn
 };
 const captureInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     query: DslQueryExecuteBodySchema.shape.query.describe(
       "GQL query; captures its complete result, at most 10,000 rows within the document data budget.",
     ),
@@ -165,7 +164,6 @@ const captureInput = z
   .strict();
 const issueInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     data: DocumentCaptureDataSchema.describe("Immutable capture from document.capture."),
     output: DocumentQueryOutputSchema.describe("Versioned output definition: PDF, CSV, JSON, XML, ZIP, DATEV or SEPA."),
     sourceVersions: DocumentSourceVersionsInputSchema.optional().describe(
@@ -177,7 +175,6 @@ const issueInput = z
   .strict();
 const confirmationInput = z
   .object({
-    baseId: ShortIdSchema.describe("Writable Base public ID."),
     receiptId: ShortIdSchema.describe("Pending receipt from document.issue."),
     sha256: z
       .string()
@@ -191,7 +188,7 @@ const issueData = z.discriminatedUnion("state", [
 ]);
 const reviewed = (context: CapabilityExecutionContext, en: string, de: string, input: unknown) =>
   ok(gridsActionReview(context, text(context, en, de), input));
-const finalizeReview = (input: z.infer<typeof FinalizeRecordInputSchema>, context: CapabilityExecutionContext) =>
+const finalizeReview = (input: Omit<z.infer<typeof FinalizeRecordInputSchema>, "tableId">, context: CapabilityExecutionContext) =>
   reviewed(
     context,
     "Close the current Record under its pinned finalization policy. Four-eyes approval remains required.",
@@ -199,7 +196,7 @@ const finalizeReview = (input: z.infer<typeof FinalizeRecordInputSchema>, contex
     input,
   );
 const confirmationRequest = async (input: z.infer<typeof confirmationInput>, context: CapabilityExecutionContext) => {
-  const baseId = await base(input.baseId, context);
+  const baseId = await base(context.target?.id ?? "", context);
   return {
     baseId,
     runId: null,
@@ -216,12 +213,13 @@ export const integrityCapabilities = defineCapabilities({
     "record.finalization.read": {
       title: "Read Record finalization readiness",
       description: "Read current requirements, Four-eyes request and policy revision before closing or finalizing a Record.",
-      input: RecordTargetSchema,
+      target: "table",
+      input: RecordTargetSchema.omit({ tableId: true }),
       data: PublicRecordFinalizationReadinessSchema,
       openWorld: false,
       run: (input, context) =>
         integrityAttempt(async () => {
-          const tableId = await resolvePublicId("table", input.tableId);
+          const tableId = await resolvePublicId("table", context.target?.id ?? "");
           const recordId = await resolvePublicId("record", input.recordId);
           if (!tableId || !recordId) return fail(err.notFound("Record"));
           const [table] = await sql<
@@ -240,7 +238,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Change Records atomically",
       description:
         "Create/update up to 50 Records in one Base transaction after current-state checks; at most 100 locked Records. Any failure rolls back every change. Requires ordinary Base write access.",
-      input: AtomicRecordsInputSchema,
+      target: "base",
+      input: AtomicRecordsInputSchema.omit({ baseId: true }),
       data: AtomicRecordsDataSchema,
       destructive: false,
       openWorld: false,
@@ -249,7 +248,7 @@ export const integrityCapabilities = defineCapabilities({
       review: (input, context) => reviewed(context, "Change these Records atomically", "Diese Datensätze atomar ändern", input),
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await changeRecordsAtomically(input, await integrityContext(context));
+          const result = await changeRecordsAtomically({ ...input, baseId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok
             ? ok({ data: result.data, refs: result.data.records.map((row) => ({ type: "grids.record", id: row.id })) })
             : result;
@@ -259,7 +258,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Close Record",
       description:
         "Finalize under Direct policy or create a Four-eyes request. Requires current Record version and finalization policy revision. Always asks.",
-      input: FinalizeRecordInputSchema,
+      target: "table",
+      input: FinalizeRecordInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
       destructive: true,
       openWorld: false,
@@ -268,7 +268,7 @@ export const integrityCapabilities = defineCapabilities({
       review: finalizeReview,
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await finalizeRecord(input, await integrityContext(context), true);
+          const result = await finalizeRecord({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context), true);
           return result.ok ? ok({ data: result.data }) : result;
         }),
     },
@@ -276,7 +276,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Finalize Record",
       description:
         "Finalize one version-checked Record without changing the original Four-eyes rules. An independent eligible person must approve an existing request. Always asks.",
-      input: FinalizeRecordInputSchema,
+      target: "table",
+      input: FinalizeRecordInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
       destructive: true,
       openWorld: false,
@@ -285,7 +286,7 @@ export const integrityCapabilities = defineCapabilities({
       review: finalizeReview,
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await finalizeRecord(input, await integrityContext(context));
+          const result = await finalizeRecord({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok ? ok({ data: result.data }) : result;
         }),
     },
@@ -293,7 +294,8 @@ export const integrityCapabilities = defineCapabilities({
       title: "Create correction draft",
       description:
         "Create an editable correction or cancellation draft linked to a finalized original; never changes or reissues the original. Requires Base write access and current original version.",
-      input: CorrectionDraftInputSchema,
+      target: "table",
+      input: CorrectionDraftInputSchema.omit({ tableId: true }),
       data: IntegrityRecordDataSchema,
       destructive: false,
       openWorld: false,
@@ -302,7 +304,7 @@ export const integrityCapabilities = defineCapabilities({
       review: (input, context) => reviewed(context, "Create this correction draft", "Diesen Korrekturentwurf erstellen", input),
       run: (input, context) =>
         withCapabilityAudit(context, async () => {
-          const result = await createCorrectionDraft(input, await integrityContext(context));
+          const result = await createCorrectionDraft({ ...input, tableId: context.target?.id ?? "" }, await integrityContext(context));
           return result.ok ? ok({ data: result.data, refs: [{ type: "grids.record", id: result.data.id }] }) : result;
         }),
     },
@@ -310,6 +312,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Capture document data",
       description:
         "Freeze a complete permission-checked GQL result in Grids, independent of any workflow. The immutable handle pins the values for document.issue. Truncated results are rejected.",
+      target: "base",
       input: captureInput,
       data: DocumentCaptureDataSchema,
       destructive: false,
@@ -321,7 +324,7 @@ export const integrityCapabilities = defineCapabilities({
         withCapabilityAudit(context, () =>
           integrityAttempt(async () => {
             if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
-            const baseId = await base(input.baseId, context);
+            const baseId = await base(context.target?.id ?? "", context);
             const dates = (await integrityContext(context)).dateConfig;
             const parsed = parseGridsQueryDsl(input.query);
             if (!parsed.ok) return fail(err.badInput("Invalid GQL."));
@@ -368,6 +371,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Issue captured document",
       description:
         "Issue an immutable PDF, CSV, JSON, XML or ZIP from frozen data. DATEV/SEPA reserve a versioned preview and require document.confirm before issuance. Financial exports require pinned source versions and retain duplicate-export claims. Always asks.",
+      target: "base",
       input: issueInput,
       data: issueData,
       destructive: true,
@@ -385,7 +389,7 @@ export const integrityCapabilities = defineCapabilities({
         withCapabilityAudit(context, () =>
           integrityAttempt<{ data: z.infer<typeof issueData>; refs?: Array<{ type: string; id: string }> }>(async () => {
             if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
-            const baseId = await base(input.baseId, context);
+            const baseId = await base(context.target?.id ?? "", context);
             if ((input.output.kind === "datev-csv" || input.output.kind === "sepa-xml") && !input.sourceVersions)
               return fail(
                 err.badInput(text(context, "Financial exports require source versions.", "Finanzexporte benötigen Quellversionen.")),
@@ -438,6 +442,7 @@ export const integrityCapabilities = defineCapabilities({
       title: "Confirm financial document",
       description:
         "Confirm the exact frozen DATEV/SEPA preview as its original actor after current permission and source-version checks. Completes issuance from that exact reserved request. Never submits a bank payment. Always asks.",
+      target: "base",
       input: confirmationInput,
       data: DocumentCapabilityDataSchema,
       destructive: true,
@@ -526,10 +531,6 @@ const dateConfig = async (context: CapabilityExecutionContext) => ({
   locale: context.locale ?? "en",
   firstDayOfWeek: 1 as const,
 });
-const operationKey = (context: CapabilityExecutionContext, action: string) =>
-  createHash("sha256")
-    .update(JSON.stringify(["grids.capability", action, context.accessSubject, context.idempotencyKey]))
-    .digest("hex");
 const documentResult = async (document: Parameters<typeof projectDocuments>[0][number]) => {
   const [value] = await projectDocuments([document]);
   const data = documentData.parse(value);
@@ -544,7 +545,7 @@ const documentResult = async (document: Parameters<typeof projectDocuments>[0][n
 };
 const loadIssuance = async (input: z.infer<typeof createInput>, context: CapabilityExecutionContext, resume = false) => {
   const loaded = await loadTemplateAndTable(input.templateId, { includeDeleted: resume });
-  if (!loaded) return missing();
+  if (!loaded || loaded.table.shortId !== context.target?.id) return missing();
   const gate = await gateBaseAtAccess(context, loaded.table.baseId, "write");
   if (!gate.ok) return gate;
   if (!resume && !loaded.template.enabled) return fail(err.badInput(capabilityMessagesFor(context.locale).documentTemplateDisabled));
@@ -563,8 +564,12 @@ const loadRecordAction = async (input: z.infer<typeof recordActionInput>, contex
   const launcher = await gridsService.workflow.launcher.get(launcherId);
   if (!launcher || launcher.config.kind !== "record") return missing();
   const workflow = await gridsService.workflow.get(launcher.workflowId);
+  const base = workflow ? await gridsService.base.get(workflow.baseId) : null;
+  if (!base || base.shortId !== context.target?.id) return missing();
   const tableId = workflow?.plan.bindings[`inputs.${launcher.config.input}.table`];
   if (typeof tableId !== "string") return missing();
+  const table = await gridsService.table.get(tableId);
+  if (!table || table.baseId !== base.id) return missing();
   const recordId = await resolvePublicId("record", input.recordId);
   const record = recordId
     ? await gridsService.record.get(tableId, recordId, { viewer: actorViewerFor(context), dateConfig: await dateConfig(context) })
@@ -771,6 +776,7 @@ export const dailyCapabilities = defineCapabilities({
       title: "Issue an immutable document",
       description:
         "Issue one document from document.templates and a Record. This may assign an irreversible invoice/document number. Review every issuance; reuse the capability idempotency key only for retries of the same request. No compliance guarantee or external delivery.",
+      target: "table",
       input: createInput,
       data: documentData,
       destructive: true,
@@ -813,6 +819,7 @@ export const dailyCapabilities = defineCapabilities({
       title: "Run a record workflow action",
       description:
         "Create one linked correction/cancellation Draft through an action from workflow.record-actions at its exact revision. The original must be finalized and remains unchanged. No issuance or external delivery. Obtain explicit approval; no arbitrary workflow source or extra inputs. Follow the run ref for status.",
+      target: "base",
       input: recordActionInput,
       data: PublicWorkflowInvocationReceiptSchema,
       destructive: true,
@@ -1207,8 +1214,19 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
   const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const access = accessContext(context);
-  const baseResult = await requireBase(input.baseId, access, context.locale);
+  const baseResult = await requireBase(context.target?.id ?? "", access, context.locale);
   if (!baseResult.ok) return baseResult;
+  // Even optional filters must stay inside the declared base when this section does not use them.
+  if (input.tableId) {
+    const table = await requireTable(input.tableId, access, "read", context.locale);
+    if (!table.ok || table.data.baseId !== baseResult.data.id) return fail(notFoundError(t.tableNotFound));
+  }
+  if (input.fieldId) {
+    const field = await gridsService.field.getByShortId(input.fieldId);
+    const table = field ? await gridsService.table.get(field.tableId) : null;
+    if (!field || !table || table.baseId !== baseResult.data.id || (input.tableId && table.shortId !== input.tableId))
+      return fail(notFoundError(t.selectFieldNotFound));
+  }
 
   let items: GqlContextItem[];
   let recordWrite: ReturnType<typeof recordWriteContext> | undefined;
@@ -1383,6 +1401,7 @@ const gqlCapabilityResult = async (
       ? fail(err.badInput(tooLarge.message))
       : ok({
           data: response,
+          page: capabilityPage(),
           summary: gqlCapabilitySummary(response, base, outcome, locale),
           refs: [{ type: "grids.base" as const, id: base.shortId }, ...refs],
           links: [{ rel: "open" as const, href: baseHref(base) }],
@@ -1455,23 +1474,33 @@ const gqlCapabilityResult = async (
     refs[index] = { type: ref.type, id: ref.id };
   }
   if (!showTableToUser) return ok(result);
-  const presentation = CapabilityTablePresentationSchema.safeParse(
-    data.columns.length
+  const view = BlockViewSchema.safeParse(
+    data.columns.length && data.columns.length <= BLOCK_LIMITS.columns && data.rows.length <= BLOCK_LIMITS.rows
       ? {
-          kind: "table" as const,
-          rowsPath: ["rows"],
-          columns: data.columns.map((column) => ({ path: ["values", column.key], label: column.label })),
-          rowLinksPath: ["links"],
+          version: 1,
+          blocks: [
+            {
+              kind: "Table",
+              title: base.name.trim().slice(0, 160) || "Results",
+              rows: { from: ["rows"] },
+              columns: data.columns.map((column) => ({ path: ["values", column.key], label: column.label.trim().slice(0, 80) || "Value" })),
+              ...(data.rows.every((row) => typeof row.recordId === "string") ? { rowId: ["recordId"] } : {}),
+              rowHref: ["links", "0", "href"],
+            },
+          ],
         }
       : undefined,
   );
-  // Presentation is optional; it must never turn a valid bounded data result into an oversized response.
-  return ok(
-    presentation.success &&
-      new TextEncoder().encode(JSON.stringify({ ...result, presentation: presentation.data })).byteLength <= CAPABILITY_MAX_RESULT_BYTES
-      ? { ...result, presentation: presentation.data }
-      : result,
-  );
+  // A view is optional; preserve valid data when its complete envelope would exceed the transport budget.
+  if (view.success && new TextEncoder().encode(JSON.stringify({ ...result, view: view.data })).byteLength <= CAPABILITY_MAX_RESULT_BYTES) {
+    try {
+      validateBlocks(bindView(view.data, data).blocks, "result", { appId: "grids", appPrefixes: ["/app/grids", "/api/grids"] });
+      return ok({ ...result, view: view.data });
+    } catch {
+      /* Some query shapes have no stable row identity or scalar cells; data remains available. */
+    }
+  }
+  return ok(result);
 };
 
 const gqlUnavailable = (error: unknown, locale?: string) =>
@@ -1503,7 +1532,7 @@ const resolveGqlCurrentSource = async (
 
 const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, context: CapabilityExecutionContext) => {
   const access = accessContext(context);
-  const base = await requireBase(input.baseId, access, context.locale);
+  const base = await requireBase(context.target?.id ?? "", access, context.locale);
   if (!base.ok) return base;
   const current = await resolveGqlCurrentSource(base.data.id, input, context.locale);
   if (!current.ok) return current;
@@ -1529,7 +1558,7 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
     return await gqlCapabilityResult(
       result.response,
       base.data,
-      { kind: "preview", queryLink: queryCapabilityHref(input) },
+      { kind: "preview", queryLink: queryCapabilityHref({ ...input, baseId: base.data.shortId }) },
       context,
       input.showTableToUser,
     );
@@ -1540,7 +1569,7 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
 
 const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, context: CapabilityExecutionContext) => {
   const access = accessContext(context);
-  const base = await requireBase(input.baseId, access, context.locale);
+  const base = await requireBase(context.target?.id ?? "", access, context.locale);
   if (!base.ok) return base;
   const current = await resolveGqlCurrentSource(base.data.id, input, context.locale);
   if (!current.ok) return current;
@@ -1568,7 +1597,7 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
     return await gqlCapabilityResult(
       result.response,
       base.data,
-      { kind: "execute", queryLink: queryCapabilityHref({ ...input, query }) },
+      { kind: "execute", queryLink: queryCapabilityHref({ ...input, baseId: base.data.shortId, query }) },
       context,
       input.showTableToUser,
     );
@@ -1579,7 +1608,7 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
 
 const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
-  const base = await requireBase(input.baseId, accessContext(context), context.locale);
+  const base = await requireBase(context.target?.id ?? "", accessContext(context), context.locale);
   if (!base.ok) return base;
   const view = await gridsService.view.getByShortId(input.viewId);
   if (!view) return fail(notFoundError(t.viewNotFound));
@@ -1602,7 +1631,7 @@ const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema
         kind: "execute",
         viewName: view.name,
         viewId: view.shortId,
-        queryLink: queryCapabilityHref({ baseId: input.baseId, query: `from view {${view.shortId}}` }),
+        queryLink: queryCapabilityHref({ baseId: base.data.shortId, query: `from view {${view.shortId}}` }),
       },
       context,
       input.showTableToUser,
@@ -1776,7 +1805,7 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
   return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     const access = accessContext(context);
-    const table = await requireTable(input.tableId, access, "write", context.locale);
+    const table = await requireTable(context.target?.id ?? "", access, "write", context.locale);
     if (!table.ok) return table;
     const values = await resolveRecordValues(table.data.id, input.values, context.locale);
     if (!values.ok) return values;
@@ -1795,10 +1824,10 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
     const t = capabilityMessagesFor(context.locale);
     if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
     const access = accessContext(context);
-    const table = await requireTable(input.tableId, access, "write", context.locale);
+    const table = await requireTable(context.target?.id ?? "", access, "write", context.locale);
     if (!table.ok) return table;
     const operationScope = `capability:record.upsert-external:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
-    const requestHash = gridsService.record.external.externalRecordRequestHash(input);
+    const requestHash = externalUpsertRequestHash(table.data.shortId, input);
     const replay = await gridsService.record.external.replay({
       operationScope,
       operationKey: context.idempotencyKey,
@@ -1868,7 +1897,7 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
     const t = capabilityMessagesFor(context.locale);
     if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
     const access = accessContext(context);
-    const table = await requireTable(input.tableId, access, "write", context.locale);
+    const table = await requireTable(context.target?.id ?? "", access, "write", context.locale);
     if (!table.ok) return table;
     const record = await gridsService.record.getByShortId(input.recordId);
     if (!record || record.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
@@ -1897,7 +1926,7 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
 };
 
 const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, context: CapabilityExecutionContext) => {
-  const base = await requireBase(input.baseId, accessContext(context), context.locale);
+  const base = await requireBase(context.target?.id ?? "", accessContext(context), context.locale);
   if (!base.ok) return base;
   const gate = await gateBaseAtAccess(accessContext(context), base.data.id, "admin");
   if (!gate.ok) return gate;
@@ -1932,6 +1961,7 @@ export const gridsCapabilities = defineCapabilities({
       description: "A permission-scoped Grids workspace.",
       icon: "ti ti-table",
       reader: "base.read",
+      access: { managers: (input, context) => listBaseManagers(input, context.signal) },
       pages: ["/app/grids/:id"],
     },
     table: {
@@ -1939,6 +1969,7 @@ export const gridsCapabilities = defineCapabilities({
       description: "A readable stored or Combined table in a base.",
       icon: "ti ti-table-column",
       reader: "table.read",
+      container: "base",
       pages: ["/app/grids/:base/table/:id"],
     },
     view: {
@@ -1946,6 +1977,7 @@ export const gridsCapabilities = defineCapabilities({
       description: "A permission-scoped saved GQL data view.",
       icon: "ti ti-layout-list",
       reader: "view.read",
+      container: "table",
       pages: ["/app/grids/:base/table/:table/view/:id"],
     },
     record: {
@@ -2006,7 +2038,8 @@ export const gridsCapabilities = defineCapabilities({
     },
     "view.read": {
       title: "Read Grids View",
-      description: "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same baseId.",
+      description:
+        "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same base target.",
       input: ViewReadInputSchema,
       data: ViewCapabilityDataSchema,
       openWorld: false,
@@ -2016,6 +2049,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Load Grids GQL context",
       description:
         "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options and list-columns need tableId and fieldId. List columns include typed constraints and calculations; follow pagination. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
+      target: "base",
       input: GqlContextInputSchema,
       data: GqlContextDataSchema,
       openWorld: false,
@@ -2025,6 +2059,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Preview Grids GQL",
       description:
         "Validate permission-safe GQL after loading IDs with gql.context. Returns a small sample or actionable diagnostics without mutation; pass valid GQL unchanged to gql.execute.",
+      target: "base",
       input: GqlPreviewInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -2034,6 +2069,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Execute Grids GQL",
       description:
         "Execute permission-safe GQL after gql.context and normally gql.preview. Select only needed fields; returned grids.record refs can be opened with record.read, and nextCursor continues byte-bounded pages.",
+      target: "base",
       input: GqlExecuteInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -2042,7 +2078,8 @@ export const gridsCapabilities = defineCapabilities({
     "gql.view.execute": {
       title: "Execute saved Grids View",
       description:
-        "Execute the exact saved query for a baseId and viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
+        "Execute the exact saved query in the target base for a viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
+      target: "base",
       input: GqlViewExecuteInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -2066,6 +2103,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Save Grids query as View",
       description:
         "Save a reviewed GQL query as a new personal or shared View. Requires base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+      target: "base",
       input: ViewCreateInputSchema,
       data: ViewCapabilityDataSchema,
       openWorld: false,
@@ -2112,13 +2150,14 @@ export const gridsCapabilities = defineCapabilities({
       title: "Create Grids Record",
       description:
         "Create a single Grids Record. Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
+      target: "table",
       input: RecordCreateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       async review(input, context) {
-        const table = await requireTable(input.tableId, accessContext(context), "write", context.locale);
+        const table = await requireTable(context.target?.id ?? "", accessContext(context), "write", context.locale);
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
@@ -2127,7 +2166,7 @@ export const gridsCapabilities = defineCapabilities({
           gridsActionReview(context, t.reviewCreateRecord({ table: table.data.name }), {
             input,
             message: t.reviewCreateRecord({ table: table.data.name }),
-            approvalScope: `table:${input.tableId}`,
+            approvalScope: `table:${context.target?.id}`,
             details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
           }),
         );
@@ -2140,6 +2179,7 @@ export const gridsCapabilities = defineCapabilities({
       description:
         "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
         "The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
+      target: "table",
       input: RecordExternalUpsertInputSchema,
       data: RecordExternalUpsertDataSchema,
       destructive: false,
@@ -2148,7 +2188,7 @@ export const gridsCapabilities = defineCapabilities({
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         const access = accessContext(context);
-        const table = await requireTable(input.tableId, access, "write", context.locale);
+        const table = await requireTable(context.target?.id ?? "", access, "write", context.locale);
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
@@ -2156,7 +2196,7 @@ export const gridsCapabilities = defineCapabilities({
           gridsActionReview(context, t.reviewExternalRecord({ table: table.data.name }), {
             input,
             message: t.reviewExternalRecord({ table: table.data.name }),
-            approvalScope: `table:${input.tableId}`,
+            approvalScope: `table:${context.target?.id}`,
             details: [
               { label: t.table, value: table.data.name },
               { label: t.provider, value: input.externalRef.provider },
@@ -2176,6 +2216,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Update Grids Record",
       description:
         "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
+      target: "table",
       input: RecordUpdateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: false,
@@ -2185,7 +2226,7 @@ export const gridsCapabilities = defineCapabilities({
         const t = capabilityMessagesFor(context.locale);
         if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
         const access = accessContext(context);
-        const table = await requireTable(input.tableId, access, "write", context.locale);
+        const table = await requireTable(context.target?.id ?? "", access, "write", context.locale);
         if (!table.ok) return table;
         const resolvedRecord = await gridsService.record.getByShortId(input.recordId);
         if (!resolvedRecord || resolvedRecord.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
@@ -2202,7 +2243,7 @@ export const gridsCapabilities = defineCapabilities({
           gridsActionReview(context, t.reviewUpdateRecord({ table: table.data.name }), {
             input,
             message: t.reviewUpdateRecord({ table: table.data.name }),
-            approvalScope: `table:${input.tableId}`,
+            approvalScope: `table:${context.target?.id}`,
             details: [
               { label: t.table, value: table.data.name },
               { label: t.record, value: record.shortId },
@@ -2217,3 +2258,5 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listBaseManagers } from "./service/manager-recipients";

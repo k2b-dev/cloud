@@ -47,7 +47,10 @@ const context = (permission: MailboxSettingsContext["permission"], options: Rend
           style: { mailboxId, customCss: "", formattingWarnings: options.styleWarnings ?? [], revision: 1, updatedAt: now },
           identities: [],
         },
-  admin: permission === "admin" ? { accessEntries: [], bindings: [], connections: [], folders: [], identities: [] } : null,
+  admin:
+    permission === "admin"
+      ? { accessEntries: [], code: null, messageCount: null, bindings: [], connections: [], folders: [], identities: [] }
+      : null,
 });
 
 const renderSettings = (
@@ -110,6 +113,17 @@ describe("Mailbox settings composition", () => {
     expect(renderSettings("admin", "writing", { styleWarnings: [{ code: "ignored_mailbox_css" }] })).toContain(
       "Mail uses the built-in design because the mailbox email design cannot be applied.",
     );
+  });
+
+  // N4-summary-allgemein: a mailbox does not offer "All signed-in people", so its access summary does not name it.
+  test("the access summary leaves out General, which a mailbox does not offer", () => {
+    const html = renderSettings("admin", "access", undefined, {
+      accessEntries: [
+        { id: "1", principal: { type: "user", userId: "u1" }, permission: "admin", displayName: "Mia Hoffmann", createdAt: now },
+      ],
+    });
+    expect(html).toContain("1 person, group or agent");
+    expect(html).not.toContain("All signed-in people");
   });
 
   test("keeps stable deep links and separates Calendar from the General footer", () => {

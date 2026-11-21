@@ -1595,6 +1595,58 @@ describe("ACP session/load", () => {
   const said = (updates: ReturnType<typeof of>, kind: "user_message_chunk" | "agent_message_chunk") =>
     updates.flatMap((u) => (u.sessionUpdate === kind && u.content.type === "text" ? [u.content.text] : [])).join("");
 
+  test("Code decision activities replay as facts instead of human requests", async () => {
+    const h = await harness();
+    const decision: AiStoredMessage = {
+      ...stored({ role: "assistant", content: [{ type: "text", text: "Version 5 wurde freigegeben." }] }, null),
+      meta: {
+        codeDecision: {
+          codeId: "c_review",
+          versionId: "v",
+          number: 5,
+          outcome: "approved",
+          person: { id: null, name: null },
+          anchor: "tool-submit",
+        },
+      },
+    };
+    const start: AiStoredMessage = {
+      ...stored({ role: "user", content: ["Gustav startet von selbst, einmal."] }, null),
+      meta: { codeReviewStart: { codeId: "c_review", versionId: "v" } },
+    };
+    h.streams.push([state([decision, start])]);
+    await load(h);
+    expect(said(of(h), "agent_message_chunk")).toBe("Version 5 wurde freigegeben.\n\nGustav startet von selbst, einmal.\n\n");
+    expect(said(of(h), "user_message_chunk")).toBe("");
+  });
+
+  test("saved delegated completion is a status with the exact result link", async () => {
+    const h = await harness();
+    h.streams.push([
+      state([
+        {
+          ...stored({ role: "assistant", content: [] }, null),
+          meta: {
+            chatDone: {
+              chatId: "Target",
+              turnId: "Turn02",
+              status: "completed",
+              messageSeq: 2,
+              name: "Hotels in Lyon",
+              href: "/app/assistant?conversation=Target&message=2",
+            },
+          },
+        },
+      ]),
+    ]);
+    await load(h);
+    expect(said(of(h), "agent_message_chunk")).toBe(
+      "Hotels in Lyon is done. View result: https://cloud.test/app/assistant?conversation=Target&message=2\n\n",
+    );
+    expect(said(of(h), "user_message_chunk")).toBe("");
+    expect(h.requests.some((request) => request.method === "POST")).toBe(false);
+  });
+
   test("a chat that is not listed opens by its ID and replays its history before the response", async () => {
     const h = await harness();
     h.streams.push([
@@ -1774,5 +1826,57 @@ describe("ACP session/load", () => {
     await h.store.set("gone-session", "gone", h.cwd);
     await expect(load(h, "gone-session")).rejects.toMatchObject({ code: -32002 });
     expect(await h.store.chat("gone-session")).toBeUndefined();
+  });
+});
+
+describe("ACP capability choices", () => {
+  const choiceResult = (): AiStoredMessage => ({
+    id: "choice-result",
+    shortId: "Chs234",
+    conversationId: "chat",
+    seq: 2,
+    kind: "message",
+    loopId: "turn",
+    message: { role: "tool_result", callId: "choice-source", name: "art__query__categories", result: { data: {} } },
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-08T12:00:00Z",
+    meta: {
+      resultChoice: { state: "open" },
+      resultView: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "category",
+            title: "Category?",
+            submit: "Choose",
+            mode: "one",
+            options: [
+              { id: "jug", title: "Jugendstil" },
+              { id: "modern", title: "Modern" },
+            ],
+            option: { id: ["id"], title: ["title"] },
+          },
+        ],
+      },
+    },
+  });
+  test.each([false, true])("prints choices with a browser link without elicitation or submission (forms: %s)", async (forms) => {
+    const h = await harness({ forms, form: () => ({ action: "accept", content: { ids: "jug" } }) });
+    h.streams.push([{ ...h.done(), messages: [choiceResult()] }]);
+    expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
+    expect(h.forms).toHaveLength(0);
+    expect(h.requests.some((request) => request.path.endsWith("/choices"))).toBe(false);
+    expect(h.text()).toContain(
+      "Category?\n1. Jugendstil [jug]\n2. Modern [modern]\nAnswer in Cloud: https://cloud.test/app/assistant?conversation=chat\n",
+    );
+    expect(h.requests.filter((request) => request.path.endsWith("/stream"))).toHaveLength(1);
+    expect(h.requests.some((request) => request.path.includes("/actions/"))).toBe(false);
   });
 });

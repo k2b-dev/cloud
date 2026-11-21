@@ -38,7 +38,7 @@
  *   CLOUD_TEST_S3_ENDPOINT    http://host:3900 (dedicated Garage test instance)
  *   CLOUD_TEST_S3_BUCKET      cloud-test (must end in -test)
  *   CLOUD_TEST_S3_ACCESS_KEY_ID / CLOUD_TEST_S3_SECRET_ACCESS_KEY / CLOUD_TEST_S3_REGION
- *   CLOUD_TEST_RSQL_URL       http://host:8080
+ *   CLOUD_TEST_RSQL_URL       http://host:8081
  */
 import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
 import { S3Client, SQL } from "bun";

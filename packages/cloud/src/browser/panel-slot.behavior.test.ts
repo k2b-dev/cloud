@@ -537,6 +537,31 @@ else {
     for (let i = 0; i < 20; i++) window.dispatchEvent(new Event(COMMANDS_CHANGED));
   };
 
+  test("a provider page can bring the consent question back, but never answers it", () => {
+    const h = setupContext(pageContext, true, false);
+    h.open();
+    ready(h);
+    expect(h.slot.dataset.consent).toBeUndefined();
+    // Only the current frame, same origin and the exact schema count.
+    h.message({ type: "cloud.panel.consent.ask", v: 1 }, null);
+    h.message({ type: "cloud.panel.consent.ask", v: 1, allowed: true });
+    h.message({ type: "cloud.panel.consent.ask", v: 1 }, h.frame().contentWindow, "https://elsewhere.test");
+    expect(h.slot.dataset.consent).toBeUndefined();
+    h.message({ type: "cloud.panel.consent.ask", v: 1 });
+    expect(h.slot.dataset.consent).toBe("ask");
+    expect(h.slot.dataset.contextAllowed).toBe("false");
+    expect(document.activeElement).toBe(h.slot.querySelector("[data-cloud-panel-consent]"));
+  });
+
+  test("asking again changes nothing while context is already allowed", () => {
+    const h = setupContext(pageContext, true, true);
+    h.open();
+    ready(h);
+    h.message({ type: "cloud.panel.consent.ask", v: 1 });
+    expect(h.slot.dataset.consent).toBeUndefined();
+    expect(h.slot.dataset.contextAllowed).toBe("true");
+  });
+
   test("a lazy installer clears the retained frame's URL context when the arriving page disables sharing", () => {
     const h = setup(
       1440,

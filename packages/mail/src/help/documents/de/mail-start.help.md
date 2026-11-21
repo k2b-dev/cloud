@@ -48,7 +48,6 @@ Nach der Einrichtung findet Mail die Ordner des Anbieters und startet die Synchr
 - Empfänger sehen den **Anzeigename** und die **Absenderadresse**.
 - Eine normale Verbindung erstellt eine Standard-Absenderidentität für die Adresse des Kontos.
 - Mail sendet mit einer Absenderidentität erst, wenn sie bestätigt ist. Zwei Absenderidentitäten können dieselbe Absenderadresse mit unterschiedlichen Standardwerten nutzen.
-- **Automatische Antworten** ist eine eigene Einstellung jeder Absenderidentität. Sie ist bei neuen Absenderidentitäten eingeschaltet. Mail sendet automatische E-Mails erst, wenn jemand mit Zugriff **Verwalten** eine automatische Antwort oder einen Workflow erstellt und einschaltet.
 
 ## Dich im Postfach zurechtfinden {icon="layout-grid"}
 
@@ -64,7 +63,7 @@ Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete 
 Im Kopfbereich findest du:
 
 - Das Suchfeld des Postfachs. Mit `/` springst du hinein. Der Filter-Knopf daneben enthält **Ungelesen**, **Markiert**, **Mit Anhang**, den Zeitraum und einen Tag. Während du suchst, enthält er auch **Suchen in** und den Ort. Eine Zahl am Knopf zeigt, wie viele Filter aktiv sind. **Filter zurücksetzen** entfernt sie.
-- **…** mit **Automatisierungen**, **Postfach synchronisieren**, **Postfachstatus** und **Einstellungen** zuerst. Danach folgen Postfachdetails, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und die Wahl zwischen Unterhaltungen und einzelnen Nachrichten. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**.
+- **…** mit **Frühere Mail-Regeln**, **Postfach synchronisieren**, **Postfachstatus** und **Einstellungen** zuerst. Danach folgen Postfachdetails, Mailinglisten, externe Bilder, Freigabelinks, E-Mail-Links und die Wahl zwischen Unterhaltungen und einzelnen Nachrichten. Dein Zugriff bestimmt die Einträge. Mit Zugriff Ansehen heißt der Detail-Eintrag **Über dieses Postfach**.
 - **Neue Nachricht** als Hauptaktion, wenn du senden kannst.
 
 Über Liste und Leser stehen die Ansichten als Tabs: **Alle**, **Handlungsbedarf**, **Mir zugewiesen**, **Wartet auf Antwort**, **Nicht zugewiesen**, **Später**, **Erledigt**, **Letzte Aktivität**, **Aufbewahrt** und gespeicherte Ansichten. Die Zeile zeigt so viele davon, wie in ihre Breite passen, die übrigen stehen unter **Mehr**. **Ereignisse** steht am Ende. Die geöffnete Ansicht bleibt immer sichtbar. Ordner, Geplant und Versandprobleme haben keine Ansichts-Tabs.
@@ -119,6 +118,8 @@ Schlägt der Entwurf fehl, nachdem Mail den Termin gespeichert hat, meldet Mail 
 - [E-Mails verfassen und senden](/app/mail/help/mail-compose)
 - [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration)
 - [Ein Postfach einrichten und verwalten](/app/mail/help/mail-admin)
-- [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation)
-- [Mail-Workflow-YAML-Referenz](/app/mail/help/mail-workflows)
 - [Mail-Probleme beheben](/app/mail/help/mail-troubleshooting)
+
+## Mit Code automatisieren
+
+Öffne die **Code**-Seite des Postfachs, um eine Automatisierung zu erstellen. Gustav kann exportierte Regeln als Code neu aufbauen. Prüfe Zugriffe und Änderungen und aktiviere den Code ausdrücklich. Frühere Regelprotokolle bleiben nur lesbar. Abwesenheitsantworten, Bürozeitenantworten und Eingangsbestätigungen mit Referenznummer sind ohne Ersatz entfernt.

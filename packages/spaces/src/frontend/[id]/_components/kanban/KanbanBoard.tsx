@@ -1790,6 +1790,11 @@ export default function KanbanBoard(props: Props) {
                                             {t.overdue}
                                           </span>
                                         </Show>
+                                        <Show when={item().createdByWorkload}>
+                                          <span class="spaces-kanban-card-meta inline-flex text-xs text-dimmed" title={t.createdByWorkload}>
+                                            <i class="ti ti-code text-xs" role="img" aria-label={t.createdByWorkload} />
+                                          </span>
+                                        </Show>
                                         <Show when={item().deadline}>
                                           <span class="spaces-kanban-card-meta inline-flex items-center gap-1 text-xs tabular-nums text-dimmed">
                                             <i class="ti ti-clock text-xs" aria-hidden="true" />

@@ -118,6 +118,11 @@ await app.settings.set("inventory.low_stock_threshold", 10);
 await app.settings.remove("inventory.low_stock_threshold");
 ```
 
+Inside an existing database transaction, pass its executor to
+`app.settings.get(key, db)` or `coreSettings.get<T>(key, db)`. The read uses that
+transaction, sees its uncommitted writes, and bypasses the shared cache. Keep
+ordinary `get(key)` calls on hot paths to use the cache.
+
 Use `app.settings.read(key)` when the stored state matters. It returns
 `{ value, stored }`, where `stored` is `"none"`, `"readable"`, or `"unreadable"`.
 Each call reads the stored row from Postgres and reports this process's view
@@ -254,5 +259,5 @@ when writes must instead use an application API for connection checks,
 rescheduling or a stronger OAuth scope. The internal generic setter then
 rejects that key, including for an administrator. Supply a named CLI command
 for the owning API; environment diagnostics remain readable without values.
-For example, Assistant's rsql target allowlist uses `assistant studio-admin
-configure`, preserving its connection preflight.
+The former Assistant Studio settings and their dedicated administration command
+have been retired; see [Studio retirement](/en/docs/operations/studio-retirement).

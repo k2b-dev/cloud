@@ -5,7 +5,6 @@ import type { AddConversationLocalTags, CreateLocalTag, DeleteLocalTag, SetConve
 import { withShortIdDb } from "../lib/short-id";
 import { conversationVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
-import { invalidateAutomationEffects } from "./automation-effect-state";
 import { insertActivity } from "./collaboration";
 import { mailLive } from "./live";
 
@@ -471,7 +470,6 @@ export const addConversationLocalTags = async (params: {
           current.push(row.tag_id);
           insertedByConversation.set(row.conversation_id, current);
         }
-        for (const [conversationId, ids] of insertedByConversation) await invalidateAutomationEffects(tx, conversationId, "tag", ids);
         const updatedConversationIds = [...insertedByConversation.keys()].sort();
         const unchangedConversationIds = conversationIds.filter((conversationId) => !insertedByConversation.has(conversationId));
         if (updatedConversationIds.length === 0) {
@@ -524,77 +522,6 @@ export const addConversationLocalTags = async (params: {
   }
 };
 
-export const updateWorkflowConversationLocalTagInTransaction = async (params: {
-  db: SqlClient;
-  mailboxId: string;
-  conversationId: string;
-  workflowVersionId?: string;
-  context?: MailRequestContext;
-  expectedRevision: number;
-  tagId: string;
-  operation: "add" | "remove";
-}): Promise<Result<WorkflowLocalTagMutation>> => {
-  const [conversation] = await params.db<{ revision: string | number }[]>`
-    SELECT revision
-    FROM mail.conversations
-    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
-    FOR UPDATE
-  `;
-  if (!conversation) return fail(err.notFound("Conversation"));
-  if (Number(conversation.revision) !== params.expectedRevision) {
-    return fail(err.conflict("Conversation was changed by another collaborator"));
-  }
-  const [tag] = await params.db<{ id: string }[]>`
-    SELECT id
-    FROM mail.local_tags
-    WHERE id = ${params.tagId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
-    FOR SHARE
-  `;
-  if (!tag) return fail(err.badInput("Local tag no longer belongs to this mailbox"));
-  const changed =
-    params.operation === "add"
-      ? await params.db<{ tag_id: string }[]>`
-          INSERT INTO mail.conversation_local_tags (
-            mailbox_id, conversation_id, tag_id, assigned_by_actor_kind, assigned_by_actor_id
-          ) VALUES (
-            ${params.mailboxId}::uuid, ${params.conversationId}::uuid, ${params.tagId}::uuid,
-            ${params.context ? mutationActor(params.context).kind : "workflow"}, ${params.context ? mutationActor(params.context).id : params.workflowVersionId}::uuid
-          )
-          ON CONFLICT (conversation_id, tag_id) DO NOTHING
-          RETURNING tag_id
-        `
-      : await params.db<{ tag_id: string }[]>`
-          DELETE FROM mail.conversation_local_tags
-          WHERE mailbox_id = ${params.mailboxId}::uuid
-            AND conversation_id = ${params.conversationId}::uuid
-            AND tag_id = ${params.tagId}::uuid
-          RETURNING tag_id
-        `;
-  if (changed.length === 0) {
-    return ok({ conversationRevision: Number(conversation.revision), applied: false, activityId: null });
-  }
-  await invalidateAutomationEffects(params.db, params.conversationId, "tag", [params.tagId]);
-  const [updated] = await params.db<{ revision: string | number }[]>`
-    UPDATE mail.conversations
-    SET revision = revision + 1, updated_at = now()
-    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
-    RETURNING revision
-  `;
-  if (!updated) return fail(err.internal("Tagged conversation could not be updated"));
-  const activityId = await insertActivity({
-    db: params.db,
-    mailboxId: params.mailboxId,
-    conversationId: params.conversationId,
-    context: params.context ?? null,
-    actorOverride: params.workflowVersionId ? { kind: "workflow", workflowVersionId: params.workflowVersionId } : undefined,
-    action: params.operation === "add" ? "conversation.local_tag_added" : "conversation.local_tag_removed",
-    targetType: "local_tag",
-    targetId: params.tagId,
-    metadata: { beforeRevision: Number(conversation.revision), afterRevision: Number(updated.revision) },
-  });
-  return ok({ conversationRevision: Number(updated.revision), applied: true, activityId });
-};
-
 export const setConversationLocalTags = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -642,12 +569,6 @@ export const setConversationLocalTags = async (params: {
           if (!state) return fail(err.notFound("Conversation"));
           return ok({ state, activityId: null, conversationId });
         }
-        await invalidateAutomationEffects(
-          tx,
-          conversationId,
-          "tag",
-          [...new Set([...existingTagIds, ...tagIds])].filter((id) => existingTagIds.includes(id) !== tagIds.includes(id)),
-        );
         await tx`
         DELETE FROM mail.conversation_local_tags
         WHERE mailbox_id = ${params.mailboxId}::uuid AND conversation_id = ${conversationId}::uuid

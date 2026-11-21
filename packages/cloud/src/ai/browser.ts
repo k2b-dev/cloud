@@ -2,8 +2,6 @@ import { fetchAppAction } from "../browser/app-actions";
 
 export {
   CODE_RUNTIME_TOOL_NAMES,
-  CodeActionInput,
-  CodeCheckInput,
   CodeResourceId,
   CodeRuntimeInput,
   CodeToolFailure,
@@ -18,6 +16,7 @@ export {
   type AiQueueLiveEvent,
   type AiSendQueuedMessageResult,
 } from "./queue-contracts";
+export { type AiMessageQuote, type AiQuoteDraft, aiQuoteModelText, aiQuotesWith } from "./quote-markers";
 export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
 export { type AiTodoPlan, parseAiTodoPlan } from "./todo-contracts";
 
@@ -209,16 +208,7 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
   };
 };
 
-export {
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReason,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
-  chatTaskReasonState,
-  chatTaskStopSentence,
-} from "./chat-task-reasons";
+export { collectAiWakeupLines } from "./chat/wakeup-plan";
 export {
   createLiveDictationSource,
   type DictationDevice,
@@ -267,3 +257,4 @@ export {
   parseCloudAiView,
   sortCloudAiViewRows,
 } from "./view-block";
+export type { AiWakeup, AiWakeupEvent, AiWakeupInput, AiWakeupNoteSource, AiWakeupPatch } from "./wakeup-contracts";

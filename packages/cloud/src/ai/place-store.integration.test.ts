@@ -1,0 +1,115 @@
+import { beforeAll, expect, test } from "bun:test";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
+import { migrateCloudAi } from "./migrate";
+import { aiConversations } from "./store";
+
+const suite = databaseSuite();
+suite("personal place conversations", () => {
+  beforeAll(migrateCloudAi);
+  test("first-message creation is unique per person and place; restart archives without losing refs", async () => {
+    const users: string[] = [];
+    try {
+      for (const name of ["Lea", "Ben"]) {
+        const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
+          VALUES (${`place-${name}-${crypto.randomUUID()}`}, 'local', 'user', ${name}) RETURNING id`;
+        users.push(user!.id);
+      }
+      const lea = users[0]!;
+      const ben = users[1]!;
+      const place = { ref: { type: "fixture.conversation", id: "Marta1" }, title: "Marta" };
+      const draft = [{ type: "text" as const, text: "Shorten this reply" }];
+      expect(await aiConversations.findPlaceConversation({ ownerUserId: lea, ref: place.ref })).toBeNull();
+      expect(await aiConversations.listConversations({ ownerUserId: lea, place: "any" })).toEqual([]);
+      await expect(aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft: [] })).rejects.toThrow("first message");
+      const chats = await Promise.all(
+        Array.from({ length: 3 }, () => aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft })),
+      );
+      const chat = chats[0]!;
+      expect(new Set(chats.map((item) => item.id)).size).toBe(1);
+      expect(chat.place).toEqual(place);
+      expect((await aiConversations.listUserConversationResources({ ownerUserId: lea })).resources).toEqual([]);
+      expect(
+        (await aiConversations.listUserConversationResources({ ownerUserId: lea, place: "fixture.conversation:Marta1" })).resources,
+      ).toMatchObject([{ ref: place.ref, chat: { shortId: chat.shortId } }]);
+      expect(
+        (await aiConversations.listUserConversationResources({ ownerUserId: ben, place: "fixture.conversation:Marta1" })).resources,
+      ).toEqual([]);
+      const requestId = crypto.randomUUID();
+      expect((await aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft })).id).toBe(chat.id);
+      await expect(
+        aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft: [{ type: "text", text: "different" }] }),
+      ).rejects.toThrow("different input");
+      expect(chat.draft.content).toEqual(draft);
+      await expect(
+        aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft: [{ type: "text", text: "Other tab" }] }),
+      ).rejects.toThrow("different input");
+      expect((await aiConversations.findPlaceConversation({ ownerUserId: lea, ref: place.ref }))?.draft.content).toEqual(draft);
+      expect(await aiConversations.listConversations({ ownerUserId: lea })).toEqual([]);
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: lea })).toEqual([]);
+      expect(
+        (await aiConversations.listConversations({ ownerUserId: lea, place: "any", refs: [place.ref] })).map((item) => item.id),
+      ).toEqual([chat.id]);
+      expect(await aiConversations.listConversationsPage({ ownerUserId: lea, page: 1, perPage: 10 })).toMatchObject({
+        total: 0,
+        items: [],
+      });
+      expect(
+        await aiConversations.listConversationsPage({ ownerUserId: lea, place: "fixture.conversation:Marta1", page: 1, perPage: 10 }),
+      ).toMatchObject({ total: 1, items: [{ place }] });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ places: { total: 1 } });
+      await sql`UPDATE ai.conversations SET last_viewed_at = '2026-11-07T00:00:00Z', background_received_at = '2026-11-08T00:00:00Z' WHERE id = ${chat.id}::uuid`;
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ unread: 1, places: { unread: 1 } });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: ben })).toEqual({
+        unread: 0,
+        needsAttention: 0,
+        places: { total: 0, unread: 0, needsAttention: 0 },
+      });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "mock",
+        runConfig: { kind: "chat", input: "Help", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Help" }] },
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action' WHERE id=${turn.id}::uuid`;
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({
+        needsAttention: 1,
+        places: { needsAttention: 1 },
+      });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: ben })).toMatchObject({
+        needsAttention: 0,
+        places: { needsAttention: 0 },
+      });
+      await sql`UPDATE ai.turns SET status='aborted' WHERE id=${turn.id}::uuid`;
+      expect(await aiConversations.findPlaceConversation({ ownerUserId: ben, ref: place.ref })).toBeNull();
+      expect(await aiConversations.listConversations({ ownerUserId: ben, place: "any", search: "Marta" })).toEqual([]);
+      expect(await aiConversations.listConversationsPage({ ownerUserId: ben, place: "any", page: 1, perPage: 10 })).toMatchObject({
+        total: 0,
+        items: [],
+      });
+      expect(await aiConversations.getConversationByShortId({ ownerUserId: ben, shortId: chat.shortId })).toBeNull();
+      expect(await aiConversations.archivePlaceConversation({ ownerUserId: ben, conversationId: chat.id, ref: place.ref })).toBe(false);
+      expect(await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: chat.id, ref: place.ref })).toBe(true);
+      expect(await aiConversations.findPlaceConversation({ ownerUserId: lea, ref: place.ref })).toBeNull();
+      await expect(aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft })).rejects.toThrow(
+        "no longer available",
+      );
+      const replacement = await aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft });
+      expect(replacement.id).not.toBe(chat.id);
+      await expect(aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).rejects.toThrow(
+        "Archive the current chat",
+      );
+      await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: replacement.id, ref: place.ref });
+      expect(await aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).toMatchObject({ id: chat.id });
+      await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: chat.id, ref: place.ref });
+      expect((await aiConversations.listConversations({ ownerUserId: lea, place: "any", archived: true })).map((item) => item.id)).toEqual(
+        expect.arrayContaining([chat.id, replacement.id]),
+      );
+    } finally {
+      for (const user of users) {
+        await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${user}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${user}::uuid`;
+      }
+    }
+  });
+});

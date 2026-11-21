@@ -28,6 +28,52 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("AI controller choice submission", () => {
+  test.each([201, 409])("posts the choice event and reports its result (%s)", async (status) => {
+    const posts: { path: string; body: unknown }[] = [];
+    const current = conversation("Chat01");
+    let reloads = 0;
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path.endsWith("/choices")) {
+          posts.push({ path, body: JSON.parse(String(init?.body)) });
+          expect(init?.method).toBe("POST");
+          return status === 201
+            ? Response.json({ turn: { id: "Turn02" } }, { status })
+            : Response.json({ code: "choice_closed", message: "Choice is closed" }, { status });
+        }
+        reloads += 1;
+        return Response.json({ conversation: current, messages: [], activeTurn: null });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+    try {
+      expect(await controller.submitChoice({ turnId: "Turn01", toolCallId: "call" }, "category", ["jug"])).toBe(status === 201);
+      expect(posts).toEqual([
+        {
+          path: "/api/ai/conversations/Chat01/choices",
+          body: { turnId: "Turn01", toolCallId: "call", blockId: "category", ids: ["jug"] },
+        },
+      ]);
+      expect(reloads).toBe(status === 201 ? 1 : 0);
+      expect(controller.error()).toBe(status === 201 ? null : "Choice is closed");
+    } finally {
+      dispose();
+    }
+  });
+});
+
 describe("AI controller draft submission", () => {
   test("sends a draft containing only a Cloud resource", () => {
     expect(isComposerDraftSendable({ resources: [{ ref: { type: "mail.message", id: "m1" } }] })).toBe(true);
@@ -79,6 +125,46 @@ describe("AI controller draft submission", () => {
     expect((await second)?.conversationId).toBe("created");
     expect(createCalls).toBe(1);
     dispose();
+  });
+
+  test("recovering a creation in the background preserves a foreground chat open", async () => {
+    let resolveDetail!: (response: Response) => void;
+    const detail = new Promise<Response>((resolve) => {
+      resolveDetail = resolve;
+    });
+    const current = conversation("Current");
+    const next = conversation("Next02");
+    const recovered = conversation("Replay");
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path === "/api/ai/conversations" && init?.method === "POST") return Response.json(recovered, { status: 201 });
+        if (path === "/api/ai/conversations/Next02") return detail;
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") return new Response(new ReadableStream());
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+      });
+    });
+    try {
+      const opening = controller.openConversation(next.id);
+      expect((await controller.createConversation({}, { activate: false }))?.id).toBe(recovered.id);
+      expect(controller.activeConversationId()).toBe(next.id);
+      resolveDetail(Response.json({ conversation: next, messages: [], activeTurn: null }));
+      expect(await opening).toBe("opened");
+      expect(controller.conversation()?.id).toBe(next.id);
+      expect(controller.loadingConversation()).toBe(false);
+    } finally {
+      dispose();
+    }
   });
 
   test("tells a revision conflict, which sets no chat error, apart from another failed draft save", async () => {

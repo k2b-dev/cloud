@@ -156,11 +156,6 @@ export const deleteAiCatalogEntry = async (
       ))
         target(input.retargetTo, model);
     }
-    const scheduled = await db<
-      { sponsor_user_id: string; name: string }[]
-    >`SELECT task.sponsor_user_id,left(task.prompt,120) AS name FROM ai.chat_tasks task JOIN ai.conversations c ON c.id=task.conversation_id JOIN ai.projects p ON p.id=c.project_id WHERE p.default_model->>'id'=ANY(${pgIds}::text[])`;
-    for (const task of scheduled)
-      await db`INSERT INTO ai.model_change_notices(user_id,name,retargeted) VALUES(${task.sponsor_user_id}::uuid,${task.name},${input.retarget})`;
     for (const project of projects) {
       const owners = await db<
         { id: string }[]

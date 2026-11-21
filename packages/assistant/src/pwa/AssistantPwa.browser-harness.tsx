@@ -172,6 +172,81 @@ const STREAM_TEXT =
   "| Posten | Menge | Preis |\n|---|---:|---:|\n| Stühle neu beziehen | 12 | 1.140 € |\n| Stoff Samt Moos 14 | 9 m | 486 € |\n| Abholen und Liefern | 1 | 60 € |\n\n" +
   "Für die Lieferzeit schaue ich noch, was in Spaces für die Werkstatt";
 
+/** One finished lasting-Code step of the `code=1` chat. */
+const codeStep = (id: string, name: string, result: unknown, args: Record<string, unknown> = {}): ToolBlock => ({
+  id: `tool-${id}`,
+  kind: "tool",
+  callId: id,
+  name,
+  args: { codeId: "c_rechnung", ...args },
+  status: "completed",
+  at: ago(3),
+  result,
+});
+/** Core's switch-on preview on a phone: switching on waits for a computer, the targets show here as well. */
+const CODE_VERSION = {
+  codeId: "c_rechnung",
+  title: "Rechnungen ablegen",
+  ownerKind: "person",
+  automations: [{ entrypoint: "morning", title: "Jeden Morgen um 7 Uhr" }],
+  versionId: "33333333-3333-4333-8333-333333333333",
+  number: 3,
+  running: 2,
+  latest: 3,
+  activated: null,
+  allowed: { allowed: false, reason: "phone" },
+  readiness: { state: "ready" },
+  place: null,
+  operationLabels: {
+    "filesv2.file.import": { title: "Datei importieren", app: "Dateien" },
+    "mail.message.read": { title: "Nachricht lesen", app: "Mail" },
+  },
+  targets: [
+    {
+      target: {
+        key: "filesv2.folder\u0000fo_rechnungen",
+        ref: { type: "filesv2.folder", id: "fo_rechnungen" },
+        title: null,
+        typeTitle: "Ordner",
+        icon: "ti ti-folder",
+        own: false,
+        href: null,
+      },
+      operations: ["filesv2.file.import"],
+      isNew: true,
+    },
+    { target: null, operations: ["mail.message.read"], isNew: false },
+  ],
+};
+/** `code=full`: a version that also serves pages, follows an event elsewhere, calls the internet with a secret and keeps a database. */
+const CODE_VERSION_FULL = {
+  ...CODE_VERSION,
+  allowed: { allowed: true },
+  automations: [
+    ...CODE_VERSION.automations,
+    { entrypoint: "route:GET:/", title: "Übersicht", route: { method: "GET", path: "/", public: false } },
+    { entrypoint: "route:POST:/eingang", route: { method: "POST", path: "/eingang", public: true } },
+    {
+      entrypoint: "event:spaces.item.due@1:place:0",
+      event: {
+        type: "spaces.item.due",
+        title: "Aufgabe fällig",
+        place: {
+          key: "spaces.space\u0000Spc001",
+          ref: { type: "spaces.space", id: "Spc001" },
+          title: null,
+          typeTitle: "Bereich",
+          icon: "ti ti-layout-board",
+          own: false,
+          href: null,
+        },
+      },
+    },
+  ],
+  internet: ["https://api.lexoffice.example"],
+  secrets: [{ name: "LEXOFFICE_TOKEN", origin: "https://api.lexoffice.example" }],
+  database: true,
+};
 type Detail = NonNullable<AssistantPwaProps["initialDetail"]>;
 const detailOf = (id: string): Detail | null => {
   const conversation = CHATS.find((entry) => entry.id === id);
@@ -181,6 +256,66 @@ const detailOf = (id: string): Detail | null => {
     ? { content: [{ type: "text" as const, text: "Vom Web" }], revision: 2, updatedAt: ago(5) }
     : conversation.draft;
   const base = { conversation: { ...conversation, draft, unreadCompletion: false }, hasMoreMessages: false, timeline: [] };
+  // `code=1`: Gustav submitted a Code version and asks one question before it goes on.
+  if (id === "pflege" && params.get("code"))
+    return {
+      ...base,
+      messages: [
+        stored(
+          id,
+          1,
+          { role: "user", content: [{ type: "text", text: "Leg Rechnungen aus der Mail jeden Morgen in Dateien ab." }] },
+          "turn-c",
+        ),
+      ],
+      activeTurn: {
+        turnId: "turn-c",
+        attempt: 1,
+        status: "waiting_for_action",
+        seq: 3,
+        modelId: "oss",
+        createdAt: ago(4),
+        waitingSince: ago(1),
+        blocks: [
+          codeStep("sdk", "code_sdk", { version: 1, kind: "index", apps: [], events: [] }),
+          codeStep("write", "code_write", { version: 1 }, { path: "code.ts" }),
+          codeStep("test", "code_test", { version: 1, mode: "test", ok: false, error: null, diagnostics: [], cases: [] }),
+          codeStep("check", "code_check", {
+            version: 1,
+            result: {
+              ok: false,
+              diagnostics: [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 9 }],
+            },
+            manifest: null,
+            permissions: [],
+          }),
+          {
+            id: "tool-submit",
+            kind: "tool",
+            callId: "submit",
+            name: "code_submit",
+            args: { codeId: "c_rechnung" },
+            status: "completed",
+            at: ago(2),
+            result: { version: 1, submission: { version: { id: CODE_VERSION.versionId, number: CODE_VERSION.number } } },
+          },
+          text("t1", "Version 3 ist eingereicht. Eine Frage noch:"),
+          {
+            id: "tool-survey",
+            kind: "tool",
+            callId: "survey",
+            name: "survey",
+            frontendMode: "client_interaction",
+            status: "awaiting_client",
+            args: {
+              title: "Ablage",
+              submitLabel: "Antworten",
+              questions: [{ id: "folder", type: "text", label: "In welchen Ordner?", placeholder: "Ordnername" }],
+            },
+          },
+        ],
+      },
+    };
   if (id === "pflege")
     return {
       ...base,
@@ -390,6 +525,145 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return json({ message: "Invented failure" }, Number(status ?? 500));
   }
   if (url.pathname.endsWith("/stream")) return quietStream();
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.version.cards") {
+    const readFixture = async (path: string) => (await (await answer(new URL(path, location.href), { method: "POST" })).json()).data;
+    const p = await readFixture("/api/code/activation/preview");
+    const r = await readFixture("/api/code/review");
+    const words = await readFixture("/api/capabilities/v1/queries/core/code.version.words");
+    if (!p || !r || !words) return json({ message: "Fixture unavailable" }, 503);
+    const on = params.get("code") === "on";
+    return json({
+      data: {
+        items: [
+          {
+            codeId: p.codeId,
+            versionId: p.versionId,
+            state: "available",
+            snapshot: {
+              preview: {
+                codeId: p.codeId,
+                versionId: p.versionId,
+                number: p.number,
+                title: p.title,
+                ownerKind: p.ownerKind,
+                page: null,
+                running: p.running,
+                latest: p.latest,
+                activated: p.activated,
+                allowed: p.allowed,
+                readiness: p.readiness,
+              },
+              review: {
+                status: r.status,
+                origin: r.origin,
+                decidedBy: r.decidedBy,
+                message: r.message,
+                commentCount: r.commentCount,
+                revision: null,
+              },
+              facts: [...words.mayDo.items.slice(0, 2), ...words.timing.items.slice(0, 1)].map((item: { text: string }) => item.text),
+              code: { state: "active", activeVersionId: on ? p.versionId : "v2", pausedAt: null, pausedBy: null },
+              pages: {
+                versionId: p.versionId,
+                homeUrl: on ? "/code/c_rechnung/" : null,
+                pages: on ? [{ entrypoint: "home", title: "Rechnungen", path: "/", isRoot: true, href: "/code/c_rechnung/" }] : [],
+              },
+              latest: null,
+              permission: "editor",
+              canManage: true,
+              canActivate: true,
+            },
+          },
+        ],
+      },
+    });
+  }
+  // `code=on`: the version is switched on; the card links its page, next run and runs.
+  if (url.pathname === "/api/code/activation/preview")
+    return json({
+      data:
+        params.get("code") === "on"
+          ? {
+              ...CODE_VERSION,
+              running: 3,
+              activated: { at: ago(1), byYou: true, byName: null },
+              automations: [...CODE_VERSION.automations, { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } }],
+            }
+          : params.get("code") === "full"
+            ? CODE_VERSION_FULL
+            : // `code=pending` waits for a Cloud administrator; `code=rejected` was not approved.
+              params.get("code") === "pending"
+              ? { ...CODE_VERSION, tests: { state: "passed", passed: 3, total: 3 }, readiness: { state: "approval_pending" } }
+              : params.get("code") === "rejected"
+                ? {
+                    ...CODE_VERSION,
+                    tests: { state: "failed", passed: 2, total: 3 },
+                    readiness: {
+                      state: "refused",
+                      code: "code_approval_revoked",
+                      message: "This version approval is rejected or revoked.",
+                    },
+                  }
+                : CODE_VERSION,
+    });
+  // The review as the person sees it and the version in words, both fictional.
+  if (url.pathname === "/api/code/review")
+    return json({
+      data: {
+        status: params.get("code") === "pending" ? "pending" : params.get("code") === "rejected" ? "rejected" : "not_required",
+        origin: { kind: "ai_chat", conversationId: "pflege", automaticAfterReview: false },
+        decidedBy: params.get("code") === "rejected" ? { id: "u-jana", name: "Jana Probe", avatarHash: null } : null,
+        decidedAt: params.get("code") === "rejected" ? ago(30) : null,
+        message: params.get("code") === "rejected" ? "Rechnungen bitte weiter von Hand ablegen." : null,
+        comments: [],
+        commentCount: 0,
+        activeVersion: { id: "v2", number: 2 },
+      },
+    });
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.version.words")
+    return json({
+      data: {
+        versionId: "33333333-3333-4333-8333-333333333333",
+        number: 3,
+        submittedAt: ago(60),
+        locale: "de",
+        description: { state: "visible", text: "Legt Rechnungen ab.", modelLabel: "✦" },
+        assurance: "Cloud begrenzt die Zugriffe auf die Apps und Ziele dieser Version.",
+        mayDo: { items: [], more: 0, moreText: null },
+        timing: { items: [], more: 0, moreText: null },
+        changes: {
+          state: "changed",
+          text: "Zugriffe oder Auslöser geändert",
+          rows: {
+            items: [
+              { kind: "add", text: "Darf neu Dateien importieren im Ordner Rechnungen" },
+              { kind: "same", text: "1 weiteres bleibt gleich" },
+            ],
+            more: 0,
+            moreText: null,
+          },
+          assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+        },
+        examples: { state: "passed", passed: 3, total: 3, summary: "3 von 3 Beispielen erfolgreich", explanation: "", items: [] },
+        notices: { items: [], more: 0, moreText: null },
+      },
+    });
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
+    return json({
+      data: {
+        items: [
+          {
+            entrypoint: "morning",
+            kind: "schedule",
+            cron: "0 7 * * *",
+            nextRunAt: "2026-11-05T06:00:00.000Z",
+            lastRun: null,
+            missingTargets: [],
+          },
+        ],
+        removedTargets: [],
+      },
+    });
   if (url.pathname === "/api/assistant/workspace/sidebar")
     return json({
       conversations: empty ? [] : CHATS,
@@ -414,6 +688,8 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       state: "pending",
       createdAt: NOW,
       authorIsViewer: true,
+      error: null,
+      retrying: false,
     }));
     return json(queued);
   }

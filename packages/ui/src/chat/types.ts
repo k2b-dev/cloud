@@ -16,8 +16,20 @@ export type ChatDecisionAnswer = {
   label: string;
   /** Icon class, for example `ti ti-send`. */
   icon?: string;
+  /**
+   * The answer was given and Cloud works on it for an unknown time, such as switching something on while the question
+   * stays in place. A shimmer runs over the filled button and it takes no second press. Only `confirm` reads it.
+   */
+  busy?: boolean;
+  /** A returned promise holds every answer of the question until it settles; then they work again while it stays open. */
   onSelect: () => void | Promise<void>;
 };
+
+/**
+ * A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result,
+ * `ai` as work Gustav does by himself, such as a revision that waits or runs.
+ */
+export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" | "ai" };
 
 /** Why a question is asked, or why its main answer is off. */
 export type ChatDecisionReason = {
@@ -45,19 +57,6 @@ export type ChatOutcomeLine = {
   action?: { label: string; onSelect: () => void | Promise<void> };
   /** Small buttons under the line. Shown while this line is current; otherwise hidden but still reserving their row. */
   actions?: JSX.Element;
-};
-
-/** A person in a preview header: the name in the text colour, then the address the message really uses. */
-export type ChatPreviewPerson = { name?: string; address?: string };
-
-/** One header row, such as "To Lea Berg lea.berg@example.com". */
-export type ChatPreviewHeaderRow = {
-  label: string;
-  people?: readonly ChatPreviewPerson[];
-  /** Further content after the people, such as "and 2 more". */
-  value?: JSX.Element;
-  /** Draws the label stronger, for recipients others cannot see. */
-  emphasis?: boolean;
 };
 
 type ChatActionBase = {

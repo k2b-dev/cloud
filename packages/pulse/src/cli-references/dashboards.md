@@ -153,3 +153,7 @@ dashboard definition. Deleting the base removes its dashboards and links.
 An edit that ends a publication asks again. `dashboard.publish`,
 `dashboard.unpublish`, and `dashboard.delete` always ask. All four actions
 require an idempotency key and the same access as the CLI.
+
+Capability callers pass the public Base as `target: { type: "pulse.base", id }`
+for all four dashboard actions. Their strict `input` carries dashboard fields
+and revisions, with no `baseId`. CLI commands keep their `--base` option.

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { tinyJpeg, withCameraMetadata } from "../../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { sql } from "../../runtime/clients";
+import { coreSettings, createSettingsAPI } from "./api";
 import { decryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import * as settings from "./index";
@@ -26,6 +27,21 @@ const rowFor = async (key: string) => {
 };
 
 suite("settings writes inside a caller's transaction", () => {
+  test("transactional value reads see uncommitted writes without entering the shared cache", async () => {
+    const key = probeKey();
+    registerSettings([{ key, kind: "string", default: "default", label: "Read probe", description: "Test only.", group: "test" }]);
+    const typed = createSettingsAPI<Record<string, { kind: "string"; default: string }>>();
+    try {
+      await sql.begin(async (db) => {
+        await settings.set(key, "uncommitted", db);
+        expect(await coreSettings.get<string>(key, db)).toBe("uncommitted");
+        expect(await typed.get(key, db)).toBe("uncommitted");
+      });
+    } finally {
+      await sql`DELETE FROM settings.entries WHERE key=${key}`;
+    }
+  });
+
   test("adversarial email and template writes reject without replacing stored values", async () => {
     for (const kind of ["email", "template"] as const) {
       const key = probeKey();

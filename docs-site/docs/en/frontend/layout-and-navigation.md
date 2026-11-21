@@ -19,6 +19,14 @@ pages, breadcrumbs and a footer.
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
 
+Use `focusMode` for a dedicated editor or pop-out window. It hides the app bar
+and header while keeping the signed-in profile available to access dialogs and
+panels, so they can identify the current person just as on a regular page.
+
+The phone header names the current app. A page that an app hosts for someone
+else, such as a Code page, passes `headTitle="page"`. The header then shows the
+page's own title, or the Cloud's name when the page has none.
+
 Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;
@@ -154,7 +162,12 @@ While it is on:
 
 - The whole screen blurs and becomes `inert`: the app bar with its icons,
   counts, search, help and avatar, the navigation, the content, floating
-  windows (normal and maximized), dialogs and toasts. Only the hint and the islands below stay sharp. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
+  windows (normal and maximized), dialogs and toasts. Where the browser has
+  the popover API, one tinted, blurring veil lies above every layer, so the
+  whole screen hides evenly, also a part that cannot blur alone, such as a
+  selected row's fill. Only the hint and the islands below stay sharp; the
+  veil is open over the islands and takes no input. Nothing moves:
+  positions, scroll, focus, caret and unsaved input stay, because the
   page is never rebuilt. The tab shows only the installation's name.
 - A primary click anywhere or a key shows the content again. That click or key
   never reaches the page: the pointer sequence and the key until its release
@@ -201,8 +214,8 @@ popovers cover too, also in pop-out pages without the app bar. A container
 without a box of its own (`display: contents`), such as the `@k2b/ui` portal
 root, cannot blur, and a blurred container would become the frame of the
 fixed windows inside it and move them; such containers cover through their
-children. Loose text directly in a `display: contents` element stays sharp,
-so wrap it in an element.
+children. Loose text directly in a `display: contents` element has only the
+veil over it, so wrap it in an element.
 
 ## Render the application layout
 

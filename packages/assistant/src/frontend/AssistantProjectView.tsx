@@ -42,12 +42,11 @@ import {
   saveAssistantContextFile,
 } from "./AssistantContextContent";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
-import { AssistantProjectApps } from "./AssistantProjectApps";
-import { openAssistantProjectSettingsDialog } from "./AssistantProjectSettingsDialog";
 import { AssistantProjectSkills } from "./AssistantProjectSkills";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions } from "./assistant-search";
+import { lazyAction } from "./lazy-action";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Props = {
@@ -82,6 +81,7 @@ export default function AssistantProjectView(props: Props) {
     load: (projectId, { abortSignal }) => assistantApi.loadProjectContext(projectId, abortSignal),
   });
   const live = useAssistantLive();
+  const projectSettings = lazyAction(() => import("./AssistantProjectSettingsDialog"));
   const unregisterChats = live.register({
     matches: matchesAssistantInvalidation(["conversation-list"], { projectId: props.project.id }),
     invalidate: (invalidation) => chats.invalidate(invalidation),
@@ -464,7 +464,12 @@ export default function AssistantProjectView(props: Props) {
                   <IconButton
                     size="xs"
                     label={text("Project settings")}
-                    onClick={() => void openAssistantProjectSettingsDialog(props.project, live)}
+                    onClick={() => {
+                      const project = props.project;
+                      void projectSettings(locale(), ({ openAssistantProjectSettingsDialog }) =>
+                        openAssistantProjectSettingsDialog(project, live),
+                      );
+                    }}
                   >
                     <i class="ti ti-settings" aria-hidden="true" />
                   </IconButton>
@@ -502,7 +507,6 @@ export default function AssistantProjectView(props: Props) {
             >
               {(value) => (
                 <>
-                  <AssistantProjectApps project={props.project} initialPage={value().apps} />
                   <AssistantProjectSkills project={props.project} initialPage={value().skills} />
                   <AssistantContextSection
                     title={text("Project knowledge")}

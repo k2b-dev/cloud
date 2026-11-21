@@ -32,6 +32,7 @@ const files: Record<string, Classification> = {
   movementChain: read,
   shareAccess: read,
   machineStorage: read,
+  machineStorageById: read,
   createMachineStorage: mutation(),
   storageGrants: read,
   grantStorage: read,
@@ -85,6 +86,8 @@ const files: Record<string, Classification> = {
   folderSearch: base(),
   publiclyShared: base(),
   folderLocation: base(),
+  // Root resolution can provision a missing auto-created Cloud home.
+  rootLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },
   mkdirs: { kind: "mutation", coverage: "converted" },
   upload: mutation(),
@@ -120,6 +123,8 @@ const files: Record<string, Classification> = {
   // Reads the file like a download; a retry clears only the preview cache's remembered failure.
   preview: base(),
   retryPreview: base(),
+  // Reads an image entry's large preview like `preview`; only the shared root resolution can provision a home.
+  entryImage: base(),
   // Reads the chosen PDFs like downloads and publishes the new file through the journaled create path.
   preparePdf: mixed(),
   capabilityDownload: base(),
@@ -136,6 +141,7 @@ const files: Record<string, Classification> = {
 const templates: Record<string, Classification> = {
   list: read,
   get: read,
+  read,
   upload: read,
   import: base(),
   update: read,

@@ -1,0 +1,172 @@
+import { z } from "zod";
+import { capabilityCallDigest, capabilityValueDigest } from "../capabilities/calls";
+import { CapabilityIdempotencyKeySchema, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
+import { CodeDatabaseRequestSchema } from "./database-contract";
+import { CodeFileRefSchema } from "./file-ref";
+import { RunnerCallError, type RunnerJsonValue } from "./runner-protocol";
+import { type CodeTestCall, type CodeTestFixtureDetail, type CodeTestMock, codeTestFixtureDetail } from "./test-contract";
+import type { CodeSdkManifest } from "./types";
+
+const InvocationSchema = z
+  .object({
+    call: NormalizedCapabilityCallSchema,
+    metadata: z.object({ idempotencyKey: CapabilityIdempotencyKeySchema.optional() }).strict(),
+  })
+  .strict();
+const equal = (a: unknown, b: unknown) => capabilityValueDigest(a) === capabilityValueDigest(b);
+/** Fake-only bridge. One instance per case preserves production-style keyed receipts across repeated runs.
+ * Exact normalized targets/refs and manifest schemas are checked on every call, including a replay.
+ * Successful replies are retained; errors are not. Keys are scoped by operation (one fictional Code principal).
+ * There is deliberately no real-bridge fallback, even for a query, missing mock, AI or secret operation. */
+export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestMock[]) {
+  const receipts = new Map<string, { digest: string; data: RunnerJsonValue }>();
+  const cursors = new Map<CodeTestMock, number>();
+  let calls: CodeTestCall[] = [];
+  let failure: string | null = null;
+  return {
+    /** Start a fresh attempt's call list while retaining only this case's fake receipts. */
+    begin() {
+      calls = [];
+      failure = null;
+    },
+    calls: () => structuredClone(calls),
+    failure: () => failure,
+    async call(operation: string, raw: RunnerJsonValue): Promise<RunnerJsonValue> {
+      const database = ["db.query", "db.exec", "db.batch"].includes(operation);
+      if (
+        database &&
+        (manifest.mode === "code_run" ||
+          !raw ||
+          typeof raw !== "object" ||
+          Array.isArray(raw) ||
+          !CodeDatabaseRequestSchema.safeParse({ ...raw, operation }).success)
+      ) {
+        failure ??= "code_test_invalid_call";
+        throw new RunnerCallError(failure);
+      }
+      const parsed = InvocationSchema.safeParse(
+        database ? { call: { capability: operation, target: null, refs: {}, input: raw }, metadata: {} } : raw,
+      );
+      if (!parsed.success) {
+        failure ??= "code_test_invalid_call";
+        throw new RunnerCallError(failure);
+      }
+      const { call, metadata } = parsed.data;
+      const row: CodeTestCall = {
+        sequence: calls.length + 1,
+        operation,
+        call,
+        idempotencyKey: metadata.idempotencyKey ?? null,
+        replayed: false,
+        result: { ok: false, error: "code_test_invalid_call" },
+      };
+      calls.push(row);
+      const refuse = (code: string, fixtureFailure = true, detail?: CodeTestFixtureDetail): never => {
+        row.result = { ok: false, error: code, ...(detail === undefined ? {} : { detail }) };
+        if (fixtureFailure) failure ??= code;
+        throw new RunnerCallError(code);
+      };
+      const spec = database
+        ? {
+            capability: operation,
+            target: null,
+            refs: {},
+            kind: operation === "db.query" ? ("query" as const) : ("action" as const),
+            idempotency: "none",
+            inputSchema: {},
+            dataSchema: {},
+            stream: undefined,
+          }
+        : manifest.operations.find((value) => value.capability === operation);
+      if (!spec || call.capability !== operation || (spec.target === null ? call.target !== null : call.target?.type !== spec.target))
+        return refuse("code_test_invalid_call");
+      if (
+        Object.keys(spec.refs).sort().join("\0") !== Object.keys(call.refs).sort().join("\0") ||
+        Object.entries(spec.refs).some(([key, type]) => call.refs[key]?.type !== type)
+      )
+        return refuse("code_test_invalid_refs");
+      let domainInput = call.input;
+      if (spec.stream?.direction === "write") {
+        const input = z.record(z.string(), z.unknown()).safeParse(call.input);
+        const file = CodeFileRefSchema.safeParse(input.success ? input.data.file : null);
+        if (!input.success || !file.success || file.data.size > spec.stream.maxBytes) return refuse("code_test_invalid_input");
+        const { id: _opaque, ...metadata } = file.data;
+        domainInput = { ...input.data, file: metadata };
+      }
+      if (!database && !z.fromJSONSchema(spec.inputSchema).safeParse(domainInput).success) return refuse("code_test_invalid_input");
+      const key = metadata.idempotencyKey;
+      if (spec.kind === "action" && spec.idempotency === "required" ? !key : key !== undefined)
+        return refuse("code_test_invalid_idempotency");
+      const receiptKey = JSON.stringify([operation, key]);
+      const digest = capabilityCallDigest({ ...call, input: domainInput });
+      const old = key ? receipts.get(receiptKey) : undefined;
+      if (old) {
+        if (old.digest !== digest) return refuse("idempotency_conflict", false);
+        row.replayed = true;
+        row.result = { ok: true, data: structuredClone(old.data) };
+        return structuredClone(old.data);
+      }
+      const matches = mocks.filter(
+        (mock) =>
+          mock.operation === operation &&
+          equal(mock.target, call.target) &&
+          (mock.input === undefined || equal(mock.input, call.input)) &&
+          (mock.refs === undefined || equal(mock.refs, call.refs)),
+      );
+      const specificity = (mock: CodeTestMock) => Number(mock.input !== undefined) + Number(mock.refs !== undefined);
+      const best = matches.reduce((best, mock) => Math.max(best, specificity(mock)), -1);
+      const selected = matches.filter((mock) => specificity(mock) === best);
+      if (selected.length !== 1) return refuse(selected.length ? "code_test_ambiguous_mock" : "code_test_missing_mock");
+      const mock = selected[0]!;
+      const cursor = cursors.get(mock) ?? 0;
+      const reply = mock.replies[cursor];
+      cursors.set(mock, cursor + 1);
+      if (!reply)
+        return refuse(
+          "code_test_mock_exhausted",
+          true,
+          codeTestFixtureDetail(
+            { mocks },
+            {
+              path: ["mocks", mocks.indexOf(mock), "replies", cursor],
+              message: `Mock exhausted: calls=${cursor + 1} (excluding replays), replies=${mock.replies.length}. Each reply serves exactly one call; add a reply for each call.`,
+            },
+          ),
+        );
+      if (!reply.ok) return refuse(reply.error, false);
+      const invalidFixture = (path: PropertyKey[], reason: string): never =>
+        refuse(
+          "code_test_invalid_fixture",
+          true,
+          codeTestFixtureDetail({ mocks }, { path: ["mocks", mocks.indexOf(mock), "replies", cursor, ...path], message: reason }),
+        );
+      if ((spec.kind !== "query" || spec.stream?.direction === "read") && reply.page !== undefined)
+        return invalidFixture(["page"], "Pagination is only allowed on non-stream Query replies.");
+      const changes = z.object({ changes: z.number().int().nonnegative() }).strict();
+      const output = database
+        ? operation === "db.query"
+          ? z.array(z.record(z.string(), z.json()))
+          : operation === "db.batch"
+            ? z.array(changes)
+            : changes
+        : spec.stream?.direction === "read"
+          ? CodeFileRefSchema
+          : z.fromJSONSchema(spec.dataSchema);
+      const checked = output.safeParse(reply.data);
+      if (!checked.success) {
+        const issue = checked.error.issues[0]!;
+        return invalidFixture(["data", ...issue.path], issue.message);
+      }
+      if (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes)
+        return invalidFixture(["data", "size"], `File size exceeds the operation's stream limit of ${spec.stream.maxBytes} bytes.`);
+      const data = structuredClone(
+        !database && spec.kind === "query" && spec.stream?.direction !== "read"
+          ? { data: reply.data, ...(reply.page === undefined ? {} : { page: reply.page }) }
+          : reply.data,
+      );
+      row.result = { ok: true, data };
+      if (key) receipts.set(receiptKey, { digest, data: structuredClone(data) });
+      return structuredClone(data);
+    },
+  };
+}

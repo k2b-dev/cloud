@@ -19,6 +19,7 @@ const authenticateAs =
     c.set("actor", { kind: "user", user });
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("user", user);
+    c.set("credentialKind", "session");
     await next();
   };
 
@@ -168,5 +169,124 @@ describe("accounts entity routes", () => {
     } finally {
       record.mockRestore();
     }
+  });
+});
+
+describe("Code principal lookup with a target", () => {
+  const handle = "code-7k2q9m4xwt";
+  const target = "&target_type=spaces.space&target_id=space-1";
+  for (const [label, search, targetQuery, manages, expected] of [
+    ["exact handle with Manage", handle, target, true, handle],
+    ["a reader", handle, target, false, undefined],
+    ["no target", handle, "", true, undefined],
+    ["a name", "Code von Geheim", target, true, undefined],
+    ["a prefix", "code-7k2", target, true, undefined],
+    ["a different case", "CODE-7k2q9m4xwt", target, true, undefined],
+  ] as const) {
+    test(label, async () => {
+      let admitted: string | undefined;
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => false,
+        managesTarget: async (ref) => {
+          expect(ref).toEqual({ type: "spaces.space", id: "space-1" });
+          return manages;
+        },
+        listEntities: async (params) => {
+          admitted = params.codeAccountHandle;
+          return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+        },
+      });
+      expect((await route.request(`/entities?search=${encodeURIComponent(search)}${targetQuery}`)).status).toBe(200);
+      expect(admitted).toBe(expected);
+    });
+  }
+  for (const targetType of ["core.ai.skill", "core.ai.project"]) {
+    test(`${targetType} uses the local Manage adapter and the same handle budget`, async () => {
+      const calls: string[] = [];
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => {
+          calls.push("limit");
+          return false;
+        },
+        managesTarget: async (ref) => {
+          calls.push("target");
+          expect(ref).toEqual({ type: targetType, id: "AI2568" });
+          return true;
+        },
+        listEntities: async (params) => {
+          calls.push("entities");
+          expect(params.codeAccountHandle).toBe(handle);
+          return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+        },
+      });
+      expect((await route.request(`/entities?search=${handle}&target_type=${targetType}&target_id=AI2568`)).status).toBe(200);
+      expect(calls).toEqual(["limit", "target", "entities"]);
+    });
+  }
+  for (const manages of [false, true]) {
+    test(`the HTTP response exposes a Code title only with Manage on the supplied target (${manages})`, async () => {
+      const route = createAccountsEntitiesRoutes({
+        authenticate: authenticateAs("user"),
+        limitHandleLookup: async () => false,
+        managesTarget: async () => manages,
+        listEntities: async (params) => ({
+          items: params.codeAccountHandle
+            ? [
+                {
+                  kind: "service_account",
+                  serviceAccount: {
+                    id: USER_ID,
+                    name: "Code von Vertraulich",
+                    kind: "code",
+                    handle,
+                    status: "active",
+                    delegatedUserId: null,
+                    appId: null,
+                    resourceType: null,
+                    resourceId: null,
+                    createdBy: null,
+                    createdAt: "2026-11-04T00:00:00Z",
+                  },
+                },
+              ]
+            : [],
+          page: 1,
+          perPage: 20,
+          total: params.codeAccountHandle ? 1 : 0,
+          hasNext: false,
+        }),
+      });
+      const response = await route.request(`/entities?search=${handle}${target}`);
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body.includes("Code von Vertraulich")).toBe(manages);
+      expect(body.includes(handle)).toBe(manages);
+    });
+  }
+  test("consumes the user-wide Valkey budget before target or account lookup", async () => {
+    let queried = false;
+    const route = createAccountsEntitiesRoutes({
+      authenticate: authenticateAs("user"),
+      limitHandleLookup: async (id) => {
+        expect(id).toBe(USER_ID);
+        return true;
+      },
+      managesTarget: async () => {
+        queried = true;
+        return true;
+      },
+      listEntities: async () => {
+        queried = true;
+        throw new Error("lookup must not run");
+      },
+    });
+    expect((await route.request(`/entities?search=${handle}${target}`)).status).toBe(429);
+    expect(queried).toBe(false);
+  });
+  test("rejects a partial target reference", async () => {
+    const route = createAccountsEntitiesRoutes({ authenticate: authenticateAs("user") });
+    expect((await route.request(`/entities?search=${handle}&target_type=spaces.space`)).status).toBe(400);
   });
 });

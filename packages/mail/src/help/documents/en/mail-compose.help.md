@@ -50,7 +50,7 @@ While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the co
 
 To add several people at once, type or paste a list separated by commas, semicolons, or line breaks, also in the form `Name <address>`. Each address becomes its own recipient; a part that is not an address stays in the field, marked. Text that is still in a recipient field when you send goes with the message if it is a complete address. Otherwise Mail does not send, keeps the text, and puts the cursor in that field.
 
-**Ctrl+Enter** (**⌘+Enter** on a Mac) sends from any field of the draft, with the same checks as **Send**. While Mail saves or sends, the text keeps its cursor and toolbar; typing waits until the step ends. A draft in its own window closes that window after sending or discarding.
+**Ctrl+Enter** (**⌘+Enter** on a Mac) sends from any field of the draft, with the same checks as **Send**. While **Send** waits, for example for an upload or the connection, a message says why. While Mail saves or sends, the text keeps its cursor and toolbar; typing waits until the step ends. A draft in its own window closes that window after sending or discarding.
 
 When you open another conversation or mailbox while a draft is open, Mail saves the latest changes before it releases the editing lease. Back and reload open the conversation with the draft open again.
 
@@ -109,7 +109,7 @@ Your default format is in **… → Settings → Writing → Compose format**. C
 
 Drafts belong to the mailbox, not only to the browser that created them. A conversation has one reply draft, and it always stands in the reply box. **Reply**, **Reply all**, and **Forward** change its mode instead of starting a second one. In the list, a conversation with drafts shows **Draft** or the number of drafts with the people who write them.
 
-A suggestion from Gustav or another automated account is this one reply draft, in the reply box, in plum, with the account's name, for example **Suggestion from Gustav**, and **Type to take it over, or send it as it is**. It never sends by itself; **Send** sends it as it is. Once someone changes anything, recipients included, it is an ordinary draft, and the account never replaces it. Each account has at most one such suggestion in a conversation.
+A suggestion from Gustav or another automated account is this one reply draft, in the reply box, in plum, with the account's name, for example **Suggestion from Gustav**, and **Type to take it over, or send it as it is**. A suggestion from the mailbox's Code shows **Code of** and the mailbox name. It never sends by itself; **Send** sends it as it is. Only the line above the quoted original ("On … wrote:") follows your language and time zone. Once someone changes anything, recipients included, it is an ordinary draft, and the account never replaces it. Each account has at most one such suggestion in a conversation.
 
 Mail saves the shared draft while you work. It also keeps a recovery journal in the browser for changes that have not reached the server yet. After a reload or a broken connection, Mail can restore these browser changes.
 

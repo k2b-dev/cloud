@@ -15,7 +15,7 @@ import {
   getConversationSummary,
   loadConversationSummary,
   updateConversationSummary,
-  updateWorkflowConversationSummaryInTransaction,
+  updateConversationSummaryInTransaction,
   writeAutomatedConversationSummary,
 } from "./conversation-summary";
 import * as summaryAi from "./conversation-summary-ai";
@@ -139,10 +139,10 @@ suite("durable conversation summaries", () => {
     expect(await state(unknown)).toMatchObject({ source: null, newMessagesSince: 0 });
     const mutation = unwrap(
       await sql.begin((db) =>
-        updateWorkflowConversationSummaryInTransaction({
+        updateConversationSummaryInTransaction({
           ...workflow,
           db,
-          workflowVersionId: userIds[0]!,
+          context,
           input: { summary: "Continued summary", expectedSummaryRevision: 2 },
         }),
       ),

@@ -1,7 +1,8 @@
 import { logger } from "@k2b/cloud/services";
+import type { CodeAttention } from "@k2b/cloud/ssr/code-page";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
-import type { AutomationLogItem, MailWorkspacePreference } from "../contracts";
+import type { MailWorkspacePreference } from "../contracts";
 import {
   type ConversationDraftSummary,
   type ConversationListDrafts,
@@ -27,7 +28,6 @@ import {
 } from "../search-state";
 import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
-import * as automationLog from "./automation-log";
 import type {
   ConversationCollaboration,
   ConversationComment,
@@ -191,6 +191,8 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 };
 
 export type MailboxPageData = {
+  /** Core's answer about the mailbox's Code, added by the SSR page and the workspace route; null when it did not answer in time. */
+  codeAttention?: CodeAttention | null;
   viewPreference: MailViewPreference;
   workspacePreference: MailWorkspacePreference;
   doneTodayCounts: MailDoneTodayCounts;
@@ -237,8 +239,6 @@ export type MailboxPageData = {
   conversationRowState: ConversationRowState | null;
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
-  /** What rules did with the selected conversation, newest first (at most 10). */
-  automationTrace: AutomationLogItem[];
   detailError: string | null;
   collaborationState: ConversationCollaboration | null;
   localTags: LocalTag[];
@@ -274,7 +274,6 @@ export type MailSelectionDetail = Pick<
   | "conversationRowState"
   | "conversationSummary"
   | "conversationDrafts"
-  | "automationTrace"
   | "detailError"
   | "collaborationState"
   | "conversationLocalTags"
@@ -307,7 +306,6 @@ const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
   conversationRowState: null,
   conversationSummary: null,
   conversationDrafts: [],
-  automationTrace: [],
   detailError: null,
   collaborationState: null,
   conversationLocalTags: null,
@@ -490,7 +488,6 @@ const loadConversationDetails = async (
     referenceResult,
     summaryResult,
     draftsResult,
-    traceResult,
   ] = await Promise.all([
     messages.listConversationMessageDetails({ ...params, limit: 100 }),
     messages.getConversationRowState(params),
@@ -510,7 +507,6 @@ const loadConversationDetails = async (
     conversationReferences.listConversationReferences(params),
     conversationSummaries.getConversationSummary(params),
     drafts.listConversationDrafts({ ...params, limit: 20 }),
-    automationLog.getConversationAutomationTrace(params.context, params.mailboxId, params.conversationId),
   ]);
 
   return {
@@ -518,7 +514,6 @@ const loadConversationDetails = async (
     conversationRowState: rowStateResult.ok ? rowStateResult.data : null,
     conversationSummary: summaryResult.ok ? summaryResult.data : null,
     conversationDrafts: draftsResult.ok ? draftsResult.data : [],
-    automationTrace: traceResult.ok ? traceResult.data.items : [],
     detailError: !detailResult.ok ? errorMessage(detailResult.error) : !rowStateResult.ok ? errorMessage(rowStateResult.error) : null,
     collaborationState: stateResult.ok ? stateResult.data : null,
     conversationLocalTags: tagResult.ok ? tagResult.data : null,
@@ -1037,6 +1032,38 @@ export const loadMailboxListView = async (listParams: MailboxListParams): Promis
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
+  });
+};
+
+/** The mailbox's own sidebar beside its Code page: folders, counts, and the person's access, without any list. */
+export type MailboxCodePageData = {
+  mailbox: Mailbox;
+  access: MailboxAccess;
+  folders: MailFolderView[];
+  viewCounts: ConversationViewCounts;
+  scheduledCount: number;
+  receivingAddress: string | null;
+};
+
+export const loadMailboxCodePageData = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxCodePageData>> => {
+  const access = await requireMailboxAccess(context, mailboxId, "read");
+  if (!access.ok) return fail(access.error);
+  const [mailbox, folders, viewCounts, scheduledCount, receivingAddress] = await Promise.all([
+    mailboxes.getMailbox(context, mailboxId),
+    messages.listFolders(context, mailboxId),
+    messages.getConversationViewCounts({ context, mailboxId }),
+    scheduledSends.countScheduledSends({ context, mailboxId }),
+    mailboxes.getMailboxReceivingAddress(mailboxId),
+  ]);
+  if (!mailbox.ok) return fail(mailbox.error);
+  return ok({
+    mailbox: mailbox.data,
+    access: access.data,
+    // CountRefreshBusy propagates to the page so contention renders 503 instead of misleading zero badges.
+    folders: folders.ok ? folders.data : [],
+    viewCounts: viewCounts.ok ? viewCounts.data : EMPTY_VIEW_COUNTS,
+    scheduledCount: scheduledCount.ok ? scheduledCount.data : 0,
+    receivingAddress,
   });
 };
 

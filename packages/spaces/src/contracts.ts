@@ -1,5 +1,5 @@
 import type { MutationResult as CloudMutationResult } from "@k2b/cloud/contracts";
-import { CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
+import { AccessEntrySchema as CloudAccessEntrySchema, CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
 
@@ -80,7 +80,35 @@ export type SpaceWormholeDestination = z.infer<typeof SpaceWormholeDestinationSc
 export const PrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
 export type Priority = z.infer<typeof PrioritySchema>;
 
-export const EstimatedDurationMinutesSchema = z.number().int().min(1).max(2_147_483_647);
+export const MAX_ESTIMATED_DURATION_MINUTES = 2_147_483_647;
+/** Task estimates step in quarter hours in the edit form; a suggested estimate is always on this grid. */
+export const ESTIMATE_STEP_MINUTES = 15;
+export const EstimatedDurationMinutesSchema = z.number().int().min(1).max(MAX_ESTIMATED_DURATION_MINUTES);
+
+/** The assistant's estimate for a task's duration, offered in the edit form and never stored as the value by itself. */
+export const EstimateSuggestionResultSchema = z.discriminatedUnion("state", [
+  z
+    .object({
+      state: z.literal("ready"),
+      suggestion: z.object({
+        id: z.string().describe("Stable per task text and language; changes when the title, description, or checklist changes"),
+        minutes: EstimatedDurationMinutesSchema.describe("Suggested duration in minutes, a multiple of 15"),
+        confidence: z.enum(["high", "low"]).describe("low when the scope is unclear"),
+        reason: z.string().nullable().describe("Why the estimate is unsure; null for high confidence"),
+      }),
+    })
+    .describe("A suggestion is ready"),
+  z.object({ state: z.literal("none") }).describe("The task text gives too little to estimate"),
+  z
+    .object({
+      state: z.literal("failed"),
+      reason: z
+        .enum(["allowance", "unavailable", "error"])
+        .describe("allowance: the person's assistant allowance is used up; unavailable: no model for them; error: try again"),
+    })
+    .describe("No suggestion this time"),
+]);
+export type EstimateSuggestionResult = z.infer<typeof EstimateSuggestionResultSchema>;
 
 export const RecurrenceSchema = z.object({
   rrule: z.string().min(1).describe("RFC 5545 RRULE string"),
@@ -175,6 +203,7 @@ export const SpaceItemSchema = z.object({
   rank: z.string().describe("Item ordering rank within a column"),
   completedAt: z.string().nullable().describe("Completion timestamp (ISO)"),
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
+  createdByWorkload: z.boolean().optional().describe("Whether durable work such as Code created this item rather than a person directly"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
   lastActivityAt: z.string().optional().describe("Most recent item or checklist activity timestamp (ISO); comments do not count"),
@@ -1011,14 +1040,12 @@ export const ItemFilterResponseSchema = ItemListResultSchema.extend({
 });
 
 export type {
-  AccessEntry,
   MessageResponse,
   PermissionLevel,
   Principal,
   User,
 } from "@k2b/cloud/contracts";
 export {
-  AccessEntrySchema,
   ErrorResponseSchema,
   GrantAccessSchema,
   hasRole,
@@ -1027,6 +1054,10 @@ export {
   PrincipalSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+
+/** Ordinary resource access entries, including Code service accounts. */
+export const AccessEntrySchema = CloudAccessEntrySchema;
+export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 
 /** Item mutation conflicts retain their stable transport code. */
 export type MutationResult<T = void> = CloudMutationResult<T> & { code?: string };

@@ -25,6 +25,7 @@ export default function ItemDetailFixture(props: Props) {
             canWrite={props.canWrite}
             accessVisible={props.accessVisible}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
+            estimateSuggestions={props.estimateSuggestions}
           />
         </AppWorkspace.Content>
       </AppWorkspace>

@@ -1,0 +1,264 @@
+import { z } from "zod";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "../ai/live-interval";
+import { LIVE_LIMITS } from "../events/live-limits";
+import { codeOutputJsonBytes as bytes } from "./output-size";
+
+/** Reuse the AI stream's one-second bundling cadence; no separate output throughput policy. */
+export const CODE_OUTPUT_INTERVAL_MS = AI_LIVE_SNAPSHOT_INTERVAL_MS;
+export const CODE_OUTPUT_OPERATION = "runtime.output";
+const count = z.number().int().nonnegative().safe();
+// One local definition keeps repeated timestamp patterns within the existing
+// capability-manifest budget without changing the accepted date-time format.
+const outputAt = z.iso.datetime().meta({ id: "CodeOutputAt" });
+const logMetadata = {
+  kind: z.literal("log"),
+  level: z.enum(["log", "info", "debug", "warn", "error"]),
+  at: outputAt,
+};
+/** Step text fields share one existing live-frame budget, including the largest wire metadata.
+ * Dividing the remaining bytes among the fields ensures a complete update can fit a frame.
+ * The serialized complete step derives the lifetime handle count; no independent policy knob.
+ */
+export const CODE_OUTPUT_STEP_TEXT_FIELDS = ["label", "icon", "description", "message"] as const;
+const stepMetadata = {
+  kind: z.literal("step"),
+  at: outputAt,
+  status: z.enum(["pending", "running", "succeeded", "failed", "skipped"]),
+  startedAt: outputAt.optional(),
+  endedAt: outputAt.optional(),
+};
+const stepEnvelope = {
+  kind: "step",
+  id: Number.MAX_SAFE_INTEGER,
+  at: "2030-01-02T00:00:00.000Z",
+  label: "",
+  icon: "",
+  description: "",
+  status: "succeeded",
+  startedAt: "2030-01-02T00:00:00.000Z",
+  endedAt: "2030-01-02T00:00:00.000Z",
+  message: "",
+};
+// Reserve the canonical map form, including the largest safe generation/ID,
+// named secret parts, optional fields and automatic completion. Short fields may
+// expand to one maximum-size secret marker without consuming another handle's slot.
+const canonicalId = `${Number.MAX_SAFE_INTEGER}:step:${Number.MAX_SAFE_INTEGER}`;
+// The part schema permits one initial name character plus 63 following ones;
+// the icon schema below permits at most 64 ASCII characters.
+const secretPart = { type: "secret", name: "S".repeat(64) };
+const canonicalStep = {
+  ...stepEnvelope,
+  id: canonicalId,
+  label: [secretPart],
+  icon: "a".repeat(64),
+  description: [secretPart],
+  message: [secretPart],
+  reason: "run_ended",
+};
+const stepMetadataBytes = bytes(canonicalStep) + bytes(canonicalId) + 2;
+const stepTextReserveBytes = bytes(secretPart) - bytes({ type: "text", text: "" });
+/** Canonical event overhead uses the safe-integer transport widths, not observed counters. */
+export function codeOutputStepsBudget(runId: string, generation: number, budget: number) {
+  return Math.min(
+    budget,
+    LIVE_LIMITS.frameBytes -
+      bytes({
+        generation,
+        entries: [],
+        seq: Number.MAX_SAFE_INTEGER,
+        droppedLines: Number.MAX_SAFE_INTEGER,
+        droppedBytes: Number.MAX_SAFE_INTEGER,
+        type: "code.output",
+        runId,
+        budget: Number.MAX_SAFE_INTEGER,
+      }) +
+      bytes([]),
+  );
+}
+export const CODE_OUTPUT_STEP_LIMITS = Object.freeze({
+  count: Math.floor(
+    (codeOutputStepsBudget("00000000-0000-4000-8000-000000000000", Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) - bytes({})) /
+      stepMetadataBytes,
+  ),
+  metadataBytes: stepMetadataBytes,
+  textReserveBytes: stepTextReserveBytes,
+  textBytes: Math.floor(
+    (LIVE_LIMITS.frameBytes -
+      bytes({
+        seq: Number.MAX_SAFE_INTEGER,
+        entries: [stepEnvelope],
+        droppedLines: Number.MAX_SAFE_INTEGER,
+        droppedBytes: Number.MAX_SAFE_INTEGER,
+      })) /
+      CODE_OUTPUT_STEP_TEXT_FIELDS.length,
+  ),
+});
+/** Same reservation in the isolate and Core. Repeated immutable fields cost once;
+ * redacted parts are bounded to this reservation before another step is admitted.
+ */
+export function codeOutputStepBytes(entry: Partial<Record<(typeof CODE_OUTPUT_STEP_TEXT_FIELDS)[number], string>>) {
+  return (
+    CODE_OUTPUT_STEP_LIMITS.metadataBytes +
+    CODE_OUTPUT_STEP_TEXT_FIELDS.reduce(
+      (size, field) => size + Math.max(0, bytes(entry[field] ?? "") - bytes("") - CODE_OUTPUT_STEP_LIMITS.textReserveBytes),
+      0,
+    )
+  );
+}
+const stepText = z.string().refine((value) => bytes(value) <= CODE_OUTPUT_STEP_LIMITS.textBytes);
+export const CodeOutputLogInputSchema = z.object({ ...logMetadata, text: z.string() }).strict();
+export const CodeOutputStepInputSchema = z
+  .object({
+    ...stepMetadata,
+    id: count.positive().max(CODE_OUTPUT_STEP_LIMITS.count),
+    label: stepText,
+    icon: stepText.optional(),
+    description: stepText.optional(),
+    message: stepText.optional(),
+  })
+  .strict();
+export const CodeOutputBatchSchema = z
+  .object({
+    seq: count.positive(),
+    entries: z.array(z.discriminatedUnion("kind", [CodeOutputLogInputSchema, CodeOutputStepInputSchema])),
+    droppedLines: count,
+    droppedBytes: count,
+  })
+  .strict()
+  .refine((batch) => bytes(batch) <= LIVE_LIMITS.frameBytes);
+export type CodeOutputBatch = z.infer<typeof CodeOutputBatchSchema>;
+export const CodeOutputPartSchema = z
+  .discriminatedUnion("type", [
+    z.object({ type: z.literal("text"), text: z.string() }).strict(),
+    z.object({ type: z.literal("secret"), name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/) }).strict(),
+  ])
+  // Reuse one local JSON Schema definition for log and step text fields, rather
+  // than inlining their identical unions into the bounded capability manifest.
+  .meta({ id: "CodeOutputPart" });
+export type CodeOutputText = z.infer<typeof CodeOutputPartSchema>[];
+export const CodeOutputStepEntrySchema = z
+  .object({
+    ...stepMetadata,
+    id: z.string().min(1),
+    label: z.array(CodeOutputPartSchema),
+    icon: z
+      .string()
+      .max(64)
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+    description: z.array(CodeOutputPartSchema).optional(),
+    message: z.array(CodeOutputPartSchema).optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+export const CodeOutputKnownEntrySchema = z.discriminatedUnion("kind", [
+  z.object({ ...logMetadata, id: z.string().min(1), text: z.array(CodeOutputPartSchema) }).strict(),
+  CodeOutputStepEntrySchema,
+]);
+export type CodeOutputKnownEntry = z.infer<typeof CodeOutputKnownEntrySchema>;
+const knownKinds = new Set<string>(CodeOutputKnownEntrySchema.options.map((entry) => entry.shape.kind.value));
+/** Future entry kinds remain opaque data: retain them for identical window accounting,
+ * but never render their fields as a known kind. Known malformed entries still fail.
+ */
+export const CodeOutputEntrySchema = z.union([
+  CodeOutputKnownEntrySchema,
+  z.object({ kind: z.string().refine((kind) => !knownKinds.has(kind)) }).passthrough(),
+]);
+export type CodeOutputEntry = z.infer<typeof CodeOutputEntrySchema>;
+/** An entry counts once regardless of how many fields a step carries. */
+export const codeOutputEntryLines = (entry: CodeOutputBatch["entries"][number]) =>
+  entry.kind === "log" ? entry.text.split(/\r\n|\n|\r/).length : 1;
+export const CodeOutputWindowSchema = z
+  .object({
+    generation: count,
+    seq: count,
+    entries: z.array(CodeOutputEntrySchema),
+    droppedLines: count,
+    droppedBytes: count,
+  })
+  .strict();
+export type CodeOutputWindow = z.infer<typeof CodeOutputWindowSchema>;
+export const CodeOutputEventSchema = CodeOutputWindowSchema.omit({ entries: true })
+  .extend({
+    type: z.literal("code.output"),
+    runId: z.uuid(),
+    /** Accepted entries of this batch, before applying the shared tail window. */
+    entries: z.array(CodeOutputEntrySchema),
+    budget: count.positive(),
+  })
+  .strict();
+export type CodeOutputEvent = z.infer<typeof CodeOutputEventSchema>;
+/** ANSI CSI/OSC/DCS sequences, controls and direction/format marks are never rendered. Newlines split lines upstream. */
+export function cleanCodeOutput(text: string): string {
+  const kept: string[] = [];
+  let offset = 0;
+  let oscBoundary = -1;
+  for (let index = 0; index < text.length; ) {
+    const code = text.charCodeAt(index);
+    const escape = code === 0x1b;
+    const kind = escape ? text.charCodeAt(index + 1) : code;
+    const body = index + (escape ? 2 : 1);
+    let end = index;
+    if (escape ? kind === 0x5d : kind === 0x9d) {
+      // A failed OSC may contain more OSC introducers. Reuse its first boundary
+      // rather than scanning the same suffix again for every nested introducer.
+      if (oscBoundary < body) {
+        oscBoundary = body;
+        while (oscBoundary < text.length) {
+          const next = text.charCodeAt(oscBoundary);
+          if (next === 0x07 || next === 0x1b || next === 0x9c) break;
+          oscBoundary++;
+        }
+      }
+      const terminator = text.charCodeAt(oscBoundary);
+      if (oscBoundary === text.length) end = oscBoundary;
+      else if (terminator === 0x07 || terminator === 0x9c) end = oscBoundary + 1;
+      else if (text.charCodeAt(oscBoundary + 1) === 0x5c) end = oscBoundary + 2;
+    } else if (
+      escape
+        ? kind === 0x50 || kind === 0x5e || kind === 0x5f || kind === 0x58
+        : code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f
+    ) {
+      end = body;
+      while (end < text.length) {
+        const next = text.charCodeAt(end++);
+        if (next === 0x9c) break;
+        if (next === 0x1b && text.charCodeAt(end) === 0x5c) {
+          end++;
+          break;
+        }
+      }
+    } else if (escape ? kind === 0x5b : code === 0x9b) {
+      let cursor = body;
+      while (text.charCodeAt(cursor) >= 0x30 && text.charCodeAt(cursor) <= 0x3f) cursor++;
+      while (text.charCodeAt(cursor) >= 0x20 && text.charCodeAt(cursor) <= 0x2f) cursor++;
+      if (cursor === text.length) end = cursor;
+      else if (text.charCodeAt(cursor) >= 0x40 && text.charCodeAt(cursor) <= 0x7e) end = cursor + 1;
+    }
+    // Incomplete OSC/CSI sequences still allow the original generic ESC match.
+    if (end === index && escape) {
+      let cursor = index + 1;
+      while (text.charCodeAt(cursor) >= 0x20 && text.charCodeAt(cursor) <= 0x2f) cursor++;
+      if (text.charCodeAt(cursor) >= 0x30 && text.charCodeAt(cursor) <= 0x7e) end = cursor + 1;
+    }
+    if (end > index) {
+      kept.push(text.slice(offset, index));
+      offset = end;
+      index = end;
+    } else index++;
+  }
+  kept.push(text.slice(offset));
+  return kept.join("").replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
+}
+/** Core supplies already-redacted text. Markers become data, never HTML or an unescaped secret value. */
+export function codeOutputParts(text: string): CodeOutputText {
+  const parts: CodeOutputText = [];
+  let offset = 0;
+  for (const match of text.matchAll(/\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g)) {
+    if (match.index > offset) parts.push({ type: "text", text: text.slice(offset, match.index) });
+    parts.push({ type: "secret", name: match[1]! });
+    offset = match.index + match[0].length;
+  }
+  if (offset < text.length) parts.push({ type: "text", text: text.slice(offset) });
+  return parts;
+}

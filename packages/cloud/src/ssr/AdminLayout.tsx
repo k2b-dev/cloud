@@ -20,6 +20,7 @@ type AdminLayoutContext = {
   get(key: "runtime"): RuntimeContext;
   get(key: "settings"): Record<string, any>;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
+  get(key: "adminCodeApprovals"): number | undefined;
   get(key: "sessionIdle"): AuthContext["Variables"]["sessionIdle"];
   get(key: "credentialProof"): AuthContext["Variables"]["credentialProof"];
   req: { raw: { headers: Headers; url: string } };
@@ -51,7 +52,7 @@ export default function AdminLayout(props: Props) {
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
       {/* Settings and administration are quiet: flat, only charts, dashboard frames, and key figures lift. */}
       <AppWorkspace mobileSurface="flush" layer="quiet" class="min-h-0 flex-1">
-        <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
+        <AdminSidebar currentPath={currentPath} apps={runtime.apps} codeApprovals={c.get("adminCodeApprovals")} />
         <AppWorkspace.Content>
           {props.ownMain ? (
             props.children

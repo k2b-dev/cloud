@@ -112,9 +112,18 @@ test("a review shows each stored passage with its author above the text, also fo
   for (const operation of ["post", "edit", "delete"] as const) {
     const review = discussionReview(operation, item, "Review", "Agreed.", "en", operation === "post" ? undefined : 0, quotes);
     expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
-    expect(review.content?.body).toBe(`> disapprove of this plan — Lea Muster\n> ${"🦋".repeat(9_999)} — Ben Schulz\n\nAgreed.`);
+    expect(review.view?.blocks.slice(0, 2)).toEqual(quotes.map((quote) => ({ kind: "Text", text: `> ${quote.text} — ${quote.author}` })));
+    expect(review.view?.blocks.at(-1)).toEqual(
+      operation === "delete"
+        ? { kind: "Text", text: "Agreed." }
+        : {
+            kind: "Draft",
+            context: [{ label: "Place", value: "Review" }],
+            fields: [{ name: "body", label: "Body", type: "textarea", value: "Agreed." }],
+          },
+    );
   }
-  expect(discussionReview("post", item, "Review", "Agreed.").content?.body).toBe("Agreed.");
+  expect(discussionReview("post", item, "Review", "Agreed.").view?.blocks).toHaveLength(1);
 });
 
 test("fresh standard item and container readers supply only the exact authorized resources", async () => {
@@ -196,7 +205,10 @@ test("message entry points check credential scopes before looking up a message",
   const deniedRead = await chatCapabilities.queries["message.read"].run({ id: "Missing001" }, c);
   expect(!deniedRead.ok && deniedRead.error.status).toBe(403);
   c.authority = { ...c.authority, scopes: ["read"] };
-  const deniedReview = await chatCapabilities.actions["message.edit"].review({ id: "Missing002", revision: 0, body: "Correction" }, c);
+  const deniedReview = await chatCapabilities.actions["message.edit"].review(
+    { revision: 0, body: "Correction" },
+    { ...c, target: { type: "chat.message", id: "Missing002" } },
+  );
   expect(!deniedReview.ok && deniedReview.error.status).toBe(403);
   const delegated = context();
   delegated.actor = {
@@ -217,21 +229,22 @@ test("all discussion approval operations preserve a maximum-size message in full
       const id = operation === "post" ? "discussion.post" : `message.${operation}`;
       const action = manifest.actions.find((action) => action.localId === id)!;
       assertCapabilityReview(review, {
+        inputSchema: action.inputSchema,
         policy: capabilityActionPolicy(manifest, id),
         approval: action.approval,
         queries: manifest.queries,
         validateQueryInput: () => false,
         locales: ["en", "de"],
       });
-      expect(review.content?.body).toBe(body);
-      const { content: _content, ...compact } = review;
+      expect(JSON.stringify(review.view)).toContain(JSON.stringify(body).slice(1, -1));
+      const { view: _view, ...compact } = review;
       expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
     }
   const actualPost = await chatCapabilities.actions["discussion.post"].review({ ref: item, body }, context());
   expect(actualPost.ok).toBe(true);
   if (actualPost.ok) {
     const parsed = CapabilityActionReviewDataSchema.parse(actualPost.data);
-    expect("content" in parsed && parsed.content?.body).toBe(body);
+    expect(JSON.stringify("view" in parsed && parsed.view)).toContain(JSON.stringify(body).slice(1, -1));
     const manifest = compileCapabilityManifest("chat", chatCapabilities);
     const approval = manifest.actions.find((action) => action.localId === "discussion.post")?.approval;
     expect(capabilityReviewRememberScope(actualPost.data, approval)).toBe(discussionApprovalScope(container.ref));
@@ -276,4 +289,21 @@ test("container denial and cancellation never fall back to another authority", a
   };
   expect((await authorizeDiscussion(item, c, true)).ok).toBe(false);
   expect(queried).toBe(false);
+});
+
+test("Chat actions prohibit resource Code and Chat-owned targets stay explicit", () => {
+  const manifest = compileCapabilityManifest("chat", chatCapabilities);
+  for (const localId of ["discussion.post", "message.edit", "message.delete", "thread.follow", "notifications.set"]) {
+    expect(manifest.actions.find((action) => action.localId === localId)?.code).toBe(false);
+  }
+  for (const localId of ["message.edit", "message.delete"]) {
+    const action = manifest.actions.find((entry) => entry.localId === localId)!;
+    expect(action.target).toBe("message");
+    expect(action.inputSchema.properties).not.toHaveProperty("id");
+  }
+  for (const localId of ["notifications.set", "thread.follow"]) {
+    const action = manifest.actions.find((entry) => entry.localId === localId)!;
+    expect(action.target).toBe("conversation");
+    expect(action.inputSchema.properties).not.toHaveProperty("conversation");
+  }
 });

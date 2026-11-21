@@ -1,8 +1,6 @@
 # Known test-waits findings, one per file: <file> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts test-waits --fix` lowers counts whose findings are gone.
-packages/assistant/src/artifacts/runtime/ai.browser.test.ts | 1
-packages/assistant/src/cli/code-host.test.ts | 4
 packages/assistant/src/frontend/AssistantWorkspace.approvals.behavior.test.tsx | 1
 packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 1
 packages/cloud/src/ai/client/controller.behavior.test.ts | 2
@@ -35,14 +33,11 @@ packages/grids/src/frontend/_components/workspace/GridsNavigation.behavior.test.
 packages/grids/src/frontend/custom-app/RecordsTable.actions.behavior.test.tsx | 1
 packages/mail/src/cli.test.ts | 1
 packages/mail/src/frontend/MailWorkspace.list-actions.behavior.test.tsx | 5
-packages/mail/src/frontend/_components/MailAutomaticReplySettings.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailCalendarInvitation.behavior.test.tsx | 2
 packages/mail/src/frontend/_components/MailComposeIntentPage.behavior.test.tsx | 3
 packages/mail/src/frontend/_components/MailConversationList.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 1
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.behavior.test.tsx | 3
 packages/mail/src/frontend/_components/MailRecipientInput.behavior.test.tsx | 4
-packages/mail/src/frontend/_components/MailSenderMessageActions.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailboxLogoSettings.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/mail-assign-picker.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/mail-composer-attachment-manager.behavior.test.tsx | 2

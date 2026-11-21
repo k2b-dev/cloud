@@ -37,6 +37,16 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der Adressbücher auf dieser Seite.",
           },
         },
+        "book.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "book.list": {
           title: "Adressbücher auflisten",
           description:
@@ -46,6 +56,17 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
             minimumPermission: "Für jedes zurückgegebene Adressbuch ist eine wirksame Mindestberechtigung erforderlich.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+          },
+        },
+        "book.readable": {
+          title: "Leser für Adressbuch prüfen",
+          description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
           },
         },
         "book.read": {
@@ -170,7 +191,6 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Kontakt erstellen",
           description: "Erstellt einen Kontakt in einem explizit ausgewählten Adressbuch mit Schreibzugriff.",
           input: {
-            bookId: "Öffentliche ID des Adressbuchs, dem der Kontakt zugeordnet wird.",
             label: "Optionale explizite Anzeigebezeichnung.",
             firstName: "Vorname einer Person.",
             lastName: "Nachname der Person.",
@@ -226,7 +246,6 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
             "Verschieben Sie einen Kontakt in ein anderes beschreibbares Buch. Buchbezogene Tags und Hierarchielinks werden entfernt.",
           input: {
             contactId: "Stabile öffentliche ID des zu verschiebenden Kontakts.",
-            targetBookId: "Öffentliche ID des Zieladressbuchs mit Schreibzugriff.",
             expectedUpdatedAt: "updatedAt-Wert aus dem letzten Lesevorgang; verhindert das Verschieben einer veralteten Version.",
           },
         },

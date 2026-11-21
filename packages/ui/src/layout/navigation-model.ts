@@ -19,6 +19,8 @@ type NavigationEntry = {
    * keeps its place, so a status change never rewraps the label or moves the rows below.
    */
   status?: NavigationStatus | null;
+  /** New activity the person has not seen: the label takes a stronger weight, so unread is never color alone. */
+  unread?: boolean;
   active?: boolean;
   /** Current container, independently of its active destination. `false` quiets this row; omitted keeps the default ink. */
   context?: boolean;

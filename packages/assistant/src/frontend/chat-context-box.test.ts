@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AssistantChatResult } from "../chat-context";
 import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source } from "./AssistantChatSidebar.fixture";
 import { buildContextBoxModel, CONTEXT_BOX_ROW_LIMIT, contextBoxPending, contextBoxWhen } from "./chat-context-box";
 
@@ -22,12 +23,36 @@ describe("box model", () => {
   });
 
   test("files show their size and download while pointing; other results their time and the way back to the chat", () => {
-    const [file, app] = build().results.rows;
+    const [file, view] = build().results.rows;
     expect(file).toMatchObject({ trailing: "1400000 B", open: { kind: "file" }, hover: { kind: "download" } });
-    expect(app).toMatchObject({ open: { kind: "app", id: "App001" }, hover: { kind: "jump" } });
+    expect(view).toMatchObject({ trailing: "14:09", open: { kind: "jump" }, hover: null });
   });
 
-  test("a visualization opens as a tab of its own and still leads back to the chat", () => {
+  test("a view says what it shows with its own sign, never a size, and points back to the chat", () => {
+    const view = (key: string, kind: AssistantChatResult["view"], icon: string, seq: number) => ({
+      ...fileResult(key, { at: minutesAgo(seq), turn: `t${seq}`, seq, size: 0, mediaType: "application/json" }),
+      icon,
+      view: kind,
+    });
+    const rows = build(
+      sidebarSnapshot({
+        results: [
+          view("/views/aufgaben.view.json", "chart", "ti ti-chart-bar", 1),
+          // Key figures read "Kennzahlen", not their JSON's size (#91: "0 B" in the box).
+          view("/views/kennzahlen.view.json", "stats", "ti ti-numbers", 2),
+          view("/views/alt.view.json", "view", "ti ti-file", 3),
+        ],
+      }),
+    ).results.rows;
+    expect(rows.map((row) => [row.trailing, row.icon, row.open.kind, row.hover?.kind])).toEqual([
+      ["Diagramm", "ti ti-chart-bar", "file", "jump"],
+      ["Kennzahlen", "ti ti-numbers", "file", "jump"],
+      ["Ansicht", "ti ti-presentation-analytics", "file", "jump"],
+    ]);
+    expect(rows.some((row) => row.trailing.endsWith(" B"))).toBe(false);
+  });
+
+  test("a visualization leads back to its place in the chat, with one action per row", () => {
     const visualization = {
       key: "code_present:c9",
       kind: "visualization" as const,
@@ -41,7 +66,10 @@ describe("box model", () => {
       presentationId: "00000000-0000-4000-8000-000000000009",
     };
     const [row] = build(sidebarSnapshot({ results: [visualization] })).results.rows;
-    expect(row).toMatchObject({ open: { kind: "presentation", id: visualization.presentationId }, hover: { kind: "jump" } });
+    expect(row).toMatchObject({
+      open: { kind: "jump", target: { presentationId: visualization.presentationId } },
+      hover: null,
+    });
   });
 
   test("the three newest results lead; more lead to all", () => {
@@ -56,8 +84,23 @@ describe("box model", () => {
   test("a context line is always there; an empty chat is empty", () => {
     expect(build(sidebarSnapshot({ skills: [], memories: [] })).context).toBe("Secrets & Freigaben");
     expect(build(sidebarSnapshot(), "Einkauf").context).toBe("Einkauf, 1 Skills");
-    const empty = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0 }));
+    const empty = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0, skills: [], memories: [] }));
     expect(empty.empty).toBe(true);
+    // A chat whose only content is its context keeps the context line: when its last alarm has rung, the box does not
+    // fall back to the empty sentence.
+    const contextOnly = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0, memories: [] }));
+    expect([contextOnly.empty, contextOnly.context]).toEqual([false, "1 Skills"]);
+  });
+
+  test("a box that showed content keeps its lines when the last of it goes, such as a one-off alarm that rang", () => {
+    const bare = sidebarSnapshot({ results: [], sources: [], sourceCount: 0, skills: [], memories: [] });
+    const options = { locale: "de", formatSize: (bytes: number) => `${bytes} B`, copy, project: null };
+    expect(buildContextBoxModel(bare, options).empty).toBe(true);
+    expect(buildContextBoxModel(bare, { ...options, filled: true })).toMatchObject({
+      empty: false,
+      results: { count: 0 },
+      context: "Secrets & Freigaben",
+    });
   });
 
   test("the sources line names Cloud items in their app's nouns and counts the rest as items", () => {

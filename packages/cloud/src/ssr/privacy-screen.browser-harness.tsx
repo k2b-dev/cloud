@@ -1,4 +1,4 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { Hono } from "hono";
 import { defineApp } from "../_internal/define-app";
 import { person } from "../_internal/define-app.test-fixture";
@@ -73,6 +73,31 @@ export const server = new Hono<Environment>()
                 <span id="upload-names" data-cloud-privacy="blur">
                   Gehaltsübersicht 2026.xlsx
                 </span>
+              </div>
+              {/* The open conversation's row: its fill is its own, and its unread dot is placed absolutely, so the
+                  cover passes through it to its children and cannot blur the fill. */}
+              <div id="selected-row" style={{ background: "var(--k2b-row-selected)", padding: "0.75rem 1rem 0.75rem 2rem" }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    "margin-left": "-1.25rem",
+                    width: "0.5rem",
+                    height: "0.5rem",
+                    "border-radius": "50%",
+                    background: "var(--k2b-action)",
+                  }}
+                />
+                <span>Mietvertrag Ladenfläche – Nachtrag</span>
+              </div>
+              {/* Shaped like a Mail row: positioned, the open conversation's fill, and a closed "…" menu, whose popover is
+                  fixed but not displayed. */}
+              <div id="mail-row" style={{ position: "relative", background: "var(--k2b-row-selected)", padding: "0.75rem 1rem" }}>
+                <span>Nebenkostenabrechnung 2025</span>
+                <Dropdown.Root lazy items={[{ label: "Archivieren", action: () => {} }]}>
+                  <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label="Aktionen">
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
               </div>
             </AppWorkspace.Main>
           </AppWorkspace.Content>

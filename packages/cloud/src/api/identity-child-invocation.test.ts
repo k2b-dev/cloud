@@ -134,7 +134,9 @@ async function fixture(
     deadline: now.getTime() + 10_000,
     origin: options.origin ?? "http",
     proof: { kind: "oauth", payload: { exp: Math.floor(now.getTime() / 1000) + 60 } },
-    ...(options.origin === "assistant" ? { assistantTurn: { conversationId: person.id, turnId: parentId } } : {}),
+    ...(options.origin === "assistant" || options.origin === "choice"
+      ? { assistantTurn: { conversationId: person.id, turnId: parentId } }
+      : {}),
   };
   let active = true;
   let used = false;
@@ -337,13 +339,17 @@ test("scope ceilings, revoked source, revoked parent and revoked mandate fail be
   }
   const f = await fixture();
   await f.leases.revoke(parentId);
-  expect((await f.request()).status).toBe(403);
+  const unavailable = await f.request();
+  expect(unavailable.status).toBe(503);
+  expect(await unavailable.json()).toMatchObject({ code: "APP_UNAVAILABLE" });
   expect(f.providerCalls()).toBe(0);
 });
 
 test("one dependency budget is atomic across concurrent attempts and prohibits loops", async () => {
   const f = await fixture();
-  expect((await Promise.all([f.request(), f.request()])).map((response) => response.status).sort()).toEqual([200, 403]);
+  const answers = await Promise.all([f.request(), f.request()]);
+  expect(answers.map((response) => response.status).sort()).toEqual([200, 503]);
+  expect(await answers.find((response) => response.status === 503)!.json()).toMatchObject({ code: "APP_UNAVAILABLE" });
   expect(f.providerCalls()).toBe(1);
   const sameApp = await fixture();
   expect((await sameApp.request({ targetApp: "chat", capabilityId: "item.read", input: {} })).status).toBe(403);
@@ -372,11 +378,11 @@ test("child tokens cannot be exchanged, forged or widened at signing", async () 
   );
 });
 
-test("Assistant tool restrictions survive the hop", async () => {
-  const f = await fixture({ origin: "assistant", allowedTool: false });
+test.each(["assistant", "choice"] as const)("%s tool restrictions survive the hop", async (origin) => {
+  const f = await fixture({ origin, allowedTool: false });
   expect((await f.request()).status).toBe(403);
   expect(f.providerCalls()).toBe(0);
-  expect((await (await fixture({ origin: "assistant", allowedTool: true })).request()).status).toBe(200);
+  expect((await (await fixture({ origin, allowedTool: true })).request()).status).toBe(200);
 });
 
 test("a cancelled parent request never starts a child provider request", async () => {

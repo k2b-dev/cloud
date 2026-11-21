@@ -11,7 +11,10 @@ import {
   lockBaseAuthorization,
   resolveAccessBinding,
   resolveResourceBinding,
+  updateAccessLevel,
 } from "./access";
+
+import { loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
@@ -80,6 +83,59 @@ describe("access resource registry integration", () => {
     } finally {
       await cleanup(item.baseId, [storedAccess.id]);
       await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccount.id}::uuid`;
+    }
+  });
+
+  postgresTest("code uses only its own grants and normal base and app shares accept it", async () => {
+    const item = await insertFixture();
+    const accountId = uuid(),
+      groupId = uuid();
+    const ids: string[] = [];
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${accountId}::uuid, ${accountId}, 'code')`;
+    await sql`INSERT INTO auth.groups(id, cn, name, provider) VALUES (${groupId}::uuid, ${groupId}, 'Fixture', 'local')`;
+    await sql`INSERT INTO auth.service_account_groups(service_account_id, group_id) VALUES (${accountId}::uuid, ${groupId}::uuid)`;
+    const subject = { type: "service_account" as const, serviceAccountId: accountId };
+    try {
+      const ownGrant = await grantAccess({ resourceType: "base", resourceId: item.baseId, principal: subject, permission: "read" });
+      if (!ownGrant.ok) throw new Error(ownGrant.error.message);
+      ids.push(ownGrant.data.accessId);
+      expect((await updateAccessLevel(ownGrant.data.accessId, "write")).ok).toBe(true);
+      expect((await updateAccessLevel(ownGrant.data.accessId, "read")).ok).toBe(true);
+      expect(await updateAccessLevel(ownGrant.data.accessId, "admin")).toMatchObject({ ok: false, error: { status: 400 } });
+      await sql`DELETE FROM auth.access WHERE id = ${ownGrant.data.accessId}::uuid`;
+      const appGrant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: item.customAppId,
+        principal: subject,
+        permission: "read",
+      });
+      if (!appGrant.ok) throw new Error(appGrant.error.message);
+      ids.push(appGrant.data.accessId);
+      expect((await listCustomAppAccess(item.customAppId)).find((entry) => entry.id === appGrant.data.accessId)?.serviceAccountKind).toBe(
+        "code",
+      );
+      const ambient = await sql<{ id: string }[]>`INSERT INTO auth.access(group_id, authenticated_only, permission)
+        VALUES (NULL, true, 'admin'), (${groupId}::uuid, false, 'admin') RETURNING id`;
+      ids.push(...ambient.map((row) => row.id));
+      for (const grant of ambient)
+        await sql`INSERT INTO grids.base_access(base_id, access_id) VALUES (${item.baseId}::uuid, ${grant.id}::uuid)`;
+      const permission = async () =>
+        resolveEffectivePermission(await loadBaseGrantsForSubject({ baseId: item.baseId, subject }), { baseId: item.baseId });
+      expect(await permission()).toBe("none");
+      const [own] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(service_account_id, permission) VALUES (${accountId}::uuid, 'write') RETURNING id`;
+      if (!own) throw new Error("Missing direct grant");
+      ids.push(own.id);
+      await sql`INSERT INTO grids.base_access(base_id, access_id) VALUES (${item.baseId}::uuid, ${own.id}::uuid)`;
+      expect(await permission()).toBe("write");
+      expect((await updateAccessLevel(own.id, "admin")).ok).toBe(false);
+      await sql`DELETE FROM auth.access WHERE id = ${own.id}::uuid`;
+      expect(await permission()).toBe("none");
+    } finally {
+      await cleanup(item.baseId, ids);
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${accountId}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     }
   });
 

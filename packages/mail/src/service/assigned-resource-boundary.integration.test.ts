@@ -152,86 +152,93 @@ suite("Mail assigned resource and SSR boundaries", () => {
     type Call = (id: string, context: CapabilityExecutionContext) => Promise<{ ok: boolean; error?: unknown }>;
     const calls: Record<string, Call> = {
       related: (id, c) =>
-        queries["conversation.related"].run(queries["conversation.related"].input.parse({ mailboxId: m, conversationId: id }), c),
+        queries["conversation.related"].run(queries["conversation.related"].input.parse({ conversationId: id }), {
+          ...c,
+          target: { type: "mail.mailbox", id: m },
+        }),
       read: (id, c) => queries["conversation.read"].run({ id }, c),
     };
     calls["message.list"] = (id, c) =>
-      queries["message.list"].run(queries["message.list"].input.parse({ mailboxId: m, conversationId: id }), c);
+      queries["message.list"].run(queries["message.list"].input.parse({ conversationId: id }), {
+        ...c,
+        target: { type: "mail.mailbox", id: m },
+      });
     calls["conversation.comment.list"] = (id, c) =>
-      queries["conversation.comment.list"].run(queries["conversation.comment.list"].input.parse({ mailboxId: m, conversationId: id }), c);
+      queries["conversation.comment.list"].run(queries["conversation.comment.list"].input.parse({ conversationId: id }), {
+        ...c,
+        target: { type: "mail.mailbox", id: m },
+      });
     calls["conversation.activity.list"] = (id, c) =>
-      queries["conversation.activity.list"].run(queries["conversation.activity.list"].input.parse({ mailboxId: m, conversationId: id }), c);
+      queries["conversation.activity.list"].run(queries["conversation.activity.list"].input.parse({ conversationId: id }), {
+        ...c,
+        target: { type: "mail.mailbox", id: m },
+      });
     calls["conversation.reminder.get"] = (id, c) =>
-      queries["conversation.reminder.get"].run(queries["conversation.reminder.get"].input.parse({ mailboxId: m, conversationId: id }), c);
+      queries["conversation.reminder.get"].run(queries["conversation.reminder.get"].input.parse({ conversationId: id }), {
+        ...c,
+        target: { type: "mail.mailbox", id: m },
+      });
     for (const phase of ["review", "run"] as const) {
       calls[`tag.${phase}`] = (id, c) =>
         actions["conversation.tag.update"][phase](
-          { mailboxId: m, conversationId: id, expectedRevision: 1, addTagIds: [], removeTagIds: [] },
-          c,
+          { conversationId: id, expectedRevision: 1, addTagIds: [], removeTagIds: [] },
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`summary.${phase}`] = (id, c) =>
         actions["conversation.summary.write"][phase](
-          { mailboxId: m, conversationId: id, expectedRevision: 1, expectedSummaryRevision: 0, summary: "Prepared" },
-          c,
+          { conversationId: id, expectedRevision: 1, expectedSummaryRevision: 0, summary: "Prepared" },
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
-      calls[`reference.${phase}`] = (id, c) => actions["conversation.reference.ensure"][phase]({ mailboxId: m, conversationId: id }, c);
+      calls[`reference.${phase}`] = (id, c) =>
+        actions["conversation.reference.ensure"][phase]({ conversationId: id }, { ...c, target: { type: "mail.mailbox", id: m } });
       calls[`conversation.status.update.${phase}`] = (id, c) =>
         actions["conversation.status.update"][phase](
-          actions["conversation.status.update"].input.parse({ mailboxId: m, conversationId: id, expectedRevision: 1, status: "done" }),
-          c,
+          actions["conversation.status.update"].input.parse({ conversationId: id, expectedRevision: 1, status: "done" }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.assign.${phase}`] = (id, c) =>
         actions["conversation.assign"][phase](
-          actions["conversation.assign"].input.parse({
-            mailboxId: m,
-            conversationId: id,
-            expectedRevision: 1,
-            mode: "replace",
-            assigneeUserIds: [],
-          }),
-          c,
+          actions["conversation.assign"].input.parse({ conversationId: id, expectedRevision: 1, mode: "replace", assigneeUserIds: [] }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.snooze.${phase}`] = (id, c) =>
         actions["conversation.snooze"][phase](
-          actions["conversation.snooze"].input.parse({
-            mailboxId: m,
-            conversationId: id,
-            expectedRevision: 1,
-            snoozedUntil: "2026-12-01T00:00:00.000Z",
-          }),
-          c,
+          actions["conversation.snooze"].input.parse({ conversationId: id, expectedRevision: 1, snoozedUntil: "2026-12-01T00:00:00.000Z" }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.keep.${phase}`] = (id, c) =>
-        actions["conversation.keep"][phase](actions["conversation.keep"].input.parse({ mailboxId: m, conversationId: id }), c);
+        actions["conversation.keep"][phase](actions["conversation.keep"].input.parse({ conversationId: id }), {
+          ...c,
+          target: { type: "mail.mailbox", id: m },
+        });
       calls[`conversation.reminder.set.${phase}`] = (id, c) =>
         actions["conversation.reminder.set"][phase](
           actions["conversation.reminder.set"].input.parse({
-            mailboxId: m,
             conversationId: id,
             dueAt: "2026-12-01T00:00:00.000Z",
             expectedRevision: null,
           }),
-          c,
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.comment.create.${phase}`] = (id, c) =>
         actions["conversation.comment.create"][phase](
-          actions["conversation.comment.create"].input.parse({ mailboxId: m, conversationId: id, body: "Note" }),
-          c,
+          actions["conversation.comment.create"].input.parse({ conversationId: id, body: "Note" }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.mark.${phase}`] = (id, c) =>
         actions["conversation.mark"][phase](
-          actions["conversation.mark"].input.parse({ mailboxId: m, target: { conversationId: id, sourceFolderId: "Fold01" }, read: true }),
-          c,
+          actions["conversation.mark"].input.parse({ target: { conversationId: id, sourceFolderId: "Fold01" }, read: true }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`conversation.assign.batch.${phase}`] = (id, c) =>
         actions["conversation.assign.batch"][phase](
-          actions["conversation.assign.batch"].input.parse({ mailboxId: m, conversationIds: [id], mode: "replace", assigneeUserIds: [] }),
-          c,
+          actions["conversation.assign.batch"].input.parse({ conversationIds: [id], mode: "replace", assigneeUserIds: [] }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
       calls[`draft.create.${phase}`] = (id, c) =>
         actions["draft.create"][phase](
-          actions["draft.create"].input.parse({ mailboxId: m, conversationId: id, senderIdentityId: senderShortId, intent: "reply" }),
-          c,
+          actions["draft.create"].input.parse({ conversationId: id, senderIdentityId: senderShortId, intent: "reply" }),
+          { ...c, target: { type: "mail.mailbox", id: m } },
         );
     }
     return calls;
@@ -252,8 +259,8 @@ suite("Mail assigned resource and SSR boundaries", () => {
       test(`${who}: delivery.cancel ${phase} conceals hidden deliveries`, async () => {
         const call = (id: string) =>
           mailCapabilities.actions["delivery.cancel"][phase](
-            { mailboxId: mailboxShortId, deliveryId: id, disposition: "draft" },
-            { ...ctx[who]!, idempotencyKey: `boundary-${newShortId()}` },
+            { deliveryId: id, disposition: "draft" },
+            { ...{ ...ctx[who]!, idempotencyKey: `boundary-${newShortId()}` }, target: { type: "mail.mailbox", id: mailboxShortId } },
           );
         const hidden = await refusal(call(deliveryShortId));
         expect(hidden).toEqual(await refusal(call(newShortId())));
@@ -268,7 +275,10 @@ suite("Mail assigned resource and SSR boundaries", () => {
         for (const phase of ["review", "run"] as const) {
           const action = mailCapabilities.actions[name];
           const call = (id: string) =>
-            action[phase](action.input.parse({ mailboxId: mailboxShortId, conversationIds: [id], status: "done" }), ctx[who]!);
+            action[phase](action.input.parse({ conversationIds: [id], status: "done" }), {
+              ...ctx[who]!,
+              target: { type: "mail.mailbox", id: mailboxShortId },
+            });
           const unknownId = newShortId();
           const hidden = await call(conversationShortId);
           const unknown = await call(unknownId);
@@ -343,10 +353,10 @@ suite("Mail assigned resource and SSR boundaries", () => {
       for (const phase of ["review", "run"] as const) {
         const action = mailCapabilities.actions["draft.create"];
         const call = (id: string) =>
-          action[phase](
-            action.input.parse({ mailboxId: mailboxShortId, sourceMessageId: id, senderIdentityId: senderShortId, intent: "reply" }),
-            { ...ctx[who]!, idempotencyKey: `source-${newShortId()}` },
-          );
+          action[phase](action.input.parse({ sourceMessageId: id, senderIdentityId: senderShortId, intent: "reply" }), {
+            ...{ ...ctx[who]!, idempotencyKey: `source-${newShortId()}` },
+            target: { type: "mail.mailbox", id: mailboxShortId },
+          });
         expect(await refusal(call(messageShortId))).toEqual(await refusal(call(newShortId())));
       }
     });
@@ -394,24 +404,24 @@ suite("Mail assigned resource and SSR boundaries", () => {
     expect(
       (
         await mailCapabilities.queries["conversation.related"].run(
-          { mailboxId: mailboxShortId, conversationId: conversationShortId, limit: 10 },
-          ctx.reader!,
+          { conversationId: conversationShortId, limit: 10 },
+          { ...ctx.reader!, target: { type: "mail.mailbox", id: mailboxShortId } },
         )
       ).ok,
     ).toBeTrue();
     expect(
       (
         await mailCapabilities.actions["delivery.cancel"].review(
-          { mailboxId: mailboxShortId, deliveryId: deliveryShortId, disposition: "draft" },
-          ctx.owner!,
+          { deliveryId: deliveryShortId, disposition: "draft" },
+          { ...ctx.owner!, target: { type: "mail.mailbox", id: mailboxShortId } },
         )
       ).ok,
     ).toBeTrue();
     expect(
       await refusal(
         mailCapabilities.actions["delivery.cancel"].review(
-          { mailboxId: mailboxShortId, deliveryId: deliveryShortId, disposition: "draft" },
-          ctx.reader!,
+          { deliveryId: deliveryShortId, disposition: "draft" },
+          { ...ctx.reader!, target: { type: "mail.mailbox", id: mailboxShortId } },
         ),
       ),
     ).toMatchObject({ code: "FORBIDDEN", status: 403 });
@@ -427,8 +437,8 @@ suite("Mail assigned resource and SSR boundaries", () => {
         expect(
           await refusal(
             mailCapabilities.queries["conversation.related"].run(
-              { mailboxId: mailboxShortId, conversationId: conversationShortId, limit: 10 },
-              ctx[who]!,
+              { conversationId: conversationShortId, limit: 10 },
+              { ...ctx[who]!, target: { type: "mail.mailbox", id: mailboxShortId } },
             ),
           ),
         ).toMatchObject({ code: "FORBIDDEN", status: 403 });

@@ -83,8 +83,10 @@ export function createEventAdministration(db: () => SQL, dependencies: Dependenc
         delivery.last_error AS "lastError", delivery.last_attempt_at AS "lastAttemptAt",
         delivery.next_attempt_at AS "nextAttemptAt", delivery.created_at AS "createdAt",
         (SELECT earlier.id FROM events.app_deliveries earlier
-          WHERE earlier.subscription_id = delivery.subscription_id AND earlier.subject_key = delivery.subject_key
-            AND earlier.seq < delivery.seq AND earlier.state IN ('pending', 'retrying', 'failed')
+          WHERE earlier.subscription_id = delivery.subscription_id
+            AND (subscription.resource_binding IS NOT NULL OR earlier.subject_key = delivery.subject_key)
+            AND earlier.seq < delivery.seq
+            AND (earlier.state IN ('pending', 'retrying') OR (earlier.subject_key = delivery.subject_key AND earlier.state = 'failed'))
             AND delivery.state IN ('pending', 'retrying') ORDER BY earlier.seq LIMIT 1) AS "heldBy",
         count(*) OVER()::int AS total
       FROM events.app_deliveries delivery

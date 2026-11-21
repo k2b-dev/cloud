@@ -8,11 +8,8 @@ import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
-import { aiChatTasks } from "./chat-tasks";
-import * as codeExecution from "./code-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
-import { aiConversations } from "./store";
 
 useUnitClients();
 
@@ -42,7 +39,7 @@ const user: User = {
 };
 afterEach(() => mock.restore());
 
-for (const name of ["code_access_change", "code_import"] as const)
+for (const name of ["code_file_copy"] as const)
   for (const approved of [false, true])
     test(`${name} ${approved ? "approval" : "denial"} gates the actual write`, async () => {
       const actor = { kind: "user" as const, user, sessionKind: "app" as const };
@@ -88,7 +85,7 @@ for (const name of ["code_access_change", "code_import"] as const)
             events.push(body.review ? "preview" : "write");
             return Response.json({
               ok: true,
-              data: { data: body.review ? { message: "Share App AbC234 with Test User: none → read" } : { changed: true } },
+              data: { data: body.review ? { message: "Copy input.csv into Project: no file → copy.csv" } : { changed: true } },
             });
           },
           { preconnect: fetch.preconnect },
@@ -96,19 +93,11 @@ for (const name of ["code_access_change", "code_import"] as const)
       );
       const tool = createCodeSourceTool(name);
       if (tool.location !== "server") throw new Error("Expected server tool");
-      const input =
-        name === "code_import"
-          ? {
-              id: "AbC234",
-              expectedRevision: 1,
-              files: [{ path: "data.json", fromFile: { scope: "app" as const, id: "AbC345", path: "data.json", version: "1" } }],
-            }
-          : {
-              id: "AbC234",
-              expectedAccessRevision: "a".repeat(64),
-              principal: { type: "user" as const, userId: user.id },
-              permission: "read" as const,
-            };
+      const input = {
+        source: { scope: "chat" as const, id: "chat-test", path: "/input.csv", version: "1" },
+        destination: { scope: "project" as const, id: "project-test", path: "/copy.csv" },
+        expectedVersion: null,
+      };
       const operation = tool.run(input, {
         actor,
         conversationId: "chat-test",
@@ -118,7 +107,7 @@ for (const name of ["code_access_change", "code_import"] as const)
           throw new Error("Unexpected client tool");
         },
         requestApproval: async (message) => {
-          expect(message).toContain("none → read");
+          expect(message).toContain("no file → copy.csv");
           events.push("approval");
           return approved;
         },
@@ -140,236 +129,7 @@ for (const name of ["code_access_change", "code_import"] as const)
       for (const [params] of calls) expect(params.authority).toMatchObject({ session_kind: "app", scopes: [] });
     });
 
-test("code_write sends one write without a preview or approval", async () => {
-  const actor = { kind: "user" as const, user };
-  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
-    actor,
-    accessSubject: { type: "user", userId: user.id },
-    credentialKind: "session",
-    scopes: [],
-  });
-  spyOn(registry, "getApp").mockResolvedValue({
-    id: "assistant",
-    name: "Assistant",
-    icon: "",
-    description: "",
-    baseUrl: "http://assistant.test",
-    routes: [],
-  });
-  const keys = await crypto.subtle.generateKey(
-    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-    true,
-    ["sign", "verify"],
-  );
-  spyOn(identity, "withActiveIdentitySigner").mockImplementation(async (_purpose, callback) =>
-    callback(
-      {
-        kid: "test-key",
-        key: keys.privateKey,
-        signUntil: new Date(Date.now() + 60000),
-        issuer: "https://cloud.test",
-      },
-      sql,
-    ),
-  );
-  spyOn(claims, "claimCapabilityIdempotency").mockResolvedValue({ state: "claimed" });
-  spyOn(claims, "completeCapabilityClaim").mockResolvedValue();
-  const input = { id: "AbC234", expectedRevision: 1, path: "app.js", content: 'const title = "Hello";\nconsole.log(title);\n' };
-  const requests: unknown[] = [];
-  const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(
-      async (_url: RequestInfo | URL, init?: RequestInit) => {
-        expect(String(_url)).toBe("http://assistant.test/_internal/assistant/tools/code_write");
-        requests.push(JSON.parse(String(init?.body)));
-        return Response.json({ ok: true, data: { data: { saved: true } } });
-      },
-      { preconnect: fetch.preconnect },
-    ),
-  );
-  const requestApproval = mock(async () => true);
-  const tool = createCodeSourceTool("code_write");
-  if (tool.location !== "server") throw new Error("Expected server tool");
-  expect(
-    await tool.run(input, {
-      actor,
-      conversationId: "chat-test",
-      callId: "write-1",
-      signal: new AbortController().signal,
-      requestClientTool: async () => {
-        throw new Error("Unexpected client tool");
-      },
-      requestApproval,
-    }),
-  ).toEqual({ data: { saved: true } });
-  expect(fetchRequest).toHaveBeenCalledTimes(1);
-  expect(requests).toEqual([{ input, conversationId: "chat-test" }]);
-  expect(requestApproval).not.toHaveBeenCalled();
+test("source discovery retains chat and Project files and rejects retired app scopes", () => {
+  expect(Object.keys(CODE_SOURCE_TOOLS)).toEqual(["code_files", "code_file_stat", "code_file_copy"]);
+  expect(CODE_SOURCE_TOOLS.code_file_stat.input.safeParse({ file: { scope: "app", id: "AbC234", path: "x" } }).success).toBe(false);
 });
-
-test("code_create accepts optional top-level source text and keeps its strict input contract", () => {
-  const input = { title: "Calculator", html: "<main>Calculator</main>", steps: '[{"action":"reload"}]' };
-  expect(CODE_SOURCE_TOOLS.code_create.input.parse(input)).toEqual(input);
-  expect(CODE_SOURCE_TOOLS.code_create.input.parse({ title: input.title })).toEqual({ title: input.title });
-  expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ html: input.html }).success).toBe(false);
-  expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, unknown: true }).success).toBe(false);
-  expect(
-    CODE_SOURCE_TOOLS.code_create.input.safeParse({ title: input.title, files: [{ path: "index.html", content: input.html }] }).success,
-  ).toBe(false);
-  for (const field of ["html", "steps"] as const) {
-    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: "x".repeat(1024 * 1024) }).success).toBe(true);
-    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: "x".repeat(1024 * 1024 + 1) }).success).toBe(false);
-    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: [input[field]] }).success).toBe(false);
-    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: 42 }).success).toBe(false);
-  }
-});
-
-test("code_write rejects array arguments and accepts only top-level source text", () => {
-  const input = { id: "AbC234", expectedRevision: 1, path: "app.js", content: 'const title = "Hello";\n' };
-  expect(CODE_SOURCE_TOOLS.code_write.input.safeParse(input).success).toBe(true);
-  expect(
-    CODE_SOURCE_TOOLS.code_write.input.safeParse({
-      id: input.id,
-      expectedRevision: 1,
-      files: [{ path: input.path, content: input.content }],
-    }).success,
-  ).toBe(false);
-  expect(CODE_SOURCE_TOOLS.code_write.input.safeParse({ ...input, files: [{ path: input.path, content: input.content }] }).success).toBe(
-    false,
-  );
-});
-
-test("code_write tells the model to wait for each revision instead of sending writes together", () => {
-  // nessi runs one response's calls in order, so parallel writes with one revision conflict after the first.
-  expect(CODE_SOURCE_TOOLS.code_write.description).toContain("one call per file and wait for each result");
-  expect(CODE_SOURCE_TOOLS.code_write.description).toContain("all but the first fail with CONFLICT");
-});
-
-for (const name of ["code_sql", "code_database_read", "code_database_export", "code_database_clear", "code_database_reset"] as const) {
-  test(`${name} cannot bypass revoked background authority`, async () => {
-    const actor = { kind: "user" as const, user };
-    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
-      actor,
-      accessSubject: { type: "user", userId: user.id },
-      credentialKind: "session",
-      scopes: [],
-    });
-    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
-      kind: "chat",
-      input: "Run",
-      toolSource: { kind: "none" },
-      background: { taskId: "task", occurrenceId: "occurrence", context: [] },
-      mandate: { id: crypto.randomUUID(), revision: 1 },
-    });
-    spyOn(registry, "getApp").mockResolvedValue({
-      id: "assistant",
-      name: "Assistant",
-      icon: "",
-      description: "",
-      baseUrl: "http://assistant.test",
-      routes: [],
-    });
-    spyOn(codeExecution, "authorizeCodeExecution").mockRejectedValue(new Error("Task authority revoked"));
-    const fetchRequest = spyOn(globalThis, "fetch");
-    const tool = createCodeSourceTool(name);
-    if (tool.location !== "server") throw new Error("Expected server tool");
-    await expect(
-      tool.run(
-        { id: "AbC234" },
-        {
-          actor,
-          conversationId: "chat-test",
-          turnId: "turn-test",
-          callId: "call-test",
-          signal: new AbortController().signal,
-          requestClientTool: async () => {
-            throw new Error("Unexpected client tool");
-          },
-          requestApproval: async () => {
-            throw new Error("Unexpected interactive approval");
-          },
-        },
-      ),
-    ).rejects.toThrow("Task authority revoked");
-    expect(fetchRequest).not.toHaveBeenCalled();
-  });
-}
-
-for (const input of [
-  { id: "AbC234", operation: "schema.get", table: "invoices" },
-  { id: "AbC234", operation: "tables.update", table: "invoices", changes: { write: "own" } },
-  { id: "AbC234", operation: "tables.create", name: "invoices", columns: [{ name: "title", type: "text" }] },
-])
-  test(`background ${input.operation} forwards its table to authorization`, async () => {
-    const actor = { kind: "user" as const, user };
-    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
-      actor,
-      accessSubject: { type: "user", userId: user.id },
-      credentialKind: "session",
-      scopes: [],
-    });
-    const config = {
-      kind: "chat" as const,
-      input: "Run",
-      toolSource: { kind: "none" as const },
-      background: { taskId: "task", occurrenceId: "occurrence", context: [] },
-      mandate: { id: crypto.randomUUID(), revision: 1 },
-    };
-    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
-    spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
-      config,
-      conversation: {
-        id: "chat-test",
-        shortId: "Chat01",
-        title: "Test",
-        titleSource: "user",
-        description: "",
-        descriptionSource: "default",
-        keywords: [],
-        pinnedAt: null,
-        archivedAt: null,
-        done: false,
-        isDone: false,
-        lastUsedAt: "2026-10-07",
-        runStatus: "queued",
-        runError: null,
-        unreadCompletion: false,
-        projectId: null,
-        draft: { content: [], revision: 0, updatedAt: null },
-        createdByUserId: user.id,
-        createdAt: "2026-10-07",
-        updatedAt: "2026-10-07",
-      },
-      turn: {
-        id: "turn-test",
-        shortId: "Turn01",
-        conversationId: "chat-test",
-        status: "running",
-        attempt: 1,
-        modelId: null,
-        createdAt: "2026-10-07",
-        completedAt: null,
-        error: null,
-      },
-    });
-    const authorize = spyOn(aiChatTasks, "authorizeRuntime").mockRejectedValue(new Error("Stop after grant check"));
-    const tool = createCodeSourceTool("code_database");
-    if (tool.location !== "server") throw new Error("Expected server tool");
-    await expect(
-      tool.run(input, {
-        actor,
-        conversationId: "chat-test",
-        turnId: "turn-test",
-        callId: "call-test",
-        signal: new AbortController().signal,
-        requestClientTool: async () => {
-          throw new Error("Unexpected client tool");
-        },
-        requestApproval: async () => false,
-      }),
-    ).rejects.toThrow("Stop after grant check");
-    expect(authorize).toHaveBeenCalledWith({
-      mandate: config.mandate,
-      kind: "database",
-      input: { resourceId: "AbC234", operation: input.operation, table: "invoices" },
-    });
-  });

@@ -138,7 +138,7 @@ const skillAccessCommands = createAccessCommands({
   async resolveResource(ctx, args) {
     if (args.length !== 1) throw new Error("Pass one Skill name or ID.");
     const skill = await getSkill(ctx, args[0]!);
-    return { id: skill.shortId, label: skill.name };
+    return { id: skill.shortId, label: skill.name, target: { type: "core.ai.skill", id: skill.shortId } };
   },
   async list(ctx, resource) {
     return (await readApi<{ access: AiSkillAccess[] }>(ctx, `/skills/${encodeURIComponent(resource.id)}/access`)).access;

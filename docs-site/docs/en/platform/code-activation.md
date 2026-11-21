@@ -1,0 +1,265 @@
+---
+title: Activate a Code version
+navTitle: Code activation
+section: Platform services
+order: 963
+description: Switch an approved Code version on with its current account rights and a durable version entry.
+tags: [code, identity, permissions]
+updated: 2026-11-18
+---
+
+# Activate a Code version
+
+Activation switches the running version. It checks the Code owner, the
+activating credential and the required version approval. It creates no target
+permissions. A target manager grants the Code service account View or Edit
+through the target's normal share dialog, using its exact handle. Every call
+then uses that account's current rights at the target.
+
+For resource Code, the person switching on must manage the owner. A Code editor
+may submit a version but cannot bypass that owner check. A Cloud administrator
+can activate resource or application Code with full administrative authority;
+this grants no access at any target. Personal Code can be activated only by its
+owner and runs with that person's current rights.
+
+Personal Code requires the owner's browser session. Resource and application
+Code also accept personal OAuth credentials with the required scope. Phone
+sessions, service accounts, API keys, Code runs and forwarded invocations cannot
+activate Code. CI can submit a version but cannot activate it.
+
+## What a Code service account cannot get
+
+Target shares follow the normal grant services, with these refusals:
+
+| Case | Result |
+| --- | --- |
+| Manage (`admin`) on any target | Refused by the platform, the database and the share dialog, which offers only View and Edit. |
+| Groups, “all signed-in people” and public links | Grant nothing to a Code account. Only its own direct shares count. |
+| App access | Offer only their own Use level; Edit does not exist there. |
+| Templates | Offer only Use (stored as `read`). |
+| Creating a resource that needs an initial Manage share, such as an AI Project or Skill | Refused: the account cannot be its first manager. |
+| A target without a share, or a target that no longer exists | The target app answers 403 or 404. A setting that names a target grants no access to it. |
+
+A Code account also never receives an API key, an OAuth client or an app key.
+See [service accounts](/en/docs/identity/service-accounts).
+
+## Start and follow activation
+
+Submit the immutable version first. The
+[current policy and required version approval](/en/docs/platform/code-versions)
+must permit it. Authenticate directly to Core with the original interactive
+credential.
+
+| Route | JSON body | Result |
+| --- | --- | --- |
+| `POST /api/code/activate` | `{ codeId, versionId, activationId }` | Durable activation status |
+| `POST /api/code/activation/preview` | `{ codeId, versionId }` | Version, approval and credential state |
+| `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
+| `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after recording cancellation |
+| `POST /api/code/review` | `{ codeId, versionId }` | The review as the person sees it |
+| `POST /api/code/withdraw` | `{ codeId, versionId }` | `{ withdrawn: true }` |
+
+Generate `activationId` as a UUID once and reuse it after a lost response. Core
+returns the same process. Reusing it for a different Code, version or person
+returns a conflict. After a terminal failure, resolve the cause and start with
+a new UUID. Status reads require access to the Code; mutation routes retain the
+credential's write scope.
+
+`/api/code/review` returns the `review` contract of
+[Code versions](/en/docs/platform/code-versions) for the person who edits the
+Code, without the `path` and `line` of comments: the browser shows a decision,
+its message and the comments as text, never a place in the source. Editors read
+the places with `cld code review show`. `/api/code/withdraw` withdraws a version
+that still waits for an administrator; it answers only that it worked, and the
+version stays unable to switch on.
+
+Chat cards read `core.code.version.cards` once for the displayed versions, on
+both the server and the browser. Its shared schemas are available from
+`@k2b/cloud/contracts/code-version-cards`, without loading them through the
+general contract entry. Any application can use this public Query:
+`{ versions: [{ codeId, versionId }], knownPages?: [versionId] }`. A batch holds
+at most 50 receipts, the existing `code.version.list` page limit. Longer
+histories load bounded batches. A response also stays below the 256 KiB
+Capability result limit, including its envelope and continuation references.
+`remaining` lists references the caller must read in a new invocation, until
+none remain. This also respects the single child Query allowed per invocation:
+identical resource owners share their canonical reader answer; different owners
+continue in separate invocations when needed. Every successful continuation
+settles at least one reference. A provider outage or an individually oversized
+card returns `failed`, never `denied`; callers show a retry action and stop
+continuing when no progress is possible.
+
+Each item is `available` with its authorized snapshot, `failed`, or `denied`,
+which reveals neither existence nor content. The snapshot
+contains the receipt, operating state, up to three localized `facts`, declared Code page and
+page links from Core's single `describeCodePages` selector. It does not read
+source or bundle bytes, database size or refresh a service-account title.
+Readiness uses the already loaded manifest, hashes and decision against the
+same approval rule as activation; current policy and membership reads are
+shared within the batch. Readers see no editor
+review messages or mutation controls. Page links use the same current member and Code-permission check as other
+Code reads; a shared chat reference grants no Code access.
+
+A view shares the result by Code and version. On `code-versions`, the event's
+`codeId` selects only that Code's displayed versions for one covering batch.
+An omitted ID or resync rechecks all displayed versions. `knownPages` lets the
+view reuse immutable links after Core rechecks current rights; an absent
+`pages` field confirms that reuse, an empty list means no openable pages, and a
+failed read remains a visible, retryable error. The live cursor advances only
+after a successful covering read. Existing activation Actions are unchanged.
+
+`cld code activate` uses the preview. It contains the
+version's `number`, `running`, `latest`, optional `automations`, and
+`readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
+message. A version that a Cloud administrator rejected is `refused` with
+`code_approval_revoked`. `allowed` explains phone or credential restrictions.
+`tests` gives what Core recorded at submission: `state` (`passed`, `failed`,
+`none` or `unavailable`) with `passed` and `total` test cases; it is absent for
+versions submitted before Core recorded it. A running version also returns
+`activated`. A card waiting with `approval_pending` reads its batch snapshot again
+when the decision arrives as `code-versions` on
+[AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates). For the version that would switch on next, optional
+`targets` lists each target its checked manifest calls, with `operations` and
+`isNew` against the running version, named from registry manifests as on the
+Code page; a `null` target collects calls with a target picked at run time.
+`operationLabels` names those operations by title and app from registry
+manifests. These rows are review evidence, not grants. Each automation carries
+its `entrypoint`, an optional reviewed `title`, and what starts it: a `route`
+with `method`, `path` and `public`, an `event` named like a target, a `cron`
+expression, or a one-time `at` with the `timeZone` it is read in. Code of an
+app also returns `appName`, which names its service account, or `null` when
+the registry does not know the app. For resource Code, `page` is the
+Code page its owner's app declares in `code.pages`, or `null`. Its `place`
+names the Code's own place with `title`, `typeTitle` and `href`, read once
+through the owner app's reader with the requesting person's own rights. When
+that person may not read the place, or the reader fails or does not answer
+within one second, `place` is `null` and clients name it by type and ID, as
+they name a target. Preview never shows the title the Code's account stored.
+Preview asks no target application anything, and asks no application to plan,
+inspect or grant access. The Code page's dialog starts the same durable
+activation directly.
+
+Status contains `id`, `codeId`, `versionId`, `state`, `failure`, `mandateId`,
+`createdAt` and `updatedAt`. Timestamps use ISO 8601 UTC. A failure contains
+`{ target: null, code, reason }`; it describes an activation failure, rather
+than a target's permission decision.
+
+| State | What to show or do |
+| --- | --- |
+| `pending`, `preflight`, `applying` | Activation is in progress. Read its status again. |
+| `waiting` | An owner or another dependency is unavailable. Core retries; cancellation remains available. |
+| `rolling_back` | Core is recording a failed or cancelled attempt. No target shares need compensation. |
+| `failed` | Resolve the reported cause and start a new process. |
+| `cancelled` | The attempt ended without switching versions. |
+| `active` | The version entry and active version committed together. |
+
+Enqueue and cancellation record intent without waiting for an owner provider.
+The worker checks current owner authority and approval before switching.
+Credential expiration or revocation stops the attempt. Core stores only
+revocation coordinates and scopes, never the original cookie or bearer token.
+A failure or cancellation leaves the previous version and ordinary target
+shares intact. An unresolved response stays visible and can be recovered by
+reading the same process ID.
+
+## Version entries and old runs
+
+Core creates one `code.version` entry under app `runner` for the immutable
+version. Its subject is the personal owner or the resource or application's
+Code service account. Its `policy` is `null`. The
+[bridge](/en/docs/platform/code-bridge) applies the Cloud administrator's policy
+and required version approval to each actual call; the target application
+checks current resource rights. The checker's `manifest.permissions` is review
+evidence and grants nothing. Dynamic target IDs are allowed.
+
+Core creates the entry pending and confirms it in the transaction that switches
+`activeVersionId`. Pending entries issue no token. An existing entry is reused
+only while active, unexpired and bound to the same subject. Activation never
+resumes a paused or revoked entry. The authenticated runner path retains the
+chain from run to approved version to active subject; it has no API key or
+scope fallback.
+
+Old `core`-owned mandates keep their saved operation, target, reference and
+input restrictions. Reactivating the same version does not clear them.
+Explicitly activate a new version to confirm the new model.
+
+Queued or running work on a superseded version drains with its version entry.
+Once it has no open runs, Core revokes that old entry. Ordinary target shares
+belong to the service account, persist across version switches and pauses, and
+change only through normal sharing. Re-activation, retries and background
+cleanup never restore a share a target manager removed.
+
+## Page links after activation
+
+In the chat where a version was submitted, Cloud attaches a page link card to
+its “You switched on version N” event. This uses no AI turn or allowance.
+The card opens the home page and shows its name and “Home page” for the root
+route, or its readable, Code-relative path otherwise. Additional pages appear
+as text links on one line. Long titles are shortened; pages that do not fit
+are counted in a “+N more” link to the Code page. If no Code page is available,
+the count is plain text, with the full list in its tooltip and omitted titles
+available to screen readers. The actual destination stays in the link, so
+opaque Code identifiers do not appear as the displayed address.
+
+Core selects pages through `describeCodePages`, the same projection used by the
+Code page. Its required viewer carries the current person and permission for
+that Code; missing viewers and guests yield no pages on every read path,
+including delegated version reads and the server-rendered Code page. Only the
+latest activation line for each Code reads and shows its page handoff. The line appears with its authorized snapshot; a failed read
+keeps its space and offers a retry. The activation preview's optional `pages`
+field contains this `CodePageLinks` snapshot only for the currently running
+version of active Code.
+Both the preview and turn context require a signed-in member with current
+management access. Guests, readers and people who lost that access receive no
+page links. Versions without a page, paused Code and replaced
+versions have no page card. A failed preview offers **Try again**.
+
+Each Gustav turn receives a fresh, authorized snapshot of the active pages of
+Code associated with that chat, including titles, readable paths and exact
+hrefs. Gustav is instructed to include the supplied page link in each answer
+about that app or page. The snapshot is independent of history pagination and
+compaction and is read once during turn setup, with no SQL per message or model
+round. The candidate read uses one Code discovery page (20 Codes). The complete
+page instructions, metadata and omission notice fit the existing 32 KiB
+Assistant place-context envelope; only complete page entries are included.
+The snapshot names the number of omitted pages and directs Gustav to the Code
+page. Its optional read shares the turn's cancellation signal and the standard
+10-second request read budget. A read failure logs a structured warning and
+continues the admitted turn without page context. Page metadata remains data
+and grants no permissions.
+
+## Integration contracts
+
+Core's `code/index.ts` exports `codeActivationContracts`, `CodeActivation`,
+`CodeActivationState`, `CodeActivationFailure`, `CodeActivationPreview` and
+their schemas. CLI and UI use `activateCodeVersion`, `previewCodeActivation`,
+`readCodeActivation` and `cancelCodeActivation` with `CodeContext`.
+`processCodeActivation` is the trusted worker entry point;
+`cleanupCodeActivation` drains old version entries. Applications use the public
+[normal share contract](/en/docs/identity/authorization#code-with-access),
+without Code adapters or activation proofs.
+
+Core starts activation and drain outbox workers with its normal lifecycle.
+Their failures retain attempts and an error for retry. Separate ordered streams
+let new activations proceed while old runs drain. For owner checks and deletion,
+see [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+## Asking actions and legacy entries
+
+In Administration → Code → Policy, every `ask_*` row is fixed at **Never**.
+The editor says “In diesem Release läuft das nicht unbeaufsichtigt.” Historical
+defaults and group overrides normalize to `never`; approval cannot enable an
+asking action. Migration visibly pauses active versions that declare an asking
+row. Silent actions with `routines: false` and sending remain refused.
+The review's **What the Code calls** section describes the checked calls; it
+does not grant access to their targets.
+
+An active version with a legacy mandate policy shows **Neu bestätigen**.
+Its policy continues to restrict every call. Submitting another version changes
+nothing. Switching on another version confirms a new entry and atomically
+pauses the old policy-bearing entry. New policy-free entries keep their normal
+run-draining lifecycle. To confirm again, switch on a new version through the
+existing activation flow.
+
+Pause and resume reviews are read-only snapshots. Resource and application
+managers can review the active version without changing Code state or cached
+owner presentation; the confirmed action performs the change.

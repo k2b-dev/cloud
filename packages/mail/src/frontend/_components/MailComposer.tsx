@@ -749,7 +749,7 @@ export default function MailComposer(props: {
       event.preventDefault();
       event.stopPropagation();
       // A held key repeats; one press sends once.
-      if (!event.repeat) void sendDraft({});
+      if (!event.repeat) void sendOrSayWhy({});
     };
     // Capture runs before the editor's own Mod-Enter binding and before a field's Enter handling.
     element.addEventListener("keydown", sendOnShortcut, true);
@@ -1350,9 +1350,24 @@ export default function MailComposer(props: {
     },
   });
 
+  /** Send gave an untouched suggestion's quote the sender's words: no take-over, so it keeps its look while it sends. */
+  const [suggestionSending, setSuggestionSending] = createSignal(false);
+  createEffect(() => {
+    if (composerTransition.active() !== "send") setSuggestionSending(false);
+  });
   const prepareDelivery = async (delivery: { scheduledAt?: string }, abortSignal: AbortSignal): Promise<PreparedDelivery> => {
     for (;;) {
       abortSignal.throwIfAborted();
+      // A quote that an automated account chose (a Code or Gustav reply) speaks the language and time zone of the person
+      // who sends it, like a quote they add themselves (#3860). The save below carries it.
+      const quote = quoteSource();
+      if (quote && draft()?.createdBy.kind === "service_account") {
+        const own = { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" };
+        if (quote.locale !== own.locale || quote.timeZone !== own.timeZone) {
+          setSuggestionSending(Boolean(draft()?.suggestion));
+          setQuoteSource(own);
+        }
+      }
       validateDelivery();
       if (!sharedCanSend() || tableNeedsCheck()) throw new Error(sharedT().syncFirst);
       const saved = await persist();
@@ -1411,6 +1426,16 @@ export default function MailComposer(props: {
     }
   };
 
+  /**
+   * Why a send the composer holds back did not go out, in the words of Try again (`sendOrSayWhy`). A send that ends
+   * without a visible answer is a bug (#3859): only the Send buttons, disabled with their reason while Send waits,
+   * call `sendDraft` directly; every other way in goes through `sendOrSayWhy` (mail-composer-send-entries.test.ts).
+   */
+  const heldMessage = () => {
+    const windowT = mailComposeWindowMessages.resolve([locale()]).t;
+    return !online() && Boolean(props.host?.window || props.host?.box) ? windowT.sendOffline : windowT.sendWaits;
+  };
+
   const sendDraft = async (delivery: { scheduledAt?: string }) => {
     if (sendHeld()) return;
     const reservation = composerTransition.reserve("send");
@@ -1431,16 +1456,18 @@ export default function MailComposer(props: {
         previousAttempt !== null &&
         previousAttempt.scheduledAt === delivery.scheduledAt &&
         previousAttempt.contentFingerprint === deliveryFingerprint(delivery);
-      // The reviews take time; the person may have turned the box to a note or left meanwhile. Nothing goes out then.
+      // The reviews take time; the person may have turned the box to a note or left meanwhile. Nothing goes out then;
+      // their own step speaks for itself. Gone offline or with another draft in its place, the toast says why.
       const stillSendable = (draftId: string | undefined) =>
         !disposed && !boxBlocksSend() && (draftId === undefined || draft()?.id === draftId);
+      const notSent = () => (disposed || props.host?.box?.suspended() ? new ComposeSafetyCancelled() : new Error(heldMessage()));
       if (reusable) {
-        if (!stillSendable(previousAttempt?.draftId)) throw new ComposeSafetyCancelled();
+        if (!stillSendable(previousAttempt?.draftId)) throw notSent();
         setSendingHere(true);
         await send.retry();
       } else {
         const prepared = await prepareDelivery(delivery, preparation.signal);
-        if (!stillSendable(prepared.draftId)) throw new ComposeSafetyCancelled();
+        if (!stillSendable(prepared.draftId)) throw notSent();
         lastDeliveryAttempt = prepared;
         setSendingHere(true);
         await send.mutate(prepared);
@@ -1797,8 +1824,8 @@ export default function MailComposer(props: {
   };
   props.host?.register({
     collapse,
-    send: () => void sendDraft({}),
-    sendAt: (scheduledAt) => void sendDraft({ scheduledAt }),
+    send: () => void sendOrSayWhy({}),
+    sendAt: (scheduledAt) => void sendOrSayWhy({ scheduledAt }),
     focusText: () => focusEditorAtEnd(),
     selection: () => {
       const main = editorController?.view.state.selection.main;
@@ -2072,7 +2099,9 @@ export default function MailComposer(props: {
       host.summary({ subject: subject(), to: recipients });
     });
     // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
-    const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
+    const suggestionUntouched = () =>
+      (Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent) ||
+      (suggestionSending() && composerTransition.active() === "send");
     /** A reply quotes the message it answers; the card under the signature shows what goes along. */
     const quotedMessageId = () => {
       const intent = composerIntent();
@@ -2408,13 +2437,13 @@ export default function MailComposer(props: {
                 label: r().sendLaterTomorrow,
                 icon: "ti ti-sunrise",
                 trailing: <span class="text-xs text-dimmed">{dates.formatDateTime(shown.tomorrow, props.dateConfig)}</span>,
-                action: () => void sendDraft({ scheduledAt: at("tomorrow") }),
+                action: () => void sendOrSayWhy({ scheduledAt: at("tomorrow") }),
               },
               {
                 label: r().sendLaterMonday,
                 icon: "ti ti-calendar-week",
                 trailing: <span class="text-xs text-dimmed">{dates.formatDateTime(shown.monday, props.dateConfig)}</span>,
-                action: () => void sendDraft({ scheduledAt: at("monday") }),
+                action: () => void sendOrSayWhy({ scheduledAt: at("monday") }),
               },
               { label: r().sendLaterCustom, icon: "ti ti-clock", action: () => void schedule() },
             ],

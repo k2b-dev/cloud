@@ -100,6 +100,7 @@ export function createEventAcceptance(db: () => SQL, reconcile: () => Promise<vo
             SELECT gen_random_uuid(), id, ${envelope.id}::uuid, ${subjectKey} FROM events.app_subscriptions
             WHERE event_type = ${envelope.type} AND version = ${envelope.version} AND state = 'active'
               AND (resource_binding IS NULL OR (
+                resource_binding IS NOT NULL AND
                 resource_binding->'place'->>'type' = ${envelope.place?.type ?? null}
                 AND resource_binding->'place'->>'id' = ${envelope.place?.id ?? null}
                 AND first_seen_at <= ${envelope.time}::timestamptz

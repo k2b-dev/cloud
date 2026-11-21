@@ -6,8 +6,6 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-.assistant-apps-page { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; min-width: 0; padding: 1.5rem; }
-.assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 
 /* The Project choice sits under the composer, its icon in line with the composer's own controls. */
 .assistant-empty-project { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block-start: .375rem; padding-inline: .5rem; }
@@ -264,6 +262,23 @@
 .k2b-ui .assistant-context-box__main:disabled { cursor: default; }
 .k2b-ui .assistant-context-box__main:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: -2px; }
 .k2b-ui .assistant-context-box__icon { color: var(--k2b-text-secondary); font-size: 0.9375rem; text-align: center; }
+/* An alarm of the chat: its plain sign in plum (Gustav alarms v1, 6). */
+.k2b-ui .assistant-context-box__row[data-row^="wakeup:"] .assistant-context-box__icon { color: var(--k2b-ai-accent); }
+/* "2 more" unfolds the rest of a group in place, under its rows, aligned with their titles. */
+.k2b-ui .assistant-context-box__unfold {
+  justify-self: start;
+  height: 1.5rem;
+  margin-inline-start: 2.125rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-ai-accent);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__unfold:hover { text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .assistant-context-box__unfold:focus-visible { border-radius: 0.25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 .k2b-ui .assistant-context-box__tile {
   display: grid;
   width: 1.125rem;
@@ -637,30 +652,6 @@
 .web-reader__ask-query { color: var(--assistant-context-meta); font-size: 0.75rem; }
 .web-reader__ask-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .web-reader__ask-note { display: flex; flex: 1; align-items: center; gap: 0.375rem; margin: 0; }
-.artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
-.artifact-panel__preview { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 12rem; overflow: hidden; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
-.artifact-panel__preview > .k2b-placeholder { flex: 1; }
-/* An HTML app fills its surface and scrolls inside its own frame; it stays invisible until it reports ready. */
-.studio-app { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
-.studio-app__frame { display: flex; flex: 1; min-width: 0; }
-.studio-app-frame { display: block; flex: 1; width: 100%; min-height: 0; border: 0; background: transparent; transition: opacity 120ms, filter 120ms; }
-/* While Cloud asks the person something for this app, the app cannot be clicked and steps back visually. */
-.studio-app-frame[inert] { filter: grayscale(1) opacity(.45); }
-.studio-app__loading { position: absolute; inset: 0; }
-@media (prefers-reduced-motion: reduce) { .studio-app-frame { transition: none; } }
-.artifact-panel__console { display: flex; flex-direction: column; gap: .5rem; flex: 0 1 auto; min-height: 0; max-height: 60%; }
-.artifact-panel__console > .k2b-inline-guidance, .artifact-console__header, .artifact-console__caption { flex-shrink: 0; }
-.artifact-console[hidden] { display: none; }
-.artifact-console { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; overflow: hidden; padding: .75rem; }
-.artifact-console__header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
-.artifact-console__output { font-family: var(--k2b-font-mono); font-size: .8125rem; line-height: 1.6; min-height: 0; max-height: 18rem; overflow: auto; margin-top: .5rem; }
-.artifact-console__output, .artifact-console__output :where(time, span, pre) { font-family: var(--k2b-font-mono, ui-monospace, monospace); }
-.artifact-console__caption { color: var(--k2b-text-muted); font-size: .75rem; }
-.artifact-console__line { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: .5rem; padding-block: .2rem; }
-.artifact-console__line time { color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.artifact-console__level { justify-self: start; }
-.artifact-console__message { white-space: pre-wrap; overflow-wrap: anywhere; }
-
 /* Recording replaces footer controls with explicit cancel and finish actions. */
 .k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
 .k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text); }
@@ -672,92 +663,6 @@
   .k2b-ui .assistant-recording-wave > span { transition: none; transform: scaleY(.25); }
 }
 
-.artifact-source-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.artifact-source-editor__actions { display: flex; justify-content: flex-end; padding: .25rem 0; }
-.artifact-code { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.artifact-code .hl-keyword, .artifact-code .hl-function { color: var(--k2b-code-keyword); }
-.artifact-code .hl-string { color: var(--k2b-code-string); }
-.artifact-code .hl-comment { color: var(--k2b-code-comment); }
-.artifact-code .hl-number, .artifact-code .hl-variable { color: var(--k2b-code-number); }
-.artifact-code .hl-operator { color: var(--k2b-code-punctuation); }
-
-.assistant-app-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr)); gap:.75rem; }
-.artifact-workspace .assistant-app-grid .k2b-detail-panel__action { border:1px solid var(--k2b-border); background:var(--k2b-surface); border-radius:1rem; padding:1rem; min-height:6rem; align-items:flex-start; }
-
-.artifact-workspace .assistant-app-grid .k2b-detail-panel__action-title { font-size:.875rem; font-weight:600; }
-.k2b-ui .assistant-studio-card {
-  --studio-accent: var(--studio-accent-light);
-  display: flex; flex-direction: column; gap: .875rem; padding: .9375rem; min-width: 0;
-  border-color: color-mix(in srgb, var(--studio-accent) 16%, var(--k2b-border));
-  background: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--studio-secondary) 19%, transparent), transparent 75%),
-    linear-gradient(125deg, color-mix(in srgb, var(--studio-accent) 7%, var(--k2b-surface)), var(--k2b-surface));
-}
-.k2b-ui[data-theme="dark"] .assistant-studio-card,
-.k2b-ui.k2b-dark .assistant-studio-card,
-.dark .k2b-ui .assistant-studio-card { --studio-accent: var(--studio-accent-dark); }
-.assistant-studio-card__top { display: flex; align-items: flex-start; gap: .75rem; }
-.assistant-studio-card__menu { flex: 0 0 auto; margin: -.25rem -.25rem 0 0; }
-.assistant-studio-card__icon { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; margin-top: .1875rem; color: var(--studio-accent); font-size: 1.5625rem; }
-.assistant-studio-card__copy { flex: 1; min-width: 0; }
-.assistant-studio-card__title { color: var(--k2b-text); margin: 0; font-size: .8125rem; line-height: 1.5; font-weight: 600; overflow-wrap: anywhere; }
-.assistant-studio-card__description { margin: .25rem 0 0; color: var(--k2b-text-secondary); font-size: .75rem; line-height: 1.55; overflow-wrap: anywhere; }
-.assistant-studio-card__description:empty { display: none; }
-.assistant-studio-card__footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: auto; padding-top: .375rem; }
-.k2b-ui .k2b-button.assistant-studio-card__start { color: var(--studio-accent); border-color: color-mix(in srgb, var(--studio-accent) 15%, var(--k2b-border)); background: color-mix(in srgb, var(--k2b-surface) 70%, transparent); }
-.k2b-ui .k2b-button.assistant-studio-card__start:hover:not(:disabled) { background: color-mix(in srgb, var(--studio-accent) 10%, var(--k2b-surface)); }
-.assistant-studio-runner-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.assistant-studio-runner-header h1 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
-
-
-.assistant-studio-card__footer .k2b-status-badge { font-size: .65rem; }
-.assistant-version-list { display:flex; flex-direction:column; gap:1rem; }
-
-
-.assistant-apps-page--runner { flex: 1; min-height: 0; }
-.assistant-apps-page--runner { height: 100%; gap: .75rem; padding: .75rem; }
-.assistant-studio-runner-header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
-.assistant-studio-runner-header h1 { display:flex; align-items:center; gap:.5rem; min-width:0; overflow-wrap:anywhere; }
-.assistant-advanced-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; flex-shrink:0; }
-.assistant-manual-editor, .assistant-sql-console { display:flex; flex-direction:column; flex:1; min-height:0; gap:.75rem; overflow:auto; }
-.assistant-editor-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.75rem; flex:1; min-height:320px; }
-.assistant-editor-code, .assistant-editor-execution { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; }
-.assistant-editor-file { display:flex; flex:1; min-height:0; }
-.assistant-editor-file[hidden] { display:none; }
-.assistant-editor-file .artifact-code { flex:1; min-height:0; }
-.assistant-editor-execution > .artifact-panel { flex:1; min-height:0; }
-.assistant-editor-mobile-tabs { display:none; }
-.assistant-sql-editor { height:180px; flex-shrink:0; }
-.assistant-sql-editor[hidden] { display:none; }
-.assistant-sql-editor > .artifact-code { height:100%; }
-.assistant-sql-results { flex:1; min-height:200px; overflow:auto; }
-.assistant-data-dialog { display:flex; flex-direction:column; gap:1rem; min-width:0; }
-.assistant-data-entries { max-height:50vh; overflow:auto; }
-.assistant-data-entry { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:.5rem 0; border-bottom:1px solid var(--k2b-border, #8883); }
-@media (max-width:1000px) {
-  .assistant-editor-mobile-tabs { display:block; }
-  .assistant-editor-split { display:flex; }
-  .assistant-editor-code, .assistant-editor-execution { flex:1; }
-  .assistant-editor-split[data-mobile="code"] .assistant-editor-execution,
-  .assistant-editor-split[data-mobile="execution"] .assistant-editor-code { display:none; }
-  .assistant-data-entry { align-items:flex-start; flex-direction:column; }
-}
-.assistant-apps-page--runner > .artifact-panel { flex: 1; min-height: 0; }
-.assistant-studio-card__top--title-only { align-items: center; }
-.assistant-studio-card__top--title-only .assistant-studio-card__icon { margin-top: 0; }
-.assistant-studio-card__menu { align-self: flex-start; }
-.assistant-version-rows { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); overflow: hidden; }
-.assistant-version-entry { display: flex; align-items: center; gap: .75rem; padding: .75rem; }
-.assistant-version-entry + .assistant-version-entry { border-top: 1px solid var(--k2b-border); }
-.assistant-version-entry p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .875rem; }
-.assistant-version-entry__actions { display: flex; gap: .25rem; flex-shrink: 0; }
-@media (max-width: 480px) { .assistant-version-entry { flex-wrap: wrap; } .assistant-version-entry__actions { margin-left: auto; } }
-
-.assistant-apps-page--runner .artifact-panel__preview { min-height: 0; }
-
-.assistant-studio-card__start { margin-left: auto; }
-
-.assistant-editor-publish { margin-inline-start: auto; }
-
 .assistant-starters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin-block-start:2rem; }
 /* A suggestion is a flat card (v12 image 11): a tile, the area in a small line, a bold title, and what it does below. */
 .k2b-ui .k2b-button.assistant-starter { height:auto; min-width:0; justify-content:flex-start; align-items:flex-start; gap:.75rem; padding:.75rem .875rem; text-align:start; white-space:normal; font-size:.8125rem; line-height:1.25rem; font-weight:400; border-radius:.625rem; background:var(--k2b-surface); box-shadow:inset 0 0 0 var(--k2b-edge-width) var(--k2b-control-border-soft); }
@@ -766,7 +671,6 @@
 .assistant-starter__area { color:var(--k2b-text-muted); font-size:.75rem; line-height:1rem; }
 .assistant-starter__title { color:var(--k2b-text); font-size:.8125rem; font-weight:600; }
 .assistant-starter__hint { color:var(--k2b-text-secondary); }
-.assistant-sql-hint { color:var(--k2b-text-muted); font-size:.75rem; }
 @media(max-width:540px) { .assistant-starters { grid-template-columns:1fr; } }
 
 
@@ -792,9 +696,13 @@
   color: var(--k2b-text);
 }
 
-/* Chat titles stay regular weight; the active row alone carries emphasis. */
+/* Chat titles stay regular weight; the active row and an unread answer alone carry emphasis. Unread is weight and
+   dot, never color alone, as in the shared sidebar status. */
 .k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
   font-weight: 400;
+}
+.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--unread[data-variant] .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: 600;
 }
 
 /* Reserve the chat list's shared 0.5rem scroll track in the surrounding inset,
@@ -812,18 +720,7 @@
   max-width: 100cqi;
 }
 
-/* Keep the standalone app within the first screen, above the MinimalLayout footer, so its preview can scroll. */
-.assistant-standalone-page { display: flex; flex: 1 1 0; min-height: 0; overflow: hidden; }
-.assistant-standalone-runner { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: var(--ui-space-section); }
-/* From lg, the Cloud shell's gutters frame a signed-in runner like an
-   AppWorkspace, so its surface and controls share the header's edges. The
-   public page and the flush mobile shell have no gutters and keep the inset. */
-@media (min-width: 1024px) {
-  .assistant-standalone-runner { padding: 0; }
-  .assistant-standalone-page .assistant-standalone-runner { padding: var(--ui-space-section); }
-}
-
-.k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> :is(.assistant-studio-catalog, .assistant-project-catalog)) {
+.k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> .assistant-project-catalog) {
   height: min(450px, 60dvh);
 }
 
@@ -839,15 +736,34 @@
   pointer-events: none;
   transition: opacity 150ms ease-out;
 }
-/* One quiet status per chat at the row's end; the label is in the tooltip and for screen readers. */
+/* One status per chat at the row's end; the label is in the tooltip and for screen readers. In the chat list it has
+   the size of the row's icons in a fixed 1rem slot, so a change from running to waiting, failed, or unread moves
+   nothing. */
 .k2b-ui .assistant-chat-marker { display: inline-flex; align-items: center; color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="progress"] { color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="attention"] { color: var(--k2b-warning-text); }
 .k2b-ui .assistant-chat-marker[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-chat-marker[data-tone="accent"] { color: var(--k2b-action); }
+.k2b-ui .k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker {
+  justify-content: center;
+  inline-size: 1rem;
+  block-size: 1rem;
+  font-size: .875rem;
+}
+/* A failed run keeps its danger ink in every list, also in menus that carry no tone. */
+.k2b-ui .assistant-chat-failed { color: var(--k2b-danger-text); }
+/* Work in progress: the AI's plum, also where the surrounding tone is neutral, and a calm turn. */
+.k2b-ui .assistant-chat-progress { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-progress.animate-spin { animation-duration: 1.6s; }
 /* A chat that waits for the person carries the AI accent dot of "Waiting for you", also in the phone navigation, whose
-   tones have no AI color. It takes the slot of an icon, so the row keeps its size. */
-.k2b-ui .assistant-chat-waiting { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+   tones have no AI color. An unread answer carries the action color's dot. Each takes the slot of an icon, so the row
+   keeps its size. */
+.k2b-ui .assistant-chat-waiting,
+.k2b-ui .assistant-chat-unread { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-unread { background: var(--k2b-action); }
+@media (forced-colors: active) {
+  .k2b-ui :is(.assistant-chat-waiting, .assistant-chat-unread) { background: CanvasText; forced-color-adjust: none; }
+}
 
 /* "Waiting for you" (Gustav chat v12, Bauplan 3m): one 32 px row that never wraps. Over the chat it lies on the
    timeline's free end, which is always 54 px, so it comes and goes without moving the field or the conversation; on
@@ -881,7 +797,7 @@
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
-.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue) { visibility: hidden; }
+.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue, .assistant-wakeups) { visibility: hidden; }
 .k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; line-height: 1rem; white-space: nowrap; }
 .k2b-ui .assistant-waiting__label > i { color: var(--k2b-ai-accent); font-size: .875rem; }
 /* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
@@ -934,8 +850,9 @@
   inset-inline: 0;
   inset-block-end: calc(100% + .375rem);
 }
-.k2b-ui .assistant-queue[data-layout="line"],
-.k2b-ui .assistant-waiting[data-queue] {
+/* A row of its own carries the grey back; the shared row keeps the look and place of "Waiting for you", so a chip
+   that joins it moves nothing (Gustav alarms v1: 32 px, no back). */
+.k2b-ui .assistant-queue[data-layout="line"] {
   block-size: 2rem;
   padding: 0 .25rem 0 .625rem;
   border-radius: .625rem;
@@ -1023,9 +940,89 @@
   .k2b-ui .assistant-queue__actions > .k2b-icon-button::after { position: absolute; inset: -.4375rem -.25rem; content: ""; }
   .k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.75rem); }
 }
-/* Narrow, the row keeps the hour glass, the next entry's text and "+n". */
+/* Alarm lines in the chat (Gustav alarms v1, 6): one quiet 13 px line without a box on the edge of the work line, sign
+   in plum, "Alarm · time · note". Pencil and cross keep a fixed place and show under the pointer, on touch always. */
+.k2b-ui .assistant-wakeup-line { display: flex; align-items: flex-start; gap: .5rem; min-block-size: 2rem; max-inline-size: 44rem; padding-block: .375rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 400; line-height: 1.25rem; }
+.k2b-ui .assistant-wakeup-line__sign { flex: none; inline-size: 1.125rem; color: var(--k2b-ai-accent); font-size: 1rem; line-height: 1.25rem; text-align: center; }
+.k2b-ui .assistant-wakeup-line__text { flex: 0 1 auto; min-inline-size: 0; overflow-wrap: anywhere; }
+.k2b-ui .assistant-wakeup-line b { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .assistant-wakeup-line__aside { color: var(--k2b-text-subtle); }
+.k2b-ui .assistant-wakeup-line__state { flex: none; color: var(--k2b-text-muted); }
+.k2b-ui .assistant-wakeup-line[data-struck] :is(.assistant-wakeup-line__text, b) { color: var(--k2b-text-subtle); font-weight: 400; text-decoration: line-through; }
+.k2b-ui .assistant-wakeup-line[data-struck] .assistant-wakeup-line__sign { color: var(--k2b-text-subtle); }
+.k2b-ui .assistant-wakeup-line[data-kind="missed"] .assistant-wakeup-line__sign { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-wakeup-line[data-kind="expired"] .assistant-wakeup-line__sign { color: var(--k2b-text-subtle); }
+.k2b-ui .assistant-wakeup-line[data-kind="failed"] .assistant-wakeup-line__sign { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-wakeup-line__acts { display: inline-flex; flex: none; gap: .125rem; margin-block: -.25rem; margin-inline-start: auto; }
+.k2b-ui .assistant-wakeup-line:is([data-kind="missed"], [data-kind="expired"]) .assistant-wakeup-line__text { flex: 1 1 16rem; }
+/* Touch: pencil and cross take taps in 44 px without moving the line. */
+@media (any-pointer: coarse) {
+  .k2b-ui .assistant-wakeup-line__acts { gap: .5rem; }
+  .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button { position: relative; }
+  .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button::after { position: absolute; inset: -.625rem -.25rem; content: ""; }
+}
+/* The one way out is the library's link button (Gustav's plum inside Gustav); it keeps the 20 px line. */
+.k2b-ui .assistant-wakeup-line__link { flex: none; margin-block: -.25rem; white-space: nowrap; }
+/* One type size per line (6d): the link takes the line's 13 px, above the library's small button size. */
+.k2b-ui .assistant-wakeup-line > .k2b-button.assistant-wakeup-line__link { font-size: inherit; }
+/* Gustav's alarms (Gustav alarms v1, F1 A): the same 32 px row in the free end above the field, with the next alarm,
+   or the chip "Alarms · n" at the end of the row "Waiting for you" or "Queued" share. The list has the form of "Queued":
+   time in a fixed column of 8.75 rem, the note behind it, two fixed places for pencil and cross. */
+.k2b-ui .assistant-chat-composer__column > .assistant-wakeups {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  inset-block-end: calc(100% + .375rem);
+}
+.k2b-ui .assistant-wakeups[data-layout="line"] {
+  block-size: 2rem;
+  padding: 0 .25rem 0 .625rem;
+  border-radius: .625rem;
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .assistant-wakeups { display: flex; align-items: center; gap: .5rem; min-inline-size: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1rem; }
+.k2b-ui .assistant-wakeups[data-layout="chip"] { flex: none; }
+.k2b-ui .assistant-wakeups .assistant-queue__head > i { color: var(--k2b-ai-accent); font-size: .875rem; }
+.k2b-ui .assistant-wakeups .assistant-queue__chip > .ti-alarm { color: var(--k2b-text-subtle); font-size: .875rem; }
+.k2b-ui .assistant-wakeups__when { flex: none; margin-inline-end: .5rem; color: var(--k2b-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .assistant-wakeups__state { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-warning-text); font-size: .75rem; white-space: nowrap; }
+.k2b-ui .assistant-wakeups__state > i { font-size: .875rem; }
+.k2b-ui .assistant-queue__sign.assistant-wakeups__sign { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-wakeups__main { align-items: baseline; }
+.k2b-ui .assistant-wakeups__list .assistant-wakeups__when { box-sizing: border-box; min-inline-size: 8.75rem; margin: 0; padding-inline-end: .5rem; }
+/* An alarm waiting in "Queued" carries Gustav's plum, as everything that comes from him. */
+.k2b-ui .assistant-queue__sign[data-kind="wakeup"] { color: var(--k2b-ai-accent); }
+/* While the list loads on first use: one placeholder row in its place. */
+.k2b-ui .assistant-wakeups__loading { display: block; block-size: .75rem; margin: .75rem .5rem; border-radius: .375rem; background: var(--k2b-surface-muted); }
+.k2b-ui .assistant-wakeups__main > .assistant-queue__text { max-inline-size: none; }
+/* Two 30 px places, pencil (or "Catch up now") and cross. */
+.k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: 3.875rem; }
+/* Touch screens: the signs always show; time and note stand on two lines. */
+@media (hover: none) {
+  .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { min-inline-size: 0; }
+  .k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: auto; }
+}
+@media (max-width: 640px) {
+  .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { min-inline-size: 0; }
+}
+/* "Change alarm": flat inside, the shared fields with their own edge, "What changes" over the foot without a box. */
+.k2b-ui .assistant-wakeup-dialog { display: grid; gap: .875rem; }
+.k2b-ui .assistant-wakeup-dialog__pair { display: grid; grid-template-columns: minmax(0, 1fr) 7rem; gap: .625rem; align-items: start; }
+.k2b-ui .assistant-wakeup-dialog__hint { display: flex; justify-content: space-between; gap: .5rem; }
+.k2b-ui .assistant-wakeup-dialog__count { flex: none; font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-wakeup-dialog__changes,
+.k2b-ui .assistant-wakeup-dialog__error { display: flex; gap: .375rem; margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; }
+.k2b-ui .assistant-wakeup-dialog__changes b { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .assistant-wakeup-dialog__error { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-wakeup-dialog__error > i { flex: none; margin-block-start: .125rem; font-size: 1rem; }
+.k2b-ui .assistant-wakeup-dialog__foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.k2b-ui .assistant-wakeup-dialog__grow { flex: 1 1 0; }
+.k2b-ui .assistant-wakeup-dialog__delete { color: var(--k2b-danger-text); }
+/* Narrow, the row keeps the hour glass, the next entry's text and "+n"; the alarm chip keeps its word (Gustav alarms v1). */
 @container assistant-waiting (max-width: 29.999rem) {
-  .k2b-ui .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .k2b-ui .assistant-queue > .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @media (max-width: 640px) {
   /* The row above the field drops the source (the list keeps every one) and the list its order hint; a state word such
@@ -1060,7 +1057,6 @@
 /* Task rows fill the shared Button label; the chevron owns the trailing edge. */
 .k2b-ui .assistant-task-row { width: 100%; justify-content: flex-start; text-align: left; }
 .k2b-ui .assistant-task-row > .k2b-button__label { width: 100%; flex: 1; }
-.artifact-pane__body:has(> .assistant-task-detail) { overflow: hidden; }
 .assistant-task-detail { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .assistant-task-detail__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1rem; padding: .5rem .5rem 1.25rem; }
 .assistant-task-detail__instructions { margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1088,9 +1084,392 @@
 .assistant-all-chats-filters > :first-child { flex: 999 1 16rem; min-width: 0; }
 .assistant-all-chats-filters > :last-child { flex: 1 1 13rem; min-width: 0; }
 
+/* The Code destinations load their code when they open; the loading surface holds the pane like the content does. */
+.assistant-deferred-view { display: contents; }
+.assistant-deferred-feedback { display: flex; flex: 1; min-height: 0; align-items: flex-start; padding: var(--ui-space-section); }
+
+/* Gustav's own pages ("My apps & automations", "Waiting for you"): a heading with one quiet line, and the page
+   action at the end. Type scale 12/13/14/18 px: title, entry, one meta step (concept gustav-ui-neu v12, 6d). */
+.assistant-apps,
+.assistant-waiting-page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  width: 100%;
+  padding: 1.25rem 1.75rem 1.75rem;
+}
+.assistant-apps { max-width: 72rem; }
+.assistant-waiting-page { max-width: 58rem; }
+.assistant-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.625rem 1rem; }
+.assistant-page-head__copy { display: flex; flex: 1 1 16rem; flex-direction: column; gap: 0.1875rem; min-width: 0; }
+.assistant-page-head__title { margin: 0; color: var(--k2b-text); font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; }
+.assistant-page-head__lead { margin: 0; color: var(--k2b-text-muted); font-size: 0.8125rem; }
+@media (max-width: 47.999rem) {
+  .assistant-apps,
+  .assistant-waiting-page { gap: 0.875rem; padding: 0.625rem 0.875rem 1.5rem; }
+  .assistant-page-head > .k2b-button { flex: 1 1 100%; }
+}
+
+/* My apps & automations (picture 27): the day line "Today" as an island, the cards, and the quiet footer. */
+.assistant-apps__body { display: flex; flex-direction: column; gap: 1.125rem; min-width: 0; }
+.k2b-ui .assistant-apps__today { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.8125rem 1rem 0.75rem; }
+.assistant-apps__today-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; min-height: 1.25rem; margin: 0; }
+.assistant-apps__today-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-apps__today-sentence { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+/* The line keeps its height in every state; loading shows the axis without marks, a failed read takes the same room. */
+.assistant-apps__day { position: relative; height: 3.625rem; margin: 0.375rem 1.25rem 0; }
+.assistant-apps__axis { position: absolute; inset: 0; }
+.assistant-apps__axis-line { position: absolute; top: 22px; right: 0; left: 0; height: 1px; background: var(--k2b-border-strong); }
+.assistant-apps__axis-line > i { position: absolute; top: 0; left: 0; height: 1px; background: var(--k2b-text-secondary); }
+.assistant-apps__hour { position: absolute; top: 34px; transform: translateX(-50%); color: var(--k2b-text-subtle); font-size: 0.75rem; line-height: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.assistant-apps__hour::before { content: ""; position: absolute; top: -14px; left: 50%; width: 1px; height: 6px; background: var(--k2b-border-strong); }
+.assistant-apps__now { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: var(--k2b-ai-accent); }
+.assistant-apps__now > span { position: absolute; top: -14px; left: 6px; color: var(--k2b-ai-accent); font-size: 0.75rem; line-height: 1; white-space: nowrap; }
+.assistant-apps__marks { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.assistant-apps__marks > li { position: absolute; top: 12px; width: 0; }
+/* A failed or running run is never hidden under its neighbours: it lies on top. */
+.assistant-apps__marks > li:has(> [data-state="failed"]) { z-index: 2; }
+.assistant-apps__marks > li:has(> [data-state="running"]) { z-index: 3; }
+/* Form carries the state as well as colour: a failed run is interrupted, a planned start is short and grey. */
+.assistant-apps__mark { position: absolute; top: 0; left: -2px; display: block; width: 4px; height: 20px; border-radius: 2px; background: var(--k2b-success-500); }
+.assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 4px, transparent 4px 7px, var(--k2b-danger-500) 7px); }
+.assistant-apps__mark[data-state="planned"] { top: 6px; height: 8px; background: var(--k2b-border-strong); }
+.assistant-apps__mark[data-state="skipped"] { top: 6px; height: 8px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong); }
+.assistant-apps__mark[data-state="running"] { background: var(--k2b-ai-accent); }
+.assistant-apps__mark[data-state="group"] { background: var(--k2b-text-secondary); }
+/* A mark is 4 px wide; its link reaches a little further, so a pointer finds it. */
+a.assistant-apps__mark::before { content: ""; position: absolute; inset: -6px -4px; }
+a.assistant-apps__mark:hover { filter: brightness(0.86); }
+a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
+.assistant-apps__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.125rem 0 0; color: var(--k2b-text-subtle); font-size: 0.75rem; }
+.assistant-apps__legend > span { display: inline-flex; align-items: center; gap: 0.3125rem; }
+.assistant-apps__legend .assistant-apps__mark { position: static; display: inline-block; height: 10px; }
+.assistant-apps__legend .assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 3px, transparent 3px 5px, var(--k2b-danger-500) 5px); }
+.assistant-apps__legend .assistant-apps__mark[data-state="planned"] { height: 6px; }
+.assistant-apps__today-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-height: 5rem; margin: 0; color: var(--k2b-text-secondary); font-size: 0.8125rem; }
+.assistant-apps__filters { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+/* Three columns of cards with 14 px between them; two on a narrow pane, one on a phone. */
+.k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@container (max-width: 52rem) {
+  .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 34rem) {
+  .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: minmax(0, 1fr); }
+}
+.k2b-ui .assistant-apps .k2b-paper.assistant-apps__card { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; padding: 0.875rem 1rem 0.75rem; border-radius: 10px; color: inherit; text-decoration: none; }
+.assistant-apps__card-top { display: flex; align-items: flex-start; gap: 0.625rem; min-width: 0; }
+.assistant-apps__tile,
+.assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 7px; background: var(--k2b-surface-muted); color: var(--k2b-text); }
+.assistant-apps__card-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.assistant-apps__card-title { overflow: hidden; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__bars { flex: none; margin-top: 3px; }
+/* "Last: …" holds two lines in every state, so cards of a row keep one height while their words arrive. */
+.assistant-apps__card-last { display: flex; align-items: flex-start; gap: 0.375rem; min-height: 2.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.1875rem; }
+.assistant-apps__card-last > .ti { flex: none; margin-top: 2px; color: var(--k2b-text-subtle); }
+.assistant-apps__card-last > span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.assistant-apps__card-last-skeleton { width: 70%; height: 0.75rem; margin-top: 0.25rem; }
+.assistant-apps__card-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.625rem; min-height: 1.25rem; margin-top: auto; }
+/* The status word takes the card title's style with its colour (6d). */
+.assistant-apps__state { display: inline-flex; min-width: 0; align-items: center; gap: 0.3125rem; color: var(--k2b-text-secondary); font-size: 0.875rem; font-weight: 600; white-space: nowrap; }
+.assistant-apps__state[data-tone="success"] { color: var(--k2b-success-text); }
+.assistant-apps__state[data-tone="danger"] { color: var(--k2b-danger-text); }
+.assistant-apps__state[data-tone="warning"] { color: var(--k2b-warning-text); }
+.assistant-apps__state[data-tone="ai"] { color: var(--k2b-ai-accent); }
+.assistant-apps__state[data-tone="ai"] > .ti { animation: assistant-apps-running var(--k2b-motion-spin) linear infinite; }
+@keyframes assistant-apps-running { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-apps__state[data-tone="ai"] > .ti { animation: none; }
+}
+.assistant-apps__card-when { min-width: 0; overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.75rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__quiet { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; color: var(--k2b-text-subtle); font-size: 0.8125rem; }
+.assistant-apps__quiet > .ti { flex: none; margin-top: 2px; }
+.assistant-apps__more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.assistant-apps__more-failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
+
+/* A personal Code page: on a phone the sidebar is out of sight, so a link leads back to the list. */
+.k2b-ui .k2b-button.assistant-code-detail__back { display: none; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-button.assistant-code-detail__back { display: inline-flex; margin-bottom: 0.5rem; }
+}
+.assistant-code-block__actions .ti-moustache {
+  color: var(--ui-app-accent-text);
+}
+
+/* "Code of …" above the panel chat: a quiet block for the place the page shows. */
+.assistant-code-block {
+  margin: 0.25rem 0.875rem 0.625rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  font-size: 0.8125rem;
+}
+.assistant-code-block[data-state="error"] {
+  background: var(--k2b-danger-surface);
+}
+.assistant-code-block__head {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: 0.84375rem;
+  text-align: start;
+}
+.assistant-code-block__head > .ti {
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+.assistant-code-block__head:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-width) * -1);
+}
+.assistant-code-block__summary {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+.assistant-code-block__rows {
+  display: flex;
+  flex-direction: column;
+}
+.assistant-code-block__row {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.625rem;
+}
+.assistant-code-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem 0;
+}
+.assistant-code-block__note {
+  margin: 0;
+  padding: 0.375rem 0.625rem 0;
+}
+
+/* The event line at the end of a chat: a decision on a version, one sentence and at most one action. It is a fact,
+   no turn: no surface, the text on the reading edge, the action at the end of the same line. */
+.assistant-code-decision {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  min-height: 2rem;
+  font-size: 0.8125rem;
+}
+.assistant-code-decision__icon {
+  color: var(--k2b-text-secondary);
+}
+.assistant-code-decision[data-tone="ok"] .assistant-code-decision__icon {
+  color: var(--k2b-success-text);
+}
+.assistant-code-decision[data-tone="warning"] .assistant-code-decision__icon {
+  color: var(--k2b-warning-text);
+}
+.assistant-code-decision[data-tone="ai"] .assistant-code-decision__icon {
+  color: var(--k2b-ai-accent);
+}
+.assistant-code-decision[data-tone="danger"] .assistant-code-decision__icon {
+  color: var(--k2b-danger-text);
+}
+.assistant-code-decision__text {
+  margin: 0;
+  min-width: 0;
+}
+.assistant-code-decision__text strong {
+  font-weight: 600;
+}
+.assistant-code-decision__when {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+.assistant-code-decision__missing {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Waiting for you: each topic under its own heading with its count; approvals use the shared approval card, and
+   Code that needs the person stands as rows in one island. */
+.assistant-waiting-page__section { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+.assistant-waiting-page__heading { display: flex; align-items: baseline; gap: 0.375rem; margin: 0; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-waiting-page__count { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-waiting-page__rows { padding: 0.375rem 0 0.25rem; }
+.assistant-waiting-page__list { margin: 0; padding: 0; list-style: none; }
+.assistant-waiting-page__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; }
+.assistant-waiting-page__row--more { flex-wrap: wrap; }
+.assistant-waiting-page__row-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.assistant-waiting-page__row-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-waiting-page__row-sub { color: var(--k2b-text-subtle); font-size: 0.8125rem; }
+.assistant-waiting-page__open { flex: none; }
+.assistant-waiting-page__actions { display: flex; flex: none; flex-wrap: wrap; gap: 0.5rem; }
+.assistant-waiting-page__failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
+@container (max-width: 34rem) {
+  .assistant-waiting-page__row { flex-wrap: wrap; }
+  /* The row's words take the width beside the tile, so its action moves under them, on the words' edge. */
+  .assistant-waiting-page__row-copy { flex-basis: calc(100% - 2.375rem); }
+  .assistant-waiting-page__open { margin-left: 2.375rem; }
+  /* A row with two actions keeps both on the words' edge, side by side or wrapped. */
+  .assistant-waiting-page__actions { flex: 1 1 auto; margin-left: 2.375rem; }
+  .assistant-waiting-page__actions > .assistant-waiting-page__open { margin-left: 0; }
+}
+/* While loading, each approval holds the room of a card: sentence, reason, and its two answers. */
+.k2b-ui .assistant-waiting-page__skeleton { display: flex; flex-direction: column; gap: 0.625rem; min-height: 10.5rem; padding: 0.875rem 1rem; }
+.assistant-waiting-page__skeleton-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: auto; }
+
+/* Gustav at a place: the bar at the top of the side panel. Plum marks it as Gustav's; the first row keeps one height
+   in every state (place, switch, loading, failed, gone), so nothing below it moves. */
+.assistant-place-bar {
+  --k2b-choice-color: var(--k2b-ai-accent);
+  --k2b-choice-background: var(--k2b-surface);
+  display: flex;
+  flex-direction: column;
+  gap: .375rem;
+  margin: .5rem .75rem 0;
+  padding: .375rem .5rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-ai-surface);
+  color: var(--k2b-text);
+}
+.assistant-place-bar__row { display: flex; align-items: center; gap: .5rem; min-width: 0; min-height: 1.75rem; }
+.assistant-place-bar__app { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-place-chip { min-width: 0; max-width: 60%; font-weight: 600; }
+.k2b-ui .assistant-place-chip .k2b-tag__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-place-only-you { display: inline-flex; flex-shrink: 0; align-items: center; gap: .25rem; color: var(--k2b-text-secondary); font-size: .75rem; }
+.assistant-place-bar__chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.assistant-place-bar__note { display: flex; align-items: flex-start; gap: .375rem; margin: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1.4; }
+.assistant-place-bar__note > i { margin-block-start: .125rem; }
+.assistant-place-bar__failed { min-width: 0; font-size: .8125rem; }
+.k2b-ui .assistant-place-bar__switch { min-width: 0; max-width: 70%; flex-shrink: 1; }
+.k2b-ui .assistant-place-bar__switch > .k2b-button__label { min-width: 0; }
+.assistant-place-bar__skeleton { width: 9rem; height: 1.25rem; border-radius: 999px; }
+.assistant-place-bar__skeleton-line { width: 70%; height: 0.875rem; border-radius: 0.375rem; }
+.assistant-place-bar__sentence { display: block; min-height: 1.25rem; margin: 0; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.25rem; }
+.assistant-place-bar__sentence > .assistant-place-bar__things { font-size: inherit; }
+
+.assistant-place-what { display: flex; flex-direction: column; gap: .75rem; padding: .25rem; font-size: .8125rem; }
+.assistant-place-what__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.assistant-place-what__title { margin: 0; font-size: .875rem; font-weight: 600; }
+.assistant-place-what__heading { margin: 0 0 .25rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; }
+.assistant-place-what__list { display: flex; flex-direction: column; gap: .375rem; margin: 0; padding: 0; list-style: none; }
+.assistant-place-what__list > li { display: flex; align-items: flex-start; gap: .5rem; }
+.assistant-place-what__list > li > i { margin-block-start: .125rem; color: var(--k2b-ai-accent); }
+.assistant-place-what__list small { display: block; color: var(--k2b-text-secondary); font-size: .75rem; }
+.assistant-place-what__muted { color: var(--k2b-text-secondary); }
+
+/* The empty chat at a place: what Gustav knows here and up to three suggestions from the place's app. */
+.assistant-place-starters { display: flex; flex-direction: column; gap: .25rem; margin-block-start: 1.25rem; padding-inline: .5rem; }
+.assistant-place-starters__heading { margin: 0 0 .25rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; }
+.k2b-ui .assistant-place-starter { justify-content: flex-start; width: 100%; text-align: start; }
+.k2b-ui .assistant-place-starter > .k2b-button__label { justify-content: flex-start; min-width: 0; gap: .5rem; }
+.k2b-ui .assistant-place-starter i { color: var(--k2b-ai-accent); }
+
+/* Chats at places in the Gustav list: the filter pair above the list and rows that name app and place. */
+.assistant-place-filter { display: flex; flex-wrap: nowrap; gap: .25rem; padding: .25rem .5rem .5rem; }
+.k2b-ui .assistant-place-filter .k2b-filter-chip { flex: 0 1 auto; padding-inline: calc(.5rem + 1px); }
+.k2b-ui .assistant-place-filter .k2b-filter-chip__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-place-filter__count { color: var(--k2b-text-secondary); font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-place-starter > .k2b-button__label { width: 100%; }
+.assistant-place-row-sub { display: block; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.k2b-ui .assistant-authoring-stop__retired { visibility: hidden; }
+
 /* Reading column (Gustav chat v12, Bauplan 4a): the conversation is at most 812 px wide and centred, so with its 24 px
    gutters the turns and the composer share one 764 px column; prose stops at 44 rem. */
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { width: min(100%, 50.75rem); }
 .k2b-ui .assistant-chat-composer > div { max-width: 47.75rem; }
 .k2b-ui .assistant-chat-layout .ai-turn__text .assistant-markdown-block { max-width: 44rem; }
 
+/* Cloud's page handoff follows the activation fact, with one shared link surface and quiet additional links. */
+.assistant-code-decision__pages {
+  grid-column: 2 / -1;
+  min-width: 0;
+  width: 100%;
+  max-width: 26.25rem;
+  margin-top: 0.5rem;
+}
+.assistant-code-decision__more,
+.assistant-code-decision__pages-pending {
+  font-size: var(--k2b-type-13);
+  color: var(--k2b-text-secondary);
+}
+/* The sentence keeps the line's 32 px row, whether the page occupies the next row or not. */
+.assistant-code-decision[data-outcome="activated"] { grid-template-rows: minmax(2rem, auto); }
+.assistant-code-decision__placeholder-sentence { grid-column: 2; min-height: 2rem; }
+.assistant-code-decision__more {
+  position: relative;
+  display: flex;
+  white-space: nowrap;
+  margin: 0.5rem 0 0;
+}
+.assistant-code-decision__more > span:first-child,
+.assistant-code-decision__remaining { flex: 0 0 auto; }
+.assistant-code-decision__more-label { padding-inline-end: 0.3em; }
+.assistant-code-decision__additional-item:not(:first-child)::before,
+.assistant-code-decision__measure > [data-page-measure]:not(:first-child)::before,
+.assistant-code-decision__remaining::before {
+  content: "·";
+  display: inline-block;
+  padding-inline: 0.3em;
+  flex: 0 0 auto;
+}
+.assistant-code-decision__additional { display: flex; min-width: 0; }
+.assistant-code-decision__additional-item { display: flex; flex: 0 1 auto; min-width: 0; }
+.assistant-code-decision__additional-item[hidden] { display: none; }
+.assistant-code-decision__additional-item a { min-width: 0; }
+.assistant-code-decision__additional-item a > span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-code-decision__measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  inset-inline-start: 0;
+  top: 0;
+  display: flex;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.assistant-code-decision__measure > span { flex: 0 0 auto; }
+.assistant-code-decision__more a:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+  border-radius: 0.25rem;
+}
+.assistant-code-decision__more a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-border-strong);
+  text-underline-offset: 3px;
+}
+.assistant-code-decision__more a:hover { text-decoration-color: currentColor; }
+.assistant-code-decision__pages-pending {
+  /* LinkCard: 32 px padding + 2 px border + 21 px title + 18 px description. */
+  min-height: 4.5625rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.assistant-code-decision__pages-pending[data-multiple] {
+  min-height: calc(4.5625rem + 0.5rem + 1.5em);
+}
+
+@media (max-width: 40rem) {
+  .assistant-code-decision__pages-pending { flex-direction: column; justify-content: center; align-items: stretch; }
+  .assistant-code-decision__pages-pending .k2b-button { width: 100%; }
+}

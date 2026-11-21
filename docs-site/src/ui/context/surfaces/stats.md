@@ -5,8 +5,10 @@ framed tile of its own: an optional icon and the label at the top, the figure
 with its change below, and one support line with the comparison, a note, and
 the trend. The tile is an island (layers and shadows): lifted in the main
 content, flat inside another island, a column, a panel, or a dialog. A muted
-grid tints its tiles instead and never lifts them. With `variant="plain"` the
-same figures stand without tiles, for example under a page head.
+grid tints its tiles instead and never lifts them. A `flat` grid has no tiles
+at all: figures stand side by side in the flow, the icon without its chip, as
+key figures in a chat answer do. With `variant="plain"` the same figures stand
+without tiles in equal columns with separators, for example under a page head.
 
 The application owns the values, their scope, and the links used to investigate them.
 
@@ -52,7 +54,7 @@ import {
 | `action` | `{ label: string; href: string }` | none | Adds a link beside the title when `title` is present. |
 | `columns` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | `4` | Tiles per row on a wide container. |
 | `size` | `"lg" \| "md" \| "sm"` | `"md"` | Sets the density inherited by the tiles. |
-| `surface` | `"white" \| "muted"` | `"white"` | Gives the tiles the page or the muted surface. No effect with `variant="plain"`. |
+| `surface` | `"white" \| "muted" \| "flat"` | `"white"` | Gives the tiles the page or the muted surface, or drops the tiles (`flat`). No effect with `variant="plain"`. |
 | `variant` | `"tiles" \| "plain"` | `"tiles"` | `plain` sets the figures without frame, surface and shadow, in equal columns with a thin line between. See [Figures without tiles](#figures-without-tiles). |
 | `class` | `string` | none | Adds sizing or layout classes to the outer element. |
 
@@ -76,6 +78,7 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `sub` | `string` | Qualifies the value with scope, unit, or time range. |
 | `href` | `string` | Makes the complete tile a link. |
 | `accent` | `StatCellAccent` | Adds a semantic icon or short status pill to the support line. |
+| `valueTone` | `"danger" \| "success"` | Colors the figure as a result, such as a negative balance. |
 | `valueClass` | `string` | Overrides the value color. |
 | `title` | `string` | Adds a native title to the value, such as its unrounded form. |
 | `trend` | `readonly number[]` | Adds a sparkline at the end of the support line, from oldest to newest, with tooltips and keyboard inspection. |

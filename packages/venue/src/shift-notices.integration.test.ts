@@ -416,8 +416,8 @@ suite("Venue shift notices", () => {
     const assignmentId = await internalId("shift_assignments", taken.id);
 
     const cancelled = await venueCapabilities.actions["assignment.cancel"].run(
-      { venueId, assignmentId: taken.id },
-      capabilityContext(quiet),
+      { assignmentId: taken.id },
+      { ...capabilityContext(quiet), target: { type: "venue.venue", id: venueId } },
     );
     expect(cancelled).toMatchObject({ ok: true, data: { data: { assignmentId: taken.id, cancelled: true } } });
 

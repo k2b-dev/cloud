@@ -182,7 +182,8 @@ Selection changes only color and background, so neighboring chips stay in place.
 
 Pass `href` to render a native link that works without JavaScript. The active
 link carries `aria-current="true"`. Without `href`, it renders a button with
-`aria-pressed`; use `onClick` to update the controlled state. A disabled toggle
+`aria-pressed`; use `onClick` to update the controlled state. Leave out `icon`
+when the label alone names the choice, such as the optional reasons of a form. A disabled toggle
 renders a disabled button even when `href` is supplied.
 
 A button toggle may open a dialog with more filters, such as a filter builder:
@@ -211,7 +212,7 @@ const [onlyMine, setOnlyMine] = createSignal(false);
 ```ts
 type FilterToggleProps = {
   label: JSX.Element;
-  icon: string;
+  icon?: string;
   active: boolean;
   href?: string;
   onClick?: (event: MouseEvent) => void;

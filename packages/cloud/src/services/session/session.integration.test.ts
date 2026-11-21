@@ -7,7 +7,7 @@ import { migrateBrowserSessionCutover } from "../../../../core/src/migrate/core/
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
 import * as settings from "../settings";
 import { SessionEpochChangedError, session } from "./index";
-import { createTestSession } from "./session.test-fixture";
+import { createTestAppSession, createTestSession } from "./session.test-fixture";
 
 const withFrozenTime = async (run: () => Promise<void>) => {
   const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
@@ -29,6 +29,30 @@ const fixture = async () => {
 };
 
 suite("JWT-only browser sessions", () => {
+  test("browser sign-in persists its locale for future notifications without phone renewals changing it", () =>
+    withFrozenTime(async () => {
+      const f = await fixture();
+      try {
+        const routes = new Hono().post("/login", async (c) => {
+          await session.create(c, f.userId, { method: "password", notify: null });
+          return c.body(null, 204);
+        });
+        for (const locale of ["en", "de"]) {
+          expect((await routes.request("/login", { method: "POST", headers: { "x-cloud-locale": locale } })).status).toBe(204);
+          const [row] = await sql<{ locale: string }[]>`SELECT notification_locale AS locale FROM auth.users WHERE id=${f.userId}::uuid`;
+          expect(row?.locale).toBe(locale);
+        }
+        await createTestAppSession(f.userId);
+        const [afterRenewal] = await sql<
+          { locale: string }[]
+        >`SELECT notification_locale AS locale FROM auth.users WHERE id=${f.userId}::uuid`;
+        expect(afterRenewal?.locale).toBe("de");
+        await session.revokeAllForUser(f.userId);
+      } finally {
+        await f.cleanup();
+      }
+    }));
+
   test("refuses session creation after the approved epoch changes", () =>
     withFrozenTime(async () => {
       const f = await fixture();

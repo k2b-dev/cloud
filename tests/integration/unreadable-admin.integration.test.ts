@@ -1,10 +1,7 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { z } from "zod";
-import { artifactDatabase } from "../../packages/assistant/src/artifacts/database";
-import { storageSettings } from "../../packages/assistant/src/artifacts/storage-settings";
-import { testIdentity } from "../../packages/assistant/src/artifacts/test-identity";
-import { app as assistant } from "../../packages/assistant/src/config";
+import { testIdentity } from "../../packages/assistant/src/chat-code/test-identity";
 import { createAdminOutgoingMailRoutes } from "../../packages/cloud/src/api/admin-outgoing-mail";
 import { compileCapabilityManifest } from "../../packages/cloud/src/capabilities/testing";
 import {
@@ -33,10 +30,6 @@ import { suiteFor } from "../../scripts/fixtures/test-infra";
 
 const suite = suiteFor("database", "valkey");
 const keys = [
-  "assistant.storage_file_mib",
-  "assistant.storage_total_mib",
-  "assistant.rsql_url",
-  "assistant.rsql_api_token",
   "outgoing_mail.content_retention_days",
   "outgoing_mail.record_retention_days",
   "logs.retention_days",
@@ -97,44 +90,6 @@ const rejectsWithoutPartialCommit = async (first: string, later: string, save: (
 suite("#1408 application editors preserve unreadable stored settings", () => {
   beforeEach(clear);
   afterAll(clear);
-  test("Assistant storage: all keys preflight before writes; partial edits preserve ciphertext", async () => {
-    const key = "assistant.storage_total_mib";
-    const value = await unreadable(key);
-    expect((await storageSettings.read(identity)).unreadable[key]).toBe(true);
-    await expect(storageSettings.write({ fileMiB: 64, totalMiB: 250 }, identity)).rejects.toMatchObject({ code: "setting_unreadable" });
-    expect((await assistant.settings.read("assistant.storage_file_mib")).stored).toBe("none");
-    await preserved(key, value);
-    await storageSettings.write({ fileMiB: 64 }, identity);
-    await preserved(key, value);
-    await storageSettings.write({ totalMiB: 250, replaceUnreadable: [key] }, identity);
-    expect(await assistant.settings.read(key)).toEqual({ value: 250, stored: "readable" });
-  });
-  test("Assistant storage rolls back an earlier key when a later key becomes unreadable after preflight", async () => {
-    await settings.set("assistant.storage_file_mib", 50);
-    await settings.set("assistant.storage_total_mib", 250);
-    await rejectsWithoutPartialCommit("assistant.storage_file_mib", "assistant.storage_total_mib", () =>
-      storageSettings.write({ fileMiB: 60, totalMiB: 500 }, identity),
-    );
-  });
-  test("Assistant rsql rolls back settings within its existing advisory transaction", async () => {
-    await settings.set("assistant.rsql_url", "");
-    await settings.set("assistant.rsql_api_token", "");
-    await rejectsWithoutPartialCommit("assistant.rsql_url", "assistant.rsql_api_token", () =>
-      artifactDatabase.configure({ url: "", token: "" }, identity),
-    );
-  });
-  test("Assistant database: hidden unreadable token is never replaced by the empty fallback", async () => {
-    const key = "assistant.rsql_api_token";
-    const value = await unreadable(key);
-    await unreadable("assistant.rsql_url");
-    expect((await artifactDatabase.settings(identity)).unreadable[key]).toBe(true);
-    await expect(artifactDatabase.configure({ token: "" }, identity)).rejects.toMatchObject({ code: "setting_unreadable" });
-    await preserved(key, value);
-    await artifactDatabase.configure({}, identity);
-    await preserved(key, value);
-    await artifactDatabase.configure({ url: "", token: "", replaceUnreadable: ["assistant.rsql_url", key] }, identity);
-    expect(await assistant.settings.read(key)).toEqual({ value: "", stored: "readable" });
-  });
   test("outgoing mail: API returns per-key state, rolls back implicit full saves, and supports partial recovery", async () => {
     const key = "outgoing_mail.record_retention_days";
     const value = await unreadable(key);

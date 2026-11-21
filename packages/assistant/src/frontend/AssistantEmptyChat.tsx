@@ -1,7 +1,16 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { Button, useLocale } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import { assistantMessages } from "./messages";
+import { placeMessages } from "./place-messages";
+
+/** The empty chat at a place: its name in the heading and up to three suggestions from the place's app. */
+export type AssistantEmptyPlace = {
+  title: string;
+  appName: string;
+  starters: readonly { label: string; prompt: string }[];
+  onStarter: (starter: { label: string; prompt: string }) => void;
+};
 
 export type AssistantStarterAction = {
   label: string;
@@ -37,9 +46,11 @@ export default function AssistantEmptyChat(props: {
   onStarter?: (starter: AssistantStarterAction) => void;
   /** Quiet control at the end of the row under the composer, such as the panel's "All chats". */
   rowEnd?: JSX.Element;
+  place?: AssistantEmptyPlace | null;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  const placeT = () => placeMessages.resolve([locale()]).t;
   const starters = (): readonly AssistantStarterAction[] => [
     {
       label: t().analyzeFiles,
@@ -73,8 +84,11 @@ export default function AssistantEmptyChat(props: {
               class="text-start text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
               classList={{ "sr-only": Boolean(props.modelNote) }}
             >
-              {t().workOn}
+              {props.place ? placeT().emptyTitle({ title: props.place.title }) : t().workOn}
             </h1>
+            {props.place && !props.modelNote ? (
+              <p class="mt-1 text-center text-sm text-[var(--k2b-text-secondary)]">{placeT().emptyText}</p>
+            ) : null}
             {props.modelNote}
           </div>
         </div>
@@ -103,7 +117,22 @@ export default function AssistantEmptyChat(props: {
           {props.rowEnd}
         </div>
 
-        {props.onStarter ? (
+        <Show when={props.place?.starters.length ? props.place : null} keyed>
+          {(place) => (
+            <div class="assistant-place-starters" role="group" aria-labelledby="assistant-place-starters-title">
+              <h2 id="assistant-place-starters-title" class="assistant-place-starters__heading">
+                {placeT().startersFrom({ app: place.appName })}
+              </h2>
+              {place.starters.map((starter) => (
+                <Button variant="ghost" size="sm" class="assistant-place-starter" onClick={() => place.onStarter(starter)}>
+                  <i class="ti ti-sparkles" aria-hidden="true" />
+                  <span class="truncate">{starter.label}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </Show>
+        {props.onStarter && !props.place ? (
           <div class="assistant-starters" role="group" aria-label={t().starters}>
             {starters().map((starter) => (
               <Button variant="subtle" class="assistant-starter" onClick={() => props.onStarter?.(starter)}>

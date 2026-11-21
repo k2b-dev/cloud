@@ -1,0 +1,141 @@
+import { i18n } from "@k2b/stdlib";
+
+/** The day line's counts, in the sentence beside "Today". */
+type DayCounts = { succeeded: number; failed: number; planned: number; running: number; grouped: number };
+
+/**
+ * "My apps & automations" only: these texts load with the view itself, so the workspace's first download leaves them out
+ * (the island budget in scripts/checks/island-bundles.ts). Texts the chat's Code block shares stay in `assistantMessages`.
+ */
+export const codeViewMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      codeRunsAsYou: "Your Code runs as you, with your rights and no more.",
+      codeCreateInChat: "Create in chat",
+      codeKind: "Automation",
+      codeElsewhere: "Code of a mailbox or another place is listed at that place, under “Code”.",
+      codeLoadMore: "Load more",
+      codeLoadFailed: "Your automations could not be loaded.",
+      codeLoadFailedHint: "Loading does not change them.",
+      codeEmpty: "No automation of your own yet.",
+      codeEmptyHint: "Tell Gustav what should happen for you regularly, for example “Summarize my open offers every Monday”.",
+      appsToday: "Today",
+      appsTodaySentence: ({ succeeded, failed, planned, running, grouped }: DayCounts) =>
+        [
+          `${succeeded} ${succeeded === 1 ? "run" : "runs"} succeeded`,
+          `${failed} failed`,
+          `${planned} planned ${planned === 1 ? "start" : "starts"}`,
+          ...(running > 0 ? [`${running} running`] : []),
+          ...(grouped > 0 ? [`${grouped} more runs`] : []),
+        ].join(", "),
+      appsDayLabel: ({ sentence }: { sentence: string }) => `Runs today: ${sentence}`,
+      appsDayMarks: "Runs today",
+      appsDayNow: "now",
+      appsDayFailed: "Today's runs could not be loaded.",
+      appsDayPartial: ({ count }: { count: number }) =>
+        count === 1
+          ? "Today's runs of 1 automation are missing; the numbers leave it out."
+          : `Today's runs of ${count} automations are missing; the numbers leave them out.`,
+      appsLegendSucceeded: "succeeded",
+      appsLegendFailed: "failed",
+      appsLegendPlanned: "planned",
+      appsRunSucceeded: "Succeeded",
+      appsRunFailed: "Failed",
+      appsRunSkipped: "Skipped",
+      appsRunRunning: "Running",
+      appsRunPlanned: "Planned start",
+      appsMark: ({ title, time, state }: { title: string; time: string; state: string }) => `${title}, ${time}: ${state}`,
+      appsGroupMark: ({ time, count }: { time: string; count: number }) => `${count} runs around ${time}`,
+      appsLast: ({ text }: { text: string }) => `Last: ${text}`,
+      appsLastRun: ({ state, when }: { state: string; when: string }) => `${state}, ${when}`,
+      appsNoRun: "No run yet.",
+      appsStateOn: "On",
+      appsStateChatMissing: "Needs you",
+      appsNoScheduleYet: "No schedule yet",
+      appsInChat: ({ title }: { title: string }) => `in\u00a0“${title}”`,
+      appsChatMissing: "Chat missing",
+      appsChatArchived: ({ title }: { title: string }) => `The chat “${title}” is archived`,
+      appsChatGone: "The chat of this automation is missing",
+      appsStateRunning: "Running",
+      appsStateFailed: "Last run failed",
+      appsStatePaused: "Paused",
+      appsStateAccess: "Access missing",
+      appsStateDraft: "Not switched on yet",
+      appsStateDeleting: "Being deleted",
+      appsSince: ({ when }: { when: string }) => `since ${when}`,
+      appsTodayAt: ({ time }: { time: string }) => `today, ${time}`,
+      appsRuns: ({ count, succeeded, failed }: { count: number; succeeded: number; failed: number }) =>
+        `${count === 1 ? "Last run" : `Last ${count} runs`}: ${succeeded} succeeded, ${failed} failed`,
+      appsFilters: "Show",
+      appsFilterAll: ({ count }: { count: number }) => `All ${count}`,
+      appsFilterAttention: ({ count }: { count: number }) => `Needs you ${count}`,
+      appsFilterPaused: ({ count }: { count: number }) => `Paused ${count}`,
+      appsFilterEmpty: "Nothing here with this filter.",
+    },
+    de: {
+      codeRunsAsYou: "Dein Code läuft als du, mit deinen Rechten und nicht mehr.",
+      codeCreateInChat: "Im Chat erstellen",
+      codeKind: "Automation",
+      codeElsewhere: "Code eines Postfachs oder eines anderen Orts steht an diesem Ort unter „Code“.",
+      codeLoadMore: "Mehr laden",
+      codeLoadFailed: "Deine Automationen konnten nicht geladen werden.",
+      codeLoadFailedHint: "Das Laden ändert nichts an ihnen.",
+      codeEmpty: "Noch keine eigene Automation.",
+      codeEmptyHint:
+        "Sag Gustav, was regelmäßig für dich passieren soll, zum Beispiel „Fass mir jeden Montag meine offenen Angebote zusammen“.",
+      appsToday: "Heute",
+      appsTodaySentence: ({ succeeded, failed, planned, running, grouped }) =>
+        [
+          `${succeeded} ${succeeded === 1 ? "Lauf" : "Läufe"} erfolgreich`,
+          `${failed} fehlgeschlagen`,
+          `${planned} ${planned === 1 ? "geplanter Start" : "geplante Starts"}`,
+          ...(running > 0 ? [`${running} ${running === 1 ? "läuft" : "laufen"} gerade`] : []),
+          ...(grouped > 0 ? [`${grouped} weitere Läufe`] : []),
+        ].join(", "),
+      appsDayLabel: ({ sentence }) => `Läufe heute: ${sentence}`,
+      appsDayMarks: "Läufe heute",
+      appsDayNow: "jetzt",
+      appsDayFailed: "Die Läufe von heute konnten nicht geladen werden.",
+      appsDayPartial: ({ count }) =>
+        count === 1
+          ? "Die Läufe von heute fehlen für 1 Automation; die Zahlen lassen sie aus."
+          : `Die Läufe von heute fehlen für ${count} Automationen; die Zahlen lassen sie aus.`,
+      appsLegendSucceeded: "erfolgreich",
+      appsLegendFailed: "fehlgeschlagen",
+      appsLegendPlanned: "geplant",
+      appsRunSucceeded: "Erfolgreich",
+      appsRunFailed: "Fehlgeschlagen",
+      appsRunSkipped: "Übersprungen",
+      appsRunRunning: "Läuft gerade",
+      appsRunPlanned: "Geplanter Start",
+      appsMark: ({ title, time, state }) => `${title}, ${time}: ${state}`,
+      appsGroupMark: ({ time, count }) => `${count} Läufe um ${time}`,
+      appsLast: ({ text }) => `Zuletzt: ${text}`,
+      appsLastRun: ({ state, when }) => `${state}, ${when}`,
+      appsNoRun: "Noch kein Lauf.",
+      appsStateOn: "Eingeschaltet",
+      appsStateChatMissing: "Braucht dich",
+      appsNoScheduleYet: "Noch ohne Zeitplan",
+      appsInChat: ({ title }) => `in\u00a0„${title}“`,
+      appsChatMissing: "Chat fehlt",
+      appsChatArchived: ({ title }) => `Der Chat „${title}“ ist archiviert`,
+      appsChatGone: "Der Chat dieser Automation fehlt",
+      appsStateRunning: "Läuft gerade",
+      appsStateFailed: "Letzter Lauf fehlgeschlagen",
+      appsStatePaused: "Pausiert",
+      appsStateAccess: "Zugriff fehlt",
+      appsStateDraft: "Noch nicht eingeschaltet",
+      appsStateDeleting: "Wird gelöscht",
+      appsSince: ({ when }) => `seit ${when}`,
+      appsTodayAt: ({ time }) => `heute, ${time}`,
+      appsRuns: ({ count, succeeded, failed }) =>
+        `${count === 1 ? "Letzter Lauf" : `Letzte ${count} Läufe`}: ${succeeded} erfolgreich, ${failed} fehlgeschlagen`,
+      appsFilters: "Anzeigen",
+      appsFilterAll: ({ count }) => `Alle ${count}`,
+      appsFilterAttention: ({ count }) => `Braucht dich ${count}`,
+      appsFilterPaused: ({ count }) => `Pausiert ${count}`,
+      appsFilterEmpty: "Mit diesem Filter ist nichts dabei.",
+    },
+  },
+});

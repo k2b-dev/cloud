@@ -92,3 +92,11 @@ authorization.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+## Capability action targets
+
+`location.delete` targets `weather.location` and takes an empty `input`
+object. Chat tools and MCP use the flat field `location`, replacing
+`locationId`. The target must be a saved location owned by the current user.
+`location.create` acts at the application. Forecast Queries retain their
+saved-location or coordinate source, and readers retain `id`.

@@ -25,7 +25,7 @@ const GrantSchema = z.object({
   principal: z.object({ type: z.literal("service_account"), serviceAccountId: z.string() }),
   permission: z.enum(["read", "write", "admin"]),
   displayName: z.string(),
-  serviceAccountKind: z.enum(["standalone", "agent", "user_delegated", "resource_bound"]),
+  serviceAccountKind: z.enum(["standalone", "agent", "user_delegated", "resource_bound", "code"]),
 });
 const AccessListSchema = z.object({ access: z.array(z.object({ id: z.string(), principal: z.object({ type: z.string() }) })) });
 type Resource = "projects" | "skills";
@@ -151,6 +151,31 @@ suite("Project and Skill credential limits and manager eligibility", () => {
   });
 
   for (const resource of ["projects", "skills"] as const) {
+    test(`${resource}: normal sharing grants and switches a Code account without credentials`, async () => {
+      const person = await owner();
+      const fixture = await create(resource, person.headers);
+      const machine = await account("code", person.id, resource, fixture.id);
+      const response = await request(person.headers, `${fixture.path}/access`, "POST", {
+        principal: { type: "service_account", serviceAccountId: machine.id },
+        permission: "read",
+      });
+      expect(response.status).toBe(201);
+      const { access } = z.object({ access: GrantSchema }).parse(await response.json());
+      expect(access.serviceAccountKind).toBe("code");
+      for (const permission of ["write", "read"] as const) {
+        expect((await request(person.headers, `${fixture.path}/access/${access.id}`, "PATCH", { permission })).status).toBe(200);
+        const subject = await machine.context(["read", "write"]);
+        const result =
+          resource === "projects" ? await aiProjects.getByShortId(fixture.id, subject) : await aiSkills.getByShortId(fixture.id, subject);
+        expect(result?.permission).toBe(permission);
+      }
+      expect((await request(person.headers, `${fixture.path}/access/${access.id}`, "PATCH", { permission: "admin" })).status).toBe(404);
+      expect((await request(person.headers, `${fixture.path}/access/${access.id}`, "DELETE")).status).toBe(200);
+      expect(
+        await serviceAccountCredentials.createApiToken({ serviceAccountId: machine.id, name: "Forbidden", scopes: ["read"] }),
+      ).toMatchObject({ ok: false });
+    });
+
     for (const kind of ["standalone", "agent"] as const) {
       test(`${resource}: ${kind} authenticates, receives named grants, is scope-capped and loses revoked access`, async () => {
         const person = await owner();

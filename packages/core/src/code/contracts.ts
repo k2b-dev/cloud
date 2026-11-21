@@ -1,0 +1,346 @@
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  CloudResourceRefSchema,
+  CODE_BRIDGE_REFUSAL_KINDS,
+  CodeOutputWindowSchema,
+  CodePageLinksSchema,
+} from "@k2b/cloud/contracts";
+import { CodeRunEntriesInputSchema, CodeRunEntriesSchema } from "@k2b/cloud/contracts/code-runs";
+import { z } from "zod";
+
+export const CodeEventDeliverySchema = z
+  .object({
+    id: z.uuid(),
+    eventId: z.uuid(),
+    eventType: z.string(),
+    state: z.enum(["pending", "retrying", "failed"]),
+    code: z.string().nullable(),
+    attempts: z.number().int().nonnegative(),
+    createdAt: z.string(),
+  })
+  .strict();
+
+/** Stable public identity; never changes when a new version is saved. */
+export const CodeIdSchema = z
+  .string()
+  .regex(/^c_[a-z0-9]{4,16}$/)
+  .describe("Code ID.");
+/** Exactly one owner. Resource identity is the platform's opaque { type, id } pair. */
+export const CodeOwnerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("person").describe("Personal owner."), userId: z.uuid().describe("Owner UUID.") }).strict(),
+  z
+    .object({
+      kind: z.literal("resource").describe("Resource owner."),
+      ref: CloudResourceRefSchema.describe("Exact owner resource."),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("app").describe("App owner."),
+      appId: z
+        .string()
+        .regex(/^[a-z][a-z0-9-]*$/)
+        .max(80)
+        .describe("Owner app ID."),
+    })
+    .strict(),
+]);
+export type CodeOwner = z.infer<typeof CodeOwnerSchema>;
+/** Editors also read run contents; readers see only run metadata. Owner administrators are live editors. */
+export const CodePermissionSchema = z.enum(["editor", "reader"]);
+export type CodePermission = z.infer<typeof CodePermissionSchema>;
+/** Source paths are relative POSIX paths; content and bundle are exact UTF-8 text. */
+export const CodeSourceFilesSchema = z.record(
+  z
+    .string()
+    .min(1)
+    .max(512)
+    .refine(
+      (path) =>
+        !path.startsWith("/") &&
+        !/[\\\u0000-\u001f\u007f]/.test(path) &&
+        path.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
+      "Expected a relative source path",
+    ),
+  z.string(),
+);
+export type CodeSourceFiles = z.infer<typeof CodeSourceFilesSchema>;
+/** Immutable checked-version manifest slot. C8/C16 own its eventual schema, not the SDK generation manifest. */
+export const CodeVersionManifestSchema = z.record(z.string(), z.json());
+export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
+/** Core-owned tables; other applications consume capabilities, never these tables. */
+export const CODE_TABLES = {
+  secrets: "code.secrets",
+  secretBindings: "code.secret_bindings",
+  codes: "code.codes",
+  databases: "code.databases",
+  databaseDeletions: "code.database_deletions",
+  shares: "code.shares",
+  versions: "code.versions",
+  runs: "code.runs",
+  calls: "code.calls",
+  versionSubmissions: "code.version_submissions",
+  versionDecisions: "code.version_decisions",
+  versionBaselines: "code.version_baselines",
+  activations: "code.activations",
+  activationOutbox: "code.activation_outbox",
+  cleanupJobs: "code.cleanup_jobs",
+  policy: "code.policy",
+  policyRules: "code.policy_rules",
+  policyCoverage: "code.policy_coverage",
+  policyPauseOutbox: "code.policy_pause_outbox",
+} as const;
+const timestamp = z.iso.datetime();
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
+export const CodeSchema = z
+  .object({
+    id: CodeIdSchema,
+    owner: CodeOwnerSchema,
+    title: z.string(),
+    database: z
+      .object({
+        bytes: z.number().nonnegative().nullable(),
+        limit: z.number().positive(),
+        state: z.enum(["unused", "ready", "unavailable"]),
+        owner: z.object({ reserved: z.number().nonnegative(), limit: z.number().positive() }).strict().optional(),
+        canExport: z.boolean().optional(),
+        unused: z
+          .object({
+            since: z.iso.datetime(),
+            deleteAt: z.iso.datetime().nullable(),
+            namespace: z.string(),
+            canDelete: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    serviceAccountId: z.uuid().nullable(),
+    /** Copyable account handle, also before the first run; null for personal Code. */
+    serviceAccountHandle: z.string().nullable(),
+    state: z.enum(["draft", "active", "paused", "deleting"]),
+    activeVersionId: z.uuid().nullable(),
+    activatedAt: timestamp.nullable().optional(),
+    activatedBy: z.object({ name: z.string() }).strict().nullable().optional(),
+    pausedBy: z.object({ name: z.string() }).strict().nullable().optional(),
+    pausedAt: timestamp.nullable().optional(),
+    needsReconfirmation: z.boolean().optional(),
+    pauseReason: z.string().nullable(),
+    pauseRows: z.array(z.string()),
+    pausePolicyRevision: z.number().int().positive().nullable(),
+    createdBy: z.uuid().nullable(),
+    createdAt: timestamp,
+  })
+  .strict();
+export type Code = z.infer<typeof CodeSchema>;
+export const CodeVersionSchema = z
+  .object({
+    id: z.uuid(),
+    codeId: CodeIdSchema,
+    number: z.number().int().positive(),
+    sourceHash: hash,
+    bundleHash: hash,
+    files: z.array(z.string()),
+    sourceBytes: z.number().int().nonnegative(),
+    bundleBytes: z.number().int().nonnegative(),
+    manifestAvailable: z.boolean(),
+    createdBy: z.uuid().nullable(),
+    createdAt: timestamp,
+  })
+  .strict();
+export type CodeVersion = z.infer<typeof CodeVersionSchema>;
+/** One attempt, never a resumable workflow. Scheduling/leases belong to C13. */
+export const CodeRunSchema = z
+  .object({
+    id: z.uuid(),
+    codeId: CodeIdSchema,
+    versionId: z.uuid(),
+    trigger: z.enum(["manual", "schedule", "event", "path"]),
+    /** Declared handler name; never a concrete request URL or payload. Safe run metadata for readers. */
+    entrypoint: z.string(),
+    /** Reviewed title of this run's entrypoint in its pinned version, when declared. */
+    title: z.string().optional(),
+    state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
+    outcome: z.string().nullable(),
+    /** First target refusal in invocation order; contains no target data and is safe for readers. */
+    firstRefusedCallOrdinal: z.number().int().positive().nullable(),
+    createdAt: timestamp,
+    startedAt: timestamp.nullable(),
+    endedAt: timestamp.nullable(),
+    /** The failed run this one starts again; null for a first attempt or after that run's retention. */
+    rerunOf: z.uuid().nullable(),
+    /** Who started it again, as the directory shows them to this reader; resolved on read and never stored. */
+    rerunByName: z.string().nullable(),
+  })
+  .strict();
+export type CodeRun = z.infer<typeof CodeRunSchema>;
+/** Results use Postgres json (exact JSON text), so the public capability result byte budget applies without expansion. */
+export const CODE_RESULT_STORAGE_BYTES = CAPABILITY_MAX_RESULT_BYTES;
+/** Inline JSON and text chunks share the capability response budget. Larger values remain complete in Postgres. */
+export const CODE_INLINE_JSON_BYTES = 16_384;
+/** Reason recorded by the bridge, before the provider status is lost in transport. Null for successes and legacy calls. */
+export const CodeCallRefusalKindSchema = z.enum(CODE_BRIDGE_REFUSAL_KINDS);
+export type CodeCallRefusalKind = z.infer<typeof CodeCallRefusalKindSchema>;
+/** Editor-only summary of the first target refusal; never contains provider names or response payloads. */
+export const CodeRefusedCallSchema = z
+  .object({
+    ordinal: z.number().int().positive(),
+    kind: z.enum(["query", "action"]),
+    capability: z.string(),
+    /** From the normalized call and the capability's target declaration, never from its response. */
+    target: CloudResourceRefSchema.nullable(),
+  })
+  .strict();
+export type CodeRefusedCall = z.infer<typeof CodeRefusedCallSchema>;
+// Run and call payloads share one recursive JSON definition in their capability
+// projection, leaving room for structured output within the registry byte limit.
+const runJson = z.json();
+/** Ordered observational record, not a replay journal or an idempotency reservation. */
+export const CodeCallSchema = z
+  .object({
+    ordinal: z.number().int().positive(),
+    kind: z.enum(["query", "action"]),
+    capability: z.string(),
+    refusalKind: CodeCallRefusalKindSchema.nullable(),
+    /** Historical normalized JSON; output validation must not depend on the current invocation schema. */
+    call: runJson.nullable(),
+    callChunked: z.boolean(),
+    resultChunked: z.boolean(),
+    result: runJson.nullable(),
+    state: z.enum(["running", "succeeded", "failed", "uncertain"]),
+    startedAt: timestamp,
+    endedAt: timestamp.nullable(),
+  })
+  .strict();
+export type CodeCall = z.infer<typeof CodeCallSchema>;
+const pageInput = {
+  cursor: z.string().max(100).optional().describe("Previous page cursor."),
+  limit: z.number().int().min(1).max(50).default(20).describe("Page size."),
+};
+const page = { nextCursor: z.string().nullable() };
+const textChunkInput = {
+  offset: z.number().int().min(0).default(0).describe("UTF-16 offset: 0 or nextOffset."),
+  length: z.number().int().min(1).max(16_384).default(16_384).describe("UTF-16 units; a surrogate pair uses 2."),
+};
+const textChunk = z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict();
+/** Exact timestamp precision is retained in the cursor, including Postgres microseconds. */
+export const CodeRunCursorSchema = z
+  .string()
+  .max(100)
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z\|[a-f0-9-]{36}$/)
+  .refine((value) => z.iso.datetime().safeParse(value.split("|")[0]).success && z.uuid().safeParse(value.split("|")[1]).success)
+  .describe("Opaque run history cursor returned by the previous page.");
+/** Public Query inputs/results. Content is chunked to fit the capability transport's result budget. */
+export const codeQueryContracts = {
+  list: {
+    input: z
+      .object({
+        owner: CodeOwnerSchema.optional().describe("Filter by one exact Code owner."),
+        ...pageInput,
+        cursor: CodeIdSchema.optional().describe("Last Code ID returned as nextCursor."),
+        limit: z.number().int().min(1).max(20).default(20).describe("Maximum Code candidates checked in this page."),
+      })
+      .strict(),
+    data: z.object({ items: z.array(CodeSchema.extend({ permission: CodePermissionSchema })), ...page }).strict(),
+  },
+  read: {
+    input: z.object({ codeId: CodeIdSchema }).strict(),
+    data: z.object({ code: CodeSchema, permission: CodePermissionSchema }).strict(),
+  },
+  versionRead: {
+    input: z
+      .object({
+        codeId: CodeIdSchema,
+        versionId: z.uuid().describe("Immutable version UUID belonging to this Code."),
+        content: z
+          .discriminatedUnion("kind", [
+            z
+              .object({
+                kind: z.literal("source").describe("Read a source file."),
+                path: z.string().min(1).max(512).describe("Relative source path from version metadata."),
+              })
+              .strict(),
+            z.object({ kind: z.literal("bundle").describe("Read the exact runner bundle.") }).strict(),
+            z.object({ kind: z.literal("manifest").describe("Read the checked version manifest as JSON text.") }).strict(),
+          ])
+          .optional()
+          .describe("Select version text to read; omit for metadata only."),
+        offset: z.number().int().min(0).default(0).describe("UTF-16 offset: 0 or nextOffset."),
+        length: z.number().int().min(1).max(16_384).default(16_384).describe("UTF-16 units; a surrogate pair uses 2."),
+      })
+      .strict(),
+    data: z
+      .object({
+        version: CodeVersionSchema,
+        content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
+        /** Page selection from this immutable manifest, only for manifest reads; null when no checked manifest exists. */
+        pages: CodePageLinksSchema.nullable(),
+      })
+      .strict(),
+  },
+  runList: {
+    input: z.object({ codeId: CodeIdSchema, ...pageInput, cursor: CodeRunCursorSchema.optional() }).strict(),
+    data: z
+      .object({ items: z.array(CodeRunSchema), ...page, eventDeliveries: z.array(CodeEventDeliverySchema).max(20).optional() })
+      .strict(),
+  },
+  runRead: {
+    input: z
+      .object({
+        codeId: CodeIdSchema,
+        runId: z.uuid().describe("Run UUID."),
+        cursor: z.number().int().min(0).default(0).describe("nextCursor, or 0 initially."),
+        content: z
+          .discriminatedUnion("kind", [
+            z.object({ kind: z.literal("input").describe("Input JSON.") }).strict(),
+            z.object({ kind: z.literal("output").describe("Output JSON.") }).strict(),
+            z
+              .object({
+                kind: z.literal("call").describe("Normalized call JSON."),
+                ordinal: z.number().int().positive().describe("Call ordinal."),
+              })
+              .strict(),
+            z
+              .object({
+                kind: z.literal("result").describe("Result JSON."),
+                ordinal: z.number().int().positive().describe("Call ordinal."),
+              })
+              .strict(),
+          ])
+          .optional()
+          .describe("Full JSON selector."),
+        ...textChunkInput,
+      })
+      .strict(),
+    data: z
+      .object({
+        run: CodeRunSchema,
+        contents: z
+          .object({
+            input: runJson,
+            output: runJson.nullable(),
+            consoleOutput: CodeOutputWindowSchema.nullable().optional().describe("First-page sanitized output; null later. Managers only."),
+            inputChunked: z.boolean(),
+            outputChunked: z.boolean(),
+            content: textChunk.nullable(),
+            /** Directly selected by run.firstRefusedCallOrdinal, independent of call pagination. Editors only. */
+            firstRefusedCall: CodeRefusedCallSchema.nullable(),
+            calls: z.array(CodeCallSchema).max(1),
+            nextCursor: z.number().int().nullable(),
+          })
+          .nullable(),
+      })
+      .strict(),
+  },
+  runEntries: { input: CodeRunEntriesInputSchema, data: CodeRunEntriesSchema },
+  /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
+  runCount: {
+    input: z
+      .object({
+        since: z.iso.datetime().describe("Window start, at most 7 days ago."),
+      })
+      .strict(),
+    data: z.object({ runs: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }).strict(),
+  },
+} as const;

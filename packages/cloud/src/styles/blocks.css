@@ -1,0 +1,719 @@
+/* Capability views (`@k2b/cloud/blocks`). A view has no hull: its blocks stand in the flow like Gustav's text. Depth
+   comes from the kind of block, never from the app: a card with an image is an island (it reads the island hooks of
+   the layer model), key figures, text lists, and the options of a choice stay flat. Inside an approval the blocks lie
+   on the details surface and stay flat too. */
+.k2b-ui .cloud-blocks {
+  container-type: inline-size;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.875rem;
+}
+
+.k2b-ui .cloud-blocks__cell {
+  display: grid;
+  min-width: 0;
+  grid-column: span 6;
+  align-content: start;
+  gap: 0.875rem;
+}
+
+.k2b-ui .cloud-blocks__cell[data-span="2"] {
+  grid-column: span 2;
+}
+
+.k2b-ui .cloud-blocks__cell[data-span="3"] {
+  grid-column: span 3;
+}
+
+.k2b-ui .cloud-blocks__cell[data-span="4"] {
+  grid-column: span 4;
+}
+
+/* An image beside the details of the same thing: the thumbnail, then its rows. */
+.k2b-ui .cloud-blocks__cell[data-media-row] {
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: start;
+}
+
+.k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image .cloud-blocks__image-place {
+  aspect-ratio: 4 / 3;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+@container (max-width: 40rem) {
+  .k2b-ui .cloud-blocks__cell[data-span] {
+    grid-column: span 6;
+  }
+}
+
+/* A capability result in the conversation: the app's blocks in the flow, without an origin line above them. */
+.k2b-ui .cloud-capability-view {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  margin-block: 0.625rem 1rem;
+}
+
+/* The head of an island in a chat answer: title 14/600, subtitle 12/400 in the quiet step (Feinschliff v3). */
+.k2b-ui .cloud-capability-view :is(.k2b-dashboard-frame__header p, .k2b-chart-explorer__description) {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Copy and Maximize of a block: 30 px ghost buttons in its head; on touch each reaches 44 px. */
+.k2b-ui .cloud-block-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+/* 30 px like the selection toolbar's compact buttons; a coarse pointer keeps every button's own 44 px hit area. */
+.k2b-ui .cloud-block-actions .k2b-icon-button,
+.k2b-ui .cloud-table-search-toggle.k2b-icon-button {
+  inline-size: 1.875rem;
+  min-height: 1.875rem;
+}
+
+.k2b-ui .cloud-block-actions [data-copied] {
+  color: var(--k2b-success-text);
+}
+
+/* Key figures keep their row flat; their actions stand at its end, their room always kept. On a computer they show
+   when the row is pointed at or holds the focus, on touch always. */
+.k2b-ui .cloud-block-figures {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.k2b-ui .cloud-block-figures > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-block-actions[data-quiet] {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui :is(.cloud-block-figures, section):is(:hover, :focus-within) .cloud-block-actions[data-quiet] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .k2b-ui .cloud-block-actions[data-quiet] {
+    opacity: 1;
+  }
+}
+
+/* "Raw data" in the Lightbox: the data behind the block, read only. */
+.k2b-ui .cloud-block-raw {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-block-raw__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .cloud-block-raw__head > span {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-block-raw pre {
+  margin: 0;
+  overflow: auto;
+  max-height: 70vh;
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The person's own message for a choice: where it was made, then what was chosen. */
+.k2b-ui .cloud-choice-message {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.k2b-ui .cloud-choice-message__where {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+
+.k2b-ui .cloud-choice-message__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-choice-message__value i {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .cloud-blocks__title {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__count {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .cloud-blocks__text,
+.k2b-ui .cloud-blocks__hint {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Markdown text keeps the reading size of plain text; the safe renderer owns its headings and lists. */
+.k2b-ui .cloud-blocks__markdown {
+  min-width: 0;
+  color: var(--k2b-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-blocks__hint {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .cloud-blocks__section {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.k2b-ui .cloud-blocks__link,
+.k2b-ui .cloud-blocks__card-link {
+  width: fit-content;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-border-strong);
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .cloud-blocks__value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.k2b-ui .cloud-blocks__before {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .cloud-blocks__empty {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* Cards: a list. With images every card is an island in a grid; without, a flat list of text rows. */
+.k2b-ui .cloud-blocks__cards {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.k2b-ui .cloud-blocks__card-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .cloud-blocks__cards[data-media] .cloud-blocks__card-list {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.5rem), 1fr));
+  gap: 0.75rem;
+}
+
+.k2b-ui .cloud-blocks__card {
+  display: grid;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-blocks__card[data-island] {
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-surface);
+}
+
+/* The whole card chooses. Keep its border thin; selection adds the second line inside it without moving content.
+   The choice tints it in the primary colour of the place, the mark in its corner says so in shape too. */
+.k2b-ui .cloud-blocks__card-choice {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.k2b-ui .cloud-blocks__card-choice[data-disabled] {
+  cursor: default;
+}
+
+.k2b-ui .cloud-blocks__card:has(.cloud-blocks__card-choice) {
+  border: var(--k2b-edge-width) solid var(--k2b-edge-color, var(--k2b-border));
+}
+
+.k2b-ui .cloud-blocks__card[data-selected] {
+  border-color: var(--k2b-action);
+  background: var(--k2b-edge-selected-fill, var(--k2b-selected));
+  box-shadow: inset 0 0 0 calc(var(--k2b-edge-selected-width) - var(--k2b-edge-width)) var(--k2b-action);
+}
+
+.k2b-ui .cloud-blocks__card[data-selected][data-island] {
+  box-shadow:
+    inset 0 0 0 calc(var(--k2b-edge-selected-width) - var(--k2b-edge-width)) var(--k2b-action),
+    var(--k2b-shadow-surface);
+}
+
+.k2b-ui .cloud-blocks__card:has(.cloud-blocks__card-choice:not([data-disabled])):hover:not([data-selected]) {
+  background: var(--k2b-edge-hover-bg, var(--k2b-hover));
+}
+
+.k2b-ui .cloud-blocks__card:has(input:focus-visible) {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .cloud-blocks__card:has([data-disabled]):not([data-selected]) {
+  opacity: 0.72;
+}
+
+.k2b-ui .cloud-blocks__mark {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.625rem;
+  z-index: 1;
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border: 2px solid var(--k2b-border-strong);
+  border-radius: 999px;
+  color: transparent;
+  background: var(--k2b-surface);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-blocks__mark[data-mode="many"] {
+  border-radius: 0.3125rem;
+}
+
+.k2b-ui .cloud-blocks__card[data-selected] .cloud-blocks__mark {
+  border-color: var(--k2b-action);
+  color: var(--k2b-surface);
+  background: var(--k2b-action);
+}
+
+.k2b-ui .cloud-blocks__rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__rating i {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .cloud-blocks__card-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .cloud-blocks__card-body {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+  padding: 0.625rem 0.75rem 0.75rem;
+}
+
+.k2b-ui .cloud-blocks__card:not([data-island]) .cloud-blocks__card-body {
+  padding: 0;
+}
+
+.k2b-ui .cloud-blocks__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.k2b-ui .cloud-blocks__badge {
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__card-title {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-blocks__card-subtitle {
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-blocks__facts {
+  display: grid;
+  gap: 0.125rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .cloud-blocks__facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.k2b-ui .cloud-blocks__facts dt {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .cloud-blocks__facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .cloud-blocks__price {
+  margin-inline-start: auto;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__image {
+  display: grid;
+  gap: 0.375rem;
+  max-width: 24rem;
+  margin: 0;
+}
+
+/*
+  The picture, its wait for a later try, and its stand-in fill the same place, so loading and failing never move what
+  follows. A picture is never cropped: in a fixed place it is fitted whole, centred on the muted ground.
+*/
+.k2b-ui .cloud-blocks__image-place {
+  display: grid;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-blocks__image :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--k2b-radius-control);
+  object-fit: contain;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .cloud-blocks__image img {
+  display: block;
+}
+
+/* A declared ratio is the place of the picture, not of the figure, so a caption below never makes the picture smaller. */
+.k2b-ui .cloud-blocks__image[data-ratio] .cloud-blocks__image-place {
+  aspect-ratio: var(--cloud-blocks-image-ratio);
+  grid-template-rows: minmax(0, 1fr);
+  /* The ratio alone sets the height: a state's own minimum must not grow a flat place. */
+  min-height: 0;
+}
+
+/* Without a ratio, a wait and a later try keep the same small place, so the height does not jump with every try. */
+.k2b-ui .cloud-blocks__image :is(img[data-retry], .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  min-height: 3rem;
+}
+
+.k2b-ui .cloud-blocks__image-missing {
+  display: grid;
+  place-items: center;
+  color: var(--k2b-text-muted);
+  font-size: 1.5rem;
+}
+
+.k2b-ui .cloud-blocks__image figcaption {
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+
+/* A choice: a question, its options as flat controls with the shared 2 px edge, then the state and its one button. */
+.k2b-ui .cloud-blocks__choice {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.k2b-ui .cloud-blocks__question {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__checks {
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* A survey's options for several answers sit in the same grid as a choice list. */
+.k2b-ui .cloud-survey__checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: 0.5rem;
+}
+
+.k2b-ui .cloud-blocks__choice-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  min-height: 2.75rem;
+  margin-top: 0.25rem;
+}
+
+.k2b-ui .cloud-blocks__choice-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .cloud-blocks__choice-state[data-tone="done"] i {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .cloud-blocks__choice-state[data-tone="error"] {
+  color: var(--k2b-danger-text);
+}
+
+/* A draft: read-only context rows first, then fields with their label above. While the approval asks, the fields
+   keep their size and padding and lose only their edge, so switching moves nothing. */
+.k2b-ui .cloud-blocks__draft {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+/* Gustav v12: the label is quiet in its own column, the value carries the weight. */
+.k2b-ui .cloud-blocks__context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-blocks__context-label {
+  min-width: 4.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.k2b-ui .cloud-blocks__draft .k2b-input-shell {
+  transition:
+    border-color 200ms var(--k2b-ease-out),
+    box-shadow 200ms var(--k2b-ease-out),
+    background-color 200ms var(--k2b-ease-out);
+}
+
+/* Locked, a field is no control: no edge and no hover, the same box and padding. */
+.k2b-ui .cloud-blocks__draft:not([data-editable]) .k2b-input-shell,
+.k2b-ui .cloud-blocks__draft:not([data-editable]) .k2b-input-shell:hover {
+  --k2b-edge-color: transparent;
+  background: transparent;
+  cursor: default;
+}
+
+.k2b-ui .cloud-blocks__draft:not([data-editable]) .k2b-text-input__textarea {
+  resize: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .cloud-blocks__draft .k2b-input-shell {
+    transition: none;
+  }
+}
+
+/* Cloud's own part of an approval's details: what changes, then the app's blocks, then the review's links. */
+.k2b-ui .cloud-action-details {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.k2b-ui .cloud-action-details__label {
+  margin: 0 0 0.25rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-action-details__changes ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .cloud-action-details__changes li {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.k2b-ui .cloud-action-details__changes li > i {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .cloud-action-details__changes li[data-mark="added"] > i {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .cloud-action-details__changes li[data-mark="removed"] > i {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .cloud-action-details__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .cloud-action-details__links a {
+  color: var(--k2b-text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-border-strong);
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .cloud-action-details__links a:hover {
+  color: var(--k2b-text);
+}
+
+/* In the search dialog, which is flat inside, a detail block is a quiet title over its rows. */
+.k2b-ui .cloud-blocks__flat {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.k2b-ui .cloud-blocks__flat-title {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.k2b-ui .cloud-blocks__flat + .cloud-blocks__flat,
+.k2b-ui .cloud-blocks__cell:has(> .cloud-blocks__flat) + .cloud-blocks__cell:has(> .cloud-blocks__flat) {
+  padding-top: 0.25rem;
+}
+
+/* A value an app writes on several lines, such as an address or a list of files, keeps its lines. */
+.k2b-ui .cloud-blocks__value > strong {
+  white-space: pre-line;
+}
+
+/*
+ * A searchable table in a chat answer (Feinschliff v3 §5). Its foot names what the search finds and keeps its line in
+ * every state. On a narrow island the search is a sign; opened, it lies over the title, which keeps its room, so the
+ * head keeps its height.
+ */
+.k2b-ui .cloud-table-frame {
+  container: cloud-table / inline-size;
+}
+
+.k2b-ui .cloud-block-foot {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .cloud-table-frame .cloud-table-search-toggle {
+  display: none;
+}
+
+@container cloud-table (max-width: 30rem) {
+  .k2b-ui .cloud-table-frame .cloud-table-search-toggle {
+    display: inline-flex;
+  }
+
+  .k2b-ui .cloud-table-frame:not(.cloud-table-frame--searching) :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    display: none;
+  }
+
+  /* Opened, the sign keeps its place unseen and the title its width, so the head keeps its height. */
+  .k2b-ui .cloud-table-frame--searching .cloud-table-search-toggle {
+    visibility: hidden;
+  }
+
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) {
+    position: relative;
+  }
+
+  /* Out of sight, but still the island's heading for a screen reader. */
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) > div:first-child {
+    opacity: 0;
+  }
+
+  .k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 0;
+    inset-inline: 0 var(--cloud-search-end, 0);
+    width: auto;
+    max-width: none;
+  }
+}

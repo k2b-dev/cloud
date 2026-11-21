@@ -62,12 +62,7 @@ const providerLine = (t: AiAreaMessages, provider: ProviderRow) => {
 };
 
 /** Column 1: the area. Model classes first, then providers, settings, content and insight. */
-function AreaColumn(props: {
-  t: AiAreaMessages;
-  query: AiAreaQuery;
-  overview: Overview;
-  studioLinks: { href: string; label: string; icon: string; app: string }[];
-}) {
+function AreaColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview: Overview }) {
   const t = props.t;
   const assigned = AI_MODEL_CLASSES.filter((modelClass) => props.overview.assignments[modelClass]?.variantId).length;
   const item = (section: Exclude<AiAreaQuery["sec"], undefined | "providers">, label: string) => (
@@ -126,11 +121,6 @@ function AreaColumn(props: {
       <AppWorkspace.SidebarSection title={t.g_content}>
         {item("skills", t.skills)}
         {item("projects", t.projects)}
-        {props.studioLinks.map((link) => (
-          <AppWorkspace.SidebarItem href={link.href} icon={`ti ${link.icon}`} description={link.app} navigation="document">
-            {link.label}
-          </AppWorkspace.SidebarItem>
-        ))}
       </AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.g_insight}>{item("usage", t.usage)}</AppWorkspace.SidebarSection>
     </>
@@ -411,7 +401,6 @@ export type AiAreaViewProps = {
   index: AiCatalogIndex | null;
   loadFailed: boolean;
   detailLoadFailed?: boolean;
-  studioLinks: { href: string; label: string; icon: string; app: string }[];
   provider: ProviderRow | undefined;
   providerDetail: (AiProvider & { models: AiModel[] }) | null;
   model: (AiModel & { variants: AiModelVariant[] }) | null;
@@ -449,7 +438,7 @@ type AssignmentDetail = {
 
 /** The AI area: the area column, the section column and the detail column, or one wide section. */
 export function AiAreaView(props: AiAreaViewProps) {
-  const { t, locale, query, overview, index, loadFailed, studioLinks, provider, providerDetail, model, usage, assignmentDetails } = props;
+  const { t, locale, query, overview, index, loadFailed, provider, providerDetail, model, usage, assignmentDetails } = props;
   const section = query.sec;
   const level = aiAreaLevel(query);
   const quotaConfig = props.accountingUnit ? { unit: props.accountingUnit } : null;
@@ -662,7 +651,7 @@ export function AiAreaView(props: AiAreaViewProps) {
         maxSize={360}
         actions={<AiAreaActions kind="add-provider" variant="icon" />}
       >
-        {overview ? <AreaColumn t={t} query={query} overview={overview} studioLinks={studioLinks} /> : loadFailed ? failure : null}
+        {overview ? <AreaColumn t={t} query={query} overview={overview} /> : loadFailed ? failure : null}
       </AppWorkspace.MainPane>
       {isWideSection(section) ? (
         <AppWorkspace.MainPane id="section" label={sectionTitle}>

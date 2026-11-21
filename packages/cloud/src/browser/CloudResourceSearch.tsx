@@ -1,15 +1,19 @@
 import { dates } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { announce, Button, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { announce, Button, ButtonLink, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
+import type { BlockTree } from "../blocks/BlockTree";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
-import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
+import { importOnDemand } from "./reload";
+import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 import { commandSearchItem, isShellCommand, matchingCommands, type PaletteCommand } from "./search-commands";
+import { createSearchPreview } from "./search-preview";
 import {
   applySearchLine,
   breakSearchRun,
@@ -43,10 +47,14 @@ export type CloudResourceSearchProps = {
   navigationItems?: readonly NavigationSearchItem[];
   searchResources?: boolean;
   excludeRefs?: readonly CloudResourceRef[];
+  /** Global search only: the window-filling size beside the close button; the host keeps and remembers it. */
+  maximize?: { on: boolean; toggle: () => void };
 };
 
 /** What `/api/search` accepts as `q`; a prefilled query is cut to it as typing is. */
 const MAX_QUERY_LENGTH = 500;
+
+const loadBlockTree = () => import("../blocks/BlockTree");
 
 const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
 
@@ -261,7 +269,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
   const freshResults = () => current() && shownRun();
   const results = createMemo(() =>
-    canSearch() ? [...navigation(), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))] : [],
+    canSearch()
+      ? [
+          ...navigation(),
+          ...shownBlocks().flatMap((block) => groupCloudResourceSearchItems(filterCloudResourceSearchItems(block.items, props))),
+        ]
+      : [],
   );
   const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
   /**
@@ -487,6 +500,32 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   };
   const updateCaret = () => setCaret(inputRef.selectionStart ?? input().length);
   const isApp = (item: SearchItem) => navigation().some((link) => link === item && link.kind === "app");
+  // Only a hit the person may read asks its reader; the others keep the search facts.
+  const preview = createSearchPreview(() => {
+    const item = showResults() ? previewItem() : undefined;
+    return item && "ref" in item && item.readable ? item.ref : undefined;
+  });
+  // A reader view draws with the block renderer, which pages using the search must not carry up front: the dialog
+  // warms it silently, and a view that answers first keeps the held loading room until the renderer is there.
+  const [blockTree, setBlockTree] = createSignal<typeof BlockTree>();
+  const [blockTreeFailed, setBlockTreeFailed] = createSignal(false);
+  let blockTreeRequested = false;
+  onMount(
+    () =>
+      void loadBlockTree().then(
+        (module) => setBlockTree(() => module.BlockTree),
+        () => undefined,
+      ),
+  );
+  createEffect(() => {
+    if (preview().state !== "view" || blockTree() || blockTreeRequested) return;
+    blockTreeRequested = true;
+    void importOnDemand(loadBlockTree).then((module) => (module ? setBlockTree(() => module.BlockTree) : setBlockTreeFailed(true)));
+  });
+  const previewView = () => {
+    const state = preview();
+    return state.state === "view" && !blockTreeFailed() ? state.view : undefined;
+  };
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim());
 
   return (
@@ -505,6 +544,18 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     >
       <Show when={props.selectionMode}>
         <div class="cloud-resource-search__title">{props.title ?? t().chooseResource}</div>
+      </Show>
+      <Show when={props.maximize}>
+        {(maximize) => (
+          <IconButton
+            class="cloud-resource-search__maximize"
+            label={maximize().on ? t().restore : t().maximize}
+            aria-pressed={maximize().on}
+            onClick={() => maximize().toggle()}
+          >
+            <i class={maximize().on ? "ti ti-arrows-diagonal-minimize-2" : "ti ti-arrows-diagonal"} aria-hidden="true" />
+          </IconButton>
+        )}
       </Show>
       <IconButton class="cloud-resource-search__close" label={t().close} onClick={props.onClose}>
         <i class="ti ti-x" aria-hidden="true" />
@@ -672,9 +723,13 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                       const item = () => itemsByKey().get(key) ?? first;
                       return (
                         <>
-                          <Show when={index() === 0 || items()[index() - 1]?.appId !== item().appId}>
+                          <Show
+                            when={
+                              index() === 0 || items()[index() - 1]?.appId !== item().appId || items()[index() - 1]?.group !== item().group
+                            }
+                          >
                             <div class="cloud-resource-search__group" role="presentation">
-                              {item().appName}
+                              {item().group ?? item().appName}
                             </div>
                           </Show>
                           <button
@@ -904,33 +959,52 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               {item().appName}
             </div>
             <h2>{item().title}</h2>
-            <Show when={item().previewUrl?.startsWith("/") && !previewFailed()}>
-              <img class="cloud-resource-search__image" src={item().previewUrl} alt="" onError={() => setPreviewFailed(true)} />
-            </Show>
-            <Show when={previewMetadata().length > 0}>
-              <dl>
-                <For each={previewMetadata()}>
-                  {(entry) => (
-                    <>
-                      <dt>{entry.label}</dt>
-                      <dd>
-                        <Show when={entry.format && validDate(entry.value)} fallback={entry.value}>
-                          <Show
-                            when={entry.format === "date-time"}
-                            fallback={<Format.Date value={entry.value} timeZone={zoneFor(entry)} />}
-                          >
-                            <Format.DateTime value={entry.value} timeZone={zoneFor(entry)} />
-                          </Show>
-                        </Show>
-                      </dd>
-                    </>
-                  )}
-                </For>
-              </dl>
-            </Show>
-            <Show when={item().preview}>
-              <p>{item().preview}</p>
-            </Show>
+            <Switch>
+              <Match when={preview().state === "loading" || (previewView() && !blockTree())}>
+                {/* The reader answers within a moment; its room is held so the column does not jump. */}
+                <div class="cloud-resource-search__preview-loading" aria-busy="true" />
+              </Match>
+              <Match when={previewView() && blockTree()}>
+                {(tree) => (
+                  <Dynamic component={tree()} blocks={previewView()!.blocks} host="preview" locale={locale()} timeZone={localTimeZone()} />
+                )}
+              </Match>
+              <Match when={true}>
+                <Show when={item().previewUrl?.startsWith("/") && !previewFailed()}>
+                  <img class="cloud-resource-search__image" src={item().previewUrl} alt="" onError={() => setPreviewFailed(true)} />
+                </Show>
+                <Show when={previewMetadata().length > 0}>
+                  <dl>
+                    <For each={previewMetadata()}>
+                      {(entry) => (
+                        <>
+                          <dt>{entry.label}</dt>
+                          <dd>
+                            <Show when={entry.format && validDate(entry.value)} fallback={entry.value}>
+                              <Show
+                                when={entry.format === "date-time"}
+                                fallback={<Format.Date value={entry.value} timeZone={zoneFor(entry)} />}
+                              >
+                                <Format.DateTime value={entry.value} timeZone={zoneFor(entry)} />
+                              </Show>
+                            </Show>
+                          </dd>
+                        </>
+                      )}
+                    </For>
+                  </dl>
+                </Show>
+                <Show when={item().preview}>
+                  <p>{item().preview}</p>
+                </Show>
+              </Match>
+            </Switch>
+            <div class="cloud-resource-search__preview-open">
+              <ButtonLink href={item().href} variant="secondary" size="sm">
+                {t().openInApp({ app: item().appName })}
+                <i class="ti ti-corner-down-left" aria-hidden="true" />
+              </ButtonLink>
+            </div>
           </ScrollArea>
         )}
       </Show>

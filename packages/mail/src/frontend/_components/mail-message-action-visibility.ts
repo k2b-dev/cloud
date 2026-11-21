@@ -1,6 +1,5 @@
 export type MailMessageActionVisibility = {
   findSender: boolean;
-  createIncomingAutomation: boolean;
   blockSender: boolean;
   manageUnsubscribe: boolean;
   conversationRepair: boolean;
@@ -23,7 +22,6 @@ export const resolveMailMessageActionVisibility = (input: {
   const multiMessageConversation = input.hasConversation && input.totalMessageCount > 1;
   return {
     findSender: externalSender,
-    createIncomingAutomation: externalSender && input.canAdmin,
     blockSender: externalSender && input.canAdmin,
     manageUnsubscribe: externalSender && input.canWrite && input.mailboxWide && input.hasMailingListUnsubscribe,
     conversationRepair: input.canWrite && input.mailboxWide && multiMessageConversation,

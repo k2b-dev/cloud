@@ -57,6 +57,7 @@ export default function HomeHeader(props: HomeHeaderProps) {
         </a>
         <nav class="cloud-header-nav" aria-label="Primary navigation">
           <a href="/en/apps">Apps</a>
+          <a href="/en/code">feat/code</a>
           <a href="/en/docs">Docs</a>
           <a href="/en/ui">UI</a>
         </nav>

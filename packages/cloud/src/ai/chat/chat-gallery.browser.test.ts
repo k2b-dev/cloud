@@ -206,15 +206,35 @@ test("what a message brings along stands above it: images as previews, files as 
 }, 60_000);
 
 for (const width of [1440, 390])
-  test(`the work line says in one line what the turn did, with ✦, and opens the steps on one grid (${width} px)`, async () => {
+  test(`the work line says in one line what the turn did, with only ✦, its steps and time on the right, and opens the steps on one grid (${width} px)`, async () => {
     const { page, close } = await open("antwort", width);
     try {
       const line = ".ai-turn-work > summary";
+      // The sentence names only what the turn did; steps and time stand right in their own columns (Feinschliff 4).
       expect(await page.locator(`${line} .ai-turn-work__sentence`).textContent()).toBe("In Mail und Dateien nachgesehen");
-      // The steps and what did not go through stand in meta; on a phone the plain count gives way beside a status.
+      // The sentence is never cut: a phone gives it two 18 px lines in its 44 px row (Feinschliff 2). The whole sentence
+      // is also in the title.
+      const sentenceFits = await page
+        .locator(`${line} .ai-turn-work__sentence`)
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5 && node.scrollHeight <= node.clientHeight + 0.5);
+      expect(sentenceFits).toBe(true);
+      expect(await page.locator(`${line} .ai-turn-work__sentence`).getAttribute("title")).toBe("In Mail und Dateien nachgesehen");
+      // The steps and what did not go through stand in meta, never cut; on a phone the plain count gives way beside a
+      // status, which takes the warning colour.
+      const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
+      expect(whole).toBe(true);
       const meta = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
       expect(meta).toBe(width < 768 ? "1 ohne Zugriff" : "5 Schritte · 1 ohne Zugriff");
-      // Only ✦ in the AI colour; the apps' icons stand at their steps (F4 A).
+      const warning = await page.locator(`${line} .ai-turn-work__steps [data-tone="warning"]`).evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-warning-text)";
+        document.body.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return getComputedStyle(node).color === value;
+      });
+      expect(warning).toBe(true);
+      // Only ✦ in the AI colour, without a tinted surface; the apps' icons stand at their steps (F4 A).
       const spark = await page.locator(`${line} .k2b-chat-activity__leading`).evaluate((node) => getComputedStyle(node).color);
       const plum = await page.evaluate(() => {
         const probe = document.createElement("span");
@@ -343,8 +363,10 @@ test("a stopped answer ends with a quiet line and Answer again; a failed one say
       expect(await failed.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
       const notice = failed.page.locator(".ai-turn__notice");
       const said = await notice.innerText();
-      expect(said).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
-      expect(said).toContain("Was bis hier steht, bleibt erhalten.");
+      expect(await notice.locator(".k2b-notice-card__title").innerText()).toBe("Die Antwort wurde abgebrochen.");
+      expect(await notice.locator(".k2b-notice-card__description").innerText()).toBe(
+        "Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.",
+      );
       // Said once: the reason does not repeat what stays.
       expect(said).not.toContain("Die bisherigen Ergebnisse bleiben erhalten.");
       expect(await notice.locator(".ti-alert-circle").count()).toBe(1);
@@ -409,3 +431,18 @@ for (const width of [1440, 390])
       await close();
     }
   }, 60_000);
+
+test("a prepared automation reads as its effect and its examples, whole and without Code's tile (Feinschliff 4)", async () => {
+  const { page, close } = await open("automation", 1440);
+  try {
+    const line = ".ai-turn-work > summary";
+    expect(await page.locator(`${line} .ai-turn-work__sentence`).textContent()).toBe(
+      "Automation vorbereitet · 3 von 3 Beispielen erfolgreich",
+    );
+    expect(await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(true);
+    expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
+    expect((await page.locator(`${line} .ai-turn-work__steps`).innerText()).trim()).toBe("4 Schritte");
+  } finally {
+    await close();
+  }
+}, 60_000);

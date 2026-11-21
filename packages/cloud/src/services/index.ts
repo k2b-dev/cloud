@@ -85,8 +85,17 @@ export { announcements } from "./announcements";
 export type { AnnouncementsService } from "./announcements";
 
 export { session } from "./session";
-export { mandateMetrics, mandates, startMandateMaintenance } from "./mandates";
+export {
+  CODE_VERSION_ENTRY_APP_ID,
+  CODE_VERSION_MANDATE_WORKLOAD_TYPE,
+  mandateMetrics,
+  mandates,
+  startMandateMaintenance,
+} from "./mandates";
 export type {
+  CapabilityGrant,
+  CodeVersionMandateBinding,
+  MandateGrant,
   Mandate,
   MandateInteractiveAuthority,
   MandateIssueAuthority,
@@ -99,7 +108,7 @@ export type {
 } from "./mandates";
 export { serviceAccounts } from "./service-accounts";
 export type { ServiceAccount, ServiceAccountKind, ServiceAccountStatus, StandaloneServiceAccountKind } from "./service-accounts";
-export { isStandaloneServiceAccountKind, STANDALONE_SERVICE_ACCOUNT_KINDS } from "./service-accounts";
+export { serviceAccountUsesOwnGrants, serviceAccountMayHoldCredentials, STANDALONE_SERVICE_ACCOUNT_KINDS } from "./service-accounts";
 export { serviceAccountCredentials } from "./service-account-credentials";
 export type {
   AuthenticatedServiceAccountCredential,
@@ -306,3 +315,5 @@ export { links } from "./links";
 export { previews, PreviewSourceChanged } from "./previews";
 export type { PreviewSource, PreviewReader, PreviewReadResult, PreviewVariant } from "./previews";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
+
+export { type PurposeSecretRoots, purposeSecretCipher } from "./purpose-secrets";

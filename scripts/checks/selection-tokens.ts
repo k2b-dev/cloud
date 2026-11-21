@@ -11,6 +11,12 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/cloud/src/styles/blocks.css",
+    subject: ".k2b-ui .cloud-blocks__card[data-selected] { background }",
+    reason:
+      "Option: a card that is an option of a capability view's Choice is a radio or checkbox label, the same control state as ChoiceList and CheckboxCard, not a selected object row.",
+  },
+  {
     file: "packages/core/src/pages/admin/apps/view.tsx",
     subject: 'variant={text().primary ? "primary" : "secondary"}',
     reason: "Action: a notice's way out is the app page's one filled action when the app has no valid key.",
@@ -19,6 +25,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
     subject: 'variant={props.neverStarted ? "primary" : "secondary"}',
     reason: "Action: before an app's first start, creating its key is the page's one main action.",
+  },
+  {
+    file: "packages/cloud/src/ssr/code-page/CodePage.tsx",
+    subject: 'variant={changeFilled() ? "primary" : "secondary"}',
+    reason: "Action: opening Gustav becomes the main recovery action when the Code needs attention or has no launch action.",
   },
   {
     file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",

@@ -78,6 +78,10 @@ export const directoryShares = {
     if (!principal.success) return fail(err.badInput("Choose an exact directory entry"));
     if (!(await recipientExists(params.recipientId))) return fail(err.notFound("Service account"));
     const target = principal.data;
+    if (target.type === "service_account") {
+      const [account] = await sql`SELECT id FROM auth.service_accounts WHERE id = ${target.serviceAccountId}::uuid AND kind <> 'code'`;
+      if (!account) return fail(err.notFound("Directory entry"));
+    }
     try {
       return await sql.begin(async (db) => {
         const [row] = await db<{ id: string }[]>`INSERT INTO auth.directory_shares(recipient_id,user_id,group_id,service_account_id)

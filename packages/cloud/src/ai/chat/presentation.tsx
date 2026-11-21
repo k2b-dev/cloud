@@ -6,30 +6,35 @@ import {
   createMemo,
   createRoot,
   createSignal,
+  For,
   getOwner,
   type JSX,
   onCleanup,
+  onMount,
   type Setter,
   Show,
   sharedConfig,
 } from "solid-js";
 import { isServer } from "solid-js/web";
+import { blockWords } from "../../blocks/messages";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { AiReaderTimeZoneProvider } from "./action-sentences";
+import { aiChatDoneItem } from "./chat-done-line";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
-import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
+import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, showsNothing, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
+  AiUserMessageQuotes,
   aiSteerMessageText,
   aiUserMessageAttachments,
   aiUserMessageSource,
@@ -38,6 +43,7 @@ import {
   createAiUserMessageActions,
 } from "./user-message";
 import { CloudSurveyResultBlock } from "./visual-tools";
+import { collectAiWakeupLines } from "./wakeup-plan";
 
 export type AiChatTimelineSession = {
   messages: readonly AiStoredMessage[];
@@ -168,22 +174,45 @@ const storedItems = (
   actions: AiChatActions,
   views: TurnViews,
   locale: string,
-  idle: boolean,
+  activeTurnId: string | null,
+  /** The request's time zone; server and browser name the same clock time with it. */
+  timeZone: string | undefined,
+  renderedAt?: string,
 ): ChatTimelineItem[] => {
+  const idle = activeTurnId === null;
   const timeline = buildAiMessageTimeline([...messages]);
   const lastItemOfLoop = new Map<string, number>();
   // A failed turn's notice ends its last item, which is its user message when the model never answered.
   const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
-    const loopId = item.type === "summary" ? null : item.type === "user" ? item.entry.loopId : item.loopId;
+    const loopId =
+      item.type === "summary" || item.type === "code-decision" || item.type === "chat-done"
+        ? null
+        : item.type === "user" || item.type === "code-review-start"
+          ? item.entry.loopId
+          : item.loopId;
     if (!loopId) return;
     lastEntryOfLoop.set(loopId, index);
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
+  const reviewLoops = new Set(messages.flatMap((entry) => (entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : [])));
+  const wakeupLines = collectAiWakeupLines(timeline);
+  const alarms = new Map(
+    [...wakeupLines.values()].flatMap((line) => (line.plan ? [[line.plan.event.wakeup.id, line.plan.event.wakeup] as const] : [])),
+  );
+  /** Gustav could not set an alarm in this turn and did not set one either: the line with "Try again" ends the turn. */
+  const failedWakeup = (item: AiAssistantTimelineItem): ChatTimelineItem[] => {
+    const key = `${item.id}:wakeup-failed`;
+    const input = wakeupLines.get(key);
+    const line = input && actions.renderWakeupLine?.(input, key);
+    return line ? [{ kind: "activity", id: key, class: "ai-wakeup-line-row", label: line }] : [];
+  };
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
-  const newestLoop = idle ? (messages.at(-1)?.loopId ?? null) : null;
+  // An alarm fact the person or Cloud added afterwards never ends a turn's chance to continue.
+  const lastEntry = messages.findLast((entry) => !entry.meta?.wakeupEvent && !entry.meta?.chatDone);
+  const newestLoop = idle ? (lastEntry?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
   // The model never answered: the notice stands where the live turn showed its progress, under the same id.
   const unansweredNotice = (entry: AiStoredMessage, itemIndex: number): ChatTimelineItem[] => {
@@ -206,7 +235,7 @@ const storedItems = (
           earlier: false,
           duration: () => null,
           error,
-          continuable: newestLoop === loopId,
+          continuable: newestLoop === loopId && !reviewLoops.has(loopId),
         }),
       },
     ];
@@ -260,8 +289,50 @@ const storedItems = (
         id: item.id,
         role: "user",
         createdAt: item.entry.createdAt,
-        content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
-        source: aiUserMessageSource(item.entry, locale),
+        content: item.entry.meta?.choice ? (
+          // The person's choice in a capability view: Cloud names where it was made and what was chosen.
+          <div class="cloud-choice-message">
+            <p class="cloud-choice-message__where">
+              <i class="ti ti-hand-click" aria-hidden="true" />
+              {blockWords(locale).chosenIn({ app: item.entry.meta.choice.appName })}
+            </p>
+            <For each={item.entry.meta.choice.labels}>
+              {(label) => (
+                <p class="cloud-choice-message__value">
+                  <i class="ti ti-circle-check" aria-hidden="true" />
+                  {label}
+                </p>
+              )}
+            </For>
+          </div>
+        ) : text || item.entry.meta?.quotes?.length ? (
+          <>
+            {/* Who wrote a message the person did not type stands in its source chip (v6 F11), never as a second line. */}
+            <AiUserMessageQuotes entry={item.entry} />
+            {/* The person's own words are a passage to quote; a message an automation wrote is none. */}
+            {text ? (
+              <p
+                class={`${item.entry.meta?.codeOrigin ? "" : "ai-user-text "}whitespace-pre-wrap`}
+                data-quote-source={item.entry.meta?.codeOrigin ? undefined : item.entry.shortId}
+              >
+                {text}
+              </p>
+            ) : undefined}
+            {/* The data an automation or another chat sent along: a quiet line under its instruction, never its words. */}
+            {item.entry.meta?.sourceContext ? (
+              <p class="ai-message-data" title={item.entry.meta.sourceContext}>
+                <i class="ti ti-database" aria-hidden="true" />
+                <span>{aiChatMessages(locale).messageData({ text: item.entry.meta.sourceContext })}</span>
+              </p>
+            ) : undefined}
+          </>
+        ) : undefined,
+        source: aiUserMessageSource(
+          item.entry,
+          locale,
+          timeZone,
+          item.entry.meta?.origin?.kind === "wakeup" ? alarms.get(item.entry.meta.origin.id) : undefined,
+        ),
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "inline",
@@ -290,6 +361,41 @@ const storedItems = (
       return [...replacementItem, userItem, ...unansweredNotice(item.entry, itemIndex)];
     }
 
+    if (item.type === "chat-done") {
+      if (activeTurnId !== null && item.after === activeTurnId) return [];
+      return aiChatDoneItem(item.entry, locale, timeZone, renderedAt);
+    }
+
+    if (item.type === "code-decision" || item.type === "code-review-start") {
+      // Automatic reviews have their own fixed task and no personal prompt to retry.
+      if (item.type === "code-review-start") prompt = null;
+      // A host that draws the decision gets the whole line: its sentence, time and the one jump to the card.
+      const line = actions.renderCodeDecision?.(item.entry);
+      const activity: ChatTimelineItem = line
+        ? { kind: "activity", id: item.id, label: line, class: "ai-code-decision-line" }
+        : { kind: "activity", id: item.id, label: textFromMessage(item.entry.message), icon: "ti ti-shield-check", tone: "ai" };
+      return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
+    }
+
+    if (item.type === "wakeup") {
+      const input = wakeupLines.get(item.id);
+      // A fact of the turn that still runs stands at its end once it finished.
+      if (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId) return [];
+      // Without a host's line, every fact stands as Cloud stored it, quietly; a host draws only the lines it plans.
+      if (actions.renderWakeupLine && !input) return [];
+      const line = input && actions.renderWakeupLine?.(input, item.id);
+      return line
+        ? { kind: "activity", id: item.id, class: "ai-wakeup-line-row", anchorId: item.entry.seq, label: line }
+        : {
+            kind: "activity",
+            id: item.id,
+            anchorId: item.entry.seq,
+            label: textFromMessage(item.entry.message),
+            icon: "ti ti-alarm",
+            tone: "ai",
+          };
+    }
+
     if (item.type === "summary") {
       const count = item.entry.meta?.compactedCount;
       const date = new Date(item.entry.createdAt).toLocaleDateString(locale);
@@ -311,8 +417,12 @@ const storedItems = (
 
     const actionEntry = item.actionEntry?.compactedAt ? null : item.actionEntry;
     const lastOfLoop = !item.loopId || lastItemOfLoop.get(item.loopId) === itemIndex;
-    const turnError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
-    const phase = turnError ? "failed" : lastOfLoop ? storedPhase(item.entries) : "completed";
+    const storedError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
+    // Cloud fails a turn that stopped after its steps with nothing to show (#3755); the chat keeps its notice for it.
+    const whole = storedError?.code === "provider_stopped" ? layoutAiTurn(item.blocks, { phase: "completed" }) : null;
+    const unanswered = Boolean(whole && whole.steps > 0 && showsNothing(whole));
+    const turnError = unanswered ? undefined : storedError;
+    const phase = turnError ? "failed" : unanswered || !lastOfLoop ? "completed" : storedPhase(item.entries);
     const segments = splitSurveyResults(item.blocks);
     // A turn that failed after an accepted answer ends with its notice where the live turn showed its progress, below
     // the answer and under the same id, as activeItems() places it.
@@ -324,7 +434,7 @@ const storedItems = (
     prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
-    return segments.flatMap((segment, index): ChatTimelineItem[] => {
+    const rendered = segments.flatMap((segment, index): ChatTimelineItem[] => {
       const turnId = item.loopId ?? item.id;
       if (segment.type === "survey") {
         opener = surveyOpener(segment.block.callId);
@@ -333,7 +443,11 @@ const storedItems = (
       const segmentOpener = opener;
       const last = lastOfLoop && index === lastAssistant;
       const segmentPhase = last ? phase : "completed";
-      const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
+      const layout = layoutAiTurn(segment.blocks, {
+        phase: segmentPhase,
+        codePresentations: Boolean(actions.renderCodePresentation),
+        codeVersions: Boolean(actions.renderCodeVersion),
+      });
       const messageActions =
         actionEntry && index === lastAssistant
           ? createAssistantMessageActions({
@@ -355,16 +469,7 @@ const storedItems = (
       const storedNotice =
         index === lastAssistant && lastMessage && !byPerson && !queueInterrupted ? aiMessageStopNotice(lastMessage) : null;
       // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
-      const silent =
-        last &&
-        segmentPhase === "completed" &&
-        !error &&
-        !storedNotice &&
-        !task &&
-        layout.steps > 0 &&
-        layout.text.length === 0 &&
-        layout.results.length === 0 &&
-        layout.actions.length === 0;
+      const silent = last && segmentPhase === "completed" && !error && !storedNotice && !task && layout.steps > 0 && showsNothing(layout);
       const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
@@ -382,6 +487,7 @@ const storedItems = (
             turnId,
             phase: segmentPhase,
             layout,
+            ...(lastMessage ? { quoteSource: lastMessage.shortId } : {}),
             earlier: !last,
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
@@ -398,13 +504,18 @@ const storedItems = (
               actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
-            continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
+            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== lastEntry?.id,
+            continuable:
+              idle &&
+              !(item.loopId && reviewLoops.has(item.loopId)) &&
+              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === lastEntry?.id),
           }),
           actions: messageActions,
           actionDisplay: "inline",
         },
       ];
     });
+    return item.loopId !== activeTurnId ? [...rendered, ...failedWakeup(item)] : rendered;
   });
 };
 
@@ -433,7 +544,11 @@ const activeItems = (
   const phaseOf = (index: number): AiTurnPhase =>
     index !== working ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
   const layoutOf = (blocks: AiTurnBlock[], index: number) =>
-    layoutAiTurn(blocks, { phase: phaseOf(index), codePresentations: Boolean(actions.renderCodePresentation) });
+    layoutAiTurn(blocks, {
+      phase: phaseOf(index),
+      codePresentations: Boolean(actions.renderCodePresentation),
+      codeVersions: Boolean(actions.renderCodeVersion),
+    });
   // The work line says in place that the turn reconnects. A turn without one yet says it in a row at its end, where a
   // row that comes and goes moves nothing above it.
   const workingSegment = segments[working];
@@ -574,13 +689,16 @@ export type AiChatTimelineSource = {
 export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<readonly ChatTimelineItem[]> {
   const actions = useAiChatActions();
   const locale = useLocale();
+  // Match the server's calendar day on the first frame; later snapshots use the current day.
+  const [renderedAt, setRenderedAt] = createSignal(source.renderedAt);
+  onMount(() => setRenderedAt(undefined));
   const disclosureState = createAiToolDisclosureState();
   const views = createTurnViews(disclosureState, source.timeZone);
   // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);
-  const idle = createMemo(() => source.activeTurn() === null);
-  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), idle()));
+  const activeTurnId = createMemo(() => source.activeTurn()?.turnId ?? null);
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId(), source.timeZone, renderedAt()));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting(), locale()));
   return createMemo(() => {
     const items = [...stored(), ...active()];

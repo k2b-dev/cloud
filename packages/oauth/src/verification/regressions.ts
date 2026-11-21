@@ -60,7 +60,7 @@ try {
       "test",
       "packages/oauth/src/service/tokens.test.ts",
       "packages/cloud/src/ai/store.integration.test.ts",
-      "packages/cloud/src/ai/chat-tasks.integration.test.ts",
+      "packages/cloud/src/ai/retired-routines-migrate.integration.test.ts",
     ],
     { cwd: "/workspace", env, stdout: "pipe", stderr: "pipe" },
   );

@@ -88,6 +88,15 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 
 **Blockiert** listet die Aufgaben, die auf diese warten. Ab fünf Einträgen zeigt eine Liste drei, offene zuerst, und fasst den Rest unter **N weitere** zusammen. Ohne Zugriff **Bearbeiten** siehst du dieselben Werte ohne die Bearbeitungsaktionen.
 
+## Dauer von Gustav schätzen lassen {icon="sparkles"}
+
+Wenn du Gustav nutzen darfst, fragt das vollständige Formular einer Aufgabe Gustav nach einer Schätzung. Gustav liest nur Titel, Beschreibung und Checkliste der Aufgabe.
+
+- Die Schätzung steht im leeren Feld **Geschätzte Dauer**. Sie ist ein Vorschlag, kein Wert: Spaces speichert sie erst, wenn du **Übernehmen** oder **Alle übernehmen** wählst.
+- Tippst du eigene Minuten ein, bleibt dein Wert. Lässt du das Feld leer, bekommt die Aufgabe keine Schätzung.
+- **unsicher** heißt: Der Text der Aufgabe lässt den Umfang offen. Zeig darauf, um den Grund zu lesen.
+- Jede Schätzung zählt zu deinem Gustav-Kontingent. Für denselben Aufgabentext fragt Spaces einen Tag lang nicht neu.
+
 ## Den Tag abarbeiten {icon="route"}
 
 :::steps
@@ -97,6 +106,8 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 4. **Kontext ergänzen:** Nutze Kommentare für Diskussionen. Nutze Notizen für aktuelle Anweisungen oder dauerhaften Kontext.
 5. **Erledigte Arbeit abschließen:** Nimm abgeschlossene Einträge aus den aktiven Ansichten, damit die offenen Listen übersichtlich bleiben.
 :::
+
+Der **Verlauf** einer Karte zeigt, wer sie angelegt und geändert hat, auch wenn das Code war, etwa „Angelegt von Code von info@“. Darfst du diesen Code lesen, führt der Name zum Code und „Lauf öffnen“ zum Lauf.
 
 Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen bearbeiten oder löschen. Kommentare anderer Personen bleiben unverändert, auch für Personen mit Zugriff **Verwalten**.
 

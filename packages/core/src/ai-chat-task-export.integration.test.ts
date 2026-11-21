@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
+import { createArchivedTaskExportFixture } from "@k2b/cloud/ai/testing";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
-import { aiChatTaskRoutes } from "./ai-chat-task-routes";
+import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";
 
 suiteFor(
   "database",
@@ -17,7 +18,9 @@ suiteFor(
   let adminToken: string;
   let chatId: string;
   let conversationId: string;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
+    database = await useMigratedDatabase("archived_routine_export_http");
     const token = async (uid: string, admin = false) => {
       const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, admin)
         VALUES (${uid}, 'local', 'user', ${uid}, ${admin}) RETURNING id`;
@@ -30,15 +33,15 @@ suiteFor(
     const conversation = await aiConversations.createConversation({ ownerUserId: users[0]!, title: "Report target" });
     chatId = conversation.shortId;
     conversationId = conversation.id;
-    await sql`INSERT INTO ai.chat_tasks(short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, run_at, timezone, state)
-      VALUES ('ExTask', ${conversation.id}::uuid, ${users[0]}::uuid, 'Write a report', 'once', '2030-01-07T09:00:00Z', 'UTC', 'completed')`;
+    await createArchivedTaskExportFixture(sql, { conversationId, ownerUserId: users[0]!, shortId: "ExTask" });
   });
   afterAll(async () => {
     if (conversationId) await sql`DELETE FROM ai.conversations WHERE id = ${conversationId}::uuid`;
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
+    await database?.drop();
   });
   const read = (path: string, token?: string) =>
-    aiChatTaskRoutes.request(path, { headers: token ? { cookie: `session_token=${token}` } : {} });
+    aiChatTaskExportRoutes.request(path, { headers: token ? { cookie: `session_token=${token}` } : {} });
   test("serves a person's definitions, rejects unauthenticated and installation-wide reads, and permits admins", async () => {
     expect((await read("/tasks/export")).status).toBe(401);
     const own = await read("/tasks/export", ownerToken);

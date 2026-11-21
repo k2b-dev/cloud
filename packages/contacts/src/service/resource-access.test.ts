@@ -80,5 +80,6 @@ test("settings context authorizes once before loading access, keys, and tags", a
   });
   expect(get).toHaveBeenCalledTimes(1);
   expect(permission).toHaveBeenCalledTimes(1);
-  for (const load of [entries, keys, listTags]) expect(load).toHaveBeenCalledWith({ bookId });
+  expect(entries).toHaveBeenCalledWith({ bookId, permission: "admin" });
+  for (const load of [keys, listTags]) expect(load).toHaveBeenCalledWith({ bookId });
 });

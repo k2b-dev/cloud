@@ -1,12 +1,11 @@
+import type { AiMessageOrigin } from "@k2b/cloud/ai/browser";
+import { dates } from "@k2b/stdlib";
 import { IconButton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { queueMessages } from "./queue-messages";
 
 /** Who wrote a queued message, as the server projects it for the viewer; `href` only where the viewer may open it. */
-export type AssistantQueueOrigin =
-  | { kind: "person"; id: string; name: string }
-  | { kind: "automation"; id: string; name: string; href?: string }
-  | { kind: "chat"; id: string; name: string; href?: string };
+export type AssistantQueueOrigin = AiMessageOrigin;
 
 /** One queued message, in the order the server received it. */
 export type AssistantQueueEntry = {
@@ -15,12 +14,15 @@ export type AssistantQueueEntry = {
   origin: AssistantQueueOrigin;
   state: "pending" | "sending" | "failed";
   authorIsViewer: boolean;
+  error?: string | null;
+  retrying?: boolean;
 };
 
 export type AssistantQueueProps = {
   entries: readonly AssistantQueueEntry[];
   /** `line`: the row above the field shows the next entry; `chip`: it shares the row with "Waiting for you". */
   layout: "line" | "chip";
+  timeZone?: string;
   /** The entry whose "Send now" runs on this device. */
   sendingId: string | null;
   /** Entries whose "Send now" failed, or ended unclear and was not sent, on this device. */
@@ -30,6 +32,8 @@ export type AssistantQueueProps = {
   onSendNow: (entry: AssistantQueueEntry) => void;
   onEdit: (entry: AssistantQueueEntry) => void;
   onRemove: (entry: AssistantQueueEntry) => void;
+  /** What else shares the row, at its end: the chip of the chat's alarms. */
+  end?: JSX.Element;
 };
 
 type EntryState = "pending" | "sending" | "failed";
@@ -38,6 +42,7 @@ const ORIGIN_ICON: Record<AssistantQueueOrigin["kind"] | "own", string> = {
   own: "ti ti-corner-down-right",
   person: "ti ti-user",
   automation: "ti ti-feat-code",
+  wakeup: "ti ti-alarm",
   chat: "ti ti-sparkles",
 };
 
@@ -66,8 +71,12 @@ export default function AssistantQueue(props: AssistantQueueProps) {
   const origin = (entry: AssistantQueueEntry): string | null => {
     if (entry.authorIsViewer) return null;
     const source = entry.origin;
+    if (source.kind === "wakeup")
+      return `${source.name} ${dates.formatTime(source.scheduledAt, { locale: locale(), timeZone: props.timeZone ?? "UTC" })}`;
     return source.kind === "automation"
-      ? t().fromAutomation({ name: source.name })
+      ? source.named === false
+        ? t().fromUnnamedAutomation
+        : t().fromAutomation({ name: source.name })
       : source.kind === "chat"
         ? t().fromChat({ name: source.name })
         : source.name;
@@ -143,13 +152,36 @@ export default function AssistantQueue(props: AssistantQueueProps) {
   const Sign = (signProps: { entry: AssistantQueueEntry }) => (
     <i class={`assistant-queue__sign ${ORIGIN_ICON[icon(signProps.entry)]}`} data-kind={icon(signProps.entry)} aria-hidden="true" />
   );
+  /** An entry Cloud could not start and restarts by itself is no failure of the person's: it waits, quietly. */
+  const retrying = (entry: AssistantQueueEntry) =>
+    stateOf(entry) === "failed" && entry.error === "dispatch_failed" && entry.retrying === true;
+  /** The row keeps one short word; a longer explanation stays in the tooltip and for screen readers. */
+  const stateWords = (entry: AssistantQueueEntry): { short: string; long?: string } =>
+    stateOf(entry) === "sending"
+      ? { short: t().sending }
+      : retrying(entry)
+        ? { short: t().retrying, long: t().dispatchRetrying }
+        : entry.error === "dispatch_failed"
+          ? { short: t().notSent, long: t().dispatchFailed }
+          : { short: t().notSent };
   const StateWord = (stateProps: { entry: AssistantQueueEntry }) => (
     <Show when={stateOf(stateProps.entry) !== "pending"}>
-      <span class="assistant-queue__state" data-state={stateOf(stateProps.entry)}>
+      <span
+        class="assistant-queue__state"
+        data-state={retrying(stateProps.entry) ? "retrying" : stateOf(stateProps.entry)}
+        title={stateWords(stateProps.entry).long}
+      >
         <Show when={stateOf(stateProps.entry) === "failed"}>
-          <i class="ti ti-alert-circle" aria-hidden="true" />
+          <i class={retrying(stateProps.entry) ? "ti ti-refresh" : "ti ti-alert-circle"} aria-hidden="true" />
         </Show>
-        {stateOf(stateProps.entry) === "failed" ? t().notSent : t().sending}
+        <Show when={stateWords(stateProps.entry).long} fallback={stateWords(stateProps.entry).short}>
+          {(long) => (
+            <>
+              <span aria-hidden="true">{stateWords(stateProps.entry).short}</span>
+              <span class="k2b-sr-only">{long()}</span>
+            </>
+          )}
+        </Show>
       </span>
     </Show>
   );
@@ -199,6 +231,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
         )}
       </Show>
       <Toggle />
+      {props.end}
       <div class="assistant-queue__list" id={listId} role="group" aria-label={t().queuedMessages} hidden={!open()}>
         <div class="assistant-queue__list-head">
           <span>

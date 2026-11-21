@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { posixLocale } from "./config";
+import { envIsCi, posixLocale } from "./config";
 
 describe("posixLocale", () => {
   test.each([
@@ -32,4 +32,18 @@ describe("posixLocale", () => {
   ])("uses the first non-empty variable in %j", (env, expected) => {
     expect(posixLocale(env)).toBe(expected);
   });
+});
+
+const previousCi = process.env.CI;
+test("CLI host reports the standard CI environment without treating false/0 as CI", () => {
+  try {
+    for (const value of [undefined, "", "false", "0", "true", "1"]) {
+      if (value === undefined) delete process.env.CI;
+      else process.env.CI = value;
+      expect(envIsCi()).toBe(value === "true" || value === "1");
+    }
+  } finally {
+    if (previousCi === undefined) delete process.env.CI;
+    else process.env.CI = previousCi;
+  }
 });
