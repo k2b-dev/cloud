@@ -99,8 +99,8 @@ import { appAssetPath } from "@k2b/cloud/server";
 import { app } from "./config";
 import ProductFinder from "./ProductFinder.island";
 
-const site = app.publicSsr<{ title: string }>(({ body, scripts, title }) =>
-  `<!doctype html><html lang="en"><head>
+const site = app.publicSsr<{ title: string; lang: string }>(({ body, scripts, title, lang }) =>
+  `<!doctype html><html lang="${lang}"><head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${Bun.escapeHTML(title)}</title><link rel="stylesheet" href="/site.css">
   </head><body>${body}${scripts}</body></html>`);
@@ -110,7 +110,7 @@ app.public.get("/site.css", () => new Response(Bun.file(appAssetPath("site.css")
 }));
 app.public.get("/", () => site.html(
   () => <main><h1>Our products</h1><ProductFinder /></main>,
-  { title: "Our products" },
+  { title: "Our products", lang: "en" },
 ));
 ```
 
@@ -118,6 +118,15 @@ Import this module from the app's server entry point before `app.start()`.
 Keep `ProductFinder.island.tsx` under the app's `src` directory so the existing
 plugin discovers it. Keep the render function synchronous; load data before
 calling `html()`. The template must include `scripts` so islands can mount.
+
+Pass the page language as `lang` in the `html()` options and write it into
+`<html lang>`. Production islands are built once per catalog language and ship
+only that language's messages, including those of `@k2b/ui` components;
+`html()` loads the build that `lang` names, exactly as on the app's own pages.
+A page without a string `lang` loads the English build. Server rendering
+reads its locale from a `LocaleProvider`, so wrap a translated page in one
+with the same locale; then the server and the mounted islands show the same
+text. Development builds once with every language.
 
 This example keeps plain site CSS at `src/assets/site.css`.
 `appAssetPath("site.css")` reads that file in development and its copied
