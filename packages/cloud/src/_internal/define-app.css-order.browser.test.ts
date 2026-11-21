@@ -6,7 +6,7 @@ import type { BunPlugin } from "bun";
 import rawTailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import appTailwind from "../../scripts/tailwind";
 
@@ -79,6 +79,7 @@ test("an app's own utility beats a shared one on the same property, and its tran
   const page = await browser.newPage();
   try {
     await page.goto(server.url.origin + "/");
+    await settled(page);
     const style = await page.evaluate(() => {
       const probe = Object.assign(document.createElement("div"), { className: "m-0 mt-[-4px] transition" });
       document.body.append(probe);
