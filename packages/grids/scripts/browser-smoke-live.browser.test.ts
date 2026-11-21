@@ -9,7 +9,7 @@ const privatePayload = "fixture-content-must-not-be-logged";
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });

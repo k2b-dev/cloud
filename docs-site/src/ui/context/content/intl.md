@@ -33,7 +33,7 @@ Every locale-aware component resolves its locale in the same order:
 
 On the server the provider is the only source, so SSR consumers wrap the page in `LocaleProvider` and emit a matching `<html lang>`. A browser island is an independent Solid root: an outer server-side provider does not survive the island's re-render, which falls back to `<html lang>` instead. Keeping both equal keeps server and browser text identical. Changing the language without a document reload is out of scope; update the preference and reload.
 
-`NumberInput`, `DatePicker`, and `Calendar` inherit the same locale: the pickers prefer an explicit `dateConfig.locale`, and `NumberInput` derives its decimal separator from the effective locale while keeping its numeric value contract unchanged.
+`NumberInput`, `DatePicker`, and `Calendar` inherit the same locale: the pickers prefer an explicit `dateConfig.locale`, and `NumberInput` derives its decimal and grouping separators from the effective locale while keeping its numeric value contract unchanged.
 
 ## Formatters
 

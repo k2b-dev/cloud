@@ -109,7 +109,7 @@ let page: Page;
 beforeAll(async () => {
   browser = await launchBrowser();
   page = await browser.newPage();
-});
+}, 30_000);
 afterAll(async () => {
   await page?.close();
   await browser?.close();

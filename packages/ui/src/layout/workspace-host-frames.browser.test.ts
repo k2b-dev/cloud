@@ -50,7 +50,7 @@ let browser: Browser;
 setDefaultTimeout(60_000);
 beforeAll(async () => {
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });

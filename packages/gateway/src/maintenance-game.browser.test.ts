@@ -96,7 +96,7 @@ const corner = (page: Page) =>
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
   server.stop(true);

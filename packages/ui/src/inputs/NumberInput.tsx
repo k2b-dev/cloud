@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, type JSX, Show, splitProps } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, mergeProps, on, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { decimalSeparator, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -48,6 +48,36 @@ export type NumberInputProps = Omit<
      */
     formatValue?: (value: number) => string;
   };
+
+/**
+ * Reads typed or pasted text with the locale's marks: `decimal` separates the
+ * fraction, the other of `.` and `,` groups thousands, one to three digits and
+ * then groups of three. One mark of the other kind that cannot group (`3.14` in
+ * German) still reads as the decimal separator. Text that fits neither reading
+ * is `"invalid"`, never a shortened number.
+ */
+function parseLocalizedNumber(text: string, decimal: string): number | null | "invalid" {
+  const point = decimal === "," ? "," : ".";
+  const group = point === "," ? "." : ",";
+  const body = text.replaceAll(decimal, point);
+  if (!body) return null;
+  let canonical: string;
+  if (new RegExp(`^-?(\\d*|[1-9]\\d{0,2}(\\${group}\\d{3})+)(\\${point}\\d*)?$`).test(body))
+    canonical = body.replaceAll(group, "").replace(point, ".");
+  else if (new RegExp(`^-?\\d*\\${group}\\d*$`).test(body)) canonical = body.replace(group, ".");
+  else return "invalid";
+  // Separators or a minus alone; a minus anywhere but first, such as in `1.234,56-`, already failed above.
+  return /\d/.test(canonical) ? Number(canonical) : "invalid";
+}
+
+// Intl rounds a number by its shortest decimal form, half away from zero: `1.005` rounds to `1.01`,
+// not to the `1.00` of the binary float that `toFixed` sees. Typed text up to 15 digits is that form.
+const exact = new Intl.NumberFormat("en", { useGrouping: false, minimumFractionDigits: 20, maximumFractionDigits: 20 });
+/** A number's decimal form as an exact count of 10^-20 units. */
+const units = (value: number) => BigInt(exact.format(value).replace(".", ""));
+
+/** Why the field refuses its text: no reading as a number, or a minus where negatives are not allowed. */
+type Refusal = "invalid" | "negative";
 
 function fractionDigits(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -102,14 +132,15 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const messages = useUiMessages();
   const inputMessages = useInputMessages();
   const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
-  const min = () => local.min ?? -Infinity;
+  // Without negatives the steppers and the commit stop at 0, like a typed minus is refused.
+  const min = () => (local.allowNegative === false ? Math.max(local.min ?? 0, 0) : (local.min ?? -Infinity));
   const max = () => local.max ?? Infinity;
   const step = () => local.step ?? 1;
   // `step` and the accepted decimals never disagree: a fractional step implies
   // its own precision unless the caller states `decimalPlaces` explicitly.
   const places = () => Math.max(0, local.decimalPlaces ?? fractionDigits(step()));
-  // Keep ASCII digits and no grouping so display text round-trips through parse,
-  // including numbers that String/toFixed would write in exponential notation.
+  // ASCII digits without grouping or exponent, so the text round-trips through parse;
+  // `parseLocalizedNumber` still reads typed or pasted grouping.
   const formatter = createMemo(
     () =>
       new Intl.NumberFormat("en", {
@@ -118,48 +149,61 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
         maximumFractionDigits: places(),
       }),
   );
-  const display = (value: number | null | undefined) => {
-    if (value == null) return "";
-    // Match normalize's rounding; toFixed switches to exponents at 1e21.
-    const text = Math.abs(value) < 1e21 ? value.toFixed(places()) : formatter().format(value);
-    return text.replace(".", separator());
-  };
+  // `+ 0` shows negative zero as 0.
+  const display = (value: number | null | undefined) =>
+    value == null
+      ? ""
+      : formatter()
+          .format(value + 0)
+          .replace(".", separator());
   const [raw, setRaw] = createSignal(display(value()));
+  /** Why the field refused its text; the text stays as typed until it reads as a number. */
+  const [failure, setFailure] = createSignal<string>();
+  const shownError = () => failure() ?? error();
+  const example = () => {
+    const decimal = separator();
+    return `1${decimal === "," ? "." : ","}234${places() > 0 ? `${decimal}56` : ""}`;
+  };
 
-  const filter = (input: string) => {
-    let output = "";
-    let decimal = false;
-    for (const character of input) {
-      if (/\d/.test(character)) output += character;
-      else if (character === "-" && output === "" && (local.allowNegative ?? true)) output += character;
-      else if ((character === "." || character === "," || character === separator()) && !decimal && places() > 0) {
-        output += separator();
-        decimal = true;
-      }
-    }
-    if (decimal) {
-      const [integer = "", fraction = ""] = output.split(separator());
-      return `${integer}${separator()}${fraction.slice(0, places())}`;
-    }
-    return output;
+  // Only characters that can never belong to a number go; separators stay as typed,
+  // because whether a mark groups or separates decimals is clear only from the whole text.
+  // A minus stays even where negatives are not allowed, so the field can refuse it instead of flipping the sign.
+  const filter = (input: string) => input.replace(new RegExp(`[^\\d.,${separator()}-]`, "g"), "");
+  /** The number, `null` for empty text, or why the text is refused. */
+  const parse = (input: string): number | null | Refusal => {
+    const number = parseLocalizedNumber(input, separator());
+    if (typeof number !== "number") return number;
+    if (!Number.isFinite(number)) return "invalid";
+    return input[0] === "-" && local.allowNegative === false ? "negative" : number;
   };
-  const parse = (input: string) => {
-    const canonical = input.replace(separator(), ".");
-    if (!canonical || canonical === "-" || canonical === ".") return null;
-    const number = places() === 0 ? Number.parseInt(canonical, 10) : Number(canonical);
-    return Number.isFinite(number) ? number : null;
+  /** The number the current text stands for, or `null` while it reads as none. */
+  const typed = () => {
+    const number = parse(raw());
+    return typeof number === "string" ? null : number;
   };
+  /** Clamps, snaps to the step grid and rounds to `places`, all on the decimal form. */
   const normalize = (value: number | null) => {
     if (value === null) return null;
-    const clamped = Math.max(min(), Math.min(max(), value));
-    const anchor = Number.isFinite(min()) ? min() : 0;
-    const snapped = step() > 0 ? Math.round((clamped - anchor) / step()) * step() + anchor : clamped;
-    const bounded = Math.max(min(), Math.min(max(), snapped));
-    return places() === 0 ? Math.round(bounded) : Number(bounded.toFixed(places()));
+    let decimal = Math.max(min(), Math.min(max(), value));
+    if (!Number.isFinite(decimal)) return decimal;
+    if (step() > 0) {
+      // Snap in exact units, half away from zero: `anchor + count × step`.
+      const size = units(step());
+      const anchor = units(Number.isFinite(min()) ? min() : 0);
+      const offset = units(decimal) - anchor;
+      const remainder = offset % size;
+      const away = (remainder < 0n ? -remainder : remainder) * 2n >= size ? (offset < 0n ? -1n : 1n) : 0n;
+      decimal = Number(`${(offset / size + away) * size + anchor}e-20`);
+    }
+    return Math.max(min(), Math.min(max(), Number(formatter().format(decimal))));
   };
   const emit = (value: number | null) => local.onValueChange?.(value);
+  /** The value before the current edit; text the field cannot read hands it back instead of a guess. */
+  let editStart: number | null | undefined;
   const commit = (value: number | null, changeAlreadyEmitted = false) => {
     const next = normalize(value);
+    editStart = undefined;
+    setFailure(undefined);
     setRaw(display(next));
     if (!changeAlreadyEmitted || !Object.is(next, value)) emit(next);
     local.onValueCommit?.(next);
@@ -187,27 +231,55 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   };
 
   createEffect(() => {
-    if (focused()) return;
+    if (focused() || failure()) return;
     // Synchronize display text: precision or locale can change
     // without changing the controlled number. This effect never emits changes.
     setRaw(display(value()));
   });
+  // A new value from outside replaces text the field refused.
+  createEffect(
+    on(
+      value,
+      () => {
+        if (focused()) return;
+        editStart = undefined;
+        setFailure(undefined);
+      },
+      { defer: true },
+    ),
+  );
+  const refusal = (reason: Refusal) =>
+    reason === "negative" ? inputMessages().noNegativeNumbers : inputMessages().notANumber({ example: example() });
+  // A form that validates does not submit text the field refuses, also while it is still being typed.
+  createEffect(() => {
+    const number = parse(raw());
+    input?.setCustomValidity(failure() ?? (typeof number === "string" ? refusal(number) : ""));
+  });
+  /** Commits the current text, or keeps it with an error when the field refuses it. */
+  const commitText = () => {
+    const number = parse(raw());
+    if (typeof number === "string") setFailure(refusal(number));
+    else commit(number, true);
+  };
   // Enter already committed the current text, so leaving the field does not commit it twice.
   let committedOnEnter = false;
   const onKeyDown: JSX.EventHandler<HTMLInputElement, KeyboardEvent> = (event) => {
     const handler = local.onKeyDown;
     if (typeof handler === "function") handler(event);
     else if (Array.isArray(handler)) handler[0](handler[1], event);
-    if (!plain() || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
+    // Enter commits before a form submits, so the form sends the normalized number, or nothing for refused text.
     // Both keys keep focus in the field, so keyboard and screen reader users stay in place.
     if (event.key === "Enter") {
-      event.preventDefault();
-      commit(parse(raw()), true);
+      commitText();
       committedOnEnter = true;
-    } else if (event.key === "Escape" && parse(raw()) !== value()) {
+      if (plain() || failure()) event.preventDefault();
+    } else if (plain() && event.key === "Escape" && parse(raw()) !== value()) {
       // Only an edit in progress swallows Escape; otherwise it reaches an enclosing panel.
       event.preventDefault();
       event.stopPropagation();
+      editStart = undefined;
+      setFailure(undefined);
       setRaw(display(value()));
     }
   };
@@ -215,12 +287,12 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   /** What a plain field shows: the formatted value at rest, the text being edited while focused. */
   const shownText = () => {
     const current = value();
-    if (!focused() && current != null && local.formatValue) return local.formatValue(current);
+    if (!focused() && !failure() && current != null && local.formatValue) return local.formatValue(current);
     return raw() || placeholderText();
   };
   const valueText = () => {
     if (rest["aria-valuetext"] !== undefined) return rest["aria-valuetext"];
-    const current = focused() ? parse(raw()) : value();
+    const current = focused() || failure() ? typed() : value();
     if (current == null) return undefined;
     if (local.formatValue) return local.formatValue(current);
     const unit = typeof local.suffix === "string" ? local.suffix : "";
@@ -239,11 +311,18 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       value={raw()}
       placeholder={suggested() ?? rest.placeholder}
       required={local.required}
-      {...fieldControlAria(meta, local)}
+      {...fieldControlAria(
+        meta,
+        mergeProps(local, {
+          get error() {
+            return shownError();
+          },
+        }),
+      )}
       aria-describedby={suggestion.describe(fieldDescribedBy(meta, local))}
       aria-valuemin={Number.isFinite(min()) ? min() : undefined}
       aria-valuemax={Number.isFinite(max()) ? max() : undefined}
-      aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
+      aria-valuenow={(focused() || failure() ? typed() : value()) ?? undefined}
       aria-valuetext={valueText()}
       // The plain sizer sets the width; the smallest intrinsic size keeps the input from widening it.
       size={plain() ? 1 : rest.size}
@@ -263,12 +342,21 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
             input.setSelectionRange(filter(current.slice(0, selectionStart)).length, filter(current.slice(0, selectionEnd)).length);
           }
         }
+        if (editStart === undefined) editStart = value() ?? null;
         setRaw(next);
         committedOnEnter = false;
-        emit(parse(next));
+        const number = parse(next);
+        if (typeof number !== "string") {
+          setFailure(undefined);
+          emit(number);
+        } else {
+          // Without focus (autofill) no blur follows, so the refusal shows at once.
+          if (!focused()) setFailure(refusal(number));
+          if (!Object.is(value() ?? null, editStart)) emit(editStart);
+        }
       }}
       onBlur={() => {
-        if (!committedOnEnter) commit(parse(raw()), true);
+        if (!committedOnEnter) commitText();
         committedOnEnter = false;
         setFocused(false);
       }}
@@ -280,7 +368,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       class={suggestion.field(local.class)}
       label={local.label}
       description={local.description}
-      error={error()}
+      error={shownError()}
       meta={meta}
       required={local.required}
       disabled={rest.disabled}
@@ -292,7 +380,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           class="k2b-input-shell k2b-number-input"
           data-appearance={local.appearance ?? "field"}
           data-disabled={rest.disabled ? "true" : undefined}
-          data-invalid={error() ? "true" : undefined}
+          data-invalid={shownError() ? "true" : undefined}
           onClick={(event) => {
             if (plain() && event.target !== input && !rest.disabled) input?.focus();
           }}
