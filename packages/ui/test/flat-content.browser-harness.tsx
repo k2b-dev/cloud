@@ -41,6 +41,12 @@ render(
           <ProgressPath label="Weg der Bestellung 2026-0419" steps={path} />
         </section>
       </main>
+      {/* Red template outside #app: a row that draws its own edge against the hairline above it. The double-line
+          check must report it, or the green checks above prove nothing. */}
+      <aside id="double">
+        <div class="hairline-above">Kopf</div>
+        <TaskRow class="own-edge" icon="ti ti-file" text="Zeile mit eigenem Rand" action="Öffnen" href="#rand" />
+      </aside>
     </LocaleProvider>
   ),
   document.getElementById("root")!,

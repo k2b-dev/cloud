@@ -41,8 +41,9 @@ on the left edge of the container, so the path stands on the text edge of its
 column. Names and detail lines wrap between words instead of being cut. One
 below the other, a stage with a detail line is 52 px high, one without 40 px.
 
-The line between the dots is the only line in the flat design that does not
-structure the page. It connects the stages. It is 2 px and uses the color of a
+The path keeps 12 px clear above and below, so the ring of a dot never touches
+a hairline of its container (one line, one owner). The line between the dots is
+the only line in the flat design that does not structure the page. It connects the stages. It is 2 px and uses the color of a
 field edge, like every other strong line. The state is in the form of the dot
 and in words, never in color alone.
 

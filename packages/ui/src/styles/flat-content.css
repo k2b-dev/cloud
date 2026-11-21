@@ -13,24 +13,24 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: var(--k2b-h-row, 40px);
+  min-height: var(--k2b-h-row);
   margin: 0;
-  padding: 0 var(--k2b-gutter, 20px);
+  padding: 0 var(--k2b-gutter);
   border: 0;
-  border-radius: var(--k2b-radius-flat, 0);
+  border-radius: var(--k2b-radius-flat);
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   text-align: start;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color var(--k2b-motion-fast, 120ms) ease-out;
+  transition: background-color var(--k2b-motion-fast) ease-out;
 }
 
 .k2b-ui .k2b-task-row[data-detail] {
-  min-height: var(--k2b-h-row-2, 52px);
+  min-height: var(--k2b-h-row-2);
 }
 
 .k2b-ui .k2b-task-row:hover {
@@ -52,9 +52,9 @@
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: var(--k2b-space-3, 12px);
+  column-gap: var(--k2b-space-3);
   min-width: 0;
-  padding-block: var(--k2b-space-1, 4px);
+  padding-block: var(--k2b-space-1);
 }
 
 .k2b-ui .k2b-task-row__icon {
@@ -74,7 +74,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: var(--k2b-space-2, 8px);
+  gap: var(--k2b-space-2);
 }
 
 .k2b-ui .k2b-task-row__text {
@@ -88,7 +88,7 @@
 /* A quiet line in free height wraps instead of being cut (K15). */
 .k2b-ui .k2b-task-row__detail {
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   line-height: 1rem;
   overflow-wrap: break-word;
@@ -100,17 +100,17 @@
   height: 28px;
   flex: none;
   align-items: center;
-  padding: 0 var(--k2b-space-2, 8px);
+  padding: 0 var(--k2b-space-2);
   border: 1px solid var(--k2b-border-strong);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   white-space: nowrap;
   transition:
-    border-color var(--k2b-motion-fast, 120ms) ease-out,
-    color var(--k2b-motion-fast, 120ms) ease-out;
+    border-color var(--k2b-motion-fast) ease-out,
+    color var(--k2b-motion-fast) ease-out;
 }
 
 .k2b-ui .k2b-task-row:hover .k2b-task-row__action {
@@ -130,7 +130,7 @@
   .k2b-ui .k2b-task-row__body {
     grid-template-columns: 20px minmax(0, 1fr);
     align-items: start;
-    padding-block: var(--k2b-space-2, 8px);
+    padding-block: var(--k2b-space-2);
   }
 
   .k2b-ui .k2b-task-row__icon {
@@ -142,14 +142,14 @@
   .k2b-ui .k2b-task-row__action {
     grid-column: 2;
     justify-self: start;
-    margin-top: var(--k2b-space-2, 8px);
+    margin-top: var(--k2b-space-2);
   }
 }
 
 @media (max-width: 767px) {
   .k2b-ui .k2b-task-row,
   .k2b-ui .k2b-task-row[data-detail] {
-    min-height: var(--k2b-h-row-phone, 60px);
+    min-height: var(--k2b-h-row-phone);
   }
 }
 
@@ -157,9 +157,11 @@
    quiet line, done, now, or open. The line between the dots is the only line that does not structure the page; it
    connects (K2, exception). Side by side when the column is wide enough, one below the other under 360 px. The state
    is in words for screen readers and in the dot's form, never in color alone. */
+/* The path keeps 12 px clear above and below, so the ring of a dot never lies on a hairline of its container (K2). */
 .k2b-ui .k2b-progress-path {
   container-type: inline-size;
   min-width: 0;
+  padding-block: var(--k2b-space-3);
 }
 
 .k2b-ui .k2b-progress-path__list {
@@ -176,7 +178,7 @@
   min-width: 0;
   flex-direction: column;
   margin: 0;
-  padding-inline-end: var(--k2b-space-2, 8px);
+  padding-inline-end: var(--k2b-space-2);
 }
 
 /* The line runs from the right of a dot to the start of the next column, with 4 px air on both sides. */
@@ -196,9 +198,9 @@
   height: 20px;
   flex: none;
   place-items: center;
-  margin-bottom: var(--k2b-space-2, 8px);
+  margin-bottom: var(--k2b-space-2);
   border: 1px solid var(--k2b-border-strong);
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   color: var(--k2b-text-muted);
   background: var(--k2b-surface);
   font-size: 0.75rem;
@@ -221,7 +223,7 @@
   content: "";
   width: 8px;
   height: 8px;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   background: var(--k2b-accent-600);
 }
 
@@ -241,7 +243,7 @@
 .k2b-ui .k2b-progress-path__label {
   overflow-wrap: break-word;
   color: var(--k2b-text-secondary);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.25rem;
 }
@@ -259,7 +261,7 @@
 .k2b-ui .k2b-progress-path__detail {
   overflow-wrap: break-word;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -272,8 +274,8 @@
     display: grid;
     grid-template-columns: 20px minmax(0, 1fr);
     align-content: start;
-    column-gap: var(--k2b-space-3, 12px);
-    min-height: var(--k2b-h-row, 40px);
+    column-gap: var(--k2b-space-3);
+    min-height: var(--k2b-h-row);
     padding: 0;
   }
 
@@ -293,7 +295,7 @@
 
   /* A stage with a quiet line is 52 px, one without 40 px (K1). */
   .k2b-ui .k2b-progress-path__detail {
-    padding-bottom: var(--k2b-space-4, 16px);
+    padding-bottom: var(--k2b-space-4);
   }
 
   .k2b-ui .k2b-progress-path__step:not(:last-child)::before {

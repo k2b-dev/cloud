@@ -49,7 +49,7 @@ const open = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   pages.push(page);
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0} .column{margin-bottom:32px} .column[data-probe^="path"]{padding:0 var(--k2b-gutter, 20px)} .narrow{width:340px;box-sizing:border-box}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0} .column{margin-bottom:32px;border-block:1px solid var(--k2b-border)} .hairline-above{border-bottom:1px solid var(--k2b-border)} .k2b-ui .k2b-task-row.own-edge{border-top:1px solid var(--k2b-border)} .column[data-probe^="path"]{padding:0 var(--k2b-gutter)} .narrow{width:340px;box-sizing:border-box}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ content: bundle });
   await settled(page);
@@ -64,8 +64,7 @@ const box = (page: Page, selector: string, index = 0) =>
       const rect = element.getBoundingClientRect();
       return { left: rect.left, right: rect.right, top: rect.top, height: rect.height, width: rect.width };
     });
-const gutter = (page: Page) =>
-  page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--k2b-gutter")) || 20);
+const gutter = (page: Page) => page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--k2b-gutter")));
 
 for (const width of [390, 768, 1440, 1920])
   test(`${width} px: task rows and paths do not overlap, spill, or cut`, async () => {
@@ -73,10 +72,49 @@ for (const width of [390, 768, 1440, 1920])
     expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
   });
 
+for (const width of [390, 1440])
+  test(`${width} px: one line, one owner: no double line between the list, its rows, and the way`, async () => {
+    const page = await open(width);
+    const result = await page.evaluate(layoutProblems, { root: "#app" });
+    expect(result.double).toEqual([]);
+    // The rows draw no edge; the list that divides them does, between rows only.
+    const tops = await page
+      .locator('[data-probe="tasks"] > .k2b-task-row')
+      .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderTopWidth));
+    expect(tops).toEqual(["0px", "1px", "1px", "1px", "1px"]);
+    expect(
+      await page
+        .locator('[data-probe="tasks"] > .k2b-task-row')
+        .last()
+        .evaluate((row) => getComputedStyle(row).borderBottomWidth),
+    ).toBe("0px");
+    // The way's line is a background, not a border, and with the path's 12 px of air it never touches the hairline.
+    const line = await page
+      .locator('[data-probe="path"] .k2b-progress-path__step')
+      .first()
+      .evaluate((step) => {
+        const before = getComputedStyle(step, "::before");
+        const column = step.closest("section")!.getBoundingClientRect();
+        return { border: before.borderTopStyle, top: step.getBoundingClientRect().top + Number.parseFloat(before.top) - column.top - 1 };
+      });
+    // Side by side the line runs at the height of the dots (21 px), one below the other it starts under the first dot.
+    expect(line.border).toBe("none");
+    expect(line.top).toBeGreaterThanOrEqual(21);
+  });
+
+test("red template: a row that draws its own edge under a hairline is a double line", async () => {
+  const page = await open(1440);
+  const result = await page.evaluate(layoutProblems, { root: "#double" });
+  expect(result.double.length).toBeGreaterThan(0);
+  expect(result.problems.some((problem) => problem.startsWith("double line"))).toBe(true);
+});
+
 test("task row at 1440 px: fixed heights, symbol on the text edge, action word whole at the right edge", async () => {
   const page = await open(1440);
   const edge = await gutter(page);
-  const heights = await page.locator(".k2b-task-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+  const heights = await page
+    .locator('[data-probe="tasks"] .k2b-task-row')
+    .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
   // 52 with a quiet line, 40 without (K1). The line between rows is inside the height.
   expect(heights).toEqual([52, 40, 40, 52, 40]);
   for (let index = 0; index < heights.length; index++) {
@@ -97,7 +135,7 @@ test("task row at 1440 px: fixed heights, symbol on the text edge, action word w
 
 test("task row at 390 px: at least 60 px, the action word whole below the text on the text edge", async () => {
   const page = await open(390);
-  const rows = await page.locator(".k2b-task-row").count();
+  const rows = await page.locator('[data-probe="tasks"] .k2b-task-row').count();
   for (let index = 0; index < rows; index++) {
     const row = await box(page, ".k2b-task-row", index);
     const text = await box(page, ".k2b-task-row__copy", index);
@@ -138,7 +176,8 @@ test("task row: one target with a name, a tooltip only while cut, focus without 
 
   // A disabled button and a disabled link stay in place and take no focus.
   await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-task-row"))).toBe(false);
+  // The next stop is the row of the red template below #app: both disabled rows were skipped.
+  expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Zeile mit eigenem Rand");
   expect(await page.getByRole("button", { name: /Vertrag gegenzeichnen/ }).isDisabled()).toBe(true);
   const link = page.locator(".k2b-task-row").nth(4);
   expect(await link.evaluate((row) => [row.tagName, row.getAttribute("href"), row.getAttribute("aria-disabled")])).toEqual([
