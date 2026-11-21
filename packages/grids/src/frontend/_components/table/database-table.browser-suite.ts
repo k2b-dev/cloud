@@ -86,7 +86,12 @@ describe("Grids table beside Detail", () => {
             // The end of Main's content box: the flat Detail column adds no gap of its own (K5a).
             mainEnd: (() => {
               const main = viewport.closest(".k2b-app-workspace__main")!;
-              return main.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(main).paddingRight) - (main as HTMLElement).offsetWidth + (main as HTMLElement).clientWidth;
+              return (
+                main.getBoundingClientRect().right -
+                Number.parseFloat(getComputedStyle(main).paddingRight) -
+                (main as HTMLElement).offsetWidth +
+                (main as HTMLElement).clientWidth
+              );
             })(),
             // Inside the Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
             radius: token("--k2b-radius-surface") - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),

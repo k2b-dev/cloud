@@ -2312,7 +2312,11 @@ describePart("cards", "wide Spaces surfaces beside Detail", () => {
             };
             // The end of Main's content box: the flat Detail column adds no gap of its own (K5a).
             const main = viewport.closest<HTMLElement>(".k2b-app-workspace__main")!;
-            const mainEnd = main.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(main).paddingRight) - main.offsetWidth + main.clientWidth;
+            const mainEnd =
+              main.getBoundingClientRect().right -
+              Number.parseFloat(getComputedStyle(main).paddingRight) -
+              main.offsetWidth +
+              main.clientWidth;
             const radius = token("--k2b-radius-surface");
             const style = getComputedStyle(viewport);
             const paper = viewport.closest(".k2b-paper");
