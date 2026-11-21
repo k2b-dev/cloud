@@ -37,6 +37,7 @@ export const codeVersionMessages = i18n.define({
       reviewReason: ({ row }: { row: string }) =>
         ({
           public_routes: "This version serves a public page.",
+          owner_data: "This version shows the owner's data to every member who opens its page.",
           internet: "This version connects to the internet.",
           ai: "This version uses AI.",
           ai_chat_you: "This version starts bounded AI turns in your own chat.",
@@ -94,6 +95,7 @@ export const codeVersionMessages = i18n.define({
       reviewReason: ({ row }: { row: string }) =>
         ({
           public_routes: "Diese Version stellt eine öffentliche Seite bereit.",
+          owner_data: "Diese Version zeigt allen Mitgliedern, die ihre Seite öffnen, Daten mit den Rechten des Besitzers.",
           internet: "Diese Version verbindet sich mit dem Internet.",
           ai: "Diese Version nutzt KI.",
           ai_chat_you: "Diese Version startet begrenzte KI-Züge im eigenen Chat.",

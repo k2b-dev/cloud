@@ -205,3 +205,28 @@ test("checked manifests bind route descriptors and public classification", async
       false,
     );
 });
+
+test("checked manifests bind owner-data routes to their own classification", async () => {
+  const { CodeCheckedVersionManifestSchema } = await import("../contracts/code-version");
+  const manifest = {
+    version: 1,
+    entry: "code.ts",
+    entrypoints: [
+      {
+        kind: "route",
+        entrypoint: "route:GET:/",
+        route: { method: "GET", path: "/", public: false, audience: "owner-data" },
+        cron: null,
+        file: "code.ts",
+        line: 1,
+      },
+    ],
+    permissions: [],
+    ai: false,
+    policyRows: [],
+    hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+  };
+  expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBe(false);
+  expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: ["public_routes"] }).success).toBe(false);
+  expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: ["owner_data"] }).success).toBe(true);
+});

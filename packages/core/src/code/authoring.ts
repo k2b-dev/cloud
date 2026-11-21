@@ -120,6 +120,7 @@ async function describeCheck(
   const policyRows = new Set<CodePolicyRow>();
   if (result.manifest.ai && !result.permissions.some((permission) => isCodeAiOperation(permission.operation))) policyRows.add("ai");
   if (result.manifest.entrypoints.some((entry) => entry.route?.public)) policyRows.add("public_routes");
+  if (result.manifest.entrypoints.some((entry) => entry.route?.audience === "owner-data")) policyRows.add("owner_data");
   if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
   const catalogs = new Map<string, Awaited<ReturnType<typeof getCapabilityCatalogApp>>>();
@@ -173,12 +174,7 @@ async function describeCheck(
       own,
     });
   }
-  // G1: a public route never reads a type its app keeps off pages without sign-in (`code.noPublicRoutes`).
-  for (const permission of result.permissions) {
-    const typeAppId = permission.target?.type.split(".")[0];
-    if (typeAppId && !catalogs.has(typeAppId))
-      catalogs.set(typeAppId, await getCapabilityCatalogApp(typeAppId, context.locale, context.authority));
-  }
+  // G1: a public route calls Queries only with owner-data, and never those of an app with `code.publicRoutes: false`.
   const refusals = publicRouteReadRefusals(
     result.manifest,
     result.permissions,

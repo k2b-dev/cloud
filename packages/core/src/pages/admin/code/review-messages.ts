@@ -22,6 +22,7 @@ const ROW_REASON_EN: Record<CodePolicyRow, string> = {
   ai_chat_you: "It writes to its person’s chat from a reserved daily budget.",
   internet: "It calls addresses on the internet.",
   public_routes: "It shows pages without sign-in.",
+  owner_data: "It shows the owner's data to every member who opens its page.",
 };
 const ROW_REASON_DE: Record<CodePolicyRow, string> = {
   read: "Sie liest Daten.",
@@ -40,6 +41,7 @@ const ROW_REASON_DE: Record<CodePolicyRow, string> = {
   ai_chat_you: "Sie schreibt aus einem reservierten Tagesbudget in den Chat ihrer Person.",
   internet: "Sie ruft Adressen im Internet auf.",
   public_routes: "Sie zeigt Seiten ohne Anmeldung.",
+  owner_data: "Sie zeigt allen Mitgliedern, die ihre Seite öffnen, Daten mit den Rechten des Besitzers.",
 };
 
 /** Words of one approval review in Administration › Code: list, head, tabs, approval, comments, and decisions. */

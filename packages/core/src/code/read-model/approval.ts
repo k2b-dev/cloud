@@ -18,6 +18,8 @@ export function approvalReason(row: CodePolicyRow, locale: string) {
       return t.approval_internet;
     case "public_routes":
       return t.approval_public_routes;
+    case "owner_data":
+      return t.approval_owner_data;
     default:
       return t.approval_silent_shared;
   }

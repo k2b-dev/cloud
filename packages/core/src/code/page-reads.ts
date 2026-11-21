@@ -15,15 +15,18 @@ const ReaderDataSchema = z.object({ view: CloudResourceReaderViewSchema });
 
 type Facts = NonNullable<Awaited<ReturnType<typeof getCapabilityCodeReadFacts>>>;
 const appOf = (qualified: string) => qualified.slice(0, qualified.indexOf("."));
+/** The Code's own database and files belong to the Code, not to an app. */
+const isCodeOwnData = (capability: string) => capability === "db.query" || capability.startsWith("core.code.file.");
 
 /**
  * G1: Cloud delivers a Code route's answer only to a visitor who may read every resource the route read: the target or
- * a ref of a succeeded Query, or the resource whose type reader it called. Each is checked with the type's reader under
+ * a ref of a succeeded Query, or the resource whose type reader it called. Queries without such a resource (lists,
+ * searches, other app-wide reads) stay the route handler's job on member routes. Each is checked with the type's reader under
  * the visitor's own authority, so the check is the same one the app applies everywhere else.
  *
  * `audience: "owner-data"` turns the check off on purpose; it is in the manifest and the admin review. A public route
- * has no visitor who could read anything, so its reads need `owner-data`, and types an app declares in
- * `code.noPublicRoutes` are refused on a public route even then.
+ * has no visitor who could read anything, so any Query it calls needs `owner-data`, and an app that declares
+ * `code.publicRoutes: false` is refused on a public route even then. Code's own database and files are no app data.
  */
 export async function checkCodeRouteReads(input: {
   reads: readonly CodeRouteRead[];
@@ -44,21 +47,24 @@ export async function checkCodeRouteReads(input: {
     facts.set(appId, loaded);
     return loaded;
   };
+  if (input.route.public) {
+    const apps = new Set(
+      input.reads.flatMap((read) => (read.kind === "query" && !isCodeOwnData(read.capability) ? [appOf(read.capability)] : [])),
+    );
+    for (const appId of apps) if (!(await factsOf(appId)).publicRoutes) return "forbidden";
+    return apps.size === 0 || input.route.audience === "owner-data" ? "deliver" : "forbidden";
+  }
   const resources = new Map<string, { type: string; id: string }>();
   for (const read of input.reads) {
     let ref: { type: string; id: string } | null = read.kind === "target" ? read.ref : null;
     if (read.kind === "reader") {
       const type = (await factsOf(appOf(read.capability))).readers[read.capability];
-      // A Query that is no type's reader reads no named resource; Code's handler checks own data (09.11.).
+      // A Query that is no type's reader reads no named resource; the route's handler checks such data (09.11.).
       if (type) ref = { type, id: read.id };
     }
     if (ref) resources.set(JSON.stringify([ref.type, ref.id]), ref);
   }
   if (resources.size === 0) return "deliver";
-  if (input.route.public) {
-    for (const ref of resources.values()) if ((await factsOf(appOf(ref.type))).noPublicRoutes.includes(ref.type)) return "forbidden";
-    return input.route.audience === "owner-data" ? "deliver" : "forbidden";
-  }
   if (input.route.audience === "owner-data") return "deliver";
   const visitor = input.visitor;
   if (!visitor) return "forbidden";

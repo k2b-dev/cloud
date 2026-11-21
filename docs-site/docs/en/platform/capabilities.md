@@ -581,12 +581,13 @@ existence check. `pages` maps those owner Types to their shared Code page:
 a path on this Cloud that contains `{id}`; a pattern starting with `//` is
 refused.
 The manifest publishes only `owners`, optional `pages` and optional
-`noPublicRoutes`. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+`publicRoutes`. See [Code lifecycle](/en/docs/platform/code-lifecycle).
 
-`code: { noPublicRoutes: ["base"] }` names local Types whose resources a public
-Code route never reads, not even with `audience: "owner-data"`. The checker
-refuses such a version and Core refuses such an answer. An app without Code
-owners may declare it alone; `owners` then stays empty. See
+`code: { publicRoutes: false }` keeps the app's data off public Code routes: a
+public route never calls one of its Queries, not even with
+`audience: "owner-data"`. The checker refuses such a version and Core refuses
+such an answer. An app without Code owners may declare it alone; `owners` then
+stays empty. See
 [Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
 
 Activation creates a version entry and switches versions. It never grants

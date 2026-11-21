@@ -815,8 +815,8 @@ const ingestTarget = async (input: z.infer<typeof IngestWriteInputSchema>, conte
 export const pulseCapabilities = defineCapabilities({
   protocolVersion: 2,
   presentation: pulseCapabilityPresentation,
-  // G1: base data never reaches a page without sign-in, not even with audience "owner-data".
-  code: { noPublicRoutes: ["base", "dashboard", "source"] },
+  // G1: Pulse data never reaches a page without sign-in, not even with audience "owner-data".
+  code: { publicRoutes: false },
   types: {
     dashboard: {
       title: "Pulse Dashboard",

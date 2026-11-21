@@ -85,7 +85,11 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
       .filter((entry) => entry.route)
       .map((entry) => ({
         key: `page:${stable(entry.route)}`,
-        ...(entry.route?.public ? { policyRow: "public_routes" as const } : {}),
+        ...(entry.route?.public
+          ? { policyRow: "public_routes" as const }
+          : entry.route?.audience === "owner-data"
+            ? { policyRow: "owner_data" as const }
+            : {}),
         text: `${t.page({ audience: entry.route?.public ? t.public : t.members })}${entry.route?.audience === "owner-data" ? ` · ${t.ownerData}` : ""} · ${entry.route?.method} ${entry.route?.path}`,
       })),
     ...(manifest.database ? [{ key: "database", text: t.database }] : []),

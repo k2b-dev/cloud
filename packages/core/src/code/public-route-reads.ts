@@ -6,54 +6,56 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      refused: ({ type }: { type: string }) =>
-        `A public route cannot read ${type}. Its app keeps this data off pages without sign-in, also with audience "owner-data". Serve the page to members instead.`,
+      app: ({ operation }: { operation: string }) =>
+        `A public route cannot call ${operation}. Its app keeps its data off pages without sign-in, also with audience "owner-data". Serve the page to members instead.`,
+      ownerData: ({ operation }: { operation: string }) =>
+        `A public route that calls ${operation} shows data read with the owner's rights to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.`,
     },
     de: {
-      refused: ({ type }) =>
-        `Eine öffentliche Route kann ${type} nicht lesen. Die App hält diese Daten von Seiten ohne Anmeldung fern, auch mit audience "owner-data". Stelle die Seite stattdessen für Mitglieder bereit.`,
+      app: ({ operation }) =>
+        `Eine öffentliche Route kann ${operation} nicht aufrufen. Die App hält ihre Daten von Seiten ohne Anmeldung fern, auch mit audience "owner-data". Stelle die Seite stattdessen für Mitglieder bereit.`,
+      ownerData: ({ operation }) =>
+        `Eine öffentliche Route, die ${operation} aufruft, zeigt allen Daten mit den Rechten des Besitzers. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.`,
     },
   },
 });
 
+/** The Code's own database and files belong to the Code, not to an app. */
+const isCodeOwnData = (operation: string) => operation === "db.query" || operation.startsWith("core.code.file.");
+
 /**
- * G1 for the checker: a public route never reads a type its app declares in `code.noPublicRoutes`, through a Query's
- * target or ref, or by calling the type's reader. A call the checker could not place in an entrypoint counts for every
- * public route. One diagnostic per refused call; an empty list means the version may be submitted.
+ * G1 for the checker, in step with hosting: a public route has no visitor who could read anything, so every Query it
+ * calls needs `audience: "owner-data"`, and a Query of an app with `code.publicRoutes: false` is refused even then.
+ * A call the checker could not place in an entrypoint counts for every public route. One diagnostic per refused
+ * call; an empty list means the version may be submitted.
  */
 export function publicRouteReadRefusals(
   manifest: Pick<CodeVersionManifest, "entrypoints">,
   permissions: readonly CodePermission[],
-  catalogs: ReadonlyMap<string, Pick<CapabilityManifest, "appId" | "types" | "queries" | "code"> | null | undefined>,
+  catalogs: ReadonlyMap<string, Pick<CapabilityManifest, "appId" | "queries" | "code"> | null | undefined>,
   locale: string | undefined,
 ): CodeCheckDiagnostic[] {
-  const publicRoutes = new Set(manifest.entrypoints.filter((entry) => entry.route?.public).map((entry) => entry.entrypoint));
+  const publicRoutes = new Map(
+    manifest.entrypoints.flatMap((entry) =>
+      entry.route?.public ? [[entry.entrypoint, entry.route.audience === "owner-data"] as const] : [],
+    ),
+  );
   if (publicRoutes.size === 0) return [];
   const { t } = messages.resolve(locale ? [locale] : []);
   const diagnostics: CodeCheckDiagnostic[] = [];
   for (const permission of permissions) {
-    if (permission.entrypoints && !permission.entrypoints.some((entry) => publicRoutes.has(entry))) continue;
+    const routes = permission.entrypoints ? permission.entrypoints.filter((entry) => publicRoutes.has(entry)) : [...publicRoutes.keys()];
+    if (routes.length === 0 || isCodeOwnData(permission.operation)) continue;
     const appId = permission.operation.split(".")[0]!;
-    const localId = permission.operation.slice(appId.length + 1);
-    const operationApp = catalogs.get(appId);
-    if (!operationApp?.queries.some((query) => query.localId === localId)) continue;
-    const readType = permission.target
-      ? permission.target.type
-      : (() => {
-          const type = operationApp.types.find((candidate) => candidate.reader === localId);
-          return type ? `${appId}.${type.localId}` : null;
-        })();
-    if (!readType) continue;
-    const typeAppId = readType.split(".")[0]!;
-    const typeApp = catalogs.get(typeAppId);
-    if (!typeApp?.code?.noPublicRoutes?.includes(readType.slice(typeAppId.length + 1))) continue;
-    diagnostics.push({
-      code: "code_public_route_private_data",
-      message: t.refused({ type: readType }),
-      file: permission.file,
-      line: permission.line,
-      column: 1,
-    });
+    const app = catalogs.get(appId);
+    if (!app?.queries.some((query) => query.localId === permission.operation.slice(appId.length + 1))) continue;
+    const message =
+      app.code?.publicRoutes === false
+        ? t.app({ operation: permission.operation })
+        : routes.some((entry) => !publicRoutes.get(entry))
+          ? t.ownerData({ operation: permission.operation })
+          : null;
+    if (message) diagnostics.push({ code: "code_public_route_reads", message, file: permission.file, line: permission.line, column: 1 });
   }
   return diagnostics;
 }

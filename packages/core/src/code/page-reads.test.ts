@@ -16,10 +16,16 @@ afterEach(() => {
 });
 
 /** One provider "pulse" with a base type read by base.read; sql.run is no reader. */
-function provider(answer: (id: string) => "ok" | "FORBIDDEN" | "NOT_FOUND" | "UNAVAILABLE", noPublicRoutes = ["pulse.base"]) {
+function provider(answer: (id: string) => "ok" | "FORBIDDEN" | "NOT_FOUND" | "UNAVAILABLE", pulseOnPublicRoutes = false) {
   const asked: { capabilityId: string; id: string; authority: unknown }[] = [];
-  const facts = spyOn(capabilities, "getCapabilityCodeReadFacts").mockImplementation(async (appId) =>
-    appId === "pulse" ? { readers: { "pulse.base.read": "pulse.base" }, typeReaders: { "pulse.base": "base.read" }, noPublicRoutes } : null,
+  type Facts = Awaited<ReturnType<typeof capabilities.getCapabilityCodeReadFacts>>;
+  const facts = spyOn(capabilities, "getCapabilityCodeReadFacts").mockImplementation(
+    async (appId): Promise<Facts> =>
+      appId === "pulse"
+        ? { readers: { "pulse.base.read": "pulse.base" }, typeReaders: { "pulse.base": "base.read" }, publicRoutes: pulseOnPublicRoutes }
+        : appId === "grids"
+          ? { readers: {}, typeReaders: {}, publicRoutes: true }
+          : null,
   );
   const invoke = spyOn(capabilities, "invokeCapabilityWithDataSchema").mockImplementation((async (
     body: { capabilityId: string; input: { id: string } },
@@ -75,20 +81,39 @@ test("an unavailable reader or registry is an error, never a delivery", async ()
   provider(() => "UNAVAILABLE");
   await expect(check([base("A")], { public: false })).rejects.toBeInstanceOf(CodeRouteReadsUnavailable);
   provider(() => "ok");
-  await expect(check([{ kind: "target", ref: { type: "grids.base", id: "G" } }], { public: false })).rejects.toBeInstanceOf(
+  await expect(check([{ kind: "target", ref: { type: "unknown.thing", id: "G" } }], { public: false })).rejects.toBeInstanceOf(
     CodeRouteReadsUnavailable,
   );
 });
 
-test("owner-data turns the check off on member routes, but never lets a no-public type onto a public route", async () => {
+test("owner-data turns the check off on member routes without asking any reader", async () => {
   const asked = provider(() => "FORBIDDEN");
   expect(await check([base("A")], { public: false, audience: "owner-data" })).toBe("deliver");
   expect(asked).toEqual([]);
-  expect(await check([base("A")], { public: true, audience: "owner-data" }, null)).toBe("forbidden");
-  provider(() => "FORBIDDEN", []);
-  expect(await check([base("A")], { public: true, audience: "owner-data" }, null)).toBe("deliver");
-  // Without owner-data, a public route has no visitor who could read anything.
-  expect(await check([base("A")], { public: true }, null)).toBe("forbidden");
+});
+
+test("a public route needs owner-data for any app Query, and never calls an app that keeps its data off public routes", async () => {
+  const asked = provider(() => "ok");
+  const pulseList: CodeRouteRead = { kind: "query", capability: "pulse.base.list" };
+  const gridsList: CodeRouteRead = { kind: "query", capability: "grids.table.list" };
+  // Lists and searches carry no resource, so the query itself decides on a public route.
+  expect(await check([pulseList], { public: true, audience: "owner-data" }, null)).toBe("forbidden");
+  expect(await check([gridsList], { public: true }, null)).toBe("forbidden");
+  expect(await check([gridsList], { public: true, audience: "owner-data" }, null)).toBe("deliver");
+  // The Code's own database and files are no app data.
+  expect(
+    await check(
+      [
+        { kind: "query", capability: "db.query" },
+        { kind: "query", capability: "core.code.file.read" },
+      ],
+      { public: true },
+      null,
+    ),
+  ).toBe("deliver");
+  provider(() => "ok", true);
+  expect(await check([pulseList, base("A")], { public: true, audience: "owner-data" }, null)).toBe("deliver");
+  expect(asked).toEqual([]);
 });
 
 test("a member route without a visitor authority is refused", async () => {

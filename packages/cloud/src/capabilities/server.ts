@@ -70,15 +70,15 @@ export const getCapabilityCatalogApp = async (
 };
 
 /**
- * Live registry facts for the read check of Code route hosting (G1): which Query reads which resource type, and which
- * types the app never lets a public Code route read. No presentation, no authority; `null` for an unknown app.
+ * Live registry facts for the read check of Code route hosting (G1): which Query reads which resource type, and
+ * whether the app keeps its data off public Code routes. No presentation, no authority; `null` for an unknown app.
  */
 export const getCapabilityCodeReadFacts = async (
   appId: string,
 ): Promise<{
   readers: Readonly<Record<string, string>>;
   typeReaders: Readonly<Record<string, string>>;
-  noPublicRoutes: readonly string[];
+  publicRoutes: boolean;
 } | null> => {
   const capability = await getCapability(appId);
   if (!capability) return null;
@@ -90,7 +90,7 @@ export const getCapabilityCodeReadFacts = async (
     readers[`${appId}.${type.reader}`] ??= `${appId}.${type.localId}`;
     typeReaders[`${appId}.${type.localId}`] = type.reader;
   }
-  return { readers, typeReaders, noPublicRoutes: (capability.manifest.code?.noPublicRoutes ?? []).map((type) => `${appId}.${type}`) };
+  return { readers, typeReaders, publicRoutes: capability.manifest.code?.publicRoutes !== false };
 };
 
 /**

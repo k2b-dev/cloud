@@ -57,7 +57,7 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
     await database?.drop();
   });
 
-  test("succeeded Queries name their targets, refs and reader ids once; writes, failures and other runs do not count", async () => {
+  test("succeeded Queries name themselves, their targets, refs and reader ids once; writes, failures and other runs do not count", async () => {
     const base = { type: "pulse.base", id: "Base01" };
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 1" }, "succeeded");
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 2" }, "succeeded");
@@ -79,6 +79,10 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
         { kind: "target", ref: { type: "grids.table", id: "T1" } },
         { kind: "target", ref: { type: "grids.view", id: "V1" } },
         { kind: "reader", capability: "pulse.source.read", id: "Src001" },
+        { kind: "query", capability: "pulse.base.sql.run" },
+        { kind: "query", capability: "grids.row.list" },
+        { kind: "query", capability: "pulse.source.read" },
+        { kind: "query", capability: "pulse.base.list" },
       ]
         .map((read) => JSON.stringify(read))
         .sort(),

@@ -635,18 +635,24 @@ script gets `403 { "code": "code_page_access_denied" }`. If a reader does not
 answer, the visitor gets the error page with **Try again** and a script gets
 `503 { "code": "code_page_access_unavailable" }`. The page never names the
 resource. Actions are writes and stay outside the check, so a form may still
-write to a resource that its visitors cannot read. Data that the route reads
-without a resource, such as a list of the owner's bases or the Code's own
-database, stays the handler's job: check `c.user` as shown above.
+write to a resource that its visitors cannot read.
+
+On a member route, Cloud checks only these named resources. Data that a Query
+reads without a target, ref or type reader stays the handler's job: lists and
+searches, app-wide reads such as a message body by its ID, and data the Code
+stored earlier in its own database. Check `c.user` as shown above, and prefer
+an app's target form where it offers one.
 
 `{ audience: "owner-data" }` on a route turns the check off on purpose:
 everyone who opens the route sees what the Code read with its owner's rights.
-The manifest records it, and the administrators see it in the approval review.
+The manifest records it with the `owner_data` policy classification, which
+needs administrator approval by default; the administrators see it in the
+approval review.
 A public route has no visitor who could read anything, so a public route that
-reads a resource needs `owner-data`. An app can keep a type off public routes
-entirely with `code.noPublicRoutes`; the checker then refuses such a version,
-and Cloud refuses the answer. Pulse does this for bases, sources and
-dashboards.
+calls any app Query, a list or search included, needs `owner-data`. The Code's
+own database and files do not count. An app can keep its data off public routes
+entirely with `code.publicRoutes: false`; the checker then refuses such a
+version, and Cloud refuses the answer. Pulse does this.
 
 ```ts
 // Every signed-in member sees this report, including people without access to the base.

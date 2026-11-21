@@ -5,11 +5,11 @@ export type CapabilityCodeDefinition = {
   owners?: readonly string[];
   pages?: Readonly<Record<string, string>>;
   /**
-   * Local types whose resources a public Code route never reads, not even with `audience: "owner-data"`. The checker
-   * refuses such a version and Core refuses such a response, so data of these types never reaches a visitor without
-   * an account.
+   * `false`: a public Code route never calls a Query of this app, not even with `audience: "owner-data"`. The checker
+   * refuses such a version and Core refuses such an answer, so the app's data never reaches a visitor without an
+   * account.
    */
-  noPublicRoutes?: readonly string[];
+  publicRoutes?: false;
 };
 
 export const CapabilityCodeManifestSchema = z
@@ -25,7 +25,7 @@ export const CapabilityCodeManifestSchema = z
           .regex(/^\/(?!\/)[^\\\u0000-\u001f\u007f]*\{id\}[^\\\u0000-\u001f\u007f]*$/),
       )
       .optional(),
-    noPublicRoutes: z.array(z.string().min(1).max(100)).max(200).optional(),
+    publicRoutes: z.literal(false).optional(),
   })
   .strict();
 export type CapabilityCodeManifest = z.infer<typeof CapabilityCodeManifestSchema>;

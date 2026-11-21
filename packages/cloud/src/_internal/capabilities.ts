@@ -1314,7 +1314,7 @@ export const compileCapabilities = (
           code: {
             owners: [...(definitions.code?.owners ?? [])].sort(),
             ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
-            ...(definitions.code?.noPublicRoutes ? { noPublicRoutes: [...definitions.code.noPublicRoutes].sort() } : {}),
+            ...(definitions.code?.publicRoutes === false ? { publicRoutes: false as const } : {}),
           },
         }
       : {}),

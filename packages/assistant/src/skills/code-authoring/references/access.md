@@ -52,10 +52,10 @@ visitor who may read every resource the route read (a Query's target or ref,
 or a type reader such as `pulse.base.read`). Others see **No access**. Write
 `{ audience: "owner-data" }` on a route only when every member should see
 the owner's data; say so to the person, because the administrators see it in
-the review. A public route that reads a resource needs `owner-data`, and some
-types, such as Pulse bases, never appear on public routes. Data without a
-resource, such as lists or the Code's own database, still needs the checks
-below.
+the review. A public route that calls any app Query needs `owner-data`, and
+some apps, such as Pulse, never appear on public routes. On member routes,
+data without a named resource, such as lists, searches or the Code's own
+database, still needs the checks below.
 
 <!-- check: resource mail.mailbox -->
 ```tsx

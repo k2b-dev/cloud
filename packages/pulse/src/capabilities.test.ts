@@ -49,7 +49,7 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "schema.read",
   ] as const)
     expect(pulseCapabilities.queries[id].target).toBe("base");
-  expect(pulseCapabilities.code?.noPublicRoutes).toEqual(["base", "dashboard", "source"]);
+  expect(pulseCapabilities.code?.publicRoutes).toBe(false);
   expect(Object.keys(pulseCapabilities.actions).sort()).toEqual([
     "alert.delete",
     "alert.save",
