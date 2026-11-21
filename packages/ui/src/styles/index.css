@@ -5757,10 +5757,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* One line, one owner: the dialog draws the hairline between its bands
-   (header, tabs, body, footer), as `k2b-divided` does; no band draws its own,
-   so two lines never meet. A sheet's grip is no band. Over a picture the
-   header floats as glass chips and there are no lines. */
-.k2b-ui .k2b-panel-dialog:not([data-media]) > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {
+   (header, tabs, content, footer), as `k2b-divided` does, also where an app
+   wraps them in an element of its own; no band draws its own, so two lines
+   never meet. A sheet's grip is no band. Over a picture the header floats as
+   glass chips and there are no lines. */
+.k2b-ui
+  .k2b-panel-dialog:not([data-media])
+  :is(.k2b-panel-dialog__header, .k2b-panel-dialog__tabs, .k2b-panel-dialog__body, .k2b-panel-dialog__footer):not([hidden])
+  ~ :is(.k2b-panel-dialog__tabs, .k2b-panel-dialog__body, .k2b-panel-dialog__footer):not([hidden]) {
   border-block-start: 1px solid var(--k2b-border);
 }
 
@@ -7703,7 +7707,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* K2, K16, one line one owner: the menu draws one hairline from edge to edge
    above every section that is not its first child; rows and sections draw
    none, so no line meets the menu's own edge. */
-.k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section {
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section,
+.k2b-ui .k2b-context-menu > .k2b-context-menu__title + :not([hidden]) {
   border-block-start: 1px solid var(--k2b-border);
 }
 

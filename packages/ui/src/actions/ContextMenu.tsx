@@ -3,7 +3,7 @@ import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { inheritUiScope } from "../internal/portal-scope";
 import { useUiMessages } from "../intl/messages";
-import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition, preloadSubmenus } from "./Dropdown";
+import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
 import { focusRowSegment } from "./menu-rows";
 
 export type ContextMenuProps = {
@@ -194,7 +194,6 @@ export function ContextMenuBase(
   });
 
   onMount(() => {
-    preloadSubmenus(props.items);
     onCleanup(() => {
       detachOpenListeners();
       if (closeActiveContextMenu === close) closeActiveContextMenu = undefined;

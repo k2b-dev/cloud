@@ -403,7 +403,7 @@
   overflow-y: auto;
 }
 
-/* A custom body that brings its own panel (head, body, foot) owns its bands. */
+/* A custom body that brings its own panel (head, content, foot) owns its bands. */
 .k2b-ui .k2b-dialog__content:has(> .k2b-dialog__panel) {
   padding: 0;
 }
@@ -589,9 +589,12 @@
 }
 
 /* One line, one owner: the panel draws the hairline between its bands (head,
- * body, foot), as `k2b-divided` does; no band draws its own, so two lines
- * never meet. A sheet's grip is no band and draws none. */
-.k2b-ui .k2b-dialog__panel > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {
+ * content, foot), as `k2b-divided` does, also where they are wrapped; no band
+ * draws its own, so two lines never meet. */
+.k2b-ui
+  .k2b-dialog__panel
+  :is(.k2b-dialog__header, .k2b-dialog__body, .k2b-dialog__content, .k2b-zoom-pan):not([hidden])
+  ~ :is(.k2b-dialog__body, .k2b-dialog__content, .k2b-dialog__actions, .k2b-zoom-pan-dialog):not([hidden]) {
   border-block-start: 1px solid var(--k2b-border);
 }
 

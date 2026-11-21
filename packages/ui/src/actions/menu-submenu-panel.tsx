@@ -1,26 +1,13 @@
-import {
-  type Accessor,
-  createEffect,
-  createRoot,
-  createSignal,
-  createUniqueId,
-  type JSX,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-  useContext,
-} from "solid-js";
+import { type Accessor, createEffect, createRoot, createSignal, createUniqueId, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { inheritUiScope } from "../internal/portal-scope";
-import {
-  type DropdownAction,
-  type DropdownChoice,
-  type DropdownItem,
+import type {
+  DropdownAction,
+  DropdownChoice,
+  DropdownItem,
   DropdownItems,
-  type DropdownSubmenu,
+  DropdownSubmenu,
   itemContent,
-  MenuContext,
-  type MenuContextValue,
+  MenuContextValue,
 } from "./Dropdown";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 
@@ -130,6 +117,7 @@ const levelOf = (menu: MenuContextValue, row: HTMLElement): MenuLevel => {
   };
   const set = (next: HTMLElement | undefined) => {
     clear();
+    hovered = undefined;
     setOpen(() => next);
   };
   const level: MenuLevel = { open, set, hold };
@@ -154,8 +142,13 @@ const levelOf = (menu: MenuContextValue, row: HTMLElement): MenuLevel => {
     const towards = Boolean(panel && before && inCorridor(before, last, panel.getBoundingClientRect()));
     timer = setTimeout(() => setOpen(() => entry as HTMLElement), towards ? CORRIDOR_DELAY : DELAY);
   });
+  // Leaving the menu, or the menu closing, ends anything pending; a closed menu keeps no submenu open.
   host?.addEventListener("pointerleave", () => {
+    clear();
     hovered = undefined;
+  });
+  host?.addEventListener("toggle", (event) => {
+    if ((event as ToggleEvent).newState === "closed") set(undefined);
   });
   host?.addEventListener("focusin", (event) => {
     const entry = rowOf(event.target);
@@ -176,9 +169,10 @@ function SubmenuPanel(props: {
   depth: number;
   close: (restoreFocus?: boolean) => void;
   level: MenuLevel;
-  /** Changes whenever the keyboard asks for the first entry. */
-  focus: () => number;
+  /** Whether the keyboard opened it, so its first entry takes the focus. */
+  focusFirst: boolean;
   hide: () => void;
+  Items: typeof DropdownItems;
 }): JSX.Element {
   let panel!: HTMLDivElement;
   const rtl = () => getComputedStyle(props.row).direction === "rtl";
@@ -224,13 +218,9 @@ function SubmenuPanel(props: {
     window.removeEventListener("scroll", closed, true);
     // Closed by the pointer resting elsewhere or by a resize, with the keyboard inside: the focus goes back to its row
     // rather than to the page.
-    if (panel.contains(document.activeElement) && props.row.isConnected) props.row.focus();
+    // Another row's submenu opening takes the focus to that row instead, so the move does not close it again.
+    if (panel.contains(document.activeElement)) (props.level.open() ?? props.row).focus();
   });
-  createEffect(
-    on(props.focus, (request) => {
-      if (request) queueMicrotask(() => focusMenuRow(ownEntries(panel), "Home"));
-    }),
-  );
   return (
     <div
       ref={(element) => {
@@ -240,6 +230,7 @@ function SubmenuPanel(props: {
           if (!element.isConnected) return;
           if (typeof element.showPopover === "function") element.showPopover();
           place();
+          if (props.focusFirst) focusMenuRow(ownEntries(element), "Home");
         });
       }}
       id={`${props.id}-menu`}
@@ -252,29 +243,30 @@ function SubmenuPanel(props: {
       onPointerEnter={() => props.level.hold()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <DropdownItems items={props.items} close={props.close} depth={props.depth} />
+      <props.Items items={props.items} close={props.close} depth={props.depth} />
     </div>
   );
 }
 
 /** A row with "▸" that opens its submenu beside it, or in a phone sheet in the sheet's place (K16). */
-export function SubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
-  const menu = useContext(MenuContext);
-  if (!menu) throw new Error("A submenu row must be inside a menu");
+export function SubmenuRow(props: {
+  item: DropdownSubmenu;
+  /** The level's menu: handed in, so this module needs nothing of the menu's code at run time. */
+  menu: MenuContextValue;
+  Items: typeof DropdownItems;
+  content: typeof itemContent;
+}): JSX.Element {
+  const menu = props.menu;
   // A list box cannot open a menu: there the entries stand under the row's name, as a section's do.
   if (menu.role === "option")
     return (
-      <DropdownItems
-        items={[{ sectionLabel: props.item.label, items: flatEntries(props.item.submenu) }]}
-        close={menu.close}
-        role="option"
-      />
+      <props.Items items={[{ sectionLabel: props.item.label, items: flatEntries(props.item.submenu) }]} close={menu.close} role="option" />
     );
   const id = `k2b-submenu-${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   // A fourth level is not offered (K16): its row stays, but cannot open.
   const disabled = () => Boolean(props.item.disabled) || menu.depth >= MAX_DEPTH;
-  const [focus, setFocus] = createSignal(0);
   const [level, setLevel] = createSignal<MenuLevel>();
+  let focusFirst = false;
   const open = () => level()?.open() === row;
   let row!: HTMLButtonElement;
   onMount(() => {
@@ -283,7 +275,10 @@ export function SubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
   const show = (moveFocus: boolean) => {
     if (disabled()) return;
     if (menu.drill) return menu.drill(props.item, row);
-    if (moveFocus) setFocus((request) => request + 1);
+    focusFirst = moveFocus;
+    // Already open: the keyboard goes into it now.
+    const panel = document.getElementById(`${id}-menu`);
+    if (panel && moveFocus) focusMenuRow(ownEntries(panel), "Home");
     level()?.set(row);
   };
   const onRowKey = (event: KeyboardEvent) => {
@@ -297,6 +292,7 @@ export function SubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
     <div role="none" class="k2b-dropdown__subgroup">
       <button
         ref={row}
+        id={id}
         type="button"
         role={menu.role}
         tabIndex={-1}
@@ -318,7 +314,7 @@ export function SubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
           show(event.detail === 0);
         }}
       >
-        {itemContent({ ...props.item, children: props.item.label })}
+        {props.content({ ...props.item, children: props.item.label })}
         <i class="ti ti-chevron-right k2b-dropdown__more" aria-hidden="true" />
       </button>
       <Show when={open() && level()}>
@@ -331,7 +327,8 @@ export function SubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
             depth={menu.depth + 1}
             close={menu.close}
             level={current()}
-            focus={focus}
+            focusFirst={focusFirst}
+            Items={props.Items}
             hide={() => {
               current().set(undefined);
               row.focus();

@@ -4,6 +4,8 @@
  */
 export const DIALOG_LIFT = "--k2b-dialog-lift";
 
+const lifted = new WeakSet<HTMLElement>();
+
 /** The least room a lifted frame keeps above it, as the frame's own budget keeps at the viewport's edge. */
 const EDGE = 8;
 
@@ -25,6 +27,16 @@ export const keepDialogFoot = (footer: HTMLElement | undefined, before: number |
   const lift = (Number.parseFloat(frame.style.getPropertyValue(DIALOG_LIFT)) || 0) + shift;
   if (Math.abs(lift) < 0.5) return void frame.style.removeProperty(DIALOG_LIFT);
   frame.style.setProperty(DIALOG_LIFT, `${Math.round(lift)}px`);
-  // A new window size centers the frame again, so a lift never pushes its header off a smaller screen.
-  window.addEventListener("resize", () => frame.style.removeProperty(DIALOG_LIFT), { once: true });
+  // A new window size centers the frame again, so a lift never pushes its header off a smaller screen. One listener
+  // per lifted frame, gone with the next resize.
+  if (lifted.has(frame)) return;
+  lifted.add(frame);
+  window.addEventListener(
+    "resize",
+    () => {
+      lifted.delete(frame);
+      frame.style.removeProperty(DIALOG_LIFT);
+    },
+    { once: true },
+  );
 };

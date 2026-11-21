@@ -43,7 +43,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
     // One line, one owner: the dialog draws the line between its bands; the header draws none.
     expect(header).not.toMatch(/border(-(top|bottom|block[-a-z]*))?:/);
     expect(indexCss).toContain(
-      ".k2b-ui .k2b-panel-dialog:not([data-media]) > :not([hidden], .k2b-bottom-sheet__handle) ~ :not([hidden]) {\n  border-block-start: 1px solid var(--k2b-border);",
+      "~ :is(.k2b-panel-dialog__tabs, .k2b-panel-dialog__body, .k2b-panel-dialog__footer):not([hidden]) {\n  border-block-start: 1px solid var(--k2b-border);",
     );
     expect(header).not.toContain("background");
     // K11: a title in a head is 14 px.

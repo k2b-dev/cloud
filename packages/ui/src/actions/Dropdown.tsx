@@ -277,11 +277,11 @@ type DropdownContextValue = {
   triggerKeyDown: JSX.EventHandlerUnion<HTMLButtonElement, KeyboardEvent>;
 };
 
-export const MenuContext = createContext<MenuContextValue>();
+const MenuContext = createContext<MenuContextValue>();
 const DropdownContext = createContext<DropdownContextValue>();
 
-/** Internal: the entries of one menu level that take focus. */
-export const menuEntries = (menu: HTMLElement | undefined): HTMLElement[] =>
+/** The entries of one menu level that take focus. */
+const menuEntries = (menu: HTMLElement | undefined): HTMLElement[] =>
   menu
     ? Array.from(
         menu.querySelectorAll<HTMLElement>(
@@ -525,8 +525,12 @@ export function DropdownItems(props: {
     if ("choice" in initial) return <DropdownChoiceItem {...mergeProps(() => item() as DropdownChoice)} />;
     if ("submenu" in initial) {
       const submenu = () => item() as DropdownSubmenu;
-      preloadSubmenus([submenu()]);
-      return <Show when={submenuRow()}>{(Row) => <Dynamic component={Row()} item={submenu()} />}</Show>;
+      loadSubmenus();
+      return (
+        <Show when={submenuRow()}>
+          {(Row) => <Dynamic component={Row()} item={submenu()} menu={context} Items={DropdownItems} content={itemContent} />}
+        </Show>
+      );
     }
     const action = () => item() as DropdownAction;
     return (
@@ -605,7 +609,8 @@ export function DropdownItems(props: {
 }
 
 /** A row's key names its kind too: an entry that turns from an action into a submenu row is built anew. */
-const rowKey = (item: DropdownAction | DropdownChoice) => `${"submenu" in item ? "submenu" : "item"}:${item.label}`;
+const rowKey = (item: DropdownAction | DropdownChoice) =>
+  `${"submenu" in item ? "submenu" : "choice" in item ? "choice" : "item"}:${item.label}`;
 
 type SubmenuRowModule = typeof import("./menu-submenu-panel");
 /**
@@ -615,14 +620,9 @@ type SubmenuRowModule = typeof import("./menu-submenu-panel");
  */
 const [submenuRow, setSubmenuRow] = createRoot(() => createSignal<SubmenuRowModule["SubmenuRow"]>());
 let submenuLoad: Promise<unknown> | undefined;
-/** Internal: starts loading the submenu code when `items` hold a submenu, such as when their menu mounts. */
-export const preloadSubmenus = (items: readonly DropdownItem[]): void => {
-  if (
-    isServer ||
-    submenuLoad ||
-    !items.some((item) => "submenu" in item || ("items" in item && item.items.some((entry) => "submenu" in entry)))
-  )
-    return;
+/** Starts loading the submenu code, once, as the first submenu row renders. */
+const loadSubmenus = (): void => {
+  if (isServer || submenuLoad) return;
   submenuLoad = import("./menu-submenu-panel").then(
     (module) => setSubmenuRow(() => module.SubmenuRow),
     (error: unknown) => {
@@ -980,7 +980,6 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
   });
   onMount(() => {
     mounted = true;
-    preloadSubmenus(props.items);
     if (props.open) open(false);
     onCleanup(detachViewportListeners);
     const adopted = props.attach?.();
