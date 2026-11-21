@@ -1917,6 +1917,7 @@ export class AiTurnExecutor {
           authoringBudget.noteToolCall(call);
           turnPolicy.noteToolCall(call);
         },
+        stoppedWithNotice: () => Boolean(authoringBudget?.stopped() || authoringBudget?.automationStopped()),
         failureReason,
         rejectedToolCallIds,
         unavailablePlaceToolNames,
@@ -1990,6 +1991,11 @@ export class AiTurnExecutor {
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
+    /**
+     * The turn's safety budget stopped it: its empty closing message carries the pause, which the chat shows as a
+     * notice. Such an ending is visible, so it never counts as one without any answer.
+     */
+    stoppedWithNotice?: () => boolean;
     /**
      * Why the turn would fail now, as a model call or the turn's own checks said. A new model call starts without one,
      * so a context overflow that compaction resolved never names a later failure. Only the model calls and checks set
@@ -2133,6 +2139,7 @@ export class AiTurnExecutor {
             !stoppedAfterFailure &&
             lastResponse !== undefined &&
             !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== "")) &&
+            !input.stoppedWithNotice?.() &&
             leavesNothingToShow(pipeline.blocks);
           const doneReason = stoppedAfterFailure || stoppedWithoutAnswer ? "error" : event.reason;
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);

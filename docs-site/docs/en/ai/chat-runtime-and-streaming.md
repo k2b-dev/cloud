@@ -1108,7 +1108,8 @@ rejected approvals do not count as failures. Worker recovery restores this
 state from the latest stored assistant round, including repaired malformed
 calls. A later text answer still completes the turn. A loop that ends normally
 also fails with `provider_stopped` when its final response has no text and no
-tool call and the whole turn shows no text, result, or action. The stored
+tool call and the whole turn shows no text, result, or action. A pause from
+the turn's safety budget is a visible ending and keeps the turn completed. The stored
 status, the completion line in a chat that delegated the work, and `cld` then
 report a failure, not a success that nobody can read.
 

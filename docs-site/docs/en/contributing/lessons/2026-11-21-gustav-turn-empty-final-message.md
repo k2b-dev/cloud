@@ -10,5 +10,7 @@
 - **Error class:** A silent ending is detected where it is rendered, not where the turn is finalized. As a result,
   each reader of the stored outcome reports a success that did not happen.
 - **Guard:** The executor applies the chat's rule for a silent ending to the whole turn: no text, no result, and no
-  Cloud action. Such a turn fails with `provider_stopped` and its localized sentence. `executor.test.ts` checks an
-  empty stop after a successful step, and a text written before the step that stays the answer.
+  Cloud action. Such a turn fails with `provider_stopped` and its localized sentence. A pause from the safety budget
+  writes an empty closing message on purpose, and the chat shows it as a notice, so it is not counted as silent.
+  `executor.test.ts` checks an empty stop after a successful step, and a text written before the step that stays the
+  answer.
