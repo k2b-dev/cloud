@@ -107,20 +107,20 @@ export function Area(props: AreaProps): JSX.Element {
           <Show when={open() && local.actions}>
             <div class="k2b-area__actions">{local.actions}</div>
           </Show>
-          <Show when={local.collapsible}>
-            <IconButton
-              size="sm"
-              variant="ghost"
-              class="k2b-area__chevron"
-              label={open() ? t().hideArea({ name: local.name }) : t().showArea({ name: local.name })}
-              aria-expanded={open()}
-              aria-controls={`${id}-body`}
-              onClick={toggle}
-            >
-              <i class={open() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
-            </IconButton>
-          </Show>
         </div>
+        <Show when={local.collapsible}>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            class="k2b-area__chevron"
+            label={open() ? t().hideArea({ name: local.name }) : t().showArea({ name: local.name })}
+            aria-expanded={open()}
+            aria-controls={`${id}-body`}
+            onClick={toggle}
+          >
+            <i class={open() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+          </IconButton>
+        </Show>
         <Show when={open() && local.meta}>
           <div class="k2b-area__meta">{local.meta}</div>
         </Show>
