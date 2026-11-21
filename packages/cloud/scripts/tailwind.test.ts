@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { BunPlugin, OnLoadResult, PluginBuilder } from "bun";
+import tailwind from "bun-plugin-tailwind";
 import { compile } from "tailwindcss";
 import { wrapTailwindPlugin } from "./tailwind";
 
@@ -225,6 +226,23 @@ ${shape === "nested" ? `    & {\n      ${declaration}\n    }` : `    ${declarati
     const results: OnLoadResult[] = [];
     await buildCss(observe(wrapTailwindPlugin(cssPlugin(source)), results));
     expect(results).toEqual([{ loader: "css", contents: source }]);
+  });
+
+  test("point an app's transition utilities at the shared theme's defaults (#3921)", async () => {
+    // An app's stylesheet in its usual shape: Tailwind utilities without Cloud's theme.
+    const utilities = Bun.resolveSync("tailwindcss/utilities.css", import.meta.dir);
+    const source = `@import ${JSON.stringify(utilities)} layer(utilities) source(none);\n@source inline("transition transition-colors");\n`;
+    const css = normalize(await buildCss(wrapTailwindPlugin(tailwind), source));
+    // It loads after the shared stylesheet and wins there, so it must not end transitions at once.
+    expect(css).not.toContain("var(--tw-duration, 0s)");
+    expect(css).not.toContain("var(--tw-ease, ease)");
+    for (const selector of [".transition {", ".transition-colors {"]) {
+      const rule = css.slice(css.indexOf(selector), css.indexOf("}", css.indexOf(selector)));
+      expect(rule).toContain("transition-duration: var(--tw-duration, var(--default-transition-duration, .15s));");
+      expect(rule).toContain(
+        "transition-timing-function: var(--tw-ease, var(--default-transition-timing-function, cubic-bezier(.4, 0, .2, 1)));",
+      );
+    }
   });
 
   test("forward build properties, hooks, setup results, and declined loads", async () => {
