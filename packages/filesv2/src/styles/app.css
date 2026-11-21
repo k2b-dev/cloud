@@ -118,7 +118,7 @@
   min-height: 0;
   overflow: hidden;
 }
-/* "Scrollbar moves nothing": the list reserves its scrollbar's room, so head and rows keep their lines. */
+/* "Scrollbar moves nothing": the ScrollArea reserves its scrollbar's room, so head and rows keep their lines. */
 .filesv2-browser__scroll {
   display: flex;
   flex-direction: column;
@@ -128,13 +128,6 @@
 }
 .filesv2-browser__collection .k2b-file-grid {
   padding: var(--k2b-space-3) var(--k2b-gutter);
-}
-.filesv2-selection-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  min-height: 1.75rem;
 }
 .filesv2-browser__pagination {
   display: flex;
@@ -470,7 +463,8 @@
   }
   .filesv2-list__row {
     display: grid;
-    grid-template-columns: auto 1.75rem auto minmax(0, 1fr) auto;
+    /* The sign's column grows with a tree level, so a nested folder keeps its indent. */
+    grid-template-columns: auto calc(1.75rem + var(--depth, 0) * 1.25rem) auto minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
     align-content: center;
     min-height: var(--k2b-h-row-phone);
@@ -563,9 +557,9 @@
     display: none;
   }
 }
-/* Head (K6): the path, then search, sort and filter, the view segment and New. The path's wrapper adds no box. */
-.filesv2-path {
-  display: contents;
+/* Head (K6): the path, then search, sort and filter, the view segment and New. */
+.filesv2-view-switch-place {
+  display: inline-flex;
 }
 .k2b-ui .filesv2-search {
   flex: 0 0 14.5rem;
@@ -578,9 +572,18 @@
     width: 20rem;
   }
 }
-@container k2b-app-area (max-width: 47.999rem) {
+/* K6, K15: the head stays one 56 px row; the search field narrows before the path gives way (path keeps 18 rem). */
+@container k2b-head (width < 54rem) {
+  .k2b-ui .filesv2-search {
+    flex-basis: 10rem;
+    width: 10rem;
+  }
+}
+@container k2b-head (width < 44rem) {
   .k2b-ui .filesv2-search {
     flex-basis: 7.5rem;
+    width: 7.5rem;
+    min-width: 0;
   }
 }
 /* The view segment shows its signs only (its names are for screen readers), so each option is a square. */

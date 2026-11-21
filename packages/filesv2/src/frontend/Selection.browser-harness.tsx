@@ -53,20 +53,20 @@ render(() => {
             </AppWorkspace.SidebarBody>
           </AppWorkspace.SidebarDesktop>
         </AppWorkspace.Sidebar>
-          {directory() && (
-            <Browser
-              directory={directory()!}
-              bases={[base]}
-              source="/app/filesv2"
-              uploads={uploads}
-              selectionHint={new URLSearchParams(location.search).has("hint")}
-              onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
-              onChanged={async () => {
-                setDirectory(await listing());
-              }}
-              onNavigate={async () => {}}
-            />
-          )}
+        {directory() && (
+          <Browser
+            directory={directory()!}
+            bases={[base]}
+            source="/app/filesv2"
+            uploads={uploads}
+            selectionHint={new URLSearchParams(location.search).has("hint")}
+            onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
+            onChanged={async () => {
+              setDirectory(await listing());
+            }}
+            onNavigate={async () => {}}
+          />
+        )}
       </AppWorkspace>
     </LocaleProvider>
   );

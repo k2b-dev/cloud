@@ -61,7 +61,6 @@ import {
   viewFor,
   withView,
 } from "./browser-preferences";
-import { SELECTION_ACTIONS_HINT } from "./hints";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileOperationView, type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
@@ -71,6 +70,7 @@ import { IssueMessage } from "./feedback";
 import { fileLightboxItem } from "./file-lightbox";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
+import { SELECTION_ACTIONS_HINT } from "./hints";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
@@ -1768,23 +1768,16 @@ export default function Browser(props: {
     if (focused) selection.focus(focused);
   };
 
-  /** The path from the storage to this folder; every level but the last leads to its folder. */
-  const pathItems = () => {
-    const parts = folder().split("/").filter(Boolean);
-    return [
-      { label: baseLabel(props.directory.base, b(), locale()), href: parts.length ? filesUrl(baseId()) : undefined },
-      ...parts.map((part, index) => ({
-        label: part,
-        href: index < parts.length - 1 ? filesUrl(baseId(), parts.slice(0, index + 1).join("/")) : undefined,
-      })),
-    ];
-  };
-  const pathClick = (event: MouseEvent) => {
-    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-    if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    props.onOpenDirectory?.(new URL(link.href).searchParams.get("path") ?? "");
-  };
+  /** The path from the storage to this folder; every level but the last opens its folder. */
+  const pathItems = () => [
+    { label: baseLabel(props.directory.base, b(), locale()) },
+    ...folder()
+      .split("/")
+      .filter(Boolean)
+      .map((part) => ({ label: part })),
+  ];
+  /** The folder at a level of the path: 0 is the storage itself. */
+  const pathAt = (index: number) => folder().split("/").filter(Boolean).slice(0, index).join("/");
   const folderCount = () => props.directory.items.filter((entry) => entry.directory).length;
   /** The current order in words, such as "Folders first, Name", for the chip in the status row. */
   const sortSummary = () =>
@@ -1896,10 +1889,8 @@ export default function Browser(props: {
       {/* K6: the head shows the folder's path, never tabs; the ways to show the folder are a segment at its end. */}
       <AppWorkspace.Head
         views={
-          // The path's links move in place like every other folder link here, so uploads keep running.
-          <span class="filesv2-path" onClick={pathClick}>
-            <Breadcrumbs label={b().path} items={pathItems()} />
-          </span>
+          // Every level opens in place like every other folder here, so uploads keep running.
+          <Breadcrumbs label={b().path} items={pathItems()} onSelect={(index) => props.onOpenDirectory?.(pathAt(index))} />
         }
         actions={
           <>
@@ -1922,7 +1913,8 @@ export default function Browser(props: {
             <Show when={search()} fallback={browseChip(true)}>
               {(current) => searchSortChip(current())}
             </Show>
-            <Show when={!searching()}>
+            {/* While searching the switch has no meaning; it keeps its place, so the search field does not move. */}
+            <span class="filesv2-view-switch-place" classList={{ invisible: searching() }} inert={searching() || undefined}>
               <SegmentedControl
                 label={b().view}
                 size="sm"
@@ -1936,10 +1928,10 @@ export default function Browser(props: {
                 ]}
                 onValueChange={(value) => updateView({ view: value })}
               />
-            </Show>
+            </span>
           </>
         }
-        primary={canCreate() && !searching() ? { label: b().newItem, icon: "ti ti-plus", popup: "menu", onClick: openAddMenu } : undefined}
+        primary={canCreate() ? { label: b().newItem, icon: "ti ti-plus", popup: "menu", onClick: openAddMenu } : undefined}
       />
       <AppWorkspace.Content>
         <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
@@ -1975,13 +1967,13 @@ export default function Browser(props: {
               }}
             />
             {/* The head's "New" opens this menu beside itself; on a phone it is a sheet. */}
-            <Dropdown items={addItems()} label={b().add} align="end" phone="sheet" openAt={(open) => (openAdd = open)} />
+            <Dropdown items={addItems()} label={b().newItem} align="end" phone="sheet" openAt={(open) => (openAdd = open)} />
             {/* K6: the status row says what is here; a selection shows its count and its actions in the same place. */}
             <StatusRow
               class="filesv2-toolbar"
               lead={
                 <span class="filesv2-status-lead" data-pending={props.pendingSearch ? "true" : undefined}>
-                  <span class="filesv2-status-lead__count">
+                  <span class="filesv2-status-lead__count" role={searching() ? "status" : undefined}>
                     {searching()
                       ? !props.directory.failure && searchCount()
                       : props.directory.next || props.after
@@ -2095,6 +2087,9 @@ export default function Browser(props: {
                   </Show>
                 </>
               }
+              line={view().view === "grid"}
+              // A screen reader hears the count as it changes, as before in the selection's own status line.
+              announcement={selecting() ? b().selectedActions(selectedPaths().length) : undefined}
               selection={
                 selecting()
                   ? {
@@ -2527,11 +2522,11 @@ export default function Browser(props: {
               onCopy={(item) => void moveOrCopy([item], true)}
               onTrash={(item) => void trashItems([item])}
               onShare={props.onShare ? (item) => props.onShare?.([item.path]) : undefined}
-            extraMenu={(item) =>
-              !searching() && canCreate() && isPdf(item)
-                ? [{ label: b().pdfExtract, icon: "ti ti-files", disabled: busy(), action: () => void extractPages([item]) }]
-                : []
-            }
+              extraMenu={(item) =>
+                !searching() && canCreate() && isPdf(item)
+                  ? [{ label: b().pdfExtract, icon: "ti ti-files", disabled: busy(), action: () => void extractPages([item]) }]
+                  : []
+              }
               onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
               onChanged={refresh}
               onMarksChanged={props.onMarksChanged}

@@ -522,9 +522,9 @@ describe("Files folder is flat (K1–K15)", () => {
       ignore:
         ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target, .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-breadcrumbs__more, .k2b-section__header",
     });
-  for (const [device, options, width] of [
-    ["desktop", desktop, 1440],
-    ["phone", phone, 390],
+  for (const [options, width] of [
+    [desktop, 1440],
+    [phone, 390],
   ] as const)
     for (const [amount, items] of [
       ["few", few],
