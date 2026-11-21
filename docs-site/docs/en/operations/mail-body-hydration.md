@@ -5,7 +5,7 @@ section: Operations
 order: 1196
 description: Distinguish body queue wait, provider contention, and delayed message discovery.
 tags: [mail, operations, synchronization]
-updated: 2026-11-01
+updated: 2026-11-21
 ---
 
 # Diagnose delayed Mail content
@@ -47,6 +47,12 @@ A body that has already failed or returned no source waits for a subsequent
 scheduled pass instead of retrying continuously. A message has at most five
 hydration attempts. The minute scheduler remains the recovery path for those
 message failures; it is not required to wake newly imported messages.
+
+No mailbox uses JMAP yet; only tests call the JMAP path. For a JMAP account,
+Mail streams each message source from the server into the same parser and
+takes the same turns, priorities, and five attempts. Two JMAP messages with
+identical sources stay two messages: Mail may store the source once, but it
+never merges them into one message as it can for two IMAP copies.
 
 ## Separate discovery from body delay
 

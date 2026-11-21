@@ -41,6 +41,12 @@ const log = logger("mail:hydration");
 // Hydration stops retrying at this attempt count; a permanent failure jumps to it.
 const MAX_HYDRATION_ATTEMPTS = 5;
 
+/**
+ * The code of a JMAP body download that its own lease or job stopped. Hydration restores the claim
+ * it held, as for a changed mailbox transport, so the stop uses no attempt of the message.
+ */
+export const JMAP_HYDRATION_INTERRUPTED = "JMAP_HYDRATION_INTERRUPTED";
+
 /** A message whose hydration failed for good; its envelope still decides the work status. */
 export const isTerminalHydrationFailure = (message: {
   hydrationStatus: Bun.SQL.Query<unknown>;
@@ -64,6 +70,7 @@ type MessageIdentityProjection = {
   id: string;
   conversation_id: string | null;
   override_conversation_id: string | null;
+  jmap: boolean;
 };
 
 type VerifiedConversationProjection = {
@@ -385,6 +392,13 @@ const mergeVerifiedDuplicate = async (params: {
      AND candidate.source_hash = ${params.sourceHash}
      AND candidate.hydration_status = 'complete'
     WHERE current_message.id = ${params.messageId}::uuid
+      -- Two JMAP Email IDs stay two messages, even with the same source: no merge into or out of a
+      -- message with a JMAP reference, a stale one included. The projection below checks again
+      -- once the candidates are locked.
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.remote_message_refs ref
+        WHERE ref.message_id IN (current_message.id, candidate.id) AND ref.remote_id IS NOT NULL
+      )
     ORDER BY EXISTS (
       SELECT 1 FROM mail.conversation_thread_overrides thread_override WHERE thread_override.message_id = candidate.id
     ) DESC, candidate.created_at, candidate.id
@@ -410,7 +424,10 @@ const mergeVerifiedDuplicate = async (params: {
     SELECT
       message.id,
       link.conversation_id,
-      thread_override.conversation_id AS override_conversation_id
+      thread_override.conversation_id AS override_conversation_id,
+      EXISTS (
+        SELECT 1 FROM mail.remote_message_refs ref WHERE ref.message_id = message.id AND ref.remote_id IS NOT NULL
+      ) AS jmap
     FROM mail.message_contents message
     LEFT JOIN mail.conversation_messages link ON link.message_id = message.id
     LEFT JOIN mail.conversation_thread_overrides thread_override ON thread_override.message_id = message.id
@@ -418,15 +435,20 @@ const mergeVerifiedDuplicate = async (params: {
   `;
   const current = projections.find((projection) => projection.id === params.messageId);
   if (!current) return { canonicalMessageId: null, duplicateFound: true };
+  // A JMAP reference that a concurrent writer added before the locks above keeps both messages
+  // apart, as a normal hydration. Without one, every candidate stays and the result is as before.
+  if (current.jmap) return { canonicalMessageId: null, duplicateFound: false };
+  const candidates = canonicalIdentities
+    .map((candidate) => projections.find((projection) => projection.id === candidate.id))
+    .filter((candidate) => !candidate?.jmap);
+  if (candidates.length === 0) return { canonicalMessageId: null, duplicateFound: false };
 
   const currentConversationId = current.override_conversation_id ?? current.conversation_id;
-  const canonical = canonicalIdentities
-    .map((candidate) => projections.find((projection) => projection.id === candidate.id))
-    .find((candidate) => {
-      if (!candidate) return false;
-      const candidateConversationId = candidate.override_conversation_id ?? candidate.conversation_id;
-      return !currentConversationId || !candidateConversationId || currentConversationId === candidateConversationId;
-    });
+  const canonical = candidates.find((candidate) => {
+    if (!candidate) return false;
+    const candidateConversationId = candidate.override_conversation_id ?? candidate.conversation_id;
+    return !currentConversationId || !candidateConversationId || currentConversationId === candidateConversationId;
+  });
   if (!canonical) return { canonicalMessageId: null, duplicateFound: true };
 
   if (current.override_conversation_id && !canonical.override_conversation_id) {
@@ -1145,8 +1167,9 @@ export const hydrateMessageFromSource = async (params: {
   } catch (error) {
     error = sourceError ?? error;
     params.source.destroy();
-    const transportChanged = normalizeErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED";
-    if (transportChanged) {
+    // A changed transport, or a JMAP download its own lease or job stopped, leaves the message as it was.
+    const restored = ["MAILBOX_TRANSPORT_CHANGED", JMAP_HYDRATION_INTERRUPTED].includes(normalizeErrorCode(error));
+    if (restored) {
       await sql`
         UPDATE mail.message_contents
         SET

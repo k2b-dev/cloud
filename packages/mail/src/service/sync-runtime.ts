@@ -22,6 +22,8 @@ import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, FlagChange, ProjectionEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { closeReusableImapSessions } from "./connectors/imap-smtp";
+import { readJmapEmailBlobs } from "./connectors/jmap";
+import type { JmapTransportDependencies } from "./connectors/jmap-transport";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isAutomaticSubmission } from "./conversation-work-state";
 import { databaseErrorCode, databaseErrorConstraint, databaseErrorFacts, isPermanentDataError } from "./database-errors";
@@ -46,13 +48,20 @@ import {
   recordHydrationLeaseWait,
   requestMailboxHydration,
 } from "./hydration-work";
+import { loadJmapAccountAccess } from "./jmap-account-access";
+import { classifyJmapSourceFailure, hydrateJmapSource } from "./jmap-hydration";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
 import { deleteUnusedMailboxLogoVersions } from "./mailbox-logos";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
-import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
+import {
+  hydrateMessageFromSource,
+  JMAP_HYDRATION_INTERRUPTED,
+  recordMissingMessageSources,
+  releaseExpiredHydrationClaims,
+} from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { hasReplySubjectPrefix, normalizeMailSubject, REPLY_SUBJECT_PREFIX_PATTERN } from "./message-threading";
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
@@ -3291,13 +3300,31 @@ type HydrationTarget = {
   mailbox_id: string;
   folder_id: string;
   remote_resource_id: string;
+  /** A JMAP reference: the batch loads sources for the whole account by Email ID, not by UID. */
+  jmap: boolean;
 };
 
-type HydrationBatch = { hydrated: boolean; settled: number; stopped: boolean; missingFromUid: number | null; targetError: unknown };
+type HydrationBatch = {
+  hydrated: boolean;
+  settled: number;
+  stopped: boolean;
+  missingFromUid: number | null;
+  targetError: unknown;
+  /** The JMAP provider lacked a source; only an account delta can show whether the Email is gone. */
+  accountDeltaRequired?: boolean;
+};
 
 const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | "unsupported" | null> => {
-  const [target] = await sql<(HydrationTarget & { remote_id: string | null })[]>`
-    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id, rmr.remote_id
+  // A JMAP reference is fetchable while its folder is readable through the resource's active
+  // binding; it has no UIDVALIDITY. IMAP references come first, as before, and never run the check.
+  const [target] = await sql<(Omit<HydrationTarget, "jmap"> & { remote_id: string | null; jmap_ready: boolean })[]>`
+    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id, rmr.remote_id,
+      CASE WHEN rmr.remote_id IS NULL THEN false ELSE EXISTS (
+        SELECT 1
+        FROM mail.binding_folder_refs bfr
+        JOIN mail.provider_bindings binding ON binding.id = bfr.binding_id AND binding.state = 'active'
+        WHERE bfr.folder_id = rmr.folder_id AND bfr.remote_folder_id IS NOT NULL AND 'read' = ANY(bfr.effective_rights)
+      ) END AS jmap_ready
     FROM mail.message_contents mc
     JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
     JOIN mail.folders f
@@ -3312,28 +3339,39 @@ const requestedHydrationTarget = async (messageId: string): Promise<HydrationTar
     WHERE mc.id = ${messageId}::uuid
       AND mc.hydration_status <> 'complete'
       AND mc.hydration_attempt < 5
-    ORDER BY (rmr.uid_validity IS NOT NULL) DESC, f.role = 'inbox' DESC, rmr.last_seen_at DESC
+    ORDER BY (rmr.uid_validity IS NOT NULL) DESC, jmap_ready DESC, f.role = 'inbox' DESC, rmr.last_seen_at DESC
     LIMIT 1
   `;
-  return target?.remote_id != null ? "unsupported" : (target ?? null);
+  if (!target) return null;
+  if (target.remote_id !== null && !target.jmap_ready) return "unsupported";
+  return {
+    id: target.id,
+    hydration_attempt: target.hydration_attempt,
+    mailbox_id: target.mailbox_id,
+    folder_id: target.folder_id,
+    remote_resource_id: target.remote_resource_id,
+    jmap: target.remote_id !== null,
+  };
 };
 
 /**
  * The newest body of the mailbox that a batch can fetch: a fresh one, or with `retry` one that
  * was already tried and failed or came back without a source. The folder must be readable
  * through the mailbox's binding at the reference's UIDVALIDITY, as the batch requires, so a
- * body no batch can fetch never becomes the mailbox's target.
+ * body no batch can fetch never becomes the mailbox's target. A JMAP reference has no
+ * UIDVALIDITY; its folder must be readable through the resource's active binding.
  *
  * One index probe per hydration status keeps this cheap for any backlog; the status condition
  * repeats the predicate of `message_contents_hydration_queue_idx` so Postgres can use it.
  */
 const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<HydrationTarget | null> => {
   const [target] = await sql<HydrationTarget[]>`
-    SELECT newest.id, newest.hydration_attempt, newest.mailbox_id, newest.folder_id, newest.remote_resource_id
+    SELECT newest.id, newest.hydration_attempt, newest.mailbox_id, newest.folder_id, newest.remote_resource_id, newest.jmap
     FROM mail.mailboxes mailbox
     CROSS JOIN unnest(ARRAY['envelope', 'headers', 'body', 'failed']::text[]) AS status(value)
     CROSS JOIN LATERAL (
-      SELECT mc.id, mc.hydration_attempt, mc.internal_date, mc.mailbox_id, rmr.folder_id, f.remote_resource_id
+      SELECT mc.id, mc.hydration_attempt, mc.internal_date, mc.mailbox_id, rmr.folder_id, f.remote_resource_id,
+        rmr.remote_id IS NOT NULL AS jmap
       FROM mail.message_contents mc
       JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
       JOIN mail.folders f
@@ -3351,7 +3389,10 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
           FROM mail.binding_folder_refs bfr
           JOIN mail.provider_bindings binding ON binding.id = bfr.binding_id AND binding.state IN ('active', 'degraded')
           WHERE bfr.folder_id = rmr.folder_id
-            AND bfr.uid_validity = rmr.uid_validity
+            AND (
+              bfr.uid_validity = rmr.uid_validity
+              OR (rmr.remote_id IS NOT NULL AND bfr.remote_folder_id IS NOT NULL AND binding.state = 'active')
+            )
             AND 'read' = ANY(bfr.effective_rights)
         )
       ORDER BY mc.internal_date DESC, mc.id, f.role = 'inbox' DESC, rmr.last_seen_at DESC
@@ -3371,9 +3412,181 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
 const nextMailboxHydrationTarget = async (mailboxId: string, retry = true): Promise<HydrationTarget | null> =>
   (await newestPendingBody(mailboxId, false)) ?? (retry ? await newestPendingBody(mailboxId, true) : null);
 
+// A failure before a source reached the parser holds no claim and uses no attempt. A rate limit
+// waits for its Retry-After like an IMAP throttle; any other failure ends the batch, which runs
+// again with the next turn.
+const stopJmapBatch = (error: unknown): never => {
+  const failure = classifyJmapSourceFailure(error, Date.now());
+  if (failure.kind === "rate_limited") {
+    throw Object.assign(new Error("JMAP provider rate limited body downloads"), {
+      code: "MAIL_RATE_LIMITED",
+      retryAfterMs: failure.retryAfterMs,
+    });
+  }
+  throw error;
+};
+
+/**
+ * One JMAP source batch under the hydration lease. It takes the account's pending bodies by Email
+ * ID, each Email once whatever its folders, and asks for their blob IDs, which live only in this
+ * batch. Sources stream one by one into the same parser as IMAP sources. A missing source counts
+ * an attempt and asks for an account delta; other failures before the parser count none.
+ */
+const hydrateJmapSourceBatch = async (params: {
+  input: HydrationInput;
+  message: HydrationTarget;
+  turn: Parameters<typeof providerLeaseWaitedFor>[0];
+  signal: AbortSignal;
+  assertJobLeaseActive: () => Promise<void>;
+  assertProviderLeaseActive: () => Promise<void>;
+  setActiveClaim: (claim: { messageId: string; claimId: string } | null) => void;
+  transport?: JmapTransportDependencies;
+}): Promise<HydrationBatch> => {
+  const { message, signal } = params;
+  const none: HydrationBatch = { hydrated: false, settled: 0, stopped: false, missingFromUid: null, targetError: null };
+  const transportFence = await loadMailboxTransportFence(message.remote_resource_id);
+  if (!transportFence) {
+    throw Object.assign(new Error("Mailbox transport changed before hydration"), { code: "MAILBOX_TRANSPORT_CHANGED" });
+  }
+  await waitForMailProviderSlot(message.remote_resource_id, signal);
+  const loaded = await loadJmapAccountAccess({ remoteResourceId: message.remote_resource_id, signal, transport: params.transport }).catch(
+    stopJmapBatch,
+  );
+  // An account that cannot run now keeps its bodies as they are.
+  if (loaded.status !== "ready") return none;
+  const { access } = loaded;
+  const takesRetries = "messageId" in params.input || message.hydration_attempt > 0;
+  // The order and filters of the IMAP batch, for the whole account. One readable reference per
+  // message gives its Email ID, so a message in several folders is fetched once.
+  const candidates = await sql<{ id: string; email_id: string; size_bytes: string | number }[]>`
+    SELECT mc.id, ref.email_id, mc.size_bytes
+    FROM mail.message_contents mc
+    CROSS JOIN LATERAL (
+      SELECT rmr.remote_id AS email_id
+      FROM mail.remote_message_refs rmr
+      JOIN mail.folders f
+        ON f.id = rmr.folder_id
+       AND f.remote_resource_id = ${message.remote_resource_id}::uuid
+       AND f.selected_for_sync = true
+       AND f.discovery_state = 'active'
+       AND f.sync_status <> 'excluded'
+      JOIN mail.binding_folder_refs bfr
+        ON bfr.folder_id = rmr.folder_id
+       AND bfr.binding_id = ${access.bindingId}::uuid
+       AND bfr.remote_folder_id IS NOT NULL
+       AND 'read' = ANY(bfr.effective_rights)
+      WHERE rmr.message_id = mc.id AND rmr.stale_at IS NULL AND rmr.remote_id IS NOT NULL
+      ORDER BY rmr.remote_id
+      LIMIT 1
+    ) ref
+    WHERE mc.mailbox_id = ${message.mailbox_id}::uuid
+      AND mc.hydration_status <> 'complete'
+      AND mc.hydration_attempt < 5
+      AND (
+        mc.hydration_status <> 'hydrating'
+        OR mc.hydration_claimed_at < now() - interval '15 minutes'
+      )
+      AND (mc.hydration_attempt = 0 OR ${takesRetries})
+    ORDER BY (mc.id = ${message.id}::uuid) DESC, mc.hydration_attempt > 0, mc.internal_date DESC, mc.id DESC
+    LIMIT ${HYDRATION_BATCH_SIZE}
+  `;
+  // One message per Email ID; a second one would be an identity conflict, which ingest reports.
+  const byEmail = new Map<string, (typeof candidates)[number]>();
+  for (const candidate of candidates) if (!byEmail.has(candidate.email_id)) byEmail.set(candidate.email_id, candidate);
+  if (byEmail.size === 0) return none;
+
+  let hydrated = false;
+  let targetError: unknown = null;
+  let stopped = false;
+  const settled = new Set<string>();
+  const missing: string[] = [];
+  await params.assertProviderLeaseActive();
+  await assertMailboxTransportFence(transportFence);
+  try {
+    const sources = await readJmapEmailBlobs(
+      access.session,
+      access.authorization,
+      access.accountId,
+      [...byEmail.keys()],
+      signal,
+      params.transport,
+    ).catch(stopJmapBatch);
+    for (const emailId of sources.notFoundIds) {
+      const candidate = byEmail.get(emailId);
+      if (candidate) missing.push(candidate.id);
+    }
+    const blobs = new Map(sources.objects.map((source) => [source.id, source]));
+    for (const candidate of byEmail.values()) {
+      const blob = blobs.get(candidate.email_id);
+      if (!blob) continue;
+      await params.assertJobLeaseActive();
+      await params.assertProviderLeaseActive();
+      await assertMailboxTransportFence(transportFence);
+      const claimId = randomUUID();
+      params.setActiveClaim({ messageId: candidate.id, claimId });
+      const outcome = await hydrateJmapSource({
+        session: access.session,
+        authorization: access.authorization,
+        accountId: access.accountId,
+        messageId: candidate.id,
+        blobId: blob.blobId,
+        size: blob.size,
+        sizeBytes: Number(candidate.size_bytes),
+        claimId,
+        transportFence,
+        signal,
+        transport: params.transport,
+      }).finally(() => params.setActiveClaim(null));
+      if (outcome.kind === "hydrated") {
+        if (outcome.result.status !== "already_complete") settled.add(outcome.result.canonicalMessageId ?? candidate.id);
+        hydrated = true;
+        await params.assertProviderLeaseActive();
+        await assertMailboxTransportFence(transportFence);
+      } else if (outcome.kind === "failed") {
+        const code = normalizeSyncErrorCode(outcome.error);
+        // The claim was restored or the turn is gone: the rest of the batch waits for the next turn.
+        if (["SYNC_LEASE_LOST", "SYNC_JOB_LEASE_LOST", "MAILBOX_TRANSPORT_CHANGED", JMAP_HYDRATION_INTERRUPTED].includes(code)) {
+          throw outcome.error;
+        }
+        if (code !== "HYDRATION_NOT_CLAIMED") {
+          settled.add(candidate.id);
+          log.warn("Mail message hydration failed within a JMAP source batch", {
+            messageId: candidate.id,
+            code,
+            ...databaseErrorFacts(outcome.error),
+          });
+          if (candidate.id === message.id && "messageId" in params.input) targetError = outcome.error;
+        }
+      } else if (classifyJmapSourceFailure(outcome.error, Date.now()).kind === "missing") {
+        missing.push(candidate.id);
+      } else {
+        stopJmapBatch(outcome.error);
+      }
+      // A folder sync or command ahead of this batch's place waits for this body only.
+      if (await providerLeaseWaitedFor(params.turn, { yieldToForeground: true })) {
+        stopped = true;
+        break;
+      }
+    }
+    // The provider answered, unlike a batch that found no body to fetch.
+    await recordProviderReachable(message.remote_resource_id);
+    if (missing.length > 0) {
+      await params.assertProviderLeaseActive();
+      for (const messageId of await recordMissingMessageSources(missing, transportFence)) settled.add(messageId);
+    }
+  } finally {
+    await invalidateSettledConversations(message.mailbox_id, settled);
+  }
+  await params.assertProviderLeaseActive();
+  await assertMailboxTransportFence(transportFence);
+  return { hydrated, settled: settled.size, stopped, missingFromUid: null, targetError, accountDeltaRequired: missing.length > 0 };
+};
+
 export const hydrateMessageBatch = async (
   ctx: Pick<JobContext<HydrationInput>, "input" | "heartbeat" | "resubmit">,
-): Promise<{ hydrated: boolean }> => {
+  /** The JMAP fixture's transport in tests; production uses HTTPS. */
+  options: { jmapTransport?: JmapTransportDependencies } = {},
+): Promise<{ hydrated: boolean; accountDeltaRequired?: true }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
     intervalMs: 60_000,
@@ -3443,6 +3656,20 @@ export const hydrateMessageBatch = async (
           heartbeat: () => extendSyncLease(lock, "during message hydration"),
           work: async (assertProviderLeaseActive, providerSignal) => {
             const signal = AbortSignal.any([jobSignal, providerSignal]);
+            if (message.jmap) {
+              return hydrateJmapSourceBatch({
+                input: ctx.input,
+                message,
+                turn,
+                signal,
+                assertJobLeaseActive,
+                assertProviderLeaseActive,
+                setActiveClaim: (claim) => {
+                  activeClaim = claim;
+                },
+                transport: options.jmapTransport,
+              });
+            }
             const execution = await resolveMailExecution({
               mailboxId: message.mailbox_id,
               operation: "backgroundSync",
@@ -3605,7 +3832,8 @@ export const hydrateMessageBatch = async (
       if ("mailboxId" in ctx.input && (batch.settled > 0 || batch.stopped) && (await newestPendingBody(ctx.input.mailboxId, false))) {
         ctx.resubmit({ delayMs: 0 });
       }
-      return { hydrated: batch.hydrated };
+      // The JMAP account job (Schnitt 5b) runs the delta that shows whether a missing Email is gone.
+      return batch.accountDeltaRequired ? { hydrated: batch.hydrated, accountDeltaRequired: true } : { hydrated: batch.hydrated };
     },
   });
 };
@@ -3715,12 +3943,23 @@ const stopHydrationPublisher = (): void => {
   hydrationPublisherTimer = undefined;
 };
 
+/**
+ * Publishes the mailbox's committed hydration request now, as after an IMAP folder batch. A lost
+ * publication only delays it: the hydration publisher finds the committed request.
+ */
+export const wakeMailboxHydration = async (mailboxId: string): Promise<void> => {
+  await (syncTasks.run(() => publishMailboxHydration(mailboxId)) ?? Promise.resolve());
+};
+
 /** Queues one message's body on its own, for a caller that waits for exactly that message. */
 export const enqueueMessageHydration = async (messageId: string): Promise<void> => {
   await submitHydrationJob({ messageId });
 };
 
-/** Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a synced mailbox. */
+/**
+ * Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a
+ * synced mailbox, for a JMAP copy one whose folder is readable through the active binding.
+ */
 export const canHydrateMessage = async (messageId: string): Promise<boolean> => {
   const target = await requestedHydrationTarget(messageId);
   return target !== null && target !== "unsupported";
@@ -3903,6 +4142,8 @@ let mailSchedulerWorker: Worker | undefined;
 export const submitDueHydrationWork = async (): Promise<number> => {
   // The status condition repeats the predicate of `message_contents_hydration_queue_idx`, so each
   // mailbox costs one index probe instead of a scan of every pending body in the installation.
+  // Any live reference counts: an IMAP one by UID, a JMAP one by Email ID (the address-shape check
+  // allows only these two). The mailbox's batch checks that the folder is readable.
   const mailboxes = await sql<{ id: string }[]>`
     SELECT mailbox.id
     FROM mail.mailboxes mailbox
@@ -3919,7 +4160,6 @@ export const submitDueHydrationWork = async (): Promise<number> => {
             FROM mail.remote_message_refs remote_ref
             WHERE remote_ref.message_id = mc.id
               AND remote_ref.stale_at IS NULL
-              AND remote_ref.uid_validity IS NOT NULL
           )
       )
     ORDER BY mailbox.id

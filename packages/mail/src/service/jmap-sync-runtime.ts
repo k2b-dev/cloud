@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { projectJmapFolders } from "./bindings";
 import { ENVELOPE_BATCH_SIZE } from "./connectors/contract";
@@ -26,9 +27,19 @@ import {
 import { type JmapTransportDependencies, JmapTransportError } from "./connectors/jmap-transport";
 import { keepLastKeptPlacements } from "./conversation-keep-rules";
 import { isTrashOrJunkFolder } from "./follow-up-scope";
+import { requestMailboxHydration } from "./hydration-work";
 import { enqueueMailInvalidation, mailLive } from "./live";
+import { providerErrorCode } from "./provider-errors";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
-import { claimFence, ingestEnvelope, SYNC_FOLDER_DATA_ERROR_RECHECK_MS, SYNC_FOLDER_MAX_ATTEMPTS } from "./sync-runtime";
+import {
+  claimFence,
+  ingestEnvelope,
+  SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
+  SYNC_FOLDER_MAX_ATTEMPTS,
+  wakeMailboxHydration,
+} from "./sync-runtime";
+
+const log = logger("mail:jmap-sync");
 
 type Account = {
   db?: typeof sql;
@@ -209,7 +220,10 @@ function validateBatch(params: Account & { beforeState: JmapSyncState | null; ba
   }
 }
 
-/** One reader page, no network and no hydration. The resource serializes all account writes. */
+/**
+ * One reader page, no network. The resource serializes all account writes. A page with new
+ * memberships asks for their bodies once, in the same transaction, as an IMAP folder batch does.
+ */
 export async function commitJmapAccountBatch(
   params: Account & {
     fence: Awaited<ReturnType<typeof claimFence>>;
@@ -527,13 +541,28 @@ export async function commitJmapAccountBatch(
         cursor_after = ${nextState}::jsonb, stats = ${stats}::jsonb, finished_at = now()
         WHERE id = ${fence.runId}::uuid AND state = 'running' RETURNING id`;
       if (!finished) throw new Superseded("account_changed");
+      // The request commits with the memberships, so a lost wake only waits for the publisher. A
+      // complete delta ranks its bodies with arrivals, like a finished IMAP increment; scan pages
+      // and a delta with more changes to read stay in the background.
+      const hydration = stats.memberships > 0;
+      if (hydration)
+        await requestMailboxHydration(tx, resource.mailbox_id, {
+          foreground: batch.kind === "email" && !batch.delta.hasMoreChanges,
+        });
       if (changed) await enqueueMailInvalidation(tx, { mailboxId: resource.mailbox_id });
       assertActive(params.signal);
       const hasMore = batch.kind === "email" || batch.kind === "mailbox" ? batch.delta.hasMoreChanges : nextState.scan !== null;
-      return { stats, changed, hasMore };
+      return { stats, changed, hasMore, hydration, mailboxId: resource.mailbox_id };
     });
-    // Durable rows above are sufficient if the process exits before the advisory wake.
+    // Durable rows above are sufficient if the process exits before the advisory wakes.
     if (result.changed) mailLive.wake();
+    if (result.hydration)
+      await wakeMailboxHydration(result.mailboxId).catch((error: unknown) => {
+        log.warn("Mail could not publish JMAP body hydration; the publisher retries", {
+          mailboxId: result.mailboxId,
+          code: providerErrorCode(error, "HYDRATION_PUBLISH_FAILED"),
+        });
+      });
     return { status: "committed", hasMore: result.hasMore, stats: result.stats };
   } catch (error) {
     if (error instanceof Superseded) return { status: "superseded", cause: error.reason };

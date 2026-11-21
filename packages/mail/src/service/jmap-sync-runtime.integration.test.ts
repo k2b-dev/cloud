@@ -12,10 +12,12 @@ import { fetchJmapSession, JMAP_CORE } from "./connectors/jmap-client";
 import { type JmapEmailDelta, readJmapEmailDelta, readJmapMailboxDelta } from "./connectors/jmap-delta";
 import type { JmapEmailSnapshot } from "./connectors/jmap-email";
 import { createJmapFixture, fixtureEmail, fixtureMailbox } from "./connectors/jmap-fixture";
+import * as hydrationWork from "./hydration-work";
 import { waitForBlockedCommit } from "./jmap-lock-fixture";
 import { commitJmapAccountBatch, syncJmapAccountDelta } from "./jmap-sync-runtime";
 import { mailLive } from "./live";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
+import * as syncRuntime from "./sync-runtime";
 import { claimFence } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -319,14 +321,14 @@ suite("JMAP account commit", () => {
   test("flow: one content, locator, placement, conversation, receipt and checkpoint; quiet retry has no visible writes", async () => {
     change(message("arrival"));
     expect(await run(), "flow: committed").toMatchObject({ status: "committed", hasMore: false, stats: { imported: 1 } });
-    expect(await counts(), "flow: durable projection without hydration").toEqual({
+    expect(await counts(), "flow: durable projection and one hydration request").toEqual({
       contents: 1,
       refs: 1,
       active: 1,
       conversations: 1,
       receipts: 1,
       live: 1,
-      hydration: 0,
+      hydration: 1,
     });
     expect(await state(), "flow: email axis only").toEqual({ ...initial, emailState: "Email:1" });
     const before = await placements();
@@ -947,7 +949,11 @@ suite("JMAP account commit", () => {
       observations.push(
         (async () => {
           expect(await state(), "wake: checkpoint already visible on another connection").toEqual({ ...initial, emailState: "Email:1" });
-          expect(await counts(), "wake: durable receipt/live before delivery").toMatchObject({ receipts: 1, live: 1, hydration: 0 });
+          expect(await counts(), "wake: durable receipt/live/hydration before delivery").toMatchObject({
+            receipts: 1,
+            live: 1,
+            hydration: 1,
+          });
         })(),
       );
     };
@@ -956,7 +962,47 @@ suite("JMAP account commit", () => {
     await run();
     await Promise.all(observations);
     expect(live, "wake: once").toHaveBeenCalledTimes(1);
-    expect(await counts(), "lost wakes: rows persist without publishing").toMatchObject({ receipts: 1, live: 1, hydration: 0 });
+    expect(await counts(), "lost wakes: rows persist without publishing").toMatchObject({ receipts: 1, live: 1, hydration: 1 });
+  });
+  test("hydration: new memberships ask once per batch, durably before the wake; flags, removal and quiet commits ask nothing", async () => {
+    const requests = spyOn(hydrationWork, "requestMailboxHydration");
+    const woken: Array<{ foreground: boolean | null }> = [];
+    // The wake runs after the commit; another connection already sees the request.
+    const wake = spyOn(syncRuntime, "wakeMailboxHydration").mockImplementation(async (mailboxId) => {
+      const [row] = await sql<{ foreground_requested: boolean }[]>`
+        SELECT foreground_requested FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid`;
+      woken.push({ foreground: row?.foreground_requested ?? null });
+    });
+    try {
+      // Two Emails per page: the first page has more changes to read, the second completes the delta.
+      const paged = { ...source.args, session: { ...source.args.session, core: { ...source.args.session.core, maxObjectsInGet: 2 } } };
+      for (let index = 0; index < 3; index++) change(message(`hydrate${index}`));
+      expect(await syncJmapAccountDelta(paged), "first page: two memberships").toMatchObject({
+        status: "committed",
+        hasMore: true,
+        stats: { memberships: 2 },
+      });
+      expect(await syncJmapAccountDelta(paged), "second page: one membership").toMatchObject({
+        status: "committed",
+        hasMore: false,
+        stats: { memberships: 1 },
+      });
+      expect(
+        requests.mock.calls.map((call) => call[2]),
+        "pages: once each; only the completed delta ranks with arrivals",
+      ).toEqual([{ foreground: false }, { foreground: true }]);
+      expect(woken, "pages: each wake after its durable request").toEqual([{ foreground: false }, { foreground: true }]);
+      change(message("hydrate0", { a: true }, { $seen: true }), "updated");
+      expect(await run(), "flags: committed").toMatchObject({ status: "committed", stats: { flagsUpdated: 1, memberships: 0 } });
+      source.f.journal.Email.push({ id: "hydrate1", kind: "destroyed" });
+      expect(await run(), "removal: committed").toMatchObject({ status: "committed", stats: { removed: 1, memberships: 0 } });
+      expect(await run(), "quiet: committed").toMatchObject({ status: "committed", stats: { memberships: 0 } });
+      expect(requests, "flags, removal, quiet: no request").toHaveBeenCalledTimes(2);
+      expect(wake, "flags, removal, quiet: no wake").toHaveBeenCalledTimes(2);
+    } finally {
+      requests.mockRestore();
+      wake.mockRestore();
+    }
   });
   test("DATA-13: measured statement budgets are constant for keywords/removal and linear only for new memberships", async () => {
     const meter = await meterSql();

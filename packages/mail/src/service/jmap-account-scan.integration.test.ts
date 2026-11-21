@@ -11,6 +11,7 @@ import { fetchJmapSession, JMAP_CORE } from "./connectors/jmap-client";
 import type { JmapEmailSnapshot } from "./connectors/jmap-email";
 import { createJmapFixture, fixtureEmail, fixtureMailbox } from "./connectors/jmap-fixture";
 import { type JmapScanPage, readJmapAccountStart, readJmapScanPage } from "./connectors/jmap-scan";
+import * as hydrationWork from "./hydration-work";
 import { waitForBlockedCommit } from "./jmap-lock-fixture";
 import {
   commitJmapAccountBatch,
@@ -437,7 +438,7 @@ suite("JMAP account scan", () => {
     expect((await state()).emailState, "race: the delta caught up").toBe("Email:6");
     expect(await projection(), "race: projection equals the server").toEqual(serverProjection());
     expect(await scanOf(), "race: no scan left").toBeNull();
-    expect(await counts(), "race: X, Y and Z each arrived once, through the delta").toMatchObject({ receipts: 3, hydration: 0 });
+    expect(await counts(), "race: X, Y and Z each arrived once, through the delta").toMatchObject({ receipts: 3, hydration: 1 });
     expect(
       (await runs()).filter((run) => run.state !== "completed"),
       "race: yielding steps leave no failed run",
@@ -708,6 +709,25 @@ suite("JMAP account scan", () => {
     expect(await scanOf(), "no arrival: scan complete").toBeNull();
     expect(await counts(), "no arrival: five mails, still one receipt").toMatchObject({ contents: 5, receipts: 1 });
     expect(await step(), "idle: after the verify pass").toEqual({ status: "idle" });
+  });
+
+  test("hydration: a scan page with new mail asks for its bodies in the background; start and verify ask nothing", async () => {
+    const requests = spyOn(hydrationWork, "requestMailboxHydration");
+    try {
+      put(message("BODYA", "10"));
+      put(message("BODYB", "09"));
+      await startScan();
+      expect(requests, "start: no bodies to ask for").not.toHaveBeenCalled();
+      await scanToEnd();
+      expect(await scanOf(), "scan: complete, verify pass included").toBeNull();
+      expect(
+        requests.mock.calls.map((call) => call[2]),
+        "scan: the one page with new mail asks once, in the background",
+      ).toEqual([{ foreground: false }]);
+      expect(await counts(), "scan: one durable request").toMatchObject({ contents: 2, receipts: 0, hydration: 1 });
+    } finally {
+      requests.mockRestore();
+    }
   });
 
   test("verify: a scanned mail that the server deleted without a delta entry is removed, keeping the last placement", async () => {
