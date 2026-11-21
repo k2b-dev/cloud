@@ -109,6 +109,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         "saved_queries",
         "saved_query_operations",
         "schema_migrations",
+        "source_rejections",
         "source_scrapes",
         "sources",
         "state_keys",
