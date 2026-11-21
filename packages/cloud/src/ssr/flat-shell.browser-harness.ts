@@ -50,7 +50,7 @@ const apps = [
 }));
 
 type LayoutContextArg = Parameters<typeof Layout>[0]["c"];
-const h = <P>(component: (props: P) => JSX.Element, props: P) => createComponent(component, props);
+const h = createComponent;
 const icon = (name: string) => createComponent(Dynamic, { component: "i", class: name, "aria-hidden": "true" });
 
 type Task = { id: string; title: string; space: string; due: string; who: string; state: string };
@@ -130,10 +130,7 @@ const spacesPage = (detail: boolean, c: Query) =>
                         { value: "2", label: "überfällig" },
                         { value: "3", label: "diese Woche" },
                       ],
-                      filters: [
-                        h(Button, { size: "sm", variant: "ghost", children: "Tag" }),
-                        h(Button, { size: "sm", variant: "ghost", children: "Zuständig" }),
-                      ],
+                      filters: [h(Button, { size: "sm", children: "Tag" }), h(Button, { size: "sm", children: "Zuständig" })],
                       state:
                         c.req.query("state") === "sync"
                           ? { label: "Abgleich pausiert", tone: "warning", icon: "ti ti-refresh", next: "14:05" }

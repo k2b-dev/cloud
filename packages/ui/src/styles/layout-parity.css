@@ -2368,12 +2368,13 @@ html {
     background-clip: padding-box;
   }
 
-  /* The handle after such a region sits in the middle of the space. */
+  /* The handle after such a region sits on the boundary's line at the end of the space. */
   .k2b-ui
     .k2b-app-workspace__main
     > .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region])
     + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.375rem) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.375rem);
+    /* K13: centred on the boundary's hairline, which lies at the end of the space. */
+    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
   }
 
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
@@ -2503,6 +2504,11 @@ html {
   .k2b-ui .k2b-app-workspace__head[data-row] {
     --k2b-workspace-head-line: var(--k2b-h-tabs-phone, 2.75rem);
   }
+}
+
+/* K5a: the sidebar button's icon, not its box, stands on the text edge. */
+.k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-toggle {
+  margin-inline-start: -0.5rem;
 }
 
 /* In the head, the view strip reaches the head line, so the selected view's
@@ -2657,7 +2663,8 @@ html {
   min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: none;
   max-width: 100%;
-  flex-wrap: wrap;
+  /* K15: a toolbar never wraps; a control never sits on the head line. */
+  flex-wrap: nowrap;
   margin-inline-start: auto;
   align-items: center;
   gap: 0.25rem;
@@ -2785,6 +2792,7 @@ html {
 
   /* A plain title in place of the view strip keeps the strip's inset from
      the edge that its negative margin returns. Controls bring their own. */
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > .k2b-breadcrumbs,
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > :is(span, strong, p, h1, h2, h3),
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > :is(solid-island, solid-client) > :is(span, strong, p, h1, h2, h3) {
     padding-inline-start: 1rem;
@@ -6226,7 +6234,8 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   display: flex;
   min-width: 0;
   height: 1.25rem;
-  flex: 1 1 auto;
+  /* A zero basis keeps the figures or the state on the lead statement's line; they give way inside it. */
+  flex: 1 1 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 0 1.25rem;

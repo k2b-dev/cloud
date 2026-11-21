@@ -91,7 +91,7 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
         </Show>
         <Show when={mode() === "selection" && props.selection}>
           {(selection) => (
-            <span class="k2b-status-row__fact k2b-status-row__count">
+            <span class="k2b-status-row__fact">
               <b>{messages().statusSelected({ count: selection().count })}</b>
             </span>
           )}
