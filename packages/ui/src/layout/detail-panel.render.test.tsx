@@ -99,10 +99,7 @@ describe("DetailPanel", () => {
         actions: "Close",
       }),
     );
-    const actions = html.slice(
-      html.indexOf('class="k2b-detail-panel__actions"'),
-      html.indexOf('class="k2b-detail-panel__lead"'),
-    );
+    const actions = html.slice(html.indexOf('class="k2b-detail-panel__actions"'), html.indexOf('class="k2b-detail-panel__lead"'));
     expect(actions).toMatch(/aria-label="More actions".*ti-dots.*Close/s);
     const lead = html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'));
     expect(lead).toContain("Mark as done");

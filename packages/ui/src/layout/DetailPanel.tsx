@@ -211,9 +211,7 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
             </div>
           </Show>
           <Show when={props.primaryActions}>
-            <div class="k2b-detail-panel__primary-actions">
-              {props.primaryActions}
-            </div>
+            <div class="k2b-detail-panel__primary-actions">{props.primaryActions}</div>
           </Show>
         </div>
       </Show>
