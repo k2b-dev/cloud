@@ -63,7 +63,8 @@ render(() => createComponent(LocaleProvider, { locale: window.LOCALE || "en", ge
     },
   }));
   // One line, one owner: the board draws the lines between columns, each list the lines between its cards.
-  const columns = document.createElement("div"); columns.className = "board k2b-divided-inline";
+  // A board scrolls its columns sideways on purpose; it says so to the layout self-check.
+  const columns = document.createElement("div"); columns.className = "board k2b-divided-inline"; columns.dataset.layoutCheck = "scroll-x";
   for (const column of ["open", "doing", "done"]) {
     const section = document.createElement("section"); section.className = "column"; section.dataset.sortableColumn = ""; section.dataset.column = column;
     const head = document.createElement("div"); head.className = "head"; head.dataset.sortableColumnHead = ""; head.textContent = NAMES[column];

@@ -116,10 +116,10 @@ const toolbar = `<div data-probe="toolbar" role="toolbar" aria-label="Format" st
   ${Array.from({ length: 12 }, (_, index) => `<button type="button" style="flex:none;width:36px">${index + 1}</button>`).join("")}
 </div>`;
 describe(`scroll containers in ${browserName}`, () => {
-  test("390 px: a scroller that opts in and a toolbar on a phone pass", async () => {
+  test("390 px: a scroller that opts in, a code block, and a toolbar on a phone pass", async () => {
     const result = await check(
       390,
-      `<div data-layout-check="scroll-x" style="width:200px;overflow-x:auto"><div style="width:400px">Chips in a row</div></div>${toolbar}`,
+      `<div data-layout-check="scroll-x" style="width:200px;overflow-x:auto"><div style="width:400px">Chips in a row</div></div>${toolbar}<pre style="width:200px;overflow-x:auto;margin:0">claude mcp add --transport http cloud https://cloud.example.test/mcp</pre>`,
     );
     expect(result.problems).toEqual([]);
   });

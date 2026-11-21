@@ -22,7 +22,8 @@
  * covers; a review checks those. A box whose children overlap on purpose (an avatar stack) is listed in `ignore`, or
  * carries `data-layout-check="skip"`. A touch hit area (an empty, invisible, positioned `::before` or `::after` that
  * reaches past a small control) is no spill and no cut; it needs no exception. A scroller that is meant to scroll
- * sideways says so with `data-layout-check="scroll-x"`; a toolbar (`role="toolbar"`) may scroll below 768 px (K15).
+ * sideways says so with `data-layout-check="scroll-x"`; a code block (`pre`) keeps its lines and may scroll, and a
+ * toolbar (`role="toolbar"`) may scroll below 768 px (K15).
  *
  * Run page tests with classic scrollbars, as on most desktops: headless Chromium hides them unless it is launched with
  * `ignoreDefaultArgs: ["--hide-scrollbars"]`. Only then does a scrollbar take its width, and a column that is a few
@@ -127,8 +128,11 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
   // A sideways scroller is a finding unless it says it scrolls on purpose, or it is a toolbar on a phone (K15: only there
   // does a toolbar scroll). A box with only `overflow-y: auto` computes `overflow-x` to auto too, so a scroll area whose
   // content is a few pixels too wide counts here as well.
+  // A code block (`pre`) keeps its lines and scrolls them sideways on purpose.
   const scrollsOnPurpose = (box: HTMLElement) =>
-    box.getAttribute("data-layout-check") === "scroll-x" || (box.getAttribute("role") === "toolbar" && window.innerWidth < 768);
+    box.getAttribute("data-layout-check") === "scroll-x" ||
+    box.tagName === "PRE" ||
+    (box.getAttribute("role") === "toolbar" && window.innerWidth < 768);
   const found = { overlap: [] as string[], spill: [] as string[], cut: [] as string[], scroll: [] as string[] };
   for (const box of [root, ...Array.from(root.querySelectorAll("*"))]) {
     if (!(box instanceof HTMLElement) || !seen(box) || box.closest(ignore)) continue;

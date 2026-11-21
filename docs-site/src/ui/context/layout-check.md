@@ -53,9 +53,10 @@ uses nothing from outside the function.
 | `slack` | `number` | How far content may reach past its box before it counts, in px. The default is 7. |
 
 A scroller that is meant to scroll sideways, such as a row of chips, says so
-with `data-layout-check="scroll-x"`. A toolbar (`role="toolbar"`) may scroll
-sideways below 768 px, because on a phone its tools scroll instead of moving
-into "⋯". Everywhere else, a sideways scroller is a finding.
+with `data-layout-check="scroll-x"`. A code block (`pre`) keeps its lines and
+may scroll sideways. A toolbar (`role="toolbar"`) may scroll sideways below
+768 px, because on a phone its tools scroll instead of moving into "⋯".
+Everywhere else, a sideways scroller is a finding.
 
 It returns `overlap`, `spill`, `cut`, `scroll`, and `double` as lists of readable lines,
 `sideways` as a boolean, and `problems` as every problem in one list. If the
