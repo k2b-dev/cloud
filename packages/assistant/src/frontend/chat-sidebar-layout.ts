@@ -46,8 +46,10 @@ export const createChatContextHost = (options: { onSheet: () => void }) => {
       if (!layout) return;
       const mode = chatContextMode(layout);
       if (mode === "sheet") return options.onSheet();
-      if (mode === "column") setClosed(false);
-      else if (drawer()) return setDrawer(false);
+      if (mode === "column") {
+        setDrawer(false);
+        setClosed(false);
+      } else if (drawer()) return setDrawer(false);
       else setDrawer(true);
       focusLater(() => heading);
     },
@@ -58,7 +60,16 @@ export const createChatContextHost = (options: { onSheet: () => void }) => {
       setDrawer(false);
       focusLater(() => button);
     },
-    closeDrawer: () => setDrawer(false),
+    /** Closes the drawer; with `returnFocus`, a focus left behind in it (or nowhere) goes back to the button. */
+    closeDrawer: (returnFocus = false) => {
+      setDrawer(false);
+      if (!returnFocus) return;
+      const column = heading?.closest(".assistant-context-boxcol");
+      requestAnimationFrame(() => {
+        const focus = document.activeElement;
+        if (!focus || focus === document.body || column?.contains(focus)) button?.focus();
+      });
+    },
   };
 };
 

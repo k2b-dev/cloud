@@ -12,7 +12,7 @@ import {
   type ContextBoxRow,
   contextBoxPending,
 } from "./chat-context-box";
-import { createChatContextHost } from "./chat-sidebar-layout";
+import { chatContextMode, createChatContextHost } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 
 export type ContextBoxActions = {
@@ -328,44 +328,47 @@ export function AssistantChatContextBox(props: {
                   <BoxGroup group={group} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
                 )}
               </For>
-              <ul class="assistant-context-box__lines">
-                <Show when={box().sources}>
-                  {(summary) => (
-                    <li class="assistant-context-box__row">
-                      <button
-                        type="button"
-                        class="assistant-context-box__main"
-                        title={`${copy().boxSources}: ${summary()}`}
-                        onClick={() => props.actions.onOpenSources()}
-                      >
-                        <i class="assistant-context-box__icon ti ti-world" aria-hidden="true" />
-                        <span class="assistant-context-box__title k2b-truncate-fade">
-                          <span class="assistant-context-box__key">{copy().boxSources}</span>
-                          {summary()}
-                        </span>
-                      </button>
-                    </li>
-                  )}
-                </Show>
-                <Show when={box().context}>
-                  {(summary) => (
-                    <li class="assistant-context-box__row">
-                      <button
-                        type="button"
-                        class="assistant-context-box__main"
-                        title={`${copy().boxContext}: ${summary()}`}
-                        onClick={() => props.actions.onOpenContext()}
-                      >
-                        <i class="assistant-context-box__icon ti ti-adjustments" aria-hidden="true" />
-                        <span class="assistant-context-box__title k2b-truncate-fade">
-                          <span class="assistant-context-box__key">{copy().boxContext}</span>
-                          {summary()}
-                        </span>
-                      </button>
-                    </li>
-                  )}
-                </Show>
-              </ul>
+              {/* Only with sources or context: an empty list would draw a hairline and an empty band. */}
+              <Show when={box().sources || box().context}>
+                <ul class="assistant-context-box__lines">
+                  <Show when={box().sources}>
+                    {(summary) => (
+                      <li class="assistant-context-box__row">
+                        <button
+                          type="button"
+                          class="assistant-context-box__main"
+                          title={`${copy().boxSources}: ${summary()}`}
+                          onClick={() => props.actions.onOpenSources()}
+                        >
+                          <i class="assistant-context-box__icon ti ti-world" aria-hidden="true" />
+                          <span class="assistant-context-box__title k2b-truncate-fade">
+                            <span class="assistant-context-box__key">{copy().boxSources}</span>
+                            {summary()}
+                          </span>
+                        </button>
+                      </li>
+                    )}
+                  </Show>
+                  <Show when={box().context}>
+                    {(summary) => (
+                      <li class="assistant-context-box__row">
+                        <button
+                          type="button"
+                          class="assistant-context-box__main"
+                          title={`${copy().boxContext}: ${summary()}`}
+                          onClick={() => props.actions.onOpenContext()}
+                        >
+                          <i class="assistant-context-box__icon ti ti-adjustments" aria-hidden="true" />
+                          <span class="assistant-context-box__title k2b-truncate-fade">
+                            <span class="assistant-context-box__key">{copy().boxContext}</span>
+                            {summary()}
+                          </span>
+                        </button>
+                      </li>
+                    )}
+                  </Show>
+                </ul>
+              </Show>
             </Show>
           )}
         </Show>
@@ -391,24 +394,32 @@ export function AssistantChatContextPlaces(props: {
 }) {
   const copy = useCopy();
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
-  createEffect(on(() => props.chatId, host.closeDrawer, { defer: true }));
+  createEffect(
+    on(
+      () => props.chatId,
+      () => host.closeDrawer(),
+      { defer: true },
+    ),
+  );
   const freeze = createReadingFreeze();
   let column: HTMLDivElement | undefined;
   let button: HTMLElement | undefined;
-  // The width the person gave the column with its grip, in rem; until then the stylesheet's.
+  // The width the person gave the column with its grip, in rem; until then the stylesheet's (20 rem, 23.75 from 1920 px).
   const [width, setWidth] = createSignal<number | null>(null);
   const REM = 16;
-  const shownWidth = () => width() ?? (column ? column.getBoundingClientRect().width / REM : 20);
-  // The chat keeps at least 400 px (Gustav flat); the column takes at most 30 rem.
-  const widest = () => {
-    const layout = column?.parentElement;
-    return layout ? Math.max(20, Math.min(30, (layout.getBoundingClientRect().width - 400) / REM)) : 30;
+  const shownWidth = () => {
+    const measured = column?.getBoundingClientRect().width ?? 0;
+    return width() ?? (measured > 0 ? measured / REM : 20);
   };
-  /** In the drawer every action that leaves the column closes it first. */
+  // The column takes 20 to 30 rem. It docks only in a chat pane of at least 56 rem, so the chat keeps at least 26 rem
+  // (416 px), more than the 400 px of the concept.
+  const WIDEST = 30;
+  /** In the drawer every action that leaves the column closes it first; a focus left behind goes back to the button. */
   const leave =
     <A extends unknown[]>(run: (...args: A) => void) =>
     (...args: A) => {
-      host.closeDrawer();
+      const inside = column?.contains(document.activeElement) ?? false;
+      host.closeDrawer(inside && host.drawer());
       run(...args);
     };
   const actions: ContextBoxActions = {
@@ -418,9 +429,11 @@ export function AssistantChatContextPlaces(props: {
     onOpenSources: () => leave(props.actions.onOpenSources)(),
     onOpenContext: () => leave(props.actions.onOpenContext)(),
   };
-  // A drawer closes with Escape and with a press anywhere outside it and its button.
+  // A drawer closes with Escape while the focus is in it or on its button, and with a press anywhere outside both. When
+  // the chat gains room for the column (a wider window, the last tab closed), the drawer gives way to the docked column.
   createEffect(() => {
     if (!host.drawer()) return;
+    const layout = column?.parentElement;
     const outside = (event: PointerEvent) => {
       const target = event.target instanceof Node ? event.target : null;
       if (target && (column?.contains(target) || button?.contains(target))) return;
@@ -428,12 +441,19 @@ export function AssistantChatContextPlaces(props: {
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      const focus = document.activeElement;
+      if (!focus || !(column?.contains(focus) || button?.contains(focus))) return;
       event.preventDefault();
-      host.close();
+      host.closeDrawer(true);
     };
+    const room = new ResizeObserver(() => {
+      if (layout && chatContextMode(layout) === "column") host.closeDrawer();
+    });
+    if (layout) room.observe(layout);
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("keydown", escape);
     onCleanup(() => {
+      room.disconnect();
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", escape);
     });
@@ -494,9 +514,9 @@ export function AssistantChatContextPlaces(props: {
           step={1}
           largeStep={4}
           min={20}
-          max={widest()}
+          max={WIDEST}
           value={shownWidth()}
-          onResize={(value) => setWidth(Math.min(value, widest()))}
+          onResize={setWidth}
           onReset={() => setWidth(null)}
         />
         <AssistantChatContextBox

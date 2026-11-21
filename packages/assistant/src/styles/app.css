@@ -182,7 +182,8 @@
 .k2b-ui { --assistant-context-meta: #71717a; }
 :is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui, .dark.k2b-ui) { --assistant-context-meta: #8d8d98; }
 .k2b-ui .k2b-button.assistant-context-button[data-variant] { color: var(--k2b-ai-accent); font-size: 0.8125rem; font-weight: 600; }
-.k2b-ui .k2b-button.assistant-context-button[data-variant][aria-expanded="true"] { background: var(--k2b-surface); }
+/* While its drawer is open, the button shows it is pressed. */
+.k2b-ui .k2b-button.assistant-context-button[data-variant][aria-expanded="true"] { background: var(--k2b-hover); }
 .k2b-ui .assistant-context-box__head .k2b-button i,
 .k2b-ui .assistant-context-box__act .k2b-button i { font-size: 0.9375rem; }
 .k2b-ui .assistant-context-box {
