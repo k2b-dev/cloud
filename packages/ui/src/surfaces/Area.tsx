@@ -1,6 +1,7 @@
 import { children, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { rendersSomething } from "../internal/renders-something";
 import { useFlatBlockMessages } from "./flat-block-messages";
 
 export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "title"> & {
@@ -31,9 +32,6 @@ export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "titl
   /** Heading level of the name; defaults to 4. */
   level?: 3 | 4 | 5;
 };
-
-/** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
-const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");
 
 /**
  * An area (K17 "Bereich"): a thing the rows hang on, such as a stack with its lists. Open, it is a square area of its

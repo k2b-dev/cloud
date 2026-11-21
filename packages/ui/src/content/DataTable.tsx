@@ -866,9 +866,9 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
                           <tr role={tableRole("row")} class="k2b-data-table__group-row">
                             <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
-                              <Show
-                                when={props.collapsibleGroups}
-                                fallback={
+                              {(() => {
+                                // One label for both forms: plain text, or the content of the fold button.
+                                const label = (
                                   <>
                                     {group.label || "—"}
                                     <span class="k2b-data-table__group-count">
@@ -876,25 +876,24 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                                       <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
                                     </span>
                                   </>
-                                }
-                              >
-                                <button
-                                  type="button"
-                                  class="k2b-data-table__group-toggle"
-                                  aria-expanded={!groupCollapsed(group.key)}
-                                  onClick={() => toggleGroup(group.key)}
-                                >
-                                  {group.label || "—"}
-                                  <span class="k2b-data-table__group-count">
-                                    <span aria-hidden="true">{group.rows.length}</span>
-                                    <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
-                                  </span>
-                                  <i
-                                    class={`ti ${groupCollapsed(group.key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
-                                    aria-hidden="true"
-                                  />
-                                </button>
-                              </Show>
+                                );
+                                return props.collapsibleGroups ? (
+                                  <button
+                                    type="button"
+                                    class="k2b-data-table__group-toggle"
+                                    aria-expanded={!groupCollapsed(group.key)}
+                                    onClick={() => toggleGroup(group.key)}
+                                  >
+                                    {label}
+                                    <i
+                                      class={`ti ${groupCollapsed(group.key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
+                                      aria-hidden="true"
+                                    />
+                                  </button>
+                                ) : (
+                                  label
+                                );
+                              })()}
                             </th>
                           </tr>
                           <Show when={!groupCollapsed(group.key)}>
