@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
+import { layoutProblems } from "../../../../../ui/src/layout-check";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { adminAppsBrowserFixture } from "./AdminApps.browser-fixture";
 import { FIXTURE_NOW } from "./AdminApps.fixture-data";
@@ -89,6 +90,8 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
     }, FIXTURE_NOW);
     for (const [width, query] of [
       [390, ""],
+      [768, ""],
+      [1100, ""],
       [1100, "?app=chat"],
       [1440, ""],
     ] as const) {
@@ -114,6 +117,7 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
         const row = Array.from(document.querySelectorAll("tbody tr")).find((tr) => tr.querySelector('[data-app="inventar"]'));
         const date = row?.querySelector<HTMLElement>("td .whitespace-nowrap");
         const cell = date?.closest("td");
+        const address = date?.parentElement;
         const dateRect = date && date.getClientRects().length > 0 ? date.getBoundingClientRect() : null;
         const cellRect = cell?.getBoundingClientRect();
         return {
@@ -121,8 +125,12 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           figures,
           date:
-            dateRect && cellRect
-              ? { text: date!.textContent, whole: dateRect.left >= cellRect.left - 0.5 && dateRect.right <= cellRect.right + 0.5 }
+            dateRect && cellRect && address
+              ? {
+                  text: date!.textContent,
+                  whole: dateRect.left >= cellRect.left - 0.5 && dateRect.right <= cellRect.right + 0.5,
+                  spill: address.scrollWidth - address.clientWidth,
+                }
               : null,
         };
       });
@@ -144,7 +152,10 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
       if (result.date) {
         expect(result.date.text, label).toMatch(/2026$/);
         expect(result.date.whole, label).toBe(true);
+        expect(result.date.spill, label).toBeLessThanOrEqual(0);
       }
+      // Without the detail the list is this file's own layout; beside it the shell's columns take over (L3).
+      if (!query) expect((await tab.evaluate(layoutProblems, { root: "[data-apps-list]" })).problems, label).toEqual([]);
     }
     await tab.close();
   } finally {
