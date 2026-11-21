@@ -71,6 +71,7 @@ import { DetailSectionsDemo } from "./detail-sections";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
+import { FlatWorkspaceDemo, PathHeadDemo, ReadingColumnDemo } from "./workspace-flat";
 import { LiveWorkspaceDemo } from "./workspace-live";
 
 const WorkspaceHeadRowDemo = () => {
@@ -2690,6 +2691,9 @@ const items = [
   navigation: () => <NavigationDemo />,
   workspace: () => (
     <DemoGrid columns="one">
+      <FlatWorkspaceDemo />
+      <PathHeadDemo />
+      <ReadingColumnDemo />
       <WorkspaceHeadRowDemo />
       <DetailsToggleDemo />
       <WorkspaceHeadLongViewsDemo />

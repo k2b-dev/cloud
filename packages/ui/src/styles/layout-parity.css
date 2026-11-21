@@ -1063,17 +1063,20 @@ html {
   background: var(--k2b-surface);
 }
 
-/* K2, K3: from 48 rem the frame is a hairline, never a shadow; dark keeps its
-   line at every width, where the surface alone does not part from the canvas. */
+/* K2, K3: from 48 rem the outermost workspace, the app card, has a hairline
+   frame, never a shadow; dark keeps its line at every width, where the
+   surface alone does not part from the canvas. One line, one owner: a
+   workspace inside another stands in a column whose edges the boundary lines
+   and the head line already draw, so it draws no frame of its own. */
 @media (min-width: 48rem) {
-  .k2b-ui .k2b-app-workspace {
+  .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
     border-color: var(--k2b-border);
   }
 }
 
-.k2b-ui[data-theme="dark"] .k2b-app-workspace,
-.k2b-ui.k2b-dark .k2b-app-workspace,
-.dark .k2b-ui .k2b-app-workspace {
+.k2b-ui[data-theme="dark"] .k2b-app-workspace:not(.k2b-app-workspace *),
+.k2b-ui.k2b-dark .k2b-app-workspace:not(.k2b-app-workspace *),
+.dark .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
   border-color: var(--k2b-border);
 }
 
@@ -6093,29 +6096,17 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   }
 }
 
-/* K16: the pill floats at the top end of its column, round, with the small
-   overlay shadow. It sticks while the column scrolls and takes no room: its
-   negative bottom margin returns its height, so the text starts at the top. */
+/* K16: the pill floats at the top end of its column. Its look is the shared
+   `k2b-pill`; this places it. It sticks while the column scrolls and takes no
+   room: its negative bottom margin returns its 38 px height, so the text
+   starts at the top. */
 .k2b-ui .k2b-floating-pill {
   position: sticky;
   z-index: 6;
   top: 0.75rem;
-  display: flex;
   width: max-content;
   max-width: 100%;
-  height: 2.375rem;
-  align-items: center;
-  gap: 0.25rem;
-  margin: 0.75rem 0 -2.375rem auto;
-  padding: 0.25rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-round, 9999px);
-  background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-overlay-sm, var(--k2b-shadow-float));
-}
-
-.k2b-ui .k2b-floating-pill > :is(.k2b-button, .k2b-icon-button, a, button) {
-  border-radius: var(--k2b-radius-round, 9999px);
+  margin: 0.75rem 0 calc(-1 * (var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px)) auto;
 }
 
 .k2b-ui .k2b-floating-pill__separator {
