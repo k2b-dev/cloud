@@ -42,8 +42,13 @@ const answer = (url: string, many: boolean) => {
   if (path.endsWith("/scrapes")) return { status: 200, json: [] };
   return { status: 500, json: { code: "UNEXPECTED" } };
 };
-const open = async (width: number, props: PulseWorkspaceProps, options: { many?: boolean; hold?: boolean } = {}, on: Browser = browser) => {
-  const touch = width < 768;
+const open = async (
+  width: number,
+  props: PulseWorkspaceProps,
+  options: { many?: boolean; hold?: boolean; touch?: boolean } = {},
+  on: Browser = browser,
+) => {
+  const touch = options.touch ?? width < 768;
   const tab = await on.newPage({ viewport: { width, height: touch ? 844 : 900 }, isMobile: touch, hasTouch: touch });
   await pauseWorkspaceClock(tab.clock, new Date(props.initialNow));
   await tab.route(`${origin}/api/**`, (route) => route.fulfill(answer(route.request().url(), options.many ?? false)));
@@ -81,8 +86,8 @@ const many = (props: PulseWorkspaceProps): PulseWorkspaceProps => ({
   ],
 });
 
-// Required since 21.11. ~22:30Z: classic scrollbars that take layout space, at 390/768/1100/1440 px, with the detail
-// column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Chromium
+// Required since 21.11. ~22:30Z: classic scrollbars that take layout space, at 390/768/1100/1440 px (desktop windows
+// without touch), with the detail column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Chromium
 // only: the flag belongs to Chromium's launch; the WebKit run keeps the checks above.
 const classic = process.env.TEST_BROWSER === "webkit" ? describe.skip : describe;
 classic("Pulse flat base page with classic scrollbars", () => {
@@ -100,8 +105,19 @@ classic("Pulse flat base page with classic scrollbars", () => {
         [flatStates.data, "/sammlung/vasen", { many: true }],
       ];
       for (const [props, text, options] of cases) {
-        const tab = await open(width, props, options, scrollbars);
+        // A narrow desktop window, never touch: with isMobile or hasTouch Chromium uses overlay scrollbars that take no room.
+        const tab = await open(width, props, { ...options, touch: false }, scrollbars);
         await tab.getByText(text, { exact: false }).first().waitFor();
+        // The run only measures something when a scrollbar really takes room.
+        const gutter = await tab.evaluate(() => {
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+          document.body.append(probe);
+          const room = probe.offsetWidth - probe.clientWidth;
+          probe.remove();
+          return room;
+        });
+        expect(gutter).toBeGreaterThan(0);
         if (width === 1100 && props !== flatStates.data) expect(await tab.locator(".k2b-detail-panel").count()).toBeGreaterThan(0);
         expect({ width, problems: await problems(tab) }).toEqual({ width, problems: [] });
         await tab.close();
