@@ -60,10 +60,10 @@
   box-shadow: var(--k2b-shadow-frame);
 }
 
-/* A clickable card (K17): flat, a 1 px border in every state, 8 px corners;
-   hover darkens the fill only. */
+/* A clickable card (K17): flat, the same 1 px hairline as every card
+   (LinkCard, ResourceCard) in every state, 8 px corners; hover darkens the
+   fill only. */
 .k2b-ui .k2b-paper[data-interactive="true"] {
-  border-color: var(--k2b-border-strong);
   border-radius: var(--k2b-radius-control);
 }
 
@@ -218,7 +218,7 @@
   align-items: start;
   gap: 0.75rem;
   height: 100%;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
 }
 .k2b-ui .k2b-link-card[data-layout="stacked"] > .k2b-link-card__aside { grid-column: 4; grid-row: 1; }
 .k2b-ui .k2b-link-card[data-layout="stacked"] > .k2b-link-card__body { grid-column: 1 / -1; grid-row: 2; }
@@ -273,7 +273,7 @@
   gap: 0.75rem;
   min-height: 3.5rem;
   padding: 0.5rem 0.625rem;
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-control);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 .k2b-ui .k2b-link-card[data-surface="plain"]:hover { background: var(--k2b-hover); }
@@ -538,9 +538,6 @@
 }
 .k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
-/* Buttons in a notice take its line height instead of their own, so a card's
-   actions keep the height its 22px lines give them (32px for `sm`). */
-.k2b-ui .k2b-notice-card .k2b-button { line-height: inherit; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
    read as empty rows inside the card. `[data-tone]` lifts these rules above

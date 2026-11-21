@@ -87,6 +87,8 @@ test("reports a frame whose only content is another frame (K14)", async () => {
         '  <div class="rounded-lg border p-3"><section class="rounded-md border p-2">Rows</section></div>',
         '  <div class="rounded-lg border p-3"><h2>Title</h2><section class="rounded-md border p-2">Rows</section></div>',
         '  <div class="rounded-lg border p-3"><section class="p-2">Rows</section></div>',
+        '  <div class="rounded-lg border p-3"><input class="rounded-md border" /></div>',
+        '  <div class="rounded-lg border p-3"><textarea class="rounded-md border">Note</textarea></div>',
         "</>);",
       ].join("\n"),
     ),

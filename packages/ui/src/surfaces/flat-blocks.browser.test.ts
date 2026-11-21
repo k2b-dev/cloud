@@ -110,6 +110,20 @@ describe("Cloud flat building blocks", () => {
     }
   });
 
+  test("on a phone an open area keeps its name whole and a closed one stays a 40 px row", async () => {
+    const page = await load(390);
+    try {
+      const names = await page
+        .locator(".k2b-area__name")
+        .evaluateAll((items) => items.map((name) => ({ text: name.textContent, cut: name.scrollWidth > name.clientWidth })));
+      expect(names.filter((name) => name.cut)).toEqual([]);
+      expect((await box(page, "#a2")).height).toBe(40);
+      expect((await box(page, "#a1 > .k2b-area__head")).height).toBeGreaterThanOrEqual(56);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("a group has a 36 px head and disappears when it is empty", async () => {
     const page = await load(1440);
     try {

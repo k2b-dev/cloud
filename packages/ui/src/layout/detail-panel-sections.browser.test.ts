@@ -587,16 +587,16 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
         gap: getComputedStyle(document.querySelector("#plain .k2b-detail-panel__body")!).gap,
       };
     });
-    expect(painted.plain).toHaveLength(2);
-    expect(painted.plain.every((value) => value.background === "rgba(0, 0, 0, 0)" && value.radius === "0px")).toBe(true);
-    // The first topic starts flush; the next one starts below one hairline with the body's gap above and below it.
-    expect(painted.plain.map((value) => [value.padding, value.line])).toEqual([
-      ["0px", "0px none"],
-      ["20px 0px 0px", "1px solid"],
-    ]);
-    expect(painted.default.every((value) => value.background !== "rgba(0, 0, 0, 0)" && value.radius !== "0px")).toBe(true);
-    expect(painted.default.every((value) => value.line === "0px none")).toBe(true);
-    expect(painted.gap).toBe("20px");
+    // K9: on every surface the topics stand flat on the 20 px text edge; one hairline separates each from the one before.
+    for (const surface of [painted.plain, painted.default]) {
+      expect(surface).toHaveLength(2);
+      expect(surface.every((value) => value.background === "rgba(0, 0, 0, 0)" && value.radius === "0px")).toBe(true);
+      expect(surface.map((value) => [value.padding, value.line])).toEqual([
+        ["16px 20px", "0px none"],
+        ["16px 20px", "1px solid"],
+      ]);
+    }
+    expect(painted.gap).toBe("0px");
   } finally {
     await page.close();
   }

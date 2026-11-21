@@ -11,6 +11,7 @@ const BORDER =
   /^border(?:-(?:2|4|8|\[(?:0|(?:\d*\.)?\d+(?:px|rem|em|ex|ch|cap|ic|lh|rlh|vw|vh|vi|vb|vmin|vmax|dvw|dvh|svw|svh|lvw|lvh|cqw|cqh|cqi|cqb|cqmin|cqmax|cm|mm|Q|in|pt|pc))\]))?$/;
 /** Any rounded corner, for the nested-frame rule (K14). */
 const ANY_RADIUS = /^rounded(?:-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]*\]))?$/;
+const CONTENT_TAGS = new Set(["input", "textarea", "select", "button", "img", "video", "audio", "iframe", "canvas", "svg", "picture"]);
 const NESTED_ADVICE =
   "draws a frame whose only content is another frame: K14 drops the inner one; its content stands directly in the outer area.";
 const ADVICE =
@@ -77,8 +78,9 @@ export const rule: Rule = {
               (child) => ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || (ts.isJsxExpression(child) && child.expression),
             );
             const only = kids.length === 1 ? kids[0] : undefined;
+            // A control or media element (an input, an image) inside a frame is content, not a second box.
             const opening =
-              only && ts.isJsxElement(only) ? only.openingElement : only && ts.isJsxSelfClosingElement(only) ? only : undefined;
+              only && ts.isJsxElement(only) && !CONTENT_TAGS.has(only.openingElement.tagName.getText()) ? only.openingElement : undefined;
             const inner = opening
               ? opening.attributes.properties
                   .filter(ts.isJsxAttribute)

@@ -391,6 +391,12 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const nowrapAttr = (col: DataTableColumn<T>) => (columnPresentation().get(col.id)?.nowrap ? "true" : undefined);
   /** Text columns wrap inside their cell; every other value keeps one line. */
   const wrapAttr = (col: DataTableColumn<T>) => (col.type === "text" && col.nowrap !== true ? "true" : undefined);
+  /**
+   * A table that becomes a list on a phone changes its display, which drops the table semantics in WebKit; explicit
+   * roles keep rows and cells announced in both forms.
+   */
+  const listMode = createMemo(() => props.columns.some((col) => col.list));
+  const tableRole = (role: string) => (listMode() ? role : undefined);
   const priorityAttr = (col: DataTableColumn<T>) => (col.priority === 2 || col.priority === 3 ? String(col.priority) : undefined);
   /** The lowest priority present: 3 shows the details toggle below 560 px, 2 below 420 px. */
   const detailsPriority = createMemo(() => {
@@ -593,6 +599,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     return (
       <>
         <tr
+          role={tableRole("row")}
           ref={(element) => {
             const key = id();
             if (key !== undefined) props.selection?.register(key, element);
@@ -619,6 +626,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               const value = () => valueOf(row, col);
               return (
                 <td
+                  role={tableRole("cell")}
                   class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
                   data-nowrap={nowrapAttr(col)}
                   data-wrap={wrapAttr(col)}
@@ -728,17 +736,22 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
+          <table role={tableRole("table")} ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
             <Show when={props.loading}>
               {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
               <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>
             </Show>
-            <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
-              <tr class="k2b-data-table__head-row">
+            <thead
+              role={tableRole("rowgroup")}
+              class="k2b-data-table__head"
+              data-sticky={props.stickyHeader === false ? undefined : "true"}
+            >
+              <tr role={tableRole("row")} class="k2b-data-table__head-row">
                 <For each={headerColumns()}>
                   {(col, index) =>
                     col ? (
                       <th
+                        role={tableRole("columnheader")}
                         scope="col"
                         class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
                         data-align={alignAttr(col)}
@@ -820,7 +833,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               <Show
                 when={groups()}
                 fallback={
-                  <tbody>
+                  <tbody role={tableRole("rowgroup")}>
                     <For each={props.rows}>{(row, index) => renderRow(row, () => index() === props.rows.length - 1)}</For>
                     <Show when={props.fillHeight}>
                       <tr aria-hidden="true">
@@ -834,9 +847,9 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   <>
                     <For each={list()}>
                       {(group) => (
-                        <tbody class="k2b-data-table__group">
-                          <tr class="k2b-data-table__group-row">
-                            <th scope="rowgroup" colspan={columnCount()}>
+                        <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
+                          <tr role={tableRole("row")} class="k2b-data-table__group-row">
+                            <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
                               {group.label || "—"}
                               <span class="k2b-data-table__group-count">
                                 <span aria-hidden="true">{group.rows.length}</span>
@@ -861,13 +874,14 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             </Show>
             <Show when={props.footer}>
               {(footer) => (
-                <tfoot class="k2b-data-table__foot" data-sticky="true">
-                  <tr class="k2b-data-table__foot-row">
+                <tfoot role={tableRole("rowgroup")} class="k2b-data-table__foot" data-sticky="true">
+                  <tr role={tableRole("row")} class="k2b-data-table__foot-row">
                     <For each={props.columns}>
                       {(col, index) => {
                         const value = () => footer().values?.[col.id];
                         return (
                           <td
+                            role={tableRole("cell")}
                             class="k2b-data-table__footer-cell"
                             data-nowrap={nowrapAttr(col)}
                             data-align={alignAttr(col)}

@@ -127,14 +127,15 @@ describe("@k2b/ui NoticeCard with an icon and actions", () => {
       expect(new Set(cards.map((card) => card.top)).size).toBe(1);
       expect(new Set(cards.map((card) => card.height)).size).toBe(1);
       for (const card of cards) {
-        // The 1px forced-colours border and the 18px side padding, the icon on the title line, then one text edge.
-        expect(card.iconLeft).toBe(19);
+        // K5, K10: the 1px forced-colours border and the 20px text edge, the icon on the title line, then one text edge.
+        expect(card.iconLeft).toBe(21);
         expect(Math.abs(card.iconMiddle - card.titleMiddle)).toBeLessThanOrEqual(1);
         expect(new Set(card.textEdges).size).toBe(1);
-        expect(card.textEdges[0]).toBe(19 + 20 + 12);
+        expect(card.textEdges[0]).toBe(21 + 20 + 12);
         expect(card.buttonLefts[0]).toBe(card.textEdges[0]);
-        expect(card.actionsBottom).toBe(17);
-        expect(card.buttonHeight).toBe(32);
+        expect(card.actionsBottom).toBe(13);
+        // K1: a small button keeps its own 28 px.
+        expect(card.buttonHeight).toBe(28);
         // Title keeps the calm primary ink; only the icon takes the tone.
         expect(card.titleInk).not.toBe(card.iconInk);
       }
@@ -146,14 +147,16 @@ describe("@k2b/ui NoticeCard with an icon and actions", () => {
         const style = getComputedStyle(card);
         return { display: style.display, padding: style.padding };
       });
-      expect(line).toMatchObject({ display: "grid", padding: "10px 14px" });
+      expect(line).toMatchObject({ display: "grid", padding: "12px 20px" });
       const plain = await page.evaluate(() => {
         const card = document.querySelector<HTMLElement>("#plain .k2b-notice-card")!;
         const root = card.getBoundingClientRect();
         const actions = card.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect();
-        return { left: Math.round(actions.left - root.left), bottom: Math.round(root.bottom - actions.bottom) };
+        const text = card.querySelector(".k2b-notice-card__text")!.getBoundingClientRect();
+        return { right: Math.round(root.right - actions.right), beside: actions.left >= text.right };
       });
-      expect(plain).toEqual({ left: 19, bottom: 17 });
+      // K10, K15: in a wide cell the deed stands at the right of the text, on the text edge.
+      expect(plain).toEqual({ right: 21, beside: true });
     } finally {
       await page.close();
     }
@@ -221,7 +224,8 @@ for (const width of [1440, 390])
             return { card: box("#summary .k2b-notice-card"), next: box("#following") };
           });
         const first = await measure();
-        expect(first.card.height).toBe(width === 390 ? 156 : 64);
+        // K1: the two-line row is 52 px; on a phone it reserves two title lines, two quiet lines, and its controls.
+        expect(first.card.height).toBe(width === 390 ? 142 : 52);
         for (const state of ["failed", "loading", "ready", "long", "single"]) {
           await page.evaluate((value) => window.noticeRow(value), state);
           await settled(page);
@@ -237,7 +241,7 @@ for (const width of [1440, 390])
             const quiet = (await card.locator(".k2b-notice-card__description").boundingBox())!;
             expect(boxes[0]!.y - quiet.y - quiet.height).toBeGreaterThanOrEqual(12);
             const root = (await card.boundingBox())!;
-            expect(root.y + root.height - boxes[0]!.y - boxes[0]!.height).toBeCloseTo(11, 0);
+            expect(root.y + root.height - boxes[0]!.y - boxes[0]!.height).toBeCloseTo(8, 0);
           }
         }
         const primary = card.getByRole("button", { name: "Enable", exact: true });

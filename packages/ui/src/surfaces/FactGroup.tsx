@@ -71,23 +71,24 @@ export function FactGroup(props: FactGroupProps): JSX.Element {
             <div class="k2b-fact-group__fact">
               <dt>{item.label}</dt>
               <dd>
-                {item.value}
+                <span class="k2b-fact-group__value">{item.value}</span>
                 <Show when={item.detail}>
                   <small class="k2b-fact-group__detail">{item.detail}</small>
                 </Show>
+                {/* Inside the value, so the list holds only terms and values; without a copy button the slot stays, so
+                    every value of a group ends on one edge. */}
+                <Show when={copyValue(item)} fallback={<span class="k2b-fact-group__slot" aria-hidden="true" />}>
+                  {(value) => (
+                    <CopyButton
+                      class="k2b-fact-group__copy"
+                      value={value()}
+                      size="xs"
+                      iconOnly
+                      label={copyLabel().copyField({ label: item.label })}
+                    />
+                  )}
+                </Show>
               </dd>
-              {/* Without a copy button the slot stays, so every value of a group ends on one edge. */}
-              <Show when={copyValue(item)} fallback={<span class="k2b-fact-group__slot" aria-hidden="true" />}>
-                {(value) => (
-                  <CopyButton
-                    class="k2b-fact-group__copy"
-                    value={value()}
-                    size="xs"
-                    iconOnly
-                    label={copyLabel().copyField({ label: item.label })}
-                  />
-                )}
-              </Show>
             </div>
           )}
         </For>

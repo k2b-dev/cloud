@@ -147,19 +147,20 @@ const baseline = {
   buttonSm: 28,
   buttonMd: 32,
   buttonLg: 40,
-  // A notice's 22px lines set its buttons' height, as before.
-  noticeButtonSm: 32,
-  noticeButtonXs: 28,
-  fieldLabel: 18,
-  fieldDescription: 15.39,
-  field: 81.39,
+  // K1: a button in an alert cell keeps its own height (28 px small, 24 px extra small).
+  noticeButtonSm: 28,
+  noticeButtonXs: 24,
+  // K5: a 20 px label row, the 36 px control, a 16 px help line, 4 px apart.
+  fieldLabel: 20,
+  fieldDescription: 16,
+  field: 80,
   input: 32,
   badge: 20,
   title: 24,
 } as const;
 
 // The C Kontrast scale: [font size, weight, color] per primitive.
-const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)", muted: "rgb(69, 69, 78)" };
+const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)", muted: "rgb(69, 69, 78)", subtle: "rgb(113, 113, 122)" };
 const scale = {
   sidebarItem: ["13px", "400", ink.text],
   sidebarSection: ["12px", "600", ink.secondary],
@@ -170,11 +171,12 @@ const scale = {
   buttonSm: ["12px", "600", ink.text],
   buttonMd: ["13px", "600", ink.text],
   buttonLg: ["14px", "600", ink.text],
-  fieldLabel: ["13px", "600", ink.secondary],
-  fieldDescription: ["12px", "400", ink.secondary],
+  // K11: labels and help in the 12 px meta size; help in the quiet third grey.
+  fieldLabel: ["12px", "500", ink.secondary],
+  fieldDescription: ["12px", "400", ink.subtle],
   badge: ["10px", "600", "rgb(4, 120, 87)"],
-  // The table's grey head: smaller than the 12px rows, semibold, secondary ink.
-  tableHeader: ["11px", "600", ink.secondary],
+  // K7: the table head is 12 px grey words without a fill.
+  tableHeader: ["12px", "500", ink.subtle],
 } as const;
 
 describe(`type scale in ${browserName}`, () => {
@@ -188,8 +190,8 @@ describe(`type scale in ${browserName}`, () => {
         // A sixty-fourth of a pixel is how the engines round a line box, not a shift.
         for (const [name, height] of Object.entries(baseline))
           expect({ name, height: heights[name]! }).toEqual({ name, height: expect.closeTo(height, 1) });
-        // The table: a 34px head above 44px rows (data-table-lines.browser.test.ts owns the rest).
-        expect(probe.tableHeader.height + probe.tableRow.height).toBe(78);
+        // The table: a 36px head above 40px rows (K1; data-table-lines.browser.test.ts owns the rest).
+        expect(probe.tableHeader.height + probe.tableRow.height).toBe(76);
 
         const type: Record<string, readonly string[]> = Object.fromEntries(
           Object.keys(scale).map((name) => {
