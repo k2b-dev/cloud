@@ -130,10 +130,14 @@ describe(`scroll containers in ${browserName}`, () => {
     }
   });
 
-  test("390 px: a scroller that opts in, a code block, and a toolbar on a phone pass", async () => {
+  test("390 px: a scroller that opts in, a code block, CodeDisplay's body, and a toolbar on a phone pass", async () => {
     const result = await check(
       390,
-      `<div data-layout-check="scroll-x" style="width:200px;overflow-x:auto"><div style="width:400px">Chips in a row</div></div>${toolbar}<pre style="width:200px;overflow-x:auto;margin:0">claude mcp add --transport http cloud https://cloud.example.test/mcp</pre>`,
+      `<div data-layout-check="scroll-x" style="width:200px;overflow-x:auto"><div style="width:400px">Chips in a row</div></div>${toolbar}<pre style="width:200px;overflow-x:auto;margin:0">claude mcp add --transport http cloud https://cloud.example.test/mcp</pre><div class="k2b-content-code-display" style="width:200px"><div class="k2b-content-code-display__body" data-layout-check="scroll-x" role="region" tabindex="0"><div class="k2b-content-code-display__lines"><div class="k2b-content-code-display__line"><code>const endpoint = "https://cloud.example.test/mcp/with/a/long/path";</code></div></div></div></div>`,
+    );
+    // Without its declaration CodeDisplay's body would be a finding: it really scrolls its line sideways.
+    expect(await page.locator(".k2b-content-code-display__body").evaluate((body) => body.scrollWidth - body.clientWidth)).toBeGreaterThan(
+      7,
     );
     expect(result.problems).toEqual([]);
   });
