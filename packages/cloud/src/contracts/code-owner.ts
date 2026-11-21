@@ -4,6 +4,12 @@ import { z } from "zod";
 export type CapabilityCodeDefinition = {
   owners?: readonly string[];
   pages?: Readonly<Record<string, string>>;
+  /**
+   * `false`: a public Code route never calls a Query of this app, not even with `audience: "owner-data"`. The checker
+   * refuses such a version and Core refuses such an answer, so the app's data never reaches a visitor without an
+   * account.
+   */
+  publicRoutes?: false;
 };
 
 export const CapabilityCodeManifestSchema = z
@@ -19,6 +25,7 @@ export const CapabilityCodeManifestSchema = z
           .regex(/^\/(?!\/)[^\\\u0000-\u001f\u007f]*\{id\}[^\\\u0000-\u001f\u007f]*$/),
       )
       .optional(),
+    publicRoutes: z.literal(false).optional(),
   })
   .strict();
 export type CapabilityCodeManifest = z.infer<typeof CapabilityCodeManifestSchema>;

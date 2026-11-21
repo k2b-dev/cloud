@@ -921,6 +921,17 @@ export type CapabilityQueryDefinition<
    * access refusals before Code calls run.
    */
   codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
+  /**
+   * Excludes this Query from all Code: the SDK omits it and the bridge refuses it. Use it for an app-wide form that
+   * also exists as a targeted Query, so a Code page reads through the target that Cloud checks for its visitors.
+   */
+  code?: false;
+  /**
+   * Top-level string input fields that name a resource this Query reads, as `{ field: "localType" }`, for an app-wide
+   * Query that takes the resource in its input rather than as a target. Code page hosting checks each named resource
+   * for the visitor like a target (G1). It grants and checks nothing by itself; the Query still authorizes the caller.
+   */
+  inputRefs?: Readonly<Record<string, string>>;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1093,6 +1104,8 @@ const CapabilityOperationManifestBaseSchema = z
   .strict();
 
 export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  code: z.literal(false).optional(),
+  inputRefs: z.record(z.string().min(1).max(100), CapabilityLocalIdSchema).optional(),
   appOnly: z.literal(true).optional(),
   openWorld: z.boolean(),
   universalSearch: z

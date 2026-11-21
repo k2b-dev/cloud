@@ -886,6 +886,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             // Public exposure and the layout must be explicit literals, never a computed flag or spread.
             let isPublic = false;
             let plain = false;
+            let ownerData = false;
             let validOptions = !opts;
             if (opts && ts.isObjectLiteralExpression(opts)) {
               const seen = new Set<string>();
@@ -899,6 +900,10 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                   isPublic = value.kind === ts.SyntaxKind.TrueKeyword;
                   return true;
                 }
+                if (name === "audience" && ts.isStringLiteral(value) && value.text === "owner-data") {
+                  ownerData = true;
+                  return true;
+                }
                 if (name !== "layout" || !ts.isStringLiteral(value) || value.text !== "plain") return false;
                 plain = true;
                 return true;
@@ -909,6 +914,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               path: paths?.length === 1 ? paths[0] : null,
               public: isPublic,
               ...(plain ? { layout: "plain" } : {}),
+              ...(ownerData ? { audience: "owner-data" } : {}),
             });
             if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
               report(node, "code_static_route", t.static_route);

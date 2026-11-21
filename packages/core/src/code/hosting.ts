@@ -7,6 +7,7 @@ import { ssr } from "../config";
 import { admitCodePage, isCodePageNavigation } from "./page-admission";
 import { codePageLabel } from "./page-provenance";
 import type { CodePageProvenanceSeed } from "./page-provenance-contracts";
+import { CodeRouteReadsUnavailable, checkCodeRouteReads } from "./page-reads";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
 import { waitCodeRequest } from "./request-deadline";
 import { CodeRequestError, codeRequestVersion, requestCodeRoute } from "./requests";
@@ -56,12 +57,17 @@ const unavailableMessages = i18n.define({
       gone: "It may be paused, the link may be out of date, or the page is not shared with you.",
       later: "Try again in a moment.",
       retry: "Try again",
+      noAccessTitle: "No access",
+      noAccess: "This page shows data you may not read. Ask the person who owns the page, or who manages the data, for access.",
     },
     de: {
       title: "Diese Seite ist gerade nicht erreichbar",
       gone: "Vielleicht ist sie pausiert, der Link stimmt nicht mehr, oder sie ist nicht für dich freigegeben.",
       later: "Versuche es in einem Moment noch einmal.",
       retry: "Erneut versuchen",
+      noAccessTitle: "Kein Zugriff",
+      noAccess:
+        "Diese Seite zeigt Daten, die du nicht lesen darfst. Bitte die Person, der die Seite gehört oder die die Daten verwaltet, um Zugriff.",
     },
   },
 });
@@ -82,7 +88,20 @@ const unavailablePage = (c: Context, status: number) => {
   return ssr.error(c, 404, { title: t.title, description: t.gone });
 };
 
-export function createCodeHostingRoutes(deps = { version: codeRequestVersion, request: requestCodeRoute }) {
+/** G1: the route read data this visitor may not read. The shared no-access page, without naming the data. */
+const noAccessPage = (c: Context) => {
+  const { t } = unavailableMessages.resolve([getLocale(c)]);
+  return ssr.error(c, 403, { title: t.noAccessTitle, description: t.noAccess });
+};
+
+export function createCodeHostingRoutes(
+  deps: {
+    version: typeof codeRequestVersion;
+    request: typeof requestCodeRoute;
+    /** Tests replace the read check (G1); production always uses `checkCodeRouteReads`. */
+    checkReads?: typeof checkCodeRouteReads;
+  } = { version: codeRequestVersion, request: requestCodeRoute },
+) {
   const router = new Hono<CodePageHostingContext>();
   router.use("/code/:codeId/*", middleware.noTransform(), auth.requireRole("*"));
   router.all(
@@ -168,6 +187,22 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           }),
           signal,
         );
+        // G1: nothing the route answered leaves before the visitor's own right to read each resource it read is checked.
+        const reads = await waitCodeRequest(
+          (deps.checkReads ?? checkCodeRouteReads)({
+            reads: response.reads,
+            route: selected.route,
+            visitor: isPublic ? null : auth.getAuthority(c),
+            locale: getLocale(c),
+            signal,
+          }),
+          signal,
+        ).catch((error: unknown) => {
+          if (error instanceof CodeRouteReadsUnavailable) throw new CodeRequestError("code_page_access_unavailable", 503);
+          throw error;
+        });
+        if (reads === "forbidden")
+          return isCodePageNavigation(c) ? await noAccessPage(c) : c.json({ code: "code_page_access_denied" }, 403);
         if (response.kind === "page") {
           const tree = validateCodePage(response.tree, codeId);
           // The page's own island asks for the checked tree alone after a submit or a followed event.

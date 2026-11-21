@@ -13,6 +13,36 @@ updated: 2026-11-21
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
 
+## Code pages check what they read
+
+A Code route now delivers its answer only to a visitor who may read every
+resource the route read: the target and refs of each succeeded Query and each
+resource read through its type reader. Other visitors get **No access**
+(`403 code_page_access_denied`). Before, every signed-in member saw what the
+owner's account could read.
+
+- A page that should show the owner's data to everyone who opens it declares
+  `{ audience: "owner-data" }` on the route. The change needs a new version and
+  its approval; the administrators see the option in the review.
+- A public route that calls any app Query needs `audience: "owner-data"`. So
+  does a public route that uses the Code's own database, because the database
+  outlives versions and may hold app data copied earlier: existing public pages
+  that read their database answer **No access** until a new version declares
+  `{ public: true, audience: "owner-data" }`. Pulse keeps its data off public
+  routes entirely (`code.publicRoutes: false`).
+- A Query that failed counts like one that succeeded, because its error text
+  can carry data.
+- Pulse reads have a target form, recommended for Code:
+  `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`,
+  `.savedQuery.list` and `.schema.read`. The app-wide forms with `baseId` keep
+  working everywhere, also in Code; Cloud checks the base they name for each
+  visitor like a target. They are planned for removal from Code in a later
+  release, which this page will announce.
+- `sql.run` and `base.sql.run` return a cursor for the next page; use `ORDER BY`
+  so pages stay stable.
+
+See [Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
+
 ## One compact approval frame
 
 `ApprovalFrame` from `@k2b/cloud/approvals/ui` now renders the same compact

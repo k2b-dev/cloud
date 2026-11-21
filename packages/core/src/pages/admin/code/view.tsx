@@ -117,13 +117,15 @@ const reasonIcon = (row: string): string =>
         ? "ti ti-sparkles"
         : row === "public_routes"
           ? "ti ti-world-www"
-          : row === "silent_draft"
-            ? "ti ti-pencil"
-            : row === "silent_you"
-              ? "ti ti-user"
-              : row === "read"
-                ? "ti ti-book"
-                : "ti ti-lock";
+          : row === "owner_data"
+            ? "ti ti-users"
+            : row === "silent_draft"
+              ? "ti ti-pencil"
+              : row === "silent_you"
+                ? "ti ti-user"
+                : row === "read"
+                  ? "ti ti-book"
+                  : "ti ti-lock";
 
 const ownerIcon = (owner: CodeOwner) => (owner.kind === "person" ? "ti ti-user" : owner.kind === "app" ? "ti ti-apps" : "ti ti-box");
 

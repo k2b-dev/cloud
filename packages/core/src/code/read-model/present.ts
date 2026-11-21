@@ -83,11 +83,18 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
     })),
     ...manifest.entrypoints
       .filter((entry) => entry.route)
-      .map((entry) => ({
-        key: `page:${stable(entry.route)}`,
-        ...(entry.route?.public ? { policyRow: "public_routes" as const } : {}),
-        text: `${t.page({ audience: entry.route?.public ? t.public : t.members })} · ${entry.route?.method} ${entry.route?.path}`,
-      })),
+      .flatMap((entry) => {
+        const page = `${t.page({ audience: entry.route?.public ? t.public : t.members })} · ${entry.route?.method} ${entry.route?.path}`;
+        // A public owner-data route needs both approvals; each row is its own fact, so the review shows both.
+        return [
+          ...(entry.route?.public || entry.route?.audience !== "owner-data"
+            ? [{ key: `page:${stable(entry.route)}`, ...(entry.route?.public ? { policyRow: "public_routes" as const } : {}), text: page }]
+            : []),
+          ...(entry.route?.audience === "owner-data"
+            ? [{ key: `owner-data:${stable(entry.route)}`, policyRow: "owner_data" as const, text: `${page} · ${t.ownerData}` }]
+            : []),
+        ];
+      }),
     ...(manifest.database ? [{ key: "database", text: t.database }] : []),
     ...(manifest.ai && !manifest.permissions.some((permission) => isCodeAiOperation(permission.operation))
       ? [{ key: "ai", policyRow: "ai" as const, text: t.ai }]
