@@ -75,6 +75,7 @@ import {
   Steps,
   StructuredDataPreview,
   startsMessageGroup,
+  TaskRow,
   TemplateEditor,
   TemplatePreview,
   TemplateSampleData,
@@ -2936,13 +2937,13 @@ const demos: DemoSection = {
       <DemoCard
         id="progress-path"
         chip={{ kind: "component", name: "ProgressPath", from: "@k2b/ui" }}
-        description="Where one order is on its way. Done stages carry a check and a green line; the words say the state too. A narrow container, such as a phone sheet, lists the stages one below the other."
+        description="Where one order is on its way: dots on one line, done, current, or open. The current stage is a ring in the app color with a bold name; screen readers hear the state as a word. A container under 360 px, such as a phone sheet, lists the stages one below the other."
         code={`<ProgressPath
   label="Order 2026-0418"
   steps={[
     { label: "Ordered", detail: "Nov 3", done: true },
     { label: "Paid", detail: "Nov 3", done: true },
-    { label: "Shipped", detail: "Nov 5", done: true },
+    { label: "Shipped", detail: "Nov 5", current: true },
     { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
   ]}
 />`}
@@ -2952,7 +2953,7 @@ const demos: DemoSection = {
           steps={[
             { label: "Ordered", detail: "Nov 3", done: true },
             { label: "Paid", detail: "Nov 3", done: true },
-            { label: "Shipped", detail: "Nov 5", done: true },
+            { label: "Shipped", detail: "Nov 5", current: true },
             { label: "Delivered", detail: "expected Nov 8", icon: "ti ti-home" },
           ]}
         />
@@ -2961,10 +2962,63 @@ const demos: DemoSection = {
             label="Order 2026-0419"
             steps={[
               { label: "Ordered", detail: "Nov 6", done: true },
-              { label: "Paid", detail: "not yet", icon: "ti ti-credit-card" },
+              { label: "Paid", detail: "waiting for the transfer from the customer's bank", current: true },
               { label: "Shipped", detail: "not yet", icon: "ti ti-truck" },
             ]}
           />
+        </div>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  "task-row": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="task-row"
+        chip={{ kind: "component", name: "TaskRow", from: "@k2b/ui" }}
+        description="Tasks that only have a date. The whole row is one link or button; the symbol stands on the text edge, the sentence ends in an ellipsis with a tooltip, and the action word stays. What needs someone now is a notice cell instead."
+        code={`<TaskRow
+  icon="ti ti-package-export"
+  count={3}
+  text="Unsold items are ready for pickup"
+  detail="until Dec 12, 2026"
+  action="Prepare handover"
+  href="#handover"
+/>
+<TaskRow icon="ti ti-file-invoice" text="Send the October statement" action="Open statement" onClick={open} />
+<TaskRow icon="ti ti-signature" text="Countersign the contract" action="Sign" disabled />`}
+      >
+        <div class="ui-task-row-demo">
+          <TaskRow
+            icon="ti ti-package-export"
+            count={3}
+            text="Unsold items are ready for pickup"
+            detail="until Dec 12, 2026"
+            action="Prepare handover"
+            href="#task-row"
+          />
+          <TaskRow icon="ti ti-file-invoice" text="Send the October statement" action="Open statement" onClick={() => announce("Statement opened")} />
+          <TaskRow
+            icon="ti ti-truck-return"
+            count={12}
+            text="Returned items from the November collection wait for a decision on resale or disposal at the warehouse"
+            detail="since Nov 18, 2026 · Warehouse 2, shelf C"
+            action="Decide"
+            href="#task-row"
+          />
+          <TaskRow icon="ti ti-signature" text="Countersign the contract" detail="after the customer signed" action="Sign" disabled />
+        </div>
+        <div class="ui-task-row-demo ui-task-row-demo__narrow">
+          <TaskRow
+            icon="ti ti-package-export"
+            count={3}
+            text="Unsold items are ready for pickup"
+            detail="until Dec 12, 2026"
+            action="Prepare handover"
+            href="#task-row"
+          />
+        </div>
+        <div class="ui-task-row-demo">
+          <Placeholder title="Nothing to do" description="New tasks appear here when they get a date." icon="ti ti-checklist" />
         </div>
       </DemoCard>
     </DemoGrid>

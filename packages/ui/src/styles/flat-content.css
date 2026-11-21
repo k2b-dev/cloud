@@ -1,0 +1,278 @@
+@reference "tailwindcss";
+
+/* TaskRow: a task that only has a date (K17 "Zu tun"). One link or button the width of its column: the kind as a
+   symbol on the text edge, the count as a chip, one sentence, and the action word at the end. 40 px, 52 px with a
+   quiet second line, 60 px on a phone (K1). The sentence ends in an ellipsis; the action word never gives way (K15).
+   A line separates rows; the last row of a section has none (K2). */
+.k2b-ui .k2b-task-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--k2b-space-3, 12px);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--k2b-h-row, 40px);
+  margin: 0;
+  padding: 0 var(--k2b-gutter, 20px);
+  border: 0;
+  border-radius: var(--k2b-radius-flat, 0);
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  line-height: 1.25rem;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast, 120ms) ease-out;
+}
+
+.k2b-ui .k2b-task-row[data-detail] {
+  min-height: var(--k2b-h-row-2, 52px);
+}
+
+.k2b-ui .k2b-task-row ~ .k2b-task-row {
+  border-top: 1px solid var(--k2b-border);
+}
+
+.k2b-ui .k2b-task-row:hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-task-row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-task-row:is(:disabled, [aria-disabled="true"]) {
+  color: var(--k2b-text-subtle);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.k2b-ui .k2b-task-row__icon {
+  justify-self: center;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-task-row__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-task-row__line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--k2b-space-2, 8px);
+}
+
+.k2b-ui .k2b-task-row__text {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-task-row__detail {
+  overflow: hidden;
+  color: var(--k2b-text-subtle);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The action word looks like the small framed button of the mockup, but the whole row is the one target. */
+.k2b-ui .k2b-task-row__action {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  padding: 0 var(--k2b-space-2, 8px);
+  border: 1px solid var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    border-color var(--k2b-motion-fast, 120ms) ease-out,
+    color var(--k2b-motion-fast, 120ms) ease-out;
+}
+
+.k2b-ui .k2b-task-row:hover .k2b-task-row__action {
+  border-color: var(--k2b-text-muted);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-task-row:is(:disabled, [aria-disabled="true"]) :is(.k2b-task-row__icon, .k2b-task-row__detail, .k2b-task-row__action) {
+  color: var(--k2b-text-subtle);
+}
+
+.k2b-ui .k2b-task-row:is(:disabled, [aria-disabled="true"]) .k2b-task-row__action {
+  border-color: var(--k2b-border);
+}
+
+@media (max-width: 767px) {
+  .k2b-ui .k2b-task-row,
+  .k2b-ui .k2b-task-row[data-detail] {
+    min-height: var(--k2b-h-row-phone, 60px);
+  }
+}
+
+/* ProgressPath: the way of one thing through its stages. Dots on one line, each stage with a name and an optional
+   quiet line, done, now, or open. The line between the dots is the only line that does not structure the page; it
+   connects (K2, exception). Side by side when the column is wide enough, one below the other under 360 px. The state
+   is in words for screen readers and in the dot's form, never in color alone. */
+.k2b-ui .k2b-progress-path {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-progress-path__list {
+  display: grid;
+  grid-template-columns: repeat(var(--k2b-progress-path-count, 1), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-progress-path__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin: 0;
+  padding-inline-end: var(--k2b-space-2, 8px);
+}
+
+/* The line runs from the right of a dot to the start of the next column, with 4 px air on both sides. */
+.k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  inset-inline: 24px 4px;
+  height: 2px;
+  background: var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-progress-path__marker {
+  display: grid;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  margin-bottom: var(--k2b-space-2, 8px);
+  border: 1px solid var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-round, 9999px);
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-progress-path__step[data-state="done"] .k2b-progress-path__marker {
+  border-color: var(--k2b-text-secondary);
+  color: var(--k2b-surface);
+  background: var(--k2b-text-secondary);
+}
+
+/* Now: the place the thing is at, a ring with a dot in the app colour ("you are here", K8). */
+.k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker {
+  border: 2px solid var(--k2b-accent-600);
+}
+
+.k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: var(--k2b-radius-round, 9999px);
+  background: var(--k2b-accent-600);
+}
+
+.k2b-ui.k2b-dark .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker,
+.k2b-ui[data-theme="dark"] .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker,
+.dark .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker {
+  border-color: var(--k2b-accent-400);
+}
+
+.k2b-ui.k2b-dark .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after,
+.k2b-ui[data-theme="dark"] .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after,
+.dark .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after {
+  background: var(--k2b-accent-400);
+}
+
+.k2b-ui .k2b-progress-path__label {
+  overflow-wrap: anywhere;
+  color: var(--k2b-text-secondary);
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-weight: 500;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__label {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-progress-path__step[data-state="open"] .k2b-progress-path__label {
+  color: var(--k2b-text-muted);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-progress-path__detail {
+  overflow-wrap: anywhere;
+  color: var(--k2b-text-subtle);
+  font-size: var(--k2b-font-size-meta, 0.75rem);
+  line-height: 1rem;
+}
+
+@container (max-width: 359.98px) {
+  .k2b-ui .k2b-progress-path__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .k2b-ui .k2b-progress-path__step {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-content: start;
+    column-gap: var(--k2b-space-3, 12px);
+    min-height: var(--k2b-h-row, 40px);
+    padding: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__step:last-child {
+    min-height: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__marker {
+    grid-row: span 2;
+    margin: 0;
+  }
+
+  .k2b-ui .k2b-progress-path__label,
+  .k2b-ui .k2b-progress-path__detail {
+    grid-column: 2;
+  }
+
+  .k2b-ui .k2b-progress-path__detail {
+    padding-bottom: var(--k2b-space-3, 12px);
+  }
+
+  .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
+    top: 24px;
+    bottom: 4px;
+    inset-inline: 9px auto;
+    width: 2px;
+    height: auto;
+  }
+}
