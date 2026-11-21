@@ -19,7 +19,6 @@ export const pulseMessages = i18n.define({
       dashboardTo: "To",
       dashboardApplyRange: "Apply range",
       dashboardInvalidRange: "Choose a valid start and an end after it.",
-      dashboardUnavailableDetail: "The dashboard could not be loaded. Try again.",
       dashboardLoading: "Loading…",
       dashboardReady: "Up to date · refreshes every 60 s",
       dashboardLastGood: "Last successful update",
@@ -30,9 +29,6 @@ export const pulseMessages = i18n.define({
       dashboardTimeLimit: "This query took too long. The other panels remain available.",
       dashboardInvalidResult:
         "The result cannot be displayed. Review the selected columns and aggregate the query within the dashboard limits.",
-      dashboardDenied: "Dashboard unavailable",
-      dashboardDeniedDetail:
-        "You no longer have access, or the public link has been revoked. Ask the base admins for access or a new link.",
       dashboardSql: "How this was calculated",
       dashboardShare: "Share",
       dashboardPublish: "Publish dashboard",
@@ -359,6 +355,8 @@ export const pulseMessages = i18n.define({
         "is an internal server and not released for this base. A Cloud admin can release it under Administration -> Pulse -> Internal targets.",
       start: "Start",
       backToPulse: "Back to Pulse",
+      publicLinkRemovedTitle: "This link is no longer valid",
+      publicLinkRemovedDetail: "Shared Pulse dashboards were removed, so this link no longer shows any data.",
       retry: "Retry",
       close: "Close",
       cancel: "Cancel",
@@ -602,7 +600,6 @@ export const pulseMessages = i18n.define({
       dashboardTo: "Bis",
       dashboardApplyRange: "Zeitraum übernehmen",
       dashboardInvalidRange: "Wähle einen gültigen Beginn und ein Ende danach.",
-      dashboardUnavailableDetail: "Das Dashboard konnte nicht geladen werden. Versuche es erneut.",
       dashboardLoading: "Lädt …",
       dashboardReady: "Aktuell · alle 60 s",
       dashboardLastGood: "Letzter erfolgreicher Stand",
@@ -613,9 +610,6 @@ export const pulseMessages = i18n.define({
       dashboardTimeLimit: "Diese Abfrage brauchte zu lange. Die anderen Panels bleiben verfügbar.",
       dashboardInvalidResult:
         "Das Ergebnis lässt sich nicht darstellen. Prüfe die gewählten Spalten und fasse die Abfrage innerhalb der Dashboard-Grenzen zusammen.",
-      dashboardDenied: "Dashboard nicht verfügbar",
-      dashboardDeniedDetail:
-        "Du hast keinen Zugriff mehr, oder der öffentliche Link wurde widerrufen. Bitte die Admins der Base um Zugriff oder einen neuen Link.",
       dashboardSql: "So gerechnet",
       dashboardShare: "Teilen",
       dashboardPublish: "Dashboard veröffentlichen",
@@ -951,6 +945,8 @@ export const pulseMessages = i18n.define({
         "ist ein interner Server und für diese Base nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
       start: "Start",
       backToPulse: "Zurück zu Pulse",
+      publicLinkRemovedTitle: "Dieser Link gilt nicht mehr",
+      publicLinkRemovedDetail: "Geteilte Pulse-Dashboards wurden entfernt. Dieser Link zeigt deshalb keine Daten mehr.",
       retry: "Erneut versuchen",
       close: "Schließen",
       cancel: "Abbrechen",
