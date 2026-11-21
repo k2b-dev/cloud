@@ -348,6 +348,7 @@ const measure = () => {
       };
     })(),
     looseIndent: style(document.querySelector("#loose .k2b-section__body")!).paddingInlineStart,
+    looseEdge: style(document.querySelector("#loose .k2b-section__header")!).paddingInlineStart,
     standalone: card("standalone"),
     bare: card("bare"),
     hosted: (() => {
@@ -541,8 +542,10 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.narrowHeader.metaInside).toBe(true);
           expect(result.narrowHeader.metaBelow || result.narrowHeader.metaBeside).toBe(true);
 
-          // The one text edge belongs to panels: a section outside one keeps its full width.
-          expect(result.looseIndent).toBe("0px");
+          // The one text edge belongs to panels: a section outside one has no icon indent; its body stands on the same
+          // text edge as its heading, the gutter (K5).
+          expect(result.looseIndent).toBe(result.looseEdge);
+          expect(["16px", "20px"]).toContain(result.looseIndent);
 
           // Outside a detail panel the default discussion keeps its own surface and inset, but draws no outer frame
           // (Cloud flach "one line, one owner": a section never draws its own border); bare draws nothing.
