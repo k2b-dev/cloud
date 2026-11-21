@@ -30,6 +30,9 @@ export type PulseBase = {
   updatedAt: string;
 };
 
+/** `lastReason` names the first refused field or the refusal in words, never values from the batch. */
+export type PulseSourceRejections = { last24h: number; lastReason: string | null; lastAt: string | null };
+
 export type PulseSource = {
   seriesCount?: number;
   todayCount?: number | null;
@@ -54,6 +57,8 @@ export type PulseSource = {
     skippedSummaries: number;
     lastError: string | null;
     lastErrorAt: string | null;
+    /** Refused ingest requests sent with this source's key; absent in write responses and from older servers. */
+    rejected?: PulseSourceRejections;
   };
   lastSeenAt: string | null;
   lastError: string | null;
