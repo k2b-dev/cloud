@@ -19,7 +19,7 @@ import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { layoutProblems } from "../../../../ui/src/layout-check";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // Whether the account pages draw one frame or nested ones, and whether switching tabs moves
@@ -316,7 +316,8 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${await content(path, locale)}</main></div></div></body></html>`,
   );
-  await tab.evaluate(() => document.fonts.ready);
+  // Fonts, layout and the first observer wave settle before any caller reads styles or geometry.
+  await settled(tab);
   return tab;
 };
 
