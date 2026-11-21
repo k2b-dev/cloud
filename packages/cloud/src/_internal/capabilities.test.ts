@@ -221,6 +221,37 @@ describe("capability v1 compilation", () => {
     ).toThrow('field path "limit.missing" does not exist');
   });
 
+  test("publishing a schema once under $defs is not a breaking evolution, while narrowing it still is", () => {
+    const base = example();
+    const manifest = (amount: z.ZodType) =>
+      compileCapabilities(
+        "example",
+        defineCapabilities({
+          ...base,
+          queries: {
+            ...base.queries,
+            get: {
+              ...base.queries.get,
+              input: z.object({ id: z.string().describe("Stable item ID."), limit: amount.optional().describe("Limit.") }).strict(),
+            },
+          },
+        }),
+      ).manifest;
+    const amount = z.object({ value: z.number().describe("Amount.") }).strict();
+    const inline = manifest(amount);
+    const shared = manifest(amount.meta({ id: "CapabilitiesEvolutionAmount" }));
+    expect(shared.queries[0]!.inputSchema).toHaveProperty("$defs.CapabilitiesEvolutionAmount");
+    expect(capabilityManifestEvolutionIssues(inline, shared)).toEqual([]);
+    expect(capabilityManifestEvolutionIssues(shared, inline)).toEqual([]);
+    const narrowed = manifest(
+      z
+        .object({ value: z.number().max(10).describe("Amount.") })
+        .strict()
+        .meta({ id: "CapabilitiesEvolutionNarrowed" }),
+    );
+    expect(capabilityManifestEvolutionIssues(inline, narrowed)).toContain("Query get input.limit.value changed");
+  });
+
   test("rejects presentation keys that do not exist in the stable manifest", () => {
     expect(() =>
       compileCapabilities(
