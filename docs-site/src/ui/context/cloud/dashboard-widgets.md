@@ -19,7 +19,7 @@ on a 320px phone.
 
 `DescriptionPanel` from `@k2b/cloud/descriptions` maps one portable
 description onto the `@k2b/ui` dashboard components: `DashboardFrame`,
-`ChartExplorer`, `StatGrid`, `DataTable` and `DescriptionList`. Chat, Pulse, Code pages and the
+`ChartExplorer`, `StatGrid`, `DataTable` and `DescriptionList`. Chat, Code pages and the
 chart showcase use it, so a page tree maps one to one onto components:
 
 | Node | Drawn as | Props from the node |

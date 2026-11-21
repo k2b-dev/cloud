@@ -1066,22 +1066,11 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
-Pulse dashboards add Postgres definitions, publication hashes, and execution
-receipts to the control-data backup. Valkey stores disposable result snapshots,
-bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
-can leave a panel waiting for its next permitted refresh; it does not permit
-another calculation in the same interval. Dashboards share SQL admission and
-read profiles but do not consume the questions quota. Public links are checked
-on every read and can be revoked by a base writer. Clearing measurements keeps
-dashboard definitions and invalidates their cached results.
-
-Before rolling Pulse back, check whether anyone saved dashboards with newly
-introduced panel kinds. Dashboard reads validate the stored definition strictly;
-an older Pulse version cannot read a kind it does not recognize. Rolling back
-after saving those kinds can make the affected base's entire dashboard list
-unavailable. Keep the newer version, or replace those panels with kinds supported
-by the rollback target before downgrading. Include dashboard definitions in the
-pre-upgrade backup.
+Pulse keeps the tables of its removed dashboards and overview
+(`dashboards`, `dashboard_operations`, `dashboard_runs`, `overview_state`) and
+the `saved_queries.pinned` column in Postgres, unused, until a later release
+removes them. Keep them in the control-data backup
+([Pulse dashboards and the overview are removed](/en/docs/reference/deprecations-and-migrations#pulse-dashboards-and-the-overview-are-removed)).
 
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.

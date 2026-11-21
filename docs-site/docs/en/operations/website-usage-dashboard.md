@@ -1,18 +1,18 @@
 ---
-title: Build a website usage dashboard
-navTitle: Website usage dashboard
+title: Show website usage on a page
+navTitle: Website usage page
 section: Operations
 order: 1148
-description: Send page views from a website backend to Pulse and show totals, a time series, a country map, and top pages on one dashboard.
+description: Send page views from a website backend to Pulse and show totals, a time series, countries, and top pages on a Code page.
 tags: [operations, pulse, analytics, privacy]
-updated: 2026-11-06
+updated: 2026-11-21
 ---
 
-# Build a website usage dashboard
+# Show website usage on a page
 
-This guide gives you one Pulse dashboard with page views, sessions, contact
-requests, a time series, a world map, and top pages. The website's backend
-sends the events; Pulse has no browser tracking snippet.
+This guide sends page views from a website's backend to Pulse and shows page
+views, sessions, contact requests, a time series, countries, and top pages on
+one Code page. Pulse has no browser tracking snippet.
 
 ## Send page views with a country
 
@@ -30,59 +30,41 @@ const dimensions = { path: "/services", ...(country ? { country } : {}) };
 ```
 
 Never send the IP address to Pulse. A page view without a country still counts
-in every panel except the map. When `attribution` in the result is set, link
-it where you show the results. Pulse dashboards add that link to panels with
-country data themselves. Other backends send `dimensions.country` from their
+in every number except the country breakdown. When `attribution` in the result is set, link
+it where you show the results, including on a Code page. Other backends send `dimensions.country` from their
 own source or leave it out.
 
-## Create the source and dashboard
-
-Start from the example definition in
-`packages/pulse/examples/website-dashboard.json`:
+## Create the base and source
 
 ```sh
 cld pulse create Website --json
 cld pulse use Website
 cld pulse sources create --name website --kind http_ingest
 cld pulse source-tokens create website --name backend --output-file ./website.token
-cld pulse dashboards save --file website-dashboard.json --idempotency-key website-v1 --json
-cld pulse dashboards list
-cld pulse dashboards panels <dashboard-id>
-cld pulse dashboards panel <dashboard-id> countries --range 7d --json
 ```
 
-`dashboards save` needs write access to the base. A person's login and an agent
-acting for that person use the same commands and the same access checks.
-A panel that returns no rows yet shows an empty state until the first events
-arrive.
-
-## Change a panel
-
-Read the dashboard into a file with its current revision, change
-`definition.panels`, and save the whole definition. Pulse refuses a save from an
-older revision.
+Sources and tokens need base admin access. Check the first events with SQL:
 
 ```sh
-cld pulse dashboards get <dashboard-id> --json \
-  | jq '{name, definition, expectedRevision: .revision}' > website-dashboard.json
-cld pulse dashboards save --dashboard <dashboard-id> --file website-dashboard.json --idempotency-key website-v2 --json
+cld pulse sql --file packages/pulse/examples/website.sql --param bucket=1d --format table
 ```
 
-The [Pulse app guide](/en/apps/pulse) describes each panel type and its limits.
+## Build the page
 
-## Share the numbers
+Ask Gustav for a Code page that reads the Website base, for example: "Build a
+page with page views, sessions, and contact requests for the last seven days,
+page views per day, page views per country, and the top ten pages from my
+Website base." Gustav writes SQL like `packages/pulse/examples/website.sql`
+and reads it with `pulse.base(id).sql.run`.
 
-Publishing creates a link that anyone can open, without an account. Review each
-output column first: the link shows those columns for the preset time ranges.
-Publishing confirms the exact columns of every panel, so read them from the
-dashboard and check the file:
+Cloud shows the page only to people who may read the Website base. Others get
+**No access**. Pulse data never appears on a public page; to share the
+numbers, give people read access to the base. Each visit runs the page's
+queries against the base's SQL quota, so a page with a few aggregated queries
+stays fast.
 
-```sh
-cld pulse dashboards get <dashboard-id> --json \
-  | jq '[.definition.panels[] | {(.id): .columns}] | add' > columns.json
-cld pulse dashboards publish <dashboard-id> --expected-revision <revision> --file columns.json --yes --json
-cld pulse dashboards unpublish <dashboard-id> --expected-revision <revision> --yes
-```
+The [Pulse app guide](/en/apps/pulse#show-pulse-data-on-a-page) describes the
+access rules and limits.
 
 ## Limits
 
