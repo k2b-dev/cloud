@@ -105,7 +105,7 @@ beforeAll(async () => {
   browser = await launchBrowser({
     ...(browserName === "chromium" ? { channel: "chromium", args: ["--use-fake-device-for-media-stream"] } : {}),
   });
-});
+}, 30_000);
 
 afterAll(async () => {
   try {

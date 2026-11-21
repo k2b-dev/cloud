@@ -33,7 +33,7 @@ let browser: Browser;
 beforeAll(async () => {
   server = Bun.serve({ port: 0, fetch: app.fetch });
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
   await server?.stop(true);

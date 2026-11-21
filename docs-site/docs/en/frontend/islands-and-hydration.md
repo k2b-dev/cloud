@@ -184,6 +184,30 @@ Keep content that the page renders on mount in static imports; a dynamic
 import there only delays it. Import types with `import type`; they never reach
 the browser.
 
+Never load a whole package entry such as `@k2b/ui` or `@k2b/stdlib/browser` on
+demand when other browser code imports it statically. For a static import, the
+bundler reads only the names you import from the package's re-exports. An
+`import()` needs every export. The package entry then keeps all its re-exports,
+and every island that imports the package statically keeps modules it never
+uses in its first load. Import a small module on demand that re-exports only
+the names it needs instead:
+
+```ts
+// pairing-toast.ts
+export { toast } from "@k2b/ui";
+```
+
+```ts
+void import("./pairing-toast").then(({ toast }) => toast(text));
+```
+
+The island build warns and names the file when code imports a package entry
+on demand that only re-exports other modules and that browser code also
+imports statically. The build still succeeds, so a dependency you cannot
+change does not stop it. An entry that re-exports a single module, such as
+`@k2b/ui/hover-card`, may load on demand. Inside the Cloud repository, the
+`no-barrel-dynamic-import` rule makes this an error.
+
 ## Preserve the server result
 
 Render the initial answer on the server. The island starts from serialized
