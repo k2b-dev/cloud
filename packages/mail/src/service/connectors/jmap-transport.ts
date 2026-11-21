@@ -49,7 +49,7 @@ export async function requestJmap(input: JmapRequest, deps: JmapTransportDepende
   validateRequest(input);
   try {
     // Same connection budget as imap-smtp.ts; here it bounds DNS and the complete buffered response too.
-    return await withNetworkDeadline(15_000, input.signal, new JmapTransportError("JMAP_TRANSPORT"), async (signal) => {
+    return await withNetworkDeadline(15_000, input.signal, new JmapTransportError("JMAP_TIMEOUT"), async (signal) => {
       const endpoint = await awaitNetworkOperation(
         // resolvePublicEndpoint's existing DNS budget is 5 seconds.
         (deps.resolveEndpoint ?? resolvePublicEndpoint)(
@@ -126,6 +126,9 @@ function requestOptions(input: JmapRequest, endpoint: ResolvedEndpoint): Request
 function transportError(error: unknown, signal: AbortSignal): JmapTransportError {
   if (signal.aborted) return new JmapTransportError("JMAP_ABORTED");
   if (error instanceof JmapTransportError) return error;
+  // A DNS deadline (endpoint-policy.ts) or a socket that timed out is a timeout, not a broken connection.
+  const code: unknown = error instanceof Error ? Reflect.get(error, "code") : undefined;
+  if (code === "ENDPOINT_DNS_TIMEOUT" || code === "ETIMEDOUT") return new JmapTransportError("JMAP_TIMEOUT");
   // Node and response-reading errors may contain headers or URLs. Retain no cause.
   // Consumer failures belong to the caller and bypass this normalization.
   return new JmapTransportError("JMAP_TRANSPORT");

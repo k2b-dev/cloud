@@ -5,7 +5,7 @@ import { z } from "zod";
 import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { ENVELOPE_BATCH_SIZE } from "./contract";
 import { callJmap, fetchJmapSession, JMAP_CORE, JMAP_JSON_BYTES, JMAP_MAIL, jmapBasicAuthorization, jmapIdSchema } from "./jmap-client";
-import { readJmapMailboxDelta } from "./jmap-delta";
+import { readJmapEmailDelta, readJmapMailboxDelta } from "./jmap-delta";
 import type { JmapEmailSnapshot } from "./jmap-email";
 import { type JmapScanPageStep, type JmapScanStep, readJmapAccountStart, readJmapEmailExistence, readJmapScanPage } from "./jmap-scan";
 import { type JmapTransportDependencies, requestJmap } from "./jmap-transport";
@@ -212,6 +212,8 @@ suiteFor("jmap")("Mail account scan conformance against CI Stalwart", () => {
       start: () => stage(`${label} Account start`, () => readJmapAccountStart(session, authorization, accountId, signal, dependencies)),
       mailboxDelta: (sinceState: string) =>
         stage(`${label} Mailbox delta`, () => readJmapMailboxDelta(session, authorization, accountId, sinceState, signal, dependencies)),
+      emailDelta: (sinceState: string) =>
+        stage(`${label} Email delta`, () => readJmapEmailDelta(session, authorization, accountId, sinceState, signal, dependencies)),
       cleanup: async () => {
         const cleanupSignal = AbortSignal.timeout(5_000);
         let succeeded = true;
@@ -382,6 +384,28 @@ suiteFor("jmap")("Mail account scan conformance against CI Stalwart", () => {
       } finally {
         console.info("JMAP_STALWART_SCAN", JSON.stringify({ restarts, pages, totalReported }));
       }
+    });
+  }, 30_000);
+
+  // Unmeasured until now: a scan step applies only when its get reports the state the last delta
+  // reached. Nothing in this test changes the account between the delta and the page.
+  test("4 A scan page reports the Email state the caught-up delta reached", async () => {
+    await withFixtures("Scan state", async (f) => {
+      const from = windowDay + 4 * 3_600_000;
+      const mailbox = await f.createMailbox();
+      await f.importEmails(mailbox, utc(from + 10_000));
+      const start = await f.start();
+      check(start.kind === "ready", "Scan state: start ready");
+      let state = start.emailState;
+      let caughtUp = false;
+      for (let turn = 0; turn < 50 && !caughtUp; turn++) {
+        const delta = await f.emailDelta(state);
+        state = delta.newState;
+        caughtUp = !delta.hasMoreChanges;
+      }
+      check(caughtUp, "Scan state: delta caught up within the bound");
+      const page = await f.page({ kind: "query", before: utc(from + 60_000) });
+      check(page.emailState === state, "Scan state: page state equals the last delta newState");
     });
   }, 30_000);
 

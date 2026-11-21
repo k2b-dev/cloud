@@ -139,7 +139,7 @@ test("rejects repeated query IDs rather than continuing indefinitely", async () 
           methodResponses: [
             ["Mailbox/query", { accountId: "d333333", queryState: "s", position: 0, total: 4, ids: ["a", "a"] }, "folders"],
           ],
-          sessionState: "s",
+          sessionState: f.session.state,
         })
       : undefined;
   await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
@@ -182,7 +182,7 @@ test("bounds even a progressing query with an endless fabricated total", async (
               "folders",
             ],
           ],
-          sessionState: "s",
+          sessionState: f.session.state,
         })
       : undefined;
   await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_DISCOVERY_LIMIT" });
