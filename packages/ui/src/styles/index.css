@@ -15927,29 +15927,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* In a chat a notice is a card, as wide as the reading column (Gustav flat, a named exception to K10): the tint of its
    tone, a thin edge in the hue of that tint, the radius of a control, and no shadow. Pause, error, approval, and a
    Code version stand in line with the person's messages and the composer; the conversation sets them apart by space.
-   A callout in the answer's prose stays part of the text (F3: results in the conversation have no frame). */
+   The edge is a 1 px ring inside the card, as a field draws its edge, so the card keeps every size and inset of the
+   notice it is. A callout in the answer's prose stays part of the text (F3: results in the conversation have no frame). */
 .k2b-ui .k2b-chat-timeline .k2b-notice-card:not(.k2b-callout),
-.k2b-ui .k2b-chat-timeline .k2b-notice-card[data-row][data-tone] {
-  --k2b-chat-card-edge: color-mix(in srgb, var(--k2b-notice-ink) 22%, var(--k2b-surface));
-  padding: calc(0.75rem - 1px) calc(1rem - 1px);
-  border: 1px solid var(--k2b-chat-card-edge);
-  border-radius: var(--k2b-radius-control);
-}
-
-/* A row with its quiet line: as roomy as a card where it is wide; where it is narrow it keeps the row's reserved
-   height and insets, and the edge takes one pixel of each inset, so a change of state still moves nothing. */
+.k2b-ui .k2b-chat-timeline .k2b-notice-card[data-row][data-tone],
 .k2b-ui .k2b-chat-timeline .k2b-notice-card[data-row][data-detail] {
-  padding: calc(0.5rem - 1px) calc(var(--k2b-gutter) - 1px);
-  border: 1px solid var(--k2b-chat-card-edge);
+  --k2b-chat-card-edge: color-mix(in srgb, var(--k2b-notice-ink) 22%, var(--k2b-surface));
   border-radius: var(--k2b-radius-control);
-}
-
-@container (min-width: 35.001rem) {
-  .k2b-ui .k2b-chat-timeline .k2b-notice-card[data-row][data-detail] {
-    block-size: auto;
-    min-block-size: var(--k2b-h-row-3);
-    padding: calc(0.75rem - 1px) calc(1rem - 1px);
-  }
+  box-shadow: inset 0 0 0 1px var(--k2b-chat-card-edge);
 }
 
 /* A decision has one look in every place (chat, side panel, approvals page,
