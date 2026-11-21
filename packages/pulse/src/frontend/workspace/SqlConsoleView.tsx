@@ -242,7 +242,7 @@ export default function SqlConsoleView(props: {
         <div class="w-full min-w-0 max-w-[1120px]">
           <div
             data-sql-region="editor"
-            class="min-w-0 rounded-xl bg-(--k2b-surface-muted) focus-within:shadow-[0_0_0_2px_var(--k2b-action)]"
+            class="pulse-sql-editor min-w-0 bg-(--k2b-surface-muted)"
             style={{
               "--k2b-code-keyword": "light-dark(#1e40af, #a5b8f3)",
               "--k2b-code-string": "light-dark(#047857, #6ee7b7)",
@@ -613,7 +613,7 @@ export default function SqlConsoleView(props: {
                   <DataTable
                     surface="plain"
                     density="compact"
-                    class="w-fit max-w-full rounded-[10px]!"
+                    class="w-fit max-w-full"
                     tableClass="w-max! border-separate! border-spacing-0!"
                     rowClass="group/pulse-result-row border-0!"
                     cellContentClass="whitespace-nowrap font-mono!"
@@ -632,8 +632,7 @@ export default function SqlConsoleView(props: {
                         nowrap: true,
                         headerClass:
                           "h-[38px]! px-3.5! py-0! text-[12.5px]! font-semibold! text-secondary! bg-(--k2b-surface) whitespace-nowrap",
-                        cellClass:
-                          "h-9! px-3.5! py-0! font-mono text-[12.5px] text-primary first:rounded-l-lg last:rounded-r-lg group-odd/pulse-result-row:bg-[color-mix(in_srgb,var(--k2b-surface-muted)_60%,transparent)]",
+                        cellClass: "h-9! px-3.5! py-0! font-mono text-[12.5px] text-primary",
                       }),
                     )}
                     ariaLabel={t().sqlResultTable}

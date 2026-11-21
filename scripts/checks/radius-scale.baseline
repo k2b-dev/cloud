@@ -168,9 +168,7 @@ packages/notebooks/src/styles/app.css | css | 3px
 packages/notebooks/src/styles/app.css | css | 9px
 packages/notebooks/src/styles/app.css | css | 9px
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | class | rounded-[10px]
-packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-[10px]
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-md
-packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-xl
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[10px]
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]

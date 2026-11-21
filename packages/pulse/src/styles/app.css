@@ -236,3 +236,6 @@
 @container k2b-data-table (max-width: 479.98px) {
   .k2b-ui .pulse-source-cell__meta { display: none; }
 }
+/* The SQL editor is a writing area (K14): a light tint, square, and one stronger line below it that turns blue on focus. */
+.pulse-sql-editor { box-shadow: inset 0 -1px 0 var(--k2b-border-strong); }
+.pulse-sql-editor:focus-within { box-shadow: inset 0 -2px 0 var(--k2b-action); }
