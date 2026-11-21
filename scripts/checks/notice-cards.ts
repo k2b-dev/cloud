@@ -88,6 +88,11 @@ const frameAround = (notice: ts.Node): string | undefined => {
       : [];
     if (FRAMES.has(tag) || frameClasses.length > 0)
       return frameClasses.length > 0 ? `<${tag} class="${frameClasses.join(" ")}">` : `<${tag}>`;
+    // A plain element with only the notice inside draws nothing; the question goes to the element above it.
+    if (/^[a-z]/.test(tag)) {
+      child = parent;
+      continue;
+    }
     return undefined;
   }
   return undefined;

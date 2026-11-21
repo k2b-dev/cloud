@@ -50,10 +50,6 @@ const parts = (value: string): string[] => {
 export const onScale = (value: string): boolean => {
   const cleaned = value.replace(/!important/gi, "").trim();
   if (/^(?:inherit|initial|unset|revert|revert-layer|none)$/i.test(cleaned)) return true;
-  // A step between two scale values on the box's own size, such as an icon tile that is a mark below 24 px and a
-  // control above: `clamp(<scale>, (100% - <n>px) * 1000, <scale>)`. The factor makes it a step, never a value between.
-  const step = cleaned.match(/^clamp\(\s*(var\([^()]*\)|[\w.%]+)\s*,\s*\(100% - [\d.]+px\) \* 1000\s*,\s*(var\([^()]*\)|[\w.%]+)\s*\)$/);
-  if (step) return onScale(step[1]!) && onScale(step[2]!);
   return parts(cleaned).every((part) => {
     if (scaleLength.test(part) || isRound(part)) return true;
     const variable = part.match(/^var\(\s*(--[\w-]+)\s*(?:,(.*))?\)$/s);

@@ -16,6 +16,8 @@ test("a focusable separator and a column cursor belong to the shared grip", asyn
         'const d = <div role="separator" tabIndex={0} />;',
         'const e = <div role="separator" tabindex="0" class="old-edge" />;',
         'const f = <div class="w-1 cursor-col-resize" />;',
+        'const g = <div role="separator" tabindex="-1" class="divider" />;',
+        'const h = <div role="separator" tabIndex={-1} class="divider" />;',
       ].join("\n"),
       "packages/demo/src/app.css": [
         ".k2b-ui .k2b-resize-separator[data-orientation=vertical] { cursor: col-resize; }",

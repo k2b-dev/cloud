@@ -179,7 +179,14 @@ test("the overview hydrates its live cards without a console error", async () =>
         const casts = (element: Element) =>
           [...getComputedStyle(element).boxShadow.matchAll(/-?[\d.]+px -?[\d.]+px ([\d.]+)px/g)].some((layer) => Number(layer[1]) > 0);
         const lifted = cards.filter(casts).length;
-        const nested = cards.flatMap((card) => Array.from(card.querySelectorAll("*"))).filter(casts).length;
+        // A floating layer (a chart tooltip) keeps its overlay shadow (K16); everything in the card's flow is flat.
+        const inFlow = (element: Element) =>
+          !["fixed", "absolute"].includes(getComputedStyle(element).position) &&
+          element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+        const nested = cards
+          .flatMap((card) => Array.from(card.querySelectorAll("*")))
+          .filter(inFlow)
+          .filter(casts).length;
         return { raised: raised === "rgba(0, 0, 0, 0) 0px 0px 0px 0px", lifted, nested };
       }),
     ).toEqual({ raised: true, lifted: 0, nested: 0 });

@@ -12,7 +12,6 @@ test("accepts the five K4 values and radius tokens only", () => {
     "var(--ui-radius-frame, 14px)",
     "inherit",
     "8px !important",
-    "clamp(var(--k2b-radius-mark), (100% - 23.5px) * 1000, var(--k2b-radius-control))",
   ])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: true });
   for (const value of [
@@ -22,8 +21,6 @@ test("accepts the five K4 values and radius tokens only", () => {
     "calc(var(--k2b-radius-control) + 3px)",
     "var(--k2b-gap)",
     "var(--k2b-radius-control, 6px)",
-    "clamp(4px, 50%, 8px)",
-    "clamp(4px, (100% - 23.5px) * 1000, 12px)",
   ])
     expect({ value, ok: onScale(value) }).toEqual({ value, ok: false });
   for (const size of [undefined, "none", "sm", "lg", "full", "[8px]", "[var(--k2b-radius-card)]"]) expect(utilityOnScale(size)).toBe(true);

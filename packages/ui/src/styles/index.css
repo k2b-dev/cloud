@@ -221,9 +221,9 @@
   --k2b-radius-overlay: 8px;
   --k2b-radius-round: 9999px;
   --k2b-radius-card: 14px;
-  /* An icon tile is a mark below 24 px and a control from 24 px: a step on
-     its own width, never a value between 4 and 8 px. */
-  --k2b-radius-tile: clamp(var(--k2b-radius-mark), (100% - 23.5px) * 1000, var(--k2b-radius-control));
+  /* An icon tile from 24 px is pressed-looking like a control: 8 px. A tile
+     below 24 px is a mark, and its owning rule sets `--k2b-radius-mark`. */
+  --k2b-radius-tile: var(--k2b-radius-control);
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: var(--k2b-radius-overlay);
   /* Spacing (K1): every gap is one step of 4 px or a sum of steps. */
@@ -686,6 +686,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* What a chart holds, such as its table view, stays flat. */
 .k2b-ui [data-k2b-layer="quiet"] .k2b-chart-explorer > * {
   --k2b-island-shadow: 0 0 #0000;
+}
+
+/* One line, one owner (Cloud flach K2): the container draws the divider
+   between its children, its children never draw an outer edge of their own.
+   `k2b-divided` puts a hairline above every shown child after the first;
+   `k2b-divided-inline` does the same for a row, at the start of each child.
+   A hidden child (`[hidden]`) neither draws a line nor counts as the first. */
+.k2b-ui :where(.k2b-divided) > :not([hidden]) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
+}
+
+.k2b-ui :where(.k2b-divided-inline) > :not([hidden]) ~ :not([hidden]) {
+  border-inline-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui::selection,

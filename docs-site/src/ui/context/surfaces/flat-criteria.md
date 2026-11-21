@@ -20,7 +20,7 @@ heights, lines, and radii follow from the tokens below.
 | --- | --- |
 | **status row** | The first row under a column's head, 52 px: the lead statement (18 px, bold), at most three key figures, filters on the right. Selection and page state take the place of the figures. |
 | **notice cell** | A square cell in the state colour where the thing is: sign, sentence, consequence, and a button that names the deed. Never a round box inside a cell. |
-| **section header** | The head of one topic: an icon in a 20 px tile in the colour of its area, a 14 px bold title (13 px in the detail column, K9), a count, at most two grey text buttons. |
+| **section header** | The head of one topic: an icon in a 20 px tile in the area colour the app passes, a 14 px bold title (13 px in the detail column, K9), a count, at most two grey text buttons. |
 | **group** | Sorts the rows of a list by one property. 36 px head on the quiet page surface, 13 px bold name, count, at most one action. Disappears when empty. |
 | **area** | A thing the rows belong to, such as a stack with its lists. Its own square surface, 56 px head with two lines, a rail from head to last row, 8 px between areas. |
 | **facts group** | A group of labelled values in the facts column: quiet label, strong value, an icon, one pencil per group. |
@@ -33,22 +33,74 @@ heights, lines, and radii follow from the tokens below.
 | | Criterion | Kind | Check or question |
 | --- | --- | --- | --- |
 | K1 | Fixed heights and one spacing scale: head 56, status row 52, column head 36, rows 40/52/72, dense 32; phone title 52, tabs 44, row 60; gaps 4, 8, 12, 16, 20, 24, 32 px | measure | the `--k2b-h-*` and `--k2b-space-*` tokens; height tests of each building block as it moves (planned) |
-| K2 | Hairlines divide: 1 px, one colour, edge to edge of their column; the head line carries the 2 px tab mark | measure | `shadow-tokens`; a workspace hairline browser test with the workspace building block (planned) |
+| K2 | Hairlines divide: 1 px, one colour, edge to edge of their column; the head line carries the 2 px tab mark | measure | `border-ownership`, `layoutProblems` (double line), `shadow-tokens`; a workspace hairline browser test with the workspace building block (planned) |
 | K3 | Shadows only for what floats | measure | `shadow-tokens` |
 | K4 | Round is what you press, square is what orders: 0, 4, 8, 14 px, or round | measure | `radius-scale` |
 | K5 | Alignment: text edge 20 px (phone 16 px), fields of three fixed lines on one grid, numbers right-aligned in tabular figures | measure | `field-subgrid.browser.test.ts` |
 | K6 | Head shows tabs or a path, never both; the status row holds the lead statement | judgement | Is the lead statement what a person wants to know here first? |
 | K7 | Table and list: grey 12 px column head without fill, lines under rows only, selection is a fill in the app colour, name column at most 560 px | measure | `layoutProblems`, `DataTable` browser tests |
-| K8 | Colour only with meaning: grey carries, app colour is "you are here", blue is "you press this", green, yellow, and red are states with a word, plum is AI | judgement | Does every colour on the page map to one of these meanings? |
+| K8 | Colour only with meaning: grey carries, app colour is "you are here", blue is "you press this" and, as a tint, "your turn", green, yellow, and red are states with a word, plum is AI; one filled main action per view | judgement | Does every colour on the page map to one of these meanings? |
 | K9 | The detail column: docked, 380 px, head 56 px, sections divided by hairlines, icons on one axis | measure | `workspace-surfaces`, detail browser tests |
 | K10 | Notice and fault: a page-wide fault rests in the status row; what needs a person is a notice cell where the thing is; empty is a sign, a sentence, and a way out, without a box | measure, judgement | `notice-cards`; Does it concern the page or one thing? Must someone act? |
 | K11 | Four sizes in the controls: 12, 13, 14, 18 px; three weights | measure | `type-scale.browser.test.ts` |
 | K12 | Phone below 768 px, tablet to 1023 px, wide from 1920 px | judgement | Does every width look intended? (`host-breakpoints` and `layoutProblems` at 390 and 768 px measure the rest) |
 | K13 | A draggable edge carries a grip, and no other edge does | measure | `resize-grips` |
 | K14 | No needless nesting: a square area with one framed child loses the inner frame | measure | `workspace-surfaces`, `notice-cards` |
-| K15 | Overflow and wrapping: one behaviour per kind of content; nothing overlaps, spills, or is cut without a sign | measure | `layoutProblems` at 390, 768, 1100, 1280, 1440, and 1920 px, with the detail open and with a narrow reader |
+| K15 | Overflow and wrapping: one behaviour per kind of content; nothing overlaps, spills, is cut without a sign, or draws a double line | measure | `layoutProblems` at 390, 768, 1100, 1280, 1440, and 1920 px, with the detail open and with a narrow reader |
 | K16 | Overlays: menus, toasts, and pills small shadow; dialog large shadow over a 28 % scrim; no blur | measure | `glass-surfaces`, `shadow-tokens` |
 | K17 | Dense detail pages: three type steps, order "who, what now, domain, holdings, history", group or area below a section | measure, judgement | a browser test of the area building block (planned); Do you find within five seconds what to do and how much money flows? |
+
+### One line, one owner (K2)
+
+> „Das größte Risiko bei dem neuen Design sehe ich, dass irgendwelche Borders
+> doppelt sind, weil sowohl die obere als auch die untere oder die linke als
+> auch die rechte Komponente die Border zeichnet. Das darf nicht passieren, das
+> sieht extrem buggy aus und verschiebt alles.“ (Valentin, 21 November 2026:
+> the biggest risk is a border drawn twice, because both neighbours draw it.)
+
+Every line has exactly one owner:
+
+- **The container draws the dividers between its children**, with one
+  mechanism: the class `k2b-divided` (a 1 px hairline above every shown child
+  after the first) or `k2b-divided-inline` for a row (at the start of each
+  child). Rows, sections, bands, head and status row, and lists use it or their
+  container does.
+- **A component draws no outer edge of its own.** Only elements that are framed
+  by definition do: field, button, card (K17), overlay, chip, and area. A framed
+  element never stands edge to edge in a container with hairlines.
+- **Columns:** the line between two columns belongs to the column boundary (the
+  divider or the grip of K13). Neither column draws it.
+- **Head line and tab mark:** the line under the head belongs to the head. The
+  2 px tab mark lies on it and is no second line.
+
+**Measure:** `layoutProblems` reports a double line: two parallel visible
+borders that touch or lie at most 1 px apart, also across components (the
+bottom of A and the top of B, the right of A and the left of B, a parent's and
+a child's border on the same edge). Focus rings and outlines do not count. The
+`border-ownership` check reports a new outer border on a component root in
+`@k2b/ui` and on a root element in an app, outside the framed elements.
+
+```tsx
+<ul class="k2b-divided">
+  <li>Palette 14</li>
+  <li>Palette 15</li>
+</ul>
+```
+
+### Decisions of 21 November 2026
+
+These four decisions hold for every app and refine K6, K8, K10, and K17.
+
+- **Your turn (K8, K10, K17):** what waits for the person is a blue-tinted cell
+  or a blue-tinted chip. Amber means only "to clarify".
+- **Violet is not plum (K8):** plum is only AI and Gustav. Violet stays a colour
+  with its own meaning, such as a direction pill, also next to plum. No rule
+  and no check forbids violet beside plum; the tokens keep the two apart.
+- **Area colours belong to the app (K17):** there is no fixed palette of area
+  colours. A section header takes the colour the app passes.
+- **Main action (K6, K8):** it stands in the head, and may also stand as a
+  quiet, unfilled entry in the sidebar where people know it ("Create",
+  "Upload"). Each view keeps exactly one filled main button.
 
 ### Group and area
 
@@ -77,7 +129,7 @@ building block "area" (planned with the building block).
 | `--k2b-h-head-phone`, `-tabs-phone`, `-row-phone` | 52, 44, 60 px | phone |
 | `--k2b-font-size-meta`, `-row`, `-body`, `-lead` | 12, 13, 14, 18 px | the four sizes |
 | `--k2b-radius-flat`, `-mark`, `-control`, `-overlay`, `-round`, `-card` | 0, 4, 8, 8 px, round, 14 px | the radius roles; `--k2b-radius-dialog` is the overlay role; `--k2b-radius-surface` keeps 12 px until its users move to a role |
-| `--k2b-radius-tile` | 4 px below 24 px, 8 px from 24 px | an icon tile: a step on its own width |
+| `--k2b-radius-tile` | 8 px | an icon tile; a tile below 24 px sets `--k2b-radius-mark` |
 | `--k2b-shadow-overlay-sm`, `-overlay-lg` | small, large | menu, popover, toast, pill, drag preview; dialog |
 | `--k2b-shadow-side`, `-sheet` | directed | drawer, phone sheet |
 | `--k2b-shadow-frame` | a 1 px ring | the edge of the app card, no shadow |
@@ -90,8 +142,8 @@ names; outside `@k2b/ui` a use of one, or of the column tokens
 `--k2b-shadow-column-*`, is a `shadow-tokens` finding. The column shadow itself
 goes when the workspace draws its hairline (K2).
 
-Checks with a baseline (`radius-scale`, `resize-grips`, `shadow-tokens`,
-`glass-surfaces`, `notice-cards`) list today's known findings in
+Checks with a baseline (`border-ownership`, `radius-scale`, `resize-grips`,
+`shadow-tokens`, `glass-surfaces`, `notice-cards`) list today's known findings in
 `scripts/checks/<rule>.baseline`, one line each. A new finding fails; a fixed one
 is removed with `bun scripts/check.ts <rule> --fix`.
 

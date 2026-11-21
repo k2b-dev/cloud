@@ -88,8 +88,9 @@ test("reports a frame around a notice that is its only child (K10, K14)", async 
         '  <div class="rounded-lg border"><h2>Sync</h2><NoticeCard tone="info" title="A second child" /></div>',
         '  <div class="flex gap-2"><NoticeCard tone="info" title="No frame" /></div>',
         '  <div class="rounded-md bg-red-50">{props.error && <NoticeCard tone="danger" title="Behind a condition" />}</div>',
+        '  <Paper><div class="p-2"><NoticeCard tone="info" title="Inside a plain wrapper" /></div></Paper>',
         "</>);",
       ].join("\n"),
     ),
-  ).toEqual(["packages/demo/src/Panel.tsx:2", "packages/demo/src/Panel.tsx:3", "packages/demo/src/Panel.tsx:7"]);
+  ).toEqual(["packages/demo/src/Panel.tsx:2", "packages/demo/src/Panel.tsx:3", "packages/demo/src/Panel.tsx:7", "packages/demo/src/Panel.tsx:8"]);
 });

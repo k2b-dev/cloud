@@ -1,12 +1,29 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../test/browser";
 import { layoutProblems } from "../../test/head-overlap";
 
-// Error class: a box that overlaps its sibling, spills, or cuts its text without a sign at one width only (K15).
+// Error class: a box that overlaps its sibling, spills, or cuts its text without a sign at one width only (K15), and a
+// line drawn twice because both neighbours draw it (K2, "one line, one owner").
 // This fixture is the guard of the self-check itself: a clean page passes at every width, and a page with one defect
 // of each kind is caught at every width. Apps call `layoutProblems` the same way on their own pages.
+// The shipped stylesheet, so `k2b-divided` is the real mechanism.
+const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const clean = `
+  <section data-probe="divided-frame" style="border-block:1px solid #e4e4e7">
+    <ul class="k2b-divided" style="list-style:none;margin:0;padding:0">
+      <li hidden>Hidden first row</li>
+      <li style="padding:8px 20px">Palette 14</li>
+      <li style="padding:8px 20px">Palette 15</li>
+      <li style="padding:8px 20px">Palette 16</li>
+    </ul>
+  </section>
+  <div class="k2b-divided-inline" style="display:flex;padding:0 20px">
+    <span style="padding:0 8px">Open</span>
+    <span style="padding:0 8px">Done</span>
+  </div>
   <header data-probe="head" style="display:flex;align-items:center;gap:8px;height:56px;padding:0 20px;border-bottom:1px solid #e4e4e7">
     <h1 style="flex:1;min-width:0;margin:0;font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
       Quarterly report for the north warehouse and its three outlets, with the open returns
@@ -28,12 +45,18 @@ const clean = `
   </div>`;
 
 const defects = `
+  <div data-probe="row-a" style="width:200px;border-bottom:1px solid #e4e4e7">Row A</div>
+  <div data-probe="row-b" style="width:200px;border-top:1px solid #e4e4e7">Row B</div>
+  <section data-probe="frame" style="width:200px;margin-top:16px;border-top:1px solid #d4d4d8">
+    <div data-probe="inner" style="border-top:1px solid #d4d4d8;outline:2px solid #2563eb">Inner band</div>
+  </section>
   <div style="display:flex;width:240px">
     <span data-probe="first" style="flex:none;width:120px">First</span>
     <span data-probe="second" style="flex:none;width:120px;margin-left:-60px">Second</span>
   </div>
   <div data-probe="spilling" style="width:120px"><div style="width:200px">A box wider than its parent</div></div>
   <div data-probe="cut" style="width:120px;overflow:hidden;white-space:nowrap">A title that is cut without a sign</div>
+  <div data-probe="cut-in-scroller" style="width:120px;height:40px;overflow-x:hidden;overflow-y:auto;white-space:nowrap">A row that scrolls down but is cut sideways</div>
   <div data-probe="wide" style="position:absolute;top:0;left:0;width:2400px;height:1px"></div>`;
 
 const widths = [390, 768, 1440, 1920];
@@ -49,7 +72,9 @@ afterAll(async () => {
 
 const check = async (width: number, body: string) => {
   await page.setViewportSize({ width, height: 800 });
-  await page.setContent(`<!doctype html><html><body style="margin:0;font:13px sans-serif"><main id="app">${body}</main></body></html>`);
+  await page.setContent(
+    `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;font:13px sans-serif"><main id="app">${body}</main></body></html>`,
+  );
   return page.evaluate(layoutProblems, { root: "#app" });
 };
 
@@ -66,7 +91,12 @@ describe(`layout self-check in ${browserName}`, () => {
         '[data-probe="second"] overlaps [data-probe="first"] by 60',
       ]);
       expect(result.spill).toEqual(['[data-probe="spilling"] spills 80 px out of its box']);
-      expect(result.cut.map((line) => line.split(" is cut")[0])).toEqual(['[data-probe="cut"]']);
+      expect(result.cut.map((line) => line.split(" is cut")[0])).toEqual(['[data-probe="cut"]', '[data-probe="cut-in-scroller"]']);
+      // Both neighbours draw the line, and a child repeats its parent's edge; the outline of a focus ring is no border.
+      expect(result.double.map((line) => line.replace(/ at .*$/, ""))).toEqual([
+        'double line: [data-probe="row-a"] bottom and [data-probe="row-b"] top',
+        'double line: [data-probe="frame"] top and [data-probe="inner"] top',
+      ]);
       expect(result.sideways).toBe(true);
       expect(result.problems.at(-1)).toBe("the page scrolls sideways (2400 px)");
     });

@@ -43,7 +43,11 @@ const sourceFindings = (workspaceRoot: string, file: string, source: string): Ke
   const visit = (node: ts.Node) => {
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
       const tag = node.tagName.getText();
-      const focusable = tag === "button" || attribute(node, "tabindex") !== undefined;
+      // A literal negative tabindex takes the element out of the tab order; an expression may still make it focusable.
+      const tabindex = attribute(node, "tabindex");
+      const init = tabindex?.initializer;
+      const raw = init && ts.isStringLiteral(init) ? init.text : init && ts.isJsxExpression(init) ? (init.expression?.getText() ?? "") : "";
+      const focusable = tag === "button" || (tabindex !== undefined && !/^["'`]?-\d+["'`]?$/.test(raw.trim()));
       if (
         literal(attribute(node, "role")) === "separator" &&
         focusable &&
