@@ -1,6 +1,6 @@
 # Layers and shadows
 
-> **Being replaced.** [Flat criteria](/en/ui/surfaces/flat-criteria) replace this layer model: only what floats casts a shadow (K3, K16). The island tokens (`--k2b-shadow-raised`, `--k2b-shadow-frame`, the island hook) and the column shadow already draw nothing; the rest of this page is rewritten with the building blocks.
+> **Being replaced.** [Flat criteria](/en/ui/surfaces/flat-criteria) replace this layer model: only what floats casts a shadow (K3, K16). The island tokens (`--k2b-shadow-raised`, `--k2b-shadow-frame`, the island hook) already draw nothing; the column shadow goes with the workspace hairline; the rest of this page is rewritten with the building blocks.
 
 Every Cloud screen has four layers. A shadow appears only where one layer lies
 on another, never inside a layer, and never as depth inside depth. Components

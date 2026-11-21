@@ -306,19 +306,22 @@
      action, and a drag preview; large for a dialog; directed for a drawer
      (`-side`) and a phone sheet (`-sheet`). The scrim dims the page behind a
      dialog or sheet, without blur.
-     The layer tokens of things that never float (app card, columns, islands,
+     The layer tokens of things that never float (app card, islands,
      surfaces) draw nothing. They stay as names, as a transparent no-op layer
      (`0 0 #0000`) so lists such as `ring, var(--k2b-shadow-raised)` stay
-     valid, and the column tokens as transparent colours. */
+     valid. */
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
   --k2b-scrim: rgb(9 9 11 / 0.28);
   --k2b-shadow-surface: 0 0 #0000;
   --k2b-shadow-frame: 0 0 #0000;
-  --k2b-shadow-column-mid: transparent;
-  --k2b-shadow-column-edge: transparent;
-  --k2b-shadow-column-active-mid: transparent;
-  --k2b-shadow-column-active-edge: transparent;
+  /* The quiet shadow at every workspace column boundary stays until the
+     workspace draws its hairline (K2); both change together, so columns are
+     never left without a divider. */
+  --k2b-shadow-column-mid: rgb(24 24 27 / 0.0055);
+  --k2b-shadow-column-edge: rgb(24 24 27 / 0.022);
+  --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
+  --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   /* Light glass for layers that float over a picture, video, or map (`k2b-overlay-surface`). */
   --k2b-overlay-surface: rgb(255 255 255 / 0.78);
@@ -564,6 +567,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-suggestion: #c99abb;
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
+  --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
+  --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
+  --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
+  --k2b-shadow-column-active-edge: rgb(0 0 0 / 0.14);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-overlay-surface: rgb(30 36 44 / 0.86);
   --k2b-overlay-surface-hover: rgb(44 51 61 / 0.95);

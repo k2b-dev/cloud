@@ -82,8 +82,10 @@ building block "area".
 | `--k2b-scrim` | 28 % | behind a dialog or sheet, without blur |
 
 The layer tokens of things that never float (`--k2b-shadow-surface`, `-raised`,
-`-frame`, `-column-*`, the island hook `--k2b-island-shadow`) draw nothing. They
-stay as names; outside `@k2b/ui` a use of one is a `shadow-tokens` finding.
+`-frame`, the island hook `--k2b-island-shadow`) draw nothing. They stay as
+names; outside `@k2b/ui` a use of one, or of the column tokens
+`--k2b-shadow-column-*`, is a `shadow-tokens` finding. The column shadow itself
+goes when the workspace draws its hairline (K2).
 
 Checks with a baseline (`radius-scale`, `resize-grips`, `shadow-tokens`,
 `glass-surfaces`, `notice-cards`) list today's known findings in
