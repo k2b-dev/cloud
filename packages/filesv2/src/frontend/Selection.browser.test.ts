@@ -300,9 +300,12 @@ describe("Files selection pill in a browser", () => {
       await tab.waitForFunction(() => document.querySelectorAll(".filesv2-pdf-order .k2b-pdf-thumbnails li[data-drawn]").length >= 9);
       expect(await dialog.locator(".filesv2-pdf-dialog__count").textContent()).toBe("9 pages");
       expect(await dialog.getByLabel("Name of the new PDF").inputValue()).toBe("Angebot-0412-Sekretär-Biedermeier-komplett.pdf");
-      // The last file moves to the top with the keyboard on its grip.
+      // The last file moves to the top with the keyboard on its grip: Space lifts it, Home chooses the top, Enter drops.
       await dialog.getByRole("button", { name: /Move Angebot-0413/ }).focus();
+      await tab.keyboard.press("Space");
+      await tab.waitForFunction(() => document.querySelector(".filesv2-pdf-order [data-sortable-dragging]") !== null);
       await tab.keyboard.press("Home");
+      await tab.keyboard.press("Enter");
       await settled(tab);
       if (shots) await tab.screenshot({ path: `${shots}/merge-dialog-light-1440.png` });
       await dialog.getByRole("button", { name: "Merge", exact: true }).click();

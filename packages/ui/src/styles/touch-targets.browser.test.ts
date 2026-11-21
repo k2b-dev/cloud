@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, settled, touchTargetMin } from "../../test/browser";
 import { solidTestPlugin } from "../../test/solid-test-plugin";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
@@ -285,8 +285,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       expect(await page.evaluate(() => document.querySelector(".k2b-map-view__zoom")!.getBoundingClientRect().height)).toBe(64);
       expect(hitAreas).toHaveLength(5);
       for (const area of hitAreas) {
-        expect(area.width).toBeGreaterThanOrEqual(44);
-        expect(area.height).toBeGreaterThanOrEqual(44);
+        expect(area.width).toBeGreaterThanOrEqual(touchTargetMin);
+        expect(area.height).toBeGreaterThanOrEqual(touchTargetMin);
       }
     } finally {
       await page.close();
@@ -680,7 +680,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       expect(await rows(page, dropdown)).toEqual([
         ["Rename", 44, true, true],
         ["Open", 44, true, true],
-        ["ShareAnyone with the link", 47, true, true],
+        // K1: a menu row has 8 px above and below its two lines.
+        ["ShareAnyone with the link", 49, true, true],
         ["Show archived", 44, true, true],
         ["English", 44, true, true],
         ["Deutsch", 44, true, true],
@@ -705,8 +706,9 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   test("keep stacked Dropdown items, FilterChip options, and Select options compact on a device without a touch screen", async () => {
     const page = await browser.newPage(desktop);
     try {
-      expect((await rows(page, dropdown)).map(([, height]) => height)).toEqual([32, 32, 47, 32, 32, 32, 32]);
-      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([32, 32, 32, 32, 32]);
+      // K1: a menu row is a 36 px control row, also without a touch screen.
+      expect((await rows(page, dropdown)).map(([, height]) => height)).toEqual([36, 36, 49, 36, 36, 36, 36]);
+      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([36, 36, 36, 36, 36]);
       expect((await rows(page, select)).map(([, height]) => height)).toEqual([32, 50]);
     } finally {
       await page.close();
@@ -954,7 +956,7 @@ describe("@k2b/ui Calendar on a phone", () => {
         const agenda = document.querySelector(".k2b-calendar-mobile-month__agenda")!.getBoundingClientRect();
         return { shortest: Math.min(...days), tallest: Math.max(...days), grid: grid.height, gap: agenda.top - grid.bottom };
       });
-      expect(layout.shortest).toBeGreaterThanOrEqual(44);
+      expect(layout.shortest).toBeGreaterThanOrEqual(touchTargetMin);
       expect(layout.tallest).toBeLessThanOrEqual(52);
       // Six weeks and the weekday row, instead of the month view's 36rem.
       expect(layout.grid).toBeLessThan(360);
