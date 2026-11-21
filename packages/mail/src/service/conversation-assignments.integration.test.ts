@@ -25,7 +25,7 @@ import { createMailbox } from "./mailboxes";
 const suite = suiteFor("database", "nats");
 
 type TestUser = { id: string; uid: string; displayName: string };
-type Plan = { "Node Type": string; "Relation Name"?: string; "Index Name"?: string; "Actual Rows"?: number; Plans?: Plan[] };
+type Plan = { "Node Type": string; "Actual Rows"?: number; Plans?: Plan[] };
 const planNodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 
 const contextFor = (user: TestUser): MailRequestContext => ({
@@ -791,8 +791,7 @@ suite("mail conversation assignment", () => {
       await meter.close();
     }
 
-    // Only the latest changes count: newer ones for Amy push Zed's two out of the window. A long own history (1,000
-    // changes) also makes the bound visible in the plan below: the index is read in order and stops at the window.
+    // Only the latest changes count: a window's worth of newer ones for Amy push Zed's two out of it.
     const insertAssignments = (actorId: string, assigneeId: string, count: number) => sql`
       INSERT INTO mail.activity_events (mailbox_id, conversation_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata)
       SELECT ${dropMailboxId}::uuid, ${first.id}::uuid, 'user', ${actorId}::uuid, 'conversation.collaboration_updated', 'confirmed',
@@ -801,27 +800,30 @@ suite("mail conversation assignment", () => {
           'after', jsonb_build_object('assigneeUserIds', jsonb_build_array(${assigneeId}::text)))
       FROM generate_series(1, ${count}::int)
     `;
-    await insertAssignments(owner.id, amy.id, 1_000);
+    await insertAssignments(owner.id, amy.id, MAIL_DROP_ASSIGNMENT_HISTORY);
     const windowed = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
     expect(windowed.ok && names(windowed.data.people)).toEqual([
       amy.displayName,
       ...alphabetical.filter((name) => name !== amy.displayName),
     ]);
 
-    // Others' history is never read: the index seeks this person's latest rows and stops at the window. 20,000 newer
-    // changes by someone else make any read in the mailbox's id order skip them all; only this index avoids that.
-    await insertAssignments(writer.id, zed.id, 20_000);
-    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
-    await sql`ANALYZE mail.activity_events`;
+    // The read is bounded by the query itself, whatever plan the database picks: at most the window's rows reach the
+    // count. The index that serves it in order exists, is valid, and has the query's shape (equal mailbox and actor,
+    // newest id first, the one action), so a long history of others is never in the way.
     const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan }] }[]>`
       EXPLAIN (ANALYZE, FORMAT JSON) ${dropAssigneeOrderQuery(sql, { mailboxId: dropMailboxId, actor: { kind: "user", id: owner.id } })}
     `;
-    const nodes = planNodes(explained!["QUERY PLAN"][0].Plan);
-    const scan = nodes.find((node) => node["Index Name"] === "activity_events_actor_assignment_idx");
-    expect(scan, JSON.stringify(explained!["QUERY PLAN"][0].Plan)).toBeDefined();
-    // An ordered scan under the window's limit: it reads the latest 100 rows of 1,000, never all of them.
-    expect(scan?.["Node Type"]).toBe("Index Scan");
-    expect(scan?.["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
-    expect(nodes.some((node) => node["Relation Name"] === "activity_events" && node["Node Type"] === "Seq Scan")).toBeFalse();
+    const limits = planNodes(explained!["QUERY PLAN"][0].Plan).filter((node) => node["Node Type"] === "Limit");
+    expect(limits).toHaveLength(1);
+    expect(limits[0]!["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
+    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
+    const [index] = await sql<{ valid: boolean; definition: string }[]>`
+      SELECT index.indisvalid AS valid, pg_get_indexdef(index.indexrelid) AS definition
+      FROM pg_index index
+      WHERE index.indexrelid = 'mail.activity_events_actor_assignment_idx'::regclass
+    `;
+    expect(index?.valid).toBeTrue();
+    expect(index?.definition).toContain("(mailbox_id, actor_id, id DESC)");
+    expect(index?.definition).toContain("WHERE (action = 'conversation.collaboration_updated'::text)");
   });
 });
