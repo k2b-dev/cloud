@@ -1149,22 +1149,20 @@ describe("capability API", () => {
       { path: ["c0"], label: "Item" },
       { path: ["c1"], label: "Stock", type: "number" },
     ];
-    const call = async (
+    const call = (
       result: unknown,
       getApp: CapabilityRouteDependencies["getApp"] = async () => ({ ...summary(stock), routes: ["/app/stock"] }),
-    ) => {
-      const routes = createCapabilityRoutes({
-        getCapability: async () => stock,
-        getApp,
-        authenticate,
-        fetch: async () => Response.json(result),
+      origin: "assistant" | "http" = "assistant",
+    ) =>
+      dispatchCapability({
+        request: new Request("http://cloud.internal/api/capabilities/v1"),
+        kind: "queries",
+        origin,
+        appId: "stock",
+        capabilityId: "list",
+        input: {},
+        dependencies: { getCapability: async () => stock, getApp, fetch: async () => Response.json(result) },
       });
-      return routes.request("/capabilities/v1/queries/stock/list", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: {} }),
-      });
-    };
     const warn = spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       // The table Cloud shows for stored results, titled with the capability.
@@ -1197,6 +1195,10 @@ describe("capability API", () => {
         expect(dropped.status).toBe(200);
         expect(await dropped.json()).toEqual(expected);
       }
+      // A caller that reads results with its own SDK may predate `view`, so it gets the result without the table.
+      const sdkCaller = await call({ data, presentation: table }, undefined, "http");
+      expect(sdkCaller.status).toBe(200);
+      expect(await sdkCaller.json()).toEqual({ data });
       // Every other unknown field still fails the strict result check.
       const unknown = await call({ data, presentation: table, layout: "grid" });
       expect(unknown.status).toBe(502);

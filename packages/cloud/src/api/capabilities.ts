@@ -9,6 +9,7 @@ import {
   isPersonVisibleCapabilityQuery,
   resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
+  resolveCapabilityOperationTitle,
 } from "../_internal/capabilities";
 import {
   capabilityActionReceiptIssues,
@@ -111,7 +112,6 @@ import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
-import { DEFAULT_LOCALE } from "../shared/locale";
 import { authenticateSignedAppRequest } from "./authenticate-app-request";
 import { dispatchCapabilityStream, inspectCodeStream, rebindCodeWriteStream, sealCapabilityStream } from "./capability-streams";
 import { acceptLegacyPresentation, LEGACY_PRESENTATION_REMOVED_IN } from "./legacy-presentation";
@@ -1032,18 +1032,13 @@ const runCapabilityDispatch = async (
     } catch {
       /* Without the registration the table is dropped, never the result. */
     }
+    const locale = params.locale ?? preferredLocale(params.request.headers);
     const legacy = acceptLegacyPresentation(legacyBody, {
       appId: params.appId,
       appPrefixes,
-      title: () => {
-        const presented = resolveCapabilityManifestPresentation(
-          entry.manifest,
-          entry.presentation,
-          params.locale ?? preferredLocale(params.request.headers) ?? DEFAULT_LOCALE,
-        );
-        const operations = params.kind === "queries" ? presented.queries : presented.actions;
-        return operations.find((candidate) => candidate.localId === params.capabilityId)?.title ?? operation.title;
-      },
+      // Callers that parse results with their own SDK may predate `view`; only Core-rendered surfaces get one.
+      toView: params.origin === "assistant" || params.origin === "choice" || params.origin === "mcp",
+      title: () => (locale ? resolveCapabilityOperationTitle(operation, params.kind, entry.presentation, locale) : operation.title),
     });
     upstreamBody = { ok: true, data: legacy.body };
     const warning = `${params.appId}\0${params.kind}\0${params.capabilityId}`;
