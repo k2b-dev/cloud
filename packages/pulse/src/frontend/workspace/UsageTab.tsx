@@ -6,14 +6,15 @@ import { type JSX, Show } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
+import { type CodeUsageItem, loadCodeUsage } from "./code-usage-client";
 import type { PulseDateContext } from "./helpers";
 import { ago } from "./SourcesTab";
 
 type UsageRow = { id: string; icon: string; name: string; kind: string; permission: string; last: string | null };
 
 /**
- * The Usage tab. Which Code pages and automations read this base comes with a platform query in the next release;
- * until then one quiet row says so. The API group lists the accounts and source keys that reach the base, from the
+ * The Usage tab. Pages and automations come from Core (`GET /api/code/usage`): only those the person may open, plus a
+ * count of the rest without names (F4). The API group lists the accounts and source keys that reach the base, from the
  * base's own members and keys, which only people who manage the base can read.
  */
 export default function UsageTab(props: {
@@ -68,6 +69,37 @@ export default function UsageTab(props: {
       return [...accounts, ...sourceKeys];
     },
   });
+  const pages = query.create({
+    source: () => props.baseId,
+    load: async (baseId, { abortSignal }) => {
+      const result = await loadCodeUsage(baseId, abortSignal);
+      if (!result.ok && result.error === "unavailable") throw new Error(t().usagePagesFailed);
+      return result.ok ? result.data : null;
+    },
+  });
+  const pageColumns = (): DataTableColumn<CodeUsageItem>[] => [
+    { id: "title", header: t().usageName, value: "title", primary: true, list: "title" },
+    { id: "kind", header: t().usageKind, list: "meta", priority: 2 },
+    { id: "owner", header: t().usageOwner, list: "meta", priority: 3 },
+    { id: "lastCalledAt", header: t().usageLast, list: "end", nowrap: true },
+  ];
+  const renderPageCell = (
+    row: CodeUsageItem,
+    col: DataTableColumn<CodeUsageItem>,
+    render: (value: unknown) => JSX.Element,
+  ): JSX.Element => {
+    if (col.id === "title")
+      return (
+        <span class="pulse-usage-name">
+          <i class={row.kind === "page" ? "ti ti-browser" : "ti ti-bolt"} aria-hidden="true" />
+          {row.title}
+        </span>
+      );
+    if (col.id === "kind") return render(row.kind === "page" ? t().usagePage : t().usageAutomation);
+    if (col.id === "owner") return <span class="pulse-quiet">{row.owner ?? "—"}</span>;
+    if (col.id === "lastCalledAt") return <span class="pulse-quiet">{ago(row.lastCalledAt, props.dateContext)}</span>;
+    return render(row[col.id as keyof CodeUsageItem]);
+  };
   const columns = (): DataTableColumn<UsageRow>[] => [
     { id: "name", header: t().usageName, value: "name", primary: true, list: "title" },
     { id: "kind", header: t().usageKind, value: "kind", list: "meta", priority: 2 },
@@ -96,14 +128,45 @@ export default function UsageTab(props: {
           return last ? [{ value: ago(last, props.dateContext), label: t().usageLast.toLowerCase() }] : [];
         })()}
       />
-      <RowGroup title={t().usagePagesTitle} level={3}>
-        <p class="pulse-line pulse-line--row">
-          <span>{t().usagePagesLater}</span>
+      <RowGroup
+        title={t().usagePagesTitle}
+        count={pages.data()?.items.length}
+        level={3}
+        action={
           <Button variant="secondary" size="sm" loading={props.buildPending} onClick={props.buildPage}>
             <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
             {t().usageBuildPage}
           </Button>
-        </p>
+        }
+      >
+        <Show
+          when={!pages.error()}
+          fallback={
+            <Placeholder
+              state="error"
+              title={t().usagePagesFailed}
+              description={pages.error()?.message}
+              onRetry={() => void pages.refresh()}
+            />
+          }
+        >
+          <Show when={pages.data() !== null} fallback={<p class="pulse-line pulse-line--quiet">{t().usagePagesForbidden}</p>}>
+            <DataTable
+              rows={pages.data()?.items ?? []}
+              loading={pages.data() === undefined}
+              loadingRows={2}
+              columns={pageColumns()}
+              getRowId={(row) => row.codeId}
+              ariaLabel={t().usagePagesTitle}
+              empty={t().usagePagesNone}
+              onRowClick={(row) => window.location.assign(row.href)}
+              renderCell={({ row, col, render }) => renderPageCell(row, col, render)}
+            />
+            <Show when={(pages.data()?.others ?? 0) > 0}>
+              <p class="pulse-line pulse-line--quiet">{t().usageOthers({ count: pages.data()!.others })}</p>
+            </Show>
+          </Show>
+        </Show>
       </RowGroup>
       <RowGroup
         title={t().usageApiTitle}

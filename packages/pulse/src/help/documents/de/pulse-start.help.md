@@ -16,7 +16,7 @@ Eine Base öffnet **Quellen**. Der Kopf hat vier Tabs: **Quellen**, **Daten**, *
 
 - **Quellen** sagt dir, ob Daten ankommen. Die erste Zeile sagt „Alle 4 Quellen empfangen“ oder wie viele Quellen Aufmerksamkeit brauchen. Darunter stehen Quellen mit abgelehnten Anfragen, Fehlern, Drosselung oder verspäteten Daten und ausgelöste Alarme. Danach folgen alle Quellen mit Zustand und letztem Eingang. Wähle eine Zeile, um ihre Details rechts zu öffnen.
 - **Daten** zeigt die Datenarten der Base: Ereignisse, Messwerte und Zustände. Wähle eine Datenart, um ihre Felder mit Typ, Beispiel und Füllgrad und die fünf neuesten Einträge zu sehen. Vertrauliche Ereignisdaten zeigt Pulse hier nie.
-- **Nutzung** zeigt die Dienstkonten und Quellen-Schlüssel, die über die API auf die Base zugreifen. Du siehst sie nur, wenn du die Base verwaltest. Ab dem nächsten Release zeigt Nutzung auch, welche Code-Seiten und Automationen die Daten lesen.
+- **Nutzung** zeigt die Code-Seiten und Automationen, die die Base in den letzten 30 Tagen gelesen haben und die du öffnen darfst. Die übrigen erscheinen nur als Zahl. Wer die Base verwaltet, sieht auch die Dienstkonten und Quellen-Schlüssel, die über die API zugreifen.
 - **SQL** führt eine Abfrage aus und zeigt Tabelle und Zeitdiagramm. **Mit Gustav auswerten** beginnt dann mit deinem SQL.
 
 Die Details einer Quelle beginnen mit **Was nicht ankommt**, wenn Pulse Anfragen ablehnt oder ein Abruf fehlschlägt. Der Grund steht in Worten da. **Eingang** zeigt die neuesten Daten und was Pulse erwartet. Schlüssel sehen nur Personen, die die Base verwalten.

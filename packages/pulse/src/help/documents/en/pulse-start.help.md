@@ -16,7 +16,7 @@ A base opens on **Sources**. The head has four tabs: **Sources**, **Data**, **Us
 
 - **Sources** tells you if data arrives. The first line says "All 4 sources receiving" or how many sources need attention. Below it are the sources with refused requests, errors, throttling, or late data, and the alerts that fired. Then all sources follow with their state and newest arrival. Select a row to open its details on the right.
 - **Data** lists the data kinds of the base: events, metrics, and states. Select a kind to see its fields with type, an example, and how often each field is filled, and the five newest entries. Pulse never shows confidential event data here.
-- **Usage** lists the service accounts and source keys that reach the base through the API. You see them only when you manage the base. From the next release, Usage also shows which Code pages and automations read the data.
+- **Usage** lists the Code pages and automations that read the base in the last 30 days and that you may open. The others appear only as a number. If you manage the base, you also see the service accounts and source keys that reach it through the API.
 - **SQL** runs a query and shows its table and time chart. **Analyze with Gustav** then starts from your SQL.
 
 The source details start with **What does not arrive** when Pulse refuses requests or a fetch fails. The reason is in words. **Arrival** shows the newest data and what Pulse expects. Keys show only to people who manage the base.

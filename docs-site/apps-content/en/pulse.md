@@ -46,8 +46,10 @@ for people with edit access. The head keeps its height in every state.
   again every 30 seconds while the page is visible.
 - **Data** reads `GET /api/pulse/bases/:baseId/schema`: kinds, fields with type,
   example and fill rate, and the five newest entries of one kind.
-- **Usage** lists the service accounts and source keys that reach the base,
-  for people who manage it.
+- **Usage** lists the Code pages and automations that read the base in the
+  last 30 days and that you may open, with kind, owner and last read; the
+  others appear only as a number. People who manage the base also see the
+  service accounts and source keys that reach it through the API.
 
 A person without access sees "No access" in the head and the base's managers
 who can give it. **…** holds the base settings and, until the next release,
