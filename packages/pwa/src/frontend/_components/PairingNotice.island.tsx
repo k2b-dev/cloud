@@ -16,7 +16,7 @@ export default function PairingNotice(props: { name?: string }) {
         if (!props.name) return;
         const text = t().alreadyConnected({ name: props.name });
         // Rare on a page: the toast code loads only when a connected app sees a pairing link, so it stays out of the island.
-        void import("@k2b/ui").then(({ toast }) => toast(text, { iconClass: "ti ti-info-circle" }));
+        void import("./pairing-toast").then(({ toast }) => toast(text, { iconClass: "ti ti-info-circle" }));
       }),
     );
   });
