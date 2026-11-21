@@ -19080,13 +19080,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
 }
 
-.k2b-ui .k2b-sortable-list__item[data-sortable-dragging] {
+/* The moved row dims, but not its grip and not the boxes around the grip,
+   which the list marks with data-sortable-path: the focus ring of a row
+   lifted by keyboard keeps its contrast, and the row's hairline keeps its
+   colour (K2). */
+.k2b-ui .k2b-sortable-list__item[data-sortable-dragging] > :not([data-sortable-path], .k2b-sortable-list__handle),
+.k2b-ui .k2b-sortable-list__item[data-sortable-dragging] [data-sortable-path] > :not([data-sortable-path], .k2b-sortable-list__handle) {
   opacity: 0.4;
 }
 
 /* The row dims once, not again through its drag source. */
 .k2b-ui .k2b-sortable-list__item .k2b-drag-source[data-dragging] {
   opacity: 1;
+}
+
+/* On a phone, rows of a group do not drag; their menu moves them (K7). */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-sortable-list[data-sortable-grouped] .k2b-sortable-list__handle {
+    visibility: hidden;
+  }
 }
 
 .k2b-ui .k2b-sortable-list__item[data-sortable-line]::before,
@@ -19146,6 +19158,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui [data-sortable-column][data-sortable-target] [data-sortable-column-head] {
   background: var(--k2b-info-surface);
   color: var(--k2b-info-text);
+}
+
+.k2b-ui [data-sortable-column][data-sortable-target] [data-sortable-column-head] * {
+  color: inherit;
 }
 
 .k2b-ui .k2b-sortable-list__grip {
@@ -19213,7 +19229,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A sortable row floats as itself, at its own width. */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] {
   display: block;
-  max-width: min(24rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   padding: 0;
   overflow: hidden;
   background: var(--k2b-surface);
@@ -19222,6 +19238,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] .k2b-sortable-list__item {
   list-style: none;
+}
+
+/* The preview shows the row's content; its controls keep their place but
+   are not drawn, as nothing on it can be pressed. */
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] :is(button, [role="button"], a[href]) {
+  visibility: hidden;
 }
 
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > i {

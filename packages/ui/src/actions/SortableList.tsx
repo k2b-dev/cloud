@@ -20,6 +20,7 @@ import {
   type SortableMove,
   setLift,
   showStatus,
+  staying,
   touchRegistry,
 } from "./sortable-board";
 import { useSortableListMessages } from "./sortable-list-messages";
@@ -71,7 +72,6 @@ export type SortableListProps<Item> = {
 let pointerPlan: Lift | undefined;
 /** Loaded on the first focus of a grip; a lift waits for it. */
 let keyboard: typeof import("./sortable-keyboard") | undefined;
-let lifting = false;
 const loadKeyboard = () => import("./sortable-keyboard").then((module) => (keyboard = module));
 
 const usePhone = () => {
@@ -134,7 +134,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
   };
   const lineGap = createMemo(() => {
     const state = mine();
-    if (state?.to !== listKey || state.index === undefined) return undefined;
+    if (state?.to !== listKey || state.index === undefined || staying(state)) return undefined;
     return gapForIndex(state.index, keys().indexOf(state.key));
   });
 
@@ -189,7 +189,9 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
   };
 
   onMount(() => {
-    area = list.closest<HTMLElement>("[data-sortable-column]") ?? list;
+    // The nearest column, unless another list lies between, such as a checklist inside a card of a board column.
+    const outer = list.parentElement?.closest<HTMLElement>("[data-sortable-column], .k2b-sortable-list");
+    area = outer?.hasAttribute("data-sortable-column") ? outer : list;
     const members = groups.get(group) ?? new Set<Entry>();
     groups.set(group, members);
     members.add(entry);
@@ -206,7 +208,8 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
     createEffect(() => target.update(read()));
     // The column around the list is tinted while it is the target, so a host's column head can show it.
     createEffect(() => {
-      if (mine()?.to === listKey) area.dataset.sortableTarget = "";
+      const state = mine();
+      if (state?.to === listKey && !staying(state)) area.dataset.sortableTarget = "";
       else delete area.dataset.sortableTarget;
     });
     onCleanup(() => {
@@ -219,6 +222,9 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
       if (state?.group === group && state.keyboard && (state.from === listKey || state.to === listKey)) keyboardLift.end?.();
     });
   });
+
+  /** A keyboard lift of this list that waits for its module. */
+  let lifting: { off: boolean } | undefined;
 
   /** One step at once, without lifting: the existing quick path for the grip's arrow keys, Home, and End. */
   const step = (key: string, index: number) => {
@@ -243,6 +249,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
         ref={list}
         class={`k2b-sortable-list${props.class ? ` ${props.class}` : ""}`}
         aria-label={props.label}
+        data-sortable-grouped={props.group === undefined ? undefined : ""}
         data-sortable-line={lineGap() !== undefined && keys().length === 0 ? "empty" : undefined}
       >
         <For each={keys()}>
@@ -256,6 +263,12 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
             const label = () => props.itemLabel(item());
             let row!: HTMLLIElement;
             let grip!: HTMLButtonElement;
+            // A lifted row that leaves, for example removed by someone else, ends its lift and says so.
+            onCleanup(() => {
+              const state = lift();
+              if (state?.keyboard && state.group === group && state.key === key && state.from === listKey && keys().includes(key) === false)
+                keyboardLift.cancel?.();
+            });
             const onKeyDown = (event: KeyboardEvent) => {
               if (event.altKey || event.ctrlKey || event.metaKey) return;
               const state = mine();
@@ -271,19 +284,24 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
               if (event.key === " " || event.key === "Enter") {
                 event.preventDefault();
                 if (props.disabled || lifting) return;
-                // Keys that come while the module loads would move the row at once; they wait for the lift instead.
-                lifting = true;
+                // Keys that come while the module loads would move the row at once; they wait for the lift instead,
+                // and Escape or Tab call it off.
+                const pending = { off: false };
+                lifting = pending;
                 void loadKeyboard()
                   .then((module) => {
-                    if (grip.isConnected) module.startLift(entry, key, label(), locale(), dragMessages());
+                    if (!pending.off && grip.ownerDocument.activeElement === grip)
+                      module.startLift(entry, key, label(), locale(), dragMessages());
                   })
+                  .catch(() => announce(list, messages().unavailable))
                   .finally(() => {
-                    lifting = false;
+                    if (lifting === pending) lifting = undefined;
                   });
                 return;
               }
               if (lifting) {
-                event.preventDefault();
+                if (event.key === "Escape" || event.key === "Tab") lifting.off = true;
+                if (event.key !== "Tab") event.preventDefault();
                 return;
               }
               const wanted = { ArrowUp: index() - 1, ArrowDown: index() + 1, Home: 0, End: keys().length - 1 }[event.key];
@@ -322,7 +340,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                 aria-describedby={hintId}
                 disabled={props.disabled}
                 onKeyDown={onKeyDown}
-                onFocus={() => void loadKeyboard()}
+                onFocus={() => void loadKeyboard().catch(() => undefined)}
               >
                 <i class="ti ti-grip-vertical" aria-hidden="true" />
               </button>
@@ -339,6 +357,13 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
               const state = mine();
               return state?.key === key && state.from === listKey;
             };
+            // The boxes from the row down to its grip stay undimmed while it moves; the stylesheet dims the rest.
+            createEffect(() => {
+              const on = dragged();
+              if (!row.contains(grip)) return;
+              for (let element = grip.parentElement; element && element !== row; element = element.parentElement)
+                element.toggleAttribute("data-sortable-path", on);
+            });
             return (
               <li ref={row} class="k2b-sortable-list__item" data-sortable-dragging={dragged() ? "" : undefined} data-sortable-line={line()}>
                 {/* Once per key: a newer copy of the item reaches the row through `item`, never by rebuilding it. */}
@@ -379,7 +404,10 @@ export function useSortableMoveMenu(group: string): (key: string) => DropdownSec
           const index = sorted ? clampIndex(sorted(key, from.key), placesIn(entry, key)) : entry.keys().length;
           const state: Lift = { ...base, to: entry.key, index };
           const at = place(entry, state, index);
-          if (commit(state)) announce(entry.list, messages().position(at));
+          if (!commit(state)) return;
+          announce(entry.list, messages().position(at));
+          // The menu's trigger left with its row; focus follows the row to its new list.
+          queueMicrotask(() => refocus(group, key));
         },
       }));
     return items.length ? { sectionLabel: messages().moveTo, items } : undefined;

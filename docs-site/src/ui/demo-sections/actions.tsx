@@ -32,6 +32,7 @@ import {
   SpotlightButton,
   type SpotlightSearchResolver,
   Tabs,
+  type ToastHandle,
   Toolbar,
   ToolbarDock,
   toast,
@@ -835,7 +836,11 @@ const SortableBoardDemo = () => {
   const moveMenu = useSortableMoveMenu("ui-demo-board");
   const byTitle = (key: string) =>
     board().done.filter((other) => other !== key && boardCards[other]!.title.localeCompare(boardCards[key]!.title) < 0).length;
+  // One "Undo" at a time: the next move replaces the toast of the last one.
+  let undoToast: ToastHandle | undefined;
   const move = (key: string, index: number, move: SortableMove) => {
+    undoToast?.dismiss();
+    undoToast = undefined;
     setBoard((all) => {
       const next = { ...all, [move.from]: all[move.from]!.filter((other) => other !== key) };
       const to = next[move.to]!.filter((other) => other !== key);
@@ -843,7 +848,7 @@ const SortableBoardDemo = () => {
       return { ...next, [move.to]: to };
     });
     if (move.from !== move.to)
-      toast(`Moved to ${boardColumns.find((column) => column.key === move.to)?.label}`, {
+      undoToast = toast(`“${boardCards[key]!.title}” moved to “${boardColumns.find((column) => column.key === move.to)?.label}”`, {
         action: { label: "Undo", variant: "ghost", onClick: move.undo },
       });
   };
@@ -854,13 +859,16 @@ const SortableBoardDemo = () => {
       description="Columns of one group exchange cards. Drag a card; it stays dimmed in place while the line and the tinted column head show where it lands. Space on a grip lifts, arrows choose, Enter drops. On a phone the card menu moves it."
       code={sortableBoardExample}
     >
+      {/* The count keeps its place; the drag status takes the place of the key figures beside it (K6, K7). */}
       <p class="ui-sortable-board__status" aria-hidden="true">
+        <b class="ui-sortable-board__lead">{Object.values(board()).flat().length} cards</b>
         {dragStatus() ? (
-          <>
+          <span class="ui-sortable-board__state">
+            <i class="ti ti-hand-grab" />
             <b>{dragStatus()!.lead}</b> {dragStatus()!.detail}
-          </>
+          </span>
         ) : (
-          `${Object.values(board()).flat().length} cards`
+          <span class="ui-sortable-board__state">{board().open!.length} open</span>
         )}
       </p>
       <div class="ui-sortable-board">

@@ -95,7 +95,8 @@ The same handler serves the menu entry and `onDrop`.
 
 `useKeyboardDrag()` is an optional pick-up sequence started from a menu entry
 such as **Move…**. Call its returned function with the payload and the row
-element. The drag is active at once, so targets a host shows only while
+element. The sequence loads on first use and starts a moment later; if it
+cannot load, the live region says so. The drag is active at once, so targets a host shows only while
 dragging take part too. It then visits the enabled, accepting targets a
 pointer could reach (shown, not inert, not behind a modal dialog) in document
 order. With no destination, it announces that no place takes the item.

@@ -30,7 +30,7 @@ const dragKeyboardMessages = /* @__PURE__ */ i18n.define({
     },
     de: {
       pickedUp: ({ label, count }: { label: string; count: number }) =>
-        `${label} angehoben. ${count === 1 ? "1 Ort nimmt es an" : `${count} Orte nehmen es an`}. Pfeiltasten wählen einen Ort, Eingabe legt ab, Escape bricht ab.`,
+        `${label} angehoben. ${count === 1 ? "1 Ort nimmt es an" : `${count} Orte nehmen es an`}. Pfeiltasten wählen einen Ort, Enter legt ab, Escape bricht ab.`,
       choice: ({ target, index, count }: { target: string; index: number; count: number }) => `${target}, ${index} von ${count}.`,
       noTarget: ({ label }: { label: string }) => `Hier nimmt kein Ort ${label} an.`,
     },

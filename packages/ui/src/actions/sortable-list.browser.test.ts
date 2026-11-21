@@ -189,7 +189,7 @@ describe(`sortable list in ${browserName}`, () => {
           kind: preview.dataset.preview,
           copy: preview.textContent,
           dragged: document.querySelector("[data-sortable-dragging]")?.textContent,
-          dim: getComputedStyle(document.querySelector("[data-sortable-dragging]")!).opacity,
+          dim: getComputedStyle(document.querySelector("[data-sortable-dragging] .name")!).opacity,
         };
       });
       expect(during).toMatchObject({ line: ['""', "2px"], kind: "row", copy: "Alpha", dragged: "Alpha", dim: "0.4" });
@@ -219,8 +219,10 @@ describe(`sortable list in ${browserName}`, () => {
     try {
       const before = await boxes(page);
       await lift(page, "o2");
-      // Still over its own column, where it would stay.
-      expect(await status(page)).toBe("„Startseite gegenlesen“ wird verschoben | nach „Offen“, Platz 2 · Esc bricht ab");
+      // Still over its own place: no line, no tinted head, and the status says it stays.
+      expect(await status(page)).toBe("„Startseite gegenlesen“ wird verschoben | bleibt an seinem Platz · Esc bricht ab");
+      expect(await line(page)).toBeUndefined();
+      expect(await page.locator("[data-sortable-target]").count()).toBe(0);
       const target = await center(page, '[data-card="d2"]');
       await page.mouse.move(target.x, target.y - 12, { steps: 3 });
       await page.waitForFunction(() => document.querySelector('[data-column="doing"][data-sortable-target]') !== null);
@@ -234,7 +236,16 @@ describe(`sortable list in ${browserName}`, () => {
       });
       expect(tint.doing).not.toBe(tint.open);
       expect(tint.open).toBe("rgba(0, 0, 0, 0)");
-      expect(await page.locator('#app [data-card="o2"]').evaluate((card) => getComputedStyle(card.closest("li")!).opacity)).toBe("0.4");
+      // The row's content dims; its hairline and grip keep their strength.
+      expect(
+        await page
+          .locator('#app [data-card="o2"]')
+          .evaluate((card) => [
+            getComputedStyle(card.querySelector(".title")!).opacity,
+            getComputedStyle(card).opacity,
+            getComputedStyle(card.closest("li")!).opacity,
+          ]),
+      ).toEqual(["0.4", "1", "1"]);
       expect(await boxes(page)).toEqual(before);
       await page.mouse.up();
       await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview, [data-sortable-target], [data-sortable-line]"));
@@ -331,7 +342,16 @@ describe(`sortable list in ${browserName}`, () => {
       await page.keyboard.press("ArrowRight");
       expect(await line(page)).toBe("before d2");
       await announced(page, "Position 2 von 4 in „In Arbeit“.");
-      expect(await status(page)).toBe("„Impressum prüfen“ wird verschoben | nach „In Arbeit“, Platz 2 · Eingabe legt ab, Esc bricht ab");
+      expect(await status(page)).toBe("„Impressum prüfen“ wird verschoben | nach „In Arbeit“, Platz 2 · Enter legt ab, Esc bricht ab");
+      // The lifted grip and every box around it stay at full strength, so its focus ring keeps its contrast.
+      expect(
+        await page.locator('[data-sortable-handle="o1"]').evaluate((grip) => {
+          const seen: string[] = [];
+          for (let element: Element | null = grip; element && element.tagName !== "UL"; element = element.parentElement)
+            seen.push(getComputedStyle(element).opacity);
+          return seen.every((value) => value === "1");
+        }),
+      ).toBe(true);
       expect(await page.locator('[data-column="doing"]').getAttribute("data-sortable-target")).toBe("");
       await settled(page);
       expect(await boxes(page)).toEqual(before);

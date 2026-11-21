@@ -71,17 +71,24 @@ const move = (id: string, index: number, move: SortableMove) => {
 
 - **Column head.** Mark the column with `data-sortable-column` and its head
   with `data-sortable-column-head`. While a row would land in that column,
-  the column carries `data-sortable-target` and its head is tinted blue.
-  The whole column, also its head and the empty space below the cards, takes
-  the drop.
+  the column carries `data-sortable-target` and its head, with all its text,
+  is tinted blue. The whole column, also its head and the empty space below
+  the cards, takes the drop. A list inside another list, such as a checklist
+  in a card, takes its own drops and leaves the column to the outer list.
+- **Grip on cards.** With `dragBy="row"` the grip serves the keyboard only.
+  Keep it out of the card's text edge, for example over the card's glyph, and
+  show it on `:focus-visible`; the demo does this.
 - **Sorted column.** `placement(key, from)` returns where the row lands
   among the column's items without it. The line then shows that place,
   wherever the pointer is in the column, and the drop uses it.
 - **Undo.** `move.undo()` moves the row back through the lists' own
-  `onMove`. The list shows no toast; the host shows one with "Undo".
-- **Phone.** Below 768 px, rows of a `group` do not drag. Offer
-  `useSortableMoveMenu(group)` in the card's menu: it returns a "Move to"
-  section with one entry per other column, or `undefined`.
+  `onMove`, as long as the row is still where that move put it; after a
+  further move it does nothing. The list shows no toast; the host shows one
+  with "Undo" and the card's title, and replaces it on the next move.
+- **Phone.** Below 768 px, rows of a `group` do not drag and their grips are
+  not drawn. Offer `useSortableMoveMenu(group)` in the card's menu: it
+  returns a "Move to" section with one entry per other column, or
+  `undefined`. After a move, focus follows the row to its new column.
   ```tsx
   const moveMenu = useSortableMoveMenu("board");
   <Dropdown.Root items={[moveMenu(id)].filter((section) => section !== undefined)} />
@@ -93,17 +100,22 @@ const move = (id: string, index: number, move: SortableMove) => {
 ## Behavior
 
 - **Nothing jumps.** The moved row stays dimmed in its place until it is
-  dropped. A 2 px blue line with a dot at its start shows where it lands; the
-  line lies over the gap and takes no space, so no row moves, in any list,
-  before the drop. There is no animation that shifts neighbours.
+  dropped; only its content dims, so its hairline and its grip, with the
+  focus ring, keep their strength. A 2 px blue line with a dot at its start
+  shows where it lands; the line lies over the gap and takes no space, so no
+  row moves, in any list, before the drop. Over its own place there is no
+  line and no tint, and the status says the row stays. There is no animation
+  that shifts neighbours.
 - **Pointer.** In `dragBy="handle"` (the default), the grip is the only place
   a drag starts; the rest of the row keeps its clicks, links, and controls.
   Dragging uses [drag and drop](./drag-and-drop), so mouse slop,
   hold-then-drag on touch (300 ms; a finger that moves earlier scrolls),
   autoscroll at the edges of the column and the page, and announcements work
   the same. The line sits above the row under the pointer, and at most 8 px
-  below the pointer; the preview, a copy of the row with a small shadow,
-  hangs 16 px below the pointer, so it never covers the line.
+  below the pointer; the preview, a copy of the row with a small shadow and
+  without its controls, hangs 16 px below the pointer, and below the line
+  when a sorted list shows it further down, so it never covers the line. It
+  stays 8 px inside the viewport.
 - **Cancel.** Escape, or letting go outside every list of the group, puts the
   row back. There is no separate cancel area.
 - **Keyboard.** On a focused grip, Space or Enter lifts the row. While it is
@@ -111,9 +123,14 @@ const move = (id: string, index: number, move: SortableMove) => {
   last place, ArrowLeft and ArrowRight the column before or after; Enter or
   Space drops, and Escape, Tab, or a pointer press cancel. Nothing moves
   until the drop; the line and the tinted head show the place, and focus
-  stays on the grip, also after the drop into another column. Without
+  stays on the grip, also after the drop into another column when the host
+  renders the move at once. A lifted row that leaves the list, for example
+  because someone else deleted it, ends the lift and says so. Without
   lifting, ArrowUp and ArrowDown move the row by one at once, Home and End to
   the start or end. At the edges a key does nothing.
+- **Loading.** The keyboard lift loads on the first focus of a grip. Keys
+  pressed while it loads wait for it; Escape or Tab call the lift off. If it
+  cannot load, the live region says so.
 - **Disabled.** `disabled` stops every move and disables the grips; the list
   then refuses rows from other lists.
 

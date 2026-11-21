@@ -14,6 +14,7 @@ const dragAndDropMessages = /* @__PURE__ */ i18n.define({
         count > 1 ? `${count} items are being moved` : `“${label}” is being moved`,
       statusOver: ({ target }: { target: string }) => `to “${target}” · Esc cancels`,
       statusIdle: "Esc cancels",
+      unavailable: "Moving by keyboard is not available right now. Reload the page and try again.",
     },
     de: {
       pickedUp: ({ label }: { label: string }) => `${label} angehoben. Zieh es an einen Ort und lass los, oder drück Escape zum Abbrechen.`,
@@ -25,6 +26,7 @@ const dragAndDropMessages = /* @__PURE__ */ i18n.define({
         count > 1 ? `${count} Einträge werden verschoben` : `„${label}“ wird verschoben`,
       statusOver: ({ target }: { target: string }) => `nach „${target}“ · Esc bricht ab`,
       statusIdle: "Esc bricht ab",
+      unavailable: "Verschieben mit der Tastatur geht gerade nicht. Lade die Seite neu und versuch es noch einmal.",
     },
   },
 });

@@ -160,7 +160,7 @@ export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "
     },
     dispose() {
       engine.targets.delete(entry);
-      engine.byElement.delete(element);
+      if (engine.byElement.get(element) === entry) engine.byElement.delete(element);
       delete element.dataset.drop;
       engine.session?.targetsChanged?.();
     },
@@ -173,7 +173,19 @@ export const statusFor = (messages: DragAndDropMessages, payload: DragPayload, o
 });
 
 /** Attributes that mark the dragged row itself; its copy in the preview shows the row as it was. */
-const DRAG_MARKS = ["data-dragging", "data-held", "data-pressing", "data-sortable-dragging", "data-sortable-line", "id"];
+const DRAG_MARKS = [
+  "data-dragging",
+  "data-held",
+  "data-pressing",
+  "data-sortable-dragging",
+  "data-sortable-line",
+  "data-sortable-handle",
+  "data-sortable-path",
+  "id",
+  // A copied radio with the same name would uncheck the original; a copied field would join a form.
+  "name",
+  "form",
+];
 /**
  * A copy of `shown` for the preview, inside a shallow copy of its parent, so the parent's class and attribute
  * selectors still style it. Canvases keep their picture.
@@ -182,6 +194,14 @@ const copyOf = (shown: HTMLElement): HTMLElement => {
   const copy = shown.cloneNode(true) as HTMLElement;
   const frame = shown.parentElement?.cloneNode(false) as HTMLElement | undefined;
   for (const element of [copy, ...copy.querySelectorAll("*")]) for (const name of DRAG_MARKS) element.removeAttribute(name);
+  // Frames and media would load or play again; an empty box of the same size stands in.
+  const MEDIA = "iframe, video, audio, object, embed";
+  const originals = shown.querySelectorAll<HTMLElement>(MEDIA);
+  copy.querySelectorAll(MEDIA).forEach((media, index) => {
+    const box = media.ownerDocument.createElement("div");
+    box.style.cssText = `width:${originals[index]?.offsetWidth ?? 0}px;height:${originals[index]?.offsetHeight ?? 0}px`;
+    media.replaceWith(box);
+  });
   const canvases = shown.querySelectorAll("canvas");
   copy.querySelectorAll("canvas").forEach((canvas, index) => {
     const original = canvases[index]!;
@@ -413,6 +433,8 @@ export const bindDragSource = (
     const cancel = () => {
       if (finished) return;
       const payload = session?.payload;
+      // The target forgets the place it showed, so nothing of a cancelled drag can land later.
+      over?.hover?.(undefined);
       clean();
       if (payload) announce(source, messages.cancelled(payload));
     };
@@ -462,7 +484,7 @@ export const bindDragSource = (
      * shifts left so it stays whole.
      */
     const place = () => {
-      const x = previewWidth ? Math.max(0, Math.min(point.x, win.innerWidth - previewWidth + 8)) : point.x;
+      const x = previewWidth ? Math.max(24, Math.min(point.x, win.innerWidth - previewWidth + 8)) : point.x;
       const y = lineY === undefined ? point.y : Math.max(point.y, lineY - 8);
       preview!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     };

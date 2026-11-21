@@ -14,6 +14,7 @@ import {
   placesIn,
   refocus,
   setLift,
+  staying,
 } from "./sortable-board";
 import { clampIndex } from "./sortable-place";
 
@@ -33,15 +34,17 @@ const sortableKeyboardMessages = /* @__PURE__ */ i18n.define({
         `${label} dropped, position ${position} of ${count} in “${list}”.`,
       cancelled: ({ label }: { label: string }) => `Cancelled. ${label} stays where it was.`,
       status: ({ position, list }: { position: number; list: string }) => `to “${list}”, place ${position} · Enter drops, Esc cancels`,
+      stay: "stays where it is · arrow keys choose a place, Esc cancels",
     },
     de: {
       lifted: ({ label, position, count, list }: Place & { label: string }) =>
-        `${label} angehoben. Position ${position} von ${count} in „${list}“. Pfeiltasten wählen den Platz, Eingabe legt ab, Escape bricht ab.`,
+        `${label} angehoben. Position ${position} von ${count} in „${list}“. Pfeiltasten wählen den Platz, Enter legt ab, Escape bricht ab.`,
       dropped: ({ label, position, count, list }: Place & { label: string }) =>
         `${label} abgelegt, Position ${position} von ${count} in „${list}“.`,
       cancelled: ({ label }: { label: string }) => `Abgebrochen. ${label} bleibt an seinem Platz.`,
       status: ({ position, list }: { position: number; list: string }) =>
-        `nach „${list}“, Platz ${position} · Eingabe legt ab, Esc bricht ab`,
+        `nach „${list}“, Platz ${position} · Enter legt ab, Esc bricht ab`,
+      stay: "bleibt an seinem Platz · Pfeiltasten wählen den Platz, Esc bricht ab",
     },
   },
 });
@@ -55,7 +58,7 @@ const showStatus = (state: Lift, to: Entry) => {
   if (state.index === undefined) return;
   setDragStatus({
     lead: state.messages.statusLead({ label: state.label, count: 1 }),
-    detail: texts!.status({ position: state.index + 1, list: to.label() }),
+    detail: staying(state) ? texts!.stay : texts!.status({ position: state.index + 1, list: to.label() }),
   });
 };
 
@@ -85,6 +88,7 @@ export const startLift = (entry: Entry, key: string, label: string, locale: stri
   const end = () => {
     if (keyboardLift.end !== end) return;
     keyboardLift.end = undefined;
+    keyboardLift.cancel = undefined;
     doc.removeEventListener("pointerdown", cancel, true);
     win.removeEventListener("blur", cancel);
     if (lift()?.keyboard) setLift(undefined);
@@ -96,6 +100,7 @@ export const startLift = (entry: Entry, key: string, label: string, locale: stri
     if (current) announce(list, texts!.cancelled({ label: current.label }));
   };
   keyboardLift.end = end;
+  keyboardLift.cancel = cancel;
   doc.addEventListener("pointerdown", cancel, true);
   win.addEventListener("blur", cancel);
 };

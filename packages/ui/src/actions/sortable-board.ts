@@ -54,8 +54,11 @@ export const registry = () => sharedState().registry[0]();
 export const touchRegistry = () => sharedState().registry[1]();
 export const lift = () => sharedState().lift[0]();
 export const setLift = (next: Lift | undefined) => sharedState().lift[1](next);
-/** Ends the keyboard lift in progress without a drop; set by the keyboard module while a row is lifted. */
-export const keyboardLift: { end?: () => void } = {};
+/**
+ * The keyboard lift in progress, set by the keyboard module: `end` stops it quietly before a drop, `cancel` stops it
+ * and says so.
+ */
+export const keyboardLift: { end?: () => void; cancel?: () => void } = {};
 
 export const listsOf = (group: string): Entry[] => {
   registry();
@@ -86,19 +89,27 @@ export const showStatus = (state: Lift) => {
     return;
   }
   const at = { position: state.index + 1, list: entry.label() };
-  setDragStatus({ lead, detail: entry.messages().statusPlace(at) });
+  setDragStatus({ lead, detail: staying(state) ? entry.messages().statusStay : entry.messages().statusPlace(at) });
 };
 export const moveOf = (group: string, key: string, from: string, to: string, fromIndex: number, index: number): SortableMove => ({
   from,
   to,
   fromIndex,
-  undo: () => find(group, from)?.onMove(key, fromIndex, moveOf(group, key, to, from, index, fromIndex)),
+  // Only while the row is still where this move put it: after a further move, this undo would duplicate it.
+  undo: () => {
+    if (!find(group, to)?.keys().includes(key)) return;
+    find(group, from)?.onMove(key, fromIndex, moveOf(group, key, to, from, index, fromIndex));
+  },
 });
+/** The lift lands where it already is: no line, no tint, nothing to commit. */
+export const staying = (state: Lift) => {
+  if (state.to !== state.from || state.index === undefined) return false;
+  return find(state.group, state.to)?.keys().indexOf(state.key) === state.index;
+};
 /** Hands the move to the target list; false when nothing would change. */
 export const commit = (state: Lift): boolean => {
   const to = find(state.group, state.to);
-  if (!to || state.index === undefined) return false;
-  if (state.to === state.from && state.index === to.keys().indexOf(state.key)) return false;
+  if (!to || state.index === undefined || to.disabled() || staying(state)) return false;
   to.onMove(state.key, state.index, moveOf(state.group, state.key, state.from, to.key, state.fromIndex, state.index));
   return true;
 };
