@@ -472,7 +472,11 @@ export const listAssignableUsers = async (params: {
 
 /** The people a drag can offer without a request: the assignment search takes over beyond them. */
 export const MAIL_DROP_ASSIGNEE_LIMIT = 200;
-/** The person's own latest assignment changes in the mailbox that order the drag's people: often chosen first. */
+/**
+ * The person's own latest collaboration changes in the mailbox (assignment, status, snooze) that order the drag's
+ * people: whom they added there comes first. A fixed window keeps the read bounded; status-only changes count toward
+ * it and add no one.
+ */
 export const MAIL_DROP_ASSIGNMENT_HISTORY = 100;
 
 export type MailDropAssignees = {
@@ -483,8 +487,8 @@ export type MailDropAssignees = {
 };
 
 /**
- * Whom the actor added as assignee in their latest MAIL_DROP_ASSIGNMENT_HISTORY changes of the mailbox, most often
- * first. `activity_events_actor_assignment_idx` reads exactly those rows, however long the mailbox's history is.
+ * Whom the actor added as assignee in their latest MAIL_DROP_ASSIGNMENT_HISTORY collaboration changes of the mailbox,
+ * most often first. `activity_events_actor_assignment_idx` reads exactly those rows, however long the mailbox's history is.
  */
 export const dropAssigneeOrderQuery = (db: SqlClient, params: { mailboxId: string; actor: { kind: string; id: string | null } }) =>
   db<{ user_id: string }[]>`
@@ -518,8 +522,14 @@ export const listDropAssignees = async (params: { context: MailRequestContext; m
     listEligibleAssignees({ mailboxId: params.mailboxId, limit: MAIL_DROP_ASSIGNEE_LIMIT + 1 }),
     dropAssigneeOrderQuery(sql, { mailboxId: params.mailboxId, actor }),
   ]);
+  // Beyond the limit, the A–Z page can miss someone assigned often: they are looked up by ID and still come first.
+  const shown = new Set(eligible.map((user) => user.id));
+  const missing = eligible.length > MAIL_DROP_ASSIGNEE_LIMIT ? frequent.map((row) => row.user_id).filter((id) => !shown.has(id)) : [];
+  const candidates = missing.length
+    ? [...eligible, ...(await listEligibleAssignees({ mailboxId: params.mailboxId, userIds: missing, limit: missing.length }))]
+    : eligible;
   const rank = new Map(frequent.map((row, index) => [row.user_id, index]));
-  const people = eligible
+  const people = candidates
     .map((user, index) => ({ user, order: rank.get(user.id) ?? frequent.length + index }))
     .sort((a, b) => a.order - b.order)
     .slice(0, MAIL_DROP_ASSIGNEE_LIMIT)

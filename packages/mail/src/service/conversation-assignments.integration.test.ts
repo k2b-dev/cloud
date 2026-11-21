@@ -791,7 +791,8 @@ suite("mail conversation assignment", () => {
       await meter.close();
     }
 
-    // Only the latest changes count: a hundred newer ones for Amy push Zed's two out of the window.
+    // Only the latest changes count: newer ones for Amy push Zed's two out of the window. A long own history (1,000
+    // changes) also makes the bound visible in the plan below: the index is read in order and stops at the window.
     const insertAssignments = (actorId: string, assigneeId: string, count: number) => sql`
       INSERT INTO mail.activity_events (mailbox_id, conversation_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata)
       SELECT ${dropMailboxId}::uuid, ${first.id}::uuid, 'user', ${actorId}::uuid, 'conversation.collaboration_updated', 'confirmed',
@@ -800,7 +801,7 @@ suite("mail conversation assignment", () => {
           'after', jsonb_build_object('assigneeUserIds', jsonb_build_array(${assigneeId}::text)))
       FROM generate_series(1, ${count}::int)
     `;
-    await insertAssignments(owner.id, amy.id, MAIL_DROP_ASSIGNMENT_HISTORY);
+    await insertAssignments(owner.id, amy.id, 1_000);
     const windowed = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
     expect(windowed.ok && names(windowed.data.people)).toEqual([
       amy.displayName,
@@ -816,7 +817,9 @@ suite("mail conversation assignment", () => {
     `;
     const nodes = planNodes(explained!["QUERY PLAN"][0].Plan);
     const scan = nodes.find((node) => node["Index Name"] === "activity_events_actor_assignment_idx");
-    expect(scan).toBeDefined();
+    expect(scan, JSON.stringify(explained!["QUERY PLAN"][0].Plan)).toBeDefined();
+    // An ordered scan under the window's limit: it reads the latest 100 rows of 1,000, never all of them.
+    expect(scan?.["Node Type"]).toBe("Index Scan");
     expect(scan?.["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
     expect(nodes.some((node) => node["Relation Name"] === "activity_events" && node["Node Type"] === "Seq Scan")).toBeFalse();
   });
