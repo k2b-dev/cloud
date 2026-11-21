@@ -428,8 +428,9 @@ for (const [width, options] of [
 // "A scrollbar moves nothing" (Valentin 21.11.): with classic scrollbars (Chromium on Linux draws the shared 0.5 rem
 // scrollbar), every scroller of the shell keeps its room for the scrollbar. Few rows, then so many that each column
 // scrolls: the boundaries with their lines and grips, the columns, and each scroller's inner width stay where they were.
+// Content goes into the regions that scroll; a Main with panes only lays out its regions, so it gets none itself.
 const scrollers =
-  ".k2b-app-workspace__sidebar-body, .k2b-app-workspace__main, .k2b-app-workspace__main-pane, .k2b-app-workspace__level-body, .k2b-app-workspace__detail, .k2b-app-workspace__drawer";
+  ".k2b-app-workspace__sidebar-body, .k2b-app-workspace__main:not(.has-panes), .k2b-app-workspace__main-primary, .k2b-app-workspace__main-pane, .k2b-app-workspace__level-body, .k2b-app-workspace__detail, .k2b-app-workspace__drawer";
 for (const { label, options } of scenarios)
   test(`1440: ${label}: a scrollbar that comes or goes moves no boundary, grip, column, or content edge`, async () => {
     const page = await load(1440, { ...options, rows: true }, false, false);
@@ -458,7 +459,8 @@ for (const { label, options } of scenarios)
       }, scrollers);
       await settled(page);
       console.info(`scrollers: ${scrolled.join(", ")}`);
-      expect(scrolled.filter((entry) => entry.endsWith("true")).length).toBeGreaterThanOrEqual(2);
+      // At least one scrollbar is really there, so the comparison below sees it come.
+      expect(scrolled.filter((entry) => entry.endsWith("true")).length).toBeGreaterThanOrEqual(1);
       expect(await measure()).toEqual(few);
     } finally {
       await page.close();

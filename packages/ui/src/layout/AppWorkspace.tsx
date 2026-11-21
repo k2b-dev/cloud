@@ -2602,7 +2602,7 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? String(primary().expanded ?? false) : undefined}
+                    aria-expanded={primary().popup ? (primary().expanded ? "true" : "false") : undefined}
                     disabled={primary().disabled}
                     onClick={primary().onClick}
                   >
@@ -2617,7 +2617,7 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? String(primary().expanded ?? false) : undefined}
+                    aria-expanded={primary().popup ? (primary().expanded ? "true" : "false") : undefined}
                     aria-disabled={primary().disabled ? "true" : undefined}
                     href={primary().disabled ? undefined : href()}
                     onClick={primary().disabled ? undefined : primary().onClick}
