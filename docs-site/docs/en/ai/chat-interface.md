@@ -673,10 +673,11 @@ and any path below the chat's working folder `/temp/`, whose files its snapshot
 counts but does not list; the workspace reports such a file if it is gone.
 Conversation file paths are not website URLs; agents deliver files with `present`.
 
-Assistant shows what a chat holds in the box **In this chat**: a small island
-of about 300 px at the top right beside the chat, with at most ten rows of
-28 px. Its head holds the title, a fixed place for **New · n**, and **Open as
-tab**. Below come the three newest **Results** with their time or size (a view
+Assistant shows what a chat holds in the column **In this chat**: 320 px (380 px
+from 1920 px) docked at the right of the chat, from top to bottom, with at most
+ten rows of 36 px in sections between hairlines. Its 56 px head holds the
+title, a fixed place for **New · n**, **Open as tab**, and **Close**. A grip on
+its boundary resizes it up to 480 px; the chat keeps at least 400 px. Below come the three newest **Results** with their time or size (a view
 file names what it shows instead, such as Chart or Table, with its sign), then
 any further group the chat snapshot carries (`groups` on
 `AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
@@ -687,21 +688,23 @@ one for **Context**. A
 click on a row opens the thing as a tab beside the chat (files and apps) or
 jumps to its message; pointing at a row shows exactly one action over its
 fixed place (download for files, show in chat otherwise), never on touch. The
-box keeps what someone reads while the pointer or focus is inside, and always
-while it is open under its button or as a sheet; news raise **New · n** in its
+column keeps what someone reads while the pointer or focus is inside, and always
+while it is open as a sheet; news raise **New · n** in its
 head. What stopped in the chat and waits for the person (a routine that needs
 attention, a failed app run) shows at the top of the tab **In this chat**, with
 the same target as before. Empty, the box says what will appear; loading
 shows rows of the same height; a failed load offers **Retry** and leaves the chat
 untouched.
 
-CSS decides where the box shows, so the server render is final: as the island
-while the chat area is at least 56 rem wide and no workspace tab is open;
-otherwise as a button **In this chat** in a head row above the timeline, so the
-history scrolls below it and no message passes under it; it opens the same box
-below it (Escape closes it). On phones the head row also names the chat, and
-the button opens a bottom sheet as high as the box that leaves the chat
-undimmed; Back or a tap beside it closes it. The former sidebar column, its
+CSS decides where the column shows, so the server render is final: docked
+while the chat area is at least 56 rem wide and no workspace tab is open. The
+chat's 56 px head row names the chat; while the column is not docked, or after
+the person closed it, the head holds the button **In this chat**, and the
+history scrolls below the head, so no message passes under it. Where the column
+is docked, the button brings it back; elsewhere it opens the same column as a
+drawer over the right edge of the chat (Escape or a press outside closes it).
+On phones the button opens a bottom sheet as high as the column that leaves the
+chat undimmed; Back or a tap beside it closes it. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
 
 Web tabs accept absolute HTTP and HTTPS addresses without embedded credentials.
