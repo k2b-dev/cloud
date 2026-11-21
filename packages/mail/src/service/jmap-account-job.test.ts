@@ -23,7 +23,11 @@ const state = (change: Partial<JmapSyncState> = {}): JmapSyncState => ({
 
 describe("routeJmapAccountTurn", () => {
   test("an account without a checkpoint or with a missing state starts a scan as background work", () => {
-    for (const read of [{ state: null, now }, { state: state({ emailState: null }), now }, { state: state({ mailboxState: null }), now }]) {
+    for (const read of [
+      { state: null, now },
+      { state: state({ emailState: null }), now },
+      { state: state({ mailboxState: null }), now },
+    ]) {
       expect(routeJmapAccountTurn(read, "delta")).toEqual({ work: "start", phase: "scan" });
       expect(routeJmapAccountTurn(read, "scan")).toEqual({ work: "start", phase: "scan" });
     }
@@ -54,10 +58,14 @@ describe("routeJmapAccountTurn", () => {
 });
 
 describe("onJmapAccountJobError", () => {
-  const context = (attempt: number) => ({ input: { remoteResourceId: "00000000-0000-4000-8000-000000000001", phase: "delta" as const }, attempt });
+  const context = (attempt: number) => ({
+    input: { remoteResourceId: "00000000-0000-4000-8000-000000000001", phase: "delta" as const },
+    attempt,
+  });
 
   test("retries until the folder job's last attempt, then dead-letters", () => {
-    for (const attempt of [1, 2, 3, 4]) expect(onJmapAccountJobError({ context: context(attempt), error: new Error("x") })).toEqual({ action: "retry" });
+    for (const attempt of [1, 2, 3, 4])
+      expect(onJmapAccountJobError({ context: context(attempt), error: new Error("x") })).toEqual({ action: "retry" });
     expect(onJmapAccountJobError({ context: context(5), error: new Error("exhausted") })).toEqual({
       action: "dead_letter",
       reason: "exhausted",

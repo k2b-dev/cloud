@@ -8,17 +8,18 @@ import { type JmapAccountAccess, type JmapAccountUnavailableReason, loadJmapAcco
 import { extendJmapCooldown, type JmapAccountFailureContext, jmapCooldownMs, recordJmapAccountFailure } from "./jmap-account-failure";
 import { classifyJmapFailure } from "./jmap-failure";
 import {
+  JMAP_SCAN_STALL_MS,
   type JmapAccountRead,
   type JmapAccountScanResult,
   type JmapAccountScanStartResult,
   type JmapAccountSyncResult,
-  JMAP_SCAN_STALL_MS,
   readJmapAccountCheckpoint,
   startJmapAccountScan,
   syncJmapAccountDelta,
   syncJmapAccountScan,
 } from "./jmap-sync-runtime";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { providerErrorCode } from "./provider-errors";
 import {
   acquireProviderLease,
   MAIL_PROVIDER_JOB_CONCURRENCY,
@@ -28,7 +29,6 @@ import {
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
-import { providerErrorCode } from "./provider-errors";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import {
   extendSyncLease,
@@ -108,7 +108,8 @@ const countFoldersRequired = async (remoteResourceId: string): Promise<number> =
     return 2;
   }
 };
-const forgetFoldersRequired = (remoteResourceId: string): Promise<unknown> => redis.send("DEL", [foldersRequiredKey(remoteResourceId)]).catch(() => 0);
+const forgetFoldersRequired = (remoteResourceId: string): Promise<unknown> =>
+  redis.send("DEL", [foldersRequiredKey(remoteResourceId)]).catch(() => 0);
 
 const leaseLost = (code: string): boolean => code === "SYNC_LEASE_LOST" || code === "SYNC_JOB_LEASE_LOST";
 
@@ -395,12 +396,9 @@ let worker: Worker | undefined;
 export const jmapAccountRuntime = {
   start: async (): Promise<void> => {
     tasks.open();
-    worker = await jmapAccountJob().process(
-      { concurrency: MAIL_PROVIDER_JOB_CONCURRENCY, onError: onJmapAccountJobError },
-      async (ctx) => {
-        await tracedJmapAccountJob(ctx);
-      },
-    );
+    worker = await jmapAccountJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY, onError: onJmapAccountJobError }, async (ctx) => {
+      await tracedJmapAccountJob(ctx);
+    });
   },
   stop: async (): Promise<void> => {
     const running = worker;

@@ -713,13 +713,27 @@ export async function syncJmapAccountDelta(
   let axis: "mailbox" | "email" = "mailbox";
   const readBatch = async (): Promise<{ batch: Batch; folderPending: boolean }> => {
     axis = "mailbox";
-    const folders = await readJmapMailboxDelta(params.session, params.authorization, params.accountId, mailboxState, params.signal, params.transport);
+    const folders = await readJmapMailboxDelta(
+      params.session,
+      params.authorization,
+      params.accountId,
+      mailboxState,
+      params.signal,
+      params.transport,
+    );
     const folderPending =
       folders.hasMoreChanges ||
       folders.created.length + folders.updated.length + folders.destroyedIds.length + folders.notFoundIds.length > 0;
     if (folderPending) return { batch: { kind: "mailbox", delta: folders }, folderPending };
     axis = "email";
-    const delta = await readJmapEmailDelta(params.session, params.authorization, params.accountId, emailState, params.signal, params.transport);
+    const delta = await readJmapEmailDelta(
+      params.session,
+      params.authorization,
+      params.accountId,
+      emailState,
+      params.signal,
+      params.transport,
+    );
     return { batch: { kind: "email", mailboxState: { oldState: folders.oldState, newState: folders.newState }, delta }, folderPending };
   };
   const failed = (error: unknown): JmapAccountSyncResult => {

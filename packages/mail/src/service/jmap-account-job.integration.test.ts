@@ -16,7 +16,6 @@ import * as accountAccess from "./jmap-account-access";
 import { JMAP_RATE_LIMIT_MAX_MS, jmapCooldownMs } from "./jmap-account-failure";
 import { jmapAccountRuntime, runJmapAccountJob } from "./jmap-account-job";
 import { mailLive } from "./live";
-import * as pacer from "./provider-pacer";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
 import {
   acquireProviderLease,
@@ -28,6 +27,7 @@ import {
   wakeParkedProviderWaiter,
   withMailboxProviderOperationBarrier,
 } from "./provider-operation-lock";
+import * as pacer from "./provider-pacer";
 import * as syncRuntime from "./sync-runtime";
 import {
   type JmapAccountJobInput,
@@ -115,15 +115,21 @@ suite("JMAP account job", () => {
       bindingId = crypto.randomUUID();
     const evidence: JmapScopeEvidence = { version: 1, kind: "jmap", origin: f.origin, accountId: "d333333" };
     const fingerprint = jmapScopeFingerprint(evidence);
-    await sql<[]>`INSERT INTO mail.mailboxes (id, short_id, name, health) VALUES (${mailboxId}::uuid, ${newShortId()}, 'JMAP job fixture', 'active')`;
-    await sql<[]>`INSERT INTO mail.remote_resources (id, mailbox_id, connector_kind, remote_locator, server_identity, scope_fingerprint, status, sync_state)
+    await sql<
+      []
+    >`INSERT INTO mail.mailboxes (id, short_id, name, health) VALUES (${mailboxId}::uuid, ${newShortId()}, 'JMAP job fixture', 'active')`;
+    await sql<
+      []
+    >`INSERT INTO mail.remote_resources (id, mailbox_id, connector_kind, remote_locator, server_identity, scope_fingerprint, status, sync_state)
       VALUES (${remoteResourceId}::uuid, ${mailboxId}::uuid, 'jmap', '{}'::jsonb, '{}'::jsonb, ${fingerprint}, 'active', ${options.syncState ?? null}::jsonb)`;
     await sql<[]>`INSERT INTO mail.provider_connections (id, owner_mailbox_id, name, email, username, connector_kind,
         imap_host, imap_port, imap_tls_mode, smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, jmap_origin)
       VALUES (${connectionId}::uuid, ${mailboxId}::uuid, 'Fixture', 'own@example.invalid', 'reader', 'jmap',
         'mail.example.invalid', 993, 'implicit', 'mail.example.invalid', 465, 'implicit', 'password',
         ${await encryptSecret({ kind: "password", password })}, ${f.origin})`;
-    await sql<[]>`INSERT INTO mail.provider_bindings (id, remote_resource_id, connection_id, state, remote_locator, verification_evidence, verified_scope_fingerprint)
+    await sql<
+      []
+    >`INSERT INTO mail.provider_bindings (id, remote_resource_id, connection_id, state, remote_locator, verification_evidence, verified_scope_fingerprint)
       VALUES (${bindingId}::uuid, ${remoteResourceId}::uuid, ${connectionId}::uuid, 'active', ${{ accountId: evidence.accountId }}::jsonb,
         ${evidence}::jsonb, ${fingerprint})`;
     await sql<[]>`INSERT INTO mail.sender_identities (id, short_id, mailbox_id, label, from_address, status)
@@ -153,7 +159,11 @@ suite("JMAP account job", () => {
     return { result, ...resubmitted };
   };
   const label = (value: Turn["result"]): string =>
-    value.kind === "deferred" ? `deferred:${value.code}` : value.kind === "ended" ? `ended:${value.reason}` : `${value.kind}:${value.result.status}`;
+    value.kind === "deferred"
+      ? `deferred:${value.code}`
+      : value.kind === "ended"
+        ? `ended:${value.reason}`
+        : `${value.kind}:${value.result.status}`;
   /** Runs continuations without delay until the job ends or waits; `before` stages server changes. */
   const drive = async (phase: JmapAccountJobInput["phase"], before: Record<number, () => void> = {}) => {
     const trace: string[] = [];
@@ -173,12 +183,16 @@ suite("JMAP account job", () => {
     expect((await state())?.scan, "initialize: no scan left").toBeNull();
   };
   const state = async () => {
-    const [row] = await sql<{ sync_state: unknown }[]>`SELECT sync_state FROM mail.remote_resources WHERE id = ${source.remoteResourceId}::uuid`;
+    const [row] = await sql<
+      { sync_state: unknown }[]
+    >`SELECT sync_state FROM mail.remote_resources WHERE id = ${source.remoteResourceId}::uuid`;
     return readJmapSyncState(row?.sync_state ?? null);
   };
   const fenceToken = async () =>
     (
-      await sql<{ token: number }[]>`SELECT current_fence_token::int AS token FROM mail.remote_resources WHERE id = ${source.remoteResourceId}::uuid`
+      await sql<
+        { token: number }[]
+      >`SELECT current_fence_token::int AS token FROM mail.remote_resources WHERE id = ${source.remoteResourceId}::uuid`
     )[0]?.token;
   const runs = () =>
     sql<{ kind: string; state: string; error_code: string | null }[]>`SELECT kind, state, error_code FROM mail.sync_runs
@@ -227,7 +241,10 @@ suite("JMAP account job", () => {
   const arrive = async (id: string) => {
     source.f.blobs.set(`blob-${id}`, [rfc822(id)]);
     change({ ...message(id, "30"), size: rfc822(id).byteLength });
-    expect((await turn("delta")).result, `${id}: arrives`).toMatchObject({ kind: "delta", result: { status: "committed", stats: { imported: 1 } } });
+    expect((await turn("delta")).result, `${id}: arrives`).toMatchObject({
+      kind: "delta",
+      result: { status: "committed", stats: { imported: 1 } },
+    });
     const [row] = await sql<{ message_id: string }[]>`SELECT ref.message_id FROM mail.remote_message_refs ref
       JOIN mail.folders folder ON folder.id = ref.folder_id
       WHERE folder.remote_resource_id = ${source.remoteResourceId}::uuid AND ref.remote_id = ${id} LIMIT 1`;
@@ -236,7 +253,10 @@ suite("JMAP account job", () => {
   };
   const hydrate = (messageId: string) =>
     syncRuntime
-      .hydrateMessageBatch({ input: { messageId }, heartbeat: noHeartbeat, resubmit: () => undefined }, { jmapTransport: source.f.dependencies })
+      .hydrateMessageBatch(
+        { input: { messageId }, heartbeat: noHeartbeat, resubmit: () => undefined },
+        { jmapTransport: source.f.dependencies },
+      )
       .then(
         () => null,
         (error: unknown) => error,
@@ -309,7 +329,10 @@ suite("JMAP account job", () => {
     const { trace, last } = await drive("scan");
     expect(trace[0], "start first").toBe("start:committed");
     expect(trace.at(-1), "a delta after the scan").toBe("delta:committed");
-    expect(trace.slice(1, -1).every((step) => step === "scan:committed"), `scan steps: ${trace.join(", ")}`).toBeTrue();
+    expect(
+      trace.slice(1, -1).every((step) => step === "scan:committed"),
+      `scan steps: ${trace.join(", ")}`,
+    ).toBeTrue();
     expect(last.next, "nothing left: no continuation").toBeNull();
     expect((await state())?.scan, "scan done").toBeNull();
     // One fence per pass that wrote: the start and each scan step; the quiet delta takes none.
@@ -342,13 +365,21 @@ suite("JMAP account job", () => {
   test("axes: a rejected Email state starts a reconciliation, a rejected mailbox state a repair that keeps the Email state", async () => {
     await initialize();
     source.f.methodErrors.set("Email/changes", "invalidArguments");
-    expect((await turn("delta")).result, "email axis").toMatchObject({ kind: "start", reason: "reconciliation", result: { status: "committed" } });
+    expect((await turn("delta")).result, "email axis").toMatchObject({
+      kind: "start",
+      reason: "reconciliation",
+      result: { status: "committed" },
+    });
     source.f.methodErrors.clear();
     expect((await state())?.scan?.reason, "reconciliation running").toBe("reconciliation");
     await drive("scan");
     const emailState = (await state())?.emailState;
     source.f.methodErrors.set("Mailbox/changes", "invalidArguments");
-    expect((await turn("delta")).result, "mailbox axis").toMatchObject({ kind: "start", reason: "repair", result: { status: "committed" } });
+    expect((await turn("delta")).result, "mailbox axis").toMatchObject({
+      kind: "start",
+      reason: "repair",
+      result: { status: "committed" },
+    });
     source.f.methodErrors.clear();
     expect(await state(), "repair keeps the Email state").toMatchObject({ emailState, scan: { reason: "repair" } });
   }, 60_000);
@@ -369,7 +400,10 @@ suite("JMAP account job", () => {
     expect(await state(), "repair: Email state kept").toMatchObject({ emailState, scan: { reason: "repair" } });
     // The message stays in a mailbox the server never shows: the scan yields to the delta, and a
     // report after the repair fails the turn visibly instead of repairing again.
-    expect((await turn("scan")).result, "after the repair: the delta first").toMatchObject({ kind: "scan", result: { status: "delta_required" } });
+    expect((await turn("scan")).result, "after the repair: the delta first").toMatchObject({
+      kind: "scan",
+      result: { status: "delta_required" },
+    });
     const failure = await turn("delta").then(
       () => null,
       (error: unknown) => error,
@@ -412,7 +446,12 @@ suite("JMAP account job", () => {
       measured.quiet = (await meter.during(() => turn("delta"))).length;
       change(message("SINGLE", "30"));
       measured.newMail = (await meter.during(() => turn("delta"))).length;
-      const holder = await acquireProviderLease({ resource: source.remoteResourceId, waiter: "commands:holder", priority: "command", ttlMs: 30_000 });
+      const holder = await acquireProviderLease({
+        resource: source.remoteResourceId,
+        waiter: "commands:holder",
+        priority: "command",
+        ttlMs: 30_000,
+      });
       if (!holder.lock) throw new Error("budget: holder lease missing");
       const wakes = captureWakes();
       try {
@@ -435,7 +474,12 @@ suite("JMAP account job", () => {
   test("busy: a held lease costs no SQL and no request; the turn parks, a release wakes it, a lost wake comes again", async () => {
     await initialize();
     const requests = source.f.requests.length;
-    const holder = await acquireProviderLease({ resource: source.remoteResourceId, waiter: "commands:holder", priority: "command", ttlMs: 30_000 });
+    const holder = await acquireProviderLease({
+      resource: source.remoteResourceId,
+      waiter: "commands:holder",
+      priority: "command",
+      ttlMs: 30_000,
+    });
     if (!holder.lock) throw new Error("busy: holder lease missing");
     const wakes = captureWakes();
     const meter = await meterSql();
@@ -454,7 +498,10 @@ suite("JMAP account job", () => {
       ]);
       // The waker dropped that wake; the scheduler's next wake of the line brings it again.
       await wakeParkedProviderWaiter(source.remoteResourceId);
-      expect(wakes.woken.map((wake) => wake.waiter), "lost wake: woken again").toEqual([waiter, waiter]);
+      expect(
+        wakes.woken.map((wake) => wake.waiter),
+        "lost wake: woken again",
+      ).toEqual([waiter, waiter]);
     } finally {
       await meter.close();
       wakes.restore();
@@ -532,7 +579,12 @@ suite("JMAP account job", () => {
       // Between two scan turns a command takes its turn first, then the scan goes on.
       const scanStep = await turn("scan");
       expect(scanStep, "scan: continues as background work").toMatchObject({ next: { phase: "scan" }, delayMs: 0 });
-      const command = await acquireProviderLease({ resource: source.remoteResourceId, waiter: "commands:fair", priority: "command", ttlMs: 30_000 });
+      const command = await acquireProviderLease({
+        resource: source.remoteResourceId,
+        waiter: "commands:fair",
+        priority: "command",
+        ttlMs: 30_000,
+      });
       expect(command.lock, "fairness: the command goes first").not.toBeNull();
       expect((await turn("scan")).result, "fairness: the scan waits for it").toMatchObject({ kind: "deferred", code: "SYNC_BUSY" });
       if (command.lock) await releaseProviderLease(command.lock);
@@ -595,7 +647,10 @@ suite("JMAP account job", () => {
       binding_error: "JMAP_AUTHENTICATION_FAILED",
     });
     source.f.controls.status = null;
-    expect((await turn("delta")).result, "after 401: not runnable until verified again").toMatchObject({ kind: "ended", reason: "binding_inactive" });
+    expect((await turn("delta")).result, "after 401: not runnable until verified again").toMatchObject({
+      kind: "ended",
+      reason: "binding_inactive",
+    });
   }, 30_000);
 
   test("403: a refused account degrades the binding, not the credentials", async () => {
@@ -621,14 +676,19 @@ suite("JMAP account job", () => {
         1,
       );
       expect(await hydrate(gone), "missing: the batch ends without a failure").toBeNull();
-      expect(queued.mock.calls, "missing: the account delta is queued").toEqual([[{ remoteResourceId: source.remoteResourceId, phase: "delta" }]]);
+      expect(queued.mock.calls, "missing: the account delta is queued").toEqual([
+        [{ remoteResourceId: source.remoteResourceId, phase: "delta" }],
+      ]);
     } finally {
       queued.mockRestore();
     }
     const refused = await arrive("REFUSED");
     source.f.controls.apiStatus = 401;
     const failure = await hydrate(refused);
-    expect([codeOf(failure), failure instanceof Error && Reflect.get(failure, "status")], "401: the batch ends").toEqual(["JMAP_HTTP", 401]);
+    expect([codeOf(failure), failure instanceof Error && Reflect.get(failure, "status")], "401: the batch ends").toEqual([
+      "JMAP_HTTP",
+      401,
+    ]);
     expect(await health(), "401: login required, as from the account job").toMatchObject({
       mailbox: "auth_required",
       binding: "degraded",
@@ -765,7 +825,9 @@ suite("JMAP account job", () => {
       if (request.method === "POST") controller.abort();
       return undefined;
     };
-    expect(codeOf(await turn("scan", { signal: controller.signal }).catch((error: unknown) => error)), "dies in its read").toBe("JMAP_ABORTED");
+    expect(codeOf(await turn("scan", { signal: controller.signal }).catch((error: unknown) => error)), "dies in its read").toBe(
+      "JMAP_ABORTED",
+    );
     source.f.controls.handle = undefined;
     const { last } = await drive("scan");
     expect(last.next, "done").toBeNull();

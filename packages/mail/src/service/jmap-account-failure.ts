@@ -78,7 +78,8 @@ const FAILURE_TEXT = {
 export const recordJmapAccountFailure = async (context: JmapAccountFailureContext, failure: JmapAccountHealthFailure): Promise<void> => {
   const refused = failure.kind !== "degraded";
   const authFailure = failure.kind === "auth_required";
-  const { code, message } = failure.kind === "degraded" ? { code: failure.code, message: "JMAP synchronization failed" } : FAILURE_TEXT[failure.kind];
+  const { code, message } =
+    failure.kind === "degraded" ? { code: failure.code, message: "JMAP synchronization failed" } : FAILURE_TEXT[failure.kind];
   await sql
     .begin(async (tx) => {
       // Lock order as recordSyncFailure: the resource first, then binding, connection and mailbox.
