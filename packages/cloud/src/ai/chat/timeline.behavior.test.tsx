@@ -1007,9 +1007,10 @@ const renderFailedTurnTimeline = async (
   }
 });
 
-(isServer ? test.skip : test)(
-  "a turn that ends after its steps without any answer says so and offers to go on, never ends in silence",
-  async () => {
+// Cloud now stores this ending as failed with provider_stopped (#3755); older history has it as a completed turn.
+(isServer ? test.skip : test).each(["completed", "failed"] as const)(
+  "a %s turn that ends after its steps without any answer says so and offers to go on, never ends in silence",
+  async (status) => {
     const dom = createDomTestHarness();
     const [state, setState] = createStore(emptyProjection());
     const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
@@ -1035,16 +1036,23 @@ const renderFailedTurnTimeline = async (
         ...base,
         seq: 3,
         type: "turn_finished",
-        status: "completed",
-        error: null,
+        status,
+        error: status === "failed" ? "Der KI-Anbieter hat diese Antwort vorzeitig beendet." : null,
         messages: [
           storedMessage(10, { role: "user", content: [{ type: "text", text: "Bau die Automation fertig." }] }),
           storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "write", name: "write_file", args: write.args }] }),
           storedMessage(12, { role: "tool_result", callId: "write", name: "write_file", result: "ok", isError: false }),
-          storedMessage(13, { role: "assistant", content: [] }, { loopDoneReason: "stop", stopReason: "stop" }),
+          storedMessage(
+            13,
+            { role: "assistant", content: [] },
+            status === "failed"
+              ? { loopDoneReason: "error", stopReason: "stop", meta: { turnError: { code: "provider_stopped" } } }
+              : { loopDoneReason: "stop", stopReason: "stop" },
+          ),
         ],
       });
       await tick();
+      expect(dom.root.querySelectorAll(".ai-turn__notice")).toHaveLength(1);
       const notice = dom.root.querySelector(".ai-turn__notice");
       expect(notice?.textContent).toContain("Die Antwort endete ohne Text.");
       expect(notice?.textContent).toContain("Die Schritte oben bleiben.");

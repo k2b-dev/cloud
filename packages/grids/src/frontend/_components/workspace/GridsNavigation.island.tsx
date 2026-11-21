@@ -8,10 +8,9 @@ import { createNewResource } from "../sidebar/new-resource";
 import { openSidebarForm } from "../sidebar/open-sidebar-form";
 import { createBaseSwitcher } from "./base-switcher";
 import { workspaceMessages } from "./messages";
-import { activeNavigationKey, type NavigationResource, navigationResources } from "./navigation-catalog";
-import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
+import { type NavigationResource, type NavigationState, navigationResources } from "./navigation-catalog";
 
-export default function GridsNavigation(props: { canCreate: boolean; state: PublicOkWorkspaceState }) {
+export default function GridsNavigation(props: { canCreate: boolean; state: NavigationState }) {
   const locale = useLocale();
   const t = () => workspaceMessages.resolve([locale()]).t;
   const navText = () => navigationMessages.resolve([locale()]).t;
@@ -25,12 +24,7 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Publ
     tableLevels: state.catalog.tableLevels,
     canCreateTables: state.canCreateTables,
     canManageBase: state.canManageBase,
-    activeTableId:
-      state.route.kind === "records"
-        ? state.route.activeTable.id
-        : state.route.kind === "queryResultView"
-          ? state.route.activeView.tableId
-          : undefined,
+    activeTableId: state.route.activeTableId,
   });
   const href = (suffix = "") => `/app/grids/${state.base.id}${suffix}${state.adminModeRequested ? "?edit=true" : ""}`;
   const entry = (resource: NavigationResource, parent: string): NavigationItem => ({
@@ -39,9 +33,9 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Publ
     icon: resource.icon,
     ...(resource.href ? { href: resource.href } : { action: `form:${resource.id}` }),
     description: [resource.context, resource.status ? t()[resource.status] : undefined].filter(Boolean).join(" · "),
-    active: activeNavigationKey(state.route) === navigationReferenceKey(resource),
+    active: state.route.activeKey === navigationReferenceKey(resource),
     actions:
-      resource.type === "customApp" && activeNavigationKey(state.route) === navigationReferenceKey(resource)
+      resource.type === "customApp" && state.route.activeKey === navigationReferenceKey(resource)
         ? [
             {
               id: `${parent}/settings:${resource.id}`,

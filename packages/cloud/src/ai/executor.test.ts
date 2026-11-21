@@ -87,6 +87,8 @@ describe("malformed tool calls in a chat turn", () => {
       unavailablePlaceCall?: boolean;
       emptyAnswer?: boolean;
       steerAfterTextAnswer?: boolean;
+      /** The first response calls a tool that succeeds, optionally after a text of its own. */
+      successfulCall?: { textBefore?: string };
       /** Continue the stored turn without new input, as a resumed worker does. */
       resume?: boolean;
     } = {},
@@ -131,7 +133,21 @@ describe("malformed tool calls in a chat turn", () => {
           yield { type: "issue", issue: { kind: "provider_error", message: "Context full", retryable: false, contextOverflow: true } };
           return;
         }
-        if (requests.length <= malformedResponses) {
+        if (options.successfulCall && requests.length === 1) {
+          const { textBefore } = options.successfulCall;
+          if (textBefore) {
+            yield { type: "block_start", blockId: "status", index: 0, kind: "text" };
+            yield { type: "block_end", blockId: "status", index: 0, block: { type: "text", text: textBefore } };
+          }
+          yield { type: "block_start", blockId: "lookup", index: 1, kind: "tool_call", callId: "lookup-call", name: "lookup" };
+          yield { type: "block_delta", blockId: "lookup", index: 1, delta: "{}" };
+          yield {
+            type: "block_end",
+            blockId: "lookup",
+            index: 1,
+            block: { type: "tool_call", id: "lookup-call", name: "lookup", args: {} },
+          };
+        } else if (requests.length <= malformedResponses) {
           if (options.providerFailure) {
             yield { type: "block_start", blockId: "partial", index: 0, kind: "text" };
             yield { type: "block_end", blockId: "partial", index: 0, block: { type: "text", text: "Partial" } };
@@ -184,6 +200,15 @@ describe("malformed tool calls in a chat turn", () => {
           }
         : undefined,
       steering,
+      ...(options.successfulCall
+        ? {
+            tools: [
+              defineTool({ name: "lookup", description: "Look up", inputSchema: z.object({}), timeoutMs: false }).server(async () => ({
+                found: [],
+              })),
+            ],
+          }
+        : {}),
       coalesce: { ms: 25, maxChars: 512 },
       maxTurns: 5,
     });
@@ -257,6 +282,20 @@ describe("malformed tool calls in a chat turn", () => {
     const result = await run(1, false, { emptyAnswer: true });
     expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "tool_failed" } } });
     expect(result.doneReason).toBe("error");
+  });
+
+  // #3755: a step that succeeds, then a stop without text, ended as a completed turn nobody could read.
+  test("an empty stop after a successful step fails visibly instead of completing in silence", async () => {
+    const result = await run(0, false, { successfulCall: {}, emptyAnswer: true });
+    expect(result.requests).toHaveLength(2);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "provider_stopped" } } });
+    expect(result.doneReason).toBe("error");
+  });
+
+  test("an empty stop after a step keeps the turn completed when its text before the step is the answer", async () => {
+    const result = await run(0, false, { successfulCall: { textBefore: "Three hotels compared." }, emptyAnswer: true });
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.doneReason).toBe("stop");
   });
 
   test("a text answer clears a failed tool round before late steering and an empty stop", async () => {

@@ -97,6 +97,19 @@ test("checker findings read as a sentence with its consequence; rights by action
   expectNoCode(words);
 });
 
+test("a finding the checker reports once per page reads once (P6 v01: two pages without a check)", () => {
+  for (const locale of ["de", "en"]) {
+    const words = describeCodeCheckWords(
+      { diagnostics: [], warnings: [{ code: "code_route_unchecked" }, { code: "code_route_unchecked" }], permissions: [] },
+      locale,
+    );
+    expect(words.notices).toHaveLength(1);
+    expect(words.notices[0]?.text).toBe(
+      locale === "de" ? "Diese Seite prüft die angemeldete Person nicht." : "This page does not check the signed-in person.",
+    );
+  }
+});
+
 test("a run that never got to its examples says so with its consequence", () => {
   const words = describeCodeTestWords(
     { version: 1, mode: "test", ok: false, error: "code_test_runner_unavailable", diagnostics: [], cases: [] } as unknown as CodeTestResult,

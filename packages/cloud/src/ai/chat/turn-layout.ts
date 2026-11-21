@@ -193,6 +193,10 @@ export function layoutAiTurn(
   };
 }
 
+/** Nothing to read, look at, or act on: a finished turn like this says that it ended without any text. */
+export const showsNothing = (layout: AiTurnLayout): boolean =>
+  layout.text.length === 0 && layout.results.length === 0 && layout.actions.length === 0;
+
 /** The loop ending is authoritative; partial messages also carry their own failed or interrupted ending. */
 export const storedPhase = (entries: readonly Pick<AiStoredMessage, "loopDoneReason" | "stopReason">[]): AiTurnPhase => {
   const reason = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;

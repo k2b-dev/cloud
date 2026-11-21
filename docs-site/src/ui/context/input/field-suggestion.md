@@ -89,7 +89,9 @@ error. It reserves no line under the field, and it does not repeat the chosen
 day at rest.
 
 Passing `suggestion` at all reserves the status line beside the label, even
-while it resolves to `undefined`. On a phone the status line has its own line
+while it resolves to `undefined`. The status line and Accept keep the height of
+the label's own line, so a field with a suggestion stays level with a neighbour
+without one. On a phone the status line has its own line
 under the label in every state, so a long label or value never cuts it short. Nothing moves when a suggestion arrives, is
 accepted, is overruled, or goes away. A field without a visible label shows the
 status line under the control.

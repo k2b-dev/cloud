@@ -124,17 +124,37 @@ test("a stopped automatic review cannot offer to answer an earlier personal mess
   expect(review).toContain("Du hast gestoppt");
   expect(review).not.toContain("Neu antworten");
 });
-test("an automatic budget stop survives reload and offers only explicit continuation", () => {
-  const html = renderHistory([
-    {
-      ...truncatedAnswer,
-      stopReason: "stop",
-      message: { role: "assistant", content: [] },
-      meta: { automationTurnStop: { reason: "model_calls" } },
-    },
-  ]);
+test("an automatic budget stop survives reload as a grey pause and offers only explicit continuation", () => {
+  const paused: AiStoredMessage = {
+    ...truncatedAnswer,
+    stopReason: "stop",
+    message: { role: "assistant", content: [] },
+    meta: { automationTurnStop: { reason: "model_calls" } },
+  };
+  const html = renderHistory([paused]);
   expect(html).toContain("Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.");
   expect(html).toContain("Was bis hier steht, bleibt erhalten.");
-  expect(html).toContain("Weiterschreiben");
+  // Pause v10: a note from Cloud, grey with the pause sign, never the warning colour or its triangle.
+  expect(html).toMatch(
+    /class="k2b-notice-card[^"]*ai-turn__notice[^"]*"[^>]*data-tone="neutral"|data-tone="neutral"[^>]*class="[^"]*ai-turn__notice/,
+  );
+  expect(html).toContain("ti-player-pause");
+  expect(html).not.toContain("ti-alert-triangle");
+  expect(html).not.toContain('data-tone="warning"');
+  expect(html).toMatch(/<button[^>]*data-variant="secondary"[^>]*>[\s\S]*?Weiterarbeiten/);
+  expect(html).not.toContain("Mit einer neuen Nachricht geht es weiter.");
   expect(html).not.toContain("code_authoring");
+  // Once a newer message follows, the button is gone and one sentence says how the work goes on.
+  const next: AiStoredMessage = {
+    ...paused,
+    id: "next",
+    seq: 3,
+    loopId: "next-turn",
+    message: { role: "user", content: ["Danke"] },
+    meta: {},
+  };
+  const overtaken = renderHistory([paused, next]);
+  expect(overtaken).toContain("Was bis hier steht, bleibt erhalten. Mit einer neuen Nachricht geht es weiter.");
+  expect(overtaken).not.toContain("Weiterarbeiten");
+  expect(overtaken).not.toContain("ti-alert-triangle");
 });

@@ -4788,6 +4788,34 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      // #3859: the box above the conversation grew on the press, which moved Send from under the pointer, so the click
+      // on a suggestion cut off at the reserved height never arrived. Send now sends it as it is, with one click.
+      test("one click on Send sends an untouched suggestion that the box cuts off, and the press moves nothing", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+          const lines = Array.from({ length: 16 }, (_, line) => `Example answer line ${line + 1}.`);
+          api.drafts.set("DrfSug", { ...api.drafts.get("DrfSug"), body: `Hello,\n\n${lines.join("\n")}` });
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] [data-reply-box-clipped]").first().waitFor();
+          await settled(page);
+          const send = draftBox(page).locator("[data-mail-reply-send]");
+          const before = (await send.boundingBox())!;
+          await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+          await page.mouse.down();
+          await settled(page);
+          const pressed = (await send.boundingBox())!;
+          expect(Math.abs(pressed.y - before.y), `Send ${before.y} → ${pressed.y} on the press`).toBeLessThanOrEqual(0.5);
+          await page.mouse.up();
+          await eventually(() => api.calls.includes("POST /commands"), true, "one click sends the suggestion as it is");
+          expect(api.calls).toContain("POST /drafts/DrfSug/safety-review");
+        } finally {
+          await close(page);
+        }
+      });
+
       test("another automated account's suggestion carries that account's name, in plum, in the box and its row", async () => {
         const page = await open(
           `${boxPath}?conversation=Conv01&identity=1&suggestion=1&suggestionBy=Rechnungseingang`,
