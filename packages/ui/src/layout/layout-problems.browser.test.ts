@@ -132,7 +132,9 @@ describe(`scroll containers in ${browserName}`, () => {
       `<div data-probe="list" style="width:300px;height:120px;overflow-y:auto"><div style="width:300px;height:400px">A list as wide as its column</div></div>`,
     );
     // The vertical scrollbar takes its width, so the 300 px content no longer fits beside it.
-    expect(await page.locator('[data-probe="list"]').evaluate((list) => list.offsetWidth - list.clientWidth)).toBeGreaterThan(7);
+    expect(
+      await page.locator('[data-probe="list"]').evaluate((list) => list.getBoundingClientRect().width - list.clientWidth),
+    ).toBeGreaterThan(7);
     expect(result.scroll.map((line) => line.split(" by ")[0])).toEqual(['[data-probe="list"] scrolls sideways']);
   });
 });
