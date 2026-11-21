@@ -554,7 +554,9 @@ test("inspector commands retain their permissions and busy state beside history"
   // The preview stands in the panel, so Download leads and no second "Preview" repeats it.
   expect(primary.some((item) => item.textContent?.trim() === "Preview")).toBe(false);
   expect(primary[0]?.textContent?.trim()).toBe("Download");
-  for (const label of ["Download", "Share"]) expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  // K9: Share stands beside the two framed actions as a sign; its name is its label.
+  for (const label of ["Download", "Share"])
+    expect(primary.find((item) => (item.textContent?.trim() || item.getAttribute("aria-label")) === label)?.disabled).toBe(true);
   expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
   setBusy(false);
   dispose();
