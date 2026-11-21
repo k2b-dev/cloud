@@ -51,9 +51,9 @@
   /* The assistant composer's edge: the AI border (#c4519f) at 60 % on white at rest (2.2:1 on the surface, 3.6:1
      against the accent it turns into on focus) and, while it has focus, the ring of every field in plum. */
   --k2b-ai-edge-rest: #dc97c5;
-  /* shadow-tokens: allow the focus ring outside the assistant composer; Gustav flat (F1): the ring of every field,
-     without blur, instead of the soft glow. */
-  --k2b-ai-glow: 0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-ai-accent) var(--k2b-edge-ring-share), transparent);
+  /* shadow-tokens: allow the focus ring outside the assistant composer; Gustav flat (F1): the ring of every field
+     (3 px, 18 % of the accent), without blur, instead of the soft glow. */
+  --k2b-ai-glow: 0 0 0 3px rgb(142 27 111 / 0.18);
   /* A suggested next message in the empty prompt: muted plum, still 5.0:1 on the surface. */
   --k2b-ai-suggestion: #9a5b88;
 
@@ -570,8 +570,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-on-solid: #3a0f2e;
   /* Rest edge 4.7:1 against the focus accent. */
   --k2b-ai-edge-rest: #6e3a61;
-  /* shadow-tokens: allow the focus ring outside the assistant composer (Gustav flat F1), resolved in the dark scope. */
-  --k2b-ai-glow: 0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-ai-accent) var(--k2b-edge-ring-share), transparent);
+  /* shadow-tokens: allow the focus ring outside the assistant composer (Gustav flat F1): 3 px, 24 % of the accent. */
+  --k2b-ai-glow: 0 0 0 3px rgb(240 171 220 / 0.24);
   --k2b-ai-suggestion: #c99abb;
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
