@@ -53,7 +53,16 @@ export type LayoutProblems = {
 
 export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProblems {
   const root = options.root ? document.querySelector(options.root) : document.body;
-  if (!root) return { overlap: [], spill: [], cut: [], double: [], scrollbar: [], sideways: false, problems: [`no element matches ${options.root}`] };
+  if (!root)
+    return {
+      overlap: [],
+      spill: [],
+      cut: [],
+      double: [],
+      scrollbar: [],
+      sideways: false,
+      problems: [`no element matches ${options.root}`],
+    };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
   const seen = (element: Element) => {
