@@ -431,13 +431,19 @@ export const createDialogCore = () => {
 
     const element = document.createElement("dialog");
     element.onclose = () => {
-      // Repeated Escape can force a non-cancelable native close. A retained
-      // entry (ignore, an async guard, or a parent) still owns the modal.
       const top = state.stack[state.stack.length - 1];
       if (state.element !== element || element.open || !top) return;
-      if (top.modal) element.showModal();
+      // The browser closed the frame on a close request without a cancel event: close watchers do so without a
+      // recent user activation, and after repeated Escape (#3916). That is still the person's Escape. A level that
+      // takes dismissal closes; only a level that must be answered, or whose guard decides, keeps the frame.
+      const keep = top.cancelBehavior === "ignore" || top.dismissPending || Boolean(top.dismissHandler);
+      if (!keep) popTop(undefined);
+      const shown = state.stack[state.stack.length - 1];
+      if (state.element !== element || element.open || !shown) return;
+      if (shown.modal) element.showModal();
       else element.show();
-      resolveInitialFocusTarget(top, element)?.focus();
+      resolveInitialFocusTarget(shown, element)?.focus();
+      if (keep && shown === top) void requestDismiss(top);
     };
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
@@ -492,15 +498,27 @@ export const createDialogCore = () => {
     else unlockPageScroll();
   };
 
-  const modelessEscape = (event: KeyboardEvent) => {
+  const escapeKey = (event: KeyboardEvent) => {
     const top = state.stack[state.stack.length - 1];
-    if (!top || top.modal || event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-    event.preventDefault();
-    void requestDismiss(top);
+    if (!top || event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+    if (!top.modal) {
+      event.preventDefault();
+      void requestDismiss(top);
+      return;
+    }
+    // A modal level takes Escape through its cancel event. Should the browser not route this Escape there, as
+    // WebKit was seen to right after a dialog opened (#3916), the level is dismissed once the key has been handled,
+    // unless something took it: a popover in front of the dialog, or a handler that prevented the key.
+    if (document.querySelector(":popover-open")) return;
+    const dialog = state.element;
+    setTimeout(() => {
+      if (event.defaultPrevented || state.stack[state.stack.length - 1] !== top || !dialog?.open || state.element !== dialog) return;
+      void requestDismiss(top);
+    }, 0);
   };
 
   const stopConnectionObserver = () => {
-    document.removeEventListener("keydown", modelessEscape);
+    document.removeEventListener("keydown", escapeKey);
     state.connectionObserver?.disconnect();
     state.connectionObserver = undefined;
   };
@@ -648,7 +666,7 @@ export const createDialogCore = () => {
 
   const observeConnection = () => {
     if (state.connectionObserver || typeof MutationObserver === "undefined") return;
-    document.addEventListener("keydown", modelessEscape);
+    document.addEventListener("keydown", escapeKey);
     state.connectionObserver = new MutationObserver(resetDisconnectedDialog);
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
