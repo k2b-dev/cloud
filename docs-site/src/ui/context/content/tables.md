@@ -103,7 +103,12 @@ For a complete set of rows that a reader searches in the browser:
 Pass `groupBy` with a column id: each group becomes its own `<tbody>` under a
 row-group header (`scope="rowgroup"`) with the group's shown value and its
 count, in the order the groups first appear. The header is a group (K17): 36 px
-on the page's quiet ground, the value in 13 px bold, the count in grey. Pass the search text as `query`
+on the page's quiet ground, the value in 13 px bold, the count in grey. With
+`collapsibleGroups` the whole header is a disclosure button with a chevron at
+its end and `aria-expanded`; a folded group keeps its 36 px header with name
+and count, and only its rows leave. `defaultCollapsedGroups` lists the group
+keys that start folded: a group's key is its stored value as text, `""` for
+missing values. Row clicks stay `onRowClick`. Pass the search text as `query`
 and a way back as `onClearQuery`: with no row left, the table says “No row
 matches “…”.” and offers **Clear search** at a fixed height instead of `empty`. Clearing removes the button the
 reader pressed, so move focus back to the search field in `onClearQuery`.
@@ -334,7 +339,8 @@ type DataTableProps<T> = {
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
   tableClass?: string; scrollClass?: string; scrollPreserveKey?: string | false;
-  groupBy?: string; query?: string; onClearQuery?: () => void;
+  groupBy?: string; collapsibleGroups?: boolean; defaultCollapsedGroups?: readonly string[];
+  query?: string; onClearQuery?: () => void;
 };
 
 type DataTablePanelProps = {

@@ -36,6 +36,8 @@ const rows = [
   { name: "Brass lamp", place: "Shelf A 1", owner: "Jonte", amount: 85.5 },
 ];
 render(() => createComponent(DataTable, { columns, rows, surface: "plain", ariaLabel: "Items" }), document.getElementById("table"));
+render(() => createComponent(DataTable, { columns, rows: [...rows, { name: "Pine chest", place: "Hall 2", owner: "Mira", amount: 310 }], groupBy: "owner",
+  collapsibleGroups: true, surface: "plain", ariaLabel: "Grouped items" }), document.getElementById("grouped"));
 
 const notice = (id) => createComponent(NoticeCard, { id, tone: "warning", icon: true, title: "The receipt waits for a signature.",
   detail: "Payout starts after it is signed.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) });
@@ -61,7 +63,7 @@ const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="notices"></div><div id="empty"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#a3").waitFor();
@@ -171,6 +173,35 @@ describe("Cloud flat building blocks", () => {
       expect(entry).toMatchObject({ metaBelow: true, endRight: true, ownerHidden: true });
     } finally {
       await phone.close();
+    }
+  });
+
+  test("folding a table group keeps its 36 px head and moves only the rows below it", async () => {
+    const page = await load(1440);
+    try {
+      const heads = () =>
+        page.locator("#grouped .k2b-data-table__group-row").evaluateAll((items) =>
+          items.map((row) => {
+            const { top, height } = row.getBoundingClientRect();
+            return { top, height };
+          }),
+        );
+      const table = await box(page, "#table");
+      const before = await heads();
+      const toggle = page.locator("#grouped .k2b-data-table__group-toggle").first();
+      expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+      await toggle.click();
+      await settled(page);
+      const after = await heads();
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(await box(page, "#table")).toEqual(table);
+      expect(after[0]).toEqual(before[0]);
+      expect(after[0]!.height).toBe(36);
+      // Mira's two rows of 40 px leave; the next head moves up by exactly them.
+      expect(before[1]!.top - after[1]!.top).toBe(80);
+      expect(await page.locator("#grouped tbody").first().locator(".k2b-data-table__row").count()).toBe(0);
+    } finally {
+      await page.close();
     }
   });
 

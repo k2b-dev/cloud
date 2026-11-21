@@ -517,6 +517,8 @@
 .k2b-ui .k2b-notice-card[data-tone="success"] { --k2b-notice-ink: var(--k2b-success-text); --k2b-notice-surface: var(--k2b-success-surface); }
 .k2b-ui .k2b-notice-card[data-tone="warning"] { --k2b-notice-ink: var(--k2b-warning-text); --k2b-notice-surface: var(--k2b-warning-surface); }
 .k2b-ui .k2b-notice-card[data-tone="danger"] { --k2b-notice-ink: var(--k2b-danger-text); --k2b-notice-surface: var(--k2b-danger-surface); }
+/* "Your turn": the action blue as a tint, never blue text. */
+.k2b-ui .k2b-notice-card[data-tone="yours"] { --k2b-notice-ink: var(--k2b-action); --k2b-notice-surface: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-surface)); }
 /* The dark tone surfaces are saturated; a notice uses a lighter share of them so it stays calm. */
 .k2b-ui[data-theme="dark"] .k2b-notice-card:not([data-tone="neutral"]),
 .k2b-ui.k2b-dark .k2b-notice-card:not([data-tone="neutral"]),
@@ -709,6 +711,13 @@
 }
 .k2b-ui .k2b-placeholder:not([data-variant="inline"]) .k2b-placeholder__icon[data-sign] { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-placeholder:not([data-variant="inline"])[data-state="error"] .k2b-placeholder__icon[data-sign] { background: var(--k2b-danger-surface); }
+/* A toned sign (K8): the tone's tint and ink, such as a green check for "All done"; the words say it too. */
+.k2b-ui .k2b-placeholder[data-tone="success"] { --k2b-placeholder-tone-surface: var(--k2b-success-surface); --k2b-placeholder-tone: var(--k2b-success-text); }
+.k2b-ui .k2b-placeholder[data-tone="info"] { --k2b-placeholder-tone-surface: var(--k2b-info-surface); --k2b-placeholder-tone: var(--k2b-info-text); }
+.k2b-ui .k2b-placeholder[data-tone="warning"] { --k2b-placeholder-tone-surface: var(--k2b-warning-surface); --k2b-placeholder-tone: var(--k2b-warning-text); }
+.k2b-ui .k2b-placeholder[data-tone="danger"] { --k2b-placeholder-tone-surface: var(--k2b-danger-surface); --k2b-placeholder-tone: var(--k2b-danger-text); }
+.k2b-ui .k2b-placeholder[data-tone] .k2b-placeholder__icon[data-sign] { color: var(--k2b-placeholder-tone); }
+.k2b-ui .k2b-placeholder:not([data-variant="inline"])[data-tone] .k2b-placeholder__icon[data-sign] { background: var(--k2b-placeholder-tone-surface); }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__icon {
   width: 2.5rem;
   height: 2.5rem;
@@ -985,7 +994,8 @@
   white-space: nowrap;
 }
 .k2b-ui .k2b-status-badge > i { flex: 0 0 auto; font-size: 0.6875rem; }
-.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.375rem; border-radius: 0.25rem; background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
+/* K4: a state is a round chip with a sign and a word. */
+.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.5rem; border-radius: var(--k2b-radius-round, 9999px); background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
 .k2b-ui .k2b-status-badge[data-variant="text"] { padding: 0; border-radius: 0; background: transparent; }
 .k2b-ui .k2b-status-badge__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* With `labels`, every possible word shares one cell and the badge keeps the widest: the dot never moves. */
@@ -1002,6 +1012,7 @@
 .k2b-ui .k2b-status-badge[data-tone="info"],
 .k2b-ui .k2b-status-badge[data-tone="running"] { color: var(--k2b-info-text); }
 .k2b-ui .k2b-status-badge[data-tone="neutral"] { color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-status-badge[data-tone="yours"] { color: var(--k2b-action); }
 .k2b-ui .k2b-status-badge[data-variant="text"][data-tone="neutral"] { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-status-badge[data-variant="chip"]:not([data-tone="neutral"]) { background: color-mix(in srgb, currentColor 10%, transparent); }
 .k2b-ui[data-theme="dark"] .k2b-status-badge[data-tone="warning"],
@@ -1024,6 +1035,7 @@
 .k2b-ui .k2b-status-badge[data-tone="warning"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="degraded"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="error"] .k2b-status-badge__dot { background: var(--k2b-danger-500); }
+.k2b-ui .k2b-status-badge[data-tone="yours"] .k2b-status-badge__dot { background: var(--k2b-action); }
 .k2b-ui .k2b-status-badge[data-tone="info"] .k2b-status-badge__dot,
 .k2b-ui .k2b-status-badge[data-tone="running"] .k2b-status-badge__dot { background: var(--k2b-info-mark); }
 .k2b-ui .k2b-status-badge[data-tone="running"] i { display: inline-block; animation: k2b-parity-spin 800ms linear infinite; }

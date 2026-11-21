@@ -109,3 +109,42 @@ test("the search field points at the element that describes it, and only when on
   expect(search("heading-stock")).toContain('aria-describedby="heading-stock"');
   expect(search()).not.toContain("aria-describedby");
 });
+
+test("a foldable group keeps its head as a disclosure button and leaves only its rows out while folded", () => {
+  type Item = { id: string; status: string };
+  const rows: Item[] = [
+    { id: "a", status: "open" },
+    { id: "b", status: "open" },
+    { id: "c", status: "done" },
+  ];
+  const html = renderToString(() =>
+    createComponent(DataTable<Item>, {
+      rows,
+      columns: [
+        { id: "id", header: "Item", value: "id" },
+        { id: "status", header: "Status", value: "status" },
+      ],
+      groupBy: "status",
+      collapsibleGroups: true,
+      defaultCollapsedGroups: ["done"],
+    }),
+  );
+  const toggles = [...html.matchAll(/<button type="button" class="k2b-data-table__group-toggle" aria-expanded="(true|false)"/g)].map(
+    (match) => match[1],
+  );
+  expect(toggles).toEqual(["true", "false"]);
+  // The open group shows its two rows; the folded one only its head.
+  expect(html.match(/class="k2b-data-table__row[ "]/g)?.length).toBe(2);
+  // Without the prop the head stays plain text.
+  const plain = renderToString(() =>
+    createComponent(DataTable<Item>, {
+      rows,
+      columns: [
+        { id: "id", header: "Item", value: "id" },
+        { id: "status", header: "Status", value: "status" },
+      ],
+      groupBy: "status",
+    }),
+  );
+  expect(plain).not.toContain("k2b-data-table__group-toggle");
+});

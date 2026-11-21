@@ -174,6 +174,13 @@ export type DataTableProps<T> = {
    */
   groupBy?: string;
   /**
+   * Lets the person fold a group: its head becomes a disclosure button with the group's name, count, and a chevron.
+   * A folded group keeps its 36 px head; only its rows leave.
+   */
+  collapsibleGroups?: boolean;
+  /** The keys of the groups that start folded: a group's key is its stored value as text, `""` for missing values. */
+  defaultCollapsedGroups?: readonly string[];
+  /**
    * The host's search text. With no rows left, the table says that nothing matches it and offers to clear it
    * through `onClearQuery`, instead of `empty`. Filter the rows with `filterRows`.
    */
@@ -396,7 +403,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
    * roles keep rows and cells announced in both forms.
    */
   const listMode = createMemo(() => props.columns.some((col) => col.list));
-  const tableRole = (role: string) => (listMode() ? role : undefined);
+  const tableRole = <R extends "table" | "rowgroup" | "row" | "columnheader" | "rowheader" | "cell">(role: R): R | undefined =>
+    listMode() ? role : undefined;
   const priorityAttr = (col: DataTableColumn<T>) => (col.priority === 2 || col.priority === 3 ? String(col.priority) : undefined);
   /** The lowest priority present: 3 shows the details toggle below 560 px, 2 below 420 px. */
   const detailsPriority = createMemo(() => {
@@ -409,6 +417,14 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const hiddenColumns = () => props.columns.filter((col) => priorityAttr(col));
   const columnCount = () => props.columns.length + (detailsPriority() ? 1 : 0);
   const [openDetails, setOpenDetails] = createSignal<ReadonlySet<T>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = createSignal<ReadonlySet<string>>(new Set(props.defaultCollapsedGroups ?? []));
+  const groupCollapsed = (key: string) => Boolean(props.collapsibleGroups) && collapsedGroups().has(key);
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((folded) => {
+      const next = new Set(folded);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const toggleDetails = (row: T) =>
     setOpenDetails((open) => {
       const next = new Set(open);
@@ -850,14 +866,40 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
                           <tr role={tableRole("row")} class="k2b-data-table__group-row">
                             <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
-                              {group.label || "—"}
-                              <span class="k2b-data-table__group-count">
-                                <span aria-hidden="true">{group.rows.length}</span>
-                                <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
-                              </span>
+                              <Show
+                                when={props.collapsibleGroups}
+                                fallback={
+                                  <>
+                                    {group.label || "—"}
+                                    <span class="k2b-data-table__group-count">
+                                      <span aria-hidden="true">{group.rows.length}</span>
+                                      <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
+                                    </span>
+                                  </>
+                                }
+                              >
+                                <button
+                                  type="button"
+                                  class="k2b-data-table__group-toggle"
+                                  aria-expanded={!groupCollapsed(group.key)}
+                                  onClick={() => toggleGroup(group.key)}
+                                >
+                                  {group.label || "—"}
+                                  <span class="k2b-data-table__group-count">
+                                    <span aria-hidden="true">{group.rows.length}</span>
+                                    <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
+                                  </span>
+                                  <i
+                                    class={`ti ${groupCollapsed(group.key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
+                                    aria-hidden="true"
+                                  />
+                                </button>
+                              </Show>
                             </th>
                           </tr>
-                          <For each={group.rows}>{(row, index) => renderRow(row, () => index() === group.rows.length - 1)}</For>
+                          <Show when={!groupCollapsed(group.key)}>
+                            <For each={group.rows}>{(row, index) => renderRow(row, () => index() === group.rows.length - 1)}</For>
+                          </Show>
                         </tbody>
                       )}
                     </For>

@@ -8,6 +8,7 @@ import {
   NoticeCard,
   NoticeRow,
   NumberInput,
+  Placeholder,
   RowGroup,
   Section,
   StatusBadge,
@@ -185,7 +186,7 @@ export const FlatTableDemo = () => (
   { id: "file", header: "File", value: "file" },
   { id: "amount", header: "Estimate", value: "amount", type: "amount", format: { currency: "EUR" }, list: "end" },
 ];
-<DataTable columns={columns} rows={rows} groupBy="owner" renderCell={…FileName…} surface="plain" />`}
+<DataTable columns={columns} rows={rows} groupBy="owner" collapsibleGroups renderCell={…FileName…} surface="plain" />`}
   >
     <div class="ui-flat-demo-stack">
       <DataTable
@@ -193,6 +194,7 @@ export const FlatTableDemo = () => (
         ariaLabel="Items by owner"
         rows={tableRows}
         groupBy="owner"
+        collapsibleGroups
         getRowId={(row) => row.name}
         selectedRowId="Brass lamp"
         columns={[
@@ -229,14 +231,14 @@ export const AlertCellDemo = () => (
       { kind: "component", name: "NoticeRow", from: "@k2b/ui" },
     ]}
     description="When something needs a person, the whole square cell carries the tint: a sign, a sentence, its consequence, and one button that names the deed. In a narrow cell the button moves under the text. There is no frame around it."
-    code={`<NoticeCard tone="warning" icon title="The receipt waits for a signature."
+    code={`<NoticeCard tone="yours" icon="ti ti-signature" title="The receipt waits for a signature."
   detail="QU-2611-00021 · Payout starts after it is signed."
   actions={<Button size="sm" variant="secondary">Open receipt</Button>} />`}
   >
     <div class="ui-flat-demo-cells">
       <NoticeCard
-        tone="warning"
-        icon
+        tone="yours"
+        icon="ti ti-signature"
         title="The receipt waits for a signature."
         detail="QU-2611-00021 · Payout starts after it is signed."
         actions={
@@ -258,6 +260,7 @@ export const AlertCellDemo = () => (
       />
       <NoticeCard tone="info" icon title="3 unsold items are ready for pickup." detail="Until 12 Dec 2026." />
       <NoticeCard tone="success" icon title="All lists are in." detail="Stack 1 was closed by Lisa Quittung." />
+      <Placeholder tone="success" title="All done" description="Nothing waits for you in this space." />
       <NoticeRow
         tone="neutral"
         tile="ti ti-photo-shield"

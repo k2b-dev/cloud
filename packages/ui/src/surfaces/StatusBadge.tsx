@@ -1,6 +1,7 @@
 import { For, type JSX, Show } from "solid-js";
 
-export type StatusTone = "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral";
+/** `yours` is "your turn": the blue tint of an action that waits for the reader; amber `warning` is "to clarify". */
+export type StatusTone = "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral" | "yours";
 
 export type StatusBadgeProps = {
   tone: StatusTone;
@@ -24,6 +25,7 @@ const DEFAULT_ICONS: Record<StatusTone, string> = {
   degraded: "ti ti-plug-connected-x",
   running: "ti ti-loader-2",
   neutral: "ti ti-alert-square-rounded",
+  yours: "ti ti-arrow-right",
 };
 
 export function StatusBadge(props: StatusBadgeProps): JSX.Element {

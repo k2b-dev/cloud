@@ -32,6 +32,7 @@ export type {
   PlaceholderProps,
   PlaceholderState,
   PlaceholderSurface,
+  PlaceholderTone,
   PlaceholderVariant,
 } from "./Placeholder";
 export { default as Placeholder } from "./Placeholder";

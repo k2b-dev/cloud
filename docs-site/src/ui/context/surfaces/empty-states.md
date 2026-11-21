@@ -24,6 +24,11 @@ and no access, the danger tint for an error, and the bare spinning glyph while
 loading. `surface="paper"` keeps its place in existing pages but no longer
 draws a frame anywhere; leave `surface` at its default in new code.
 
+Pass `tone` (`success`, `info`, `warning`, or `danger`) when the sign itself
+carries a state, such as a green check for "All done" in an empty to-do list.
+The tone brings its own icon unless you pass `icon`, and the title still says
+the state in words (K8).
+
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
 a code such as `404` only when it accurately describes the result.
 
@@ -57,6 +62,7 @@ import {
 | `title` | `JSX.Element` | none | Names the state. |
 | `description` | `JSX.Element` | none | Explains the state or next step. |
 | `icon` | `string` | state-dependent | Overrides the Tabler icon class. `empty` has no default icon; `no-results` uses search-off and `no-access` uses lock. |
+| `tone` | `"success" \| "info" \| "warning" \| "danger"` | none | Colours the round sign in a state tone and brings that tone's icon. |
 | `action` | `JSX.Element` | none | Adds a recovery or creation action. |
 | `onRetry` | `() => void` | none | Appends a localized Try again button after `action` for errors. |
 | `state` | `"empty" \| "no-results" \| "no-access" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |

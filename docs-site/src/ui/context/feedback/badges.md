@@ -6,7 +6,9 @@
 
 Use a chip in cards and normal tables. Use `variant="dot"` in dense rows. Use `variant="text"` when the surrounding surface already provides enough structure.
 
-Choose the tone by meaning: `info`, `ok`, `warning`, `error`, `degraded`, `running`, or `neutral`.
+Choose the tone by meaning: `info`, `ok`, `warning`, `error`, `degraded`, `running`, `neutral`, or `yours`.
+`yours` means "your turn": the blue tint of something that waits for the reader, such as "To sign". Amber
+`warning` means "to clarify". A chip is round and always carries a word next to its sign (K4, K8).
 
 ## Import
 
@@ -27,7 +29,7 @@ The badge keeps the width of the longest, so its dot starts at one x in every
 row and stays put when the state changes. Screen readers hear only the current
 label.
 
-Required props are `label: JSX.Element` and `tone: "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral"`.
+Required props are `label: JSX.Element` and `tone: "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral" | "yours"`.
 `variant?: "chip" | "dot" | "text"` defaults to chip. `icon?: string | null`
 overrides the default icon; `null` removes it. `labels?: readonly string[]` reserves
 the width of the longest possible label. `title?: string` and `class?: string`

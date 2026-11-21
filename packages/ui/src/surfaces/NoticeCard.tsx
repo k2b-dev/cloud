@@ -3,7 +3,8 @@ import { dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { useUiMessages } from "../intl/messages";
 import type { IntentTone } from "../semantics";
 
-export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai";
+/** `yours` is "your turn" (Valentin, 21.11.): a blue tint where the reader has to act; `warning` stays "to clarify". */
+export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai" | "yours";
 
 type NoticeCardContentProps =
   | { title: JSX.Element; detail?: JSX.Element; meta?: JSX.Element; children?: JSX.Element }

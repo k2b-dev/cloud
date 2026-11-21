@@ -7,8 +7,10 @@
 ## Use notices
 
 Use `neutral` (the default) for general notes and explanations, `info` for
-contextual information, `success` for a completed outcome, `warning` for
-reviewable risk, and `danger` for a real failure. Set a tone only when the
+contextual information, `yours` for "your turn" (a blue tint where the reader
+has to act, such as a receipt that waits for a signature), `success` for a
+completed outcome, `warning` for something to clarify or a reviewable risk,
+and `danger` for a real failure. Set a tone only when the
 notice means it; an explanation stays neutral.
 
 Write the notice so the words carry the meaning: a specific title, then what

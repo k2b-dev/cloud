@@ -1070,3 +1070,14 @@ test("absolute changes keep the saved measure's amount and unit in the shared de
   expect(html).toContain("Last month");
   expect(html).not.toContain("1,200");
 });
+
+test("a toned placeholder colours its round sign and brings the tone's icon (K8, K10)", () => {
+  const done = renderToString(() => createComponent(Placeholder, { tone: "success", title: "All done" }));
+  expect(done).toContain('data-tone="success"');
+  expect(done).toContain('<span class="k2b-placeholder__icon" data-sign=""><i class="ti ti-check" aria-hidden="true">');
+  const own = renderToString(() => createComponent(Placeholder, { tone: "success", icon: "ti ti-confetti", title: "All done" }));
+  expect(own).toContain("ti ti-confetti");
+  expect(parityCss).toMatch(
+    /\.k2b-placeholder\[data-tone\] \.k2b-placeholder__icon\[data-sign\] \{ color: var\(--k2b-placeholder-tone\); \}/,
+  );
+});
