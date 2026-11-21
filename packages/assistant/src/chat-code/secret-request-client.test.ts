@@ -255,3 +255,27 @@ test("a timed-out private capability write has an uncertain outcome without echo
     timeout.mockRestore();
   }
 });
+
+test("the destination check has no stricter response window than the Code page; only the request's lease ends it", async () => {
+  const timeout = spyOn(AbortSignal, "timeout");
+  const lease = new AbortController();
+  let checked: AbortSignal | null | undefined;
+  const request = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        checked = init?.signal;
+        return Response.json({ allowed: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  try {
+    const ports = secretRequestPorts({ ...input, target: { code: "Abc234", pathPrefix: "/v1" } }, "chat", lease.signal);
+    expect(await ports.check(destination)).toBe(true);
+    expect(timeout).not.toHaveBeenCalled();
+    expect(checked).toBe(lease.signal);
+  } finally {
+    request.mockRestore();
+    timeout.mockRestore();
+  }
+});

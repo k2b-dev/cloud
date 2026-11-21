@@ -314,6 +314,7 @@ export const assistantMessages = i18n.define({
       waitingLoadMore: "Load more",
       waitingView: "View",
       waitingVersions: "Versions",
+      waitingSecrets: "Secrets",
       waitingViewLabel: ({ title }: { title: string }) => `View: ${title}`,
     },
     de: {
@@ -606,6 +607,7 @@ export const assistantMessages = i18n.define({
       waitingLoadMore: "Mehr laden",
       waitingView: "Ansehen",
       waitingVersions: "Versionen",
+      waitingSecrets: "Secrets",
       waitingViewLabel: ({ title }) => `Ansehen: ${title}`,
     },
   },

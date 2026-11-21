@@ -267,7 +267,8 @@ allow" answers are untouched.
   other place shows nothing.
 - **Waiting for you** shows the same entries as the "Waiting for you" row
   above the chat field and its count in the sidebar, grouped by kind. Approvals
-  come with the shared approval card. **Versions** of the person's own Code
+  come with the shared approval card. **Secrets** Gustav asks for in a chat
+  each lead to their Secret card. **Versions** of the person's own Code
   (`code_activate`, `code_changes`, `code_expired`) come from the same open
   questions as the row (`ai.open_questions`); each leads to its card in the
   chat. **Load more** continues the shared waiting feed beyond its first 20
