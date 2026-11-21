@@ -1928,10 +1928,11 @@ export default function Browser(props: {
                 size="sm"
                 class="filesv2-view-switch"
                 value={view().view}
+                // The segment shows its signs; the names stay for screen readers.
                 options={[
-                  { value: "list", label: b().list, icon: "ti ti-list" },
-                  { value: "grid", label: b().grid, icon: "ti ti-layout-grid" },
-                  { value: "tree", label: b().tree, icon: "ti ti-list-tree" },
+                  { value: "list", label: <span class="sr-only">{b().list}</span>, icon: "ti ti-list" },
+                  { value: "grid", label: <span class="sr-only">{b().grid}</span>, icon: "ti ti-layout-grid" },
+                  { value: "tree", label: <span class="sr-only">{b().tree}</span>, icon: "ti ti-list-tree" },
                 ]}
                 onValueChange={(value) => updateView({ view: value })}
               />
