@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { query } from "@k2b/stdlib/solid";
-import { Button, DataTable, type DataTableColumn, Placeholder, RowGroup } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, Placeholder, RowGroup, StatusRow } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import { jsonFetch } from "../http";
@@ -87,11 +87,20 @@ export default function UsageTab(props: {
   };
   return (
     <section class="pulse-tab" aria-label={t().tabUsage}>
+      <StatusRow
+        lead={props.canManage && usage.data() ? t().usageLead({ count: usage.data()!.length }) : t().tabUsage}
+        facts={(() => {
+          const last = usage
+            .data()
+            ?.reduce<string | null>((newest, row) => (row.last && (!newest || row.last > newest) ? row.last : newest), null);
+          return last ? [{ value: ago(last, props.dateContext), label: t().usageLast.toLowerCase() }] : [];
+        })()}
+      />
       <RowGroup title={t().usagePagesTitle} level={3}>
         <p class="pulse-line pulse-line--row">
           <span>{t().usagePagesLater}</span>
-          <Button variant="ai" size="sm" loading={props.buildPending} onClick={props.buildPage}>
-            <i class="ti ti-sparkles" aria-hidden="true" />
+          <Button variant="secondary" size="sm" loading={props.buildPending} onClick={props.buildPage}>
+            <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
             {t().usageBuildPage}
           </Button>
         </p>
@@ -102,7 +111,7 @@ export default function UsageTab(props: {
         level={3}
         action={
           <Show when={props.canManage}>
-            <Button variant="ghost" size="sm" onClick={props.manageMembers}>
+            <Button variant="text" size="sm" onClick={props.manageMembers}>
               {t().manageMembers}
             </Button>
           </Show>

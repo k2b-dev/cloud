@@ -8,6 +8,7 @@ import {
   DetailPanel,
   type DropdownItem,
   IconButton,
+  NoticeRow,
   Section,
   StatusBadge,
   Tooltip,
@@ -243,36 +244,46 @@ export default function SourceDetailView(props: Props) {
       />
 
       <DetailPanel.Body>
+        {/* Something that needs a person is a tinted cell where the thing stands (K10): the source's detail. */}
         <Show when={problem() === "rejected" || problem() === "error"}>
           <Section title={t().whatNotArrives} icon="ti ti-circle-x">
-            <div class="pulse-not-arriving" role="status">
-              <Show
-                when={problem() === "rejected" && status().rejected}
-                fallback={
-                  <>
-                    <p class="pulse-not-arriving__lead">
-                      {t().fetchFailsSince({
-                        since: absoluteTime(status().lastErrorAt ?? props.source.lastErrorAt ?? props.source.updatedAt, props.dateContext),
-                      })}
-                    </p>
-                    <p>{localizedSourceError(status().lastError, t())}</p>
-                  </>
-                }
-              >
-                {(rejected) => (
-                  <>
-                    <p class="pulse-not-arriving__lead">
-                      {t().refusedSince({
-                        count: rejected().last24h,
-                        since: rejected().lastAt ? ago(rejected().lastAt!, props.dateContext) : "—",
-                      })}
-                    </p>
-                    <p>{t().refusedExplain}</p>
-                    <Show when={rejected().lastReason}>{(reason) => <p>{t().lastReason({ reason: reason() })}</p>}</Show>
-                  </>
-                )}
-              </Show>
-            </div>
+            <Show
+              when={problem() === "rejected" && status().rejected}
+              fallback={
+                <NoticeRow
+                  tone="danger"
+                  icon
+                  detail={localizedSourceError(status().lastError, t())}
+                  action={
+                    props.source.kind === "metrics" ? (
+                      <Button variant="secondary" size="sm" disabled={props.loading} onClick={() => void props.scrape(props.source)}>
+                        {t().scrape}
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  {t().fetchFailsSince({
+                    since: absoluteTime(status().lastErrorAt ?? props.source.lastErrorAt ?? props.source.updatedAt, props.dateContext),
+                  })}
+                </NoticeRow>
+              }
+            >
+              {(rejected) => (
+                <NoticeRow
+                  tone="danger"
+                  icon
+                  detailLines={2}
+                  detail={[t().refusedExplain, rejected().lastReason ? t().lastReason({ reason: rejected().lastReason! }) : null]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {t().refusedSince({
+                    count: rejected().last24h,
+                    since: rejected().lastAt ? ago(rejected().lastAt!, props.dateContext) : "—",
+                  })}
+                </NoticeRow>
+              )}
+            </Show>
           </Section>
         </Show>
         <Section title={t().arrivalTitle} icon="ti ti-inbox">
@@ -300,7 +311,7 @@ export default function SourceDetailView(props: Props) {
             ]}
           />
         </Section>
-        <Section title={t().properties}>
+        <Section title={t().properties} icon="ti ti-list-details">
           <DescriptionList items={statusItems()} layout="rows" size="sm" />
         </Section>
 

@@ -10,6 +10,8 @@ type Props = {
   title: string;
   bases: PulseBase[];
   baseId: string;
+  /** The base being opened while a switch loads; it takes the mark at once. */
+  activeId?: string;
   /** The dot of a base, when the page knows its state; bases without one show none. */
   dot: (base: PulseBase) => BaseDot | undefined;
   /** A switch to another base starts; the page shows its loading state until the new base arrives. */
@@ -57,7 +59,7 @@ export default function PulseSidebar(props: Props) {
                       )
                         props.switching(base.id);
                     }}
-                    active={base.id === props.baseId}
+                    active={base.id === (props.activeId ?? props.baseId)}
                     meta={(() => {
                       const dot = props.dot(base);
                       return dot ? <span class="pulse-dot" data-tone={dot} role="img" aria-label={dotLabel(dot)} /> : undefined;
@@ -67,6 +69,8 @@ export default function PulseSidebar(props: Props) {
                   </AppWorkspace.SidebarItem>
                 )}
               </For>
+            </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection>
               <AppWorkspace.SidebarItem class="pulse-sidebar__all" icon="ti ti-layout-grid" href="/app/pulse">
                 {t().allBases}
               </AppWorkspace.SidebarItem>

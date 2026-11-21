@@ -161,7 +161,7 @@ describe("Pulse flat base page", () => {
 
   test("states say what matters: attention order, read-only without the main action, no access without the base", async () => {
     const error = await open(1440, flatStates.error);
-    const rows = await error.locator(".pulse-attention .k2b-task-row__text").allTextContents();
+    const rows = await error.locator(".pulse-attention .pulse-row-cell__title").allTextContents();
     expect(rows).toEqual([
       "Website-Server: seit 14:01 kommt nichts an",
       "Alarm „Kontaktanfragen zu niedrig“ ausgelöst",

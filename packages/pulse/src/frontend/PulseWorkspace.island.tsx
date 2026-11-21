@@ -83,7 +83,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     } catch {
       if (!disposed) {
         setAssistantError(t().sqlAssistantFailureTitle);
-        toast.error(t().sqlAssistantFailureTitle);
+        toast.error(t().assistantRetry, { title: t().sqlAssistantFailureTitle });
       }
     } finally {
       if (!disposed) setAssistantPending(false);
@@ -287,6 +287,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
           title={denied() ? t().appName : baseName()}
           bases={denied() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
           baseId={denied() ? "" : props.initialBaseId}
+          activeId={switchingTo() ?? undefined}
           dot={baseDot}
           switching={setSwitchingTo}
           menu={
@@ -357,7 +358,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
             id="pulse-detail-panel"
             open={!denied() && !switchingTo() && activeView() === "sources" && Boolean(selectedSource() || selectedAlert())}
             onClose={openSources}
-            width="lg"
           >
             <Show when={selectedAlert()} fallback={<SourcesDetailPanel {...sourceProps} />}>
               {(alert) => (
@@ -387,6 +387,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         attention={attention()}
         firedAlerts={firedAlerts()}
         selectedSourceId={selectedSourceId()}
+        selectedAlertId={selectedAlertId()}
         dateContext={dateContext()}
         canWrite={canWrite()}
         readAt={overview.data()?.readAt ?? props.initialNow}

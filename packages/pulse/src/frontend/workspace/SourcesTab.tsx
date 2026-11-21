@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, RowGroup, Skeleton, StatusBadge, StatusRow, TaskRow } from "@k2b/ui";
-import { For, type JSX, Show } from "solid-js";
+import { DataTable, type DataTableColumn, Skeleton, StatusBadge, StatusRow } from "@k2b/ui";
+import { type JSX, Show } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import type { pulseMessages } from "../../messages";
 import { usePulseMessages } from "../use-messages";
@@ -18,6 +18,8 @@ export type SourcesTabProps = {
   attention: AttentionItem[];
   firedAlerts: number;
   selectedSourceId: string;
+  /** The alert open in the detail column, by its reference. */
+  selectedAlertId: string;
   dateContext: PulseDateContext;
   canWrite: boolean;
   /** The time the store state was read: rows below a lost store show this state. */
@@ -133,6 +135,33 @@ const attentionIcon = (item: AttentionItem) =>
 export default function SourcesTab(props: SourcesTabProps) {
   const t = usePulseMessages();
   const storeDown = () => props.state === "storeDown";
+  /** The three ways to a first source; each row opens its way (no second button). */
+  const ways = () => [
+    {
+      id: "ingest",
+      icon: "ti ti-send",
+      tone: "",
+      title: t().wayIngestTitle,
+      detail: t().wayIngestDetail,
+      run: () => props.addSource("http_ingest"),
+    },
+    {
+      id: "scrape",
+      icon: "ti ti-download",
+      tone: "",
+      title: t().wayScrapeTitle,
+      detail: t().wayScrapeDetail,
+      run: () => props.addSource("metrics"),
+    },
+    {
+      id: "gustav",
+      icon: "ti ti-sparkles",
+      tone: "ai",
+      title: t().wayGustavTitle,
+      detail: t().wayGustavDetail,
+      run: props.connectWithGustav,
+    },
+  ];
   const summary = () => sourcesSummary(props.sources);
   const lead = (): JSX.Element => {
     const value = summary();
@@ -215,45 +244,36 @@ export default function SourcesTab(props: SourcesTabProps) {
                 ]}
               />
               <p class="pulse-line">{props.canWrite ? t().emptyWhy : `${t().emptyWhy} ${t().overviewEmptyReadOnly}`}</p>
-              <RowGroup title={t().emptyWaysTitle} level={3} class="pulse-ways">
-                <div class="k2b-divided">
-                  <TaskRow
-                    icon="ti ti-send"
-                    text={t().wayIngestTitle}
-                    detail={t().wayIngestDetail}
-                    action={t().wayCreate}
-                    disabled={!props.canWrite}
-                    onClick={() => props.addSource("http_ingest")}
-                  />
-                  <TaskRow
-                    icon="ti ti-download"
-                    text={t().wayScrapeTitle}
-                    detail={t().wayScrapeDetail}
-                    action={t().wayCreate}
-                    disabled={!props.canWrite}
-                    onClick={() => props.addSource("metrics")}
-                  />
-                  <TaskRow
-                    class="pulse-way--ai"
-                    icon="ti ti-sparkles"
-                    text={t().wayGustavTitle}
-                    detail={t().wayGustavDetail}
-                    action={t().wayAskGustav}
-                    onClick={props.connectWithGustav}
-                  />
-                </div>
-              </RowGroup>
+              <DataTable
+                class="pulse-ways"
+                rows={ways()}
+                columns={[
+                  { id: "way", header: t().emptyWaysTitle, primary: true, list: "title" },
+                  { id: "open", header: "", align: "right" },
+                ]}
+                getRowId={(way) => way.id}
+                onRowClick={(way) => way.run()}
+                ariaLabel={t().emptyWaysTitle}
+                renderCell={({ row, col }) =>
+                  col.id === "way" ? (
+                    <span class="pulse-row-cell">
+                      <i class={`${row.icon} pulse-row-cell__icon`} data-tone={row.tone} aria-hidden="true" />
+                      <span class="pulse-row-cell__copy">
+                        <span class="pulse-row-cell__title">{row.title}</span>
+                        <span class="pulse-row-cell__detail">{row.detail}</span>
+                      </span>
+                    </span>
+                  ) : (
+                    <i class="ti ti-chevron-right pulse-quiet" aria-hidden="true" />
+                  )
+                }
+              />
             </>
           }
         >
           <Show when={storeDown()} fallback={<StatusRow lead={lead()} facts={facts()} line={!props.attention.length} />}>
             <StatusRow
-              lead={
-                <span class="pulse-lead">
-                  <span class="pulse-dot" data-tone="danger" aria-hidden="true" />
-                  {t().storeDownTitle}
-                </span>
-              }
+              lead={t().storeDownTitle}
               state={{
                 tone: "danger",
                 icon: "ti ti-database-off",
@@ -265,25 +285,45 @@ export default function SourcesTab(props: SourcesTabProps) {
             <p class="pulse-line">{t().storeDownConsequence({ time: absoluteTime(props.readAt, props.dateContext) })}</p>
           </Show>
           <Show when={!storeDown() && props.attention.length}>
-            <RowGroup title={t().attentionTitle} count={props.attention.length} level={3} class="pulse-attention">
-              <div class="k2b-divided">
-                <For each={props.attention}>
-                  {(item) => {
-                    const copy = () => attentionText(item, t(), props.dateContext);
-                    return (
-                      <TaskRow
-                        class={`pulse-attention__row pulse-attention__row--${item.tone}`}
-                        icon={attentionIcon(item)}
-                        text={copy().text}
-                        detail={copy().detail}
-                        action={t().openDetail}
-                        onClick={() => (item.kind === "source" ? props.openSource(item.source.id) : props.openAlert(item.alert.reference))}
-                      />
-                    );
-                  }}
-                </For>
-              </div>
-            </RowGroup>
+            <DataTable
+              class="pulse-attention"
+              rows={props.attention}
+              columns={[
+                { id: "item", header: `${t().attentionTitle} · ${props.attention.length}`, primary: true, list: "title" },
+                { id: "level", header: "", list: "end", nowrap: true },
+                { id: "open", header: "", align: "right", priority: 2 },
+              ]}
+              getRowId={(item) => item.id}
+              selectedRowId={
+                props.selectedAlertId
+                  ? `alert:${props.selectedAlertId}`
+                  : props.selectedSourceId
+                    ? `source:${props.selectedSourceId}`
+                    : null
+              }
+              onRowClick={(item) => (item.kind === "source" ? props.openSource(item.source.id) : props.openAlert(item.alert.reference))}
+              ariaLabel={t().attentionTitle}
+              renderCell={({ row, col }) => {
+                if (col.id === "open") return <i class="ti ti-chevron-right pulse-quiet" aria-hidden="true" />;
+                if (col.id === "level")
+                  return row.kind === "alert" && row.alert.state === "firing" ? (
+                    <StatusBadge
+                      tone={row.alert.severity === "critical" ? "error" : "warning"}
+                      label={row.alert.severity === "critical" ? t().severityCritical : t().severityWarning}
+                    />
+                  ) : null;
+                const copy = attentionText(row, t(), props.dateContext);
+                return (
+                  <span class="pulse-row-cell">
+                    <i class={`${attentionIcon(row)} pulse-row-cell__icon`} data-tone={row.tone} aria-hidden="true" />
+                    <span class="pulse-row-cell__copy">
+                      <span class="pulse-row-cell__title">{copy.text}</span>
+                      <span class="pulse-row-cell__detail">{copy.detail}</span>
+                    </span>
+                  </span>
+                );
+              }}
+            />
           </Show>
           <DataTable
             class={storeDown() ? "pulse-sources pulse-sources--frozen" : "pulse-sources"}

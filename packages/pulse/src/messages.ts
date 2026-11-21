@@ -734,6 +734,9 @@ export const pulseMessages = i18n.define({
       usageAdminOnly: "People who manage this base see its accounts and keys.",
       usageLoadFailed: "Pulse could not load the accounts and keys",
       manageMembers: "Manage members",
+      assistantRetry: "Try again in a moment.",
+      copyLinkFailed: "Link not copied",
+      usageLead: ({ count }: { count: number }) => (count === 1 ? "1 access through the API" : `${count} accesses through the API`),
       assistantPagePrompt: ({ base }: { base: string }) =>
         `Build a Code page that shows the data of the Pulse base “${base}”. Read its data kinds first and ask before you save.`,
       assistantConnectPrompt: ({ base }: { base: string }) =>
@@ -1483,6 +1486,9 @@ export const pulseMessages = i18n.define({
       usageAdminOnly: "Konten und Schlüssel sehen Personen, die diese Basis verwalten.",
       usageLoadFailed: "Pulse konnte die Konten und Schlüssel nicht laden",
       manageMembers: "Mitglieder verwalten",
+      assistantRetry: "Versuche es gleich noch einmal.",
+      copyLinkFailed: "Link nicht kopiert",
+      usageLead: ({ count }) => (count === 1 ? "1 Zugang über die API" : `${count} Zugänge über die API`),
       assistantPagePrompt: ({ base }) =>
         `Baue eine Code-Seite, die die Daten der Pulse-Basis „${base}“ zeigt. Lies zuerst ihre Datenarten und frag, bevor du speicherst.`,
       assistantConnectPrompt: ({ base }) =>

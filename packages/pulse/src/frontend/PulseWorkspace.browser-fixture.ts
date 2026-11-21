@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { User } from "@k2b/cloud/contracts";
 import type { ComponentProps } from "solid-js";
 import type { launchBrowser } from "../../../ui/test/browser";
@@ -543,11 +544,33 @@ const flat = (
     initialCreator: "Lena Berg",
   };
 };
+/** The one key of "Website-Server", in its detail and in Usage. */
+export const flatKeys: ResourceApiKey[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000301",
+    serviceAccountId: "00000000-0000-4000-8000-000000000201",
+    name: "pk_…3f9a",
+    kind: "api_token" as const,
+    status: "active" as const,
+    tokenPrefix: "pk_3f9a",
+    scopes: ["write"],
+    expiresAt: null,
+    lastUsedAt: "2026-10-19T12:39:42.000Z",
+    createdBy: null,
+    createdAt: "2026-10-02T08:00:00.000Z",
+    revokedAt: null,
+    revokedBy: null,
+    permission: "write" as const,
+  },
+];
+
 export const flatStates = {
   healthy: flat("Btr001", healthySources),
   error: {
     ...flat("Web001", troubledSources, [firedAlert]),
     initialRouteState: { view: "sources", sourceId: "Src201" },
+    // The same key the Usage tab lists for this source.
+    initialSourceApiKeys: { Src201: flatKeys },
   } satisfies PulseWorkspaceProps,
   alert: {
     ...flat("Web001", troubledSources, [firedAlert]),
@@ -676,23 +699,5 @@ export const flatAccess = [
     permission: "admin",
     createdAt: "2026-10-01T08:00:00.000Z",
     displayName: "Lena Berg",
-  },
-];
-export const flatKeys = [
-  {
-    id: "00000000-0000-4000-8000-000000000301",
-    serviceAccountId: "00000000-0000-4000-8000-000000000201",
-    name: "pk_…3f9a",
-    kind: "api_token",
-    status: "active",
-    tokenPrefix: "pk_3f9a",
-    scopes: ["write"],
-    expiresAt: null,
-    lastUsedAt: "2026-10-19T12:39:42.000Z",
-    createdBy: null,
-    createdAt: "2026-10-02T08:00:00.000Z",
-    revokedAt: null,
-    revokedBy: null,
-    permission: "write",
   },
 ];

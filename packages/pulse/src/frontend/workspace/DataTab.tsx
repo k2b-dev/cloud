@@ -171,7 +171,7 @@ export default function DataTab(props: {
   const sampleColumns = (names: string[]): DataTableColumn<SampleRow>[] =>
     names.map((name, index) => ({
       id: String(index),
-      header: <span class="pulse-mono">{name}</span>,
+      header: name,
       value: (row: SampleRow) => row.cells[index],
       align: "left",
       nowrap: true,
@@ -278,6 +278,13 @@ export default function DataTab(props: {
                           {(value) => (
                             <>
                               <DataTable
+                                renderCell={({ row, col, render }) =>
+                                  col.id === "key" || col.id === "example" ? (
+                                    <span class="pulse-mono">{row[col.id as "key" | "example"]}</span>
+                                  ) : (
+                                    render(row[col.id as keyof FieldRow])
+                                  )
+                                }
                                 rows={value().fields}
                                 columns={fieldColumns()}
                                 getRowId={(row) => row.key}
@@ -305,6 +312,7 @@ export default function DataTab(props: {
                                   loadingRows={5}
                                   columns={sampleColumns(value().columns)}
                                   getRowId={(row) => row.id}
+                                  renderCell={({ row, col }) => <span class="pulse-mono">{row.cells[Number(col.id)]}</span>}
                                   ariaLabel={t().dataSample}
                                   empty={t().dataSampleEmpty}
                                 />

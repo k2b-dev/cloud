@@ -37,8 +37,8 @@ export default function AlertDetail(props: {
         }
         primaryActions={
           <div class="flex flex-wrap items-center gap-2">
-            <Button variant="ai" size="sm" loading={props.adjustPending} onClick={props.adjust}>
-              <i class="ti ti-sparkles" aria-hidden="true" />
+            <Button variant="secondary" size="sm" loading={props.adjustPending} onClick={props.adjust}>
+              <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
               {t().adjustWithGustav}
             </Button>
             <ButtonLink variant="secondary" size="sm" href={props.sqlHref}>

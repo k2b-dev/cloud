@@ -12,7 +12,7 @@ export default function NoAccessView(props: { managers: string[] }) {
   const copy = () =>
     void clipboard.copy(window.location.href).then(
       () => toast.success(t().linkCopied),
-      () => toast.error(t().copySetupFailed),
+      () => toast.error(t().copySetupFailed, { title: t().copyLinkFailed }),
     );
   return (
     <section class="pulse-tab pulse-no-access" aria-label={t().noAccess}>

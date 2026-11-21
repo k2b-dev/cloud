@@ -63,26 +63,26 @@ export default function PulseHead(props: PulseHeadProps) {
           <span class="pulse-head__actions">
             <Button
               class="pulse-head__assistant"
-              variant="ai"
+              variant="secondary"
               size="sm"
               loading={props.assistant.pending}
               loadingLabel={t().sqlAssistantLaunching}
               disabled={props.assistant.disabled}
               onClick={props.assistant.launch}
             >
-              <i class="ti ti-sparkles" aria-hidden="true" />
+              <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
               {t().askGustav}
             </Button>
             <IconButton
               class="pulse-head__assistant-icon"
-              variant="ai"
+              variant="secondary"
               size="sm"
               label={props.assistant.pending ? t().sqlAssistantLaunching : t().askGustav}
               loading={props.assistant.pending}
               disabled={props.assistant.disabled}
               onClick={props.assistant.launch}
             >
-              <i class="ti ti-sparkles" aria-hidden="true" />
+              <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
             </IconButton>
             <Dropdown.Root items={props.menu} align="end" phone="sheet" label={t().moreBaseActions}>
               <Dropdown.Trigger iconOnly label={t().moreBaseActions} size="sm" variant="secondary">

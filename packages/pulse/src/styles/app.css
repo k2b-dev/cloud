@@ -176,9 +176,9 @@
 .pulse-source-cell__meta { overflow: hidden; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta, 12px); text-overflow: ellipsis; white-space: nowrap; }
 /* A lost store: the rows are the last known state, grey, without chips. */
 .pulse-sources--frozen .pulse-source-cell__name { color: var(--k2b-text-muted); }
-.k2b-ui .pulse-attention__row--danger .k2b-task-row__icon { color: var(--k2b-danger-text); }
-.k2b-ui .pulse-attention__row--warning .k2b-task-row__icon { color: var(--k2b-warning-text); }
-.k2b-ui .pulse-way--ai .k2b-task-row__icon { color: var(--k2b-ai-solid); }
+
+
+
 .pulse-usage-name { display: inline-flex; align-items: center; gap: var(--k2b-space-2, 8px); font-weight: 600; }
 .pulse-usage-name > i { color: var(--k2b-text-muted); font-size: 16px; font-weight: 400; }
 .pulse-detail-text { margin: 0 0 var(--k2b-space-2, 8px); color: var(--k2b-text); font-size: var(--k2b-font-size-row, 13px); overflow-wrap: anywhere; }
@@ -239,3 +239,18 @@
 /* The SQL editor is a writing area (K14): a light tint, square, and one stronger line below it that turns blue on focus. */
 .pulse-sql-editor { box-shadow: inset 0 -1px 0 var(--k2b-border-strong); }
 .pulse-sql-editor:focus-within { box-shadow: inset 0 -2px 0 var(--k2b-action); }
+/* Plum marks Gustav (K8) in a framed button's symbol; the one filled action of the page stays "Create source". */
+.k2b-ui .pulse-ai-icon { color: var(--k2b-ai-solid); }
+/* A row of an attention or ways table: symbol, sentence and one quiet line; the whole row opens it. */
+.pulse-row-cell { display: flex; min-width: 0; align-items: flex-start; gap: var(--k2b-space-3, 12px); }
+.pulse-row-cell__icon { flex: none; margin-top: 2px; color: var(--k2b-text-muted); font-size: 16px; }
+.pulse-row-cell__icon[data-tone="danger"] { color: var(--k2b-danger-text); }
+.pulse-row-cell__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
+.pulse-row-cell__icon[data-tone="ai"] { color: var(--k2b-ai-solid); }
+.pulse-row-cell__copy { display: flex; min-width: 0; flex-direction: column; }
+.pulse-row-cell__title { overflow: hidden; color: var(--k2b-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pulse-row-cell__detail { color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta, 12px); white-space: normal; overflow-wrap: anywhere; }
+@container k2b-app-area (max-width: 767px) {
+  /* The kinds list leaves on a phone, and so does the line its container draws before the detail. */
+  .k2b-ui .pulse-data > .pulse-kind { border-inline-start-width: 0; }
+}

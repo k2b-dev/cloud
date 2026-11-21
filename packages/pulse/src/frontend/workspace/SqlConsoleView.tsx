@@ -549,12 +549,12 @@ export default function SqlConsoleView(props: {
                   </Button>
                   <Button
                     class={props.renderFrame ? "pulse-workspace__desktop-action" : undefined}
-                    variant="ai"
+                    variant="secondary"
                     loading={c.assistantState() === "launching"}
                     loadingLabel={t().sqlAssistantLaunching}
                     onClick={() => void c.launchAssistant()}
                   >
-                    <i class="ti ti-sparkles" aria-hidden="true" />
+                    <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
                     {t().sqlAskAssistant}
                   </Button>
                 </div>
