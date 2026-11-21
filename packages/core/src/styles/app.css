@@ -193,7 +193,7 @@
   background: var(--k2b-tray);
 }
 
-/* Forced colours replace the fill that marks the current account tab, so the
+/* Forced colours drop the box-shadow mark of the current account tab, so the
    tab keeps an outline that does not move its neighbours. */
 @media (forced-colors: active) {
   .account-tabs [aria-current="page"] {

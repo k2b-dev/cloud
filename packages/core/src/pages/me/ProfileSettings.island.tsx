@@ -26,11 +26,7 @@ type Props = {
 
 function ActionRow(props: { icon: string; label: string; description: string; onClick: () => void; variant?: "danger" }) {
   return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      class="group flex min-h-[var(--k2b-h-row-2)] w-full items-center gap-3 py-2 text-left"
-    >
+    <button type="button" onClick={props.onClick} class="group flex min-h-[var(--k2b-h-row-2)] w-full items-center gap-3 py-2 text-left">
       <i class={`ti ${props.icon} text-base shrink-0 ${props.variant === "danger" ? "text-red-500" : "text-dimmed"}`} />
       <div class="flex-1 min-w-0">
         <span class={`text-sm block ${props.variant === "danger" ? "text-red-600 dark:text-red-400" : "text-primary"}`}>{props.label}</span>

@@ -367,7 +367,7 @@ function TemplateSettingInput(props: FieldInputProps) {
         </Button>
       </div>
 
-      <details class="group overflow-hidden rounded-[var(--k2b-radius-control)] border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <details class="group rounded-[var(--k2b-radius-control)] border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-secondary">
           <i class="ti ti-eye text-dimmed" />
           {t().preview}

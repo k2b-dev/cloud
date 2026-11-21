@@ -74,35 +74,38 @@ export default function AccountHub(props: {
         </div>
       </header>
 
-      <nav class="account-tabs flex max-w-full flex-wrap gap-x-3 px-3 sm:gap-x-6" aria-label={t().accountSections}>
-        {(
-          [
-            { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
-            { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
-            { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
-            { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
-            { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "ti ti-shield-check" },
-            { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
-            ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
-          ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
-        ).map((section) => {
-          const active = section.id === props.active;
-          return (
-            <a
-              href={section.href}
-              aria-current={active ? "page" : undefined}
-              class={`flex min-h-9 shrink-0 items-center gap-1.5 text-xs font-medium no-underline transition-colors sm:gap-2 sm:text-[0.8125rem] ${
-                active ? "" : "text-dimmed hover:text-primary"
-              }`}
-            >
-              <i class={section.icon} aria-hidden="true" />
-              {section.label}
-            </a>
-          );
-        })}
-      </nav>
+      {/* The tabs stand on the frame: the current tab's mark lies on the page frame's top line, which the frame owns (K2, K6). */}
+      <div class="flex min-w-0 flex-col">
+        <nav class="account-tabs flex max-w-full flex-wrap gap-x-3 px-3 sm:gap-x-6" aria-label={t().accountSections}>
+          {(
+            [
+              { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
+              { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
+              { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
+              { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
+              { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "ti ti-shield-check" },
+              { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
+              ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
+            ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
+          ).map((section) => {
+            const active = section.id === props.active;
+            return (
+              <a
+                href={section.href}
+                aria-current={active ? "page" : undefined}
+                class={`flex min-h-9 shrink-0 items-center gap-1.5 text-xs font-medium no-underline transition-colors sm:gap-2 sm:text-[0.8125rem] ${
+                  active ? "" : "text-dimmed hover:text-primary"
+                }`}
+              >
+                <i class={section.icon} aria-hidden="true" />
+                {section.label}
+              </a>
+            );
+          })}
+        </nav>
 
-      <div class="min-w-0">{props.children}</div>
+        <div class="min-w-0">{props.children}</div>
+      </div>
     </div>
   );
 }

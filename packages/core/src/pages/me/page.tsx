@@ -217,10 +217,7 @@ export default ssr<AuthContext>(async (c) => {
               ] satisfies { href: string; icon: string; title: string; summary: string }[]
             ).map((link) => (
               <li>
-                <a
-                  href={link.href}
-                  class="group flex items-start gap-3 py-3 no-underline"
-                >
+                <a href={link.href} class="group flex items-start gap-3 py-3 no-underline">
                   <i class={`${link.icon} mt-0.5 text-dimmed`} aria-hidden="true" />
                   <span class="min-w-0 flex-1">
                     <span class="block text-sm font-semibold text-primary">{link.title}</span>

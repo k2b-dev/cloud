@@ -18,9 +18,9 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
+import { layoutProblems } from "../../../../ui/src/layout-check";
 import { launchBrowser } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
-import { layoutProblems } from "../../../../ui/src/layout-check";
 
 // Whether the account pages draw one frame or nested ones, and whether switching tabs moves
 // anything, is decided by the cascade of Tailwind, Cloud and @k2b/ui styles, which only a
