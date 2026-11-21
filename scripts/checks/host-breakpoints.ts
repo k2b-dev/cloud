@@ -14,7 +14,8 @@ const WINDOW_FILES = new Set([
   "packages/cloud/src/browser/panel-slot.ts",
   "packages/cloud/src/browser/spotlight-position.ts",
 ]);
-const width = /\b(?:min|max)-width\s*:\s*(?:64rem|63\.99\d*rem|80rem|79\.99\d*rem|1024px|1023px|1280px|1279px)\b/i;
+// K12: the wide version starts at 1920 px (120rem) of host width, like the other workspace thresholds.
+const width = /\b(?:min|max)-width\s*:\s*(?:64rem|63\.99\d*rem|80rem|79\.99\d*rem|120rem|119\.99\d*rem|1024px|1023px|1280px|1279px|1920px|1919px)\b/i;
 const inScope = (file: string) =>
   /^packages\/[^/]+\/src\//.test(file) &&
   /\.(?:css|ts|tsx)$/.test(file) &&

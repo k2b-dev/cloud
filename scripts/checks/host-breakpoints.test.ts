@@ -7,7 +7,7 @@ import { checkHostBreakpointSource, formatBaseline, rule } from "./host-breakpoi
 const css = "packages/example/src/styles/app.css";
 const tsx = "packages/example/src/Workspace.tsx";
 const baseline = "scripts/checks/host-breakpoints.baseline";
-const widths = ["64rem", "63.99rem", "63.999rem", "80rem", "79.999rem", "1024px", "1023px", "1280px", "1279px"];
+const widths = ["64rem", "63.99rem", "63.999rem", "80rem", "79.999rem", "120rem", "119.999rem", "1024px", "1023px", "1280px", "1279px", "1920px", "1919px"];
 
 test("finds CSS media conditions, including negation, multiline conditions and nested rules", () => {
   for (const value of widths)
