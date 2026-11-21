@@ -56,7 +56,7 @@ thousands. In German `2.977,17` commits `2977.17`; in English `2,977.17` does.
 - `decimalPlaces` defaults to the fraction digits of `step` (`step={0.01}` accepts two decimals, the default `step={1}` accepts none). Set it explicitly when the accepted precision differs from the step grid; an explicit value always wins.
 - The visible decimal separator follows the effective locale (`locale` prop, then `LocaleProvider`, then `<html lang>`, then `"en"`). The controlled value stays a canonical JavaScript number and `aria-valuenow` stays numeric.
 - Committed and unfocused values show exactly `decimalPlaces` fraction digits, including trailing zeros: `321.4` with `step={0.01}` displays as `321.40` in English and `321,40` in German. Extra typed fraction digits round on commit.
-- Rounding and step snapping work on the decimal text, half away from zero, not on the binary float: `1.005` with `step={0.01}` commits `1.01`, `-1.005` commits `-1.01`. A shown value rounds the same way.
+- Rounding and step snapping work on the number's shortest decimal form, half away from zero, not on the binary float: `1.005` with `step={0.01}` commits `1.01`, `-1.005` commits `-1.01`. For typed text with up to 15 significant digits, that form is exactly what was typed. A shown value rounds the same way.
 - Committed text never shows grouping separators.
 - `allowNegative` defaults to `true`. With `allowNegative={false}`, a typed or pasted minus is refused with **No negative numbers.** instead of being dropped, and the floor is `0` for the steppers and commits (or `min` when it is higher).
 - `min` and `max` clamp committed values.
