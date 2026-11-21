@@ -88,7 +88,8 @@ describe("DetailPanel", () => {
     expect(header([])).not.toContain("ti-dots");
   });
 
-  test("with primary actions, the resource menu ends their row instead of sitting beside close", () => {
+  // K9: the 56 px bar holds the title, "…", and close; the first section's row holds only the framed actions.
+  test("with primary actions, the resource menu still sits in the bar beside close", () => {
     const html = renderToString(() =>
       createComponent(DetailPanel.Header, {
         kind: "Conversation",
@@ -100,10 +101,12 @@ describe("DetailPanel", () => {
     );
     const actions = html.slice(
       html.indexOf('class="k2b-detail-panel__actions"'),
-      html.indexOf("</div>", html.indexOf('class="k2b-detail-panel__actions"')),
+      html.indexOf('class="k2b-detail-panel__lead"'),
     );
-    expect(actions).not.toContain("ti-dots");
-    expect(html).toMatch(/class="k2b-detail-panel__primary-actions">Mark as done.*aria-label="More actions".*ti-dots/s);
+    expect(actions).toMatch(/aria-label="More actions".*ti-dots.*Close/s);
+    const lead = html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'));
+    expect(lead).toContain("Mark as done");
+    expect(lead).not.toContain("ti-dots");
     // The name comes first; the state leads the line below it.
     expect(html).toMatch(
       /<h2[^>]*>Invoice review<\/h2>.*class="k2b-detail-panel__supporting"><div class="k2b-detail-panel__kind">Conversation<\/div>/s,

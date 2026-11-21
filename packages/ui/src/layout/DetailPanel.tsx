@@ -162,8 +162,8 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
       </Dropdown.Trigger>
     </Dropdown.Root>
   );
-  // With primary actions, "…" ends their row, next to the commands it extends; otherwise it sits beside close.
-  const menuInActions = () => Boolean(props.menu?.length) && !props.primaryActions;
+  // K9: "…" always stands in the 56 px bar, beside close, never in the row of framed actions.
+  const menuInActions = () => Boolean(props.menu?.length);
   const hasLead = () => Boolean(props.kind || props.subtitle || props.meta || props.primaryActions);
   return (
     <>
@@ -213,7 +213,6 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           <Show when={props.primaryActions}>
             <div class="k2b-detail-panel__primary-actions">
               {props.primaryActions}
-              <Show when={props.menu?.length}>{menuTrigger()}</Show>
             </div>
           </Show>
         </div>

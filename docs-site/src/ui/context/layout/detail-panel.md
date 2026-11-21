@@ -86,8 +86,8 @@ title and subtitle do not tell apart, such as "Query" and "Action". Pass
 or another custom identity; they are mutually exclusive. Pass the resource's
 less frequent commands as `menu` (`DropdownItem[]`): the header shows one
 "…" button and opens a sheet on phones, so every panel opens its menu from the
-same place. With `primaryActions` it ends their row, next to the commands it
-extends; without them it sits before `actions`. An empty list shows no button; name it with
+same place: always in the 56 px bar before `actions` (K9), also when the panel
+has `primaryActions`. An empty list shows no button; name it with
 `menuLabel` when "More actions" is too vague. Pass `actions` for compact
 utilities such as close, and `primaryActions` for the small set of prominent
 commands below the identity row.
