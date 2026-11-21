@@ -500,6 +500,26 @@ describe("account pages in a browser", () => {
       }
   }, 60_000);
 
+  test("keep the selected fill on a phone, where the account tabs wrap into rows", async () => {
+    const tab = await open(phone, "/me/developer", "en");
+    try {
+      const current = await tab.evaluate(() => {
+        const link = document.querySelector('.account-tabs [aria-current="page"]')!;
+        const probe = document.createElement("span");
+        probe.style.cssText =
+          "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
+        link.parentElement!.append(probe);
+        const appFill = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { fill: getComputedStyle(link).backgroundColor, appFill, shadow: getComputedStyle(link).boxShadow };
+      });
+      expect(current.fill).toBe(current.appFill);
+      expect(current.shadow).toBe("none");
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
   test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
     for (const view of [desktop, phone])
       for (const dark of [false, true])
