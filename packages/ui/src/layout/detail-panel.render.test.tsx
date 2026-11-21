@@ -198,7 +198,8 @@ describe("DetailPanel", () => {
     const groupRule = css.match(/\.k2b-ui \.k2b-detail-panel__group \{([^}]*)\}/)?.[1];
     // K9: a summary, a group, and a section placed directly in the body (a discussion is one) share one flat rule,
     // and one hairline separates each from the one before.
-    const topic = ".k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section)";
+    const topic =
+      ".k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group)";
     const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const frame = css.match(new RegExp(`${escaped} \\{([^}]*)\\}`))?.[1];
     const separator = css.match(new RegExp(`${escaped}:not\\(:first-child\\) \\{([^}]*)\\}`))?.[1];

@@ -263,7 +263,7 @@ Hairlines under the rows, nothing else (Cloud flat, K7):
 - The first and the last column stand on the column's 20 px text edge.
 - Hovering a row tints it; hovering a column turns its cells, the head
   included, light grey, and its head words dark.
-- A selected row is a fill only: 16 % of the app ink on the surface, never a
+- A selected row is a fill only: an 8 % tint of the app ink on the surface, never a
   line or bar in the app colour. In forced colors it takes the system highlight.
 
 Every line is an inset shadow inside its cell, so hover and selection never

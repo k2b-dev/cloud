@@ -502,7 +502,8 @@
   --k2b-notice-ink: var(--k2b-text-secondary);
   --k2b-notice-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent);
   display: block;
-  padding: 0.75rem var(--k2b-gutter, 1.25rem);
+  /* K1: a sentence and its consequence make a 52 px cell. */
+  padding: calc(0.5rem - 1px) calc(var(--k2b-gutter, 1.25rem) - 1px);
   border: 1px solid transparent;
   border-radius: var(--k2b-radius-flat, 0);
   color: var(--k2b-text-secondary);
@@ -538,7 +539,7 @@
   font-weight: 500;
   line-height: 1.125rem;
 }
-.k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-meta, 0.75rem); line-height: 1rem; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
@@ -550,7 +551,7 @@
 .k2b-ui .k2b-notice-card[data-tone] > .k2b-notice-card__body > :last-child {
   margin-block-end: 0;
 }
-.k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.125rem; }
+.k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0; }
 .k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.5rem; }
 /* A sign (K10): a 20 px tone icon on the first text line, then the sentence
    and its consequence on one text edge. `line` and `card` share the cell; the

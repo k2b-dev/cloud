@@ -172,7 +172,7 @@ for (const theme of ["light", "dark"])
         for (const [r, row] of hovered.rows.entries())
           for (const [i, td] of row.cells.entries()) expect(td.lines).toEqual(rest.rows[r]!.cells[i]!.lines);
 
-        // Selection: a fill of 16 % app colour on the row, the same lines and boxes as before.
+        // Selection (K7): a tint of 8 % app colour on the row, the same lines and boxes as before.
         await page.mouse.move(1400, 880);
         await page.evaluate("window.select('Beta')");
         await page.waitForSelector('tr[data-selected="true"]');
@@ -182,7 +182,7 @@ for (const theme of ["light", "dark"])
         const fill = rgbOf(selected.rows[1]!.background);
         const action = rgbOf(selected.action);
         const surface = rgbOf(selected.surface);
-        fill.forEach((channel, i) => expect(Math.abs(channel - (action[i]! * 0.16 + surface[i]! * 0.84))).toBeLessThanOrEqual(1.5));
+        fill.forEach((channel, i) => expect(Math.abs(channel - (action[i]! * 0.08 + surface[i]! * 0.92))).toBeLessThanOrEqual(1.5));
         for (const [r, row] of selected.rows.entries())
           for (const [i, td] of row.cells.entries()) {
             expect(td.lines, `row ${r} cell ${i}`).toEqual(rest.rows[r]!.cells[i]!.lines);

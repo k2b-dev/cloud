@@ -3894,6 +3894,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
   flex-direction: column;
   gap: 0;
+  /* K11: rows and entries of the detail column read at 13 px. */
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  line-height: 1.25rem;
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: 0 0 1rem;
@@ -4704,7 +4707,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-area__body > .k2b-area[data-open="true"] {
   margin-top: 0;
   background: transparent;
-  box-shadow: inset 0 1px 0 var(--k2b-border);
+  /* The row line above it, or the head's, is its top line. */
+  box-shadow: none;
 }
 
 .k2b-ui .k2b-area__body > .k2b-area > .k2b-area__head {
@@ -4766,7 +4770,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-fact-group__icon {
   flex: none;
-  width: 1rem;
+  width: 1.25rem;
+  text-align: center;
   color: var(--k2b-text-subtle);
   font-size: 1rem;
 }
@@ -4792,7 +4797,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);
   margin: 0;
-  padding-inline-start: 1.5rem;
+  padding-inline-start: 1.75rem;
   column-gap: 0.5rem;
 }
 
@@ -4998,29 +5003,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section) {
+.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
   padding: 1rem var(--k2b-gutter, 1.25rem);
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section):not(:first-child) {
+.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group):not(:first-child) {
   border-top: 1px solid var(--k2b-border);
 }
 
 /* Other content placed straight into the body, such as guidance, a button, or
    a preview, stands on the same text edge with the body's 12 px rhythm. An
    alert cell keeps its edge-to-edge tint (K10). */
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-notice-card, .k2b-notice-card-container) {
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, .k2b-notice-card, .k2b-notice-card-container) {
   margin-inline: var(--k2b-gutter, 1.25rem);
 }
 
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section):first-child {
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group):first-child {
   margin-top: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section) {
+.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
   margin-top: 0.75rem;
 }
 
@@ -12899,7 +12904,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A selected row is a clear fill in the app colour, never a coloured line,
    so its geometry and the row lines stay as they are. */
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)));
+  /* K7: the app's tint, as in the mockups; never a line or a bar. */
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 8%, var(--k2b-surface-beneath, var(--k2b-surface)));
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -13266,11 +13272,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     align-content: center;
     align-items: center;
     column-gap: 0.75rem;
-    padding: 0.5rem var(--k2b-gutter, 1rem);
+    padding: 0.5rem var(--k2b-gutter, 1.25rem);
     box-shadow: inset 0 -1px 0 var(--k2b-border);
   }
 
   .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row:last-child,
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row[data-last="true"],
   .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__foot-row {
     box-shadow: none;
   }

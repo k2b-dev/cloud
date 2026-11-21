@@ -267,11 +267,11 @@ describe("selection colors in the browser", () => {
                 }
               if (colors) {
                 if (target.kind === "table") {
-                  // A selected table row mixes 16 % of the host ink into the surface below it.
+                  // K7: a selected table row mixes 8 % of the host ink into the surface below it.
                   const surface = before[index]!.paint.background;
                   const ink = rgb(colors.ink);
                   selected.background.forEach((channel, i) =>
-                    expect(Math.abs(channel - (ink[i]! * 0.16 + surface[i]! * 0.84)), "table fill").toBeLessThanOrEqual(1.5),
+                    expect(Math.abs(channel - (ink[i]! * 0.08 + surface[i]! * 0.92)), "table fill").toBeLessThanOrEqual(1.5),
                   );
                 } else expect(selected.background).toEqual(rgb(colors[target.kind]));
                 if (target.kind === "nav") expect(selected.ink).toEqual(rgb(colors.ink));
