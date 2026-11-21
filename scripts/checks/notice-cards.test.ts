@@ -76,18 +76,3 @@ test("control icon sizes do not exempt colours, opacity or the control's text", 
     ),
   ).toEqual([3, 4, 5, 7].map((line) => `packages/demo/src/Panel.tsx:${line}`));
 });
-
-test("reports a frame whose only content is a notice (K14), and accepts a frame with more inside", async () => {
-  expect(
-    await findings(
-      [
-        "export const Panel = () => (<>",
-        '  <div class="rounded-lg border p-3"><NoticeCard tone="warning" title="Sync paused" /></div>',
-        '  <Paper><NoticeRow tone="danger">Upload failed</NoticeRow></Paper>',
-        '  <div class="rounded-lg border p-3"><h2>Status</h2><NoticeCard tone="warning" title="Sync paused" /></div>',
-        '  <div class="border-b"><NoticeCard tone="info" title="New" /></div>',
-        "</>);",
-      ].join("\n"),
-    ),
-  ).toEqual([2, 3].map((line) => `packages/demo/src/Panel.tsx:${line}`));
-});

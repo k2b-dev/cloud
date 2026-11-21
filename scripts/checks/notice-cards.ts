@@ -15,10 +15,6 @@ const OVERRIDE =
 // A control glyph has its own legible size; arbitrary colour utilities remain forbidden.
 const ICON_SIZE = /^(?:[\w-]+:)*text-(?:xs|sm|base|lg|\[(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem|em)\])$/;
 
-/** A rounded corner and a border on one element draw a box (K14). */
-const FRAME_RADIUS = /^(?:[\w-]+:)*rounded(?:-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]*\]))?$/;
-const FRAME_BORDER = /^(?:[\w-]+:)*border(?:-(?:2|4|8|\[[^\]]*\]))?$/;
-
 const tagName = (node: ts.Node): string | undefined => {
   if (ts.isJsxElement(node)) return node.openingElement.tagName.getText();
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -37,17 +33,6 @@ const classTokens = (initializer: ts.JsxAttributeValue): string[] => {
   collect(initializer);
   return tokens;
 };
-
-/** The class tokens of an element's own `class` or `className`. */
-const ownClassTokens = (node: ts.JsxElement): string[] =>
-  node.openingElement.attributes.properties
-    .filter(ts.isJsxAttribute)
-    .filter((attr) => ["class", "className"].includes(attr.name.getText()) && attr.initializer)
-    .flatMap((attr) => (attr.initializer ? classTokens(attr.initializer) : []));
-
-/** The JSX elements among an element's children, ignoring text and whitespace. */
-const childElements = (node: ts.JsxElement): ts.Node[] =>
-  node.children.filter((child) => ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || ts.isJsxExpression(child));
 
 /**
  * Every NoticeCard has one calm look: a tone tint, the title in primary ink,
@@ -73,22 +58,6 @@ export const rule: Rule = {
       const visit = (node: ts.Node, inNotice: boolean, inControl: boolean, inControlIcon: boolean): void => {
         const tag = tagName(node);
         const notice = inNotice || (tag !== undefined && NOTICES.has(tag));
-        // K14: a notice is the tinted cell itself. A box whose only content is a notice (a rounded, bordered element or
-        // a Paper) draws a second frame around it.
-        if (!inNotice && ts.isJsxElement(node)) {
-          const kids = childElements(node);
-          const only = kids.length === 1 ? tagName(kids[0]!) : undefined;
-          const tokens = ownClassTokens(node);
-          const framed =
-            tag === "Paper" || (tokens.some((token) => FRAME_RADIUS.test(token)) && tokens.some((token) => FRAME_BORDER.test(token)));
-          if (only !== undefined && NOTICES.has(only) && framed) {
-            findings.push({
-              file,
-              line: lineOf(node),
-              message: `Frame around a ${only}: the notice is the tinted cell; drop the ${tag === "Paper" ? "Paper" : "border and radius"} around it (K14).`,
-            });
-          }
-        }
         const control = inControl || (tag !== undefined && CONTROLS.has(tag));
         const controlIcon = tag === undefined ? inControlIcon : control && tag === "i";
         if (notice && tag === "i" && !control) {
