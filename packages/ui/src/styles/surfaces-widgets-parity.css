@@ -630,8 +630,10 @@
   .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
   /* K15: the actions share the row below the text in equal columns; a label too long for its column wraps inside its
-     button, so nothing leaves the cell. */
-  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; margin: 0; padding: 0; }
+     button, so nothing leaves the cell. The cell's text edge (K5) is wider than the old 11 px inset, so the columns
+     and the buttons' own padding give that room back: a two-word label still reads on one line at 390 px. */
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .375rem; margin: 0; padding: 0; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions > .k2b-button { padding-inline: .625rem; }
   /* A final row sizes to its contents, including stable controls. The empty third track belongs only to the
      transition reserve; keeping it here would leave 8px plus an extra row gap above a receipt's actions. */
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }
