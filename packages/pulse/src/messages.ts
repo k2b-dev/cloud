@@ -424,6 +424,10 @@ export const pulseMessages = i18n.define({
       baseCount: ({ count }: { count: number }) => `${count} ${i18n.plural(count, "en", { one: "base", other: "bases" })} available`,
       rawRetention: ({ days }: { days: number }) => `${days}-day raw retention`,
       pulseDataRefreshFailed: "Pulse data could not be refreshed",
+      dashboardsRemovedTitle: "Dashboards are gone",
+      dashboardsRemovedDetail:
+        "Pulse no longer has dashboards. Build a page with Pulse data in Code, for example with Gustav. Your data and saved queries are unchanged.",
+      dashboardsRemovedDismiss: "Got it",
       settings: "Settings",
       pulseSettings: "Pulse settings",
       base: "Base",
@@ -1013,6 +1017,10 @@ export const pulseMessages = i18n.define({
       baseCount: ({ count }) => `${count} ${i18n.plural(count, "de", { one: "Basis", other: "Basen" })} verfügbar`,
       rawRetention: ({ days }) => `${days} Tage Aufbewahrung für Rohdaten`,
       pulseDataRefreshFailed: "Die Pulse-Daten konnten nicht aktualisiert werden",
+      dashboardsRemovedTitle: "Dashboards gibt es nicht mehr",
+      dashboardsRemovedDetail:
+        "Pulse hat keine Dashboards mehr. Eine Seite mit Pulse-Daten baust du in Code, zum Beispiel mit Gustav. Deine Daten und gespeicherten Abfragen sind unverändert.",
+      dashboardsRemovedDismiss: "Verstanden",
       settings: "Einstellungen",
       pulseSettings: "Pulse-Einstellungen",
       base: "Basis",

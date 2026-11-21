@@ -66,6 +66,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
     initialBaseId: publicBaseId,
     initialRouteState: route,
+    ...(url.searchParams.get("notice") === "dashboards-removed" ? { initialNotice: "dashboards-removed" as const } : {}),
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},

@@ -32,4 +32,6 @@ export type PulseWorkspaceProps = {
   initialDateConfig: DateContext;
   initialNow: string;
   initialOrigin: string;
+  /** An old dashboard link led here (`?notice=dashboards-removed`); the page says what happened once. */
+  initialNotice?: "dashboards-removed";
 };

@@ -55,13 +55,14 @@ const props: PulseWorkspaceProps = {
   initialNow: "2026-01-01T00:00:00.000Z",
   initialOrigin: "https://cloud.example.test",
 };
-const render = (view: "sources", locale = "en") =>
+const render = (view: "sources", locale = "en", extra: Partial<PulseWorkspaceProps> = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(PulseWorkspace, {
           ...props,
+          ...extra,
           initialRouteState: { view, sourceId: "" },
         });
       },
@@ -86,6 +87,19 @@ test("the sidebar offers sources, SQL and settings, but no overview or dashboard
     const html = render("sources", locale);
     expect(html).toContain("SQL");
     for (const text of gone) expect(html).not.toContain(text);
+  }
+});
+
+test("an old dashboard link opens the base with a notice the server renders, and only then", () => {
+  for (const [locale, title, way] of [
+    ["en", "Dashboards are gone", "in Code"],
+    ["de", "Dashboards gibt es nicht mehr", "in Code"],
+  ] as const) {
+    const html = render("sources", locale, { initialNotice: "dashboards-removed" });
+    expect(html).toContain(title);
+    expect(html).toContain(way);
+    expect(html).toContain("Warehouse importer");
+    expect(render("sources", locale)).not.toContain(title);
   }
 });
 

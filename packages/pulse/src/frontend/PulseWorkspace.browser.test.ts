@@ -210,6 +210,37 @@ describe("Pulse base workspace", () => {
 });
 
 describe("Pulse base page after the cut", () => {
+  // The old ways: /:base/dashboards and /:base/dashboards/:id redirect here with ?notice=dashboards-removed, /:base/overview
+  // without it (redirects: removed-routes.render.test.tsx). The page says what happened once and keeps the base usable.
+  test("an old dashboard link opens the base with a notice that names no dashboard and goes away on request", async () => {
+    for (const view of views) {
+      const props: PulseWorkspaceProps = { ...workspaceFixture, initialNotice: "dashboards-removed" };
+      const { tab, calls } = await open(view, props);
+      try {
+        await tab.goto(`${origin}/app/pulse/${props.initialBaseId}?notice=dashboards-removed`);
+        await tab.getByText("Dashboards gibt es nicht mehr").waitFor();
+        expect(await tab.getByText("Newsletter-Skript").first().isVisible()).toBe(true);
+        expect(await overflow(tab)).toBeLessThanOrEqual(0);
+        await tab.getByRole("button", { name: "Verstanden" }).click();
+        await tab.getByText("Dashboards gibt es nicht mehr").waitFor({ state: "hidden" });
+        expect(new URL(tab.url()).searchParams.has("notice")).toBe(false);
+        expect(calls).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("an old overview link opens the base without a notice", async () => {
+    const { tab } = await open(views[1]!, workspaceFixture);
+    try {
+      await tab.getByText("Newsletter-Skript").first().waitFor();
+      expect(await tab.getByText("Dashboards gibt es nicht mehr").count()).toBe(0);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
   test("sources show their status and newest data on phones and desktops", async () => {
     for (const view of views) {
       const { tab, calls } = await open(view, workspaceFixture);

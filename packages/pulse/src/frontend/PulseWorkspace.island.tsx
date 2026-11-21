@@ -26,6 +26,14 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   });
   const selectedSourceId = () => props.initialRouteState.sourceId;
   const [loading, setLoading] = createSignal(false);
+  // An old dashboard link led here: the server read the notice, so the first render already shows it.
+  const [removedNotice, setRemovedNotice] = createSignal(props.initialNotice === "dashboards-removed");
+  const dismissRemovedNotice = () => {
+    setRemovedNotice(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("notice");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  };
   const [settingsDialogOpen, setSettingsDialogOpen] = createSignal(false);
   const [search, setSearch] = createSignal("");
   const activeView = () => props.initialRouteState.view;
@@ -215,6 +223,13 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="gap-2 px-4 py-[var(--ui-space-shell)] md:px-5">
+            <Show when={removedNotice()}>
+              <NoticeCard tone="info" title={t().dashboardsRemovedTitle} detail={t().dashboardsRemovedDetail}>
+                <Button variant="secondary" onClick={dismissRemovedNotice}>
+                  {t().dashboardsRemovedDismiss}
+                </Button>
+              </NoticeCard>
+            </Show>
             <Show when={readError()}>
               {(error) => (
                 <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
