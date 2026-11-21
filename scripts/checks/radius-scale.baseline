@@ -305,6 +305,7 @@ packages/ui/src/styles/index.css | css | 1rem
 packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 3px
 packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) + 3px)
 packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) + 3px)
