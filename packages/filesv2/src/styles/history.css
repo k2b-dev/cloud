@@ -418,11 +418,10 @@
 .filesv2-inspector-preview {
   position: relative;
   min-width: 0;
-  /* A band of the column: square, edge to edge on the quiet surface, closed by a hairline (K9, K14). */
+  /* A band of the column: square, edge to edge on the quiet surface; the next section's hairline closes it (K2, K9). */
   display: flex;
   justify-content: center;
   padding: var(--k2b-space-4);
-  border-block-end: 1px solid var(--k2b-border);
   background: var(--k2b-surface-muted);
 }
 .k2b-ui .filesv2-inspector-preview .k2b-pdf-viewer {
