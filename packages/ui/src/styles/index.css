@@ -4070,7 +4070,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] {
-  padding: 0.75rem var(--k2b-gutter) 1rem;
+  /* The section keeps only its block insets. Its heading row and its body hold
+     the text edge themselves, so a disclosure row spans the full width without
+     reaching out of any box (K5, layoutProblems). */
+  --k2b-section-inset-inline: var(--k2b-gutter);
+  padding: 0.75rem 0 1rem;
   /* One line, one owner: a section draws no outer frame and declares no border
      at all, so the line its container draws between topics (k2b-divided) is
      not overruled by this rule's weight. */
@@ -4084,7 +4088,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem var(--k2b-gutter);
+  padding: 1rem 0;
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > :is(.k2b-section__header, .k2b-section__body) {
+  padding-inline: var(--k2b-section-inset-inline);
+}
+
+/* A disclosure row is the button itself: the heading around it adds no inset. */
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header:has(> .k2b-section__toggle) {
+  padding-inline: 0;
 }
 
 .k2b-ui
@@ -4094,9 +4107,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-detail-panel__summary,
     .k2b-paper,
     .k2b-panel-dialog,
-    .k2b-settings-section
+    .k2b-settings-section,
+    .k2b-dialog
   )
   .k2b-section[data-frame="line"] {
+  --k2b-section-inset-inline: 0;
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -4334,9 +4349,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2 * var(--k2b-gutter));
-  margin: -0.75rem calc(-1 * var(--k2b-gutter)) -1rem;
-  padding: 0.75rem var(--k2b-gutter) 1rem;
+  width: 100%;
+  /* The row fills the section's block insets too; across it, it is exactly as wide as the section. */
+  margin-block: -0.75rem -1rem;
+  padding: 0.75rem var(--k2b-section-inset-inline) 1rem;
   border-radius: 0;
 }
 
@@ -4377,10 +4393,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.75rem;
   height: 1.75rem;
   flex: 0 0 1.75rem;
-  place-items: center;
-  /* The chevron ends near the trailing edge, like a count or a time, and reaches no further out of its row than an
-     icon button at a column edge (6 px, K5). */
-  margin-inline-end: -0.375rem;
+  /* The chevron's mark ends on the trailing text edge, like a count or a time, and its box stays inside the row. */
+  place-items: center end;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
 }

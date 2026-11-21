@@ -53,6 +53,15 @@ render(() => [
   createComponent(Section, { title: "Contact", size: "md", children: "Mira Solberg" }),
   createComponent(Section, { title: "Notes", size: "md", children: "Collect on Friday." }),
 ], document.getElementById("divided"));
+// Disclosure rows on a page and in the detail column: each spans its row and reaches out of no box.
+render(() => [
+  createComponent(Section, { title: "History", size: "md", collapsible: true, children: "Signed on Monday." }),
+  createComponent(Section, { title: "Notes", icon: "ti ti-notes", collapsible: true, defaultOpen: true, children: "Collect on Friday." }),
+], document.getElementById("disclosure"));
+render(() => createComponent(DetailPanel, { get children() { return createComponent(DetailPanel.Body, { get children() { return [
+  createComponent(Section, { title: "History", icon: "ti ti-history", collapsible: true, children: "Signed on Monday." }),
+  createComponent(Section, { title: "Notes", icon: "ti ti-notes", collapsible: true, defaultOpen: true, children: "Collect on Friday." }),
+]; } }); } }), document.getElementById("panel-disclosure"));
 render(() => createComponent(RowGroup, { title: "Today", count: 3, get children() { return [
   row("Call the carrier"),
   createComponent(NoticeCard, { tone: "yours", icon: true, title: "The receipt waits for a signature.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) }),
@@ -79,7 +88,7 @@ const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div><div id="panel" style="width:380px"></div><div id="list"></div><div id="divided" class="k2b-divided"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div><div id="panel" style="width:380px"></div><div id="list"></div><div id="divided" class="k2b-divided"></div><div id="disclosure" class="k2b-divided"></div><div id="panel-disclosure" style="width:380px"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#a3").waitFor();
@@ -289,6 +298,28 @@ describe("Cloud flat building blocks", () => {
       await page.close();
     }
   });
+
+  for (const width of [1440, 390])
+    test(`at ${width} px a section's disclosure row spans its row without reaching out of any box`, async () => {
+      const page = await load(width);
+      try {
+        for (const root of ["#disclosure", "#panel-disclosure"]) {
+          // No slack: the row and its chevron stay inside every box (G3a, A1, A4).
+          const found = await page.evaluate(layoutProblems, { root, slack: 0 });
+          expect({ root, spill: found.spill }).toEqual({ root, spill: [] });
+        }
+        // On a page the row still fills the section from edge to edge, and its text stands on the gutter.
+        const [section, toggle, title] = await Promise.all(
+          ["#disclosure > .k2b-section", "#disclosure .k2b-section__toggle", "#disclosure .k2b-section__title"].map((selector) =>
+            box(page, selector),
+          ),
+        );
+        expect([toggle.left, toggle.right]).toEqual([section.left, section.right]);
+        expect(title.left - section.left).toBe(width < 768 ? 16 : 20);
+      } finally {
+        await page.close();
+      }
+    });
 
   test("an empty or failed area shows a round sign and no box", async () => {
     const page = await load(1440);
