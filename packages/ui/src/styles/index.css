@@ -21928,6 +21928,49 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transform: none;
   }
 }
+/* K16: opened on a phone, a panel dialog is a sheet from the bottom edge, as a
+ * `BottomSheet` is; `PanelDialog` then brings the grip and the sheet's motion
+ * (panel-sheet-handle.tsx). From 48rem it stays the centered dialog it was.
+ * The doubled class outranks the dialog's rise and fade, which a sheet does
+ * not use: it slides. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame) {
+    top: auto;
+    bottom: 0;
+    left: 50%;
+    margin: 0;
+    transform: translate3d(-50%, var(--k2b-sheet-y, 0px), 0);
+    width: min(100%, 36rem);
+    max-width: 100%;
+    max-height: min(92dvh, var(--k2b-dialog-available-height));
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+    box-shadow: var(--k2b-shadow-sheet);
+    opacity: 1;
+    translate: none;
+    transition: none;
+    animation: k2b-bottom-sheet-enter 160ms ease-out;
+  }
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)[data-sheet-motion] {
+    animation-name: none;
+    box-shadow: 0 6rem 0 0 var(--k2b-surface), var(--k2b-shadow-sheet);
+  }
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)::backdrop {
+    opacity: var(--k2b-sheet-dim, 1);
+    transition: none;
+  }
+  /* The same footer as a phone dialog's: 12 px below the buttons, or the safe area where it is larger, so the body
+     keeps every pixel it had (the pairing dialog's steps fit a 320 x 568 phone without scrolling). */
+  .k2b-ui .k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame) > .k2b-panel-dialog-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+/* Turned to 48rem and wider while open, the dialog is centered again; its grip has no use there. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-panel-dialog-frame:not(.k2b-bottom-sheet-frame) .k2b-bottom-sheet__handle {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame { animation: none; }
 }
