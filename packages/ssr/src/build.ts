@@ -86,6 +86,42 @@ const rejectNestedComponentImports = (
   }
 };
 
+/**
+ * Rejects an on-demand `import()` of a package's re-export module (a barrel such as `@k2b/ui`) that the browser code also
+ * imports statically. Bun parses only the re-exports that static imports name, but an `import()` needs the whole
+ * namespace. The barrel then keeps every re-export, and code splitting assigns each module behind it to every entry
+ * that imports the barrel statically, even modules that entry never uses (#3504). Application code fails the build; a
+ * dependency only warns, because the application author cannot change it.
+ */
+const rejectDynamicBarrelImports = (metafile: Bun.BuildMetafile, cwd: string): void => {
+  const canonicalCwd = canonicalFilePath(cwd);
+  const outputBytes = new Map<string, number>();
+  for (const output of Object.values(metafile.outputs))
+    for (const [input, { bytesInOutput }] of Object.entries(output.inputs))
+      outputBytes.set(input, (outputBytes.get(input) ?? 0) + bytesInOutput);
+  const staticTargets = new Set<string>();
+  for (const input of Object.values(metafile.inputs))
+    for (const edge of input.imports) if (edge.kind === "import-statement" && !edge.external) staticTargets.add(edge.path);
+  // A re-export module emits no code of its own; a package specifier is what Bun's barrel optimization narrows.
+  const isBarrel = (path: string) => !outputBytes.get(path) && (metafile.inputs[path]?.imports.length ?? 0) > 0;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const [importer, input] of Object.entries(metafile.inputs)) {
+    for (const edge of input.imports) {
+      if (edge.kind !== "dynamic-import" || /^(?:\.|\/)/.test(edge.original)) continue;
+      const target = edge.external ? metafile.outputs[edge.path]?.entryPoint : edge.path;
+      if (!target || !staticTargets.has(target) || !isBarrel(target)) continue;
+      const file = relative(canonicalCwd, resolve(process.cwd(), importer));
+      (file.split(/[\\/]/).includes("node_modules") ? warnings : errors).push(`  ${file} imports ${edge.original} on demand`);
+    }
+  }
+  const advice = 'Import a small module on demand that re-exports only the names it needs, for example `export { toast } from "@k2b/ui";`.';
+  const reason =
+    "loads a re-export module on demand that other browser code imports statically, so unused modules behind it stay in the islands' static chunks.";
+  if (warnings.length) console.warn(`[ssr] A dependency ${reason}\n${[...new Set(warnings)].sort().join("\n")}`);
+  if (errors.length) throw new Error(`[ssr] Island code ${reason}\n${[...new Set(errors)].sort().join("\n")}\n${advice}`);
+};
+
 const removeStaleBuildAssets = async (outdir: string, outputs: readonly Bun.BuildArtifact[]): Promise<number> => {
   const current = new Set(outputs.map((output) => resolve(output.path)));
   let removed = 0;
@@ -402,6 +438,8 @@ export const buildIslands = async (options: {
 
     if (!result.success) return { result };
     rejectNestedComponentImports(result.metafile, components, resolvedCwd);
+    // rejectNestedComponentImports() already threw when the metafile is missing.
+    if (result.metafile) rejectDynamicBarrelImports(result.metafile, resolvedCwd);
     const removed = await removeStaleBuildAssets(variantOutdir, result.outputs);
     if (verbose && removed > 0) console.log(`Removed ${removed} stale build asset(s).`);
     if (dev) {

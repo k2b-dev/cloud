@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { routes as honoRoutes } from "../../src/adapter/hono";
@@ -625,5 +625,91 @@ describe("buildIslands() asset manifest", () => {
     rmSync(join(cwd, "App.island.tsx"));
     await buildIslands(options);
     expect(readFileSync(join(outdir, "manifest.json"), "utf8")).toBe("preserved");
+  });
+});
+
+describe("buildIslands() barrel imports", () => {
+  // A side-effect-free package whose root re-exports a sheet that only a lazy module of another island uses.
+  const writeBarrelProject = (cwd: string) => {
+    const pkg = join(cwd, "node_modules", "fixture-ui");
+    writeTempFile(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "fixture-ui", type: "module", sideEffects: false, exports: { ".": "./index.js" } }),
+    );
+    writeTempFile(join(pkg, "index.js"), `export * from "./layout/index.js"; export { used } from "./used.js";`);
+    writeTempFile(join(pkg, "layout", "index.js"), `export { Sheet } from "./Sheet.js"; export { Other } from "./Other.js";`);
+    writeTempFile(
+      join(pkg, "layout", "Sheet.js"),
+      `import { motion } from "../motion.js"; export function Sheet() { return "SHEET_CODE" + motion(); }`,
+    );
+    writeTempFile(join(pkg, "motion.js"), `export function motion() { return "MOTION_CODE"; }`);
+    writeTempFile(join(pkg, "layout", "Other.js"), `export function Other() { return "OTHER_CODE"; }`);
+    writeTempFile(join(pkg, "used.js"), `export function used() { return "USED_CODE"; }`);
+    writeTempFile(join(cwd, "src", "Static.island.tsx"), `import { used } from "fixture-ui"; export default () => <span>{used()}</span>;`);
+    writeTempFile(
+      join(cwd, "src", "Lazy.island.tsx"),
+      `import { used } from "fixture-ui"; export default () => <button onClick={async () => (await import("./sheet")).show()}>{used()}</button>;`,
+    );
+    writeTempFile(join(cwd, "src", "sheet.ts"), `import { Sheet } from "fixture-ui"; export const show = () => console.log(Sheet());`);
+  };
+  const options = (cwd: string, dev = false) => ({
+    pattern: "**/*.{island,client}.tsx",
+    cwd,
+    outdir: join(cwd, "_ssr"),
+    verbose: false,
+    dev,
+  });
+
+  test("an unused, side-effect-free barrel module stays out of every island's static closure", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    // The allowed on-demand form: a local module that names what it re-exports.
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => (await import("./used-only")).used()}>Load</button>;`,
+    );
+    writeTempFile(join(cwd, "src", "used-only.ts"), `export { used } from "fixture-ui";`);
+    await buildIslands(options(cwd));
+    const outdir = join(cwd, "_ssr");
+    const manifest: AssetManifest = JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8"));
+    const emitted = [...new Bun.Glob("*.js").scanSync({ cwd: outdir })];
+    expect(emitted.some((file) => readFileSync(join(outdir, file), "utf8").includes("SHEET_CODE"))).toBe(true);
+    for (const island of ["Static", "Lazy", "OnDemand"]) {
+      const closure = manifest.entries[islandIdFromFile(join(cwd, "src", `${island}.island.tsx`), cwd)]!;
+      const code = closure.map((file) => readFileSync(join(outdir, file), "utf8")).join("\n");
+      for (const unused of ["SHEET_CODE", "MOTION_CODE", "OTHER_CODE"]) expect(code).not.toContain(unused);
+    }
+  });
+
+  test.each([false, true])("rejects an on-demand import of a statically imported barrel (dev: %p)", async (dev) => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => (await import("fixture-ui")).used()}>Load</button>;`,
+    );
+    await expect(buildIslands(options(cwd, dev))).rejects.toThrow(
+      "src/OnDemand.island.tsx imports fixture-ui on demand\nImport a small module on demand that re-exports only the names it needs",
+    );
+  });
+
+  test("only warns when a dependency imports a statically imported barrel on demand", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const loader = join(cwd, "node_modules", "fixture-loader");
+    writeTempFile(join(loader, "package.json"), JSON.stringify({ name: "fixture-loader", type: "module", exports: { ".": "./index.js" } }));
+    writeTempFile(join(loader, "index.js"), `export const load = () => import("fixture-ui");`);
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `import { load } from "fixture-loader"; export default () => <button onClick={async () => (await load()).used()}>Load</button>;`,
+    );
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await buildIslands(options(cwd));
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain("node_modules/fixture-loader/index.js imports fixture-ui on demand");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

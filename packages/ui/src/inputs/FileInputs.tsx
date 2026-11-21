@@ -191,7 +191,7 @@ export type ImageInputProps = ValueFieldProps<string | null> & {
 const DEFAULT_IMAGE_ACCEPT = "image/jpeg,image/png,image/gif,image/webp,image/svg+xml,.jpg,.jpeg,.png,.gif,.webp,.svg";
 
 const defaultImageTransform = async (file: File): Promise<string> => {
-  const { img } = await import("@k2b/stdlib/browser");
+  const { img } = await import("./image-tools");
   return img.presets.avatar(file);
 };
 
