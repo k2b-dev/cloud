@@ -166,6 +166,92 @@ describe("capability v1 compilation", () => {
     expect(resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "fr")).toEqual(compiled.manifest);
   });
 
+  test("localizes each path through a shared $defs schema without changing the shared registry form", () => {
+    const amount = z
+      .object({ value: z.number().describe("Amount."), unit: z.string().describe("Unit.") })
+      .strict()
+      .meta({ id: "CapabilitiesTestAmount" });
+    const base = example();
+    const definitions = defineCapabilities({
+      ...base,
+      queries: {
+        ...base.queries,
+        get: {
+          ...base.queries.get,
+          input: z
+            .object({
+              id: z.string().describe("Stable item ID."),
+              limit: amount.optional().describe("Upper bound."),
+              steps: z.array(amount).max(3).optional().describe("Steps."),
+            })
+            .strict(),
+        },
+      },
+      presentation: {
+        baseLocale: "en",
+        translations: {
+          de: { queries: { get: { input: { "limit.value": "Höchstbetrag.", "steps[].unit": "Einheit eines Schritts." } } } },
+        },
+      },
+    });
+    const compiled = compileCapabilities("example", definitions);
+    const input = compiled.manifest.queries[0]!.inputSchema;
+    expect(input).toMatchObject({
+      properties: { limit: { $ref: "#/$defs/CapabilitiesTestAmount" }, steps: { items: { $ref: "#/$defs/CapabilitiesTestAmount" } } },
+    });
+
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de").queries[0]!.inputSchema;
+    expect(localized).toMatchObject({
+      properties: {
+        limit: { description: "Upper bound.", properties: { value: { description: "Höchstbetrag." }, unit: { description: "Unit." } } },
+        steps: { items: { properties: { value: { description: "Amount." }, unit: { description: "Einheit eines Schritts." } } } },
+      },
+      $defs: { CapabilitiesTestAmount: { properties: { value: { description: "Amount." }, unit: { description: "Unit." } } } },
+    });
+    expect(z.fromJSONSchema(localized).safeParse({ id: "a", limit: { value: 1, unit: "kg" }, steps: [] }).success).toBe(true);
+    expect(compiled.manifest.queries[0]!.inputSchema).toEqual(input);
+    expect(() =>
+      compileCapabilities(
+        "example",
+        defineCapabilities({
+          ...definitions,
+          presentation: { baseLocale: "en", translations: { de: { queries: { get: { input: { "limit.missing": "Fehlt." } } } } } },
+        }),
+      ),
+    ).toThrow('field path "limit.missing" does not exist');
+  });
+
+  test("publishing a schema once under $defs is not a breaking evolution, while narrowing it still is", () => {
+    const base = example();
+    const manifest = (amount: z.ZodType) =>
+      compileCapabilities(
+        "example",
+        defineCapabilities({
+          ...base,
+          queries: {
+            ...base.queries,
+            get: {
+              ...base.queries.get,
+              input: z.object({ id: z.string().describe("Stable item ID."), limit: amount.optional().describe("Limit.") }).strict(),
+            },
+          },
+        }),
+      ).manifest;
+    const amount = z.object({ value: z.number().describe("Amount.") }).strict();
+    const inline = manifest(amount);
+    const shared = manifest(amount.meta({ id: "CapabilitiesEvolutionAmount" }));
+    expect(shared.queries[0]!.inputSchema).toHaveProperty("$defs.CapabilitiesEvolutionAmount");
+    expect(capabilityManifestEvolutionIssues(inline, shared)).toEqual([]);
+    expect(capabilityManifestEvolutionIssues(shared, inline)).toEqual([]);
+    const narrowed = manifest(
+      z
+        .object({ value: z.number().max(10).describe("Amount.") })
+        .strict()
+        .meta({ id: "CapabilitiesEvolutionNarrowed" }),
+    );
+    expect(capabilityManifestEvolutionIssues(inline, narrowed)).toContain("Query get input.limit.value changed");
+  });
+
   test("rejects presentation keys that do not exist in the stable manifest", () => {
     expect(() =>
       compileCapabilities(

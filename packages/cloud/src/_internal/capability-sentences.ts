@@ -165,6 +165,25 @@ export const capabilityApprovalText = (input: {
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const own = (value: unknown, key: string): unknown => (isRecord(value) && Object.hasOwn(value, key) ? value[key] : undefined);
+/** The target of a local `$ref` such as `#/$defs/Format`; manifest schemas never reference other documents. */
+export const localSchemaRef = (root: unknown, ref: unknown): Record<string, unknown> | undefined => {
+  if (typeof ref !== "string" || (ref !== "#" && !ref.startsWith("#/"))) return undefined;
+  let target: unknown = root;
+  for (const part of ref === "#" ? [] : ref.slice(2).split("/")) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) return undefined;
+    target = (target as Record<string, unknown>)[part.replaceAll("~1", "/").replaceAll("~0", "~")];
+  }
+  return target && typeof target === "object" && !Array.isArray(target) ? (target as Record<string, unknown>) : undefined;
+};
+
+/** A node with its local `$ref` resolved: the target's keywords, overridden by the node's own (its description). */
+const resolved = (root: unknown, node: unknown, refs: ReadonlySet<string> = new Set()): unknown => {
+  if (!isRecord(node) || typeof node.$ref !== "string" || refs.has(node.$ref)) return node;
+  const target = localSchemaRef(root, node.$ref);
+  if (!target) return node;
+  const { $ref, ...siblings } = node;
+  return resolved(root, { ...target, ...siblings }, new Set([...refs, $ref as string]));
+};
 
 /**
  * Plain one-line text without control or invisible format characters, cut at a code point boundary. A value keeps
@@ -366,7 +385,8 @@ type JsonSchema = Record<string, unknown>;
 /** The schema of one field path, following properties, array items, and union members. */
 const schemaAt = (schema: unknown, path: string): JsonSchema | undefined => {
   let nodes: unknown[] = [schema];
-  const expand = (node: unknown): JsonSchema[] => {
+  const expand = (raw: unknown): JsonSchema[] => {
+    const node = resolved(schema, raw);
     if (!isRecord(node)) return [];
     const members = (["anyOf", "oneOf", "allOf"] as const).flatMap((keyword) => (Array.isArray(node[keyword]) ? node[keyword] : []));
     return [node, ...members.flatMap(expand)];
@@ -428,8 +448,9 @@ export const capabilitySentenceFields = (input: {
 }): CapabilitySentenceField[] => {
   const fields = new Map<string, CapabilitySentenceField>();
   const properties = isRecord(input.inputSchema.properties) ? input.inputSchema.properties : {};
-  for (const [key, value] of Object.entries(properties)) {
+  for (const [key, raw] of Object.entries(properties)) {
     if (fields.size >= MAX_LABELLED_FIELDS) break;
+    const value = resolved(input.inputSchema, raw);
     if (!isRecord(value) || OPAQUE_FIELD.test(key) || value.format === "uuid") continue;
     const types = schemaTypes(value);
     if (types.length > 0 && types.every((type) => type === "boolean" || type === "null")) continue;
