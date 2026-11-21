@@ -22,10 +22,21 @@ export const sourceKindIcon = (kind: PulseSource["kind"]): string => {
   return "ti ti-database-share";
 };
 
-type SourceStatusLabels = { paused: string; error: string; healthy: string; waiting: string; throttled: string; throttledDetail: string };
+type SourceStatusLabels = {
+  paused: string;
+  error: string;
+  stale: string;
+  healthy: string;
+  waiting: string;
+  throttled: string;
+  throttledDetail: string;
+};
 export type SourceStatusTone = "ok" | "warning" | "error" | "neutral";
 
-/** One status per source, most urgent first: a throttled base refuses values even when its last scrape worked. */
+/**
+ * One status per source, most urgent first: a throttled base refuses values even when its last scrape worked,
+ * and a source that missed its expected delivery is stale even though its older data was fine.
+ */
 export const sourceStatus = (
   source: PulseSource,
   labels: SourceStatusLabels,
@@ -33,6 +44,7 @@ export const sourceStatus = (
   if (!source.enabled) return { label: labels.paused, tone: "neutral" };
   if (source.status.throttled) return { label: labels.throttled, tone: "warning", title: labels.throttledDetail };
   if (source.status.lastError) return { label: labels.error, tone: "error" };
+  if (source.staleSince) return { label: labels.stale, tone: "warning" };
   if (source.status.newestDataAt || source.lastSeenAt) return { label: labels.healthy, tone: "ok" };
   return { label: labels.waiting, tone: "neutral" };
 };

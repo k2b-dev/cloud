@@ -8,6 +8,9 @@ limits, cancellation, result formats, and exit codes. Use `queries save --pin`
 to show a saved number on the base overview (at most four), or `--unpin` to
 remove it. Read [Alert rules](alerts.md) for rule CRUD and source expectations.
 
+Read [Data kinds](schema.md) for `cld pulse schema`: metrics, event fields with
+type and fill rate, state keys, and the newest entries of one kind.
+
 Read [Ingest](ingest.md) for the batch contract, retries, metric filters, and
 scrape limits. Read [Administration](admin.md) for ClickHouse setup, base
 policy, limits, recovery, and internal targets.

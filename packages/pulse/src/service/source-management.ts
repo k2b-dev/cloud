@@ -10,6 +10,7 @@ import { recordBaseActivity } from "./base-activity";
 import { checkScrapeTarget } from "./scrape-target";
 import { sourceCounts } from "./source-counts";
 import { tryMirrorSource } from "./source-mirror";
+import { EMPTY_SOURCE_REJECTIONS, sourceRejectionSummaries } from "./source-rejections";
 import { SourceExpectationSchema } from "./source-staleness";
 import { iso, isoNullable } from "./telemetry-values";
 
@@ -119,6 +120,12 @@ const mapSource = (row: SourceRow, now = new Date()): PulseSource => ({
   updatedAt: iso(row.updated_at),
 });
 
+/** Read responses carry the flushed refusal summary; write responses omit it rather than report zero. */
+const withRejections = (source: PulseSource, rejections: Map<string, NonNullable<PulseSource["status"]["rejected"]>>): PulseSource => ({
+  ...source,
+  status: { ...source.status, rejected: rejections.get(source.id) ?? EMPTY_SOURCE_REJECTIONS },
+});
+
 const mapSourceScrape = (row: SourceScrapeRow): PulseSourceScrape => ({
   id: row.id,
   sourceId: row.source_id,
@@ -191,9 +198,13 @@ export const listSources = async (
   `;
   const now = params.now ?? new Date();
   const counts = await sourceCounts(baseId, now, params.signal);
+  const rejections = await sourceRejectionSummaries(
+    rows.map((row) => row.id),
+    now,
+  );
   return ok(
     rows.map((row) => ({
-      ...mapSource(row, now),
+      ...withRejections(mapSource(row, now), rejections),
       seriesCount: counts.get(row.id)?.seriesCount ?? 0,
       todayCount: counts.get(row.id)?.todayCount ?? (counts.has("") ? 0 : null),
     })),
@@ -204,7 +215,8 @@ export const getSource = async (sourceId: string, user: AccessScope, now = new D
   const [row] = await sql<SourceRow[]>`SELECT * FROM pulse.sources WHERE NOT deleted AND id = ${sourceId}::uuid`;
   if (!row) return fail(err.notFound("Source"));
   const access = await requireBaseAccess(row.base_id, user, "read");
-  return access.ok ? ok(mapSource(row, now)) : fail(access.error);
+  if (!access.ok) return fail(access.error);
+  return ok(withRejections(mapSource(row, now), await sourceRejectionSummaries([row.id], now)));
 };
 
 export const listSourceScrapes = async (params: {

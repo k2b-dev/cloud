@@ -581,8 +581,15 @@ reader; the reader supplies `codeResourceTitle(tx, id)` for the read-only owner
 existence check. `pages` maps those owner Types to their shared Code page:
 a path on this Cloud that contains `{id}`; a pattern starting with `//` is
 refused.
-The manifest publishes only `owners` and optional `pages`. See
-[Code lifecycle](/en/docs/platform/code-lifecycle).
+The manifest publishes only `owners`, optional `pages` and optional
+`publicRoutes`. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+`code: { publicRoutes: false }` keeps the app's data off public Code routes: a
+public route never calls one of its Queries, not even with
+`audience: "owner-data"`. The checker refuses such a version and Core refuses
+such an answer. An app without Code owners may declare it alone; `owners` then
+stays empty. See
+[Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
 
 Activation creates a version entry and switches versions. It never grants
 permissions, chooses a permission level from source, or restores access. The
@@ -1011,6 +1018,19 @@ application. It records that the Action is unavailable to resource-owned Code;
 personal Code retains its person's authority. Code consumers enforce this
 marker when offering operations. It does not change ordinary person calls or
 replace the Action's service authorization.
+
+A Query may declare `code: false` too: the Code SDK leaves it out and the bridge
+refuses it for every Code.
+
+An app-wide Query that takes the resource it reads in its input declares
+`inputRefs: { baseId: "base" }`: each named top-level string field holds the ID
+of a resource of that local Type. Code page hosting checks those resources for
+each visitor like a target
+([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
+The declaration grants nothing; the Query still authorizes its caller. Pulse
+declares it on `sql.run`, `source.list`, `alert.list`, `alert.read`,
+`saved_query.list` and `dashboard.list`, and offers target forms such as
+`base.sql.run` as well.
 
 Call the public client with explicit coordinates:
 

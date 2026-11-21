@@ -22,6 +22,7 @@ const ROW_EN: Record<CodePolicyRow, [string, string]> = {
   ai_chat_you: ["AI in your own chat", "writes to your chat, from a reserved daily budget"],
   internet: ["Internet", "calls outside addresses"],
   public_routes: ["Public pages and addresses", "reachable without sign-in"],
+  owner_data: ["Owner's data for members", "shows the owner's data to every member who opens the page"],
 };
 const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   read: ["Lesen", "Mails, Zeilen, Dateien und Termine lesen"],
@@ -40,6 +41,7 @@ const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   ai_chat_you: ["KI im eigenen Chat", "schreibt in deinen Chat, aus einem reservierten Tagesbudget"],
   internet: ["Ins Internet", "ruft fremde Adressen auf"],
   public_routes: ["Öffentliche Seiten und Adressen", "ohne Anmeldung erreichbar"],
+  owner_data: ["Daten des Besitzers für Mitglieder", "zeigt allen Mitgliedern, die die Seite öffnen, Daten mit den Rechten des Besitzers"],
 };
 
 export const codeAdminMessages = i18n.define({
@@ -252,7 +254,7 @@ export const codeAdminMessages = i18n.define({
       rowLabel: ({ row }: Row) => ROW_EN[row][0],
       // Rows that go outside describe what they do; the others give examples.
       rowExample: ({ row }: Row) =>
-        row === "ai" || row === "internet" || row === "public_routes" ? ROW_EN[row][1] : `e.g. ${ROW_EN[row][1]}`,
+        row === "ai" || row === "internet" || row === "public_routes" || row === "owner_data" ? ROW_EN[row][1] : `e.g. ${ROW_EN[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "not used" : n === 1 ? "1 Code" : `${n} Code`),
       value: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Automatic", admin: "Admin approval", never: "Never" })[value],
       valueShort: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Auto", admin: "Admin", never: "Never" })[value],
@@ -651,7 +653,7 @@ export const codeAdminMessages = i18n.define({
       secretHeaders: ({ names }: { names: string }) => `Kopfzeilen: ${names}`,
       rowLabel: ({ row }: Row) => ROW_DE[row][0],
       rowExample: ({ row }: Row) =>
-        row === "ai" || row === "internet" || row === "public_routes" ? ROW_DE[row][1] : `z. B. ${ROW_DE[row][1]}`,
+        row === "ai" || row === "internet" || row === "public_routes" || row === "owner_data" ? ROW_DE[row][1] : `z. B. ${ROW_DE[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "nicht genutzt" : n === 1 ? "1 Code" : `${n} Code`),
       value: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Automatisch", admin: "Admin gibt frei", never: "Nie" })[value],
       valueShort: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Auto", admin: "Admin", never: "Nie" })[value],
