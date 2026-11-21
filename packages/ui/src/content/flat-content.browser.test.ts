@@ -73,29 +73,42 @@ for (const width of [390, 768, 1440, 1920])
     expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
   });
 
-for (const width of [390, 1440])
-  test(`task row at ${width} px: fixed heights, symbol on the text edge, action word whole`, async () => {
-    const page = await open(width);
-    const edge = await gutter(page);
-    const phone = width < 768;
-    const heights = await page.locator(".k2b-task-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
-    // 52 with a quiet line, 40 without; at least 60 on a phone (K1). The line between rows is inside the height.
-    expect(heights).toEqual(phone ? [60, 60, 60, 60, 60] : [52, 40, 40, 52, 40]);
-    for (let index = 0; index < heights.length; index++) {
-      const row = await box(page, ".k2b-task-row", index);
-      const icon = await box(page, ".k2b-task-row__icon", index);
-      const action = await box(page, ".k2b-task-row__action", index);
-      expect(Math.abs(icon.left - row.left - edge - (20 - icon.width) / 2)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(row.right - edge - action.right)).toBeLessThanOrEqual(0.5);
-    }
-    // The long sentence ends in an ellipsis; the action word keeps its whole width.
-    const long = page.locator(".k2b-task-row").nth(2);
-    const cut = await long
-      .locator(".k2b-task-row__text")
-      .evaluate((text) => ({ cut: text.scrollWidth > text.clientWidth, ellipsis: getComputedStyle(text).textOverflow }));
-    expect(cut).toEqual({ cut: true, ellipsis: "ellipsis" });
-    expect(await long.locator(".k2b-task-row__action").evaluate((action) => action.scrollWidth <= action.clientWidth)).toBe(true);
-  });
+test("task row at 1440 px: fixed heights, symbol on the text edge, action word whole at the right edge", async () => {
+  const page = await open(1440);
+  const edge = await gutter(page);
+  const heights = await page.locator(".k2b-task-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+  // 52 with a quiet line, 40 without (K1). The line between rows is inside the height.
+  expect(heights).toEqual([52, 40, 40, 52, 40]);
+  for (let index = 0; index < heights.length; index++) {
+    const row = await box(page, ".k2b-task-row", index);
+    const icon = await box(page, ".k2b-task-row__icon", index);
+    const action = await box(page, ".k2b-task-row__action", index);
+    expect(Math.abs(icon.left - row.left - edge - (20 - icon.width) / 2)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(row.right - edge - action.right)).toBeLessThanOrEqual(0.5);
+  }
+  // The long sentence ends in an ellipsis; the action word keeps its whole width.
+  const long = page.locator(".k2b-task-row").nth(2);
+  const cut = await long
+    .locator(".k2b-task-row__text")
+    .evaluate((text) => ({ cut: text.scrollWidth > text.clientWidth, ellipsis: getComputedStyle(text).textOverflow }));
+  expect(cut).toEqual({ cut: true, ellipsis: "ellipsis" });
+  expect(await long.locator(".k2b-task-row__action").evaluate((action) => action.scrollWidth <= action.clientWidth)).toBe(true);
+});
+
+test("task row at 390 px: at least 60 px, the action word whole below the text on the text edge", async () => {
+  const page = await open(390);
+  const rows = await page.locator(".k2b-task-row").count();
+  for (let index = 0; index < rows; index++) {
+    const row = await box(page, ".k2b-task-row", index);
+    const text = await box(page, ".k2b-task-row__copy", index);
+    const action = await box(page, ".k2b-task-row__action", index);
+    expect(row.height).toBeGreaterThanOrEqual(60);
+    expect(action.top).toBeGreaterThanOrEqual(text.top + text.height);
+    expect(Math.abs(action.left - text.left)).toBeLessThanOrEqual(0.5);
+  }
+  const action = page.locator(".k2b-task-row__action").first();
+  expect(await action.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
 
 test("task row: one target with a name, a tooltip only while cut, focus without movement, and disabled states", async () => {
   const page = await open(1440);
@@ -150,9 +163,11 @@ test("progress path: dots on one line on the text edge, side by side when wide, 
     .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map((r) => ({ left: r.left, top: r.top })));
   expect(new Set(narrow.map((marker) => marker.left)).size).toBe(1);
   expect(narrow.every((marker, index) => index === 0 || marker.top > narrow[index - 1]!.top)).toBe(true);
+  // One below the other, a stage with a quiet line is 52 px (K1).
+  expect(narrow.slice(1).map((marker, index) => marker.top - narrow[index]!.top)).toEqual([52, 52, 52]);
 
-  // The state is a word for screen readers, and the current stage is marked as such.
-  const current = page.locator('[data-probe="path"] [aria-current="step"]');
+  // The state is a word for screen readers.
+  const current = page.locator('[data-probe="path"] [data-state="current"]');
   expect(await current.locator(".k2b-progress-path__label").textContent()).toBe("Versendet, aktueller Schritt");
   expect(await page.locator('[data-probe="path"] .k2b-progress-path__step').first().textContent()).toContain("erledigt");
   expect(await page.locator('[data-probe="path"] .k2b-progress-path__step').last().textContent()).toContain("noch offen");

@@ -41,9 +41,12 @@ export function ProgressPath(props: ProgressPathProps): JSX.Element {
       <ol class="k2b-progress-path__list" aria-label={props.label} style={{ "--k2b-progress-path-count": props.steps.length }}>
         <For each={props.steps}>
           {(step) => (
-            <li class="k2b-progress-path__step" data-state={stateOf(step)} aria-current={step.current ? "step" : undefined}>
+            <li class="k2b-progress-path__step" data-state={stateOf(step)}>
               <span class="k2b-progress-path__marker" aria-hidden="true">
-                <Show when={stateOf(step) === "done"} fallback={<Show when={stateOf(step) === "open" && step.icon}>{(icon) => <i class={icon()} />}</Show>}>
+                <Show
+                  when={stateOf(step) === "done"}
+                  fallback={<Show when={stateOf(step) === "open" && step.icon}>{(icon) => <i class={icon()} />}</Show>}
+                >
                   <i class="ti ti-check" />
                 </Show>
               </span>

@@ -1,11 +1,11 @@
 import { createSignal, type JSX, Show } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { Tooltip } from "../feedback/Tooltip";
 
 export type TaskRowProps = {
   /** Tabler icon class for the kind of task, such as `ti ti-package-export`. Decorative: the sentence names the task. */
   icon: string;
-  /** How many things the task covers, as a chip before the sentence. */
+  /** How many things the task covers, as a chip before the sentence. Zero shows no chip; the sentence says it in words. */
   count?: number;
   /** The task in one sentence, such as "3 unsold items are ready for pickup". One line; a longer one ends in an ellipsis. */
   text: string;
@@ -19,7 +19,10 @@ export type TaskRowProps = {
   onClick?: (event: MouseEvent) => void;
   /** The task cannot be started now. The row stays in place, reads as unavailable and does nothing. */
   disabled?: boolean;
-  /** The accessible name, when the visible text alone does not say what happens. Defaults to the row's text. */
+  /**
+   * The accessible name, when the visible text alone does not say what happens. Defaults to the row's text. Start it
+   * with the visible sentence and action word, so people who speak a visible word can still reach the row.
+   */
   label?: string;
   class?: string;
 };
@@ -50,10 +53,12 @@ export function TaskRow(props: TaskRowProps): JSX.Element {
         href={link() ? props.href : undefined}
         type={element() === "button" ? "button" : undefined}
         disabled={element() === "button" ? props.disabled : undefined}
+        role={props.disabled && element() === "a" ? "link" : undefined}
         aria-disabled={props.disabled && element() === "a" ? "true" : undefined}
         aria-label={props.label}
         data-detail={props.detail !== undefined ? "" : undefined}
-        title={props.text}
+        // The no-JavaScript hint; once hydrated, the shared tooltip shows the sentence, and only while it is cut.
+        title={isServer ? props.text : undefined}
         onClick={(event: MouseEvent) => {
           if (props.disabled) {
             event.preventDefault();
@@ -64,23 +69,28 @@ export function TaskRow(props: TaskRowProps): JSX.Element {
         on:pointerenter={measure}
         on:focusin={measure}
       >
-        <i class={`${props.icon} k2b-task-row__icon`} aria-hidden="true" />
-        <span class="k2b-task-row__copy">
-          <span class="k2b-task-row__line">
-            <Show when={props.count !== undefined}>
-              <span class="k2b-count-chip k2b-task-row__count">{props.count}</span>
-            </Show>
-            <span ref={sentence} class="k2b-task-row__text">
-              {props.text}
+        <span class="k2b-task-row__body">
+          <i class={`${props.icon} k2b-task-row__icon`} aria-hidden="true" />
+          <span class="k2b-task-row__copy">
+            <span class="k2b-task-row__line">
+              <Show when={props.count}>
+                <span class="k2b-count-chip">{props.count}</span>
+              </Show>
+              <span ref={sentence} class="k2b-task-row__text">
+                {props.text}
+              </span>
             </span>
+            <Show when={props.detail !== undefined}>
+              <span class="k2b-task-row__detail">{props.detail}</span>
+            </Show>
           </span>
-          <Show when={props.detail !== undefined}>
-            <span class="k2b-task-row__detail">{props.detail}</span>
-          </Show>
+          <span class="k2b-task-row__action">{props.action}</span>
         </span>
-        <span class="k2b-task-row__action">{props.action}</span>
       </Dynamic>
-      <Tooltip content={props.text} target={() => row} focusTarget={() => row} disabled={!cut()} />
+      {/* The tooltip binds to the element it finds when it mounts, so a row that turns from button into link gets a new one. */}
+      <Show when={element()} keyed>
+        <Tooltip content={props.text} target={() => row} focusTarget={() => row} disabled={!cut()} />
+      </Show>
     </>
   );
 }

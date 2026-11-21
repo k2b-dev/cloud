@@ -3,12 +3,12 @@
 /* TaskRow: a task that only has a date (K17 "Zu tun"). One link or button the width of its column: the kind as a
    symbol on the text edge, the count as a chip, one sentence, and the action word at the end. 40 px, 52 px with a
    quiet second line, 60 px on a phone (K1). The sentence ends in an ellipsis; the action word never gives way (K15).
-   A line separates rows; the last row of a section has none (K2). */
+   In a column under 480 px the action word moves below the text, as in the mockup, and the row grows.
+   A line separates rows; the last row of a section has none (K2). The row is the container its body asks. */
 .k2b-ui .k2b-task-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: var(--k2b-space-3, 12px);
+  container: k2b-task-row / inline-size;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -51,6 +51,15 @@
   cursor: not-allowed;
 }
 
+.k2b-ui .k2b-task-row__body {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--k2b-space-3, 12px);
+  min-width: 0;
+  padding-block: var(--k2b-space-1, 4px);
+}
+
 .k2b-ui .k2b-task-row__icon {
   justify-self: center;
   color: var(--k2b-text-muted);
@@ -79,14 +88,13 @@
   white-space: nowrap;
 }
 
+/* A quiet line in free height wraps instead of being cut (K15). */
 .k2b-ui .k2b-task-row__detail {
-  overflow: hidden;
   color: var(--k2b-text-subtle);
   font-size: var(--k2b-font-size-meta, 0.75rem);
   font-variant-numeric: tabular-nums;
   line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 /* The action word looks like the small framed button of the mockup, but the whole row is the one target. */
@@ -119,6 +127,26 @@
 
 .k2b-ui .k2b-task-row:is(:disabled, [aria-disabled="true"]) .k2b-task-row__action {
   border-color: var(--k2b-border);
+}
+
+@container k2b-task-row (max-width: 479.98px) {
+  .k2b-ui .k2b-task-row__body {
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: start;
+    padding-block: var(--k2b-space-2, 8px);
+  }
+
+  .k2b-ui .k2b-task-row__icon {
+    display: grid;
+    height: 1.25rem;
+    place-items: center;
+  }
+
+  .k2b-ui .k2b-task-row__action {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: var(--k2b-space-2, 8px);
+  }
 }
 
 @media (max-width: 767px) {
@@ -180,10 +208,11 @@
   line-height: 1;
 }
 
+/* Done is a quiet grey dot, so the current stage leads. */
 .k2b-ui .k2b-progress-path__step[data-state="done"] .k2b-progress-path__marker {
-  border-color: var(--k2b-text-secondary);
+  border-color: var(--k2b-text-subtle);
   color: var(--k2b-surface);
-  background: var(--k2b-text-secondary);
+  background: var(--k2b-text-subtle);
 }
 
 /* Now: the place the thing is at, a ring with a dot in the app colour ("you are here", K8). */
@@ -211,8 +240,9 @@
   background: var(--k2b-accent-400);
 }
 
+/* A name wraps between words; only a word longer than its column breaks. */
 .k2b-ui .k2b-progress-path__label {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row, 0.8125rem);
   font-weight: 500;
@@ -230,7 +260,7 @@
 }
 
 .k2b-ui .k2b-progress-path__detail {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--k2b-text-subtle);
   font-size: var(--k2b-font-size-meta, 0.75rem);
   line-height: 1rem;
@@ -264,8 +294,9 @@
     grid-column: 2;
   }
 
+  /* A stage with a quiet line is 52 px, one without 40 px (K1). */
   .k2b-ui .k2b-progress-path__detail {
-    padding-bottom: var(--k2b-space-3, 12px);
+    padding-bottom: var(--k2b-space-4, 16px);
   }
 
   .k2b-ui .k2b-progress-path__step:not(:last-child)::before {

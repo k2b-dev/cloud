@@ -19,7 +19,7 @@ const row = (props: Parameters<typeof TaskRow>[0]) => renderToString(() => creat
 test("TaskRow is one link or one button with no control inside, and the full sentence as the no-JavaScript hint", () => {
   const link = row({ icon: "ti ti-package-export", count: 3, text: "Items are ready", detail: "until Dec 12", action: "Prepare", href: "/h" });
   expect(link).toMatch(/^<a [^>]*class="k2b-task-row ?"[^>]*href="\/h"[^>]*data-detail=""[^>]*title="Items are ready"/);
-  expect(link).toContain('<span class="k2b-count-chip k2b-task-row__count">3</span>');
+  expect(link).toContain('<span class="k2b-count-chip">3</span>');
   expect(link).toContain('<span class="k2b-task-row__action">Prepare</span>');
   expect(link.slice(link.indexOf(">") + 1, link.indexOf("</a>"))).not.toMatch(/<(a|button)\b/);
 
@@ -44,7 +44,9 @@ test("ProgressPath names each state in words and marks the current step", () => 
     }),
   );
   expect(html).toContain('data-state="done"');
-  expect(html).toMatch(/data-state="current" aria-current="step"><span class="k2b-progress-path__marker" aria-hidden="true"><\/span>/);
+  // One word for the state: no aria-current, which would read "current step" a second time.
+  expect(html).toMatch(/data-state="current"><span class="k2b-progress-path__marker" aria-hidden="true"><\/span>/);
+  expect(html).not.toContain("aria-current");
   expect(html).toContain("Packed<span class=\"k2b-sr-only\">, current step</span>");
   expect(html).toContain('data-state="open"><span class="k2b-progress-path__marker" aria-hidden="true"><i class="ti ti-truck"></i>');
   expect(html).toContain("Shipped<span class=\"k2b-sr-only\">, not yet</span>");

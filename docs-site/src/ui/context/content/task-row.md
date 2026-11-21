@@ -27,7 +27,7 @@ import { TaskRow } from "@k2b/ui";
 | Prop | Type | Purpose |
 | --- | --- | --- |
 | `icon` | `string` | Tabler icon class for the kind of task. It is decorative. |
-| `count` | `number` | How many things the task covers, as a chip before the sentence. |
+| `count` | `number` | How many things the task covers, as a chip before the sentence. Zero shows no chip. |
 | `text` | `string` | The task in one sentence. |
 | `detail` | `JSX.Element` | A quiet second line, such as the due date. |
 | `action` | `string` | The action word at the end, such as "Prepare handover". |
@@ -41,6 +41,8 @@ import { TaskRow } from "@k2b/ui";
 
 - A row is 40 px high, or 52 px with `detail`. Below 768 px it is at least
   60 px high.
+- In a column narrower than 480 px, the action word moves below the text and
+  starts on the text edge of the sentence. The row grows.
 - The symbol starts on the text edge of the column (`--k2b-gutter`), and the
   sentence starts after exactly one symbol.
 - The action word ends on the right text edge.
@@ -52,15 +54,17 @@ import { TaskRow } from "@k2b/ui";
 
 The sentence stays on one line and ends with an ellipsis. While it is cut, the
 full sentence shows as a tooltip when you point at the row or move to it with
-the keyboard. The detail line also stays on one line. The action word never
-wraps and is never cut. The sentence gives way first.
+the keyboard. The detail line wraps and is never cut; the row grows. The action
+word never wraps and is never cut. The sentence gives way first.
 
 ## Accessibility
 
 The row is one native link or button. Its accessible name is its visible text:
 the count, the sentence, the detail, and the action word. Pass `label` when that
-text alone does not say what happens. A disabled link has no `href` and carries
-`aria-disabled="true"`. A disabled button uses the native `disabled`.
+text alone does not say what happens; start it with the visible words, so
+voice control still finds the row. A disabled link has no `href`, keeps
+`role="link"`, and carries `aria-disabled="true"`. A disabled button uses the
+native `disabled`.
 
 ## Example
 
