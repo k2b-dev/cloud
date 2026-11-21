@@ -21,7 +21,12 @@ const removedLink = describeRoute({
 const linkRemoved = (c: Context<AuthContext>) => {
   c.header("Cache-Control", "no-store");
   c.header("Referrer-Policy", "no-referrer");
-  return c.json({ code: "GONE", message: "This link is no longer valid. Shared Pulse dashboards were removed." }, 410);
+  return respond(c, {
+    ok: false,
+    status: 410,
+    code: "GONE",
+    error: "This link is no longer valid. Shared Pulse dashboards were removed.",
+  });
 };
 
 const app = new Hono<AuthContext>()
