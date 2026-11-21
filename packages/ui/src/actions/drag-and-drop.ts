@@ -28,7 +28,7 @@ const AUTOSCROLL_EDGE = 32;
 let signals: { drag: Signal<DragPayload | undefined>; status: Signal<DragStatus | undefined> } | undefined;
 const shared = () => (signals ??= { drag: createSignal<DragPayload>(), status: createSignal<DragStatus>() });
 const readActiveDrag = () => shared().drag[0]();
-const setActiveDrag = (payload: DragPayload | undefined) => shared().drag[1](payload);
+export const setActiveDrag = (payload: DragPayload | undefined) => shared().drag[1](payload);
 /** Reactive payload of the drag in progress, or undefined. */
 export const activeDrag = (): DragPayload | undefined => readActiveDrag();
 
@@ -38,7 +38,7 @@ export const activeDrag = (): DragPayload | undefined => readActiveDrag();
  */
 export type DragStatus = { lead: string; detail: string };
 const readDragStatus = () => shared().status[0]();
-const writeDragStatus = (status: DragStatus | undefined) => shared().status[1](status);
+export const writeDragStatus = (status: DragStatus | undefined) => shared().status[1](status);
 /** Reactive status of the drag in progress, for a status line; undefined while nothing is dragged. */
 export const dragStatus = (): DragStatus | undefined => readDragStatus();
 /** Internal: SortableList states the exact place, which a plain target cannot. */
@@ -50,7 +50,7 @@ export const onPointerDragStart = (listener: (pointerId: number) => void): (() =
   return () => dragStartListeners.delete(listener);
 };
 
-type Target = {
+export type Target = {
   element: HTMLElement;
   accept: readonly string[];
   label: string;
@@ -63,20 +63,20 @@ type Target = {
    */
   hover?: (point: { x: number; y: number } | undefined) => number | undefined;
 };
-type Session = {
+export type Session = {
   payload: DragPayload;
   origin: HTMLElement;
   cancel: () => void;
   targetsChanged?: () => void;
 };
-type Engine = {
+export type Engine = {
   targets: Set<Target>;
   byElement: WeakMap<Element, Target>;
   session?: Session;
   abandonPress?: () => void;
 };
 const engines = new WeakMap<Document, Engine>();
-const engineFor = (doc: Document): Engine => {
+export const engineFor = (doc: Document): Engine => {
   let engine = engines.get(doc);
   if (!engine) {
     engine = { targets: new Set(), byElement: new WeakMap() };
@@ -84,35 +84,9 @@ const engineFor = (doc: Document): Engine => {
   }
   return engine;
 };
-const accepts = (target: Target, payload: DragPayload) =>
+export const accepts = (target: Target, payload: DragPayload) =>
   target.element.isConnected && !target.disabled && target.accept.includes(payload.type);
-const isModal = (dialog: Element) => {
-  try {
-    return dialog.matches(":modal");
-  } catch {
-    return dialog.matches("dialog[open]");
-  }
-};
-/** The modal dialog around an element; while one is open, everything outside of it is inert. */
-const modalOf = (element: Element): Element | undefined => {
-  for (let dialog = element.closest("dialog"); dialog; dialog = dialog.parentElement?.closest("dialog") ?? null)
-    if (isModal(dialog)) return dialog;
-  return undefined;
-};
-const visible = (element: Element) =>
-  typeof element.checkVisibility === "function"
-    ? element.checkVisibility({ checkVisibilityCSS: true })
-    : element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
-/**
- * A keyboard destination must be one a pointer could reach from where the pickup started: shown and visible, not
- * inert, and in the same modal dialog as the origin.
- */
-const reachable = (target: Target, origin: HTMLElement) => {
-  const element = target.element;
-  if (element.closest("[inert]") || modalOf(element) !== modalOf(origin)) return false;
-  return visible(element);
-};
-const mark = (target: Target, payload?: DragPayload) => {
+export const mark = (target: Target, payload?: DragPayload) => {
   if (payload && accepts(target, payload)) target.element.dataset.drop = "ok";
   else delete target.element.dataset.drop;
 };
@@ -193,7 +167,7 @@ export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "
   };
 };
 
-const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: Target): DragStatus => ({
+export const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: Target): DragStatus => ({
   lead: messages.statusLead({ label: payload.label, count: payload.count ?? 1 }),
   detail: over ? messages.statusOver({ target: over.label }) : messages.statusIdle,
 });
@@ -202,40 +176,25 @@ const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: T
 const DRAG_MARKS = ["data-dragging", "data-held", "data-pressing", "data-sortable-dragging", "data-sortable-line", "id"];
 /**
  * A copy of `shown` for the preview, inside a shallow copy of its parent, so the parent's class and attribute
- * selectors still style it. Custom elements become plain boxes, so no island hydrates a second time; canvases keep
- * their picture.
+ * selectors still style it. Canvases keep their picture.
  */
 const copyOf = (shown: HTMLElement): HTMLElement => {
-  const doc = shown.ownerDocument;
   const copy = shown.cloneNode(true) as HTMLElement;
-  const clean = (element: Element) => {
-    for (const name of DRAG_MARKS) element.removeAttribute(name);
-  };
-  clean(copy);
-  for (const element of copy.querySelectorAll("*")) clean(element);
-  for (const element of [...copy.querySelectorAll("*")].filter((element) => element.localName.includes("-"))) {
-    const box = doc.createElement("div");
-    box.style.display = "contents";
-    box.append(...element.childNodes);
-    element.replaceWith(box);
-  }
+  const frame = shown.parentElement?.cloneNode(false) as HTMLElement | undefined;
+  for (const element of [copy, ...copy.querySelectorAll("*")]) for (const name of DRAG_MARKS) element.removeAttribute(name);
   const canvases = shown.querySelectorAll("canvas");
   copy.querySelectorAll("canvas").forEach((canvas, index) => {
-    const original = canvases[index];
-    if (original?.width && original.height) canvas.getContext("2d")?.drawImage(original, 0, 0);
+    const original = canvases[index]!;
+    if (original.width && original.height) canvas.getContext("2d")?.drawImage(original, 0, 0);
   });
-  const parent = shown.parentElement;
-  if (!parent) return copy;
-  const frame = parent.localName.includes("-") ? doc.createElement("div") : (parent.cloneNode(false) as HTMLElement);
-  if (frame.localName === "div" && parent.localName.includes("-")) frame.className = parent.className;
-  clean(frame);
-  for (const name of ["aria-label", "aria-labelledby", "aria-describedby", "role", "style"]) frame.removeAttribute(name);
+  if (!frame) return copy;
+  for (const name of [...DRAG_MARKS, "aria-label", "aria-labelledby", "aria-describedby", "role", "style"]) frame.removeAttribute(name);
   frame.style.display = "contents";
   frame.append(copy);
   return frame;
 };
 
-const clearSession = (engine: Engine, session: Session, source?: HTMLElement) => {
+export const clearSession = (engine: Engine, session: Session, source?: HTMLElement) => {
   if (engine.session !== session) return;
   engine.session = undefined;
   if (source) delete source.dataset.dragging;
@@ -663,144 +622,4 @@ export const bindDragSource = (
     source.removeEventListener("dragstart", nativeDrag);
     source.removeEventListener("touchmove", preventScroll);
   };
-};
-
-const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
-/** The origin itself when it takes focus, else the nearest ancestor that does, such as a menu's group. */
-const focusTarget = (origin: HTMLElement): HTMLElement =>
-  (origin.matches(FOCUSABLE) ? origin : origin.closest<HTMLElement>(FOCUSABLE)) ?? origin;
-
-export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messages: DragAndDropMessages): (() => void) => {
-  const doc = origin.ownerDocument;
-  const win = doc.defaultView!;
-  const engine = engineFor(doc);
-  engine.session?.cancel();
-  engine.abandonPress?.();
-  const payload = { ...input };
-  const choices = () =>
-    [...engine.targets]
-      .filter((target) => accepts(target, payload) && reachable(target, origin))
-      .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-  let targets: Target[] = [];
-  let current: Target | undefined;
-  /** Listening for keys: the first destination is chosen. */
-  let ready = false;
-  let finished = false;
-  let frame = 0;
-  const source = origin.closest<HTMLElement>(".k2b-drag-source") ?? undefined;
-  const end = (target?: Target, text?: string) => {
-    if (finished) return;
-    finished = true;
-    win.cancelAnimationFrame(frame);
-    doc.removeEventListener("keydown", key, true);
-    doc.removeEventListener("pointerdown", cancel, true);
-    win.removeEventListener("blur", cancel);
-    const result = text ?? (target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload));
-    const drop = target?.drop;
-    clearSession(engine, session, source);
-    announce(origin, result);
-    // Focus scrolls the origin back into view when choosing a destination scrolled it away.
-    if (origin.isConnected) focusTarget(origin).focus();
-    drop?.(payload);
-  };
-  const cancel = () => end();
-  const pickupModal = modalOf(origin);
-  /**
-   * Whether a modal dialog opened over the pickup, leaving the origin inert: the key comes from inside another modal,
-   * or a modal opened over a pickup that started outside of every modal.
-   */
-  const behindModal = (event: KeyboardEvent) => {
-    const keyModal = event.target instanceof Element ? modalOf(event.target) : undefined;
-    if (keyModal && keyModal !== pickupModal && !keyModal.contains(origin)) return true;
-    // A dialog stack that shares one native dialog hides the level below, the origin's, when the next one opens.
-    if (pickupModal && (!origin.isConnected || !visible(origin))) return true;
-    return !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
-  };
-  const describe = (target: Target) =>
-    target.messages.choice({ target: target.label, index: targets.indexOf(target) + 1, count: targets.length });
-  const choose = (target: Target, text = describe(target)) => {
-    if (current) mark(current, engine.targets.has(current) ? payload : undefined);
-    current = target;
-    current.element.dataset.drop = "over";
-    current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
-    writeDragStatus(statusFor(messages, payload, target));
-    announce(origin, text);
-  };
-  const key = (event: KeyboardEvent) => {
-    const backward = event.key === "ArrowUp" || event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey);
-    const forward = !backward && (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "Tab");
-    if (!backward && !forward && !["Home", "End", "Enter", " ", "Escape"].includes(event.key)) return;
-    // A modal dialog opened since the pickup: its keys are its own, and the pickup behind it ends.
-    if (behindModal(event)) {
-      cancel();
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") {
-      cancel();
-      return;
-    }
-    // Destinations may have been hidden or shown since the last key, for example by a layout change.
-    targets = choices();
-    if (!targets.length) {
-      end(undefined, messages.noTarget(payload));
-      return;
-    }
-    const index = current ? targets.indexOf(current) : -1;
-    const count = targets.length;
-    if (forward) choose(targets[index < 0 ? 0 : (index + 1) % count]!);
-    else if (backward) choose(targets[index < 0 ? count - 1 : (index - 1 + count) % count]!);
-    else if (event.key === "Home") choose(targets[0]!);
-    else if (event.key === "End") choose(targets[count - 1]!);
-    else end(index >= 0 ? current : undefined);
-  };
-  /** Chooses the first destination and starts listening; without one, the sequence ends at once. */
-  const settle = () => {
-    targets = choices();
-    if (!targets.length) {
-      end(undefined, messages.noTarget(payload));
-      return;
-    }
-    ready = true;
-    // One announcement, so a screen reader does not drop the instructions for the first choice.
-    choose(targets[0]!, `${messages.pickedUpKeyboard({ label: payload.label, count: targets.length })} ${describe(targets[0]!)}`);
-    // A menu's activating key has already traversed capture. Defer the listener until that dispatch has ended.
-    queueMicrotask(() => {
-      if (finished) return;
-      doc.addEventListener("keydown", key, true);
-      doc.addEventListener("pointerdown", cancel, true);
-      win.addEventListener("blur", cancel);
-    });
-  };
-  const session: Session = {
-    payload,
-    origin,
-    cancel,
-    // Settled a frame later, so a target that a re-render replaces has registered again before none counts as left.
-    targetsChanged() {
-      if (!ready || finished || frame) return;
-      frame = win.requestAnimationFrame(() => {
-        frame = 0;
-        if (finished) return;
-        targets = choices();
-        if (!targets.length) cancel();
-        else choose(current && targets.includes(current) ? current : targets[0]!);
-      });
-    },
-  };
-  // The drag is active before destinations are counted, so a host can mount the ones it shows only while dragging.
-  engine.session = session;
-  for (const target of engine.targets) mark(target, payload);
-  if (source) source.dataset.dragging = "";
-  writeDragStatus(statusFor(messages, payload));
-  setActiveDrag(payload);
-  if (finished) return cancel;
-  if (choices().length) settle();
-  else
-    frame = win.requestAnimationFrame(() => {
-      frame = 0;
-      if (!finished) settle();
-    });
-  return cancel;
 };

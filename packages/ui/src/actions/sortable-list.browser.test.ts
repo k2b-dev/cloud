@@ -376,7 +376,7 @@ describe(`sortable list in ${browserName}`, () => {
       }));
       expect(handle).toEqual({
         name: "Move Delta",
-        hint: "Drag, or press Space to lift, the arrow keys to choose a place, Enter to drop, and Escape to cancel. The arrow keys alone move one step.",
+        hint: "Drag, or press Space, then the arrow keys and Enter. The arrow keys alone move one step.",
         outline: "solid",
       });
     } finally {

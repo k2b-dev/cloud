@@ -1,22 +1,31 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, type Signal, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, untrack } from "solid-js";
+import { useLocale } from "../intl/locale";
 import type { DropdownSection } from "./Dropdown";
-import { activeDrag, announce, bindDragSource, registerDropTarget, setDragStatus } from "./drag-and-drop";
-import { type DragAndDropMessages, useDragAndDropMessages } from "./drag-and-drop-messages";
+import { activeDrag, announce, bindDragSource, registerDropTarget } from "./drag-and-drop";
+import { useDragAndDropMessages } from "./drag-and-drop-messages";
 import { PHONE_SHEET_QUERY } from "./phone-sheet";
-import { type SortableListMessages, useSortableListMessages } from "./sortable-list-messages";
-import { clampIndex, gapAt, gapForIndex, indexForGap, placeCount } from "./sortable-place";
+import {
+  commit,
+  type Entry,
+  groups,
+  keyboardLift,
+  type Lift,
+  landing,
+  lift,
+  listsOf,
+  moveOf,
+  place,
+  placesIn,
+  refocus,
+  type SortableMove,
+  setLift,
+  showStatus,
+  touchRegistry,
+} from "./sortable-board";
+import { useSortableListMessages } from "./sortable-list-messages";
+import { clampIndex, gapAt, gapForIndex } from "./sortable-place";
 
-/** One move a list reports through `onMove`. */
-export type SortableMove = {
-  /** The `listKey` the row came from. */
-  from: string;
-  /** The `listKey` the row goes to; the same as `from` for a move inside one list. */
-  to: string;
-  /** The row's index in `from` before the move. */
-  fromIndex: number;
-  /** Moves the row back where it came from, through the lists' own `onMove`; for the "Undo" of the host's toast. */
-  undo: () => void;
-};
+export type { SortableMove } from "./sortable-board";
 
 export type SortableListProps<Item> = {
   items: readonly Item[];
@@ -58,102 +67,12 @@ export type SortableListProps<Item> = {
   children: (item: () => Item, handle: JSX.Element) => JSX.Element;
 };
 
-type Entry = {
-  group: string;
-  key: string;
-  label: () => string;
-  list: HTMLUListElement;
-  area: HTMLElement;
-  keys: () => readonly string[];
-  disabled: () => boolean;
-  placement: () => ((key: string, from: string) => number) | undefined;
-  onMove: (key: string, index: number, move: SortableMove) => void;
-  messages: () => SortableListMessages;
-};
-/** A row on its way: lifted from `from`, and while it is over a list, `index` of `to` is where it would land. */
-type Lift = {
-  group: string;
-  key: string;
-  label: string;
-  from: string;
-  fromIndex: number;
-  to?: string;
-  index?: number;
-  keyboard: boolean;
-  messages: DragAndDropMessages;
-};
-
-const groups = new Map<string, Set<Entry>>();
-/**
- * Made on first use, so the module has no side effects and a bundle that imports `@k2b/ui` without SortableList drops
- * it. `registry` changes when a list joins or leaves a group, so a move menu built before the lists mounted updates.
- */
-let shared: { registry: Signal<undefined>; lift: Signal<Lift | undefined> } | undefined;
-const sharedState = () => (shared ??= { registry: createSignal(undefined, { equals: false }), lift: createSignal<Lift>() });
-const registry = () => sharedState().registry[0]();
-const touchRegistry = () => sharedState().registry[1]();
-const lift = () => sharedState().lift[0]();
-const setLift = (next: Lift | undefined) => sharedState().lift[1](next);
 /** The pointer's last place: the engine ends the drag, and with it `lift`, before it calls `drop`. */
 let pointerPlan: Lift | undefined;
-/** Ends the keyboard lift in progress without a drop. */
-let endKeyboard: (() => void) | undefined;
-
-const listsOf = (group: string): Entry[] => {
-  registry();
-  return [...(groups.get(group) ?? [])]
-    .filter((entry) => entry.list.isConnected)
-    .sort((a, b) => (a.area.compareDocumentPosition(b.area) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-};
-const find = (group: string, key: string | undefined) =>
-  key === undefined ? undefined : listsOf(group).find((entry) => entry.key === key);
-const placesIn = (entry: Entry, key: string) => placeCount(entry.keys().length, entry.keys().includes(key));
-/** Where the row lands in `entry`: the sorted place, or the one the gap shows. */
-const landing = (entry: Entry, state: Lift, gap: number) => {
-  const count = placesIn(entry, state.key);
-  const sorted = entry.placement();
-  if (sorted) return clampIndex(sorted(state.key, state.from), count);
-  return clampIndex(indexForGap(gap, entry.keys().indexOf(state.key)), count);
-};
-const place = (entry: Entry, state: Lift, index: number) => ({
-  position: index + 1,
-  count: placesIn(entry, state.key),
-  list: entry.label(),
-});
-const showStatus = (state: Lift) => {
-  const entry = find(state.group, state.to);
-  const lead = state.messages.statusLead({ label: state.label, count: 1 });
-  if (!entry || state.index === undefined) {
-    setDragStatus({ lead, detail: state.messages.statusIdle });
-    return;
-  }
-  const at = { position: state.index + 1, list: entry.label() };
-  setDragStatus({ lead, detail: state.keyboard ? entry.messages().statusPlaceKeyboard(at) : entry.messages().statusPlace(at) });
-};
-const moveOf = (group: string, key: string, from: string, to: string, fromIndex: number, index: number): SortableMove => ({
-  from,
-  to,
-  fromIndex,
-  undo: () => find(group, from)?.onMove(key, fromIndex, moveOf(group, key, to, from, index, fromIndex)),
-});
-/** Hands the move to the target list; false when nothing would change. */
-const commit = (state: Lift): boolean => {
-  const to = find(state.group, state.to);
-  if (!to || state.index === undefined) return false;
-  if (state.to === state.from && state.index === to.keys().indexOf(state.key)) return false;
-  to.onMove(state.key, state.index, moveOf(state.group, state.key, state.from, to.key, state.fromIndex, state.index));
-  return true;
-};
-/** The grip of `key` takes focus again once the host has rendered the move, also in another list of the group. */
-const refocus = (group: string, key: string, attempt = 0) => {
-  const handle = listsOf(group)
-    .flatMap((entry) => [...entry.list.querySelectorAll<HTMLButtonElement>("[data-sortable-handle]")])
-    .find((element) => element.dataset.sortableHandle === key);
-  if (handle) {
-    if (handle.ownerDocument.activeElement !== handle) handle.focus({ preventScroll: true });
-    handle.scrollIntoView({ block: "nearest", inline: "nearest" });
-  } else if (attempt < 2) requestAnimationFrame(() => refocus(group, key, attempt + 1));
-};
+/** Loaded on the first focus of a grip; a lift waits for it. */
+let keyboard: typeof import("./sortable-keyboard") | undefined;
+let lifting = false;
+const loadKeyboard = () => import("./sortable-keyboard").then((module) => (keyboard = module));
 
 const usePhone = () => {
   const [phone, setPhone] = createSignal(false);
@@ -177,6 +96,7 @@ const usePhone = () => {
 export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element {
   const messages = useSortableListMessages();
   const dragMessages = useDragAndDropMessages();
+  const locale = useLocale();
   const id = createUniqueId();
   const group = props.group ?? `k2b-sortable-${id}`;
   const listKey = props.listKey ?? `k2b-sortable-list-${id}`;
@@ -296,7 +216,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
       if (!members.size) groups.delete(group);
       touchRegistry();
       const state = lift();
-      if (state?.group === group && state.keyboard && (state.from === listKey || state.to === listKey)) endKeyboard?.();
+      if (state?.group === group && state.keyboard && (state.from === listKey || state.to === listKey)) keyboardLift.end?.();
     });
   });
 
@@ -312,104 +232,6 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
       refocus(group, key);
       announce(list, messages().moved({ label: props.itemLabel(item), position: keys().indexOf(key) + 1, count }));
     });
-  };
-
-  const startLift = (key: string, label: string) => {
-    if (props.disabled) return;
-    endKeyboard?.();
-    const fromIndex = keys().indexOf(key);
-    const state: Lift = {
-      group,
-      key,
-      label,
-      from: listKey,
-      fromIndex,
-      to: listKey,
-      index: fromIndex,
-      keyboard: true,
-      messages: dragMessages(),
-    };
-    setLift(state);
-    showStatus(state);
-    announce(list, messages().lifted({ label, ...place(entry, state, fromIndex) }));
-    const doc = list.ownerDocument;
-    const win = doc.defaultView!;
-    const end = () => {
-      if (endKeyboard !== end) return;
-      endKeyboard = undefined;
-      doc.removeEventListener("pointerdown", cancel, true);
-      win.removeEventListener("blur", cancel);
-      const current = lift();
-      if (current?.keyboard) setLift(undefined);
-      setDragStatus(undefined);
-    };
-    const cancel = () => {
-      const current = lift();
-      end();
-      if (current) announce(list, messages().cancelled({ label: current.label }));
-    };
-    endKeyboard = end;
-    doc.addEventListener("pointerdown", cancel, true);
-    win.addEventListener("blur", cancel);
-  };
-
-  /** Keys while a row is lifted: choose a place, drop, or cancel. Nothing moves until the drop. */
-  const liftedKey = (event: KeyboardEvent, state: Lift) => {
-    const target = find(group, state.to) ?? entry;
-    const count = placesIn(target, state.key);
-    const choose = (to: Entry, index: number) => {
-      const next = { ...state, to: to.key, index };
-      setLift(next);
-      showStatus(next);
-      announce(list, to.messages().position(place(to, next, index)));
-      requestAnimationFrame(() => {
-        const line = to.list.querySelector("[data-sortable-line]") ?? to.list;
-        line.scrollIntoView({ block: "nearest", inline: "nearest" });
-      });
-    };
-    const sorted = target.placement();
-    const at = state.index ?? 0;
-    switch (event.key) {
-      case "ArrowUp":
-      case "ArrowDown":
-      case "Home":
-      case "End": {
-        const wanted = { ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: count - 1 }[event.key];
-        choose(target, sorted ? landing(target, state, 0) : clampIndex(wanted, count));
-        break;
-      }
-      case "ArrowLeft":
-      case "ArrowRight": {
-        const lists = listsOf(group).filter((other) => other === target || !other.disabled());
-        const next = lists[lists.indexOf(target) + (event.key === "ArrowLeft" ? -1 : 1)] ?? target;
-        const nextSorted = next.placement();
-        choose(next, nextSorted ? landing(next, state, 0) : clampIndex(at, placesIn(next, state.key)));
-        break;
-      }
-      case "Enter":
-      case " ": {
-        endKeyboard?.();
-        const moved = commit(state);
-        const to = find(group, state.to);
-        if (to && state.index !== undefined)
-          announce(list, to.messages().dropped({ label: state.label, ...place(to, state, state.index) }));
-        if (moved) queueMicrotask(() => refocus(group, state.key));
-        break;
-      }
-      case "Escape": {
-        endKeyboard?.();
-        announce(list, messages().cancelled({ label: state.label }));
-        break;
-      }
-      case "Tab":
-        endKeyboard?.();
-        announce(list, messages().cancelled({ label: state.label }));
-        return;
-      default:
-        return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
   };
 
   return (
@@ -433,6 +255,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
             };
             const label = () => props.itemLabel(item());
             let row!: HTMLLIElement;
+            let grip!: HTMLButtonElement;
             const onKeyDown = (event: KeyboardEvent) => {
               if (event.altKey || event.ctrlKey || event.metaKey) return;
               const state = mine();
@@ -442,12 +265,25 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                 return;
               }
               if (state?.keyboard && state.key === key) {
-                liftedKey(event, state);
+                keyboard?.liftedKey(event, state, entry);
                 return;
               }
               if (event.key === " " || event.key === "Enter") {
                 event.preventDefault();
-                startLift(key, label());
+                if (props.disabled || lifting) return;
+                // Keys that come while the module loads would move the row at once; they wait for the lift instead.
+                lifting = true;
+                void loadKeyboard()
+                  .then((module) => {
+                    if (grip.isConnected) module.startLift(entry, key, label(), locale(), dragMessages());
+                  })
+                  .finally(() => {
+                    lifting = false;
+                  });
+                return;
+              }
+              if (lifting) {
+                event.preventDefault();
                 return;
               }
               const wanted = { ArrowUp: index() - 1, ArrowDown: index() + 1, Home: 0, End: keys().length - 1 }[event.key];
@@ -476,6 +312,9 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
             };
             const button = (
               <button
+                ref={(element) => {
+                  grip = element;
+                }}
                 type="button"
                 class="k2b-sortable-list__handle"
                 data-sortable-handle={key}
@@ -483,6 +322,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                 aria-describedby={hintId}
                 disabled={props.disabled}
                 onKeyDown={onKeyDown}
+                onFocus={() => void loadKeyboard()}
               >
                 <i class="ti ti-grip-vertical" aria-hidden="true" />
               </button>

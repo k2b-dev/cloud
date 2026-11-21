@@ -1,5 +1,6 @@
 import { createEffect, type JSX, onCleanup, onMount } from "solid-js";
-import { bindDragSource, type DragPayload, registerDropTarget, startKeyboardDrag } from "./drag-and-drop";
+import { useLocale } from "../intl/locale";
+import { bindDragSource, type DragPayload, registerDropTarget } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
 
 export type { DragPayload, DragStatus } from "./drag-and-drop";
@@ -72,10 +73,22 @@ export function DropTarget<Type extends string = string>(props: DropTargetProps<
  */
 export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) => void {
   const messages = useDragAndDropMessages();
+  const locale = useLocale();
   let cancel: (() => void) | undefined;
-  onCleanup(() => cancel?.());
+  /** The latest request; a newer one, or cleanup, makes an older one that is still loading start nothing. */
+  let request: object | undefined;
+  onCleanup(() => {
+    request = undefined;
+    cancel?.();
+  });
   return (payload, origin) => {
     cancel?.();
-    cancel = startKeyboardDrag(payload, origin, messages());
+    cancel = undefined;
+    const own = {};
+    request = own;
+    // Loaded on first use: pages that never pick up by keyboard do not ship the sequence.
+    void import("./drag-and-drop-keyboard").then(({ startKeyboardDrag }) => {
+      if (request === own && origin.isConnected) cancel = startKeyboardDrag(payload, origin, messages(), locale());
+    });
   };
 }
