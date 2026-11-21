@@ -201,11 +201,12 @@ export { toast } from "@k2b/ui";
 void import("./pairing-toast").then(({ toast }) => toast(text));
 ```
 
-The island build fails and names the file when application code imports a
-package entry on demand that only re-exports other modules and that browser
-code also imports statically. When a dependency does it, the build only warns.
-An entry that re-exports a single module, such as `@k2b/ui/hover-card`, may
-load on demand.
+The island build warns and names the file when code imports a package entry
+on demand that only re-exports other modules and that browser code also
+imports statically. The build still succeeds, so a dependency you cannot
+change does not stop it. An entry that re-exports a single module, such as
+`@k2b/ui/hover-card`, may load on demand. Inside the Cloud repository, the
+`no-barrel-dynamic-import` rule makes this an error.
 
 ## Preserve the server result
 

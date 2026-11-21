@@ -100,7 +100,7 @@ Rules:
 - use `export default` for islands and client components
 - props must be `seroval`-serializable
 - island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails and names the files; a computed `import()` path is not detected. Type-only imports are fine. Move the shared component into a plain `.tsx` module and keep the island/client file as a thin re-export: `export { default } from "./Inner";`.
-- never load a package's re-export entry (a barrel such as `@k2b/ui`) with `import()` when other browser code imports it statically: the barrel then keeps every re-export, and islands that import it statically keep unused modules in their first load. Import a small module on demand that re-exports only the needed names, such as `export { toast } from "@k2b/ui";`. The build fails for application code and warns for files under `node_modules`.
+- do not load a package's re-export entry (a barrel such as `@k2b/ui`) with `import()` when other browser code imports it statically: the barrel then keeps every re-export, and islands that import it statically keep unused modules in their first load. Import a small module on demand that re-exports only the needed names, such as `export { toast } from "@k2b/ui";`. The build warns and names the files but still succeeds; an entry that re-exports a single module may load on demand.
 
 `seroval` supports more than JSON, including values like `Date`, `RegExp`, `Map`, and `Set`, but still excludes functions, DOM nodes, and arbitrary class instances.
 

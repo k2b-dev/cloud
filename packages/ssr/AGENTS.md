@@ -87,11 +87,13 @@ build, mount runtime, or adapters reaches every application: also run the
    `src/mount.ts` runtime (plus the optional `errorFallback` module) and calls
    `mount(C, selector, Fallback?)`.
 4. Checks the successful build's metafile for nested island/client imports
-   and throws before any cleanup if it finds them. It also rejects an
-   `import()` of a package's re-export module (no output bytes of its own,
-   more than one re-exported module) that the graph imports statically too: Bun then keeps every re-export of
-   that barrel, and code splitting ties the modules behind it to each static
-   importer's entry (#3504). A file under `node_modules` only warns.
+   and throws before any cleanup if it finds them. It also warns, once per
+   build and without failing it, about an `import()` of a package's re-export
+   module (no output bytes of its own, more than one re-exported module) that
+   the graph imports statically too: Bun then keeps every re-export of that
+   barrel, and code splitting ties the modules behind it to each static
+   importer's entry (#3504). Third-party builds must keep working, so only the
+   repository rule `no-barrel-dynamic-import` makes this an error.
 5. Removes obsolete generated JavaScript and source maps after a successful
    build.
 6. In production only, runs `dedupeSharedChunkExports()`, a workaround for

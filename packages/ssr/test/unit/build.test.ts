@@ -660,6 +660,16 @@ describe("buildIslands() barrel imports", () => {
     dev,
   });
 
+  const warnings = async (build: () => Promise<void>): Promise<string[]> => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await build();
+      return warn.mock.calls.map((call) => String(call[0]));
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
   test("an unused, side-effect-free barrel module stays out of every island's static closure", async () => {
     const cwd = makeTempRoot();
     writeBarrelProject(cwd);
@@ -669,7 +679,7 @@ describe("buildIslands() barrel imports", () => {
       `export default () => <button onClick={async () => (await import("./used-only")).used()}>Load</button>;`,
     );
     writeTempFile(join(cwd, "src", "used-only.ts"), `export { used } from "fixture-ui";`);
-    await buildIslands(options(cwd));
+    expect(await warnings(() => buildIslands(options(cwd)))).toEqual([]);
     const outdir = join(cwd, "_ssr");
     const manifest: AssetManifest = JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8"));
     const emitted = [...new Bun.Glob("*.js").scanSync({ cwd: outdir })];
@@ -724,23 +734,27 @@ describe("buildIslands() barrel imports", () => {
       join(cwd, "src", "OnDemand.island.tsx"),
       `export default () => <button onClick={async () => console.log((await import("fixture-ui/sheet")).Sheet())}>Load</button>;`,
     );
-    await buildIslands(options(cwd));
+    expect(await warnings(() => buildIslands(options(cwd)))).toEqual([]);
     expect(existsSync(join(cwd, "_ssr", "manifest.json"))).toBe(true);
   });
 
-  test.each([false, true])("rejects an on-demand import of a statically imported barrel (dev: %p)", async (dev) => {
+  test.each([false, true])("warns about an on-demand import of a statically imported barrel and still builds (dev: %p)", async (dev) => {
     const cwd = makeTempRoot();
     writeBarrelProject(cwd);
     writeTempFile(
       join(cwd, "src", "OnDemand.island.tsx"),
       `export default () => <button onClick={async () => (await import("fixture-ui")).used()}>Load</button>;`,
     );
-    await expect(buildIslands(options(cwd, dev))).rejects.toThrow(
-      "src/OnDemand.island.tsx imports fixture-ui on demand\nImport a small module on demand that re-exports only the names it needs",
+    const logged = await warnings(() => buildIslands(options(cwd, dev)));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(
+      "  src/OnDemand.island.tsx imports fixture-ui on demand\nImport a small module on demand that re-exports only the names it needs",
     );
+    const id = islandIdFromFile(join(cwd, "src", "OnDemand.island.tsx"), cwd);
+    expect(existsSync(join(cwd, "_ssr", `${id}.js`))).toBe(true);
   });
 
-  test("only warns when a dependency imports a statically imported barrel on demand", async () => {
+  test("warns once when a dependency imports a statically imported barrel on demand", async () => {
     const cwd = makeTempRoot();
     writeBarrelProject(cwd);
     const loader = join(cwd, "node_modules", "fixture-loader");
@@ -750,13 +764,8 @@ describe("buildIslands() barrel imports", () => {
       join(cwd, "src", "OnDemand.island.tsx"),
       `import { load } from "fixture-loader"; export default () => <button onClick={async () => (await load()).used()}>Load</button>;`,
     );
-    const warn = spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      await buildIslands(options(cwd));
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0]?.[0])).toContain("node_modules/fixture-loader/index.js imports fixture-ui on demand");
-    } finally {
-      warn.mockRestore();
-    }
+    const logged = await warnings(() => buildIslands(options(cwd)));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain("node_modules/fixture-loader/index.js imports fixture-ui on demand");
   });
 });
