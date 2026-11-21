@@ -10,15 +10,11 @@ Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um 
 
 Öffne **Pulse** über das App-Menü. In der App-Leiste ist Pulse standardmäßig ausgeblendet. Wenn du Pulse dort eingeblendet oder angeheftet hast, bleibt deine Auswahl erhalten.
 
-## Lies die Übersicht
+## Finde, was Aufmerksamkeit braucht
 
-Eine Base öffnet die **Übersicht**. Sie zeigt, was Aufmerksamkeit braucht, bis zu vier wichtige Zahlen und letzte Änderungen. Sie aktualisiert sich alle 60 Sekunden, solange sie sichtbar ist. **Ansehen** öffnet die SQL-Abfrage eines Alarms mit ihren Parameterwerten, ohne sie auszuführen.
+Eine Base öffnet **Quellen**. Jede Quelle zeigt ihren Zustand, etwa Fehler, fehlende Daten oder Drosselung. Öffne eine Quelle, um ihre Details zu sehen.
 
-Aktualisierte Zahlen bleiben an ihrem Platz. Neue oder erledigte Hinweise verlängern oder verkürzen die Liste und verschieben die Abschnitte darunter. Eine fokussierte Aktion behält den Fokus, solange ihr Eintrag bestehen bleibt.
-
-Mit **Mit KI fragen** bereitest du eine Frage zu dieser Base vor. Der Assistant-Entwurf wird nicht automatisch gesendet. Unter **Neue Quelle** hilft derselbe Einstieg, einen Adapter für deinen Shop oder einen anderen Dienst vorzubereiten.
-
-Um eine wichtige Zahl hinzuzufügen, öffne die Liste gespeicherter Abfragen unter **SQL** und aktiviere **Auf Übersicht**. Dafür brauchst du Zugriff **Bearbeiten**; eine Base kann vier Abfragen anzeigen. Die letzte Ergebniszeile liefert den Wert, eine optionale Zeitspalte den Verlauf. Scheitert eine Aktualisierung, bleiben der letzte erfolgreiche Wert und sein Zeitpunkt sichtbar.
+Um anderen Zahlen oder Diagramme zu zeigen, bitte Gustav um eine Code-Seite, die diese Base liest. Die Seite zeigt Daten nur Personen, die die Base lesen dürfen.
 
 ## Verbinde eine Quelle
 
@@ -33,6 +29,7 @@ Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht einge
 
 Eine Metrikquelle ruft einen Prometheus-Endpunkt im eingestellten Intervall ab.
 Eine HTTP-Ingest-Quelle nimmt Batches mit einem API Key der Quelle an.
+Unter **Neue Quelle** hilft **Mit KI fragen**, einen Adapter für deinen Shop oder einen anderen Dienst vorzubereiten.
 Erstelle benannte Schlüssel unter **API Keys** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
 
 ## Wähle die Metriken für den Abruf

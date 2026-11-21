@@ -10,15 +10,11 @@ Pulse collects metrics, events, and states in bases. Open a base to set up sourc
 
 Open **Pulse** from the app menu. It is hidden from the app bar by default. If you have chosen to show or pin Pulse there, your choice stays in place.
 
-## Read the overview
+## Find what needs attention
 
-A base opens on **Overview**. It shows what needs attention, up to four important numbers, and recent changes. It refreshes every 60 seconds while visible. **View** opens an alert's SQL and parameter values without running the query.
+A base opens on **Sources**. Each source shows its status, such as errors, missing data, or throttling. Open a source to see its details.
 
-Updated numbers stay in place. New or resolved attention items make the list longer or shorter and move the sections below it. A focused action stays focused while its item remains.
-
-Choose **Ask AI** to prepare a question about this base. The Assistant draft is not sent automatically. In **New source**, the same option helps prepare an adapter for your shop or another service.
-
-To add an important number, open the saved query list in **SQL** and enable **On overview**. You need edit access, and a base can show four pinned queries. The last result row supplies the value; an optional time column supplies its trend. If a refresh fails, Pulse keeps the last successful value and its time.
+To show numbers or charts to other people, ask Gustav for a Code page that reads this base. The page shows data only to people who may read the base.
 
 ## Connect a source
 
@@ -33,6 +29,7 @@ Pulse needs a connected data store. If **Pulse is not set up yet** appears, cont
 
 A metrics source fetches a Prometheus endpoint at its configured interval.
 An HTTP ingest source accepts batches sent with a source API key.
+In **New source**, **Ask AI** helps prepare an adapter for your shop or another service.
 Create labeled keys under **API keys** in the source details. Keep them in your collector's secret store.
 
 ## Choose which metrics to collect
