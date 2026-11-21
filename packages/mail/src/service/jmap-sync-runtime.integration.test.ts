@@ -7,11 +7,12 @@ import { mailCapabilities } from "../capabilities";
 import { buildFolderIdentityIndexes, migrate } from "../migrate";
 import { projectJmapFolders } from "./bindings";
 import { discoverJmapFolders } from "./connectors/jmap";
+import { type JmapSyncState, readJmapSyncState } from "./connectors/jmap-account-state";
 import { fetchJmapSession, JMAP_CORE } from "./connectors/jmap-client";
 import { type JmapEmailDelta, readJmapEmailDelta, readJmapMailboxDelta } from "./connectors/jmap-delta";
 import type { JmapEmailSnapshot } from "./connectors/jmap-email";
 import { createJmapFixture, fixtureEmail, fixtureMailbox } from "./connectors/jmap-fixture";
-import { type JmapSyncState, readJmapSyncState } from "./connectors/jmap-sync-state";
+import { waitForBlockedCommit } from "./jmap-lock-fixture";
 import { commitJmapAccountBatch, syncJmapAccountDelta } from "./jmap-sync-runtime";
 import { mailLive } from "./live";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
@@ -19,7 +20,7 @@ import { claimFence } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 const at = new Date("2026-11-20T00:00:00Z");
-const initial: JmapSyncState = { version: 1, emailState: "Email:0", mailboxState: "Mailbox:0", scan: null };
+const initial: JmapSyncState = { version: 2, emailState: "Email:0", mailboxState: "Mailbox:0", scan: null };
 // Measured in the gate, BEGIN and COMMIT included. A quiet commit is the transaction, four locks
 // (resource, binding, connection, mailbox), the checkpoint and the run. A page with changes adds
 // the refs, the folders, one batch statement for its kind, binding usage and the live invalidation.
@@ -197,22 +198,6 @@ suite("JMAP account commit", () => {
     FROM mail.remote_message_refs ref JOIN mail.message_placements p ON p.remote_message_ref_id = ref.id
     JOIN mail.folders f ON f.id = ref.folder_id WHERE f.remote_resource_id = ${source.args.remoteResourceId}::uuid ORDER BY ref.remote_id, f.stable_key
   `;
-
-  async function waitForBlockedCommit(blockerPid: number, commits = 1) {
-    const deadline = performance.now() + 10_000;
-    while (true) {
-      // A second waiter on the same row queues behind the first one, not behind the holder.
-      const [row] = await sql<{ blocked: boolean }[]>`WITH RECURSIVE waiting AS (
-        SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
-        UNION
-        SELECT activity.pid FROM pg_stat_activity activity JOIN waiting ON waiting.pid = ANY(pg_blocking_pids(activity.pid))
-        WHERE activity.datname = current_database()
-      ) SELECT count(*) >= ${commits} AS blocked FROM waiting`;
-      if (row?.blocked) return;
-      if (performance.now() >= deadline) throw new Error("locks: account commit did not reach the held row");
-      await Bun.sleep(10);
-    }
-  }
 
   test("bounded folder locks: a flag update leaves 300 unrelated and missing folders unlocked", async () => {
     change(message("boundedlocks"));
@@ -784,6 +769,7 @@ suite("JMAP account commit", () => {
       expect(await run(), "reconciliation: typed result").toEqual({
         status: "reconciliation_required",
         cause: reason === "invalidArguments" ? "state_rejected" : "cannot_calculate",
+        axis: "mailbox",
       });
       expect(await state(), "reconciliation: unchanged checkpoint").toEqual(initial);
       expect(
@@ -794,6 +780,11 @@ suite("JMAP account commit", () => {
       ).toEqual([{ state: "failed", error_code: "JMAP_RECONCILIATION_REQUIRED" }]);
     });
   }
+  test("reconciliation: a rejected Email state names the email axis and keeps the checkpoint", async () => {
+    source.f.methodErrors.set("Email/changes", "invalidArguments");
+    expect(await run(), "email axis: typed result").toEqual({ status: "reconciliation_required", cause: "state_rejected", axis: "email" });
+    expect(await state(), "email axis: unchanged checkpoint").toEqual(initial);
+  });
   test("initial and unknown states are never overwritten and never claim a fence", async () => {
     for (const value of [null, { version: 99 }]) {
       await sql<[]>`UPDATE mail.remote_resources SET sync_state = ${value}::jsonb WHERE id = ${source.args.remoteResourceId}::uuid`;
