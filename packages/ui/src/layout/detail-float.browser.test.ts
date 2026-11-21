@@ -332,7 +332,7 @@ describe("floating workspace detail", () => {
     [1920, 1080],
   ]) {
     for (const [params, wanted] of [
-      ["", 416],
+      ["", 380],
       ["persisted=520", 520],
       ["width=sm", 320],
       ["width=lg", 480],

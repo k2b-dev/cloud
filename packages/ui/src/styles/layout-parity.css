@@ -1392,8 +1392,9 @@ html {
    the window. From 48 rem the rule is, in this order: `Main` keeps its
    minimum (20 rem, or `AppWorkspace.Main` `minWidth`); a detail that fits
    beside it is a column at the workspace's end, part of the same surface,
-   spanning its full height from edge to edge; otherwise it waits behind the head's Details button, which opens it as a
-   drawer flush with the workspace's end edge. The decision measures the
+   spanning its full height from edge to edge; otherwise it waits behind the
+   head's Details button, which opens it as a drawer flush with the
+   workspace's end edge. The decision measures the
    content region beside the sidebar, at every host width, by width alone. */
 /* As a sheet, the host keeps 0.5rem beside the panel. As a column (from
    48 rem, below) it adds nothing: the panel owns its text edge (K5a, 20 px)
@@ -1499,9 +1500,12 @@ html {
   border-top: 1px solid var(--k2b-border);
 }
 
-/* The panel keeps its own inline padding: its text edge is the panel's. */
+/* The body's scrollbar sits on the panel's edge, and its content keeps the
+   panel's inset inside the scrollport, so overlay scrollbars never leave the
+   text against the rounded edge. */
 .k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
   gap: 1.25rem;
+  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
 }
 
 @media (max-width: 47.999rem) {

@@ -849,7 +849,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       renderToString(() => createComponent(AppWorkspace.BottomDrawer, { id: "b", open: true, height, children: "x" }));
 
     expect(detail("sm")).toContain('aria-valuenow="320"');
-    expect(detail("md")).toContain('aria-valuenow="416"');
+    expect(detail("md")).toContain('aria-valuenow="380"');
     expect(detail("md")).toContain('aria-valuemin="320"');
     expect(detail("lg")).toContain("480px");
     expect(detail("xl")).toContain("544px");
@@ -999,7 +999,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
       // A phone sheet belongs to the window; from 48 rem the column or drawer sits inside the workspace.
       expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
-      expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
+      // The column adds no padding or scroll inset of its own (K5a).
+      expect(css).toMatch(
+        /\.k2b-ui \.k2b-app-workspace__detail\{--k2b-detail-panel-scroll-inset:0(rem)?;position:absolute;[^}]*padding:0[;}]/,
+      );
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
     });
 

@@ -69,6 +69,8 @@ for (const [width, column] of [
         const line = document.querySelector<HTMLElement>(".k2b-detail-panel__body > .k2b-section:not(:first-child)")!;
         const lineBox = line.getBoundingClientRect();
         const style = getComputedStyle(document.querySelector(".k2b-app-workspace__detail")!);
+        const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
+        const track = body.offsetWidth - body.clientWidth;
         const round = (value: number) => Math.round(value * 10) / 10;
         return {
           width: round(detail.width),
@@ -82,8 +84,9 @@ for (const [width, column] of [
           headLine: [round(head.bottom - workspace.top), round(header.bottom - workspace.top)],
           // K5a: the panel's text starts 20 px after the column's hairline.
           textEdge: round(title.left - detail.left),
-          // K2: a topic line runs from the column's edge to its edge.
-          topicLine: [round(lineBox.left - detail.left), round(detail.right - lineBox.right)],
+          // K2: a topic line runs from the column's edge to its end; only a classic scrollbar's fixed track, which the
+          // body keeps so nothing moves when it starts to scroll, lies after it.
+          topicLine: [round(lineBox.left - detail.left), round(detail.right - lineBox.right - track)],
         };
       });
       expect(geometry).toEqual({

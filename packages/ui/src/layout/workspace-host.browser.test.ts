@@ -181,10 +181,10 @@ test("the sm token at 860px and the default desktop host retain columns", async 
 
 test("a full-width workspace switches its track exactly at each token's content-width threshold", async () => {
   for (const [detailWidth, threshold] of [
-    ["sm", 648],
-    ["md", 744],
-    ["lg", 808],
-    ["xl", 872],
+    ["sm", 640],
+    ["md", 700],
+    ["lg", 800],
+    ["xl", 864],
   ] as const) {
     // The workspace has a 1px border on each side; queries measure the content box.
     const page = await load(threshold + 2, { detailWidth }, 1440, 0);

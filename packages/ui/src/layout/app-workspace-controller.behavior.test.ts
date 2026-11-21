@@ -911,7 +911,7 @@ const detailWorkspace = (
   const handle = document.createElement("button");
   handle.dataset.appWorkspaceResize = "detail";
   handle.dataset.workspacePanelId = "record";
-  handle.dataset.workspaceDefaultSize = "416";
+  handle.dataset.workspaceDefaultSize = String(APP_WORKSPACE_DETAIL_DEFAULT);
   handle.setAttribute("aria-controls", aside.id);
   content.append(main, handle, aside);
   root.append(content);
@@ -2230,7 +2230,8 @@ describe("floating detail controller", () => {
     flushFrames();
     expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("500px");
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("calc(416px + var(--k2b-workspace-detail-wide, 0px))"); // K12: the start width, wider from 1920 px
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("calc(380px + var(--k2b-workspace-detail-wide, 0px))"); // K9, K12: the start width, wider from 1920 px
+    // The fixture's measured box stays 416 px wide, and the value reads the box.
     expect(handle.getAttribute("aria-valuenow")).toBe("416");
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     dispose();
