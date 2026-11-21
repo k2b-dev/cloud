@@ -19,10 +19,11 @@ export type MailDropHost = {
   addTag: (conversationIds: string[], tagId: string) => Promise<string[]>;
   setTags: (conversationId: string, tagIds: string[], expectedRevision: number) => Promise<void>;
   rememberFolder: (folderId: string) => void;
-  success: (message: string, undo?: { label: string; run: () => void }) => void;
+  /** A short title names the outcome; the message under it says what changed. */
+  success: (notice: { title: string; message: string }, undo?: { label: string; run: () => void }) => void;
   /** A failed drop changed nothing: the notice says so under the reason and offers the same drop again. */
-  failed: (notice: { title: string | null; message: string; retryLabel: string }, retry: () => void) => void;
-  error: (message: string) => void;
+  failed: (notice: { title: string; message: string; retryLabel: string }, retry: () => void) => void;
+  error: (notice: { title: string; message: string }) => void;
   /** False once the workspace was disposed. */
   active: () => boolean;
 };
@@ -57,14 +58,18 @@ export const runMailDrop = async (params: {
       case "done": {
         const changed = await host.complete(conversationIds, "done");
         if (!host.active() || changed.length === 0) return;
-        host.success(t.markedDone({ count: changed.length }), {
-          label: text.undo,
-          run: () =>
-            void host.complete(changed, "open").then(
-              () => host.active() && host.success(t.undone),
-              (error: unknown) => host.active() && host.error(error instanceof Error ? error.message : t.undoFailed),
-            ),
-        });
+        host.success(
+          { title: t.doneTitle, message: t.markedDone({ count: changed.length }) },
+          {
+            label: text.undo,
+            run: () =>
+              void host.complete(changed, "open").then(
+                () => host.active() && host.success({ title: t.undone, message: t.undoneBody }),
+                (error: unknown) =>
+                  host.active() && host.error({ title: t.undoFailed, message: error instanceof Error ? error.message : t.nothingChanged }),
+              ),
+          },
+        );
         return;
       }
       case "tag": {
@@ -72,33 +77,44 @@ export const runMailDrop = async (params: {
         if (!host.active() || updated.length === 0) return;
         // Undo puts back each conversation's tags from before the drop; a conversation changed since then refuses it.
         const before = new Map(items.flatMap((item) => (item.conversationId ? [[item.conversationId, item] as const] : [])));
-        host.success(t.tagAdded({ name: action.name, count: updated.length }), {
-          label: text.undo,
-          run: () =>
-            void Promise.all(
-              updated.flatMap((conversationId) => {
-                const item = before.get(conversationId);
-                return item
-                  ? [
-                      host.setTags(
-                        conversationId,
-                        item.localTags.map((tag) => tag.id),
-                        item.revision + 1,
-                      ),
-                    ]
-                  : [];
-              }),
-            ).then(
-              () => host.active() && host.success(t.undone),
-              (error: unknown) => host.active() && host.error(error instanceof Error ? error.message : t.undoFailed),
-            ),
-        });
+        host.success(
+          { title: t.tagTitle, message: t.tagAdded({ name: action.name, count: updated.length }) },
+          {
+            label: text.undo,
+            run: () =>
+              void Promise.all(
+                updated.flatMap((conversationId) => {
+                  const item = before.get(conversationId);
+                  return item
+                    ? [
+                        host.setTags(
+                          conversationId,
+                          item.localTags.map((tag) => tag.id),
+                          item.revision + 1,
+                        ),
+                      ]
+                    : [];
+                }),
+              ).then(
+                () => host.active() && host.success({ title: t.undone, message: t.undoneBody }),
+                (error: unknown) =>
+                  host.active() && host.error({ title: t.undoFailed, message: error instanceof Error ? error.message : t.nothingChanged }),
+              ),
+          },
+        );
         return;
       }
     }
   } catch (error) {
     if (!host.active()) return;
     const reason = error instanceof Error && error.message ? error.message : action.kind.startsWith("assign") ? text.assignFailed : null;
-    host.failed({ title: reason, message: t.notSaved, retryLabel: t.tryAgain }, retry);
+    host.failed(
+      {
+        title: t.notSaved,
+        message: reason ? `${/[.!?]$/.test(reason) ? reason : `${reason}.`} ${t.nothingChanged}` : t.nothingChanged,
+        retryLabel: t.tryAgain,
+      },
+      retry,
+    );
   }
 };

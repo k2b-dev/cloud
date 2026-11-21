@@ -2808,10 +2808,13 @@ function createMailboxController(props: MailboxControllerProps) {
       applyConversationTags(await response.json());
     },
     rememberFolder: (folderId) => rememberMailDropFolder(mailboxId, folderId),
-    success: (message, undo) =>
-      toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost", onClick: undo.run } } : undefined),
-    failed: (notice, retry) => retryToast(notice.message, { title: notice.title ?? undefined, retryLabel: notice.retryLabel, retry }),
-    error: (message) => void toast.error(message),
+    success: ({ title, message }, undo) =>
+      toast.success(message, {
+        title,
+        ...(undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost" as const, onClick: undo.run } } : {}),
+      }),
+    failed: ({ title, message, retryLabel }, retry) => retryToast(message, { title, retryLabel, retry }),
+    error: ({ title, message }) => void toast.error(message, { title }),
     active: () => !disposed,
   };
   /** Runs a drop on a target; nothing happens without write access or while the list's structure is still changing. */

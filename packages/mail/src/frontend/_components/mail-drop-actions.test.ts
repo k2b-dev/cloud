@@ -19,9 +19,9 @@ const items = [
 
 const host = (overrides: Partial<MailDropHost> = {}) => {
   const calls = {
-    success: [] as Array<{ message: string; undo?: { label: string; run: () => void } }>,
+    success: [] as Array<{ title: string; message: string; undo?: { label: string; run: () => void } }>,
     failed: [] as Array<{ notice: Parameters<MailDropHost["failed"]>[0]; retry: () => void }>,
-    errors: [] as string[],
+    errors: [] as Array<{ title: string; message: string }>,
   };
   const value: MailDropHost = {
     assign: mock(async () => {}),
@@ -30,9 +30,9 @@ const host = (overrides: Partial<MailDropHost> = {}) => {
     addTag: mock(async (ids: string[]) => ids),
     setTags: mock(async () => {}),
     rememberFolder: mock(() => {}),
-    success: (message, undo) => void calls.success.push({ message, ...(undo ? { undo } : {}) }),
+    success: (notice, undo) => void calls.success.push({ ...notice, ...(undo ? { undo } : {}) }),
     failed: (notice, retry) => void calls.failed.push({ notice, retry }),
-    error: (message) => void calls.errors.push(message),
+    error: (notice) => void calls.errors.push(notice),
     active: () => true,
     ...overrides,
   };
@@ -76,18 +76,18 @@ describe("Mail drop actions", () => {
   test("done reports with Undo, and Undo reopens only what the drop changed", async () => {
     const target = host({ complete: mock(async (ids: string[], completion: "done" | "open") => (completion === "done" ? ["c2"] : ids)) });
     await run({ kind: "done" }, target);
-    expect(target.calls.success[0]?.message).toBe("Als erledigt markiert");
+    expect(target.calls.success[0]).toMatchObject({ title: "Als erledigt markiert", message: "1 Unterhaltung ist erledigt." });
     target.calls.success[0]?.undo?.run();
     await flush();
     expect(target.value.complete).toHaveBeenLastCalledWith(["c2"], "open");
-    expect(target.calls.success.at(-1)?.message).toBe("Rückgängig gemacht");
+    expect(target.calls.success.at(-1)).toEqual({ title: "Rückgängig gemacht", message: "Der vorherige Stand ist wieder da." });
   });
 
   test("a tag drop reports with Undo, and Undo puts back each conversation's earlier tags at its next revision", async () => {
     const target = host();
     await run({ kind: "tag", tagId: "t1", name: "Rechnung" }, target);
     expect(target.value.addTag).toHaveBeenCalledWith(["c1", "c2"], "t1");
-    expect(target.calls.success[0]?.message).toBe("Tag „Rechnung“ an 2 Unterhaltungen");
+    expect(target.calls.success[0]).toMatchObject({ title: "Tag hinzugefügt", message: "„Rechnung“ an 2 Unterhaltungen." });
     target.calls.success[0]?.undo?.run();
     await flush();
     expect(target.value.setTags).toHaveBeenCalledWith("c1", ["old"], 5);
@@ -111,8 +111,8 @@ describe("Mail drop actions", () => {
     });
     await run({ kind: "assign", userId: "p1", name: "Mira Schulz" }, target);
     expect(target.calls.failed[0]?.notice).toEqual({
-      title: "Zugriff verweigert",
-      message: "Änderung nicht gespeichert. Es wurde nichts geändert.",
+      title: "Nicht gespeichert",
+      message: "Zugriff verweigert. Es wurde nichts geändert.",
       retryLabel: "Erneut versuchen",
     });
     target.calls.failed[0]?.retry();
@@ -126,7 +126,7 @@ describe("Mail drop actions", () => {
     await run({ kind: "tag", tagId: "t1", name: "Rechnung" }, target);
     target.calls.success[0]?.undo?.run();
     await flush();
-    expect(target.calls.errors).toEqual(["Unterhaltung wurde geändert"]);
+    expect(target.calls.errors).toEqual([{ title: "Rückgängig machen fehlgeschlagen", message: "Unterhaltung wurde geändert" }]);
     expect(target.calls.success).toHaveLength(1);
   });
 

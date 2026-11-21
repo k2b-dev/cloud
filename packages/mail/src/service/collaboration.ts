@@ -473,7 +473,7 @@ export const listAssignableUsers = async (params: {
 /** The people a drag can offer without a request: the assignment search takes over beyond them. */
 export const MAIL_DROP_ASSIGNEE_LIMIT = 200;
 /** The person's own latest assignment changes in the mailbox that order the drag's people: often chosen first. */
-const MAIL_DROP_ASSIGNMENT_HISTORY = 100;
+export const MAIL_DROP_ASSIGNMENT_HISTORY = 100;
 
 export type MailDropAssignees = {
   /** Who the person assigned most often lately comes first, then everyone else A–Z; at most MAIL_DROP_ASSIGNEE_LIMIT. */
@@ -481,6 +481,29 @@ export type MailDropAssignees = {
   /** More people can be assigned than `people` holds; a drop on "someone else" then opens the search. */
   more: boolean;
 };
+
+/**
+ * Whom the actor added as assignee in their latest MAIL_DROP_ASSIGNMENT_HISTORY changes of the mailbox, most often
+ * first. `activity_events_actor_assignment_idx` reads exactly those rows, however long the mailbox's history is.
+ */
+export const dropAssigneeOrderQuery = (db: SqlClient, params: { mailboxId: string; actor: { kind: string; id: string | null } }) =>
+  db<{ user_id: string }[]>`
+    SELECT added.user_id
+    FROM (
+      SELECT activity.id, activity.metadata
+      FROM mail.activity_events activity
+      WHERE activity.mailbox_id = ${params.mailboxId}::uuid
+        AND activity.action = 'conversation.collaboration_updated'
+        AND activity.actor_id = ${params.actor.id}::uuid
+        AND activity.actor_kind = ${params.actor.kind}
+      ORDER BY activity.id DESC
+      LIMIT ${MAIL_DROP_ASSIGNMENT_HISTORY}
+    ) recent
+    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(recent.metadata #> '{after,assigneeUserIds}', '[]'::jsonb)) AS added(user_id)
+    WHERE NOT COALESCE(recent.metadata #> '{before,assigneeUserIds}', '[]'::jsonb) ? added.user_id
+    GROUP BY added.user_id
+    ORDER BY count(*) DESC, max(recent.id) DESC
+  `;
 
 /**
  * The people a dragged conversation can be assigned to, for the workspace's first load. Only people who may assign
@@ -493,23 +516,7 @@ export const listDropAssignees = async (params: { context: MailRequestContext; m
   const actor = activityActorIdentity(params.context);
   const [eligible, frequent] = await Promise.all([
     listEligibleAssignees({ mailboxId: params.mailboxId, limit: MAIL_DROP_ASSIGNEE_LIMIT + 1 }),
-    sql<{ user_id: string }[]>`
-      SELECT added.user_id
-      FROM (
-        SELECT activity.id, activity.metadata
-        FROM mail.activity_events activity
-        WHERE activity.mailbox_id = ${params.mailboxId}::uuid
-          AND activity.action = 'conversation.collaboration_updated'
-          AND activity.actor_kind = ${actor.kind}
-          AND activity.actor_id = ${actor.id}::uuid
-        ORDER BY activity.id DESC
-        LIMIT ${MAIL_DROP_ASSIGNMENT_HISTORY}
-      ) recent
-      CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(recent.metadata #> '{after,assigneeUserIds}', '[]'::jsonb)) AS added(user_id)
-      WHERE NOT COALESCE(recent.metadata #> '{before,assigneeUserIds}', '[]'::jsonb) ? added.user_id
-      GROUP BY added.user_id
-      ORDER BY count(*) DESC, max(recent.id) DESC
-    `,
+    dropAssigneeOrderQuery(sql, { mailboxId: params.mailboxId, actor }),
   ]);
   const rank = new Map(frequent.map((row, index) => [row.user_id, index]));
   const people = eligible

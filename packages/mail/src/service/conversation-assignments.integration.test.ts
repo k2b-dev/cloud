@@ -1,15 +1,19 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { newShortId } from "../lib/short-id";
+import { buildActorAssignmentIndex } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
   applyConversationCompletions,
+  dropAssigneeOrderQuery,
   listAssignableUsers,
   listDropAssignees,
   loadConversationAssigneeIds,
+  MAIL_DROP_ASSIGNMENT_HISTORY,
   updateConversationCollaborationInTransaction,
   writeConversationAssignees,
 } from "./collaboration";
@@ -21,6 +25,8 @@ import { createMailbox } from "./mailboxes";
 const suite = suiteFor("database", "nats");
 
 type TestUser = { id: string; uid: string; displayName: string };
+type Plan = { "Node Type": string; "Relation Name"?: string; "Index Name"?: string; "Actual Rows"?: number; Plans?: Plan[] };
+const planNodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 
 const contextFor = (user: TestUser): MailRequestContext => ({
   actor: {
@@ -773,5 +779,45 @@ suite("mail conversation assignment", () => {
       const result = await listDropAssignees({ context: contextFor(refused), mailboxId: dropMailboxId });
       expect(!result.ok && result.error.status).toBe(403);
     }
+
+    // The order costs one statement on top of the assignee list the details panel already loads.
+    const meter = await meterSql();
+    try {
+      const list = await meter.during(() => listAssignableUsers({ context: contextFor(owner), mailboxId: dropMailboxId, limit: 200 }));
+      const drop = await meter.during(() => listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId }));
+      expect(drop).toHaveLength(list.length + 1);
+      expect(drop.filter((statement) => statement.includes("mail.activity_events"))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+
+    // Only the latest changes count: a hundred newer ones for Amy push Zed's two out of the window.
+    const insertAssignments = (actorId: string, assigneeId: string, count: number) => sql`
+      INSERT INTO mail.activity_events (mailbox_id, conversation_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata)
+      SELECT ${dropMailboxId}::uuid, ${first.id}::uuid, 'user', ${actorId}::uuid, 'conversation.collaboration_updated', 'confirmed',
+        'conversation', ${first.id}::uuid,
+        jsonb_build_object('before', jsonb_build_object('assigneeUserIds', '[]'::jsonb),
+          'after', jsonb_build_object('assigneeUserIds', jsonb_build_array(${assigneeId}::text)))
+      FROM generate_series(1, ${count}::int)
+    `;
+    await insertAssignments(owner.id, amy.id, MAIL_DROP_ASSIGNMENT_HISTORY);
+    const windowed = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
+    expect(windowed.ok && names(windowed.data.people)).toEqual([
+      amy.displayName,
+      ...alphabetical.filter((name) => name !== amy.displayName),
+    ]);
+
+    // Others' history is never read: the index seeks this person's latest rows and stops at the window.
+    await insertAssignments(writer.id, zed.id, 2_000);
+    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
+    await sql`ANALYZE mail.activity_events`;
+    const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan }] }[]>`
+      EXPLAIN (ANALYZE, FORMAT JSON) ${dropAssigneeOrderQuery(sql, { mailboxId: dropMailboxId, actor: { kind: "user", id: owner.id } })}
+    `;
+    const nodes = planNodes(explained!["QUERY PLAN"][0].Plan);
+    const scan = nodes.find((node) => node["Index Name"] === "activity_events_actor_assignment_idx");
+    expect(scan).toBeDefined();
+    expect(scan?.["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
+    expect(nodes.some((node) => node["Relation Name"] === "activity_events" && node["Node Type"] === "Seq Scan")).toBeFalse();
   });
 });
