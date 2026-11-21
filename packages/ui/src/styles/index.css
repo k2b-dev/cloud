@@ -19573,8 +19573,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   translate: -1rem 1rem;
 }
 
-/* Over a drop overlay, which names the item, the preview shrinks to its
-   icon and count, so it covers less of the targets. */
+/* Over a drop overlay, which names the item, the preview shrinks to a
+   24 px badge with its icon and count, close to the pointer's tip like a
+   cursor badge, so it never covers a tile's words (K7, S7). */
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-compact]:not([data-preview="row"]) {
+  width: 1.5rem;
+  height: 1.5rem;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--k2b-radius-round);
+  translate: 0.375rem 0.5rem;
+}
+
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-compact] > i {
+  font-size: 0.875rem;
+}
+
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-compact] > .k2b-drag-preview__label {
   display: none;
 }
