@@ -30,8 +30,13 @@ pseudo-element that draws something and reaches past its box still counts.
 ## Import
 
 ```ts
-import { layoutProblems, type LayoutProblemOptions, type LayoutProblems } from "@k2b/ui/layout-check";
+import { classicScrollbars, layoutProblems, layoutWidths, type LayoutProblemOptions, type LayoutProblems } from "@k2b/ui/layout-check";
 ```
+
+`layoutWidths` is the list of widths every page test checks: 390, 768, 1100,
+and 1440 px. At 1100 px a docked detail column leaves the least room, so test
+it with the detail column open. `classicScrollbars` holds the launch options
+for visible scrollbars.
 
 The subpath is separate from the main entry of `@k2b/ui`. It has no
 dependencies and adds nothing to the bundles of an app.
@@ -65,19 +70,23 @@ column then scrolls sideways by the scrollbar's width. Launch the browser with
 classic scrollbars for page tests:
 
 ```ts
-const browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+import { classicScrollbars } from "@k2b/ui/layout-check";
+
+const browser = await chromium.launch(classicScrollbars);
 ```
 
 ## Example: a page test at four widths
 
 ```ts
 import { expect, test } from "@playwright/test";
-import { layoutProblems } from "@k2b/ui/layout-check";
+import { classicScrollbars, layoutProblems, layoutWidths } from "@k2b/ui/layout-check";
 
-for (const width of [390, 768, 1440, 1920])
+test.use({ launchOptions: classicScrollbars });
+
+for (const width of layoutWidths)
   test(`${width} px: nothing overlaps, spills, or is cut`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/records/2611");
+    await page.goto(width >= 1100 ? "/records/2611?detail=open" : "/records/2611");
     expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
   });
 ```

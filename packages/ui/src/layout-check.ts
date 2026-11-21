@@ -8,9 +8,10 @@
  * Check each width in its own test:
  *
  * ```ts
- * import { layoutProblems } from "@k2b/ui/layout-check";
+ * import { classicScrollbars, layoutProblems, layoutWidths } from "@k2b/ui/layout-check";
  *
- * for (const width of [390, 768, 1440, 1920])
+ * const browser = await chromium.launch(classicScrollbars);
+ * for (const width of layoutWidths)
  *   test(`${width} px: nothing overlaps, spills, or is cut`, async () => {
  *     await page.setViewportSize({ width, height: 900 });
  *     expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
@@ -27,6 +28,19 @@
  * `ignoreDefaultArgs: ["--hide-scrollbars"]`. Only then does a scrollbar take its width, and a column that is a few
  * pixels too wide for the space beside it shows up as a sideways scroller.
  */
+
+/**
+ * The widths every page test checks: phone, tablet, a narrow desktop where the detail column is open beside the list,
+ * and a wide desktop. 1100 px is where a docked detail column leaves the least room, so a column that is a few pixels
+ * too wide or a head that wraps shows there first.
+ */
+export const layoutWidths = [390, 768, 1100, 1440] as const;
+
+/**
+ * Launch options for classic, visible scrollbars, as on most desktops: headless Chromium hides them by default, so a
+ * scrollbar never takes its width in a test. Pass them to `chromium.launch`.
+ */
+export const classicScrollbars: { ignoreDefaultArgs: string[] } = { ignoreDefaultArgs: ["--hide-scrollbars"] };
 
 export type LayoutProblemOptions = {
   /** The element to check; the whole document by default. */

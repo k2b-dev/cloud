@@ -11,6 +11,7 @@ import {
   type Request,
   webkit,
 } from "playwright";
+import { classicScrollbars } from "../src/layout-check";
 import { launchBudgetMs, launchHookMs } from "./browser-budget";
 
 /**
@@ -638,6 +639,20 @@ export const launchBrowser = async ({
     },
   });
 };
+
+/**
+ * A browser with classic, visible scrollbars, as on most desktops, for page tests that call `layoutProblems`: only then
+ * does a scrollbar take its width, so a column that is a few pixels too wide shows up as a sideways scroller. The
+ * `layout-check-coverage` rule requires it in every browser test that calls `layoutProblems`.
+ */
+export const launchWithScrollbars = (options: Parameters<typeof launchBrowser>[0] = {}): Promise<Browser> =>
+  launchBrowser({
+    ...options,
+    ignoreDefaultArgs: [
+      ...(Array.isArray(options.ignoreDefaultArgs) ? options.ignoreDefaultArgs : []),
+      ...classicScrollbars.ignoreDefaultArgs,
+    ],
+  });
 
 /**
  * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.

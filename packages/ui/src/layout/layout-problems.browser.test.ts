@@ -2,8 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, launchWithScrollbars, settled } from "../../test/browser";
 import { layoutProblems } from "../../test/head-overlap";
+import { layoutWidths } from "../layout-check";
 
 // Error class: a box that overlaps its sibling, spills, or cuts its text without a sign at one width only (K15), and a
 // line drawn twice because both neighbours draw it (K2, "one line, one owner").
@@ -60,12 +61,13 @@ const defects = `
   <div data-probe="panel-body" style="width:300px;height:80px;overflow-y:auto"><div style="width:340px">A detail body that scrolls sideways by 40 px</div></div>
   <div data-probe="wide" style="position:absolute;top:0;left:0;width:2400px;height:1px"></div>`;
 
-const widths = [390, 768, 1440, 1920];
+// The shared widths (with the docked detail column at 1100 px) and a very wide screen.
+const widths = [...layoutWidths, 1920];
 let browser: Browser;
 let page: Page;
 beforeAll(async () => {
   // Classic scrollbars, as on most desktops: only then does a scrollbar take its width.
-  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  browser = await launchWithScrollbars();
   page = await browser.newPage();
 }, 30_000);
 afterAll(async () => {
