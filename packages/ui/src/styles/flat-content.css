@@ -4,7 +4,8 @@
    symbol on the text edge, the count as a chip, one sentence, and the action word at the end. 40 px, 52 px with a
    quiet second line, 60 px on a phone (K1). The sentence ends in an ellipsis; the action word never gives way (K15).
    In a column under 480 px the action word moves below the text, as in the mockup, and the row grows.
-   A line separates rows; the last row of a section has none (K2). The row is the container its body asks. */
+   The row draws no line of its own: the list that holds the rows divides them (`k2b-divided`, K2 "one line, one
+   owner"). The row is the container its body asks. */
 .k2b-ui .k2b-task-row {
   display: grid;
   align-items: center;
@@ -30,10 +31,6 @@
 
 .k2b-ui .k2b-task-row[data-detail] {
   min-height: var(--k2b-h-row-2, 52px);
-}
-
-.k2b-ui .k2b-task-row ~ .k2b-task-row {
-  border-top: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-task-row:hover {

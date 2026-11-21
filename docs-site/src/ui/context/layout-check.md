@@ -10,6 +10,8 @@ use it with Playwright or any browser test that can run a function in the page.
 - Siblings in a flex or grid box that overlap.
 - Content that spills out of its box.
 - Text that is cut without an ellipsis or a fade.
+- A double line: two parallel visible borders that touch or lie at most 1 px
+  apart, also across components ("one line, one owner").
 - A page that scrolls sideways.
 
 It does not see what runs out of the bottom of a scroll area or what a floating
@@ -35,7 +37,7 @@ uses nothing from outside the function.
 | `ignore` | `string` | A selector for boxes whose children overlap or clip on purpose, such as an avatar stack. |
 | `slack` | `number` | How far content may reach past its box before it counts, in px. The default is 7. |
 
-It returns `overlap`, `spill`, and `cut` as lists of readable lines,
+It returns `overlap`, `spill`, `cut`, and `double` as lists of readable lines,
 `sideways` as a boolean, and `problems` as every problem in one list. If the
 page is clean, `problems` is empty. To skip a box, give it
 `data-layout-check="skip"`.

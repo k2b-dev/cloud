@@ -14,7 +14,7 @@ render(
   () => (
     <LocaleProvider locale="de">
       <main id="app">
-        <section class="column" data-probe="tasks">
+        <section class="column k2b-divided" data-probe="tasks">
           <TaskRow
             icon="ti ti-package-export"
             count={3}

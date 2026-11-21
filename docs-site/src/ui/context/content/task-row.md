@@ -46,7 +46,8 @@ import { TaskRow } from "@k2b/ui";
 - The symbol starts on the text edge of the column (`--k2b-gutter`), and the
   sentence starts after exactly one symbol.
 - The action word ends on the right text edge.
-- A line separates two task rows. The last row has no line.
+- The row draws no line of its own. The list that holds the rows divides them
+  with `k2b-divided`, so the line has one owner and the last row has none.
 - The row is square, has no shadow, and has no surface of its own. Pointing at
   it tints it. Keyboard focus draws the ring inside the row, so nothing moves.
 
@@ -69,7 +70,7 @@ native `disabled`.
 ## Example
 
 ```tsx
-<section>
+<section class="k2b-divided">
   <TaskRow
     icon="ti ti-package-export"
     count={3}

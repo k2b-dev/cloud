@@ -1,7 +1,8 @@
 /**
  * The layout self-check of Cloud flach (K15), the mockups' `?check=1` as a function for browser tests. It finds
  * siblings in a flex or grid box that overlap, content that spills out of its box, text that is cut without an
- * ellipsis or a fade, and a page that scrolls sideways.
+ * ellipsis or a fade, a double line (two parallel visible borders that touch or lie at most 1 px apart, also across
+ * components; "one line, one owner", K2), and a page that scrolls sideways.
  *
  * It runs in the page: pass it to Playwright's `page.evaluate`, so it closes over nothing and needs no other module.
  * Check each width in its own test:
@@ -37,6 +38,7 @@ export type LayoutProblems = {
   overlap: string[];
   spill: string[];
   cut: string[];
+  double: string[];
   sideways: boolean;
   /** Every problem as one readable line; empty when the page is clean. */
   problems: string[];
@@ -44,13 +46,12 @@ export type LayoutProblems = {
 
 export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProblems {
   const root = options.root ? document.querySelector(options.root) : document.body;
-  if (!root) return { overlap: [], spill: [], cut: [], sideways: false, problems: [`no element matches ${options.root}`] };
+  if (!root) return { overlap: [], spill: [], cut: [], double: [], sideways: false, problems: [`no element matches ${options.root}`] };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
-  // Text for screen readers only (a 1 px clipped box, such as `.k2b-sr-only`) is hidden on purpose, not cut.
   const seen = (element: Element) => {
     const rect = element.getBoundingClientRect();
-    return rect.width > 1 && rect.height > 1 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
   };
   // A box that sticks or floats lies above the flow on purpose.
   const inFlow = (element: Element) => !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position);
@@ -82,14 +83,59 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
             found.overlap.push(`${name(b)} overlaps ${name(a)} by ${Math.round(width)}x${Math.round(height)}`);
         }
     }
-    if (box.clientWidth > 0 && box.scrollWidth > box.clientWidth + slack) {
+    // Text for screen readers only (a 1 px clipped box, such as `.k2b-sr-only`) is hidden on purpose, not cut.
+    if (box.clientWidth > 1 && box.clientHeight > 1 && box.scrollWidth > box.clientWidth + slack) {
       const masked = style.maskImage !== "none" && style.maskImage !== "";
-      // A scroller in either direction lets a person reach its content; it is not cut.
-      const scrolls = [style.overflowX, style.overflowY].some((overflow) => overflow === "auto" || overflow === "scroll");
+      // Only a sideways scroller lets a person reach content that is too wide. `overflow-y: auto` alone already
+      // computes `overflow-x` to auto; an explicit `overflow-x: hidden` beside it cuts the content.
+      const scrolls = style.overflowX === "auto" || style.overflowX === "scroll";
       if (style.overflowX === "visible") found.spill.push(`${name(box)} spills ${box.scrollWidth - box.clientWidth} px out of its box`);
       else if (!scrolls && style.textOverflow !== "ellipsis" && !masked)
         found.cut.push(`${name(box)} is cut by ${box.scrollWidth - box.clientWidth} px without an ellipsis or a fade`);
     }
+  }
+  // Double lines: every visible border side is a band; two parallel bands of different elements that overlap along
+  // their length and lie at most 1 px apart across it read as one thick or doubled line. Only `border-*` counts, with
+  // a width above 0, a drawing style, and a colour that is not transparent: focus rings and outlines are no borders.
+  type Band = { element: Element; side: string; across0: number; across1: number; along0: number; along1: number };
+  const bands = { horizontal: [] as Band[], vertical: [] as Band[] };
+  for (const element of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    if (!seen(element) || element.closest(ignore)) continue;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    for (const side of ["top", "bottom", "left", "right"] as const) {
+      const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`));
+      const line = style.getPropertyValue(`border-${side}-style`);
+      const color = style.getPropertyValue(`border-${side}-color`).replace(/\s+/g, "");
+      if (!(width > 0) || line === "none" || line === "hidden" || color === "transparent" || /,0\)$|\/0\)$/.test(color)) continue;
+      if (side === "top")
+        bands.horizontal.push({ element, side, across0: rect.top, across1: rect.top + width, along0: rect.left, along1: rect.right });
+      if (side === "bottom")
+        bands.horizontal.push({ element, side, across0: rect.bottom - width, across1: rect.bottom, along0: rect.left, along1: rect.right });
+      if (side === "left")
+        bands.vertical.push({ element, side, across0: rect.left, across1: rect.left + width, along0: rect.top, along1: rect.bottom });
+      if (side === "right")
+        bands.vertical.push({ element, side, across0: rect.right - width, across1: rect.right, along0: rect.top, along1: rect.bottom });
+    }
+  }
+  // Cells of a collapsed table share one border; the engine reports it on both.
+  const collapsedPair = (a: Element, b: Element) => {
+    const table = a.closest("table");
+    return !!table && table === b.closest("table") && getComputedStyle(table).borderCollapse === "collapse";
+  };
+  const double: string[] = [];
+  for (const list of [bands.horizontal, bands.vertical]) {
+    list.sort((a, b) => a.across0 - b.across0);
+    for (const [index, a] of list.entries())
+      for (const b of list.slice(index + 1)) {
+        if (b.across0 - a.across1 > 1) break;
+        if (a.element === b.element || collapsedPair(a.element, b.element)) continue;
+        const shared = Math.min(a.along1, b.along1) - Math.max(a.along0, b.along0);
+        if (shared > 1)
+          double.push(
+            `double line: ${name(a.element)} ${a.side} and ${name(b.element)} ${b.side} at ${Math.round(a.across0)} px over ${Math.round(shared)} px`,
+          );
+      }
   }
   const page = document.scrollingElement ?? document.documentElement;
   const sideways = page.scrollWidth > window.innerWidth + 1;
@@ -97,7 +143,8 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     ...found.overlap,
     ...found.spill,
     ...found.cut,
+    ...double,
     ...(sideways ? [`the page scrolls sideways (${page.scrollWidth} px)`] : []),
   ];
-  return { ...found, sideways, problems };
+  return { ...found, double, sideways, problems };
 }

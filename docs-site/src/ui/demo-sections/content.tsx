@@ -2976,7 +2976,8 @@ const demos: DemoSection = {
         id="task-row"
         chip={{ kind: "component", name: "TaskRow", from: "@k2b/ui" }}
         description="Tasks that only have a date. The whole row is one link or button; the symbol stands on the text edge, the sentence ends in an ellipsis with a tooltip, and the action word stays. What needs someone now is a notice cell instead."
-        code={`<TaskRow
+        code={`<div class="k2b-divided">
+<TaskRow
   icon="ti ti-package-export"
   count={3}
   text="Unsold items are ready for pickup"
@@ -2985,9 +2986,10 @@ const demos: DemoSection = {
   href="#handover"
 />
 <TaskRow icon="ti ti-file-invoice" text="Send the October statement" action="Open statement" onClick={open} />
-<TaskRow icon="ti ti-signature" text="Countersign the contract" action="Sign" disabled />`}
+<TaskRow icon="ti ti-signature" text="Countersign the contract" action="Sign" disabled />
+</div>`}
       >
-        <div class="ui-task-row-demo">
+        <div class="ui-task-row-demo k2b-divided">
           <TaskRow
             icon="ti ti-package-export"
             count={3}
@@ -3012,7 +3014,7 @@ const demos: DemoSection = {
           />
           <TaskRow icon="ti ti-signature" text="Countersign the contract" detail="after the customer signed" action="Sign" disabled />
         </div>
-        <div class="ui-task-row-demo ui-task-row-demo__narrow">
+        <div class="ui-task-row-demo ui-task-row-demo__narrow k2b-divided">
           <TaskRow
             icon="ti ti-package-export"
             count={3}
@@ -3022,7 +3024,7 @@ const demos: DemoSection = {
             href="#task-row"
           />
         </div>
-        <div class="ui-task-row-demo">
+        <div class="ui-task-row-demo k2b-divided">
           <Placeholder title="Nothing to do" description="New tasks appear here when they get a date." icon="ti ti-checklist" />
         </div>
       </DemoCard>

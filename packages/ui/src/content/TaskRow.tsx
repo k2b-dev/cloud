@@ -35,6 +35,7 @@ export type TaskRowProps = {
  */
 export function TaskRow(props: TaskRowProps): JSX.Element {
   let row: HTMLElement | undefined;
+  let body: HTMLSpanElement | undefined;
   let sentence: HTMLSpanElement | undefined;
   // The full sentence shows as a hint only while it is cut; it is measured when a pointer or the keyboard arrives.
   const [cut, setCut] = createSignal(false);
@@ -43,55 +44,52 @@ export function TaskRow(props: TaskRowProps): JSX.Element {
   const element = () => (props.href !== undefined ? "a" : "button");
 
   return (
-    <>
-      <Dynamic
-        component={element()}
-        ref={(node: HTMLElement) => {
-          row = node;
-        }}
-        class={props.class ? `k2b-task-row ${props.class}` : "k2b-task-row"}
-        href={link() ? props.href : undefined}
-        type={element() === "button" ? "button" : undefined}
-        disabled={element() === "button" ? props.disabled : undefined}
-        role={props.disabled && element() === "a" ? "link" : undefined}
-        aria-disabled={props.disabled && element() === "a" ? "true" : undefined}
-        aria-label={props.label}
-        data-detail={props.detail !== undefined ? "" : undefined}
-        // The no-JavaScript hint; once hydrated, the shared tooltip shows the sentence, and only while it is cut.
-        title={isServer ? props.text : undefined}
-        onClick={(event: MouseEvent) => {
-          if (props.disabled) {
-            event.preventDefault();
-            return;
-          }
-          props.onClick?.(event);
-        }}
-        on:pointerenter={measure}
-        on:focusin={measure}
-      >
-        <span class="k2b-task-row__body">
-          <i class={`${props.icon} k2b-task-row__icon`} aria-hidden="true" />
-          <span class="k2b-task-row__copy">
-            <span class="k2b-task-row__line">
-              <Show when={props.count}>
-                <span class="k2b-count-chip">{props.count}</span>
-              </Show>
-              <span ref={sentence} class="k2b-task-row__text">
-                {props.text}
-              </span>
-            </span>
-            <Show when={props.detail !== undefined}>
-              <span class="k2b-task-row__detail">{props.detail}</span>
+    <Dynamic
+      component={element()}
+      ref={(node: HTMLElement) => {
+        row = node;
+      }}
+      class={props.class ? `k2b-task-row ${props.class}` : "k2b-task-row"}
+      href={link() ? props.href : undefined}
+      type={element() === "button" ? "button" : undefined}
+      disabled={element() === "button" ? props.disabled : undefined}
+      role={props.disabled && element() === "a" ? "link" : undefined}
+      aria-disabled={props.disabled && element() === "a" ? "true" : undefined}
+      aria-label={props.label}
+      data-detail={props.detail !== undefined ? "" : undefined}
+      // The no-JavaScript hint; once hydrated, the shared tooltip shows the sentence, and only while it is cut.
+      title={isServer ? props.text : undefined}
+      onClick={(event: MouseEvent) => {
+        if (props.disabled) {
+          event.preventDefault();
+          return;
+        }
+        props.onClick?.(event);
+      }}
+      on:pointerenter={measure}
+      on:focusin={measure}
+    >
+      <span ref={body} class="k2b-task-row__body">
+        <i class={`${props.icon} k2b-task-row__icon`} aria-hidden="true" />
+        <span class="k2b-task-row__copy">
+          <span class="k2b-task-row__line">
+            <Show when={props.count}>
+              <span class="k2b-count-chip">{props.count}</span>
             </Show>
+            <span ref={sentence} class="k2b-task-row__text">
+              {props.text}
+            </span>
           </span>
-          <span class="k2b-task-row__action">{props.action}</span>
+          <Show when={props.detail !== undefined}>
+            <span class="k2b-task-row__detail">{props.detail}</span>
+          </Show>
         </span>
-      </Dynamic>
-      {/* The tooltip binds to the element it finds when it mounts, so a row that turns from button into link gets a new one. */}
-      <Show when={element()} keyed>
-        <Tooltip content={props.text} target={() => row} focusTarget={() => row} disabled={!cut()} />
-      </Show>
-    </>
+        <span class="k2b-task-row__action">{props.action}</span>
+        {/* Inside the row, so a container that divides its rows (`k2b-divided`) sees only rows. The row keeps the
+              focus; the hint is hidden from its name, which already holds the sentence. */}
+        <Tooltip content={props.text} target={() => body} focusTarget={() => row} disabled={!cut()} />
+      </span>
+    </Dynamic>
   );
 }
 
