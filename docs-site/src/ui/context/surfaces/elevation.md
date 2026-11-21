@@ -16,10 +16,30 @@ shadow; everything else is flat.
 | --- | --- | --- |
 | 0 Workspace | The app card and its columns: sidebar, main content, docked detail panel | The app card: `--k2b-shadow-frame`. Columns: the quiet column shadow. Inside: flat. |
 | 1 Islands | Content cards in the main content: `Paper`, a framed `Section`, `LinkCard`, `ResourceCard`, `DashboardFrame`, `DashboardPanel`, a `StatCell` tile, a Kanban card | `--k2b-shadow-raised` with a light 1 px edge. Dark mode: a lighter surface instead. |
-| 2 Overlaying | Surfaces that cover content: a drawer, a sheet, a `PanelDialog`, the detail panel as a sheet on a phone | `--k2b-shadow-side`, `--k2b-shadow-sheet`. Inside: flat. |
-| 3 Floating | Menus, popovers, dialogs, tooltips, hover previews, toasts, drag previews; floating pills and toolbars | `--k2b-shadow-float`, `--k2b-shadow-toast`; pills and toolbars `--k2b-shadow-toolbar`. Inside: flat. |
+| 2 Overlaying | Surfaces that cover content: a drawer, a sheet, the detail panel as a sheet on a phone | `--k2b-shadow-side`, `--k2b-shadow-sheet`. Inside: flat. |
+| 3 Floating | Menus, popovers, dialogs, tooltips, hover previews, toasts, drag previews; floating pills and toolbars | `--k2b-shadow-overlay-sm`, dialogs `--k2b-shadow-overlay-lg`; pills and toolbars `--k2b-shadow-toolbar`. Inside: flat. |
 
 "Surfaces with shadows" is the default for everyone. There is no setting.
+
+## Overlays
+
+What lies over the page is an object: round like a control, with a shadow.
+Inside it is flat again: bands, hairlines, square rows. The kind of overlay
+decides shadow, background, and radius; a component never picks them.
+
+| Overlay | Shadow | Page behind | Radius |
+| --- | --- | --- | --- |
+| Menu, submenu, popover, tooltip, hover card, floating window | `--k2b-shadow-overlay-sm` | stays as it is | 8 px |
+| Toast | `--k2b-shadow-overlay-sm`, only the front one | stays as it is | 8 px, icon tile 8 px |
+| Dialog, prompt | `--k2b-shadow-overlay-lg` | dimmed by 28 % (`--k2b-scrim`), no blur | 8 px |
+| Drawer (the detail panel on a tablet) | `--k2b-shadow-side`, towards the side | stays as it is | 0, it is a column |
+| Sheet below 48rem | `--k2b-shadow-sheet`, upwards | dimmed by 28 %, no blur | 14 px at the top, with a grip |
+
+The page dims only where it is locked (dialog, sheet), and nothing blurs
+behind an overlay. A dialog replaces the one before it; dialogs do not stack.
+An error in a dialog is a tinted cell above its footer, and the dialog grows
+upwards ([PanelDialog](/en/ui/layout/panel-dialog#show-an-error)). Menu rows
+reach every edge of the menu ([Menus](/en/ui/actions/menus#look)).
 
 ## Island or flat
 
@@ -80,11 +100,14 @@ shadow with a blur in packages and apps; rings and hairlines (blur 0, such as
 | `--k2b-surface-raised` | `--k2b-surface` | `--k2b-surface-elevated` | The lighter island surface in dark mode. |
 | `--k2b-shadow-toolbar` | `0 1px 2px rgb(9 9 11 / .06), 0 6px 18px -8px rgb(9 9 11 / .16)` | `0 1px 2px rgb(0 0 0 / .4), 0 8px 22px -10px rgb(0 0 0 / .5)` | Floating pills and toolbars that stay open. |
 | `--k2b-shadow-frame` | unchanged | unchanged | The app card on the canvas; standalone pages (`Paper elevated`). |
-| `--k2b-shadow-side`, `--k2b-shadow-sheet` | unchanged | unchanged | Drawers, sheets, `PanelDialog`. |
-| `--k2b-shadow-float`, `--k2b-shadow-toast` | unchanged | unchanged | Menus, popovers, dialogs, hover previews, toasts, drag previews. |
+| `--k2b-shadow-side`, `--k2b-shadow-sheet` | unchanged | unchanged | Drawers and sheets, directed to the side and upwards. |
+| `--k2b-shadow-overlay-sm` | small | dark | Menus, submenus, popovers, tooltips, hover cards, toasts, floating windows, drag previews. |
+| `--k2b-shadow-overlay-lg` | large | dark | Dialogs and prompts. |
+| `--k2b-scrim` | 28 % | 28 % | The dim behind a dialog or a sheet. |
+| `--k2b-shadow-float`, `--k2b-shadow-toast` | unchanged | unchanged | Kept for existing app surfaces; new overlays use the overlay tokens. |
 
 A floating toolbar that stays open is softer than a menu that opens for a
-moment, so pills never share `--k2b-shadow-float`.
+moment, so pills never share `--k2b-shadow-overlay-sm`.
 
 "No shadow" is a transparent no-op layer (`0 0 #0000`), never `none`, so a
 ring and the island hook can share one list:
@@ -136,7 +159,7 @@ More when the row gets narrow.
 Scroll and hover fades always end in the surface colour, through a mask:
 `data-scroll-fade`, `ScrollArea`, or the content's own `mask-image`. A dark
 inner shadow as a fade is never used. `HoverPreview` and `HoverCard` float on
-layer 3 with `--k2b-shadow-float` outside and no inner shade.
+layer 3 with `--k2b-shadow-overlay-sm` outside and no inner shade.
 
 ## How an app gets it for free
 

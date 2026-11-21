@@ -142,7 +142,9 @@ Both components accept `DropdownItem[]`. An item is one of:
   modified clicks, a middle click, and the link's context menu keep the link,
   for example for an in-app panel that also has its own address;
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
-- a section with optional `sectionLabel` and nested actions or choices.
+- a section with optional `sectionLabel` and nested actions or choices;
+- a submenu row with `label`, optional `icon`, and `submenu`, the items of a
+  menu that opens beside it (see [Submenus](#submenus)).
 
 A choice can also take `href`: a plain click, Enter, or Space runs its action, while modified clicks and middle-click can open the link in a new tab.
 
@@ -213,6 +215,60 @@ An `iconOnly` trigger defaults to the quiet `ghost` variant and shows its
 when the icon action should be emphasized, and `tooltip` to change or omit the
 hint.
 
+## Look
+
+A menu is a floating object: 8 px radius, a 1 px hairline edge, and the small
+overlay shadow (`--k2b-shadow-overlay-sm`). The page behind it stays as it is.
+Inside it is flat: rows are 36 px high (44 px on touch screens), square, and
+reach every edge of the menu, so there is no white strip above the first or
+below the last row, and the menu's radius clips a marked first or last row. One
+hairline from edge to edge separates two sections. A search field is the
+menu's head band, with a hairline below it. A segmented row or tiles stand on
+the text edge of the rows.
+
+## Submenus
+
+Give an item a `submenu` instead of an `action` when its entries form a group
+of their own, such as templates by folder. The row shows "▸" at its end, and
+its menu opens beside it:
+
+- **Place.** The submenu stands next to its row, its first row level with it.
+  Without room on that side it turns to the other side; without room below it
+  rises until its last row is level with its row.
+- **Pointer.** It opens after the pointer rests on the row for 150 ms, or at
+  once on click. Resting on another row of the same menu closes it after the
+  same time. Moving the pointer towards the open submenu closes nothing, also
+  across other rows on the way.
+- **Keyboard.** Right, Enter, or Space on the row opens it and moves the focus
+  to its first entry. Left or Escape closes one level and returns the focus to
+  the row; Tab closes the whole menu. Up and Down stay within one level. In a
+  right-to-left page, Left and Right swap.
+- **Depth.** A menu has at most three levels: the menu, a submenu, and one
+  more. A submenu row on the third level is shown disabled.
+- **Phone.** With `phone="sheet"`, the sheet shows one level at a time: a
+  submenu row replaces the sheet's entries with its own, and the first row,
+  "‹ name", leads back.
+- **Search.** A searchable menu lists matching entries of a submenu in a
+  section named after the submenu row.
+
+Choosing an entry in a submenu closes the whole menu and runs its action, as in
+the menu itself. `ContextMenu`, `GestureMenu`, `SplitButton`, and the toolbar's
+More menu take the same items.
+
+```tsx
+const items: DropdownItem[] = [
+  { label: "Upload", icon: "ti ti-upload", action: upload },
+  {
+    label: "From template",
+    icon: "ti ti-template",
+    submenu: [
+      { label: "Office", icon: "ti ti-folder", submenu: officeTemplates },
+      { label: "Workshop", icon: "ti ti-folder", submenu: workshopTemplates },
+    ],
+  },
+];
+```
+
 ## Menu width
 
 Menus size to their entries, so a caller does not need to know a width. A menu
@@ -274,7 +330,12 @@ type DropdownAction =
       action?: never;
       href?: never;
       external?: never;
-    });
+    })
+  | DropdownSubmenu;
+
+type DropdownSubmenu = DropdownActionBase & {
+  submenu: readonly DropdownItem[]; action?: never; href?: never; external?: never;
+};
 
 type DropdownChoice = DropdownActionBase & {
   action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
@@ -319,7 +380,7 @@ type ContextMenuProps = {
 };
 ```
 
-`DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. Actions and choices close on activation unless `closeOnSelect: false`. A section contains actions/choices, not nested sections.
+`DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSubmenu`, `DropdownSection` and `DropdownItem` types. A `DropdownSubmenu` is one form of `DropdownAction`, so code that reads `item.action` already handles a row without one. Action callbacks return `void`; asynchronous work and its errors stay with the host. Actions and choices close on activation unless `closeOnSelect: false`. A section contains actions/choices, not nested sections.
 
 Use `closeOnSelect: false` for an action that changes a value in place, such as a cycling setting. Keep the item object stable and expose changing `label`, `icon`, and `ariaLabel` fields as getters: the row updates in place and keeps focus. `ariaLabel` must contain the visible label.
 
@@ -331,6 +392,12 @@ Use `closeOnSelect: false` for an action that changes a value in place, such as 
 `search`, otherwise `menu`), `aria-expanded`, and `aria-controls` in server
 HTML. Enter, Space, and arrow keys open it. Arrow
 keys, Home, End, Escape, and Tab manage the open menu.
+
+A submenu row has `aria-haspopup="menu"` and `aria-expanded`, and points to its
+open submenu with `aria-controls`; the submenu is a `menu` named after its row.
+Right, Enter, and Space open it with the focus on its first entry; Left and
+Escape close it and return the focus to the row. In the phone sheet the back
+row is named "Back from …".
 
 Unless `closeOnSelect: false`, declarative actions close the visible menu
 before their callback runs. A state update in the callback therefore cannot
