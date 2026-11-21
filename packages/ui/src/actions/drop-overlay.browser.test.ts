@@ -180,7 +180,9 @@ describe(`drop overlay in ${browserName}`, () => {
       const at = () =>
         page.evaluate(() => {
           const preview = document.querySelector<HTMLElement>(".k2b-drag-preview");
-          return (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(preview?.style.transform ?? "") ?? []).slice(1).map(Math.round);
+          return (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(preview?.style.transform ?? "") ?? [])
+            .slice(1)
+            .map((value) => Math.round(Number(value)));
         });
       // The preview is part of the static engine: it is there and at the pointer before the overlay code arrives.
       await page.locator(".k2b-drag-preview").waitFor();
