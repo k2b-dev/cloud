@@ -657,3 +657,55 @@ test("a fitting strip with three views still moves one that does not fit under M
     await page.close();
   }
 });
+
+// K6, K15: in the flat head every view keeps its count beside its name ("Needs action 12"): on the strip at every
+// width, on a phone, and in the menu behind "More +n" for the views that wait there.
+for (const [host, width, viewport] of [
+  ["1440 px host", "1440", { width: 1440, height: 900 }],
+  ["640 px host", "640", { width: 1440, height: 900 }],
+  ["phone", "", { width: 390, height: 844 }],
+] as const)
+  test(`counts stay beside their views on the strip and under More in a ${host}`, async () => {
+    const page = await browser!.newPage({ viewport, isMobile: host === "phone", reducedMotion: "reduce" });
+    try {
+      await load(page, width ? { width } : {});
+      const counts = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".k2b-view-tabs__item")]
+          .filter((item) => item.getClientRects().length > 0)
+          .map((item) => {
+            const list = item.closest(".k2b-view-tabs__list")!.getBoundingClientRect();
+            const count = item.querySelector<HTMLElement>(".k2b-view-tabs__count");
+            const box = count?.getBoundingClientRect();
+            return {
+              label: item.querySelector(".k2b-view-tabs__label")?.textContent ?? "",
+              count: count?.textContent ?? null,
+              visible: !!box && box.width > 0 && getComputedStyle(count!).visibility === "visible",
+              // Scrolled out of the strip is fine; drawn but cut is not.
+              cut: !!box && box.right > list.right + 0.5 && box.left < list.right - 0.5,
+            };
+          }),
+      );
+      const expected = { Focus: "12", "Needs action": "12", "Assigned to me": "5", "Waiting for a customer reply": "2", "Not assigned": "4" };
+      expect(counts.length).toBeGreaterThan(0);
+      for (const tab of counts) {
+        const want = expected[tab.label as keyof typeof expected] ?? null;
+        expect({ label: tab.label, count: tab.count, visible: tab.count ? tab.visible : false, cut: tab.cut }).toEqual({
+          label: tab.label,
+          count: want,
+          visible: want !== null,
+          cut: false,
+        });
+      }
+      const more = page.locator(".k2b-view-tabs__more-trigger");
+      if (await more.isVisible()) {
+        await more.click();
+        await page.locator('[role="menu"], [role="dialog"]').first().waitFor({ state: "visible" });
+        const entries = await page.locator('[role="menuitem"], [role="menuitemradio"]').allInnerTexts();
+        const shown = new Set(counts.map((tab) => tab.label));
+        for (const [label, count] of Object.entries(expected))
+          if (!shown.has(label)) expect(entries.some((entry) => entry.includes(label) && entry.includes(count))).toBe(true);
+      }
+    } finally {
+      await page.close();
+    }
+  });

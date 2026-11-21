@@ -1,53 +1,94 @@
-import { createEffect, For, type JSX, on, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../actions/Button";
+import { Dropdown, type DropdownItem } from "../actions/Dropdown";
+import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
 
-export type BreadcrumbItem = { label: string };
+export type BreadcrumbItem = {
+  label: string;
+  /** A link to this level, for a path in a page head. Without it the level calls `onSelect`. */
+  href?: string;
+};
 
 export type BreadcrumbsProps = {
-  /** The path from the top: every item but the last is a link, the last is the current place. */
+  /** The path from the top: every item but the last leads to its level, the last is the current place. */
   items: readonly BreadcrumbItem[];
   /** Names the path for assistive technology, for example "Path". */
   label: string;
-  /** Called with the index of the link that was activated; never for the current place. */
-  onSelect: (index: number) => void;
+  /** Called with the index of the level that was activated; never for the current place. */
+  onSelect?: (index: number) => void;
   disabled?: boolean;
   class?: string;
 };
 
 /**
- * A path inside a dialog or panel: the levels above as blue text links, the current level as text. It stays on one
- * line; a long path scrolls sideways with a fade on the side where more follows, and shows its end after each change.
+ * A path, in a page head (`AppWorkspace.Head` `views`) or inside a dialog or panel: the levels above in quiet text,
+ * the current level in strong text. It stays on one line (K15): when the path does not fit, the front levels give
+ * way first and wait behind "…", which opens them as a menu; the current level always stays. Before the browser
+ * measures, a long path scrolls sideways with a fade on the side where more follows and shows its end.
  */
 export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
+  const messages = useUiMessages();
   let list: HTMLOListElement | undefined;
+  // How many front levels wait behind "…"; the current level never does.
+  const [hidden, setHidden] = createSignal(0);
   createScrollFade(
     () => list,
     () => true,
   );
+  const fits = () => !list || list.scrollWidth <= list.clientWidth + 0.5;
+  const settle = () => {
+    if (!list) return;
+    // Measure from the full path, then hide front levels one by one until the rest fits.
+    let count = 0;
+    setHidden(0);
+    while (!fits() && count < props.items.length - 1) setHidden(++count);
+    if (fits()) list.scrollLeft = getComputedStyle(list).direction === "rtl" ? -list.scrollWidth : list.scrollWidth;
+  };
+  onMount(() => {
+    if (!list || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => settle());
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  });
   // The current level is the end of the path: keep it in view after every change. Horizontal RTL counts negative.
   createEffect(
     on(
-      () => props.items.length,
+      () => props.items.map((item) => item.label).join("\u0000"),
       () => {
         if (!list) return;
+        settle();
         const rtl = getComputedStyle(list).direction === "rtl";
         list.scrollLeft = rtl ? -list.scrollWidth : list.scrollWidth;
       },
     ),
   );
+  const select = (index: number) => {
+    props.onSelect?.(index);
+  };
+  const hiddenItems = (): DropdownItem[] =>
+    props.items
+      .slice(0, hidden())
+      .map((item, index) => (item.href ? { label: item.label, href: item.href } : { label: item.label, action: () => select(index) }));
   return (
     <nav class={`k2b-breadcrumbs ${props.class ?? ""}`} aria-label={props.label}>
       <ol ref={list} class="k2b-breadcrumbs__list" data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal">
+        <Show when={hidden() > 0}>
+          <li class="k2b-breadcrumbs__item k2b-breadcrumbs__more">
+            <Dropdown items={hiddenItems()}>
+              <Dropdown.Trigger class="k2b-breadcrumbs__link" variant="ghost" size="sm" label={messages().pathLevelsAbove}>
+                …
+              </Dropdown.Trigger>
+            </Dropdown>
+          </li>
+        </Show>
         <For each={props.items}>
           {(item, index) => {
             const current = () => index() === props.items.length - 1;
             return (
-              <li class="k2b-breadcrumbs__item">
+              <li class="k2b-breadcrumbs__item" hidden={index() < hidden() ? true : undefined}>
                 <Show when={index() > 0}>
-                  <span class="k2b-breadcrumbs__separator" aria-hidden="true">
-                    /
-                  </span>
+                  <i class="ti ti-chevron-right k2b-breadcrumbs__separator" aria-hidden="true" />
                 </Show>
                 <Show
                   when={!current()}
@@ -57,9 +98,20 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
                     </span>
                   }
                 >
-                  <Button variant="link" class="k2b-breadcrumbs__link" disabled={props.disabled} onClick={() => props.onSelect(index())}>
-                    {item.label}
-                  </Button>
+                  <Show
+                    when={item.href}
+                    fallback={
+                      <Button variant="link" class="k2b-breadcrumbs__link" disabled={props.disabled} onClick={() => select(index())}>
+                        {item.label}
+                      </Button>
+                    }
+                  >
+                    {(href) => (
+                      <a class="k2b-breadcrumbs__link" href={href()} aria-disabled={props.disabled ? "true" : undefined}>
+                        {item.label}
+                      </a>
+                    )}
+                  </Show>
                 </Show>
               </li>
             );

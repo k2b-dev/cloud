@@ -267,3 +267,5 @@ export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContent
 export { TableOfContents } from "./TableOfContents";
 export type { StatusRowFact, StatusRowProps, StatusRowSelection, StatusRowState } from "./StatusRow";
 export { StatusRow } from "./StatusRow";
+export type { FloatingPillProps } from "./FloatingPill";
+export { FloatingPill } from "./FloatingPill";

@@ -17,7 +17,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const ui = await import("@k2b/ui");
-const { AppWorkspace, Breadcrumbs, DataTable, DetailPanel, IconButton, ViewTabs, SegmentedControl } = ui;
+const { AppWorkspace, Breadcrumbs, Button, DataTable, DetailPanel, FloatingPill, IconButton, SegmentedControl, StatusRow, ViewTabs } = ui;
 const { Hono } = await import("hono");
 const { Dynamic } = await import("solid-js/web");
 const { defineApp } = await import("../_internal/define-app");
@@ -90,12 +90,15 @@ const sidebar = (id: string, label: string, items: { label: string; icon: string
     },
   });
 
-const spacesPage = (detail: boolean) =>
+type Query = { req: { query: (key: string) => string | undefined } };
+const spacesPage = (detail: boolean, c: Query) =>
   h(AppWorkspace, {
     class: "min-h-0 flex-1",
     get children() {
       return [
+        // Valentin 21.11. (4): the main action also waits as a quiet entry at the top of the sidebar, never filled.
         sidebar("spaces-navigation", "Spaces", [
+          { label: "Neue Aufgabe", icon: "ti ti-plus" },
           { label: "Meine Arbeit", icon: "ti ti-user-check", meta: "6" },
           { label: "Logistik", icon: "ti ti-truck", active: true, meta: "12" },
           { label: "Vertrieb", icon: "ti ti-briefcase", meta: "5" },
@@ -120,18 +123,35 @@ const spacesPage = (detail: boolean) =>
             return [
               h(AppWorkspace.Main, {
                 get children() {
-                  return h(DataTable<Task>, {
-                    ariaLabel: "Aufgaben",
-                    rows: tasks,
-                    getRowId: (row) => row.id,
-                    selectedRowId: detail ? "t2" : null,
-                    columns: [
-                      { id: "title", header: "Aufgabe", value: "title" },
-                      { id: "space", header: "Space", value: "space" },
-                      { id: "who", header: "Zuständig", value: "who" },
-                      { id: "due", header: "Fällig", value: "due", nowrap: true },
-                    ],
-                  });
+                  return [
+                    h(StatusRow, {
+                      lead: "5 Aufgaben offen",
+                      facts: [
+                        { value: "2", label: "überfällig" },
+                        { value: "3", label: "diese Woche" },
+                      ],
+                      filters: [
+                        h(Button, { size: "sm", variant: "ghost", children: "Tag" }),
+                        h(Button, { size: "sm", variant: "ghost", children: "Zuständig" }),
+                      ],
+                      state:
+                        c.req.query("state") === "sync"
+                          ? { label: "Abgleich pausiert", tone: "warning", icon: "ti ti-refresh", next: "14:05" }
+                          : undefined,
+                    }),
+                    h(DataTable<Task>, {
+                      ariaLabel: "Aufgaben",
+                      rows: tasks,
+                      getRowId: (row) => row.id,
+                      selectedRowId: detail ? "t2" : null,
+                      columns: [
+                        { id: "title", header: "Aufgabe", value: "title" },
+                        { id: "space", header: "Space", value: "space" },
+                        { id: "who", header: "Zuständig", value: "who" },
+                        { id: "due", header: "Fällig", value: "due", nowrap: true },
+                      ],
+                    }),
+                  ];
                 },
               }),
               h(AppWorkspace.Detail, {
@@ -171,6 +191,7 @@ const filesPage = () =>
     get children() {
       return [
         sidebar("files-navigation", "Dateien", [
+          { label: "Hochladen", icon: "ti ti-upload" },
           { label: "Zuletzt", icon: "ti ti-clock" },
           { label: "Favoriten", icon: "ti ti-star" },
           { label: "Meine Dateien", icon: "ti ti-folder", active: true },
@@ -179,8 +200,12 @@ const filesPage = () =>
         h(AppWorkspace.Head, {
           views: h(Breadcrumbs, {
             label: "Pfad",
-            onSelect: () => {},
-            items: [{ label: "Meine Dateien" }, { label: "Projekte" }, { label: "2026" }, { label: "Messe Frühjahr" }],
+            items: [
+              { label: "Meine Dateien", href: "#root" },
+              { label: "Projekte", href: "#projekte" },
+              { label: "2026", href: "#2026" },
+              { label: "Messe Frühjahr" },
+            ],
           }),
           actions: h(SegmentedControl, {
             label: "Darstellung",
@@ -233,11 +258,39 @@ const notePage = () =>
         h(AppWorkspace.Content, {
           get children() {
             return h(AppWorkspace.Main, {
-              width: "content",
+              width: "reading",
               get children() {
                 return [
-                  createComponent((p: { children: JSX.Element }) => p.children, {
-                    children: "Messeplanung Frühjahr: Stand, Personal und Material für drei Tage am Standort Nord.",
+                  h(FloatingPill, {
+                    label: "Ansichten und Aktionen der Notiz",
+                    get children() {
+                      return [
+                        h(IconButton, { label: "Bearbeiten", size: "sm", variant: "ghost", children: icon("ti ti-pencil") }),
+                        h(IconButton, { label: "Lesen", size: "sm", variant: "ghost", children: icon("ti ti-book") }),
+                        h(FloatingPill.Separator, {}),
+                        h(IconButton, { label: "Teilen", size: "sm", variant: "ghost", children: icon("ti ti-share") }),
+                        h(IconButton, { label: "Weitere Aktionen", size: "sm", variant: "ghost", children: icon("ti ti-dots") }),
+                      ];
+                    },
+                  }),
+                  createComponent(Dynamic, {
+                    component: "article",
+                    get children() {
+                      return [
+                        createComponent(Dynamic, {
+                          component: "h1",
+                          style: "font-size:1.5rem;margin:3.5rem 0 1rem",
+                          children: "Messeplanung Frühjahr",
+                        }),
+                        ...[
+                          "Stand, Personal und Material für drei Tage am Standort Nord. Der Aufbau beginnt am Vortag um 14 Uhr; das Team aus der Logistik bringt die Wände und die Theke mit dem Sprinter.",
+                          "Am Stand sind jeden Tag drei Personen: zwei aus dem Vertrieb, eine aus dem Einkauf. Die Liste der Termine mit Kunden liegt im Space Vertrieb.",
+                          "Offen ist noch, ob wir den Bildschirm mieten oder den eigenen mitnehmen. Bis Freitag entscheidet Ella.",
+                        ].map((text) =>
+                          createComponent(Dynamic, { component: "p", style: "line-height:1.6;margin:0 0 1rem", children: text }),
+                        ),
+                      ];
+                    },
                   }),
                 ];
               },
@@ -249,7 +302,7 @@ const notePage = () =>
   });
 
 const pages: Record<string, (c: { req: { query: (key: string) => string | undefined } }) => JSX.Element> = {
-  spaces: (c) => spacesPage(c.req.query("detail") !== "0"),
+  spaces: (c) => spacesPage(c.req.query("detail") !== "0", c),
   files: () => filesPage(),
   notebooks: () => notePage(),
 };
@@ -303,7 +356,9 @@ const fonts = async () => {
 
 /** Server HTML with the global stylesheet; scripts and links are dropped, as the shell harnesses do. */
 const html = async (path: string, options: FlatShellOptions) => {
-  const markup = await (await server.request(path, { headers: { "Accept-Language": "de", Cookie: `theme=${options.theme ?? "light"}` } })).text();
+  const markup = await (
+    await server.request(path, { headers: { "Accept-Language": "de", Cookie: `theme=${options.theme ?? "light"}` } })
+  ).text();
   const clean = new HTMLRewriter()
     .on('script[src], script[type="module"]', { element: (element) => void element.remove() })
     .on('link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"]', { element: (element) => void element.remove() })

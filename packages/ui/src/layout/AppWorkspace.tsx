@@ -285,8 +285,12 @@ export type AppWorkspaceContentProps = { children: JSX.Element; class?: string }
 export type AppWorkspaceMainProps = {
   children: JSX.Element;
   class?: string;
-  /** `"content"` centers the children as one reading column with the shared page width on large screens. */
-  width?: "full" | "content";
+  /**
+   * `"content"` centers the children as one reading column with the shared page width on large screens.
+   * `"reading"` is a column of running text such as a note (K6, K11): no head and no status row above it, the text
+   * gets the whole height at a 720 px measure, centered; views and actions float in a `FloatingPill`.
+   */
+  width?: "full" | "content" | "reading";
   /**
    * The width in px or a workspace width share that Main keeps beside the sidebar and an open Detail,
    * from 48rem (768 px); at least the default 320. A Detail that does not fit
@@ -894,7 +898,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
         data-workspace-levels={levelsMode() ? "" : undefined}
         data-workspace-level-count={levelsMode() ? levels().length : undefined}
         data-mobile-pane={levelsMode() ? undefined : props.mobilePane}
-        data-width={props.width === "content" ? "content" : undefined}
+        data-width={props.width === "content" || props.width === "reading" ? props.width : undefined}
         data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
         data-scroll={props.scroll === false ? "false" : undefined}
         aria-busy={props["aria-busy"]}
