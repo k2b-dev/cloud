@@ -283,7 +283,10 @@ headings move to the right when the first rows arrive.
 
 Use `density="compact"` for dense operational tables. Headers are sticky unless `stickyHeader={false}`. `footer` accepts values and an optional cell renderer for server-computed totals.
 
-`DataTable` owns its scroll viewport and keeps sticky headers aligned. Avoid
+`DataTable` owns its scroll viewport and keeps sticky headers aligned: the head
+and the rows lie in this one scroll area, and it keeps a classic scrollbar's room
+(`scrollbar-gutter: stable`), so the columns and their lines keep their x when a
+scrollbar appears (K15, "a scrollbar moves nothing"). Avoid
 wrapping it in a second scrolling container.
 
 Use `surface="paper"` for a standalone bordered table and `surface="plain"`
