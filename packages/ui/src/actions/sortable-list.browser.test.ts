@@ -262,6 +262,7 @@ describe(`sortable list in ${browserName}`, () => {
       await page.mouse.up();
       expect(await board(page)).toEqual(start);
       // Outside the board there is no column, so the release cancels.
+      await settled(page);
       await lift(page, "o1");
       await page.mouse.move(700, 680, { steps: 3 });
       await page.waitForFunction(() => !document.querySelector("[data-sortable-line]"));
@@ -403,6 +404,7 @@ describe(`sortable list in ${browserName}`, () => {
       });
       expect(section).toEqual({ title: "Move to", labels: ["In Arbeit", "Erledigt"] });
       expect((await board(page)).doing).toEqual(["d1", "d2", "d3", "o1"]);
+      await settled(page);
       const grip = await center(page, '[data-sortable-handle="alpha"]');
       await page.mouse.move(grip.x, grip.y);
       await page.mouse.down();
