@@ -32,8 +32,10 @@ const at = new Date("2026-11-21T09:00:00Z");
 const password = "fixture-only-password";
 const initial: JmapSyncState = { version: 2, emailState: "Email:0", mailboxState: "Mailbox:0", scan: null };
 // Measured in the first gate: the statements of one mailbox batch with 1 and with 5 JMAP messages.
-// The per-message part equals the IMAP batch's; the account access adds the loader's two reads.
-const JMAP_HYDRATION_BUDGET: { one: number | null; five: number | null } = { one: null, five: null };
+// 46 per message: the unchanged parser, the transport fence before and after it (as in the IMAP
+// batch) and the message's live invalidation. 11 fixed: target, fence, the loader's two reads,
+// candidates, fence checks, the invalidation transaction and the follow-up check.
+const JMAP_HYDRATION_BUDGET: { one: number; five: number } = { one: 57, five: 241 };
 const noHeartbeat = async (): Promise<void> => undefined;
 const codeOf = (error: unknown): unknown => (error instanceof Error ? Reflect.get(error, "code") : undefined);
 
@@ -124,14 +126,14 @@ suite("JMAP body hydration", () => {
   });
 
   /** A JMAP mailbox with an active binding and an approved origin, folders from the fixture server. */
-  async function setup(label: string) {
+  async function setup(label: string, options: { cleanup?: boolean } = {}) {
     const f = createJmapFixture();
     fixtures.push(f);
     f.session.capabilities[JMAP_CORE].maxObjectsInGet = 200;
     const mailbox = await createMailbox(owner, { name: `JMAP hydration ${label} ${suffix}` });
     if (!mailbox.ok) throw new Error(`setup: ${mailbox.error.message}`);
     const mailboxId = mailbox.data.id;
-    mailboxIds.push(mailboxId);
+    if (options.cleanup !== false) mailboxIds.push(mailboxId);
     const remoteResourceId = crypto.randomUUID(),
       connectionId = crypto.randomUUID(),
       bindingId = crypto.randomUUID();
@@ -555,10 +557,12 @@ suite("JMAP body hydration", () => {
       return undefined;
     });
     expect(codeOf(moved.failure), "Session changed: ends the batch").toBe("JMAP_SESSION_CHANGED");
+    // The connection deadline (15 s) is armed before any request; expiring it at once is a
+    // timeout before the source, whatever the network does.
     const timedOut = await failureCase("connect-timeout", (s) => ({
       ...s.f.dependencies,
-      downloadTimer: (expire) => {
-        queueMicrotask(expire);
+      downloadTimer: (expire, milliseconds) => {
+        if (milliseconds === 15_000) queueMicrotask(expire);
         return () => undefined;
       },
     }));
@@ -676,19 +680,36 @@ suite("JMAP body hydration", () => {
 
   test("mid-stream: an idle deadline counts that message's attempt, ends the batch and opens the breaker", async () => {
     const t = await threeMessages("idle");
-    // The network idle deadline expires once the first source started.
-    let expired = false;
+    const factory = t.s.f.dependencies.request;
+    if (!factory) throw new Error("idle: fixture request factory missing");
+    // The server sends the first piece of the first source and then goes silent; closing the
+    // fixture ends the stalled response.
+    t.s.f.download.afterChunk = async (index) => {
+      if (index === 0) await new Promise<void>(() => {});
+    };
+    // The idle deadline the transport armed last, and the moment the first piece went through.
+    let idleDeadline: (() => void) | undefined;
+    const firstPiece = Promise.withResolvers<void>();
     const idle: JmapTransportDependencies = {
       ...t.s.f.dependencies,
       downloadTimer: (expire, milliseconds) => {
-        if (milliseconds === 60_000 && !expired) {
-          expired = true;
-          queueMicrotask(expire);
-        }
-        return () => undefined;
+        if (milliseconds === 60_000) idleDeadline = expire;
+        return () => {
+          if (idleDeadline === expire) idleDeadline = undefined;
+        };
       },
+      request: (options, callback) =>
+        factory(options, (response) => {
+          if (options.path?.includes("/blob-first/")) response.once("data", () => setImmediate(firstPiece.resolve));
+          callback(response);
+        }),
     };
-    const failure = await t.rejected(idle);
+    const running = t.rejected(idle);
+    await firstPiece.promise;
+    // The transport rearmed its idle deadline for the piece; it now expires without more data.
+    if (!idleDeadline) throw new Error("idle: no idle deadline armed after the first piece");
+    idleDeadline();
+    const failure = await running;
     expect(codeOf(failure), "idle: the batch ends with the timeout").toBe("JMAP_TIMEOUT");
     expect(t.s.downloads(), "idle: no download after it").toEqual(["blob-first"]);
     expect(await t.attempts(), "idle: one attempt for that message only").toEqual({ first: 1, second: 0, third: 0 });
@@ -696,23 +717,24 @@ suite("JMAP body hydration", () => {
     expect(await providerBreakerOpenForMs(t.s.remoteResourceId), "idle: breaker open").toBeGreaterThan(0);
   }, 30_000);
 
-  test("not ready: a job for a JMAP message whose binding is not active ends without a mark or an attempt", async () => {
+  test("not ready: a job for a JMAP-only message whose binding is not active stops visibly without an attempt", async () => {
     const s = await setup("not-ready");
     await s.arrive([s.email("waiting", rfc822(`waiting-${suffix}`))]);
     const id = await s.messageOf("waiting");
     await sql`UPDATE mail.provider_bindings SET state = 'pending' WHERE id = ${s.bindingId}::uuid`;
     expect(await syncRuntime.canHydrateMessage(id), "not ready: nothing to fetch").toBe(false);
-    expect(await s.hydrate({ messageId: id }), "not ready: nothing done").toEqual({ hydrated: false });
+    expect(await s.hydrate({ messageId: id }), "not ready: nothing loaded").toEqual({ hydrated: false });
     expect(s.downloads(), "not ready: no download").toEqual([]);
     const state = await stateOf(id);
     expect(
       { status: state?.hydration_status, attempt: state?.hydration_attempt, code: state?.hydration_error_code },
-      "not ready: unchanged",
-    ).toEqual({ status: "envelope", attempt: 0, code: null });
+      "not ready: a visible mark, no attempt",
+    ).toEqual({ status: "failed", attempt: 0, code: "REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED" });
   }, 30_000);
 
   test("DATA-13: a JMAP batch costs the IMAP statements per message and the loader's two reads", async () => {
     const measured: { one: number; five: number } = { one: 0, five: 0 };
+    let groups: Record<string, number> = {};
     const meter = await meterSql();
     try {
       for (const [key, count] of [
@@ -721,22 +743,30 @@ suite("JMAP body hydration", () => {
       ] as const) {
         const s = await setup(`budget ${key}`);
         await s.arrive(Array.from({ length: count }, (_, index) => s.email(`${key}-${index}`, rfc822(`${key}-${index}-${suffix}`))));
-        measured[key] = (await meter.during(() => s.hydrate({ mailboxId: s.mailboxId }))).length;
+        const statements = await meter.during(() => s.hydrate({ mailboxId: s.mailboxId }));
+        measured[key] = statements.length;
+        if (key === "one") {
+          groups = {};
+          for (const text of statements) groups[text.slice(0, 60)] = (groups[text.slice(0, 60)] ?? 0) + 1;
+        }
         expect(s.downloads().length, `${key}: every source once`).toBe(count);
       }
-      // The line names the measured values for the budget.
+      // The lines name the measured values and, for one message, which statements they are.
       console.info("JMAP_HYDRATION_STATEMENTS", JSON.stringify(measured));
-      if (JMAP_HYDRATION_BUDGET.one !== null && JMAP_HYDRATION_BUDGET.five !== null)
-        expect(measured, "budget: exact statement counts").toEqual({ one: JMAP_HYDRATION_BUDGET.one, five: JMAP_HYDRATION_BUDGET.five });
+      console.info("JMAP_HYDRATION_STATEMENT_GROUPS", JSON.stringify(groups));
+      expect(measured, "budget: exact statement counts").toEqual(JMAP_HYDRATION_BUDGET);
+      expect((measured.five - measured.one) % 4, "budget: linear in the number of messages").toBe(0);
     } finally {
       await meter.close();
     }
   }, 60_000);
 
-  // Last in the file: it leaves 160,000 pending bodies behind in two mailboxes of their own.
+  // Last in the file. Its 160,000 bodies live in mailboxes the afterAll keeps: the runner discards
+  // this file's database, and deleting them would cascade through every body and reference.
   test("candidate plan: each status probe follows the hydration queue index among 160,000 pending bodies", async () => {
     const limit = 20;
-    const fill = async (s: Fixture, prefix: string) => {
+    const statuses = 4;
+    const fill = async (s: Fixture, prefix: string, folderPrefix: string) => {
       const folderId = s.folderIds.get("a");
       if (!folderId) throw new Error("plan: folder missing");
       await sql`INSERT INTO mail.message_contents (short_id, mailbox_id, subject, internal_date, content_hash, hydration_status)
@@ -745,13 +775,22 @@ suite("JMAP body hydration", () => {
         FROM generate_series(0, 79999) AS item`;
       await sql`INSERT INTO mail.remote_message_refs (folder_id, message_id, remote_id)
         SELECT ${folderId}::uuid, mc.id, 'E' || mc.short_id FROM mail.message_contents mc WHERE mc.mailbox_id = ${s.mailboxId}::uuid`;
+      // Some hundred further folders with binding refs, so the planner sees folder tables worth an index.
+      await sql`INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name)
+        SELECT ${folderPrefix} || lpad(item::text, 5, '0'), ${s.remoteResourceId}::uuid, 'plan-folder-' || item, 'Plan ' || item
+        FROM generate_series(0, 399) AS item`;
+      await sql`INSERT INTO mail.binding_folder_refs (binding_id, folder_id, remote_folder_id, remote_path, effective_rights)
+        SELECT ${s.bindingId}::uuid, folder.id, folder.stable_key, folder.name, ARRAY['read']::text[]
+        FROM mail.folders folder WHERE folder.remote_resource_id = ${s.remoteResourceId}::uuid AND folder.stable_key LIKE 'plan-folder-%'`;
     };
-    const s = await setup("plan");
-    const other = await setup("plan-other");
-    await fill(s, "P");
-    await fill(other, "Q");
+    const s = await setup("plan", { cleanup: false });
+    const other = await setup("plan-other", { cleanup: false });
+    await fill(s, "P", "G");
+    await fill(other, "Q", "H");
     await sql`ANALYZE mail.message_contents`;
     await sql`ANALYZE mail.remote_message_refs`;
+    await sql`ANALYZE mail.folders`;
+    await sql`ANALYZE mail.binding_folder_refs`;
     const [newest] = await sql<{ id: string }[]>`SELECT id FROM mail.message_contents WHERE short_id = 'P00000'`;
     if (!newest) throw new Error("plan: newest body missing");
     const params = {
@@ -782,26 +821,46 @@ suite("JMAP body hydration", () => {
     const plan = explained?.["QUERY PLAN"][0];
     if (!plan) throw new Error("plan: missing");
     const all = nodes(plan.Plan);
-    const read = (node: Plan) => (node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0);
+    const perLoop = (node: Plan) => (node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0);
+    const read = (relation: string) =>
+      all.filter((node) => node["Relation Name"] === relation).reduce((sum, node) => sum + perLoop(node) * (node["Actual Loops"] ?? 1), 0);
+    const label = (node: Plan) =>
+      node["Node Type"] + (node["Index Name"] ? `(${node["Index Name"]})` : node["Relation Name"] ? `(${node["Relation Name"]})` : "");
     const probes = all.filter((node) => node["Index Name"] === "message_contents_hydration_queue_idx");
+    const rowsRead = {
+      message_contents: read("message_contents"),
+      remote_message_refs: read("remote_message_refs"),
+      folders: read("folders"),
+      binding_folder_refs: read("binding_folder_refs"),
+      provider_bindings: read("provider_bindings"),
+    };
     // One line for the driver; no expectation on time.
     console.info(
       "JMAP_HYDRATION_PLAN",
       JSON.stringify({
-        nodes: all.map((node) => node["Node Type"] + (node["Index Name"] ? `(${node["Index Name"]})` : "")),
-        probeRowsPerLoop: probes.map(read),
+        nodes: all.map(label),
+        seqScans: all
+          .filter((node) => node["Node Type"] === "Seq Scan")
+          .map((node) => `${label(node)}:${perLoop(node) * (node["Actual Loops"] ?? 1)}`),
+        probeRowsPerLoop: probes.map(perLoop),
         probeLoops: probes.map((node) => node["Actual Loops"] ?? 1),
-        rowsRead: all.filter((node) => node["Relation Name"]).reduce((sum, node) => sum + read(node) * (node["Actual Loops"] ?? 1), 0),
+        rowsRead,
         rows: plan.Plan["Actual Rows"],
         executionMs: plan["Execution Time"],
       }),
     );
     expect(plan.Plan["Actual Rows"] ?? Number.POSITIVE_INFINITY, "plan: at most one batch of rows").toBeLessThanOrEqual(limit);
-    expect(
-      all.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "message_contents"),
-      "plan: no sequential scan of the bodies",
-    ).toBeFalse();
+    for (const relation of ["message_contents", "remote_message_refs"])
+      expect(
+        all.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === relation),
+        `plan: no sequential scan of ${relation}`,
+      ).toBeFalse();
     expect(probes.length, "plan: the hydration queue index").toBeGreaterThan(0);
-    for (const probe of probes) expect(read(probe), "plan: each status probe reads about one batch").toBeLessThanOrEqual(4 * limit);
+    for (const probe of probes) expect(perLoop(probe), "plan: each status probe reads about one batch").toBeLessThanOrEqual(4 * limit);
+    // The small folder tables do not count against the bound; they are in the line above.
+    expect(
+      rowsRead.message_contents + rowsRead.remote_message_refs,
+      "plan: bodies and references read for about one batch",
+    ).toBeLessThanOrEqual(4 * limit * statuses);
   }, 120_000);
 });

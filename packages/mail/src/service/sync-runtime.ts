@@ -3314,18 +3314,25 @@ type HydrationBatch = {
   accountDeltaRequired?: boolean;
 };
 
-const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
-  // A JMAP reference is fetchable while its folder is readable through the resource's active
-  // binding; it has no UIDVALIDITY. IMAP references come first, as before, and never run the check.
-  // A JMAP copy that cannot be fetched now leaves nothing to do: the message stays as it is.
+/**
+ * Whether a JMAP reference in this folder can be fetched now: the folder is readable through the
+ * resource's active binding (JMAP has no UIDVALIDITY). The one condition the request target, the
+ * due mailboxes and, in its join form, `newestPendingBody` share. Callers keep IMAP references out
+ * of it, so it never runs for them.
+ */
+const jmapReferenceReady = (folderId: Bun.SQL.Query<unknown>): Bun.SQL.Query<unknown> => sql`EXISTS (
+  SELECT 1
+  FROM mail.binding_folder_refs bfr
+  JOIN mail.provider_bindings binding ON binding.id = bfr.binding_id AND binding.state = 'active'
+  WHERE bfr.folder_id = ${folderId} AND bfr.remote_folder_id IS NOT NULL AND 'read' = ANY(bfr.effective_rights)
+)`;
+
+const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | "unsupported" | null> => {
+  // IMAP references come first, as before, and never run the JMAP check. A ready JMAP reference is
+  // a target; a JMAP-only message without one is unsupported for now and stops visibly.
   const [target] = await sql<(Omit<HydrationTarget, "jmap"> & { remote_id: string | null; jmap_ready: boolean })[]>`
     SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id, rmr.remote_id,
-      CASE WHEN rmr.remote_id IS NULL THEN false ELSE EXISTS (
-        SELECT 1
-        FROM mail.binding_folder_refs bfr
-        JOIN mail.provider_bindings binding ON binding.id = bfr.binding_id AND binding.state = 'active'
-        WHERE bfr.folder_id = rmr.folder_id AND bfr.remote_folder_id IS NOT NULL AND 'read' = ANY(bfr.effective_rights)
-      ) END AS jmap_ready
+      CASE WHEN rmr.remote_id IS NULL THEN false ELSE ${jmapReferenceReady(sql`rmr.folder_id`)} END AS jmap_ready
     FROM mail.message_contents mc
     JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
     JOIN mail.folders f
@@ -3344,7 +3351,7 @@ const requestedHydrationTarget = async (messageId: string): Promise<HydrationTar
     LIMIT 1
   `;
   if (!target) return null;
-  if (target.remote_id !== null && !target.jmap_ready) return null;
+  if (target.remote_id !== null && !target.jmap_ready) return "unsupported";
   return {
     id: target.id,
     hydration_attempt: target.hydration_attempt,
@@ -3659,6 +3666,21 @@ export const hydrateMessageBatch = async (
         "mailboxId" in ctx.input
           ? await nextMailboxHydrationTarget(ctx.input.mailboxId, ctx.input.retryBodies !== false)
           : await requestedHydrationTarget(ctx.input.messageId);
+      if (message === "unsupported") {
+        if ("messageId" in ctx.input) {
+          await sql`
+            UPDATE mail.message_contents message
+            SET hydration_status = 'failed', hydration_error_code = 'REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED'
+            WHERE message.id = ${ctx.input.messageId}::uuid
+              AND message.hydration_status IN ('envelope', 'headers', 'failed')
+              AND EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.remote_id IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.uid_validity IS NOT NULL)
+          `;
+        }
+        return { hydrated: false };
+      }
       if (!message) return { hydrated: false };
       // Only the first batch of a completed incremental arrival shares sync priority.
       // Backfill, later body batches and retries retain background rank, so importing old
@@ -3995,7 +4017,8 @@ export const enqueueMessageHydration = async (messageId: string): Promise<void> 
  * synced mailbox, for a JMAP copy one whose folder is readable through the active binding.
  */
 export const canHydrateMessage = async (messageId: string): Promise<boolean> => {
-  return (await requestedHydrationTarget(messageId)) !== null;
+  const target = await requestedHydrationTarget(messageId);
+  return target !== null && target !== "unsupported";
 };
 
 /** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
@@ -4175,8 +4198,8 @@ let mailSchedulerWorker: Worker | undefined;
 export const submitDueHydrationWork = async (): Promise<number> => {
   // The status condition repeats the predicate of `message_contents_hydration_queue_idx`, so each
   // mailbox costs one index probe instead of a scan of every pending body in the installation.
-  // Any live reference counts: an IMAP one by UID, a JMAP one by Email ID (the address-shape check
-  // allows only these two). The mailbox's batch checks that the folder is readable.
+  // An IMAP reference counts as before; a JMAP one only while it is ready, so a mailbox whose bodies
+  // no batch can fetch gets no job every minute. The JMAP check never runs for IMAP references.
   const mailboxes = await sql<{ id: string }[]>`
     SELECT mailbox.id
     FROM mail.mailboxes mailbox
@@ -4193,6 +4216,10 @@ export const submitDueHydrationWork = async (): Promise<number> => {
             FROM mail.remote_message_refs remote_ref
             WHERE remote_ref.message_id = mc.id
               AND remote_ref.stale_at IS NULL
+              AND CASE
+                WHEN remote_ref.remote_id IS NULL THEN remote_ref.uid_validity IS NOT NULL
+                ELSE ${jmapReferenceReady(sql`remote_ref.folder_id`)}
+              END
           )
       )
     ORDER BY mailbox.id
