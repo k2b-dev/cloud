@@ -101,7 +101,7 @@ for (const [name, list, notFound] of [
     f.controls.handle = () =>
       Response.json({
         methodResponses: [["Email/get", { accountId: "d333333", state: "s", list, notFound }, "emails"]],
-        sessionState: "s",
+        sessionState: f.session.state,
       });
     await expect(read()).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
   });
@@ -118,7 +118,7 @@ for (const patch of [
     f.controls.handle = () =>
       Response.json({
         methodResponses: [["Email/get", { accountId: "d333333", state: "s", list: f.emails, notFound: [], ...patch }, "emails"]],
-        sessionState: "s",
+        sessionState: f.session.state,
       });
     await expect(read()).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
   });

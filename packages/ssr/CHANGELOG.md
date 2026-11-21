@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.22.0...npm-ssr-v0.23.0) (2026-11-21)
+
+
+### Features
+
+* **ssr:** load islands with only the page language's catalogs ([#3813](https://github.com/k2b-dev/cloud/issues/3813)) ([e39e932](https://github.com/k2b-dev/cloud/commit/e39e932c555d1db7e734cc932a52fe3a75ca7bc2))
+
 ## [0.22.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.3...npm-ssr-v0.22.0) (2026-11-17)
 
 
