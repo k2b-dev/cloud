@@ -297,6 +297,15 @@ describe(`sortable list in ${browserName}`, () => {
       await page.mouse.move(first.x, first.y - 20, { steps: 3 });
       await page.waitForFunction(() => document.querySelector("[data-sortable-line]") !== null);
       expect(await line(page)).toBe("before x2");
+      await settled(page);
+      // The line is below the pointer here; the preview hangs below the line, never over it, and stays in the viewport.
+      const geometry = await page.evaluate(() => {
+        const preview = document.querySelector(".k2b-drag-preview")!.getBoundingClientRect();
+        const marked = document.querySelector("[data-sortable-line]")!.getBoundingClientRect();
+        return { previewTop: preview.top, lineBottom: marked.top + 4, right: preview.right, width: innerWidth };
+      });
+      expect(geometry.previewTop).toBeGreaterThan(geometry.lineBottom);
+      expect(geometry.right).toBeLessThanOrEqual(geometry.width);
       await page.mouse.up();
       await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview"));
       expect((await board(page)).done).toEqual(["x1", "o3", "x2"]);

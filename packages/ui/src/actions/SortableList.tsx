@@ -84,16 +84,20 @@ type Lift = {
 };
 
 const groups = new Map<string, Set<Entry>>();
+/** Changes when a list joins or leaves a group, so a move menu built before the lists mounted updates. */
+const [registry, touchRegistry] = createSignal(undefined, { equals: false });
 const [lift, setLift] = createSignal<Lift>();
 /** The pointer's last place: the engine ends the drag, and with it `lift`, before it calls `drop`. */
 let pointerPlan: Lift | undefined;
 /** Ends the keyboard lift in progress without a drop. */
 let endKeyboard: (() => void) | undefined;
 
-const listsOf = (group: string): Entry[] =>
-  [...(groups.get(group) ?? [])]
+const listsOf = (group: string): Entry[] => {
+  registry();
+  return [...(groups.get(group) ?? [])]
     .filter((entry) => entry.list.isConnected)
     .sort((a, b) => (a.area.compareDocumentPosition(b.area) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+};
 const find = (group: string, key: string | undefined) => (key === undefined ? undefined : listsOf(group).find((entry) => entry.key === key));
 const placesIn = (entry: Entry, key: string) => placeCount(entry.keys().length, entry.keys().includes(key));
 /** Where the row lands in `entry`: the sorted place, or the one the gap shows. */
@@ -217,22 +221,27 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
 
   const hover = (point: { x: number; y: number } | undefined) => {
     const state = mine();
-    if (!state || state.keyboard) return;
+    if (!state || state.keyboard) return undefined;
     if (!point) {
       if (state.to === listKey) {
         pointerPlan = undefined;
         setLift({ ...state, to: undefined, index: undefined });
       }
-      return;
+      return undefined;
     }
     const rows = [...list.children].filter((row): row is HTMLLIElement => row instanceof HTMLLIElement);
-    const index = landing(entry, state, gapAt(rows.map((row) => row.getBoundingClientRect().bottom), point.y));
-    if (state.to === listKey && state.index === index) return;
+    const boxes = rows.map((row) => row.getBoundingClientRect());
+    const index = landing(entry, state, gapAt(boxes.map((box) => box.bottom), point.y));
+    // Where the line is, so the preview hangs below it; in a sorted list it may be far from the pointer.
+    const gap = gapForIndex(index, keys().indexOf(state.key));
+    const lineY = boxes[gap]?.top ?? boxes.at(-1)?.bottom ?? list.getBoundingClientRect().top;
+    if (state.to === listKey && state.index === index) return lineY;
     const next = { ...state, to: listKey, index };
     pointerPlan = next;
     setLift(next);
     showStatus(next);
     announce(list, messages().position(place(entry, next, index)));
+    return lineY;
   };
   const drop = (payload: { value: string }) => {
     const plan = pointerPlan;
@@ -245,6 +254,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
     let members = groups.get(group);
     if (!members) groups.set(group, (members = new Set()));
     members.add(entry);
+    touchRegistry();
     const read = () => ({
       accept: [type],
       label: listLabel(),
@@ -265,6 +275,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
       delete area.dataset.sortableTarget;
       members.delete(entry);
       if (!members.size) groups.delete(group);
+      touchRegistry();
       const state = lift();
       if (state?.group === group && state.keyboard && (state.from === listKey || state.to === listKey)) endKeyboard?.();
     });

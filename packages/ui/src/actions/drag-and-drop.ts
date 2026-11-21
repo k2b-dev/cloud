@@ -49,8 +49,11 @@ type Target = {
   messages: DragAndDropMessages;
   disabled?: boolean;
   drop: (payload: DragPayload) => void;
-  /** Internal: told where the pointer is while it rests over this target, and `undefined` when it leaves. */
-  hover?: (point: { x: number; y: number } | undefined) => void;
+  /**
+   * Internal: told where the pointer is while it rests over this target, and `undefined` when it leaves. It may
+   * return the viewport y of a line it shows, which the preview then keeps clear of.
+   */
+  hover?: (point: { x: number; y: number } | undefined) => number | undefined;
 };
 type Session = {
   payload: DragPayload;
@@ -478,16 +481,29 @@ export const bindDragSource = (
         }
         if (!over?.hover) writeDragStatus(statusFor(messages, payload, over));
       }
-      over?.hover?.(point);
+      lineY = over?.hover?.(point);
       if (over) over.element.dataset.drop = "over";
       if (refused) refused.element.dataset.drop = "refused";
       return hit;
     };
+    let previewWidth = 0;
+    /** The line the target shows, such as a sorted list's place far below the pointer. */
+    let lineY: number | undefined;
+    /**
+     * Follows the pointer. Its CSS `translate` hangs it 16 px left of and below this point, so it starts below the
+     * pointer and below the target's line, which it never covers. Near the viewport's right edge a wide preview
+     * shifts left so it stays whole.
+     */
+    const place = () => {
+      const x = previewWidth ? Math.max(0, Math.min(point.x, win.innerWidth - previewWidth + 8)) : point.x;
+      const y = lineY === undefined ? point.y : Math.max(point.y, lineY - 8);
+      preview!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    };
     const renderFrame = () => {
       frame = 0;
       if (finished || !session) return;
-      preview!.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       const hit = hitTest();
+      place();
       if (scrollAt(doc, hit, point.x, point.y, overflowCache)) frame = win.requestAnimationFrame(renderFrame);
     };
     const begin = () => {
@@ -553,7 +569,8 @@ export const bindDragSource = (
       preview.setAttribute("popover", "manual");
       getK2bPortalRoot(scope ?? doc.body, source, doc).append(preview);
       preview.showPopover?.();
-      preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
+      previewWidth = preview.offsetWidth;
+      place();
       for (const target of engine.targets) mark(target, payload);
       writeDragStatus(statusFor(messages, payload));
       setActiveDrag(payload);
