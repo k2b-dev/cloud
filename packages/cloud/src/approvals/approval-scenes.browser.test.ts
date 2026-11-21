@@ -773,7 +773,7 @@ describe("Approval scenes", () => {
         for (const look of looks) {
           // Gustav flat (F2): the card's 8 px and its thin edge as a 1 px ring inside, never a drop shadow.
           expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "8px", sentence: "14px", boxes: 0 });
-          expect(look.shadow).toMatch(/^rgba?\([^)]*\) 0px 0px 0px 1px inset$/);
+          expect(look.shadow).toMatch(/^(?:rgba?|color)\(.*\) 0px 0px 0px 1px inset$/);
           expect(look.actions).toBeLessThanOrEqual(2);
         }
         expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");

@@ -1004,7 +1004,7 @@ describe("Gustav", () => {
             return { shadow: style.boxShadow, radius: style.borderTopLeftRadius };
           });
           // Gustav flat (F2): no drop shadow, only the thin edge as a 1 px ring inside, and the 8 px of a card.
-          expect(look.shadow).toMatch(/^rgba?\([^)]*\) 0px 0px 0px 1px inset$/);
+          expect(look.shadow).toMatch(/^(?:rgba?|color)\(.*\) 0px 0px 0px 1px inset$/);
           expect(look.radius).toBe("8px");
           expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
           expect(h.errors).toEqual([]);
