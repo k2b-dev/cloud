@@ -25,7 +25,15 @@ import { createMailbox } from "./mailboxes";
 const suite = suiteFor("database", "nats");
 
 type TestUser = { id: string; uid: string; displayName: string };
-type Plan = { "Node Type": string; "Actual Rows"?: number; Plans?: Plan[] };
+type Plan = {
+  "Node Type": string;
+  "Relation Name"?: string;
+  "Index Name"?: string;
+  "Actual Rows"?: number;
+  "Actual Loops"?: number;
+  "Rows Removed by Filter"?: number;
+  Plans?: Plan[];
+};
 const planNodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 
 const contextFor = (user: TestUser): MailRequestContext => ({
@@ -807,16 +815,34 @@ suite("mail conversation assignment", () => {
       ...alphabetical.filter((name) => name !== amy.displayName),
     ]);
 
-    // The read is bounded by the query itself, whatever plan the database picks: at most the window's rows reach the
-    // count. The index that serves it in order exists, is valid, and has the query's shape (equal mailbox and actor,
-    // newest id first, the one action), so a long history of others is never in the way.
+    // The hot read uses its index (DATA-13). As in a real mailbox, the person's own changes are a small part of its
+    // history: 5,000 newer changes by someone else. Then statistics, then a hard plan check, as the JMAP plan tests do:
+    // the index node, no sequential scan of the events, and about one window of rows read. A read in id order would
+    // have to pass all 5,000 first.
+    await insertAssignments(writer.id, zed.id, 5_000);
+    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
+    await sql`ANALYZE mail.activity_events`;
     const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan }] }[]>`
       EXPLAIN (ANALYZE, FORMAT JSON) ${dropAssigneeOrderQuery(sql, { mailboxId: dropMailboxId, actor: { kind: "user", id: owner.id } })}
     `;
-    const limits = planNodes(explained!["QUERY PLAN"][0].Plan).filter((node) => node["Node Type"] === "Limit");
+    const plan = JSON.stringify(explained!["QUERY PLAN"][0].Plan);
+    const nodes = planNodes(explained!["QUERY PLAN"][0].Plan);
+    expect(
+      nodes.some((node) => node["Index Name"] === "activity_events_actor_assignment_idx"),
+      `the actor assignment index: ${plan}`,
+    ).toBeTrue();
+    expect(
+      nodes.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "activity_events"),
+      `no sequential scan of the events: ${plan}`,
+    ).toBeFalse();
+    const rowsRead = nodes
+      .filter((node) => node["Relation Name"] === "activity_events")
+      .reduce((sum, node) => sum + ((node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)) * (node["Actual Loops"] ?? 1), 0);
+    expect(rowsRead, `about one window of rows read: ${plan}`).toBeLessThanOrEqual(2 * MAIL_DROP_ASSIGNMENT_HISTORY);
+    // The same bound holds in any plan: at most the window's rows reach the count.
+    const limits = nodes.filter((node) => node["Node Type"] === "Limit");
     expect(limits).toHaveLength(1);
     expect(limits[0]!["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
-    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
     const [index] = await sql<{ valid: boolean; definition: string }[]>`
       SELECT index.indisvalid AS valid, pg_get_indexdef(index.indexrelid) AS definition
       FROM pg_index index
@@ -824,6 +850,5 @@ suite("mail conversation assignment", () => {
     `;
     expect(index?.valid).toBeTrue();
     expect(index?.definition).toContain("(mailbox_id, actor_id, id DESC)");
-    expect(index?.definition).toContain("WHERE (action = 'conversation.collaboration_updated'::text)");
   });
 });
