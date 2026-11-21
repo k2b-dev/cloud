@@ -33,7 +33,7 @@ With **Edit** or **Manage** access, you can switch between three views:
 
 In **Write**, use the book icon in the bottom toolbar to open Book. The detail panel also offers actions for Book and **Read-only**. In **Read-only**, choose **Edit note** in the detail panel to return to **Write**.
 
-Book and **Read-only** show a round pencil button at the bottom right when you hover over the document. Keyboard focus also shows it. On touch devices, it stays visible. Locked notes show no edit action.
+In **Read-only**, the pencil button is in the bar below the note, beside comments and details. Book shows a round pencil button at the bottom right when you hover over the document. Keyboard focus also shows it. On touch devices, it stays visible. Locked notes show no edit action.
 
 If no note is selected or the note is locked, Book shows **Open workspace** in the sidebar to people with **Edit** or **Manage** access. Use it to open the settings or to create a note. If you hid the navigation, first show it with the button at the bottom left.
 
