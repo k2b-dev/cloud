@@ -266,6 +266,37 @@ databaseSuite()("open questions", () => {
     expect((await f.read()).count).toBe(1);
   });
 
+  test("pending secret calls are owner-scoped waiting entries and invalidations contain no value", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    const privateValue = "fixture-never-in-waiting-data";
+    await sql`UPDATE ai.turns SET status='waiting_for_action',live_blocks=${JSON.stringify([tool("secret-call", { name: "code_secret", status: "awaiting_client", args: { name: "API", value: privateValue } })])}::text::jsonb WHERE id=${f.turn.id}::uuid`;
+    await sql`DELETE FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
+    await aiConversations.savePendingTurnAction({
+      conversationId: f.chat.id,
+      turnId: f.turn.id,
+      callId: "secret-call",
+      kind: "client_tool",
+      status: "pending",
+      name: "code_secret",
+      args: { name: "API" },
+      allowAlways: false,
+      approvalScope: "code_secret",
+      resolvedEvent: null,
+    });
+    expect(await f.read()).toMatchObject({ count: 1, items: [{ kind: "secret", anchor: "tool-secret-call", short: "Enter secret: API" }] });
+    expect((await other.read()).count).toBe(0);
+    expect(await countAiOpenQuestions(f.userId)).toBe(1);
+    expect(JSON.stringify(await f.read())).not.toContain(privateValue);
+    const events = await sql<
+      { payload: unknown }[]
+    >`SELECT payload FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
+    expect(events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(events)).not.toContain(privateValue);
+    await sql`UPDATE ai.pending_actions SET status='resolved' WHERE turn_id=${f.turn.id}::uuid AND call_id='secret-call'`;
+    expect((await f.read()).count).toBe(0);
+  });
+
   test("a browser tool call sends no update of the list of open questions", async () => {
     const f = await fixture();
     await sql`DELETE FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;

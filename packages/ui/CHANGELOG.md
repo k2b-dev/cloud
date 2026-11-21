@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.63.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.62.0...npm-ui-v0.63.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **code:** Studio apps, Mail rules and automatic replies, and routines in their old form are removed. Export Mail rules and routines before the upgrade; Gustav rebuilds them as Code. See "Upgrade to Code": https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/operations/upgrade-to-code.md
+
+### Features
+
+* **cloud:** accept stdlib service error statuses ([#3806](https://github.com/k2b-dev/cloud/issues/3806)) ([09a9c2f](https://github.com/k2b-dev/cloud/commit/09a9c2f9a234516a353dea616d36c1613e04f98a))
+* **code:** Gustav writes and runs Code for people, mailboxes and other apps ([#3010](https://github.com/k2b-dev/cloud/issues/3010)) ([d3ec882](https://github.com/k2b-dev/cloud/commit/d3ec88209d488af76a4db6e19db21be7cf2c5b5e))
+
+
+### Bug Fixes
+
+* **mail:** chip labels and calendar bars show their descenders ([#3834](https://github.com/k2b-dev/cloud/issues/3834)) ([a624e0e](https://github.com/k2b-dev/cloud/commit/a624e0e75ebf61c42d638964fb56f2f3aeda9210))
+* **ui:** accept @k2b/ssr 0.23 as a peer ([#3891](https://github.com/k2b-dev/cloud/issues/3891)) ([30b3c9e](https://github.com/k2b-dev/cloud/commit/30b3c9eb2b394b0f39b0ec6abacd2f82ae5964c8))
+* **ui:** dialogs that load their code first open with the context of their call ([#3832](https://github.com/k2b-dev/cloud/issues/3832)) ([8b97195](https://github.com/k2b-dev/cloud/commit/8b971959657d98cb0f66d4f688314030a729591a))
+* **ui:** the QR scanner restarts a camera picture that freezes on its first frame ([#3842](https://github.com/k2b-dev/cloud/issues/3842)) ([a99e8d1](https://github.com/k2b-dev/cloud/commit/a99e8d1a7feed93fbe4b86a02b6f65504772bfb2)), closes [#3421](https://github.com/k2b-dev/cloud/issues/3421) [#3364](https://github.com/k2b-dev/cloud/issues/3364) [#3713](https://github.com/k2b-dev/cloud/issues/3713) [#3452](https://github.com/k2b-dev/cloud/issues/3452)
+
+
+### Performance Improvements
+
+* **ui:** load form prompt fields on demand ([#3783](https://github.com/k2b-dev/cloud/issues/3783)) ([336de46](https://github.com/k2b-dev/cloud/commit/336de46b094744ebcf96a14a81cfcf59d146fbf7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.22.0 to 0.23.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 || ^0.23.0 to ^0.23.0
+
 ## [0.62.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.61.0...npm-ui-v0.62.0) (2026-11-19)
 
 

@@ -161,3 +161,31 @@ describe("what stopped in this chat", () => {
     expect(view).toEqual({ attention: [], entries: [], more: 0, total: 0, onlyHere: null, onlyHereAtEnd: false });
   });
 });
+
+test("secret requests use their timeline anchor and stop waiting as soon as this chat completes them", () => {
+  const question: AiOpenQuestion = {
+    id: "secret-1",
+    kind: "secret",
+    conversationId: "chat",
+    conversationTitle: "Automation",
+    anchor: "tool-secret",
+    short: "Enter secret: API",
+    app: { name: "Gustav", icon: "ti ti-key" },
+    createdAt: "2026-11-03T12:00:00.000Z",
+  };
+  const block: AiTurnBlock = { kind: "tool", id: "tool-secret", callId: "secret", name: "code_secret", status: "awaiting_client" };
+  const waiting = waitingQuestionsView({ questions: { count: 1, items: [question] }, conversationId: "chat", local: [block] });
+  expect(waiting.total).toBe(1);
+  expect(waiting.onlyHere).toBe("tool-secret");
+  expect(waiting.onlyHereAtEnd).toBe(true);
+  expect(waitingQuestionsView({ questions: { count: 1, items: [question] }, conversationId: "other", local: [] }).entries).toEqual([
+    question,
+  ]);
+  expect(
+    waitingQuestionsView({
+      questions: { count: 1, items: [question] },
+      conversationId: "chat",
+      local: [{ ...block, status: "completed", result: { configured: true, name: "API" } }],
+    }).total,
+  ).toBe(0);
+});

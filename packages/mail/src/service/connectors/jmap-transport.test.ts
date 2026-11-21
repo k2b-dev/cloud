@@ -1,6 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
+import type { IncomingMessage } from "node:http";
+import { EndpointPolicyError } from "./endpoint-policy";
 import { createJmapFixture } from "./jmap-fixture";
-import { requestJmap } from "./jmap-transport";
+import { consumeJmapDownload, type JmapTransportDependencies, requestJmap } from "./jmap-transport";
 
 const fixtures: ReturnType<typeof createJmapFixture>[] = [];
 afterEach(() => {
@@ -144,4 +146,89 @@ test("rejects invalid budgets and redacts network errors", async () => {
       },
     }),
   ).rejects.toThrow("JMAP_TRANSPORT");
+});
+
+const dnsTimeout = async (): Promise<never> => {
+  throw new EndpointPolicyError("Endpoint DNS lookup timed out", "ENDPOINT_DNS_TIMEOUT");
+};
+const noConnection: NonNullable<JmapTransportDependencies["request"]> = () => {
+  throw new Error("must not connect");
+};
+
+test("an expired DNS, connection or response deadline is JMAP_TIMEOUT", async () => {
+  // DNS: resolvePublicEndpoint's own deadline.
+  await expect(requestJmap(input(), { resolveEndpoint: dnsTimeout, request: noConnection })).rejects.toMatchObject({
+    code: "JMAP_TIMEOUT",
+    message: "JMAP_TIMEOUT",
+  });
+  const f = fixture();
+  const factory = f.dependencies.request;
+  if (!factory) throw new Error("Missing test factory");
+  // Connection: the socket gave up.
+  await expect(
+    requestJmap(input(), {
+      ...f.dependencies,
+      request: () => {
+        throw Object.assign(new Error("connect ETIMEDOUT 192.0.2.1:443"), { code: "ETIMEDOUT" });
+      },
+    }),
+  ).rejects.toMatchObject({ code: "JMAP_TIMEOUT", message: "JMAP_TIMEOUT" });
+  // The 15 s request deadline, expired by hand: once during DNS, once in a response that stops.
+  const timers = spyOn(globalThis, "setTimeout");
+  // The latest armed request deadline; the real timer is cleared once the request settles.
+  const expire = () => {
+    const deadline = timers.mock.calls.findLast(([, timeout]) => timeout === 15_000)?.[0];
+    if (typeof deadline !== "function") throw new Error("Expected the request deadline");
+    deadline();
+  };
+  try {
+    await expect(
+      requestJmap(input(), {
+        resolveEndpoint: async () => {
+          expire();
+          return new Promise(() => {});
+        },
+        request: noConnection,
+      }),
+    ).rejects.toMatchObject({ code: "JMAP_TIMEOUT" });
+    f.controls.handle = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("{"));
+          },
+        }),
+      );
+    await expect(
+      requestJmap(input(), {
+        ...f.dependencies,
+        request: (options, callback) =>
+          factory(options, (response: IncomingMessage) => {
+            callback(response);
+            response.once("data", () => expire());
+          }),
+      }),
+    ).rejects.toMatchObject({ code: "JMAP_TIMEOUT" });
+  } finally {
+    timers.mockRestore();
+  }
+});
+
+test("a download whose DNS lookup times out is JMAP_TIMEOUT, a cancelled one JMAP_ABORTED", async () => {
+  const download = { ...input(), url: new URL("https://mail.example.invalid/jmap/download/a/b/message.eml") };
+  await expect(
+    consumeJmapDownload(download, async () => null, { resolveEndpoint: dnsTimeout, request: noConnection }),
+  ).rejects.toMatchObject({
+    code: "JMAP_TIMEOUT",
+  });
+  const controller = new AbortController();
+  await expect(
+    consumeJmapDownload({ ...download, signal: controller.signal }, async () => null, {
+      resolveEndpoint: async () => {
+        controller.abort();
+        return dnsTimeout();
+      },
+      request: noConnection,
+    }),
+  ).rejects.toMatchObject({ code: "JMAP_ABORTED" });
 });

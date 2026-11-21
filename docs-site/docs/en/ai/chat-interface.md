@@ -1037,7 +1037,7 @@ code tools report it to the model as a tool error.
 Runs execute in the Code runner (workerd), with the person's turn approvals.
 Scheduled chat routines are retired; rebuild timed work as reviewed personal Code. Studio RSQL database
 grants and app storage are unavailable; use application capabilities and
-chat/Project file tools. `code_secret` opens trusted secret entry in the chat
+chat/Project file tools. `code_secret` offers trusted private entry as a Secret card in the chat
 UI; it does not start a browser execution host.
 See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
 the runner's deadline includes approval waits and its bridge limits also
@@ -1052,8 +1052,8 @@ wait for background work with `waitMs`.
 
 Assistant owns the chat host and persists call ownership, results and ordered
 approvals. One-off scripts execute on the Code runner. Closing the browser tab
-does not stop a run; a lost host is never replayed. `code_secret` opens trusted
-secret entry in the web interface. Native views and exported files remain chat
+does not stop a run; a lost host is never replayed. `code_secret` asks for a
+value with a Secret card in the web conversation. Native views and exported files remain chat
 files. For lasting Code, use the Code tools and [Code authoring](/en/docs/platform/gustav-code-tools).
 
 Studio apps, HTML checks and presentations, machine execution, and the direct
@@ -1105,8 +1105,58 @@ routine tabs. Scheduled chat routines are retired; historical results remain rea
 
 
 
+A `code_secret` request is a Secret card at its place in the conversation, not
+a dialog. The card names the secret in its question ("Enter API?", or
+"Replace API?" when the name already holds a value), lists its facts on the
+surface colour, and offers one password field with an eye, **Save securely** or
+**Replace**, and a quiet **Decline** or **Keep**. For a chat secret the facts
+say that it stays only for this person in this chat and which HTTPS host
+receives it. For an automation (`target`) they name the automation, the host
+and path it goes to from approved versions, and **Stored on … by …** when a
+value exists. A deleted value asks for entry again. Replacing an automation's
+secret changes only its value: when Gustav asks for another destination than
+the stored one, the card names the stored destination with **Goes to …, as
+before; set up another destination in the automation**, and Gustav's result
+says that the destination stayed.
+
+Every state changes words in fixed cells only: the line under the field, the
+labels of both answers, and the field's edge. Saving shows **Saving …** and
+locks the card; an empty field, characters the destination cannot take, or a
+value that is too long marks the field and returns the focus there; a failed
+save keeps the value in the field and offers **Try again**; no answer from Cloud
+says the value may be saved and **Try again** reads the metadata first; a
+name or destination that someone else changed meanwhile shows the current
+destination and the one shown before, then **Replace** or **Replace anyway**. A window that does not hold the request shows the card
+locked with **Open in another window**. The card loads on demand when a request
+arrives, so the first JavaScript of a chat stays small.
+
+When the request ends, the card becomes one line in the history: **Secret API
+saved** (also after a replacement), **declined**, **not saved** with the reason
+Cloud gave (an expired sign-in, or no longer allowed to edit the automation or
+write in the chat), **Secret API: Cloud did not answer, so it may be saved**
+when the window's lease ended while the save was on its way, or **Request for
+secret API no longer open** after the window's two-minute lease ran out. An answer given in the card moves the focus to that line. The
+line is rebuilt from the stored `{ configured, name }` or one fixed failure
+sentence (`CODE_SECRET_ERRORS`), so it reads the same after a reload and never
+contains the value. A line that names the automation gets its title from the
+page's request, read through `core.code.read` with the reader's rights, so the
+server and the first browser frame show the same title; a chat opened without a
+reload reads it once. The line says "the automation" only when Core answers that
+the automation is gone or no longer readable. A call that never showed a card, such as when the person
+may not edit the automation, shows no line; Gustav says why in his answer.
+
+Open secret requests join **Waiting for you** as **Enter secret: API** with
+their tool-block anchor, and **Waiting for you** lists them under **Secrets**.
+Selecting one opens the conversation at its card. Only the window that holds the
+request moves the focus into the field; any other window lands on the card's
+question, which says where to answer. Completion removes the waiting entry.
+
+A host draws the card through `renderSecretRequest` in `AiChatActions`; without
+it the request stays a waiting step and its outcome an ordinary receipt. The
+Assistant workspace and the Cloud app on a phone both show it.
+
 Secrets management uses a list with an empty-state action. Adding or replacing
-a secret opens a separate dialog. Validation errors appear at their fields;
+a secret from this management list opens a separate dialog. Validation errors appear at their fields;
 network errors and revision conflicts remain explicit. A Bearer preset supplies
 the exact `Bearer ` prefix. API-key and custom-header modes remain available.
 The target is an HTTPS origin: URL paths and query parameters do not narrow the

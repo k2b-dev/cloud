@@ -18,6 +18,7 @@ import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import { sql } from "../../runtime/clients";
 import { auth, getDateConfig, getLocale, isAppSessionActor } from "../../server";
 import { CORE_SETTINGS } from "../../services/settings/core-settings";
+import { type CodePeopleViewer, codePersonName, secretSetter, visiblePersonIds } from "../../shared/code-people";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
 import { AttentionSchema } from "./attention-schema";
@@ -130,31 +131,16 @@ const words = async <T>(promise: Promise<{ ok: true; data: { data: T } } | { ok:
     return null;
   }
 };
-const uuid = z.uuid();
 
-/** Who is looking: only members may see other people's names, as in the directory. */
-export type Viewer = { id: string | null; directory: boolean };
-/**
- * Display names for the people a page mentions; unknown or deleted accounts are left out. Like directory search,
- * guests see only their own name.
- */
-export const visiblePersonIds = (ids: Iterable<string | null | undefined>, viewer: Viewer): string[] =>
-  [
-    ...new Set(
-      [...ids].filter((id): id is string => typeof id === "string" && uuid.safeParse(id).success && (viewer.directory || id === viewer.id)),
-    ),
-  ].slice(0, 100);
+export { visiblePersonIds } from "../../shared/code-people";
+export type Viewer = CodePeopleViewer;
+const uuid = z.uuid();
 export const loadPeople = async (ids: Iterable<string | null | undefined>, viewer: Viewer): Promise<Map<string, CodePagePerson>> => {
   const unique = visiblePersonIds(ids, viewer);
   if (unique.length === 0) return new Map();
   const rows = await sql<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
     SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${sql.array(unique, "uuid")}::uuid[])`;
-  return new Map(
-    rows.map((row) => [
-      row.id,
-      { id: row.id, name: row.display_name?.trim() || `${row.given_name ?? ""} ${row.sn ?? ""}`.trim() || row.uid },
-    ]),
-  );
+  return new Map(rows.map((row) => [row.id, { id: row.id, name: codePersonName(row) }]));
 };
 
 type CatalogApp = Awaited<ReturnType<typeof getCapabilityCatalogApp>>;
@@ -620,7 +606,7 @@ const loadReady = async (
         manifest?.secrets?.some((binding) => binding.binding_revision === item.binding_revision) ?? false;
       return {
         ...item,
-        valueSetBy: item.valueSetBy ? (setters.get(item.valueSetBy) ?? null) : null,
+        valueSetBy: secretSetter(item.valueSetBy, setters),
         usedIn: [
           ...(activeVersion && activeManifest?.secrets?.some((binding) => binding.name === item.name)
             ? [{ number: activeVersion.number, state: "active" as const }]

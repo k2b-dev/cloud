@@ -48,10 +48,13 @@ export {
   type AiChatTimelineSource,
   AiChatTurnNavigator,
   type AiChatTurnNavigatorProps,
+  type AiSecretRequestView,
   createAiChatTimeline,
 } from "./chat/presentation";
 export { CloudViewFile } from "./chat/view-block";
 export type { AiWakeupLineInput, AiWakeupLinePlan } from "./chat/wakeup-plan";
+// The timeline keeps a failed `code_secret` result only as one of these sentences; hosts name its outcome from them.
+export { CODE_SECRET_ERRORS, CODE_SECRET_GUIDANCE } from "./code-secret-errors";
 
 export const aiLatestUsage = latestUsage;
 export const aiLatestLoopUsage = latestLoopUsage;

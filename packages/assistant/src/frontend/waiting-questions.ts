@@ -48,11 +48,18 @@ export const waitingQuestionsView = (input: {
   const attention = conversationId === null ? [] : [...(input.attention ?? [])];
   const here = (question: AiOpenQuestion) => conversationId !== null && question.conversationId === conversationId;
   const localTools = local ? local.filter((block) => block.kind === "tool") : null;
-  const openHere = localTools ? localTools.filter((block) => block.status === "awaiting_approval").map((block) => block.id) : null;
+  const openHere = localTools
+    ? localTools
+        .filter((block) => block.status === "awaiting_approval" || (block.name === "code_secret" && block.status === "awaiting_client"))
+        .map((block) => block.id)
+    : null;
   const known = localTools ? new Set(localTools.map((block) => block.id)) : null;
   // A block this chat shows decides; one it does not show yet stays as the server read it.
   const stillOpen = (question: AiOpenQuestion) =>
-    question.kind !== "approval" || !here(question) || !known?.has(question.anchor) || Boolean(openHere?.includes(question.anchor));
+    (question.kind !== "approval" && question.kind !== "secret") ||
+    !here(question) ||
+    !known?.has(question.anchor) ||
+    Boolean(openHere?.includes(question.anchor));
   const entries = questions.items.filter(stillOpen);
   const listedHere = new Set(entries.filter(here).map((question) => question.anchor));
   const unlistedHere = (openHere ?? []).filter((anchor) => !listedHere.has(anchor)).length;

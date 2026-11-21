@@ -4,6 +4,7 @@ import {
   fetchJmapSession,
   JMAP_CORE,
   JMAP_MAIL,
+  JmapRateLimitError,
   jmapBasicAuthorization,
   probeJmap,
   requireJmapMethodResult,
@@ -288,4 +289,64 @@ test("rejects duplicate request call IDs before sending", async () => {
     ),
   ).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
   expect(f.requests).toHaveLength(1);
+});
+
+test("a server failure keeps its HTTP status with and without a problem body; a refused login stays HTTP too", async () => {
+  const f = fixture();
+  const auth = access(f);
+  const session = await fetchJmapSession(auth, f.dependencies);
+  const call = () =>
+    callJmap({ ...auth, session, using: [JMAP_CORE], methodCalls: [["Mailbox/get", { ids: [] }, "call"]] }, f.dependencies);
+  const problem = (status: number) => () =>
+    new Response(JSON.stringify({ type: "about:blank", status }), { status, headers: { "content-type": "application/problem+json" } });
+  for (const status of [500, 502, 503]) {
+    f.controls.handle = problem(status);
+    await expect(call()).rejects.toMatchObject({ code: "JMAP_HTTP", status });
+    f.controls.handle = () => new Response("unavailable", { status });
+    await expect(call()).rejects.toMatchObject({ code: "JMAP_HTTP", status });
+  }
+  for (const status of [401, 403]) {
+    f.controls.handle = problem(status);
+    await expect(call()).rejects.toMatchObject({ code: "JMAP_HTTP", status });
+  }
+  f.controls.handle = problem(400);
+  await expect(call()).rejects.toMatchObject({ code: "JMAP_REQUEST", problemType: "about:blank" });
+});
+
+test("keeps an HTTP-date Retry-After for the caller's clock", async () => {
+  const f = fixture();
+  const auth = access(f);
+  const session = await fetchJmapSession(auth, f.dependencies);
+  f.controls.handle = () => new Response("", { status: 429, headers: { "retry-after": "Fri, 20 Nov 2026 12:02:00 GMT" } });
+  const failure = await callJmap({ ...auth, session, using: [JMAP_CORE], methodCalls: [] }, f.dependencies).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(JmapRateLimitError);
+  if (!(failure instanceof JmapRateLimitError)) return;
+  expect(failure.retryAfter).toBe("Fri, 20 Nov 2026 12:02:00 GMT");
+  expect(failure.retryAfterMs(Date.parse("2026-11-20T12:00:00Z"))).toBe(120_000);
+});
+
+test("reports a changed sessionState only after validating the response", async () => {
+  const f = fixture();
+  const auth = access(f);
+  const session = await fetchJmapSession(auth, f.dependencies);
+  const call = () =>
+    callJmap(
+      { ...auth, session, using: [JMAP_CORE, JMAP_MAIL], methodCalls: [["Mailbox/get", { accountId: "d333333", ids: [] }, "call"]] },
+      f.dependencies,
+    );
+  expect(await call()).toMatchObject({ sessionState: "session-state" });
+  f.session.state = "session-state-2";
+  await expect(call()).rejects.toMatchObject({ code: "JMAP_SESSION_CHANGED" });
+  // A malformed response stays invalid, whatever its sessionState says.
+  f.controls.handle = () => Response.json({ methodResponses: [], sessionState: "session-state-2" });
+  await expect(call()).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
+  f.controls.handle = undefined;
+  // The reloaded Session matches again.
+  const reloaded = await fetchJmapSession(auth, f.dependencies);
+  expect(
+    await callJmap({ ...auth, session: reloaded, using: [JMAP_CORE], methodCalls: [["Mailbox/get", { ids: [] }, "call"]] }, f.dependencies),
+  ).toMatchObject({ sessionState: "session-state-2" });
 });

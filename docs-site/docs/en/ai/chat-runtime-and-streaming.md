@@ -877,8 +877,10 @@ question text. Missing or unreadable tool blocks fall back to the first line of
 the request sentence and a tool anchor; one damaged question does not prevent
 the others from loading.
 
-Kinds are `approval`, `code_activate`, `code_changes`, `code_expired` and
-`code_attention`. A Code change appears only when no automatic revision is
+Kinds are `approval`, `secret`, `code_activate`, `code_changes`, `code_expired`
+and `code_attention`. A `secret` entry is an open `code_secret` call: its
+`short` is "Enter secret: NAME" in the reader's language, its anchor the call's
+tool block, and it never carries tool arguments or results. A Code change appears only when no automatic revision is
 queued or running; withdrawn, replaced or activated versions leave the list.
 Operational attention names a missing Secret, access, mandate or chat and
 carries an `href` to the Code page, plus `reason` (`secret`, `access`,

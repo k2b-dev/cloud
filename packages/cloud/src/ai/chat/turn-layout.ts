@@ -1,3 +1,4 @@
+import { CODE_SECRET_ERRORS } from "../code-secret-errors";
 import { cardToolBlocks } from "../gustav-view-blocks";
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
@@ -7,6 +8,7 @@ import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEdit
 import { isFailedTool } from "./tool-groups";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+const secretErrors: readonly string[] = Object.values(CODE_SECRET_ERRORS);
 type TextBlock = Extract<AiTurnBlock, { kind: "text" }>;
 
 /**
@@ -114,7 +116,12 @@ const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | 
   if (block.status === "awaiting_approval") return "open";
   if (block.status === "rejected") return "rejected";
   if (isSurveyToolName(block.name) || isTextEditorToolName(block.name)) return isFailedTool(block) ? null : "interaction";
-  if (block.name === "code_secret") return block.status === "awaiting_client" ? "interaction" : null;
+  if (block.name === "code_secret") {
+    if (block.status === "awaiting_client") return live(phase) ? "interaction" : "not_run";
+    if (isFailedTool(block) || (isRecord(block.result) && block.result.failed === true)) return "failed";
+    if (isRecord(block.result) && typeof block.result.configured === "boolean") return block.result.configured ? "done" : "rejected";
+    return null;
+  }
   // Effects in Cloud and approvals, decided or expired, stay visible as receipts, whether or not the model mentions them.
   const capabilityAction = block.presentation?.kind === "capability" && block.presentation.capabilityKind === "action";
   if (!capabilityAction && block.approved === undefined) return null;
@@ -130,7 +137,23 @@ export function layoutAiTurn(
   input: readonly AiTurnBlock[],
   options: { phase: AiTurnPhase; codePresentations?: boolean; codeVersions?: boolean },
 ): AiTurnLayout {
-  const blocks = input.filter(isRenderableTurnBlock);
+  const blocks = input.filter(isRenderableTurnBlock).map((block) => {
+    if (block.kind !== "tool" || block.name !== "code_secret") return block;
+    const args = isRecord(block.args) ? block.args : {};
+    const target = isRecord(args.target) ? { code: args.target.code, pathPrefix: args.target.pathPrefix } : undefined;
+    const result = isRecord(block.result) ? block.result : null;
+    // A receipt/card transports only the public metadata and outcome, even for old or malformed stored blocks.
+    return {
+      ...block,
+      args: { name: args.name, origin: args.origin, header: args.header, prefix: args.prefix, ...(target ? { target } : {}) },
+      result:
+        result && typeof result.configured === "boolean"
+          ? { configured: result.configured, name: args.name }
+          : result?.failed === true
+            ? { failed: true, error: secretErrors.find((error) => error === result.error) ?? CODE_SECRET_ERRORS.incomplete }
+            : undefined,
+    };
+  });
   const tools = blocks.filter((block): block is ToolBlock => block.kind === "tool");
   const steps = tools.length + blocks.filter((block) => block.kind === "compaction").length;
 
