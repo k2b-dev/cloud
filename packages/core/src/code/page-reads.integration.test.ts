@@ -57,7 +57,7 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
     await database?.drop();
   });
 
-  test("succeeded Queries name themselves, their targets, refs and short input strings once; writes, failures and other runs do not count", async () => {
+  test("finished Queries name themselves, their targets, refs and input strings once; app writes, running calls and other runs do not count", async () => {
     const base = { type: "pulse.base", id: "Base01" };
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 1" }, "succeeded");
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 2" }, "succeeded");
@@ -71,6 +71,8 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
     await call(runId, "query", "pulse.base.sql.run", { type: "pulse.base", id: "Pending" }, { sql: "x" }, "running");
     await call(runId, "action", "pulse.saved_query.save", { type: "pulse.base", id: "Write1" }, { name: "n", sql: "x" }, "succeeded");
     await call(otherRunId, "query", "pulse.base.sql.run", { type: "pulse.base", id: "Other1" }, { sql: "x" }, "succeeded");
+    await call(runId, "query", "db.query", null, { sql: "SELECT * FROM copied" }, "succeeded");
+    await call(runId, "action", "db.exec", null, { sql: "INSERT INTO tmp VALUES (1)" }, "succeeded");
     const [row] = await sql<{ reads: unknown }[]>`SELECT (${codeRunReadsQuery(runId)}) AS reads`;
     const reads = parseCodeRouteReads(row!.reads);
     // Postgres orders jsonb keys by length; compare with sorted keys.
@@ -97,6 +99,11 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
         { kind: "query", capability: "pulse.source.read" },
         { kind: "query", capability: "pulse.base.list" },
         { kind: "query", capability: "pulse.sql.run" },
+        // A failed Query counts too: its error text can carry data.
+        { kind: "target", ref: { type: "pulse.base", id: "Failed" } },
+        // The Code's own database counts as a Query, also db.exec (it returns counts), but names no resource.
+        { kind: "query", capability: "db.query" },
+        { kind: "query", capability: "db.exec" },
       ]
         .map(key)
         .sort(),

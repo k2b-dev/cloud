@@ -26,7 +26,7 @@ const messages = i18n.define({
 });
 
 /** The Code's own database and files belong to the Code, not to an app. */
-const isCodeOwnData = (operation: string) => operation === "db.query" || operation.startsWith("core.code.file.");
+const isCodeOwnData = (operation: string) => operation.startsWith("db.") || operation.startsWith("core.code.file.");
 /** AI reads no resource by itself; a resource it is given is a target or ref and counts on its own. */
 const isUnnamedRead = (permission: CodePermission) =>
   isCodeOwnData(permission.operation) || (isCodeAiOperation(permission.operation) && !permission.target);

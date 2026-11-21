@@ -157,3 +157,21 @@ test("a named input field that is empty or longer than any resource ID is never 
   expect(await check([old("b".repeat(513))], { public: false })).toBe("forbidden");
   expect(asked).toEqual([]);
 });
+
+test("a member page that reads the Code's own database is delivered without asking any app (no registry entry for db)", async () => {
+  const asked = provider(() => "FORBIDDEN");
+  const reads: CodeRouteRead[] = [
+    { kind: "input", capability: "db.query", fields: { sql: "SELECT 1" } },
+    { kind: "query", capability: "db.query" },
+    { kind: "query", capability: "db.exec" },
+  ];
+  expect(await check(reads, { public: false })).toBe("deliver");
+  expect(asked).toEqual([]);
+  // db.exec returns counts, so on a public route it needs owner-data like db.query.
+  expect(await check([{ kind: "query", capability: "db.exec" }], { public: true }, null)).toBe("forbidden");
+});
+
+test("a declared ID field that did not arrive as a string is never delivered (fail closed)", async () => {
+  provider(() => "ok");
+  expect(await check([{ kind: "input", capability: "pulse.sql.run", fields: { sql: "SELECT 1" } }], { public: false })).toBe("forbidden");
+});

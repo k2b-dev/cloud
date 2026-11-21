@@ -24,8 +24,14 @@ owner's account could read.
 - A page that should show the owner's data to everyone who opens it declares
   `{ audience: "owner-data" }` on the route. The change needs a new version and
   its approval; the administrators see the option in the review.
-- A public route that calls any app Query needs `audience: "owner-data"`. Pulse
-  keeps its data off public routes entirely (`code.publicRoutes: false`).
+- A public route that calls any app Query needs `audience: "owner-data"`. So
+  does a public route that uses the Code's own database, because the database
+  outlives versions and may hold app data copied earlier: existing public pages
+  that read their database answer **No access** until a new version declares
+  `{ public: true, audience: "owner-data" }`. Pulse keeps its data off public
+  routes entirely (`code.publicRoutes: false`).
+- A Query that failed counts like one that succeeded, because its error text
+  can carry data.
 - Pulse reads have a target form, recommended for Code:
   `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`,
   `.savedQuery.list` and `.schema.read`. The app-wide forms with `baseId` keep

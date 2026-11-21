@@ -19,7 +19,7 @@ const ReaderDataSchema = z.unknown();
 type Facts = NonNullable<Awaited<ReturnType<typeof getCapabilityCodeReadFacts>>>;
 const appOf = (qualified: string) => qualified.slice(0, qualified.indexOf("."));
 /** The Code's own database and files belong to the Code, not to an app. */
-const isCodeOwnData = (capability: string) => capability === "db.query" || capability.startsWith("core.code.file.");
+const isCodeOwnData = (capability: string) => capability.startsWith("db.") || capability.startsWith("core.code.file.");
 /** AI reads no resource by itself; whatever it was given came from a call that is recorded on its own. */
 const isUnnamedRead = (capability: string) => isCodeOwnData(capability) || isCodeAiOperation(capability);
 
@@ -62,22 +62,22 @@ export async function checkCodeRouteReads(input: {
       apps.size > 0 ||
       input.reads.some((read) => read.kind === "target") ||
       // The Code's database outlives its versions and may hold app data an earlier version copied.
-      input.reads.some((read) => read.kind === "query" && read.capability === "db.query");
+      input.reads.some((read) => read.kind === "query" && read.capability.startsWith("db."));
     return !ownerData || input.route.audience === "owner-data" ? "deliver" : "forbidden";
   }
   const resources = new Map<string, { type: string; id: string }>();
   const add = (ref: { type: string; id: string }) => resources.set(JSON.stringify([ref.type, ref.id]), ref);
   for (const read of input.reads) {
     if (read.kind === "target") add(read.ref);
-    if (read.kind !== "input") continue;
+    if (read.kind !== "input" || isCodeOwnData(read.capability)) continue;
     // A type reader's `id` and declared `inputRefs` name the resources an app-wide Query read. Other input names no
     // resource; the route's handler checks such data (09.11.).
     const named = (await factsOf(appOf(read.capability))).inputRefs[read.capability] ?? {};
     for (const [field, type] of Object.entries(named)) {
       const id = read.fields[field];
-      if (id === undefined) continue;
-      // An empty or over-long value cannot be checked (the reads cut strings past the longest resource ID).
-      if (id.length === 0 || id.length > CLOUD_RESOURCE_ID_MAX_LENGTH) return "forbidden";
+      // A missing (not a string), empty or over-long value cannot be checked (the reads cut strings past the longest
+      // resource ID), so the answer is not delivered.
+      if (id === undefined || id.length === 0 || id.length > CLOUD_RESOURCE_ID_MAX_LENGTH) return "forbidden";
       add({ type, id });
     }
   }
