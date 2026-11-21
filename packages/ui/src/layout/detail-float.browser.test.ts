@@ -344,7 +344,8 @@ describe("floating workspace detail", () => {
           await openRow(page);
           const shape = await geometry(page);
           expectInset(shape);
-          expect(shape.detail.width).toBeCloseTo(wanted, 1);
+          // K12: from 1920 px the preset widths start 60 px wider; a persisted width stays as it is.
+          expect(shape.detail.width).toBeCloseTo(wanted + (width! >= 1920 && !params.startsWith("persisted") ? 60 : 0), 1);
           expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
           expect(shape.main.width).toBeGreaterThanOrEqual(320);
         } finally {
@@ -732,15 +733,18 @@ describe("floating workspace detail", () => {
     }
   });
   for (const fixed of [false, true]) {
-    test(`820×1180: a fitting ${fixed ? "permanent" : "closable"} detail is a column even with touch`, async () => {
+    // K12: on a tablet a Detail is always a drawer that waits behind its Details button, also where it would fit.
+    test(`820×1180: a ${fixed ? "permanent" : "closable"} detail that would fit waits as a drawer on a tablet`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
       try {
         await openRow(page);
         const shape = await geometry(page);
-        expectInset(shape);
-        expect(shape.main.width).toBeCloseTo(shape.root.width - shape.detail.width - 8, 1);
-        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
-        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
+        // Main reaches the workspace's end: the waiting Detail takes no column.
+        expect(shape.main.right).toBeCloseTo(shape.root.right - shape.border, 1);
+        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
+        expect(
+          await page.locator(".k2b-app-workspace__detail").evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
+        ).toBe("1");
       } finally {
         await page.close();
       }
@@ -1388,7 +1392,7 @@ for (const theme of ["light", "dark"] as const)
 
 // A column's paint belongs to the workspace edge, not the inset scrollport.
 for (const theme of ["light", "dark"] as const) {
-  test(`${theme}: detail column shadow spans the workspace and retains a soft bottom edge`, async () => {
+  test(`${theme}: the detail column's hairline spans the workspace evenly`, async () => {
     const page = await load(2560, 900, `initial=1&reopen&request-control&width=lg&card${theme === "dark" ? "&island" : ""}`);
     try {
       await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
@@ -1421,17 +1425,18 @@ for (const theme of ["light", "dark"] as const) {
             return sum / 8;
           };
           const edge = (y: number) => mean(2, y) - mean(38, y);
-          return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4) };
+          // Without a shade, the column before the line keeps one paint up to it.
+          const shade = (y: number) => Math.abs(mean(2, y) - mean(34, y));
+          return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4), shade: Math.max(shade(0), shade(100)) };
         },
         `data:image/png;base64,${png.toString("base64")}`,
       );
-      console.info(`column shadow ${theme}: ${JSON.stringify(contrast)}`);
-      // 55 % of the #1672 shadow, the one every column boundary uses.
-      expect(contrast.top).toBeGreaterThan(theme === "light" ? 2.5 : 0.5);
-      expect(contrast.top).toBeLessThan(theme === "light" ? 7.5 : 3);
-      expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(1);
-      expect(contrast.bottom).toBeGreaterThan(theme === "light" ? 1 : 0.2);
-      expect(contrast.bottom).toBeLessThan(contrast.middle);
+      console.info(`column line ${theme}: ${JSON.stringify(contrast)}`);
+      // K2, K3: one hairline at the boundary, the same from top to bottom, and no shade beside it.
+      expect(Math.abs(contrast.top)).toBeGreaterThan(1);
+      expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(0.5);
+      expect(Math.abs(contrast.top - contrast.bottom)).toBeLessThan(0.5);
+      expect(contrast.shade).toBeLessThan(0.5);
       // Removing paint alone must not change the panel or Main geometry.
       const suppress = await page.addStyleTag({ content: ".k2b-app-workspace__content::after{content:none!important}" });
       await settled(page);
