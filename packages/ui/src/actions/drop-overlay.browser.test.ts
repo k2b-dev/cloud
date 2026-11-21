@@ -312,8 +312,11 @@ describe(`drop overlay in ${browserName}`, () => {
   });
 
   test("Escape and leaving the window cancel; a folder outside the overlay takes the drop; nothing shifts and nothing loads", async () => {
-    const { page, context } = await open();
+    const { page, context, overlayLoaded } = await open();
     try {
+      // The overlay's own code loads ahead of the drag (WebKit has no idle callback, so after 200 ms); from then on,
+      // dragging loads nothing.
+      await overlayLoaded;
       await settled(page);
       let requests = 0;
       page.on("request", () => requests++);
