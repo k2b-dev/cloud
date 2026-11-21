@@ -53,10 +53,10 @@ export type NumberInputProps = Omit<
  * Reads typed or pasted text with the locale's marks: `decimal` separates the
  * fraction, the other of `.` and `,` groups thousands. One mark of the other
  * kind that cannot be grouping (`3.14` in German) still reads as the decimal
- * separator. Text that fits neither reading is `"invalid"`, never a shortened
- * number.
+ * separator. Returns canonical decimal text such as `-2977.17`; text that fits
+ * neither reading is `"invalid"`, never a shortened number.
  */
-function parseLocalizedNumber(text: string, decimal: string): number | null | "invalid" {
+function parseLocalizedNumber(text: string, decimal: string): string | null | "invalid" {
   const point = decimal === "," ? "," : ".";
   const group = point === "," ? "." : ",";
   let body = decimal === point ? text : text.replaceAll(decimal, point);
@@ -76,8 +76,70 @@ function parseLocalizedNumber(text: string, decimal: string): number | null | "i
     else if (fraction === undefined && groups.length === 2) [integer = "", fraction] = groups;
     else return "invalid";
   }
-  return Number(`${negative ? "-" : ""}${integer || "0"}.${fraction ?? ""}`);
+  return `${negative ? "-" : ""}${integer || "0"}${fraction ? `.${fraction}` : ""}`;
 }
+
+/** Plain decimal text of a finite number, without an exponent: `1e21` → `1000000000000000000000`. */
+function decimalText(value: number): string {
+  const text = String(value);
+  if (!text.includes("e")) return text;
+  const [mantissa = "", exponent = "0"] = text.replace("-", "").split("e");
+  const [integer = "", fraction = ""] = mantissa.split(".");
+  const digits = integer + fraction;
+  const point = integer.length + Number(exponent);
+  const plain =
+    point <= 0
+      ? `0.${"0".repeat(-point)}${digits}`
+      : point >= digits.length
+        ? digits + "0".repeat(point - digits.length)
+        : `${digits.slice(0, point)}.${digits.slice(point)}`;
+  return value < 0 ? `-${plain}` : plain;
+}
+
+const fractionLength = (text: string) => text.split(".")[1]?.length ?? 0;
+
+/** Decimal text as an integer count of `10^-digits` units; `digits` covers every fraction digit of `text`. */
+function toUnits(text: string, digits: number): bigint {
+  const [integer = "", fraction = ""] = text.replace("-", "").split(".");
+  const units = BigInt(`${integer || "0"}${fraction.padEnd(digits, "0")}`);
+  return text.startsWith("-") ? -units : units;
+}
+
+function fromUnits(units: bigint, digits: number): string {
+  const text = (units < 0n ? -units : units).toString().padStart(digits + 1, "0");
+  const integer = text.slice(0, text.length - digits);
+  return `${units < 0n ? "-" : ""}${integer}${digits > 0 ? `.${text.slice(-digits)}` : ""}`;
+}
+
+/** Integer division that rounds half away from zero; `divisor` is positive. */
+function divideRounded(dividend: bigint, divisor: bigint): bigint {
+  const quotient = dividend / divisor;
+  const remainder = dividend % divisor;
+  const away = (remainder < 0n ? -remainder : remainder) * 2n >= divisor;
+  return away ? quotient + (dividend < 0n ? -1n : 1n) : quotient;
+}
+
+/**
+ * Snaps decimal text to `anchor + n × step` and rounds it to `places`, half away
+ * from zero, in exact decimal arithmetic: `1.005` at `step` 0.01 is `1.01`, not
+ * the `1.00` that rounding the binary float gives. A `step` of 0 only rounds.
+ */
+function roundDecimal(text: string, places: number, step = 0, anchor = 0): string {
+  const stepText = decimalText(step);
+  const anchorText = decimalText(anchor);
+  const digits = Math.max(fractionLength(text), fractionLength(stepText), fractionLength(anchorText), places);
+  let units = toUnits(text, digits);
+  if (step > 0) {
+    const stepUnits = toUnits(stepText, digits);
+    const anchorUnits = toUnits(anchorText, digits);
+    units = divideRounded(units - anchorUnits, stepUnits) * stepUnits + anchorUnits;
+  }
+  return fromUnits(divideRounded(units, 10n ** BigInt(digits - places)), places);
+}
+
+/** Why the field refuses its text: no reading as a number, or a minus where negatives are not allowed. */
+type Refusal = "invalid" | "negative";
+const isRefusal = (value: unknown): value is Refusal => value === "invalid" || value === "negative";
 
 function fractionDigits(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -132,33 +194,26 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const messages = useUiMessages();
   const inputMessages = useInputMessages();
   const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
-  const min = () => local.min ?? -Infinity;
+  // Without negatives the steppers and the commit stop at 0, like a typed minus is refused.
+  const min = () => (local.allowNegative === false ? Math.max(local.min ?? 0, 0) : (local.min ?? -Infinity));
   const max = () => local.max ?? Infinity;
   const step = () => local.step ?? 1;
   // `step` and the accepted decimals never disagree: a fractional step implies
   // its own precision unless the caller states `decimalPlaces` explicitly.
   const places = () => Math.max(0, local.decimalPlaces ?? fractionDigits(step()));
-  // The editable text never groups; `parseLocalizedNumber` still reads typed or pasted grouping.
-  // Keep ASCII digits and no grouping so display text round-trips through parse,
-  // including numbers that String/toFixed would write in exponential notation.
-  const formatter = createMemo(
-    () =>
-      new Intl.NumberFormat("en", {
-        useGrouping: false,
-        minimumFractionDigits: places(),
-        maximumFractionDigits: places(),
-      }),
-  );
+  // ASCII digits without grouping or exponent, so the text round-trips through parse;
+  // `parseLocalizedNumber` still reads typed or pasted grouping.
   const display = (value: number | null | undefined) => {
     if (value == null) return "";
-    // Match normalize's rounding; toFixed switches to exponents at 1e21.
-    const text = Math.abs(value) < 1e21 ? value.toFixed(places()) : formatter().format(value);
-    return text.replace(".", separator());
+    // A non-finite value from outside shows as it is; decimal rounding needs digits.
+    if (!Number.isFinite(value)) return String(value);
+    return roundDecimal(decimalText(value), places()).replace(".", separator());
   };
   const [raw, setRaw] = createSignal(display(value()));
   /** Why the field refused its text; the text stays as typed until it reads as a number. */
   const [failure, setFailure] = createSignal<string>();
   const shownError = () => failure() ?? error();
+  const negativeAllowed = () => local.allowNegative ?? true;
   const example = () => {
     const decimal = separator();
     return `1${decimal === "," ? "." : ","}234${places() > 0 ? `${decimal}56` : ""}`;
@@ -170,32 +225,43 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     let output = "";
     for (const character of input) {
       if (/\d/.test(character) || character === "." || character === "," || character === separator()) output += character;
-      else if (character === "-" && (local.allowNegative ?? true)) output += character;
+      // A minus stays even where negatives are not allowed, so the field can refuse it instead of flipping the sign.
+      else if (character === "-") output += character;
     }
     return output;
   };
-  const parse = (input: string) => {
-    const number = parseLocalizedNumber(input, separator());
-    return typeof number === "number" && !Number.isFinite(number) ? "invalid" : number;
+  /** Canonical decimal text, `null` for empty text, or why the text is refused. */
+  const read = (input: string): string | null | Refusal => {
+    const text = parseLocalizedNumber(input, separator());
+    if (text === null || text === "invalid") return text;
+    if (!Number.isFinite(Number(text))) return "invalid";
+    if (text.startsWith("-") && !negativeAllowed()) return "negative";
+    return text;
+  };
+  const parse = (input: string): number | null | Refusal => {
+    const text = read(input);
+    return text === null || isRefusal(text) ? text : Number(text);
   };
   /** The number the current text stands for, or `null` while it reads as none. */
   const typed = () => {
     const number = parse(raw());
-    return number === "invalid" ? null : number;
+    return isRefusal(number) ? null : number;
   };
-  const normalize = (value: number | null) => {
+  /** Clamps, snaps to the step grid and rounds to `places` on decimal text; `text` is the typed form of `value`. */
+  const normalize = (value: number | null, text?: string) => {
     if (value === null) return null;
     const clamped = Math.max(min(), Math.min(max(), value));
+    if (!Number.isFinite(clamped)) return clamped;
+    const source = text !== undefined && clamped === value ? text : decimalText(clamped);
     const anchor = Number.isFinite(min()) ? min() : 0;
-    const snapped = step() > 0 ? Math.round((clamped - anchor) / step()) * step() + anchor : clamped;
-    const bounded = Math.max(min(), Math.min(max(), snapped));
-    return places() === 0 ? Math.round(bounded) : Number(bounded.toFixed(places()));
+    const snapped = Number(roundDecimal(source, places(), step(), anchor));
+    return Math.max(min(), Math.min(max(), snapped));
   };
   const emit = (value: number | null) => local.onValueChange?.(value);
   /** The value before the current edit; text the field cannot read hands it back instead of a guess. */
   let editStart: number | null | undefined;
-  const commit = (value: number | null, changeAlreadyEmitted = false) => {
-    const next = normalize(value);
+  const commit = (value: number | null, changeAlreadyEmitted = false, text?: string) => {
+    const next = normalize(value, text);
     editStart = undefined;
     setFailure(undefined);
     setRaw(display(next));
@@ -242,14 +308,18 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       { defer: true },
     ),
   );
-  const refusal = () => inputMessages().notANumber({ example: example() });
-  // A form that validates does not submit text the field cannot read, also while it is still being typed.
-  createEffect(() => input?.setCustomValidity(failure() ?? (parse(raw()) === "invalid" ? refusal() : "")));
-  /** Commits the current text, or keeps it with an error when it reads as no number. */
+  const refusal = (reason: Refusal) =>
+    reason === "negative" ? inputMessages().noNegativeNumbers : inputMessages().notANumber({ example: example() });
+  // A form that validates does not submit text the field refuses, also while it is still being typed.
+  createEffect(() => {
+    const reading = read(raw());
+    input?.setCustomValidity(failure() ?? (isRefusal(reading) ? refusal(reading) : ""));
+  });
+  /** Commits the current text, or keeps it with an error when the field refuses it. */
   const commitText = () => {
-    const number = parse(raw());
-    if (number === "invalid") setFailure(refusal());
-    else commit(number, true);
+    const text = read(raw());
+    if (isRefusal(text)) setFailure(refusal(text));
+    else commit(text === null ? null : Number(text), true, text ?? undefined);
   };
   // Enter already committed the current text, so leaving the field does not commit it twice.
   let committedOnEnter = false;
@@ -336,12 +406,12 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
         setRaw(next);
         committedOnEnter = false;
         const number = parse(next);
-        if (number !== "invalid") {
+        if (!isRefusal(number)) {
           setFailure(undefined);
           emit(number);
         } else {
           // Without focus (autofill) no blur follows, so the refusal shows at once.
-          if (!focused()) setFailure(refusal());
+          if (!focused()) setFailure(refusal(number));
           if (!Object.is(value() ?? null, editStart)) emit(editStart);
         }
       }}

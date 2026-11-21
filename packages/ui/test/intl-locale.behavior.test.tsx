@@ -300,7 +300,7 @@ describe("@k2b/ui intl browser behavior", () => {
       () => createComponent(NumberInput, { label: "Preis", step: 0.01, decimalPlaces: 1, value: explicit, onValueChange: setExplicit }),
       dom.root,
     );
-    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,16");
+    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,15");
     expect(explicit()).toBe(0.2);
     disposeExplicit();
 

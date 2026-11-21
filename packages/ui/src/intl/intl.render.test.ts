@@ -230,7 +230,7 @@ describe("Format components SSR", () => {
 
   test("NumberInput display uses the same rounding as commit normalization", () => {
     const html = renderToString(() => createComponent(NumberInput, { value: 1.005, decimalPlaces: 2, step: 0 }));
-    expect(html).toContain('value="1.00"');
+    expect(html).toContain('value="1.01"');
   });
 
   test("passes native attributes through to the rendered element", () => {
