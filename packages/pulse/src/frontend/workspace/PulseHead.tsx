@@ -43,6 +43,8 @@ export default function PulseHead(props: PulseHeadProps) {
           <ViewTabs
             label={t().baseViews}
             current={currentTab(props.view)}
+            fit
+            max={4}
             items={[
               {
                 id: "sources",

@@ -232,3 +232,7 @@
   .pulse-kind__phone-trigger { width: 100%; justify-content: space-between; }
   .pulse-kind__phone-pick + .pulse-kind__head { display: none; }
 }
+/* In the phone list the title line holds only the name; the arrival is the entry's meta line (K7). */
+@container k2b-data-table (max-width: 479.98px) {
+  .k2b-ui .pulse-source-cell__meta { display: none; }
+}

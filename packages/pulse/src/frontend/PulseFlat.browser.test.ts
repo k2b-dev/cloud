@@ -113,7 +113,7 @@ describe("Pulse flat base page", () => {
         ["09-nur-lesen", flatStates.readOnly, "Du kannst diese Basis lesen."],
         ["10-speicher-weg", flatStates.storeDown, "Datenspeicher nicht erreichbar"],
         ["12-alarm", flatStates.alert, "Mit Gustav anpassen"],
-        ["11-sql-konsole", { ...flatStates.sql, initialSql: { limits: sqlTestLimits, query: null, error: null } }, "Ausführen"],
+        ["11-sql-konsole", { ...flatStates.sql, initialSql: { limits: sqlTestLimits, query: null, error: null } }, "Beispiel einsetzen"],
       ];
       for (const [name, props, text] of states) {
         const tab = await open(width, props);
@@ -124,6 +124,25 @@ describe("Pulse flat base page", () => {
       }
     }, 120_000);
   }
+
+  test("768 and 1920 px: Sources with detail and Data fit the tablet drawer and the wide screen", async () => {
+    for (const width of [768, 1920]) {
+      for (const props of [flatStates.error, flatStates.data]) {
+        const tab = await open(width, props);
+        // At 768 px the detail is a drawer over the list; the list is what must fit.
+        await tab
+          .getByText(props === flatStates.data ? "/sammlung/vasen" : "Shop-Backend")
+          .first()
+          .waitFor();
+        expect({ width, view: props.initialRouteState.view, problems: await problems(tab) }).toEqual({
+          width,
+          view: props.initialRouteState.view,
+          problems: [],
+        });
+        await tab.close();
+      }
+    }
+  }, 60_000);
 
   test("the head keeps its height in every state, also without tabs", async () => {
     const heights: number[] = [];
@@ -163,7 +182,9 @@ describe("Pulse flat base page", () => {
     // On a phone the host's title switches the base; the sidebar's links switch it from 768 px on.
     for (const width of [1440]) {
       const tab = await open(width, flatStates.healthy, { hold: true });
-      await tab.getByRole("link", { name: "Website" }).first().click({ noWaitAfter: true });
+      // The document request of the next base stays open: keep this page and look at it while it waits.
+      await tab.evaluate(() => document.addEventListener("click", (event) => event.preventDefault(), { once: true }));
+      await tab.locator(".k2b-app-workspace__sidebar a[href='/app/pulse/Web001']").first().click();
       await tab.locator("[aria-busy='true'], .k2b-skeleton").first().waitFor();
       await shoot(tab, "05-laedt", width);
       expect(await problems(tab)).toEqual([]);
