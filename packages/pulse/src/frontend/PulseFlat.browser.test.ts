@@ -42,9 +42,9 @@ const answer = (url: string, many: boolean) => {
   if (path.endsWith("/scrapes")) return { status: 200, json: [] };
   return { status: 500, json: { code: "UNEXPECTED" } };
 };
-const open = async (width: number, props: PulseWorkspaceProps, options: { many?: boolean; hold?: boolean } = {}) => {
+const open = async (width: number, props: PulseWorkspaceProps, options: { many?: boolean; hold?: boolean } = {}, on: Browser = browser) => {
   const touch = width < 768;
-  const tab = await browser.newPage({ viewport: { width, height: touch ? 844 : 900 }, isMobile: touch, hasTouch: touch });
+  const tab = await on.newPage({ viewport: { width, height: touch ? 844 : 900 }, isMobile: touch, hasTouch: touch });
   await pauseWorkspaceClock(tab.clock, new Date(props.initialNow));
   await tab.route(`${origin}/api/**`, (route) => route.fulfill(answer(route.request().url(), options.many ?? false)));
   let served = false;
@@ -79,6 +79,35 @@ const many = (props: PulseWorkspaceProps): PulseWorkspaceProps => ({
       name: `Kurzlink ${index + 1}`,
     })),
   ],
+});
+
+// Required since 21.11. ~22:30Z: classic scrollbars that take layout space, at 390/768/1100/1440 px, with the detail
+// column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Chromium
+// only: the flag belongs to Chromium's launch; the WebKit run keeps the checks above.
+const classic = process.env.TEST_BROWSER === "webkit" ? describe.skip : describe;
+classic("Pulse flat base page with classic scrollbars", () => {
+  let scrollbars: Browser;
+  beforeAll(async () => {
+    scrollbars = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  }, 60_000);
+  afterAll(async () => {
+    await scrollbars?.close();
+  });
+  for (const width of [390, 768, 1100, 1440]) {
+    test(`${width} px with classic scrollbars: Sources with the detail open and Data, with many rows`, async () => {
+      const cases: [PulseWorkspaceProps, string, { many?: boolean }][] = [
+        [many(flatStates.error), "Anfragen abgelehnt, zuletzt", {}],
+        [flatStates.data, "/sammlung/vasen", { many: true }],
+      ];
+      for (const [props, text, options] of cases) {
+        const tab = await open(width, props, options, scrollbars);
+        await tab.getByText(text, { exact: false }).first().waitFor();
+        if (width === 1100 && props !== flatStates.data) expect(await tab.locator(".k2b-detail-panel").count()).toBeGreaterThan(0);
+        expect({ width, problems: await problems(tab) }).toEqual({ width, problems: [] });
+        await tab.close();
+      }
+    }, 60_000);
+  }
 });
 
 describe("Pulse flat base page", () => {
