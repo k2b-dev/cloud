@@ -73,7 +73,7 @@ export default function UsageTab(props: {
     source: () => props.baseId,
     load: async (baseId, { abortSignal }) => {
       const result = await loadCodeUsage(baseId, abortSignal);
-      if (!result.ok && result.error === "unavailable") throw new Error(t().usagePagesFailed);
+      if (!result.ok && result.error === "unavailable") throw new Error(t().usagePagesRetry);
       return result.ok ? result.data : null;
     },
   });
@@ -158,7 +158,7 @@ export default function UsageTab(props: {
               columns={pageColumns()}
               getRowId={(row) => row.codeId}
               ariaLabel={t().usagePagesTitle}
-              empty={t().usagePagesNone}
+              empty={(pages.data()?.others ?? 0) > 0 ? t().usagePagesNoneOpenable : t().usagePagesNone}
               onRowClick={(row) => window.location.assign(row.href)}
               renderCell={({ row, col, render }) => renderPageCell(row, col, render)}
             />

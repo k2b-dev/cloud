@@ -247,30 +247,33 @@ export default function SourcesTab(props: SourcesTabProps) {
                 ]}
               />
               <p class="pulse-line">{props.canWrite ? t().emptyWhy : `${t().emptyWhy} ${t().overviewEmptyReadOnly}`}</p>
-              <DataTable
-                class="pulse-ways"
-                rows={ways()}
-                columns={[
-                  { id: "way", header: t().emptyWaysTitle, primary: true, list: "title" },
-                  { id: "open", header: "", align: "right" },
-                ]}
-                getRowId={(way) => way.id}
-                onRowClick={(way) => way.run()}
-                ariaLabel={t().emptyWaysTitle}
-                renderCell={({ row, col }) =>
-                  col.id === "way" ? (
-                    <span class="pulse-row-cell">
-                      <i class={`${row.icon} pulse-row-cell__icon`} data-tone={row.tone} aria-hidden="true" />
-                      <span class="pulse-row-cell__copy">
-                        <span class="pulse-row-cell__title">{row.title}</span>
-                        <span class="pulse-row-cell__detail">{row.detail}</span>
+              {/* The ways create a source, so only people who may write see them. */}
+              <Show when={props.canWrite}>
+                <DataTable
+                  class="pulse-ways"
+                  rows={ways()}
+                  columns={[
+                    { id: "way", header: t().emptyWaysTitle, primary: true, list: "title" },
+                    { id: "open", header: "", align: "right" },
+                  ]}
+                  getRowId={(way) => way.id}
+                  onRowClick={(way) => way.run()}
+                  ariaLabel={t().emptyWaysTitle}
+                  renderCell={({ row, col }) =>
+                    col.id === "way" ? (
+                      <span class="pulse-row-cell">
+                        <i class={`${row.icon} pulse-row-cell__icon`} data-tone={row.tone} aria-hidden="true" />
+                        <span class="pulse-row-cell__copy">
+                          <span class="pulse-row-cell__title">{row.title}</span>
+                          <span class="pulse-row-cell__detail">{row.detail}</span>
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    <i class="ti ti-chevron-right pulse-quiet" aria-hidden="true" />
-                  )
-                }
-              />
+                    ) : (
+                      <i class="ti ti-chevron-right pulse-quiet" aria-hidden="true" />
+                    )
+                  }
+                />
+              </Show>
             </>
           }
         >

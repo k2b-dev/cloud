@@ -394,7 +394,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         storeDownSince={selectedBase()?.store.errorAt ?? null}
         openSource={(sourceId) => navigate({ view: "sources", sourceId })}
         openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sources", alertId } })}
-        addSource={() => void actions.addSource()}
+        addSource={(kind) => void actions.addSource(kind)}
         connectWithGustav={() => void askAssistant("connect")}
       />
     );
