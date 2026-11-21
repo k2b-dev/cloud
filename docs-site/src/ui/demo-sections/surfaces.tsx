@@ -772,6 +772,84 @@ const PaperDemo = () => (
   </DemoCard>
 );
 
+const flatRadii = [
+  ["flat", "0", "column, band, row, section"],
+  ["mark", "4 px", "check, icon tile"],
+  ["control", "8 px", "button, field"],
+  ["overlay", "8 px", "menu, toast, dialog"],
+  ["round", "round", "chip, person, grip, pill"],
+  ["card", "14 px", "app card, phone sheet"],
+] as const;
+
+const FlatCriteriaDemo = () => (
+  <DemoCard
+    id="flat-criteria"
+    chip={[{ kind: "asset", name: "styles.css", from: "@k2b/ui/styles.css" }]}
+    description="The six radius roles and the two overlay shadows of Cloud flach. Square things order, round things are pressed; only what floats casts a shadow."
+    code={`.parcel-row { border-radius: var(--k2b-radius-flat); }
+.parcel-menu { border-radius: var(--k2b-radius-overlay); box-shadow: var(--k2b-shadow-overlay-sm); }
+.parcel-dialog { border-radius: var(--k2b-radius-overlay); box-shadow: var(--k2b-shadow-overlay-lg); }`}
+  >
+    <div style={{ display: "grid", gap: "var(--k2b-space-6)" }}>
+      <div style={{ display: "grid", "grid-template-columns": "repeat(auto-fill, minmax(9rem, 1fr))", gap: "var(--k2b-space-3)" }}>
+        <For each={flatRadii}>
+          {([role, value, use]) => (
+            <div style={{ display: "grid", gap: "var(--k2b-space-2)", "font-size": "var(--k2b-font-size-row)" }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  height: "3rem",
+                  border: "1px solid var(--k2b-border-strong)",
+                  background: "var(--k2b-surface-muted)",
+                  "border-radius": `var(--k2b-radius-${role})`,
+                }}
+              />
+              <strong>
+                {role} · {value}
+              </strong>
+              <span style={{ color: "var(--k2b-text-secondary)", "font-size": "var(--k2b-font-size-meta)" }}>{use}</span>
+            </div>
+          )}
+        </For>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          "flex-wrap": "wrap",
+          gap: "var(--k2b-space-6)",
+          padding: "var(--k2b-space-4)",
+          background: "var(--k2b-surface-muted)",
+        }}
+      >
+        <div
+          style={{
+            width: "12rem",
+            padding: "var(--k2b-space-3)",
+            background: "var(--k2b-surface)",
+            "border-radius": "var(--k2b-radius-overlay)",
+            "box-shadow": "var(--k2b-shadow-overlay-sm)",
+            "font-size": "var(--k2b-font-size-row)",
+          }}
+        >
+          Menu, toast, pill: <code>--k2b-shadow-overlay-sm</code>
+        </div>
+        <div
+          style={{
+            width: "14rem",
+            padding: "var(--k2b-space-4)",
+            background: "var(--k2b-surface)",
+            "border-radius": "var(--k2b-radius-overlay)",
+            "box-shadow": "var(--k2b-shadow-overlay-lg)",
+            "font-size": "var(--k2b-font-size-row)",
+          }}
+        >
+          Dialog: <code>--k2b-shadow-overlay-lg</code>
+        </div>
+      </div>
+    </div>
+  </DemoCard>
+);
+
 const elevationTiles = ["Halle B.jpg", "Sekretär.jpg", "Lieferschein.pdf", "Kühlregal.pdf"];
 
 const ElevationDemo = () => (
@@ -2014,6 +2092,11 @@ const demos: DemoSection = {
   color: () => (
     <DemoGrid columns="one">
       <ColorDemo />
+    </DemoGrid>
+  ),
+  "flat-criteria": () => (
+    <DemoGrid columns="one">
+      <FlatCriteriaDemo />
     </DemoGrid>
   ),
   elevation: () => (
