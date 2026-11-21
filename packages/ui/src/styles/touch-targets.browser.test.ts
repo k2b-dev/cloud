@@ -708,7 +708,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     try {
       // K1: a menu row is a 36 px control row, also without a touch screen.
       expect((await rows(page, dropdown)).map(([, height]) => height)).toEqual([36, 36, 49, 36, 36, 36, 36]);
-      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([32, 32, 32, 32, 32]);
+      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([36, 36, 36, 36, 36]);
       expect((await rows(page, select)).map(([, height]) => height)).toEqual([32, 50]);
     } finally {
       await page.close();
