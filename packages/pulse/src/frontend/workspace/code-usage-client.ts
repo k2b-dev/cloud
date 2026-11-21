@@ -13,7 +13,8 @@ const CodeUsageSchema = z.object({
       kind: z.enum(["page", "automation"]),
       owner: z.string().nullable(),
       lastCalledAt: z.string(),
-      href: z.string().startsWith("/"),
+      // One path on this Cloud: "//" or "/\\" would name another host.
+      href: z.string().regex(/^\/(?![/\\])/),
     }),
   ),
   others: z.number().int().nonnegative(),

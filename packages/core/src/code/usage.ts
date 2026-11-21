@@ -16,7 +16,14 @@ import {
 import type { Code } from "./contracts";
 import { describeCodePages } from "./page-links";
 import { type CodeRow, mapCode } from "./store";
-import { CODE_USAGE_CODES_MAX, CODE_USAGE_ITEMS_MAX, CODE_USAGE_WINDOW_DAYS, type CodeUsage, type CodeUsageItem } from "./usage-contracts";
+import {
+  CODE_USAGE_CHECKS_MAX,
+  CODE_USAGE_CODES_MAX,
+  CODE_USAGE_ITEMS_MAX,
+  CODE_USAGE_WINDOW_DAYS,
+  type CodeUsage,
+  type CodeUsageItem,
+} from "./usage-contracts";
 
 /** The person may not read the resource, or is no member in their own browser session. */
 export class CodeUsageForbidden extends Error {}
@@ -42,7 +49,7 @@ export const codeUsageInputFields = (inputRefs: Readonly<Record<string, Readonly
   );
 
 /**
- * One statement: the active Codes (at most `CODE_USAGE_CODES_MAX`, in ID order) whose runs made a succeeded Query since
+ * One statement: the active Codes (the `CODE_USAGE_CODES_MAX` most recently run) whose runs made a succeeded Query since
  * `since` that read `ref`, with each Code's latest such call. A Query read the resource when its target or one of its
  * refs is the resource, or, for an app-wide Query (no target), when an input field that names this type holds its ID,
  * like the route read check (G1). Actions and failed or running calls do not count. Runs come per Code from
@@ -54,13 +61,17 @@ export const findCodeUsage = async (
 ): Promise<CodeUsageRow[]> => {
   const { ref, since } = input;
   return db<CodeUsageRow[]>`SELECT c.*, v.manifest, COALESCE(NULLIF(u.display_name,''),u.uid) AS owner_name, hit.last_called_at
-    FROM (SELECT * FROM code.codes WHERE state='active' AND active_version_id IS NOT NULL ORDER BY id
+    FROM (SELECT * FROM code.codes cc WHERE state='active' AND active_version_id IS NOT NULL
+      -- The most recently run Codes first (one probe of runs_code_history each), so a busy installation drops idle ones.
+      ORDER BY (SELECT max(r.created_at) FROM code.runs r WHERE r.code_id=cc.id) DESC NULLS LAST, id
       LIMIT ${CODE_USAGE_CODES_MAX}) c
     JOIN code.versions v ON v.id=c.active_version_id AND v.code_id=c.id
     LEFT JOIN auth.users u ON c.owner_kind='person' AND u.id=c.owner_user_id
     CROSS JOIN LATERAL (
       SELECT max(k.ended_at) AS last_called_at FROM code.runs r JOIN code.calls k ON k.run_id=r.id
-      WHERE r.code_id=c.id AND (r.ended_at IS NULL OR r.ended_at>=${since})
+      -- created_at bounds the runs_code_history range: a run lasts minutes, so a day of margin keeps every match.
+      WHERE r.code_id=c.id AND r.created_at>=${new Date(since.getTime() - 86_400_000)}
+        AND (r.ended_at IS NULL OR r.ended_at>=${since})
         AND k.kind='query' AND k.state='succeeded' AND k.ended_at>=${since}
         AND (
           (k.call->'target'->>'type'=${ref.type} AND k.call->'target'->>'id'=${ref.id})
@@ -167,10 +178,12 @@ export async function readCodeUsage(
   const permissionOf = deps.permission ?? codePermission;
   const user = codePerson(context);
   const items: CodeUsageItem[] = [];
-  for (let start = 0; start < rows.length && items.length < CODE_USAGE_ITEMS_MAX; start += PERMISSION_CONCURRENCY) {
+  // At most CODE_USAGE_CHECKS_MAX permission checks per request; the unchecked rest only counts in `others` (F4).
+  const checked = rows.slice(0, CODE_USAGE_CHECKS_MAX);
+  for (let start = 0; start < checked.length && items.length < CODE_USAGE_ITEMS_MAX; start += PERMISSION_CONCURRENCY) {
     context.signal?.throwIfAborted();
     const chunk = await Promise.all(
-      rows.slice(start, start + PERMISSION_CONCURRENCY).map(async (row) => {
+      checked.slice(start, start + PERMISSION_CONCURRENCY).map(async (row) => {
         const code = mapCode(row, user);
         // One owner read per Code: the permission check and the owner's name ask the same provider.
         let ownerRead: ReturnType<typeof readCodeOwner> | undefined;

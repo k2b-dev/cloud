@@ -205,13 +205,16 @@ If the reader says no or cannot find the resource, the answer is the same
 A Code read the resource when one of its succeeded Queries in the last 30 days
 has it as target or ref, or names its ID in a field of an app-wide Query: the
 `id` of the type's reader, or a declared `inputRefs` field. Actions and
-failed calls do not count. Core looks at up to 500 active Codes and reads
-the calls in one SQL statement.
+failed calls do not count. Core searches the 500 most recently run active
+Codes, so on a larger installation an idle Code that read the resource long ago
+can be missing; it reads the calls in one SQL statement. It checks the rights
+of at most 100 matches, newest first.
 
 Each entry in `items` has `codeId`, `title`, `kind` (`page` or `automation`),
 `owner`, `lastCalledAt` and `href`, newest first and at most 50. The answer
-names only Codes the person may open with their Code rights. All other matches
-count in `others`, without a name. The answer has no counts per person or per
+names only Codes the person may open with their Code rights. All other matches,
+including those past the 50 named entries or past the 100 checks, count in
+`others`, without a name. The answer has no counts per person or per
 call. `owner` follows the rules of the page label: a person's name, an app's
 name, or a resource's name when the person may read it, else its type. `href`
 opens the page, or the automation's Code page.

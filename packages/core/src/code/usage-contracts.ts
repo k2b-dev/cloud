@@ -7,6 +7,8 @@ export const CODE_USAGE_WINDOW_DAYS = 30;
 export const CODE_USAGE_CODES_MAX = 500;
 /** Named entries in one answer; every further match counts in `others`. */
 export const CODE_USAGE_ITEMS_MAX = 50;
+/** Permission checks per request: twice the named items, newest call first; the rest counts without names. */
+export const CODE_USAGE_CHECKS_MAX = 2 * CODE_USAGE_ITEMS_MAX;
 
 /** One Code page or automation that read the resource and that the asking person may open. */
 export const CodeUsageItemSchema = z
