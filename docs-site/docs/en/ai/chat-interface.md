@@ -1056,6 +1056,13 @@ does not stop a run; a lost host is never replayed. `code_secret` asks for a
 value with a Secret card in the web conversation. Native views and exported files remain chat
 files. For lasting Code, use the Code tools and [Code authoring](/en/docs/platform/gustav-code-tools).
 
+If a Capability Action or its reviewed consequence changes while the person is
+asked, for example because the app was updated, nothing runs and no refusal is
+recorded. The run asks once more. The new card gives as its reason that the app
+changed the Action, so the person approves the current version. If it changes
+again during that second question, the run ends with a sentence that nothing has
+run and the person can start it again. Remembered approvals stay valid.
+
 Studio apps, HTML checks and presentations, machine execution, and the direct
 `cld assistant code` commands are retired. See [Studio retirement](/en/docs/operations/studio-retirement).
 

@@ -18,7 +18,9 @@ export const GeoProvenanceSchema = z
       .describe("Required attribution; preserve when storing or reusing the result."),
     computedAt: z.iso.datetime().describe("ISO timestamp when the provider result was computed."),
   })
-  .strict();
+  .strict()
+  // Every address, stop, leg and candidate carries provenance; projections publish it once under `$defs`.
+  .meta({ id: "GeoProvenance" });
 const text = z.string().max(300);
 export const GeoAddressSchema = z
   .object({

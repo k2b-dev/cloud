@@ -434,6 +434,24 @@ describe("generated runtime through the canonical call seam", () => {
   });
 });
 
+test("a shared $defs entry projects like the same schema inline and pools with it", () => {
+  const point = { type: "object", properties: { lat: { type: "number" }, unit: { type: "string", enum: ["m", "km"] } }, required: ["lat"] };
+  const shapes = { types: new Map<string, string>(), names: new Set<string>() };
+  const inline = schemaTypes({ type: "object", properties: { at: point, unit: point.properties.unit } }, "Inline", [], shapes);
+  const shared = schemaTypes(
+    {
+      type: "object",
+      properties: { at: { $ref: "#/$defs/Point", description: "Where." }, unit: { $ref: "#/$defs/Unit" } },
+      $defs: { Point: point, Unit: point.properties.unit },
+    },
+    "Shared",
+    [],
+    shapes,
+  );
+  expect(shared.type.replace(/\/\*\*[\s\S]*?\*\/\s*/g, "")).toBe(inline.type);
+  expect(shared.declarations).toEqual([]);
+});
+
 test("schema projection preserves recursive refs, tuples, literals and maps", () => {
   const root = {
     type: "object",

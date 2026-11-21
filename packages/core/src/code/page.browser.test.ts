@@ -1403,7 +1403,7 @@ describe("the feat/code label of a Code page", () => {
             };
           });
           expect(sheet.bottom).toBe(900);
-          expect(sheet.radius).toBe("16px");
+          expect(sheet.radius).toBe("14px"); // Cloud flach K4, K16: the sheet top takes the card radius.
           expect(sheet.buttons[0]).toBe(sheet.buttons[1]);
         }
         // Sending: fields and buttons are off, the line says so, and the dialog keeps its size.

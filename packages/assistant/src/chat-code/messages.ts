@@ -81,6 +81,10 @@ export const artifactMessages = i18n.define({
       httpSecretsOnServer: "Secret references are resolved only on the server.",
       httpResponseShared: "Returned data is available to this code and may be shared by the app.",
       httpTruncated: "The body preview is incomplete. Review the source and inputs before approving.",
+      actionChanged: ({ app }: { app: string }) =>
+        `${app} changed this action after you were asked, so nothing has run yet. Check the current version and approve it again.`,
+      actionChangedAgain:
+        "The app changed this action again while you were asked, so nothing has run. Run it again to approve the current version.",
       httpApprove: "Send request",
       httpMoreOptions: "More options for this request",
       allowWebsiteForApp: "Allow this website for this app",
@@ -307,6 +311,10 @@ export const artifactMessages = i18n.define({
       httpSecretsOnServer: "Secret-Referenzen werden nur auf dem Server aufgelöst.",
       httpResponseShared: "Antwortdaten stehen dem Code zur Verfügung und können von der App geteilt werden.",
       httpTruncated: "Die Vorschau des Inhalts ist unvollständig. Prüfe Quellcode und Eingaben vor der Freigabe.",
+      actionChanged: ({ app }: { app: string }) =>
+        `${app} hat diese Aktion geändert, nachdem du gefragt wurdest. Deshalb ist noch nichts passiert. Prüfe die aktuelle Fassung und gib sie erneut frei.`,
+      actionChangedAgain:
+        "Die App hat diese Aktion erneut geändert, während du gefragt wurdest. Es ist nichts passiert. Starte den Lauf noch einmal, um die aktuelle Fassung freizugeben.",
       httpApprove: "Request senden",
       httpMoreOptions: "Weitere Optionen für diesen Request",
       allowWebsiteForApp: "Diese Website für diese App erlauben",

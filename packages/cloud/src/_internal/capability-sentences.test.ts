@@ -8,6 +8,7 @@ import {
   capabilityActionOutcome,
   capabilityActionSubject,
   capabilitySentenceFallback,
+  capabilitySentenceFields,
   renderCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
@@ -349,4 +350,19 @@ describe("one contract for every app", () => {
       "Create a draft to jana@example.com",
     );
   });
+});
+
+test("sentence fields read through shared $defs, so a date behind a reference keeps its format", () => {
+  const at = { type: "string", format: "date-time", description: "Delivery time." };
+  const inputSchema = {
+    type: "object",
+    properties: { sendAt: { $ref: "#/$defs/At", description: "When to send." }, plan: { $ref: "#/$defs/Plan" } },
+    $defs: { At: at, Plan: { type: "object", properties: { at: { $ref: "#/$defs/At" } } } },
+  };
+  expect(
+    capabilitySentenceFields({ inputSchema, sentences: { approval: "Send at {input.sendAt}?", done: "Planned {input.plan.at}" } }),
+  ).toEqual([
+    { path: "input.sendAt", label: "When to send", format: "date-time" },
+    { path: "input.plan.at", format: "date-time" },
+  ]);
 });

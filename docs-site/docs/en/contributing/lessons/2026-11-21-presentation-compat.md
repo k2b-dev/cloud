@@ -1,0 +1,6 @@
+### A removed result field failed every older app at once
+
+- **What happened:** After 0.83, an independently deployed app built on an older `@k2b/cloud` that still returned `presentation` got failing capability calls, because Core checks provider results strictly and reported `unrecognized_keys: presentation`.
+- **Root cause:** The capability views cut removed `presentation` from the result schema in the same release that stopped producing it. Core validates every provider result with `additionalProperties: false`, so the removal broke apps on their release cycle, not on Core's. The read side already converted stored table presentations, but the live check had no transition period.
+- **Error class:** A wire field that independently deployed apps send is removed from Core's strict check without a period in which Core still accepts it.
+- **Guard:** Until 0.86, `packages/cloud/src/api/legacy-presentation.ts` takes `presentation` out of a result before the strict check and maps it with the stored-result converter or drops it, with one warning per app and capability. `packages/cloud/src/api/capabilities.test.ts` checks the mapped, dropped, and still-rejected cases and the single warning. No repository rule, because a rule cannot tell which removed fields older apps still send.

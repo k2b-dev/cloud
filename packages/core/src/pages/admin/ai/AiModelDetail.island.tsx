@@ -435,7 +435,7 @@ export default function AiModelDetail(props: {
                   <li>
                     <button
                       type="button"
-                      class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-(--k2b-surface-muted) focus-visible:outline-2 focus-visible:outline-(--k2b-focus-ring) sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                      class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2 text-left hover:bg-(--k2b-surface-muted) focus-visible:outline-2 focus-visible:outline-(--k2b-focus-ring) sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
                       data-ai-variant={variant.slug}
                       onClick={() => openAiVariant({ model: base(), provider: props.provider, variant })}
                     >
