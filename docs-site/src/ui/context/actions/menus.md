@@ -248,8 +248,10 @@ its menu opens beside it:
 - **Phone.** With `phone="sheet"`, the sheet shows one level at a time: a
   submenu row replaces the sheet's entries with its own, and the first row,
   "‹ name", leads back.
-- **Search.** A searchable menu lists matching entries of a submenu in a
-  section named after the submenu row.
+- **Search.** A searchable menu finds a submenu row by its name and then lists
+  all its entries in a section named after it.
+- **Cost.** The submenu code loads with the first menu that has a submenu
+  row; menus without one carry none of it.
 
 Choosing an entry in a submenu closes the whole menu and runs its action, as in
 the menu itself. `ContextMenu`, `GestureMenu`, `SplitButton`, and the toolbar's

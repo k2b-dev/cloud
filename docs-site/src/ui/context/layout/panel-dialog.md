@@ -224,8 +224,8 @@ shows all of it.
 
 When the footer's action fails, pass the reason to `PanelDialog.Footer error`:
 a string, or `{ title, description }` with what follows from it. It shows as a
-tinted, square cell directly above the footer, from edge to edge, and is
-announced. The footer keeps its place on the screen: the dialog grows upwards
+tinted, square cell, the footer's first row above its buttons, from edge to
+edge, and is announced; on a sheet it moves with the footer. The footer keeps its place on the screen: the dialog grows upwards
 by the cell's height, so the button under the pointer does not move. Keep the
 entries, and clear the error when the person tries again. A dialog at its full
 height scrolls its body instead.

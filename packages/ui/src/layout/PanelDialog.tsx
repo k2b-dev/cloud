@@ -227,13 +227,7 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
       { defer: true },
     ),
   );
-  createEffect(
-    on(
-      error,
-      () => keepDialogFoot(footer, before),
-      { defer: true },
-    ),
-  );
+  createEffect(on(error, () => keepDialogFoot(footer, before), { defer: true }));
   // The cell is the footer's first row, so it moves with the footer, also on a sheet's edge between its rests.
   return (
     <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
