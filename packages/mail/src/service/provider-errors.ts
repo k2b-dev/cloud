@@ -142,6 +142,8 @@ const PROVIDER_TIMEOUT_CODES = new Set([
   "UPGRADE_TIMEOUT",
   "ETIMEDOUT",
   "ETIMEOUT",
+  // jmap-transport.ts: DNS, connection, response or download idle deadline. JMAP_ABORTED is no timeout.
+  "JMAP_TIMEOUT",
 ]);
 
 /**

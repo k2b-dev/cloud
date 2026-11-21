@@ -5,14 +5,19 @@ section: Operations
 order: 1163
 description: Check whether a mailbox server offers JMAP and which protocols Mail uses.
 tags: [mail, operations, protocols]
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # Mail connectors
 
 Mail uses IMAP for mailboxes and SMTP for sending. No mailbox uses JMAP yet.
-Mail can internally apply each batch of JMAP account changes in one transaction.
-Only tests call this path.
+Mail can internally apply each batch of JMAP account changes in one transaction
+and load a JMAP account's session for a sync run. Only tests call these paths.
+
+Each provider connection has an empty `jmap_origin` column for the JMAP server
+an operator approves later. Mail sends credentials only to that origin and
+never derives it from detection. No command sets it yet. The column is added
+when Mail starts; this is a short metadata change without a table rewrite.
 
 Adding or changing a provider connection and refreshing its limits checks the
 IMAP hostname for JMAP over HTTPS on port 443, **without credentials**.
