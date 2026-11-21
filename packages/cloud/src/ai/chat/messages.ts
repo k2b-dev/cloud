@@ -223,6 +223,8 @@ const messages = /* @__PURE__ */ i18n.define({
       receiptApproved: ({ title }: { title: string }) => `Approved: ${title}`,
       receiptRunning: ({ title }: { title: string }) => `Running: ${title}`,
       approvalNeeded: ({ title }: { title: string }) => `Approval needed: ${title}`,
+      /** A `code_secret` call that waits for the person, in "Waiting for you". */
+      secretWaiting: ({ name }: { name: string }) => `Enter secret: ${name}`,
       answerReady: "Answer ready",
       textShowAll: "Show the whole text",
       stepOutcomeFailed: "Failed",
@@ -681,6 +683,7 @@ const messages = /* @__PURE__ */ i18n.define({
       receiptApproved: ({ title }) => `Freigegeben: ${title}`,
       receiptRunning: ({ title }) => `Wird ausgeführt: ${title}`,
       approvalNeeded: ({ title }) => `Freigabe nötig: ${title}`,
+      secretWaiting: ({ name }) => `Secret eintragen: ${name}`,
       answerReady: "Antwort fertig",
       textShowAll: "Ganzen Text zeigen",
       stepOutcomeFailed: "Fehlgeschlagen",

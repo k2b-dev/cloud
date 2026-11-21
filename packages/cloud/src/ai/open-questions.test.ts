@@ -311,6 +311,7 @@ test("a secret waiting entry projects name and anchor, never tool arguments or r
     result: { value: privateValue },
   };
   const projected = secretOpenQuestion(raw);
-  expect(projected).toMatchObject({ kind: "secret", anchor: "tool-secret-call", short: "Secret API", conversationId: "Chat42" });
+  expect(projected).toMatchObject({ kind: "secret", anchor: "tool-secret-call", short: "Enter secret: API", conversationId: "Chat42" });
+  expect(secretOpenQuestion(raw, "de").short).toBe("Secret eintragen: API");
   expect(JSON.stringify(projected)).not.toContain(privateValue);
 });

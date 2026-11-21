@@ -18,6 +18,7 @@ import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { aiToolIcon } from "./chat/message-utils";
+import { aiChatMessages } from "./chat/messages";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { type AiTurnBlock, toolBlockId } from "./protocol";
 
@@ -87,30 +88,42 @@ const countSecretQuestions = async (ownerUserId: string): Promise<number> => {
   return row?.count ?? 0;
 };
 /** Metadata-only projection: never copy tool args/results into the waiting list. */
-export const secretOpenQuestion = (row: {
-  id: string;
-  created_at: Date;
-  call_id: string;
-  name: string;
-  short_id: string;
-  title: string | null;
-}): AiOpenQuestion => ({
+export const secretOpenQuestion = (
+  row: {
+    id: string;
+    created_at: Date;
+    call_id: string;
+    name: string;
+    short_id: string;
+    title: string | null;
+  },
+  locale = "en",
+): AiOpenQuestion => ({
   id: row.id,
   kind: "secret",
   conversationId: row.short_id,
   conversationTitle: row.title === null ? null : boundedText(row.title, 200),
   anchor: toolBlockId(row.call_id),
-  short: `Secret ${/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/.test(row.name) ? row.name : ""}`.trim(),
+  short: aiChatMessages(locale)
+    .secretWaiting({ name: /^[A-Za-z_][A-Za-z0-9_-]{0,79}$/.test(row.name) ? row.name : "" })
+    .trim(),
   app: { name: "Gustav", icon: "ti ti-key" },
   createdAt: row.created_at.toISOString(),
 });
-const listSecretQuestions = async (input: { ownerUserId: string; cursor?: AiOpenQuestionsCursor }): Promise<AiOpenQuestions> => {
+const listSecretQuestions = async (input: {
+  ownerUserId: string;
+  locale: string;
+  cursor?: AiOpenQuestionsCursor;
+}): Promise<AiOpenQuestions> => {
   const count = await countSecretQuestions(input.ownerUserId);
   const rows = await sql<Parameters<typeof secretOpenQuestion>[0][]>`
     SELECT * FROM (${ownedSecretQuestions(input.ownerUserId)}) q
     WHERE ${input.cursor ? sql`(date_trunc('milliseconds',q.created_at),q.id::text COLLATE "C") > (${input.cursor.createdAt}::timestamptz,${input.cursor.id}::text COLLATE "C")` : sql`TRUE`}
     ORDER BY date_trunc('milliseconds',q.created_at),q.id LIMIT ${APPROVALS_PAGE_SIZE + 1}`;
-  return aiOpenQuestionsPage(rows.map(secretOpenQuestion), count);
+  return aiOpenQuestionsPage(
+    rows.map((row) => secretOpenQuestion(row, input.locale)),
+    count,
+  );
 };
 
 /** How many questions wait for their owner's answer, such as a badge on the Assistant; the same rows as the list. */

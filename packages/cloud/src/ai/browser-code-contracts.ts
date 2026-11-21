@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CodeSecretBindingSchema, CodeSecretNameSchema } from "../contracts/code-secrets";
+import { CODE_SECRET_ERRORS, CODE_SECRET_GUIDANCE } from "./code-secret-errors";
 
 export const CodeResourceId = z
   .string()
@@ -75,6 +76,27 @@ export const CodeSecretInput = z
  */
 export const CodeToolFailure = z.object({ failed: z.literal(true), error: z.string(), guidance: z.string().optional() });
 export type CodeToolFailure = z.infer<typeof CodeToolFailure>;
+
+export { CODE_SECRET_ERRORS, CODE_SECRET_GUIDANCE } from "./code-secret-errors";
+
+const secretErrors: readonly string[] = Object.values(CODE_SECRET_ERRORS);
+const secretGuidance: readonly string[] = Object.values(CODE_SECRET_GUIDANCE);
+/**
+ * A `code_secret` result as a host keeps it: `{ configured, name }` or a failure, each with an optional hint. Only the
+ * fixed sentences survive; any other error becomes "did not complete" and any other hint is dropped.
+ */
+export const CodeSecretResult = z
+  .union([z.object({ configured: z.boolean(), name: z.string(), guidance: z.string().optional() }), CodeToolFailure])
+  .transform((result) => {
+    const guidance = result.guidance && secretGuidance.includes(result.guidance) ? { guidance: result.guidance } : {};
+    return "configured" in result
+      ? { configured: result.configured, name: result.name, ...guidance }
+      : {
+          failed: true as const,
+          error: secretErrors.includes(result.error) ? result.error : CODE_SECRET_ERRORS.incomplete,
+          ...guidance,
+        };
+  });
 
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
