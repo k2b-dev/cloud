@@ -1,14 +1,49 @@
 import { expect, test } from "bun:test";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 
-test("base pages default to sources and source URLs restore selection", () => {
+test("base pages open Sources, and the tab URLs restore their state", () => {
   expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources", "Base01")).toEqual({ view: "sources", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
+  expect(readWorkspacePathState("/app/pulse/Base01?alert=Alt001", "Base01")).toEqual({ view: "sources", sourceId: "", alertId: "Alt001" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources?alert=Alt001", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "",
+    alertId: "Alt001",
+  });
+  // An open source wins over an alert, and a malformed reference opens no detail.
+  expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001?alert=Alt001", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "Src001",
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01?alert=%2Fbad", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/data?kind=page_view", "Base01")).toEqual({
+    view: "data",
+    sourceId: "",
+    kind: "page_view",
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01/usage", "Base01")).toEqual({ view: "usage", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base012/sql", "Base01").view).toBe("sources");
 });
 
-test("navigation exposes sources", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01/sources");
+test("removed overview and dashboard paths have no view of their own", () => {
+  // The server redirects these paths to the base; should one reach the client, it reads as the base.
+  expect(readWorkspacePathState("/app/pulse/Base01/overview", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/dashboards/Dsh001", "Base01")).toEqual({ view: "sources", sourceId: "" });
+});
+
+test("navigation exposes the four tabs", () => {
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", alertId: "Alt001" } })).toBe(
+    "/app/pulse/Base01?alert=Alt001",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001", alertId: "Alt001" } })).toBe(
+    "/app/pulse/Base01/sources/Src001",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "data", kind: "page view" } })).toBe(
+    "/app/pulse/Base01/data?kind=page+view",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "usage" } })).toBe("/app/pulse/Base01/usage");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
   );

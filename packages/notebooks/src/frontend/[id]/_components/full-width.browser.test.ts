@@ -92,6 +92,12 @@ const measure = (page: Page) => page.evaluate(() => window.harness.measure());
 const toggle = (page: Page) => page.getByRole("menuitemcheckbox", { name: "Volle Breite" });
 const openView = async (page: Page) => {
   const trigger = page.getByRole("button", { name: "Ansicht", exact: true });
+  // K12: on a tablet the panel waits as a drawer; its Details button opens it first.
+  const details = page.locator("[data-app-workspace-detail-toggle]");
+  if (!(await trigger.isVisible()) && (await details.isVisible())) {
+    await details.click();
+    await trigger.waitFor();
+  }
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
 };
 const closeTo = (actual: number, expected: number, tolerance = 1) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
@@ -105,7 +111,7 @@ for (const mode of ["write", "book"]) {
   test(`${mode}: full width rewraps in the available space without moving the reading anchor before paint`, async () => {
     const page = await open(mode);
     try {
-      closeTo((await measure(page)).width, 704);
+      closeTo((await measure(page)).width, 720);
       await page.evaluate(() => window.harness.scrollMiddle());
       expect(await page.locator(".k2b-scroll-area").evaluate((element) => element.scrollTop)).toBeGreaterThan(2000);
       const before = await page.evaluate(() => window.harness.anchor());
@@ -118,7 +124,7 @@ for (const mode of ["write", "book"]) {
         await settle(page);
         closeTo(await page.evaluate(() => window.harness.anchor()), before);
         if (on) await assertWide(page);
-        else closeTo((await measure(page)).width, 704);
+        else closeTo((await measure(page)).width, 720);
       }
     } finally {
       await page.close();
@@ -254,7 +260,7 @@ test("resizing removes and restores the command without losing the preference", 
       page
         .locator(".notebook-document-surface")
         .evaluate((surface) => getComputedStyle(surface).getPropertyValue("--notebook-measure").trim());
-    expect(await measureValue()).toBe("44rem");
+    expect(await measureValue()).toBe("45rem");
     await page.setViewportSize({ width: 1024, height: 1440 });
     await page.waitForFunction(() => window.harness.command() !== null);
     expect(await toggle(page).isChecked()).toBe(true);
@@ -310,7 +316,7 @@ for (const mode of ["write", "book"]) {
           );
         };
         const narrowOpen = await lineWidth();
-        expect(narrowOpen).toBeLessThan(704);
+        expect(narrowOpen).toBeLessThan(720);
         await toggle(page).click();
         expect(await toggle(page).isVisible()).toBe(true);
         closeTo(await lineWidth(), narrowOpen);
@@ -322,7 +328,7 @@ for (const mode of ["write", "book"]) {
         expect(await toggle(page).isVisible()).toBe(true);
         await setPanelOpen(false);
         const narrowClosed = await lineWidth();
-        closeTo(narrowClosed, 704);
+        closeTo(narrowClosed, 720);
         expect(wideClosed).toBeGreaterThan(narrowClosed);
       } finally {
         await page.close();

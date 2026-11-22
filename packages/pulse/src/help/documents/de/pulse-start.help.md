@@ -10,11 +10,24 @@ Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um 
 
 Öffne **Pulse** über das App-Menü. In der App-Leiste ist Pulse standardmäßig ausgeblendet. Wenn du Pulse dort eingeblendet oder angeheftet hast, bleibt deine Auswahl erhalten.
 
-## Finde, was Aufmerksamkeit braucht
+## Lies eine Base
 
-Eine Base öffnet **Quellen**. Jede Quelle zeigt ihren Zustand, etwa Fehler, fehlende Daten oder Drosselung. Öffne eine Quelle, um ihre Details zu sehen.
+Eine Base öffnet **Quellen**. Der Kopf hat vier Tabs: **Quellen**, **Daten**, **Nutzung** und **SQL**. Am Ende des Kopfs stehen **Mit Gustav auswerten**, **…** und **Quelle anlegen**. **Quelle anlegen** siehst du nur mit Zugriff **Bearbeiten**.
 
-Um anderen Zahlen oder Diagramme zu zeigen, bitte Gustav um eine Code-Seite, die diese Base liest. Die Seite zeigt Daten nur Personen, die die Base lesen dürfen.
+- **Quellen** sagt dir, ob Daten ankommen. Die erste Zeile sagt „Alle 4 Quellen empfangen“ oder wie viele Quellen Aufmerksamkeit brauchen. Darunter stehen Quellen mit abgelehnten Anfragen, Fehlern, Drosselung oder verspäteten Daten und ausgelöste Alarme. Danach folgen alle Quellen mit Zustand und letztem Eingang. Wähle eine Zeile, um ihre Details rechts zu öffnen.
+- **Daten** zeigt die Datenarten der Base: Ereignisse, Messwerte und Zustände. Wähle eine Datenart, um ihre Felder mit Typ, Beispiel und Füllgrad und die fünf neuesten Einträge zu sehen. Vertrauliche Ereignisdaten zeigt Pulse hier nie.
+- **Nutzung** zeigt die Code-Seiten und Automationen, die die Base in den letzten 30 Tagen gelesen haben und die du öffnen darfst. Die übrigen erscheinen nur als Zahl. Wer die Base verwaltet, sieht auch die Dienstkonten und Quellen-Schlüssel, die über die API zugreifen.
+- **SQL** führt eine Abfrage aus und zeigt Tabelle und Zeitdiagramm. **Mit Gustav auswerten** beginnt dann mit deinem SQL.
+
+Die Details einer Quelle beginnen mit **Was nicht ankommt**, wenn Pulse Anfragen ablehnt oder ein Abruf fehlschlägt. Der Grund steht in Worten da. **Eingang** zeigt die neuesten Daten und was Pulse erwartet. Schlüssel sehen nur Personen, die die Base verwalten.
+
+Eine Alarm-Zeile öffnet den Alarm: Bedingung in Worten, Wert und seit wann er ausgelöst ist. **Mit Gustav anpassen** öffnet einen nicht gesendeten Entwurf mit dem SQL des Alarms.
+
+Ist der Datenspeicher nicht erreichbar, sagt es die erste Zeile. Pulse prüft alle 30 Sekunden erneut, solange die Seite sichtbar ist. Die Zeilen zeigen den letzten bekannten Stand.
+
+**…** enthält die Einstellungen der Base.
+
+Um anderen Zahlen oder Diagramme zu zeigen, bitte Gustav um eine Code-Seite, die diese Base liest. Die Seite zeigt Daten nur Personen, die die Base lesen dürfen. Sobald die Seite die Base liest, führt **Nutzung** sie auf.
 
 ## Verbinde eine Quelle
 
@@ -22,7 +35,7 @@ Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht einge
 
 :::steps
 1. Wähle **Neue Basis** und gib einen Namen für dein Produkt, deine Umgebung oder deinen Geschäftsbereich ein.
-2. Öffne die Base und wähle **Quellen → Neue Quelle**.
+2. Öffne die Base und wähle **Quelle anlegen**.
 3. Wähle einen Metrik-Endpunkt oder eine HTTP-Ingest-Quelle und speichere sie.
 4. Öffne die Quelle, um den neuesten Datenzeitpunkt, Fehler und den Abrufverlauf zu prüfen.
 :::
@@ -53,4 +66,4 @@ Strg-C bricht eine laufende Abfrage ab. Wenn Pulse ausgelastet ist, warte die an
 Ein Ergebnis mit 10.000 Zeilen hat die Grenze erreicht. Es kann weitere Zeilen geben.
 Verkürze den Zeitraum oder gruppiere die Daten, um eine vollständige Antwort zu erhalten.
 
-Öffne **SQL** in einer Base, um eine Abfrage auszuführen, Tabelle und Zeitdiagramm zu sehen oder eine gespeicherte Abfrage zu öffnen. **Mit KI fragen** öffnet einen ungesendeten Assistant-Entwurf mit Base, SQL und Parameterwerten. Die Einstellungen öffnen ein Modal mit Allgemein, Mitglieder, Aufbewahrung, Nutzung und Grenzen sowie Leeren und löschen.
+Öffne **SQL** in einer Base, um eine Abfrage auszuführen, Tabelle und Zeitdiagramm zu sehen oder eine gespeicherte Abfrage zu öffnen. **Mit Gustav auswerten** öffnet einen nicht gesendeten Entwurf mit Base, SQL und Parameterwerten. Die Einstellungen unter **…** öffnen ein Modal mit Allgemein, Mitglieder, Aufbewahrung, Nutzung und Grenzen sowie Leeren und löschen.

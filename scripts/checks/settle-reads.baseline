@@ -99,7 +99,7 @@ packages/ui/src/inputs/date-picker-weekend.browser.test.ts | 6
 packages/ui/src/inputs/emoji/emoji-picker.browser.test.ts | 6
 packages/ui/src/inputs/signature-input.browser.test.ts | 43
 packages/ui/src/layout/app-overview-host.browser.test.ts | 2
-packages/ui/src/layout/container-field-parts.browser.test.ts | 7
+packages/ui/src/layout/container-field-parts.browser.test.ts | 6
 packages/ui/src/layout/drag-selection.browser.test.ts | 1
 packages/ui/src/layout/mobile-shell.browser.test.ts | 7
 packages/ui/src/layout/page-title.browser.test.ts | 7

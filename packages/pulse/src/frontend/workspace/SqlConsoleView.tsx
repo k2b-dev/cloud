@@ -7,7 +7,6 @@ import {
   DataTable,
   type DataTableColumn,
   highlightSql,
-  IconButton,
   Kbd,
   prompts,
   Skeleton,
@@ -33,7 +32,8 @@ export default function SqlConsoleView(props: {
   snapshot: PulseWorkspaceProps["initialSql"];
   canWrite: boolean;
   /** The view owns its controller; the parent places its real phone action around the content. */
-  renderFrame?: (content: JSX.Element, action: JSX.Element) => JSX.Element;
+  /** The base page's frame; its head carries "Analyze with Gustav", which then starts from the console's SQL. */
+  renderFrame?: (content: JSX.Element, assistant: { launch: () => void; pending: boolean }) => JSX.Element;
 }) {
   const t = usePulseMessages();
   const locale = useLocale();
@@ -206,16 +206,17 @@ export default function SqlConsoleView(props: {
         onValueChange={setTab}
         ariaLabel="SQL"
         trailing={
-          <Button
-            class={props.renderFrame ? "pulse-workspace__desktop-action" : undefined}
-            variant="ai"
-            loading={c.assistantState() === "launching"}
-            loadingLabel={t().sqlAssistantLaunching}
-            onClick={() => void c.launchAssistant()}
-          >
-            <i class="ti ti-sparkles" aria-hidden="true" />
-            {t().sqlAskAssistant}
-          </Button>
+          props.renderFrame ? undefined : (
+            <Button
+              variant="ai"
+              loading={c.assistantState() === "launching"}
+              loadingLabel={t().sqlAssistantLaunching}
+              onClick={() => void c.launchAssistant()}
+            >
+              <i class="ti ti-sparkles" aria-hidden="true" />
+              {t().sqlAskAssistant}
+            </Button>
+          )
         }
         options={[
           { value: "console", label: t().sqlConsole },
@@ -240,7 +241,7 @@ export default function SqlConsoleView(props: {
         <div class="w-full min-w-0 max-w-[1120px]">
           <div
             data-sql-region="editor"
-            class="min-w-0 rounded-xl bg-(--k2b-surface-muted) focus-within:shadow-[0_0_0_2px_var(--k2b-action)]"
+            class="pulse-sql-editor min-w-0 bg-(--k2b-surface-muted)"
             style={{
               "--k2b-code-keyword": "light-dark(#1e40af, #a5b8f3)",
               "--k2b-code-string": "light-dark(#047857, #6ee7b7)",
@@ -337,7 +338,8 @@ export default function SqlConsoleView(props: {
           >
             <Button
               class="h-9 min-w-[132px] shrink-0 @max-[760px]/k2b-app-area:min-w-32"
-              variant={running() ? "subtle" : "primary"}
+              // The one filled action of the page is "Create source" in the head; Run is an edge button (K8).
+              variant="secondary"
               aria-keyshortcuts="Meta+Enter Control+Enter"
               disabled={!running() && !c.canRun()}
               onClick={runOrCancel}
@@ -351,6 +353,9 @@ export default function SqlConsoleView(props: {
                 >
                   <i class="ti ti-player-play" aria-hidden="true" />
                   {t().sqlRun}
+                  <span class="pulse-run-kbd" aria-hidden="true">
+                    <Kbd keys="mod+enter" />
+                  </span>
                 </span>
                 <span
                   class="col-start-1 row-start-1 inline-flex items-center justify-center gap-[7px]"
@@ -543,12 +548,12 @@ export default function SqlConsoleView(props: {
                   </Button>
                   <Button
                     class={props.renderFrame ? "pulse-workspace__desktop-action" : undefined}
-                    variant="ai"
+                    variant="secondary"
                     loading={c.assistantState() === "launching"}
                     loadingLabel={t().sqlAssistantLaunching}
                     onClick={() => void c.launchAssistant()}
                   >
-                    <i class="ti ti-sparkles" aria-hidden="true" />
+                    <i class="ti ti-sparkles pulse-ai-icon" aria-hidden="true" />
                     {t().sqlAskAssistant}
                   </Button>
                 </div>
@@ -607,7 +612,7 @@ export default function SqlConsoleView(props: {
                   <DataTable
                     surface="plain"
                     density="compact"
-                    class="w-fit max-w-full rounded-[10px]!"
+                    class="w-fit max-w-full"
                     tableClass="w-max! border-separate! border-spacing-0!"
                     rowClass="group/pulse-result-row border-0!"
                     cellContentClass="whitespace-nowrap font-mono!"
@@ -626,8 +631,7 @@ export default function SqlConsoleView(props: {
                         nowrap: true,
                         headerClass:
                           "h-[38px]! px-3.5! py-0! text-[12.5px]! font-semibold! text-secondary! bg-(--k2b-surface) whitespace-nowrap",
-                        cellClass:
-                          "h-9! px-3.5! py-0! font-mono text-[12.5px] text-primary first:rounded-l-lg last:rounded-r-lg group-odd/pulse-result-row:bg-[color-mix(in_srgb,var(--k2b-surface-muted)_60%,transparent)]",
+                        cellClass: "h-9! px-3.5! py-0! font-mono text-[12.5px] text-primary",
                       }),
                     )}
                     ariaLabel={t().sqlResultTable}
@@ -647,16 +651,11 @@ export default function SqlConsoleView(props: {
     </section>
   );
   return props.renderFrame
-    ? props.renderFrame(
-        content,
-        <IconButton
-          variant="ai"
-          label={c.assistantState() === "launching" ? t().sqlAssistantLaunching : t().sqlAskAssistant}
-          loading={c.assistantState() === "launching"}
-          onClick={() => void c.launchAssistant()}
-        >
-          <i class="ti ti-sparkles" aria-hidden="true" />
-        </IconButton>,
-      )
+    ? props.renderFrame(content, {
+        launch: () => void c.launchAssistant(),
+        get pending() {
+          return c.assistantState() === "launching";
+        },
+      })
     : content;
 }

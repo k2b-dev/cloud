@@ -815,18 +815,17 @@ for (const view of [
         ],
       );
       await page.waitForSelector("[data-view-path] .k2b-data-table-tools");
-      // The tools wait, disabled, in the place they keep once the rows arrive. On a phone the search is a sign.
+      // The tools wait, disabled, in the place they keep once the rows arrive. The search is a sign (Gustav flat F3).
       const search = page.getByRole("searchbox", { name: "Search table" });
       const sign = page.getByRole("button", { name: "Search table" });
-      const phone = view.width < 480;
-      expect(await (phone ? sign : search).isDisabled()).toBe(true);
+      expect(await sign.isDisabled()).toBe(true);
       await settled(page);
       const loading = await boxes(page);
       loaded();
       await page.waitForSelector("[data-view-path] table");
       await settled(page);
       expect(await boxes(page)).toEqual(loading);
-      if (phone) await sign.click();
+      await sign.click();
       await search.fill("deliv");
       expect(await page.locator("[data-view-path] tbody tr.k2b-data-table__row").count()).toBe(2);
       await search.fill("");
@@ -871,8 +870,8 @@ for (const width of [1280, 390])
       await page.waitForSelector("[data-view-path] table");
       await settled(page);
       const search = page.getByRole("searchbox", { name: "Search table" });
-      // On a phone the search is a sign that opens it over the title.
-      if (width < 480) await page.getByRole("button", { name: "Search table" }).click();
+      // The search is a sign that opens it over the title (Gustav flat F3).
+      await page.getByRole("button", { name: "Search table" }).click();
       // The label never carries the view's title; the heading names the table for the field and the sign.
       expect(await search.getAttribute("aria-describedby")).toBeTruthy();
       expect(await search.evaluate((input) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
@@ -972,7 +971,9 @@ for (const theme of ["light", "dark"] as const)
       expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(view.frame.shadow);
       expect(markdown.frame.border.startsWith("1px")).toBe(true);
       expect(markdown.frame.shadow).not.toBe("none");
-      expect(view.band.fill).not.toBe("rgba(0, 0, 0, 0)");
+      // K7: the column head has no fill, only grey 12 px words over one hairline.
+      expect(view.band.fill).toBe("rgba(0, 0, 0, 0)");
+      expect(view.band.size).toBe("12px");
       expect(markdown.band).toEqual(view.band);
       expect(markdown.cells).toEqual(view.cells);
     } finally {
@@ -1669,15 +1670,12 @@ for (const width of [1280, 390])
         },
         present(path, cloudAiViewSummary(parsed)),
       );
-      // On a phone the search waits as a sign, disabled, in the place it keeps.
-      const phone = width < 480;
-      await page.waitForSelector(
-        phone ? "[data-view-path] .cloud-table-search-toggle" : "[data-view-path] .k2b-data-table-tools .k2b-skeleton",
-      );
+      // The search waits as a sign (Gustav flat F3), disabled, in the place it keeps.
+      await page.waitForSelector("[data-view-path] .cloud-table-search-toggle");
       await settled(page);
       const first = await boxes(page);
       code();
-      const search = phone ? page.getByRole("button", { name: "Search table" }) : page.getByRole("searchbox", { name: "Search table" });
+      const search = page.getByRole("button", { name: "Search table" });
       await search.waitFor();
       expect(await search.isDisabled()).toBe(true);
       await settled(page);

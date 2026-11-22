@@ -385,7 +385,7 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification runs in its own sharded job below.
-      - name: Start Postgres storage sampler
+      - name: Start Postgres storage and host pressure sampler
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
@@ -394,6 +394,9 @@ jobs:
             -c 'SHOW fsync' -c 'SHOW synchronous_commit' -c 'SHOW full_page_writes'
           # Run inside the disposable container so the sampler survives the
           # step boundary. The always-step below stops it and prints its log.
+          # /proc/pressure and /proc/meminfo are the runner's own: their total
+          # stall counters show a stall between two samples, such as the 13 s
+          # in which a NATS request of the cleanup got no answer (#3945).
           docker exec -d "$POSTGRES_CONTAINER" sh -ec '
             exec > /tmp/cloud-pg-storage-sampler.log 2>&1
             echo "$$" > /tmp/cloud-pg-storage-sampler.pid
@@ -407,7 +410,13 @@ jobs:
             }
             trap stop_sampler TERM INT
             while true; do
+              date -u +%H:%M:%S
               df -k "$PGDATA"
+              for resource in cpu memory io; do
+                printf "%s " "$resource"; tr "\n" " " < "/proc/pressure/$resource" 2>/dev/null || printf "unavailable"
+                echo
+              done
+              grep -E "^(MemAvailable|SwapFree):" /proc/meminfo || true
               sleep 30 &
               storage_sleep=$!
               wait "$storage_sleep"
@@ -430,7 +439,7 @@ jobs:
           docker logs ci-stalwart || true
           exit 1
       - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/${{ strategy.job-total }} --max-minutes 20
-      - name: Stop Postgres storage sampler and print samples
+      - name: Stop Postgres storage and host pressure sampler and print samples
         if: always()
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
@@ -446,7 +455,10 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          if [[ "$JOB_STATUS" != success ]]; then docker logs ci-stalwart || true; fi
+          if [[ "$JOB_STATUS" != success ]]; then
+            docker logs ci-stalwart || true
+            docker logs ci-nats || true
+          fi
           docker rm --force --volumes ci-stalwart || true
           docker compose -f compose.test-s3.yml logs
           docker compose -f compose.test-s3.yml down --volumes

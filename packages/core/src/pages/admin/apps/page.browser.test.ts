@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
+import { layoutProblems } from "../../../../../ui/src/layout-check";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { adminAppsBrowserFixture } from "./AdminApps.browser-fixture";
 import { FIXTURE_NOW } from "./AdminApps.fixture-data";
@@ -64,15 +65,115 @@ test("the list names every app by name with its state in words and its most impo
   expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
   expect(await row("tools").innerText()).toContain("Zugriff: niemand verwaltet ihn");
   // Without an open app the list is the whole page, with version and address.
-  expect(await page.locator("thead th").allInnerTexts()).toEqual(["App", "Zustand", "Version", "Adresse", "Problem"]);
+  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Version", "Adresse", "Problem"]);
   // Status keeps one place: every row's dot starts at the same x, whatever the word ("Läuft", "Nicht gestartet").
   const dots = await page
-    .locator("tbody tr")
+    .locator("tbody tr:not(.k2b-data-table__details)")
     .evaluateAll((elements) =>
       elements.map((element) => Math.round(element.querySelector(".k2b-status-badge__dot")!.getBoundingClientRect().left)),
     );
   expect(new Set(dots).size).toBe(1);
 }, 20_000);
+
+test("with classic scrollbars, key figures leave whole behind +n and an added date is never cut (K15)", async () => {
+  // A desktop window with classic scrollbars that take room, as on Windows and Linux (Cloud flach QA, blocker 5).
+  const classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  try {
+    const tab = await classic.newPage();
+    tab.setDefaultTimeout(8000);
+    await tab.addInitScript((at) => {
+      globalThis.Date = new Proxy(Date, {
+        construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
+        apply: (target) => new target(at).toString(),
+        get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
+      });
+    }, FIXTURE_NOW);
+    for (const [width, query] of [
+      [390, ""],
+      [768, ""],
+      [1100, ""],
+      [1100, "?app=chat"],
+      [1440, ""],
+    ] as const) {
+      await tab.setViewportSize({ width, height: 900 });
+      await tab.goto(`${fixture.url}${query}`);
+      await tab.waitForSelector('body[data-ready="true"]');
+      await settled(tab);
+      const result = await tab.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+        document.body.append(probe);
+        const gutter = probe.offsetWidth - probe.clientWidth;
+        probe.remove();
+        const summary = document.querySelector("[data-apps-summary]")!;
+        const box = summary.getBoundingClientRect();
+        const figures = Array.from(summary.querySelectorAll<HTMLElement>(".apps-figures__figure")).map((figure) => {
+          const rect = figure.getBoundingClientRect();
+          return {
+            state: rect.top >= box.bottom - 0.5 ? "hidden" : rect.right <= box.right + 0.5 ? "whole" : "cut",
+            more: figure.dataset.more ?? null,
+          };
+        });
+        const row = Array.from(document.querySelectorAll("tbody tr")).find((tr) => tr.querySelector('[data-app="inventar"]'));
+        const date = row?.querySelector<HTMLElement>("td .whitespace-nowrap");
+        const cell = date?.closest("td");
+        const address = date?.parentElement;
+        const dateRect = date && date.getClientRects().length > 0 ? date.getBoundingClientRect() : null;
+        const cellRect = cell?.getBoundingClientRect();
+        return {
+          gutter,
+          sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          // A state word is never cut (K15).
+          cutStates: Array.from(document.querySelectorAll("[data-apps-list] tbody .k2b-status-badge"))
+            .flatMap((badge) => [badge, ...Array.from(badge.querySelectorAll("*"))])
+            .filter((element) => element.scrollWidth > element.clientWidth + 0.5 && element.clientWidth > 0).length,
+          // The primary list never scrolls sideways; columns it cannot show move into the row's details.
+          listSideways: (() => {
+            const wrap = document.querySelector("[data-apps-list] .k2b-table-wrap");
+            return wrap ? wrap.scrollWidth - wrap.clientWidth : null;
+          })(),
+          figures,
+          date:
+            dateRect && cellRect && address
+              ? {
+                  text: date!.textContent,
+                  whole: dateRect.left >= cellRect.left - 0.5 && dateRect.right <= cellRect.right + 0.5,
+                  spill: address.scrollWidth - address.clientWidth,
+                }
+              : null,
+        };
+      });
+      const label = `${width} px ${query}`;
+      expect(result.gutter, label).toBeGreaterThan(0);
+      expect(result.sideways, label).toBeLessThanOrEqual(0);
+      expect(result.listSideways, label).not.toBeNull();
+      expect(result.listSideways!, label).toBeLessThanOrEqual(0);
+      expect(result.cutStates, label).toBe(0);
+      const states = result.figures.map((figure) => figure.state);
+      expect(states[0], label).toBe("whole");
+      expect(states, label).not.toContain("cut");
+      // Figures leave from the end in their order, and the last shown one counts the rest.
+      const shown = states.lastIndexOf("whole");
+      expect(
+        states.slice(shown + 1).every((state) => state === "hidden"),
+        label,
+      ).toBe(true);
+      const hidden = states.length - 1 - shown;
+      expect(hidden > 0 ? Number(result.figures[shown]!.more) : 0, label).toBe(hidden);
+      // The address column may give way; where it shows, the date stands whole.
+      if (result.date) {
+        expect(result.date.text, label).toMatch(/2026$/);
+        expect(result.date.whole, label).toBe(true);
+        expect(result.date.spill, label).toBeLessThanOrEqual(0);
+      }
+      // Without the detail the list is this file's own layout; beside it the shell's columns take over (L3).
+      if (!query) expect((await tab.evaluate(layoutProblems, { root: "[data-apps-list]" })).problems, label).toEqual([]);
+    }
+    await tab.close();
+  } finally {
+    await classic.close();
+  }
+}, 60_000);
 
 test("the old app address opens the app, and every hint has exactly one way out to its column", async () => {
   await open("?app=grids");
@@ -456,11 +557,17 @@ test("a search that finds nothing says so in place and leads back to every app",
   expect(new URL(page.url()).search).toBe("");
 }, 20_000);
 
-test("on a phone the list keeps name and state, with the problem under the name", async () => {
+test("on a phone the list keeps name and state, with the problem under the name and the rest in its details", async () => {
   await open("", 390);
-  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand"]);
+  // Version, address and problem wait in the row's details (priority 3) instead of widening the list.
+  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Details"]);
   expect(await row("pulse").innerText()).toContain("Start abgelehnt");
   expect(await row("chat").innerText()).toContain("/chat");
+  await row("pulse").locator(".k2b-data-table__details-button").click();
+  const details = page.locator("tr.k2b-data-table__details:visible");
+  await details.first().waitFor();
+  const text = await details.first().innerText();
+  for (const value of ["0.52.1", "/pulse", "Start abgelehnt"]) expect(text).toContain(value);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }, 20_000);
 

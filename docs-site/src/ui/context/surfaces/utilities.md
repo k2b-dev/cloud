@@ -52,8 +52,8 @@ them, are in [Colors and selection](/en/ui/surfaces/color).
 
 AI presentation has a separate semantic theme:
 `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`,
-and `--k2b-ai-surface`, plus `--k2b-ai-edge-rest` and `--k2b-ai-glow` for the
-assistant prompt's edge, and `--k2b-ai-suggestion` for a suggested next message
+and `--k2b-ai-surface`, plus `--k2b-ai-edge-rest` and `--k2b-ai-glow` (its focus
+ring) for the assistant prompt's edge, and `--k2b-ai-suggestion` for a suggested next message
 in its empty field. Override these roles when the assistant identity should
 differ from the general application accent.
 
@@ -92,9 +92,7 @@ Buttons and labels use 13px semibold type, sidebar rows 13px regular type;
 small buttons and sidebar section titles use 12px. Descriptions and supporting
 lines use secondary ink at 12px, sidebar row descriptions 13px. Each primitive
 sets its own line height, so its box keeps its height whatever the host page's
-line height. Buttons inside a `NoticeCard` take the card's line height instead,
-so its actions keep their height (32px for `sm`). Titles use `-0.018em`
-tracking.
+line height, also inside a `NoticeCard`. Titles use `-0.018em` tracking.
 
 Three surfaces keep their own sizes: object sidebar rows keep a compact 11px
 subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold

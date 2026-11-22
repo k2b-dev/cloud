@@ -56,9 +56,9 @@ import {
   mailRoleDestinationFolderId,
   spamActionForConversation,
 } from "./_components/mail-actions";
-import { chooseMailAssignee } from "./_components/mail-assign-picker";
+import { chooseMailAssignee, type MailAssigneeChoice } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
-import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { type MailBulkAssignmentHost, runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailCodeEntry } from "./_components/mail-code-entry";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
@@ -78,6 +78,14 @@ import { mailConversationUiMessages } from "./_components/mail-conversation-ui-m
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { type MailDropHost, runMailDrop } from "./_components/mail-drop-actions";
+import {
+  type MailDropAction,
+  type MailDropLevel,
+  mailDropView,
+  readMailDropRecentFolders,
+  rememberMailDropFolder,
+} from "./_components/mail-drop-targets";
 import { mailEventsMessages } from "./_components/mail-events-messages";
 import { createRetryToasts } from "./_components/mail-feedback";
 import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
@@ -418,15 +426,18 @@ function createMailboxController(props: MailboxControllerProps) {
   ): Promise<MailboxPageData | null> => {
     const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
     if (!target) return null;
+    // The drag's people come with the first load; a reload of this mailbox keeps them instead of loading them again.
+    const kept = unwrap(data).dropAssignees;
     const response = await apiClient.mailboxes[":mailboxId"]["workspace-route"].$get(
       {
         param: { mailboxId },
-        query: { href: `${target.pathname}${target.search}`, listMode },
+        query: { href: `${target.pathname}${target.search}`, listMode, dropAssignees: kept ? "keep" : "load" },
       },
       { init: { signal } },
     );
     if (!response.ok) return null;
-    return await response.json();
+    const snapshot = await response.json();
+    return kept ? { ...snapshot, dropAssignees: kept } : snapshot;
   };
 
   /** Every request path resolves against this mailbox and the browser origin; the list never carries a selection. */
@@ -1379,7 +1390,8 @@ function createMailboxController(props: MailboxControllerProps) {
   /** Full screen of a draft moves the list aside; otherwise it always stands beside the reader. */
   const listOpen = () => !draftFullscreenActive();
   // Who is responsible only matters where more than one person can be assigned.
-  const sharedMailbox = () => data.assignableUsers.length > 1;
+  const sharedMailbox = () =>
+    data.assignableUsers.length > 1 || (data.dropAssignees?.people.length ?? 0) > 1 || (data.dropAssignees?.more ?? false);
   const assigneeNames = (userIds: readonly string[]) =>
     userIds.map((userId) => data.assignableUsers.find((user) => user.id === userId)?.displayName ?? listText().unknownPerson);
   const rowAssignees = (userIds: readonly string[]) => mailRowAssignees(userIds, data.assignableUsers, listText().unknownPerson);
@@ -2658,35 +2670,36 @@ function createMailboxController(props: MailboxControllerProps) {
     await manageConversationTagsMutation.mutate(item);
   };
 
+  const assignmentHost = (chooseAssignee: () => Promise<MailAssigneeChoice | null>, active: () => boolean): MailBulkAssignmentHost => ({
+    chooseAssignee,
+    assign: async (ids, assigneeUserIds, mode) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
+        param: { mailboxId },
+        json: { conversationIds: ids, assigneeUserIds, mode },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
+      return response.json();
+    },
+    assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
+    clearSelection: () => {
+      setConversationSelection(emptyMailConversationSelection());
+      setSelectionMode(false);
+    },
+    refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
+    success: (message, undo) =>
+      toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost", onClick: undo.run } } : undefined),
+    error: (message, title) => void toast.error(message, title ? { title } : undefined),
+    refreshFailed: (error, title) => reportRefreshFailure(error, title),
+    active,
+  });
   const assignSelectionMutation = mutation.create<void, string[]>({
     mutation: (conversationIds, { abortSignal }) =>
       runMailBulkAssignment(
         conversationIds,
-        {
-          chooseAssignee: () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
-          assign: async (ids, assigneeUserIds, mode) => {
-            const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
-              param: { mailboxId },
-              json: { conversationIds: ids, assigneeUserIds, mode },
-            });
-            if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
-            return response.json();
-          },
-          assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
-          clearSelection: () => {
-            setConversationSelection(emptyMailConversationSelection());
-            setSelectionMode(false);
-          },
-          refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
-          success: (message, undo) =>
-            toast.success(
-              message,
-              undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost", onClick: undo.run } } : undefined,
-            ),
-          error: (message, title) => void toast.error(message, title ? { title } : undefined),
-          refreshFailed: (error, title) => reportRefreshFailure(error, title),
-          active: () => !abortSignal.aborted && !disposed,
-        },
+        assignmentHost(
+          () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
+          () => !abortSignal.aborted && !disposed,
+        ),
         t(),
       ),
     onError: (error) => toast.error(error.message),
@@ -2731,36 +2744,128 @@ function createMailboxController(props: MailboxControllerProps) {
         : (selectedListItem()?.assigneeUserIds ?? []);
     return { assigned: assignees.includes(userId), others: assigneeNames(assignees.filter((id) => id !== userId)) };
   });
+  // A drag's targets and drops (S7). The targets come from the first load, so a drag makes no request before its drop.
+  /** A dragged row carries every selected row when it is one of them, else itself. */
+  const dropItemsFor = (item: MailListItem): MailListItem[] => {
+    const selected = selectedConversationIds();
+    if (!item.conversationId || !selected.has(item.conversationId)) return [item];
+    return selectableRows().filter((row) => row.conversationId && selected.has(row.conversationId));
+  };
+  const dropView = (level: MailDropLevel, items: readonly MailListItem[]) =>
+    mailDropView(level, {
+      locale: locale(),
+      currentUserId: props.currentUserId ?? null,
+      items,
+      assignees: canAssign() ? data.dropAssignees : null,
+      teamMailbox: sharedMailbox(),
+      folders: data.folders,
+      folderName: folderName(),
+      tags: data.localTags,
+      recentFolderIds: readMailDropRecentFolders(mailboxId),
+    });
+  const dropHost: MailDropHost = {
+    assign: (conversationIds, choice) =>
+      runMailBulkAssignment(
+        conversationIds,
+        assignmentHost(
+          choice ? async () => choice : () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
+          () => !disposed,
+        ),
+        t(),
+      ),
+    move: (items, folderId) =>
+      runAction("move", {
+        targets: items.flatMap((item) => {
+          const row = selectableRows().find((candidate) => candidate.conversationId === item.conversationId);
+          const target = row ? actionTargetForItem(row, "move") : null;
+          return target ? [target] : [];
+        }),
+        destinationFolderId: folderId,
+      }),
+    complete: (conversationIds, completion) => submitCompletion(conversationIds, completion),
+    addTag: async (conversationIds, tagId) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations["local-tags"].$post({
+        param: { mailboxId },
+        json: { conversationIds, tagIds: [tagId] },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().addTagsFailed));
+      const result = await response.json();
+      const added = data.localTags.find((tag) => tag.id === tagId);
+      for (const conversationId of result.updatedConversationIds) {
+        const row = data.listItems.find((candidate) => candidate.conversationId === conversationId);
+        if (!row || !added) continue;
+        const patch: MailListOptimisticPatch = { localTags: [...row.localTags, added] };
+        rememberPendingListState(conversationId, patch);
+        setConversationListState(conversationId, patch);
+      }
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed);
+      return result.updatedConversationIds;
+    },
+    setTags: async (conversationId, tagIds, expectedRevision) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"]["local-tags"].$put({
+        param: { mailboxId, conversationId },
+        json: { expectedRevision, tagIds },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
+      applyConversationTags(await response.json());
+    },
+    rememberFolder: (folderId) => rememberMailDropFolder(mailboxId, folderId),
+    success: ({ title, message }, undo) =>
+      toast.success(message, {
+        title,
+        ...(undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost" as const, onClick: undo.run } } : {}),
+      }),
+    failed: ({ title, message, retryLabel }, retry) => retryToast(message, { title, retryLabel, retry }),
+    error: ({ title, message }) => void toast.error(message, { title }),
+    active: () => !disposed,
+  };
+  /** Runs a drop on a target; nothing happens without write access or while the list's structure is still changing. */
+  const runDrop = (action: MailDropAction, items: readonly MailListItem[]) => {
+    if (!canWrite() || structurePending() || disposed) return Promise.resolve();
+    return runMailDrop({
+      action,
+      items,
+      currentUserId: props.currentUserId ?? null,
+      locale: locale(),
+      host: dropHost,
+      text: { undo: t().undo, assignFailed: t().assignFailed },
+    });
+  };
   const selectedWorkStatus = () => {
     const state = data.collaborationState;
     return state?.conversationId === data.selectedConversationId ? state.workStatus : (selectedListItem()?.workStatus ?? null);
   };
   /** Marks one conversation done or reopens it, through the same path as the details panel's button. */
-  const completion = mutation.create<void, { conversationIds: string[]; completion: "done" | "open" }>({
-    mutation: async ({ conversationIds, completion }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations.completion.$post({
-        param: { mailboxId },
-        json: { conversationIds, completion },
-      });
-      if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
-      // A selection may hold a conversation that left the mailbox meanwhile: the others still change.
-      let failed = 0;
-      for (const result of (await response.json()).results) {
-        if (result.status !== "ok") {
-          failed += 1;
-          continue;
-        }
-        const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
-        rememberPendingListState(result.conversationId, patch);
-        setConversationListState(result.conversationId, patch);
-        setData("collaborationState", (current) =>
-          current?.conversationId === result.conversationId ? { ...current, ...patch } : current,
-        );
+  /** Marks conversations done or reopens them; resolves with the ones whose status changed, throws when any did not. */
+  const submitCompletion = async (conversationIds: string[], completion: "done" | "open"): Promise<string[]> => {
+    const before = new Map(data.listItems.map((item) => [item.conversationId, item.workStatus]));
+    const response = await apiClient.mailboxes[":mailboxId"].conversations.completion.$post({
+      param: { mailboxId },
+      json: { conversationIds, completion },
+    });
+    if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
+    // A selection may hold a conversation that left the mailbox meanwhile: the others still change.
+    let failed = 0;
+    const changed: string[] = [];
+    for (const result of (await response.json()).results) {
+      if (result.status !== "ok") {
+        failed += 1;
+        continue;
       }
-      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
-      if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
-      if (failed > 0) throw new Error(conversationText().completionFailed);
-    },
+      if (before.get(result.conversationId) !== result.workStatus) changed.push(result.conversationId);
+      const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
+      rememberPendingListState(result.conversationId, patch);
+      setConversationListState(result.conversationId, patch);
+      setData("collaborationState", (current) => (current?.conversationId === result.conversationId ? { ...current, ...patch } : current));
+    }
+    const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+    if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
+    if (failed > 0) throw new Error(conversationText().completionFailed);
+    return changed;
+  };
+  const completion = mutation.create<void, { conversationIds: string[]; completion: "done" | "open" }>({
+    mutation: async ({ conversationIds, completion }) => void (await submitCompletion(conversationIds, completion)),
     onError: (error) => toast.error(error.message),
   });
   const setItemCompletion = (item: MailListItem, next: "done" | "open") => {
@@ -3058,6 +3163,9 @@ function createMailboxController(props: MailboxControllerProps) {
     laterPending,
     listCounts,
     sharedMailbox,
+    dropItemsFor,
+    dropView,
+    runDrop,
     assigneeNames,
     rowAssignees,
     assignToMe,

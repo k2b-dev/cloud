@@ -103,3 +103,41 @@ test("webhooks shares catalog navigation and retains endpoint counts and recover
     }
   }
 }, 60_000);
+
+// Primary lists never scroll sideways (Cloud flach K7, K15): with classic scrollbars that take room and without touch,
+// the request table fits at 768 px and at 1100 px with a request open beside it; side columns wait in the row details.
+test("the webhook request table fits without a sideways scroll at 768 and at 1100 px with a request open", async () => {
+  const classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  try {
+    for (const [width, query] of [
+      [768, "view=webhooks&state=many"],
+      [1100, "view=webhooks&state=many&request=00000000-0000-4000-8000-100000000003"],
+    ] as const) {
+      const context = await classic.newContext({ viewport: { width, height: 900 }, hasTouch: false, reducedMotion: "reduce" });
+      try {
+        const tab = await context.newPage();
+        await tab.route("http://tools-catalog.test/**", (route) =>
+          route.fulfill({
+            contentType: new URL(route.request().url()).pathname === "/harness.js" ? "text/javascript" : "text/html",
+            body:
+              new URL(route.request().url()).pathname === "/harness.js"
+                ? harness
+                : `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="height:100vh;display:flex;container:k2b-app-area/inline-size"></div><script src="/harness.js"></script></body></html>`,
+          }),
+        );
+        await tab.goto(`http://tools-catalog.test/tools?${query}`);
+        await tab.getByText("/tools/webhooks/fixture/orders/11/items", { exact: true }).waitFor();
+        await settled(tab);
+        const tables = await tab
+          .locator(".k2b-table-wrap")
+          .evaluateAll((wraps) => wraps.map((wrap) => ({ scroll: wrap.scrollWidth, client: wrap.clientWidth })));
+        expect(tables.length).toBeGreaterThan(0);
+        for (const table of tables) expect(table.scroll, `${width} px`).toBeLessThanOrEqual(table.client);
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    await classic.close();
+  }
+}, 60_000);

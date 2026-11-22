@@ -2,6 +2,7 @@ import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
+import type { BaseAttention } from "../../service/base-attention";
 import type { WorkspaceRouteState } from "./routes";
 import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
 
@@ -25,6 +26,12 @@ export type PulseWorkspaceProps = {
   initialSources: PulseSource[];
   initialSettings?: { maxRawRetentionDays: number; admins: string[] };
   initialPermissions?: { write: boolean; admin: boolean };
+  /** The base is not shared with the person: the page shows who gives access instead of the base. */
+  initialAccess?: { denied: true; managers: string[] };
+  /** Display name of the person who created the base, for the empty state. */
+  initialCreator?: string | null;
+  /** On Sources: fired alerts and the data store state, read on the server. */
+  initialAttention?: BaseAttention;
   initialSql?: { limits: SqlLimits | null; query: SavedQuery | null; error: { code: string; details: SqlClientError["details"] } | null };
   initialSourceScrapes: Record<string, PulseSourceScrape[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;

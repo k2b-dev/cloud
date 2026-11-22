@@ -236,6 +236,11 @@ export const BaseSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const StoreOutageSchema = z.object({ unavailable: z.boolean(), since: z.string().nullable() });
+
+/** One base as its read route returns it: the list fields plus the live store outage the Sources tab re-checks. */
+export const BaseReadSchema = BaseSchema.extend({ outage: StoreOutageSchema });
+
 export const SourceSchema = z.object({
   seriesCount: z.number().int().nonnegative().optional(),
   todayCount: z.number().int().nonnegative().nullable().optional(),

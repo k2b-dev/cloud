@@ -144,10 +144,11 @@ describe("Approvals layout", () => {
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBe(0);
         expect(await tab.locator("article.cloud-approval .cloud-approval-frame").count()).toBe(2);
-        // The shared card keeps its tinted surface and normal-size answers at every width.
+        // The shared card keeps its tinted surface and its small answers at every width.
         const answer = (await tab.locator("article.cloud-approval .k2b-notice-card__actions .k2b-button").first().boundingBox())!;
-        // This fixture is server-only; responsive button sizing starts after mounting.
-        expect(answer.height).toBe(32);
+        // This fixture is server-only; responsive button sizing starts after mounting. K1: a small button in a notice keeps
+        // its own 28 px (16 px line + 2×4 px padding + 2×1 px border, raised to its 28 px minimum).
+        expect(answer.height).toBe(28);
         const card = tab.locator("article.cloud-approval .cloud-approval-frame").first();
         expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect(await tab.locator("article.cloud-approval .cloud-approval__icon").count()).toBe(0);
@@ -227,7 +228,8 @@ describe("Approvals in a browser", () => {
         const top = before!.y;
         const confirm = first.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]');
         await tab.clock.runFor(32);
-        expect((await confirm.boundingBox())!.height).toBe(width === 390 ? 36 : 32);
+        // K1: the buttons keep their own height in a notice: small 28 px, the phone's medium 32 px (18 px line + 2×6 + 2×1).
+        expect((await confirm.boundingBox())!.height).toBe(width === 390 ? 32 : 28);
         // The answers arm after half a second; a click before that does nothing.
         await confirm.click({ force: true });
         expect(decided).toEqual([]);

@@ -62,8 +62,8 @@ const render = (view: "sources", locale = "en", extra: Partial<PulseWorkspacePro
       get children() {
         return createComponent(PulseWorkspace, {
           ...props,
-          ...extra,
           initialRouteState: { view, sourceId: "" },
+          ...extra,
         });
       },
     }),
@@ -72,7 +72,9 @@ const render = (view: "sources", locale = "en", extra: Partial<PulseWorkspacePro
 test("sources render from their server snapshot without measurement counts or removed readers", () => {
   const html = render("sources");
   expect(html).toContain("Warehouse importer");
-  expect(html).toContain('class="ti ti-plus"');
+  // The head carries the four tabs; Sources counts its sources.
+  for (const tab of ["Sources", "Data", "Usage", "SQL"]) expect(html).toContain(tab);
+  expect(html).toContain("Analyze with Gustav");
   expect(html).not.toContain("Query explorer");
   expect(html).not.toContain("Resources");
   expect(html).not.toContain("Signals");
@@ -91,13 +93,16 @@ test("the sidebar offers sources, SQL and settings, but no overview or dashboard
 });
 
 test("an old dashboard link opens the base with a notice the server renders, and only then", () => {
-  for (const [locale, title, way] of [
-    ["en", "Dashboards are gone", "in Code"],
-    ["de", "Dashboards gibt es nicht mehr", "in Code"],
+  for (const [locale, title, way, usage] of [
+    ["en", "Dashboards are gone", "in Code", "Open Usage"],
+    ["de", "Dashboards gibt es nicht mehr", "in Code", "Nutzung öffnen"],
   ] as const) {
     const html = render("sources", locale, { initialNotice: "dashboards-removed" });
     expect(html).toContain(title);
     expect(html).toContain(way);
+    // The notice leads to Usage, which lists the pages that read the base.
+    expect(html).toContain(usage);
+    expect(html).toContain('href="/app/pulse/Base01/usage"');
     expect(html).toContain("Warehouse importer");
     expect(render("sources", locale)).not.toContain(title);
   }
@@ -127,4 +132,39 @@ test("SQL console SSR renders the same initial draft as the controller without b
     expect(html).not.toContain(save);
     expect(html).toContain(helper);
   }
+});
+
+const firedAlert = {
+  reference: "Alt001",
+  name: "Orders too low",
+  state: "firing" as const,
+  severity: "critical" as const,
+  since: "2025-12-31T23:30:00.000Z",
+  lastCheckedAt: "2025-12-31T23:58:00.000Z",
+  errorCode: null,
+  key: "orders",
+  value: 0,
+  comparison: "below" as const,
+  threshold: 2,
+};
+
+test("Sources renders fired alerts, the alert detail and a lost store from the server read", () => {
+  const attention = { readAt: "2026-01-01T00:00:00.000Z", store: { unavailable: false, since: null }, alerts: [firedAlert] };
+  const list = render("sources", "en", { initialAttention: attention });
+  expect(list).toContain("Alert “Orders too low” fired");
+  expect(list).toContain("Critical");
+  const detail = render("sources", "en", {
+    initialAttention: attention,
+    initialRouteState: { view: "sources", sourceId: "", alertId: "Alt001" },
+  });
+  expect(detail).toContain("Fires when the value is below 2.");
+  expect(detail).toContain("Adjust with Gustav");
+  expect(detail).toContain('href="/app/pulse/Base01/sql?alert=Alt001"');
+  // An outage of the store comes from the read, not from a failed base store.
+  const down = render("sources", "de", {
+    initialAttention: { ...attention, alerts: [], store: { unavailable: true, since: "2025-12-31T23:05:00.000Z" } },
+  });
+  expect(down).toContain("Datenspeicher nicht erreichbar");
+  expect(down).toContain("Pulse prüft das automatisch");
+  expect(render("sources", "de")).not.toContain("Datenspeicher nicht erreichbar");
 });

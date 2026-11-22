@@ -1,17 +1,39 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
-import { AppWorkspace, appWorkspaceLayoutStyle, Button, IconButton, NoticeCard, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  appWorkspaceLayoutStyle,
+  Button,
+  ButtonLink,
+  type DropdownItem,
+  NoticeCard,
+  NoticeRow,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import type { AlertRule } from "../alert-contracts";
+import type { PulseBaseRead } from "../contracts";
+import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
+import AlertDetail from "./workspace/AlertDetail";
 import { createBaseController } from "./workspace/base-controller";
+import DataTab from "./workspace/DataTab";
+import { attentionItems, basePageState, sourcesSummary } from "./workspace/flat-state";
+import NoAccessView from "./workspace/NoAccessView";
 import { navigatePulseWorkspace } from "./workspace/navigation";
-import PulseSidebar, { PulseMobileFeatureHeader } from "./workspace/PulseSidebar";
+import PulseHead from "./workspace/PulseHead";
+import PulseSidebar, { type BaseDot } from "./workspace/PulseSidebar";
 import { installPeriodicRefresh } from "./workspace/periodic-refresh";
-import { launchPulseOverviewAssistant } from "./workspace/pulse-assistant-launch";
-import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
+import { launchPulseOverviewAssistant, launchPulseSqlAssistant } from "./workspace/pulse-assistant-launch";
+import { buildPulseWorkspaceHref } from "./workspace/routes";
+import SourcesTab from "./workspace/SourcesTab";
+import { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
 import SqlConsoleView from "./workspace/SqlConsoleView";
 import { createSourceController } from "./workspace/source-controller";
+import { installStoreRecheck } from "./workspace/store-recheck";
 import type { PulseWorkspaceProps } from "./workspace/types";
+import UsageTab from "./workspace/UsageTab";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 import { pulseWorkspaceStyles } from "./workspace/workspace-styles";
 
@@ -20,11 +42,21 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const locale = useLocale();
   const [assistantPending, setAssistantPending] = createSignal(false);
   const [assistantError, setAssistantError] = createSignal<string | null>(null);
+  const [switchingTo, setSwitchingTo] = createSignal<string | null>(null);
   let disposed = false;
   onCleanup(() => {
     disposed = true;
   });
+  // Back from the next base restores this page from the cache: it shows the base again, not the switch.
+  onMount(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) setSwitchingTo(null);
+    };
+    window.addEventListener("pageshow", restored);
+    onCleanup(() => window.removeEventListener("pageshow", restored));
+  });
   const selectedSourceId = () => props.initialRouteState.sourceId;
+  const selectedAlertId = () => (props.initialRouteState.view === "sources" ? (props.initialRouteState.alertId ?? "") : "");
   const [loading, setLoading] = createSignal(false);
   // An old dashboard link led here: the server read the notice, so the first render already shows it.
   const [removedNotice, setRemovedNotice] = createSignal(props.initialNotice === "dashboards-removed");
@@ -35,36 +67,52 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   };
   const [settingsDialogOpen, setSettingsDialogOpen] = createSignal(false);
-  const [search, setSearch] = createSignal("");
   const activeView = () => props.initialRouteState.view;
+  const deniedAtLoad = Boolean(props.initialAccess?.denied);
+  const denied = () => deniedAtLoad;
   const selectedBaseId = () => props.initialBaseId;
   const [sourcesRequested, setSourcesRequested] = createSignal(false);
-  const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => activeView() === "sources" || sourcesRequested());
+  const queries = createPulseWorkspaceQueries(
+    props,
+    selectedSourceId,
+    () => !deniedAtLoad && (["sources", "usage"].includes(activeView()) || sourcesRequested()),
+  );
   const bases = () => queries.bases.data() ?? props.initialBases;
   const sources = () => queries.baseData.data() ?? props.initialSources;
   const selectedBase = () => bases().find((base) => base.id === props.initialBaseId) ?? null;
-  const askAssistant = async () => {
-    if (assistantPending()) return;
+  const baseName = () => selectedBase()?.name ?? t().appName;
+  const launch = async (start: () => ReturnType<typeof launchPulseOverviewAssistant>) => {
+    if (assistantPending() || denied()) return;
     setAssistantPending(true);
     setAssistantError(null);
     try {
-      const launch = await launchPulseOverviewAssistant({
-        base: { id: props.initialBaseId, name: selectedBase()?.name ?? t().appName },
-        locale: locale(),
-      });
-      if (!disposed) navigateTo(launch.href);
+      const result = await start();
+      if (!disposed) navigateTo(result.href);
     } catch {
-      if (!disposed) setAssistantError(t().sqlAssistantFailureTitle);
+      if (!disposed) {
+        setAssistantError(t().sqlAssistantFailureTitle);
+        toast.error(t().assistantRetry, { title: t().assistantFailedTitle });
+      }
     } finally {
       if (!disposed) setAssistantPending(false);
     }
   };
+  const base = () => ({ id: props.initialBaseId, name: baseName() });
+  const askAssistant = (goal?: "page" | "connect") => launch(() => launchPulseOverviewAssistant({ base: base(), locale: locale(), goal }));
+  const adjustAlert = (alertId: string) =>
+    launch(async () => {
+      const rule = await jsonFetch<AlertRule>(`/api/pulse/bases/${props.initialBaseId}/alerts/${encodeURIComponent(alertId)}`);
+      return launchPulseSqlAssistant({ base: base(), sql: rule.sql, params: rule.params, queryName: rule.name, locale: locale() });
+    });
   const selectedSource = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
+  // Sources: the alerts that fired and the data store state, as the server read them for this page.
+  const alerts = () => props.initialAttention?.alerts ?? [];
+  const selectedAlert = () => (selectedAlertId() ? (alerts().find((item) => item.reference === selectedAlertId()) ?? null) : null);
   const navigate: Parameters<typeof createSourceController>[0]["navigate"] = (state) =>
     navigatePulseWorkspace({ baseId: props.initialBaseId, state });
   const openSources = () => navigate({ view: "sources" });
   const readQueries = () =>
-    activeView() !== "sources"
+    !["sources", "usage"].includes(activeView())
       ? [queries.bases]
       : selectedSourceId()
         ? [queries.bases, queries.baseData, queries.sourceDetail]
@@ -73,7 +121,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const refresh = async () => {
     await Promise.all([
       queries.bases.refresh(),
-      ...(activeView() === "sources" ? [queries.baseData.refresh()] : []),
+      ...(["sources", "usage"].includes(activeView()) ? [queries.baseData.refresh()] : []),
       ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : []),
     ]);
     const error = readQueries()
@@ -81,9 +129,24 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       ?.error();
     if (error) throw error;
   };
+  // The store cannot take or answer data: the server read says so, or the base store failed since. The rows then show
+  // the state at the time of that read. Pulse checks again by itself on the Sources tab while the page is visible: the
+  // base read reports the store, only that state follows it, and the list loads again once the store answers.
+  const store = installStoreRecheck({
+    initial: props.initialAttention?.store ?? { unavailable: false, since: null },
+    failedSince: () => selectedBase()?.store.state === "failed",
+    watching: () => activeView() === "sources" && !denied(),
+    check: async () => (await jsonFetch<PulseBaseRead>(`/api/pulse/bases/${props.initialBaseId}`)).outage,
+    recovered: async () => {
+      await Promise.all([queries.bases.refresh(), queries.baseData.refresh()]);
+    },
+  });
+  const storeDown = store.down;
+  const pageState = () =>
+    basePageState({ denied: denied(), switching: Boolean(switchingTo()), storeDown: storeDown(), sourceCount: sources().length });
   // Only the sources and the open source change with collection; the base list refreshes on demand.
   installPeriodicRefresh({
-    active: () => activeView() === "sources" && !loading(),
+    active: () => activeView() === "sources" && !loading() && !denied(),
     refresh: async () => {
       await Promise.all([queries.baseData.refresh(), ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : [])]);
       const error = [queries.baseData, queries.sourceDetail].find((query) => query.error())?.error();
@@ -118,13 +181,13 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     navigateToBase: (baseId) => navigatePulseWorkspace({ baseId, state: { view: "sources" } }),
   });
   onMount(() => {
-    if (props.initialRouteState.settings) void openSettings();
+    if (props.initialRouteState.settings && !deniedAtLoad) void openSettings();
   });
   const actions = createSourceController({
-    selectedBaseName: () => selectedBase()?.name ?? t().appName,
+    selectedBaseName: baseName,
     selectedBaseId,
     timezone: () => selectedBase()?.timezone ?? "UTC",
-    askAssistant,
+    askAssistant: () => askAssistant("connect"),
     assistantPending,
     assistantError,
     loading,
@@ -147,24 +210,26 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     on(
       queries.bases.data,
       (next) => {
-        if (next && !next.some((base) => base.id === props.initialBaseId))
+        if (next && !deniedAtLoad && !next.some((base) => base.id === props.initialBaseId))
           navigatePulseWorkspace({ baseId: next[0]?.id ?? "", state: { view: "sources" } });
       },
       { defer: true },
     ),
   );
+  const canWrite = () => props.initialPermissions?.write ?? false;
+  const canManage = () => props.initialPermissions?.admin ?? false;
+  const dateContext = () => ({ ...props.initialDateConfig, now: props.initialNow });
   const sourceProps: SourcesViewProps = {
-    search,
-    setSearch,
     selectedBaseId,
     loading: () => loading() || writeBlocked(),
-    sources: () => sources().filter((source) => source.name.toLowerCase().includes(search().trim().toLowerCase())),
+    sources,
     selectedSourceId,
     selectedSource,
     selectedSourceScrapes: () => queries.currentDetail()?.scrapes ?? [],
     selectedSourceApiKeys: () => queries.currentDetail()?.apiKeys ?? [],
+    canManageKeys: canManage,
     origin: () => props.initialOrigin,
-    dateContext: () => ({ ...props.initialDateConfig, now: props.initialNow }),
+    dateContext,
     copySetupText: (text, label) => {
       void clipboard.copy(text).then(
         () => toast.success(label),
@@ -185,83 +250,186 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     readQueries()
       .find((query) => query.error())
       ?.error();
+  const attention = () => attentionItems(sources(), alerts());
+  const firedAlerts = () => alerts().filter((item) => item.state === "firing").length;
+  /** The base's dot in the sidebar: a lost store marks every base; otherwise only the open base's state is known. */
+  const baseDot = (item: { id: string }): BaseDot | undefined => {
+    if (storeDown()) return "danger";
+    if (item.id !== props.initialBaseId || !["sources", "usage"].includes(activeView())) return undefined;
+    const summary = sourcesSummary(sources());
+    return summary.kind === "empty" ? "neutral" : summary.kind === "attention" || firedAlerts() ? "danger" : "ok";
+  };
+  const menuItems = (): DropdownItem[] =>
+    denied()
+      ? []
+      : [{ label: t().baseSettings, icon: "ti ti-settings", disabled: !selectedBase() || loading(), action: () => void openSettings() }];
   // A CSS default lets restored and resized inline geometry keep precedence.
-  const renderFrame = (sqlContent?: JSX.Element, sqlAction?: JSX.Element) => (
+  const renderFrame = (sqlContent?: JSX.Element, sqlAssistant?: { launch: () => void; pending: boolean }) => (
     <>
       <style>{`.pulse-workspace{${appWorkspaceLayoutStyle({ version: 2, sidebarWidth: 236 })}}${pulseWorkspaceStyles}`}</style>
-      <PulseMobileFeatureHeader
-        title={selectedBase()?.name ?? t().appName}
-        bases={bases()}
-        baseId={props.initialBaseId}
-        name={activeView() === "sql" ? "SQL" : t().sources}
-        action={
-          activeView() === "sql" ? (
-            sqlAction
-          ) : (
-            <IconButton
-              variant="ghost"
-              label={t().sourcePickTitle({ base: selectedBase()?.name ?? t().appName })}
-              disabled={!selectedBaseId() || loading() || writeBlocked()}
-              onClick={() => void actions.addSource()}
-            >
-              <i class="ti ti-plus" aria-hidden="true" />
-            </IconButton>
-          )
-        }
-      />
       <AppWorkspace class="pulse-workspace" mobileSurface="flush">
         <PulseSidebar
-          title={selectedBase()?.name ?? t().appName}
-          bases={bases()}
+          title={denied() ? t().appName : baseName()}
+          bases={denied() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
+          baseId={denied() ? "" : props.initialBaseId}
+          activeId={switchingTo() ?? undefined}
+          dot={baseDot}
+          switching={setSwitchingTo}
+          menu={
+            denied()
+              ? []
+              : [
+                  { id: "assistant", label: t().askGustav, icon: "ti ti-sparkles", action: "assistant", disabled: assistantPending() },
+                  { id: "settings", label: t().baseSettings, icon: "ti ti-settings", action: "settings", disabled: !selectedBase() },
+                ]
+          }
+          onMenu={(action) =>
+            action === "settings"
+              ? openSettings()
+              : action === "assistant"
+                ? (sqlAssistant?.launch ?? (() => void askAssistant()))()
+                : undefined
+          }
+        />
+        <PulseHead
           baseId={props.initialBaseId}
-          activeView={activeView()}
-          sourceCount={sources().length}
-          settingsDisabled={!selectedBase() || loading()}
-          openSettings={openSettings}
-          openSources={openSources}
-          openSql={() => navigate({ view: "sql" })}
+          view={activeView()}
+          sourceCount={switchingTo() ? null : sources().length}
+          denied={denied()}
+          canWrite={canWrite()}
+          addSourceDisabled={loading() || writeBlocked()}
+          addSource={() => void actions.addSource()}
+          assistant={
+            sqlAssistant ?? {
+              pending: assistantPending(),
+              disabled: switchingTo() !== null,
+              launch: () => void askAssistant(),
+            }
+          }
+          menu={menuItems()}
         />
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="gap-2 px-4 py-[var(--ui-space-shell)] md:px-5">
-            <Show when={removedNotice()}>
-              <NoticeCard tone="info" title={t().dashboardsRemovedTitle} detail={t().dashboardsRemovedDetail}>
-                <Button variant="secondary" onClick={dismissRemovedNotice}>
-                  {t().dashboardsRemovedDismiss}
-                </Button>
-              </NoticeCard>
-            </Show>
-            <Show when={readError()}>
+          <AppWorkspace.Main class="pulse-main">
+            <Show when={!denied() && !switchingTo() && readError()}>
               {(error) => (
-                <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
-                  <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
-                    {t().retry}
-                  </Button>
-                </NoticeCard>
+                <div class="pulse-padded pulse-padded--notice">
+                  <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
+                    <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
+                      {t().retry}
+                    </Button>
+                  </NoticeCard>
+                </div>
               )}
             </Show>
-            <Show when={activeView() === "sources"} fallback={sqlContent}>
-              <SourcesView {...sourceProps} />
+            <Show when={!denied()} fallback={<NoAccessView managers={props.initialAccess?.managers ?? []} />}>
+              <Show when={!switchingTo()} fallback={sourcesTab()}>
+                {mainView(sqlContent)}
+              </Show>
             </Show>
           </AppWorkspace.Main>
           <AppWorkspace.Detail
             id="pulse-detail-panel"
-            open={activeView() === "sources" && Boolean(selectedSource())}
+            open={!denied() && !switchingTo() && activeView() === "sources" && Boolean(selectedSource() || selectedAlert())}
             onClose={openSources}
-            width="lg"
           >
-            <SourcesDetailPanel {...sourceProps} />
+            <Show when={selectedAlert()} fallback={<SourcesDetailPanel {...sourceProps} />}>
+              {(alert) => (
+                <AlertDetail
+                  alert={alert()}
+                  sqlHref={buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "sql", alertId: alert().reference } })}
+                  dateContext={dateContext()}
+                  adjust={() => void adjustAlert(alert().reference)}
+                  adjustPending={assistantPending()}
+                  close={openSources}
+                />
+              )}
+            </Show>
           </AppWorkspace.Detail>
         </AppWorkspace.Content>
       </AppWorkspace>
     </>
   );
+  const sourcesTab = () => {
+    const state = pageState();
+    return (
+      <SourcesTab
+        state={state === "noAccess" ? "ready" : state}
+        baseName={baseName()}
+        created={{ at: selectedBase()?.createdAt ?? props.initialNow, by: props.initialCreator ?? null }}
+        sources={sources()}
+        attention={attention()}
+        firedAlerts={firedAlerts()}
+        selectedSourceId={selectedSourceId()}
+        selectedAlertId={selectedAlertId()}
+        dateContext={dateContext()}
+        canWrite={canWrite()}
+        readAt={props.initialAttention?.readAt ?? props.initialNow}
+        storeDownSince={store.since() ?? selectedBase()?.store.errorAt ?? null}
+        notice={
+          // Shown on the first render of the base an old dashboard link opened; it leaves only on request.
+          <Show when={removedNotice() && !switchingTo()}>
+            <NoticeRow
+              tone="info"
+              icon
+              reserve={false}
+              detail={t().dashboardsRemovedDetail}
+              detailTitle={t().dashboardsRemovedDetail}
+              actions={
+                <>
+                  <ButtonLink variant="secondary" href={buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "usage" } })}>
+                    {t().dashboardsRemovedOpenUsage}
+                  </ButtonLink>
+                  <Button variant="secondary" onClick={dismissRemovedNotice}>
+                    {t().dashboardsRemovedDismiss}
+                  </Button>
+                </>
+              }
+            >
+              {t().dashboardsRemovedTitle}
+            </NoticeRow>
+          </Show>
+        }
+        openSource={(sourceId) => navigate({ view: "sources", sourceId })}
+        openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sources", alertId } })}
+        addSource={(kind) => void actions.addSource(kind)}
+        connectWithGustav={() => void askAssistant("connect")}
+      />
+    );
+  };
+  const mainView = (sqlContent?: JSX.Element): JSX.Element => {
+    const view = activeView();
+    // The console keeps its own layout: it stands on the text edge.
+    if (view === "sql") return <div class="pulse-padded">{sqlContent}</div>;
+    if (view === "data")
+      return (
+        <DataTab
+          baseId={props.initialBaseId}
+          initialKind={props.initialRouteState.kind}
+          dateContext={dateContext()}
+          href={(kind) => buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "data", kind } })}
+        />
+      );
+    if (view === "usage")
+      return (
+        <UsageTab
+          baseId={props.initialBaseId}
+          sources={sources()}
+          canManage={canManage()}
+          dateContext={dateContext()}
+          buildPage={() => void askAssistant("page")}
+          buildPending={assistantPending()}
+          manageMembers={() => void openSettings("members")}
+        />
+      );
+    return sourcesTab();
+  };
   return (
-    <Show when={activeView() === "sql"} fallback={renderFrame()}>
+    <Show when={activeView() === "sql" && !denied()} fallback={renderFrame()}>
       <SqlConsoleView
-        base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+        base={base()}
         route={props.initialRouteState}
         snapshot={props.initialSql}
-        canWrite={props.initialPermissions?.write ?? false}
+        canWrite={canWrite()}
         renderFrame={renderFrame}
       />
     </Show>

@@ -1,8 +1,11 @@
 import { AccessEntrySchema, hasRole } from "@k2b/cloud/contracts";
 import {
   type AuthContext,
+  err,
+  fail,
   getLocale,
   jsonResponse,
+  ok,
   REQUEST_IDLE_TIMEOUT_SECONDS,
   respond,
   respondMessage,
@@ -15,10 +18,19 @@ import { z } from "zod";
 import { BaseSchemaReadSchema, SchemaReadInputSchema } from "../../schema-contracts";
 import { pulseService } from "../../service";
 import { retryBase } from "../../service/base-admin";
+import { readStoreOutage } from "../../service/base-attention";
 import { readBaseSchema } from "../../service/base-schema-read";
 import { projectBases } from "../../service/public-resources";
 import { RetentionStoreUnavailable } from "../../store/retention";
-import { BaseSchema, CreateBaseSchema, GrantBaseAccessSchema, MessageSchema, UpdateBaseAccessSchema, UpdateBaseSchema } from "../schemas";
+import {
+  BaseReadSchema,
+  BaseSchema,
+  CreateBaseSchema,
+  GrantBaseAccessSchema,
+  MessageSchema,
+  UpdateBaseAccessSchema,
+  UpdateBaseSchema,
+} from "../schemas";
 import { projectResult, requestAccessScope, requirePublicIdParam, requireUuidParam } from "../shared";
 
 const SchemaErrorBody = z.object({
@@ -91,14 +103,26 @@ const routes = new Hono<AuthContext>()
       );
     },
   )
-  .get("/bases/:baseId", async (c) => {
-    const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
-    if (!baseId.ok) return respond(c, baseId.result);
-    return respond(
-      c,
-      projectResult(pulseService.base.get(baseId.value, requestAccessScope(c)), (item) => projectBases([item]).then(([value]) => value!)),
-    );
-  })
+  .get(
+    "/bases/:baseId",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read a Pulse base",
+      description:
+        "Returns the base with `outage`: whether its data store can take and answer data right now (no store configured, an instance outage or a failed base store), and since when.",
+      responses: { 200: jsonResponse(BaseReadSchema, "Pulse base with its store outage") },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const base = await pulseService.base.get(baseId.value, requestAccessScope(c));
+      if (!base.ok) return respond(c, base);
+      const [[item], outage] = await Promise.all([projectBases([base.data]), readStoreOutage(baseId.value)]);
+      if (!item) return respond(c, fail(err.notFound("Pulse base")));
+      // A base whose deletion started has no outage to report: its running delete is not one.
+      return respond(c, ok({ ...item, outage: outage?.store ?? { unavailable: false, since: null } }));
+    },
+  )
   .patch(
     "/bases/:baseId",
     describeRoute({

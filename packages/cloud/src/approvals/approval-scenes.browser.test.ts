@@ -534,6 +534,8 @@ describe("Approval scenes", () => {
       await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
+      // The search is a sign at every width (Gustav flat F3).
+      await frame.getByRole("button", { name: "Tabelle durchsuchen" }).click();
       await frame.getByRole("searchbox").fill("Schrauben");
       await settled(page);
       await frame.getByRole("button", { name: "Tabelle kopieren" }).click();
@@ -556,6 +558,7 @@ describe("Approval scenes", () => {
       const before = await frame.boundingBox();
       const foot = frame.locator(".k2b-dashboard-frame__footer");
       expect(await foot.textContent()).toBe("5 Zeilen");
+      await frame.getByRole("button", { name: "Tabelle durchsuchen" }).click();
       await frame.getByRole("searchbox").fill("Schrauben");
       await settled(page);
       expect(await frame.locator(".k2b-dashboard-frame__content tbody tr").count()).toBe(1);
@@ -768,7 +771,10 @@ describe("Approval scenes", () => {
           })),
         );
         for (const look of looks) {
-          expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
+          // K1/K4/K11: a two-line row of 52 px (phone reserve 2×20 + 2×16 + 2 gap + 40 actions + 12 + 2×8 inset = 142 px),
+          // Gustav flat (F2): a card of 8 px with its thin edge as a 1 px ring inside; the sentence in the 13 px row size.
+          expect(look).toMatchObject({ height: width === 390 ? 142 : 52, radius: "8px", sentence: "13px", boxes: 0 });
+          expect(look.shadow).toMatch(/^(?:rgba?|color)\(.*\) 0px 0px 0px 1px inset$/);
           expect(look.actions).toBeLessThanOrEqual(2);
         }
         expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");

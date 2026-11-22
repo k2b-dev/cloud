@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { User } from "@k2b/cloud/contracts";
 import type { ComponentProps } from "solid-js";
 import type { launchBrowser } from "../../../ui/test/browser";
 import type { PulseSource } from "../contracts";
+import type { AlertAttention } from "../service/base-attention";
 import type PulseOverview from "./PulseOverview.island";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
@@ -339,3 +341,260 @@ const compileWorkspaceHarness = async () => {
     );
   };
 };
+
+// Flat base page: one fixture per state of the concept (gesund, Fehler, leer, kein Zugriff, Daten, Nutzung,
+// Speicher weg, nur Lesen, SQL). Invented bases, sources and people.
+const flatBase = (id: string, name: string, icon: string, color: string) => ({
+  ...workspaceFixture.initialBases[0]!,
+  id,
+  shortId: id,
+  name,
+  icon,
+  color,
+  timezone: "Europe/Berlin",
+  createdAt: "2026-10-19T07:12:00.000Z",
+});
+export const flatBases = [
+  flatBase("Btr001", "Betrieb", "ti ti-server", "teal"),
+  flatBase("Web001", "Website", "ti ti-world", "violet"),
+  flatBase("Ger001", "Geräte", "ti ti-devices", "orange"),
+  flatBase("Lag001", "Lager", "ti ti-package", "blue"),
+];
+const fresh = (at: string) => status({ newestDataAt: at });
+export const healthySources: PulseSource[] = [
+  source("Src101", "web-01", { baseId: "Btr001", status: fresh("2026-10-19T12:39:39.000Z"), lastSeenAt: "2026-10-19T12:39:39.000Z" }),
+  source("Src102", "db-01", { baseId: "Btr001", status: fresh("2026-10-19T12:39:26.000Z"), lastSeenAt: "2026-10-19T12:39:26.000Z" }),
+  source("Src103", "Traefik", { baseId: "Btr001", status: fresh("2026-10-19T12:39:51.000Z"), lastSeenAt: "2026-10-19T12:39:51.000Z" }),
+  source("Src104", "Backup-Prüfung", {
+    baseId: "Btr001",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    expectDailyBy: "06:00",
+    todayCount: 14,
+    status: fresh("2026-10-19T03:12:00.000Z"),
+    lastSeenAt: "2026-10-19T03:12:00.000Z",
+  }),
+];
+export const troubledSources: PulseSource[] = [
+  source("Src201", "Website-Server", {
+    baseId: "Web001",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    todayCount: 9204,
+    status: {
+      ...fresh("2026-10-19T12:01:00.000Z"),
+      rejected: { last24h: 312, lastReason: "„value“ ist Text statt Zahl", lastAt: "2026-10-19T12:39:42.000Z" },
+    },
+    lastSeenAt: "2026-10-19T12:39:42.000Z",
+  }),
+  source("Src202", "Shop-Backend", {
+    baseId: "Web001",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    expectEverySeconds: 900,
+    staleSince: "2026-10-19T10:20:00.000Z",
+    todayCount: 312,
+    status: fresh("2026-10-19T10:05:00.000Z"),
+    lastSeenAt: "2026-10-19T10:05:00.000Z",
+  }),
+  source("Src203", "Kurzlinks", {
+    baseId: "Web001",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    todayCount: 2180,
+    status: fresh("2026-10-19T12:39:20.000Z"),
+  }),
+  source("Src204", "Webserver-Metriken", { baseId: "Web001", status: fresh("2026-10-19T12:39:38.000Z") }),
+];
+const firedAlert: AlertAttention = {
+  reference: "Alt201",
+  name: "Kontaktanfragen zu niedrig",
+  state: "firing",
+  severity: "critical",
+  since: "2026-10-19T12:30:00.000Z",
+  lastCheckedAt: "2026-10-19T12:38:00.000Z",
+  errorCode: null,
+  key: "contact_form_sent",
+  value: 0,
+  comparison: "below",
+  threshold: 2,
+};
+/** A base on Sources with the attention the server read: fired alerts and the data store state. */
+const flat = (
+  baseId: string,
+  sources: PulseSource[],
+  alerts: AlertAttention[] = [],
+  storeDownSince: string | null = null,
+): PulseWorkspaceProps => ({
+  ...workspaceFixture,
+  initialBaseId: baseId,
+  initialBases: flatBases,
+  initialSources: sources,
+  initialRouteState: { view: "sources", sourceId: "" },
+  initialCreator: "Lena Berg",
+  initialAttention: { readAt: now, store: { unavailable: storeDownSince !== null, since: storeDownSince }, alerts },
+});
+/** The one key of "Website-Server", in its detail and in Usage. */
+export const flatKeys: ResourceApiKey[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000301",
+    serviceAccountId: "00000000-0000-4000-8000-000000000201",
+    name: "pk_…3f9a",
+    kind: "api_token" as const,
+    status: "active" as const,
+    tokenPrefix: "pk_3f9a",
+    scopes: ["write"],
+    expiresAt: null,
+    lastUsedAt: "2026-10-19T12:39:42.000Z",
+    createdBy: null,
+    createdAt: "2026-10-02T08:00:00.000Z",
+    revokedAt: null,
+    revokedBy: null,
+    permission: "write" as const,
+  },
+];
+
+export const flatStates = {
+  healthy: flat("Btr001", healthySources),
+  error: {
+    ...flat("Web001", troubledSources, [firedAlert]),
+    initialRouteState: { view: "sources", sourceId: "Src201" },
+    // The same key the Usage tab lists for this source.
+    initialSourceApiKeys: { Src201: flatKeys },
+  } satisfies PulseWorkspaceProps,
+  alert: {
+    ...flat("Web001", troubledSources, [firedAlert]),
+    initialRouteState: { view: "sources", sourceId: "", alertId: "Alt201" },
+  } satisfies PulseWorkspaceProps,
+  /** An old dashboard link led to the base: the notice cell stands at the top of Sources. */
+  dashboardsRemoved: { ...flat("Btr001", healthySources), initialNotice: "dashboards-removed" } satisfies PulseWorkspaceProps,
+  empty: flat("Lag001", []),
+  noAccess: {
+    ...flat("Web001", []),
+    initialBases: flatBases.filter((base) => base.id !== "Web001"),
+    initialAccess: { denied: true, managers: ["Anna Roth", "Jonas Keller"] },
+    initialPermissions: { write: false, admin: false },
+    initialAttention: undefined,
+  } satisfies PulseWorkspaceProps,
+  // The instance store is unreachable since 12:05; the base store itself is still active.
+  storeDown: flat("Btr001", healthySources, [], "2026-10-19T12:05:00.000Z"),
+  readOnly: { ...flat("Btr001", healthySources), initialPermissions: { write: false, admin: false } } satisfies PulseWorkspaceProps,
+  data: {
+    ...flat("Web001", troubledSources),
+    initialRouteState: { view: "data", sourceId: "" },
+    // The server reads the attention for Sources only.
+    initialAttention: undefined,
+  } satisfies PulseWorkspaceProps,
+  usage: {
+    ...flat("Web001", troubledSources),
+    initialRouteState: { view: "usage", sourceId: "" },
+    // The server reads the attention for Sources only.
+    initialAttention: undefined,
+  } satisfies PulseWorkspaceProps,
+  sql: {
+    ...flat("Web001", troubledSources),
+    initialRouteState: { view: "sql", sourceId: "", sql: "" },
+    // The server reads the attention for Sources only.
+    initialAttention: undefined,
+  } satisfies PulseWorkspaceProps,
+};
+
+/** The data catalog of "Website": event kinds with fields, metrics and no states. `many` adds rows for the scrollbar. */
+export const flatSchema = (kind: string | null, many = false) => {
+  const fields = [
+    { key: "path", type: "string", types: ["string"], present: 9204, fillRate: 1 },
+    { key: "referrer", type: "string", types: ["string"], present: 5614, fillRate: 0.61 },
+    { key: "device", type: "string", types: ["string"], present: 9204, fillRate: 1 },
+    { key: "value", type: "number", types: ["number"], present: 9204, fillRate: 1 },
+    ...(many
+      ? Array.from({ length: 30 }, (_, index) => ({
+          key: `extra_${index + 1}`,
+          type: "string",
+          types: ["string"],
+          present: 10,
+          fillRate: 0.1,
+        }))
+      : []),
+  ] as const;
+  const rows: [string, string, string, string][] = [
+    ["12:39:12", "/kontakt", "mobil", "suche.example"],
+    ["12:39:09", "/", "desktop", ""],
+    ["12:38:58", "/sammlung/vasen", "mobil", "suche.example"],
+    ["12:38:41", "/", "mobil", ""],
+    ["12:38:37", "/kontakt", "desktop", "newsletter"],
+  ];
+  const event = (name: string) => ({
+    kind: name,
+    firstSeenAt: "2026-10-01T08:00:00.000Z",
+    lastSeenAt: "2026-10-19T12:39:12.000Z",
+    sampledRows: 9204,
+    fields: [...fields],
+    fieldsTruncated: false,
+    samples:
+      kind === name
+        ? rows.map(([time, path, device, referrer], index) => ({
+            id: `evt-${index}`,
+            ts: `2026-10-19T${time}.000Z`,
+            value: 1,
+            sourceId: "Src201",
+            actorId: "",
+            sessionId: "",
+            correlationId: "",
+            resourceKey: "",
+            dimensions: null,
+            attributes: { path, device, ...(referrer ? { referrer } : {}), value: 1 },
+            attributesTruncated: false,
+          }))
+        : null,
+  });
+  const events = [
+    "page_view",
+    "short_link_open",
+    "contact_form_sent",
+    "problem",
+    ...(many ? Array.from({ length: 24 }, (_, index) => `kind_${index + 1}`) : []),
+  ];
+  return {
+    baseId: "Web001",
+    generatedAt: now,
+    kind,
+    truncated: false,
+    events: { total: events.length, items: events.map(event) },
+    metrics: {
+      total: 2,
+      items: ["http_requests_total", "http_request_duration_seconds"].map((name) => ({
+        name,
+        type: name.endsWith("total") ? "counter" : "gauge",
+        unit: null,
+        seriesCount: 12,
+        lastSampleAt: "2026-10-19T12:39:38.000Z",
+        dimensions: [{ key: "route", values: 8 }],
+        samples: null,
+      })),
+    },
+    states: { total: 0, items: [] },
+  };
+};
+
+/** Base members and source keys for the Usage tab. */
+export const flatAccess = [
+  {
+    id: "00000000-0000-4000-8000-000000000101",
+    principal: { type: "service_account", serviceAccountId: "00000000-0000-4000-8000-000000000201" },
+    permission: "read",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    displayName: "Shop-Auswertung",
+    serviceAccountKind: "standalone",
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000102",
+    principal: { type: "user", userId: "00000000-0000-4000-8000-000000000202" },
+    permission: "admin",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    displayName: "Lena Berg",
+  },
+];

@@ -279,6 +279,7 @@ try {
     // becomes its own chunk. The budget below counts what a page loads up front: the entry and every chunk it
     // imports statically, but not the chunks behind a dynamic import().
     splitting: true,
+    metafile: true,
     external: ["@k2b/ssr", "@k2b/ssr/*", "@k2b/stdlib", "@k2b/stdlib/*", "marked", "solid-js", "solid-js/*"],
   });
   if (!browserBuild.success) {
@@ -300,13 +301,24 @@ try {
     throw new Error("packed browser build still requires a React JSX transform");
   }
   // Each component family owns its message catalog, so this unminified build
-  // carries only the common strings. A leaked family adds several kilobytes;
-  // the budget leaves a few percent for the two components to grow. The
-  // locale weekend band and the one-click range moved the pair to about 58 kB;
-  // the typed date field with its parser and status line to about 100 kB up
-  // front, with its phone sheet in a chunk that loads on demand.
-  if (upFrontBytes > 104_000) {
-    throw new Error(`packed Button + DatePicker browser build loads too much up front: ${upFrontBytes} bytes`);
+  // carries only the common strings. A leaked family adds several kilobytes.
+  // The typed date field with its parser and status line loads up front; its
+  // month panel and phone sheet are chunks that load on demand, which keeps
+  // the pair at about 87 kB. Do not raise the budget: move code a person needs
+  // only after an interaction behind import() of a small local module.
+  const upFrontBudget = 104_000;
+  if (upFrontBytes > upFrontBudget) {
+    const moduleBytes = new Map<string, number>();
+    for (const file of staticallyLoaded.keys()) {
+      for (const [input, { bytesInOutput }] of Object.entries(browserBuild.metafile?.outputs[`./${file}`]?.inputs ?? {})) {
+        const module = input.replace(/^.*\/dist\//, "");
+        moduleBytes.set(module, (moduleBytes.get(module) ?? 0) + bytesInOutput);
+      }
+    }
+    const largest = [...moduleBytes].sort((a, b) => b[1] - a[1]).slice(0, 12);
+    throw new Error(
+      `packed Button + DatePicker browser build loads too much up front: ${upFrontBytes} bytes (budget ${upFrontBudget}). Largest modules:\n${largest.map(([module, bytes]) => `  ${String(bytes).padStart(7)}  ${module}`).join("\n")}`,
+    );
   }
   for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {
     if (browserChunks.includes(unusedMessage)) {
