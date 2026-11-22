@@ -70,6 +70,38 @@ export const getCapabilityCatalogApp = async (
 };
 
 /**
+ * Live registry facts for the read check of Code route hosting (G1): which input fields of each app-wide Query name a
+ * resource it reads (a type's reader with `id`, and declared `inputRefs`), each type's reader, and whether the app keeps
+ * its data off public Code routes. No presentation, no authority; `null` for an unknown app.
+ */
+export const getCapabilityCodeReadFacts = async (
+  appId: string,
+): Promise<{
+  /** Qualified Query ID → input field → qualified resource type. */
+  inputRefs: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  typeReaders: Readonly<Record<string, string>>;
+  publicRoutes: boolean;
+} | null> => {
+  const capability = await getCapability(appId);
+  if (!capability) return null;
+  const queries = new Set(capability.manifest.queries.map((query) => query.localId));
+  const inputRefs: Record<string, Record<string, string>> = {};
+  const typeReaders: Record<string, string> = {};
+  for (const type of capability.manifest.types) {
+    if (!type.reader || !queries.has(type.reader)) continue;
+    const reader = `${appId}.${type.reader}`;
+    inputRefs[reader] = { id: `${appId}.${type.localId}`, ...inputRefs[reader] };
+    typeReaders[`${appId}.${type.localId}`] = type.reader;
+  }
+  for (const query of capability.manifest.queries) {
+    const capabilityId = `${appId}.${query.localId}`;
+    for (const [field, type] of Object.entries(query.inputRefs ?? {}))
+      inputRefs[capabilityId] = { ...inputRefs[capabilityId], [field]: `${appId}.${type}` };
+  }
+  return { inputRefs, typeReaders, publicRoutes: capability.manifest.code?.publicRoutes !== false };
+};
+
+/**
  * How people read calls of one Action in a locale, from the live registry like the Assistant's own calls: its title,
  * the app's sentences, and the labelled fields of the generic sentence. Pass `sentences` and `fields` to the chat's
  * approval card, so an approval a script or app asks for reads like the same call in a chat. `null` for an unknown

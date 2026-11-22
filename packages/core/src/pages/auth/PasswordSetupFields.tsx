@@ -146,7 +146,7 @@ export function PasswordSetupFields(props: PasswordSetupFieldsProps) {
   };
 
   return (
-    <div class="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/70">
+    <div class="flex flex-col gap-3">
       <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-medium text-primary">{t().newPassword}</p>

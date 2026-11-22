@@ -390,11 +390,12 @@ suiteFor(
         else
           expect(await response).toEqual(
             reply === "json"
-              ? { kind: "json", status: 200, body: JSON.stringify({ visitor: other }) }
+              ? { kind: "json", status: 200, body: JSON.stringify({ visitor: other }), reads: [] }
               : {
                   kind: "page",
                   status: 200,
                   tree: { version: 1, kind: "Page", title: "Fixture", children: [{ kind: "Text", text: "Hello" }] },
+                  reads: [],
                 },
           );
         const [run] = await sql<

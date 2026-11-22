@@ -163,6 +163,38 @@ test("changed Internet, public-page and AI accesses retain one localized approva
   }
 });
 
+test("an owner-data page needs its own approval; a public owner-data page needs both, like enforcement", () => {
+  const page = (route: { public: boolean; audience?: "owner-data" }) => ({
+    ...manifest,
+    policyRows: [...(route.public ? (["public_routes"] as const) : []), ...(route.audience ? (["owner_data"] as const) : [])],
+    entrypoints: [
+      ...manifest.entrypoints,
+      {
+        kind: "route" as const,
+        cron: null,
+        entrypoint: "page",
+        route: { method: "GET" as const, path: "/report", ...route },
+        file: "code.ts",
+        line: 3,
+      },
+    ],
+  });
+  for (const locale of ["de", "en"]) {
+    const owner = present({ locale, manifest: page({ public: false, audience: "owner-data" }), policy: { owner_data: "admin" } });
+    expect(owner.changes.approval?.count).toBe(1);
+    expect(owner.changes.approval?.reason).toBe(
+      locale === "de"
+        ? "Diese Änderung zeigt allen Mitgliedern, die eine Seite öffnen, Daten mit den Rechten des Besitzers."
+        : "This change shows the owner's data to every member who opens a page.",
+    );
+    expect(present({ locale, manifest: page({ public: false }), policy: { owner_data: "admin" } }).changes.approval).toBeNull();
+    const open = page({ public: true, audience: "owner-data" });
+    // Enforcement reads both rows from policyRows; the review shows each one that needs an approval.
+    expect(present({ locale, manifest: open, policy: { owner_data: "admin" } }).changes.approval?.count).toBe(1);
+    expect(present({ locale, manifest: open, policy: { public_routes: "admin" } }).changes.approval?.count).toBe(1);
+  }
+});
+
 test("unavailable readers hide free text without asserting that the reader lacks permission", () => {
   const model = present({ names: { ...names, target: () => ({ name: "ein Space", readable: false, unavailable: true }) } });
   expect(model.description.state).toBe("restricted");

@@ -1541,10 +1541,11 @@ serialized JSON, in addition to the 32 KiB compact review. Views up to 32 KiB
 travel inline; larger ones load through the same content reference as before.
 Ordinary capability results, views included, remain limited to 256 KiB.
 
-Upgrade Core and every application that returns reviews or table presentations
-together: Cloud rejects the removed `preview`, `content`, and `presentation`
-fields from an application, and converts stored reviews and results that still
-carry them into blocks when it reads them. Open approvals stay valid and their
+Upgrade Core and every application that returns reviews together: Cloud
+rejects the removed `preview` and `content` fields from an application. Until
+Cloud 0.86, Core still accepts `presentation` from older applications and
+converts or drops it. Cloud converts stored reviews and results that still
+carry these fields into blocks when it reads them. Open approvals stay valid and their
 digests do not change. See
 [capability views](/en/docs/reference/deprecations-and-migrations#capability-views-replace-table-presentations-and-review-previews).
 

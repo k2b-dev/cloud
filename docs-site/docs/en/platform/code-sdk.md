@@ -619,6 +619,50 @@ app.post("/answer/:token", async c => {
 export default app;
 ```
 
+## Who may see what a page read
+
+A route reads with the Code's rights, but Cloud delivers its answer only to a
+visitor who may read every resource the route read. Cloud collects these reads
+from the run itself, also for IDs the route chose at runtime:
+
+- the target and each ref of a Query that succeeded;
+- a resource that an app-wide Query names in its input: the `id` of a type's
+  reader such as `pulse.base.read`, and fields the app declares as
+  `inputRefs`, such as `baseId` of `pulse.sql.run`.
+
+Before the answer leaves, Cloud asks each type's reader with the visitor's own
+access. If one says no, the visitor gets the shared **No access** page and a
+script gets `403 { "code": "code_page_access_denied" }`. If a reader does not
+answer, the visitor gets the error page with **Try again** and a script gets
+`503 { "code": "code_page_access_unavailable" }`. The page never names the
+resource. Actions are writes and stay outside the check, so a form may still
+write to a resource that its visitors cannot read.
+
+On a member route, Cloud checks only these named resources. Data that a Query
+reads without a target, ref or type reader stays the handler's job: lists and
+searches, app-wide reads such as a message body by its ID, and data the Code
+stored earlier in its own database. Check `c.user` as shown above, and prefer
+an app's target form where it offers one.
+
+`{ audience: "owner-data" }` on a route turns the check off on purpose:
+everyone who opens the route sees what the Code read with its owner's rights.
+The manifest records it with the `owner_data` policy classification, which
+needs administrator approval by default; the administrators see it in the
+approval review.
+A public route has no visitor who could read anything, so a public route that
+calls any app Query, a list or search included, needs `owner-data`. So does a
+public route that reads the Code's own database, because the database outlives
+versions and may hold app data copied earlier; the Code's own files and AI calls
+without a resource do not count. A Code version that has a database and a public
+route without `owner-data` does not pass the check. An app can keep its data off public routes
+entirely with `code.publicRoutes: false`; the checker then refuses such a
+version, and Cloud refuses the answer. Pulse does this.
+
+```ts
+// Every signed-in member sees this report, including people without access to the base.
+app.get("/report", c => c.page(report), { audience: "owner-data" });
+```
+
 ## Call operations on a handle
 
 For a provider that declares a `workshop` Type and an `item.create` Action

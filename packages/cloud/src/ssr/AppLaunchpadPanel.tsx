@@ -139,7 +139,7 @@ export const AppLaunchpadPanel = (
                   <i class={tile.iconClass} aria-hidden="true" />
                   <AppBadge endpoint={tile.badge} appId={tile.appId} />
                 </span>
-                <span class="max-w-full k2b-truncate-fade text-[11px] font-medium text-primary sm:text-xs dark:text-white">
+                <span class="max-w-full k2b-truncate-fade max-sm:text-[11px] font-medium text-primary sm:text-xs dark:text-white">
                   {tile.label}
                   <Show when={badge()}>
                     <span class="sr-only">, {badge()}</span>

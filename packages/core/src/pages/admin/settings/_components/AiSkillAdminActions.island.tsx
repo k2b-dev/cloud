@@ -218,7 +218,7 @@ const AppVersionDialog = (props: Props & { appName: string; close: () => void })
                             <span class="shrink-0 tabular-nums text-red-700 dark:text-red-300">−{file.removed}</span>
                           </h3>
                           <Show when={!file.replaced} fallback={<p class="text-xs text-dimmed">{t().diffReplaced}</p>}>
-                            <div class="overflow-x-auto rounded-md font-mono text-xs leading-5">
+                            <div class="overflow-x-auto rounded-[var(--k2b-radius-control)] font-mono text-xs leading-5">
                               <For each={file.rows}>
                                 {(row) =>
                                   row.kind === "gap" ? (

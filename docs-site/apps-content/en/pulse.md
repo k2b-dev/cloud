@@ -803,6 +803,27 @@ an existing path. Text, JSON, and JSONL output contain only ID, name, and path;
 the token is never printed. Move it into the collector's secret store without
 copying it into chat, logs, or shell arguments.
 
+A source also shows refused requests: how many requests with its key Pulse
+refused in the last 24 hours, the last reason as the first failing field path
+(for example `events[3].attributes: expected record`), and when. Pulse counts
+them without a database write per request and stores them every five minutes,
+so the number can lag by up to five minutes. Requests with an unknown or invalid
+key belong to no source and are not counted. A source with an expectation that
+sent nothing in time is **Stale**.
+
+## Read what a base contains
+
+`cld pulse schema <base>`, `GET /api/pulse/bases/:baseId/schema` and the
+`schema.read` Query list the base's metrics with type, unit and dimensions, its
+event kinds with attribute fields (type and fill rate from the newest
+10,000 events of a kind within seven days before its newest event; a kind
+outside that sample shows no fields until you ask for it by name), and its
+state keys. Pass `kind` for the
+five newest entries of one kind. The read uses the base's read views, so
+confidential event data never appears, and it needs read access. Results are
+cached for five minutes; a read of one kind that is not cached counts against
+the hourly SQL quota.
+
 Run `cld pulse --help` for current commands and open **Help** inside Pulse for
 source setup, data types, and recovery.
 
@@ -830,4 +851,20 @@ Every Action except `base.create` targets `pulse.base`. Pass the Base ref as
 `target` and omit `baseId` from `input`. Chat tools and MCP use the flat field
 `base`. Source, saved-query and alert-rule IDs stay in `input` and must belong
 to that Base, including during review. Existing revision and permission checks
-still apply. Queries retain `baseId`; `base.create` acts at the application.
+still apply. `base.create` acts at the application.
+
+Each Query that reads one base exists twice. The app-wide form keeps `baseId`
+in `input` (`sql.run`, `source.list`, `alert.list`, `alert.read`,
+`saved_query.list`). The target form takes the Base ref as `target`
+(`base.sql.run`, `base.source.list`, `base.alert.list`, `base.alert.read`,
+`base.saved_query.list`, `schema.read`). Code may use both; the target form is
+recommended. In both forms a Code page shows base data only to people who may
+read that base. In Code, pass the base's short ID from `base.list`: the visitor
+check reads the base by its short ID and refuses a long UUID
+([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
+Pulse data never appears on a public Code route.
+
+`sql.run` and `base.sql.run` return at most 100 rows, 500 numbers and
+256 KiB per page. A full page carries a cursor; pass it back with the same SQL
+for the next page. Each page runs the SQL again and counts against the hourly
+quota, so use `ORDER BY` for stable pages.

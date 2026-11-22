@@ -41,6 +41,28 @@ app.get("/", c => c.text("x"));`;
     { method: "GET", path: "/", public: false },
   ]);
 });
+test("audience owner-data is an explicit literal option, checked and at runtime alike (G1)", async () => {
+  const source = `import { app } from "@sdk";
+app.get("/report", c => c.text("x"), { audience: "owner-data" });
+app.get("/", c => c.text("x"));`;
+  const result = analyze(source);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints.map((e) => e.route)).toEqual([
+    { method: "GET", path: "/report", page: false, public: false, audience: "owner-data" },
+    { method: "GET", path: "/", page: false, public: false },
+  ]);
+  // A fresh module: the layout test above registered routes on the shared one.
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(`${sdk.runtime}\n// G1`).toString("base64")}`);
+  runtime.app.get("/report", () => new Response(), { audience: "owner-data" });
+  expect(runtime.__codeSdk.entries().map((entry: { route: unknown }) => entry.route)).toEqual([
+    { method: "GET", path: "/report", public: false, audience: "owner-data" },
+  ]);
+  const computed = analyze(`import { app } from "@sdk";
+const audience = "owner-data";
+app.get("/a", c => c.text("x"), { audience });
+app.get("/b", c => c.text("x"), { audience: "everyone" });`);
+  expect(computed.diagnostics.filter((diagnostic) => diagnostic.code === "code_static_route")).toHaveLength(2);
+});
 test("route options other than literal public and layout plain fail closed", () => {
   const options = [
     '{ layout: "full" }',
@@ -182,4 +204,29 @@ test("checked manifests bind route descriptors and public classification", async
     expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, entrypoints: [entry], policyRows: ["public_routes"] }).success).toBe(
       false,
     );
+});
+
+test("checked manifests bind owner-data routes to their own classification", async () => {
+  const { CodeCheckedVersionManifestSchema } = await import("../contracts/code-version");
+  const manifest = {
+    version: 1,
+    entry: "code.ts",
+    entrypoints: [
+      {
+        kind: "route",
+        entrypoint: "route:GET:/",
+        route: { method: "GET", path: "/", public: false, audience: "owner-data" },
+        cron: null,
+        file: "code.ts",
+        line: 1,
+      },
+    ],
+    permissions: [],
+    ai: false,
+    policyRows: [],
+    hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+  };
+  expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBe(false);
+  expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: ["public_routes"] }).success).toBe(false);
+  expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: ["owner_data"] }).success).toBe(true);
 });

@@ -111,7 +111,7 @@ export const CODE_POLICY_ROW_GROUPS: readonly { key: "grpRead" | "grpSilent" | "
   { key: "grpRead", rows: ["read"] },
   { key: "grpSilent", rows: CODE_POLICY_ROWS.filter((row) => row.startsWith("silent_")) },
   { key: "grpAsk", rows: CODE_POLICY_ROWS.filter((row) => row.startsWith("ask_")) },
-  { key: "grpAiNet", rows: ["ai", "ai_chat_you", "internet", "public_routes"] },
+  { key: "grpAiNet", rows: ["ai", "ai_chat_you", "internet", "public_routes", "owner_data"] },
 ];
 
 /** The capability policy each row stands for, as application authors write it. */
@@ -126,7 +126,9 @@ export const codePolicyRowCode = (row: CodePolicyRow): string =>
           ? "http.fetch"
           : row === "public_routes"
             ? "{ public: true }"
-            : row.replace(/^(silent|ask)_/, "$1: ");
+            : row === "owner_data"
+              ? '{ audience: "owner-data" }'
+              : row.replace(/^(silent|ask)_/, "$1: ");
 
 /** Limits shown under Administration › Code › Limits, in this order. */
 export const CODE_LIMIT_KEYS = [
