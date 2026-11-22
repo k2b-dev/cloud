@@ -111,7 +111,7 @@ export default ssr<AuthContext>(async (c) => {
         <MailAdminTabs locale={locale} current="security" />
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 class="text-base font-semibold text-primary">{t.phishingProtection}</h1>
+            <h1 class="text-body font-semibold text-primary">{t.phishingProtection}</h1>
             <p class="mt-1 text-xs text-dimmed">{t.securityDescription}</p>
           </div>
           <MailAdminSecurityActions kind="toolbar" trustedAuthservIds={settingsResult.ok ? settingsResult.data.trustedAuthservIds : null} />
@@ -187,10 +187,10 @@ export default ssr<AuthContext>(async (c) => {
                       <p class="truncate text-xs text-primary">
                         {row.assessment.findings.map((finding) => findingText(finding).title).join(" · ") || t.reportedByUser}
                       </p>
-                      <p class="truncate text-[10px] text-dimmed">
+                      <p class="truncate text-meta text-dimmed">
                         {row.assessment.findings.map((finding) => findingText(finding).explanation).join(" · ") || t.noAutomaticWarning}
                       </p>
-                      <p class="font-mono text-[10px] text-dimmed">
+                      <p class="font-mono text-meta text-dimmed">
                         {t.messageAndMailbox({ messageId: row.messageId, mailboxId: row.mailboxId })}
                       </p>
                     </div>
@@ -199,7 +199,7 @@ export default ssr<AuthContext>(async (c) => {
                   return (
                     <div>
                       <p class="font-mono text-xs text-primary">{row.senderAddress ?? t.unknownSender}</p>
-                      {row.senderDomain ? <p class="font-mono text-[10px] text-dimmed">{row.senderDomain}</p> : null}
+                      {row.senderDomain ? <p class="font-mono text-meta text-dimmed">{row.senderDomain}</p> : null}
                     </div>
                   );
                 if (col.id === "reports") return <span class="tabular-nums">{row.reportCount}</span>;
@@ -264,7 +264,7 @@ export default ssr<AuthContext>(async (c) => {
                   return (
                     <div>
                       <p class="font-mono text-xs text-primary">{row.value}</p>
-                      {row.note ? <p class="text-[10px] text-dimmed">{row.note}</p> : null}
+                      {row.note ? <p class="text-meta text-dimmed">{row.note}</p> : null}
                     </div>
                   );
                 if (col.id === "state")

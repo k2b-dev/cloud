@@ -212,6 +212,7 @@ export default function MailRemoteImagesNotice(props: {
             13px text, without a surface. */}
         <div class="flex min-h-[var(--k2b-h-row-2)] items-center gap-3 border border-transparent px-[calc(var(--k2b-gutter)-1px)] py-[calc(0.625rem-1px)] text-[length:var(--k2b-font-size-row)] leading-5 text-secondary max-md:gap-2.5">
           <span
+            // type-scale: allow sign: the notice's symbol sizes with its 32 px tile, as NoticeRow's tile does
             class="grid size-8 shrink-0 place-items-center text-lg max-md:size-7 max-md:text-base"
             style={{ color: props.kind === "always" ? "var(--k2b-reference-image)" : "var(--k2b-success-text)" }}
             aria-hidden="true"

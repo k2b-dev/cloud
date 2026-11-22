@@ -92,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
         <MailAdminTabs locale={locale} current="mailboxes" />
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 class="text-base font-semibold text-primary">{t.adminMailboxes}</h1>
+            <h1 class="text-body font-semibold text-primary">{t.adminMailboxes}</h1>
             <p class="text-xs text-dimmed">{t.adminDescription}</p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -155,7 +155,7 @@ export default ssr<AuthContext>(async (c) => {
                 <div class="flex flex-col gap-2 px-3 py-3">
                   <div>
                     <h2 class="text-xs font-semibold text-primary">{t.activeMailboxes}</h2>
-                    <p class="text-[10px] text-dimmed">
+                    <p class="text-meta text-dimmed">
                       {t.mailboxCount({ count: mailboxes.length, total: operationsResult.data.mailboxCount })}
                     </p>
                   </div>
@@ -182,7 +182,7 @@ export default ssr<AuthContext>(async (c) => {
                           <i class="ti ti-mail text-dimmed" aria-hidden="true" />
                           <div class="min-w-0">
                             <p class="truncate font-medium text-primary">{row.mailboxName}</p>
-                            <p class="truncate font-mono text-[10px] text-dimmed">{row.mailboxId}</p>
+                            <p class="truncate font-mono text-meta text-dimmed">{row.mailboxId}</p>
                           </div>
                         </div>
                       );

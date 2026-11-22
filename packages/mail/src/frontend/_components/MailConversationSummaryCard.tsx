@@ -237,7 +237,7 @@ export default function MailConversationSummaryCard(props: {
               <Show when={props.state.nextStep}>
                 {(next) => (
                   <div class="flex flex-wrap items-center gap-2.5">
-                    <span class="inline-flex items-center gap-1.5 text-[0.78125rem] opacity-85">
+                    <span class="inline-flex items-center gap-1.5 text-meta opacity-85">
                       <i class="ti ti-calendar-due" aria-hidden="true" /> {t().nextStep}
                     </span>
                     <b>{next().text}</b>

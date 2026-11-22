@@ -355,7 +355,7 @@ export default function MailOperationalSettings(props: {
         </span>
         <div class="min-w-64 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <h3 class="text-base font-semibold text-primary">{messages().mailboxStatus}</h3>
+            <h3 class="text-body font-semibold text-primary">{messages().mailboxStatus}</h3>
             <StatusBadge
               tone={healthTone(props.health.health)}
               label={
@@ -670,6 +670,7 @@ export default function MailOperationalSettings(props: {
               <For each={props.bindings.filter((binding) => binding.state !== "revoked")}>
                 {(binding) => (
                   <div class="flex flex-wrap items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-3 py-2.5">
+                    {/* type-scale: allow sign: the server symbol beside a connection */}
                     <i class="ti ti-server text-lg text-dimmed" aria-hidden="true" />
                     <span class="min-w-0 flex-1">
                       <span class="block truncate text-sm font-medium text-primary">
@@ -766,7 +767,7 @@ export default function MailOperationalSettings(props: {
                                 </time>
                                 {item.errorCode ? ` · ${item.errorCode}` : ""}
                               </span>
-                              <span class="block truncate text-[11px] text-dimmed" title={item.id}>
+                              <span class="block truncate text-meta text-dimmed" title={item.id}>
                                 {messages().commandId({ id: item.id })}
                               </span>
                             </span>

@@ -301,7 +301,7 @@ export default function MailComposeIntentPage(props: {
             <i class="ti ti-pencil" aria-hidden="true" />
           </span>
           <div class="min-w-0">
-            <h1 id="mail-compose-intent-title" class="text-lg font-semibold text-primary">
+            <h1 id="mail-compose-intent-title" class="text-lead font-semibold text-primary">
               {t().newMessage}
             </h1>
             <p class="text-sm text-secondary">{t().chooseOwnerDescription}</p>

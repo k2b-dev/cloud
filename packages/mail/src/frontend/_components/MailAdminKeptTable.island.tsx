@@ -53,7 +53,7 @@ export default function MailAdminKeptTable(props: { rows: KeptTableRow[]; emptyT
     <div class="min-w-0">
       <p class="truncate text-primary">{row.senderName ?? row.senderAddress ?? t().unknownSender}</p>
       <Show when={row.senderName && row.senderAddress}>
-        <p class="truncate font-mono text-[10px] text-dimmed">{row.senderAddress}</p>
+        <p class="truncate font-mono text-meta text-dimmed">{row.senderAddress}</p>
       </Show>
     </div>
   );
@@ -61,7 +61,7 @@ export default function MailAdminKeptTable(props: { rows: KeptTableRow[]; emptyT
     <div class="min-w-0">
       <p class="truncate text-secondary">{row.mailboxName}</p>
       <Show when={row.mailboxDeleted}>
-        <p class="text-[10px] text-dimmed">{t().deletedMailbox}</p>
+        <p class="text-meta text-dimmed">{t().deletedMailbox}</p>
       </Show>
     </div>
   );
@@ -177,12 +177,12 @@ export default function MailAdminKeptTable(props: { rows: KeptTableRow[]; emptyT
               <a href={row.href} class="min-w-0 flex-1" data-kept-open>
                 <span class="flex items-baseline justify-between gap-2">
                   <span class="truncate text-sm font-medium text-primary">{row.subject}</span>
-                  <time class="shrink-0 text-[11px] text-dimmed" dateTime={row.dateTime ?? undefined}>
+                  <time class="shrink-0 text-meta text-dimmed" dateTime={row.dateTime ?? undefined}>
                     {row.date}
                   </time>
                 </span>
                 <span class="block truncate text-xs text-secondary">{row.senderName ?? row.senderAddress ?? t().unknownSender}</span>
-                <span class="block truncate text-[11px] text-dimmed">
+                <span class="block truncate text-meta text-dimmed">
                   {row.mailboxName} · {t().keptSince({ date: row.keptSince, name: row.keptBy })}
                 </span>
               </a>

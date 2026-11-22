@@ -75,7 +75,7 @@ export default ssr<AuthContext>(async (c) => {
       <div class="app-rows" data-scroll-preserve="mail-admin-kept">
         <MailAdminTabs locale={locale} current="kept" keptCount={query || cursor ? undefined : page?.total} />
         <div>
-          <h1 class="text-base font-semibold text-primary">{t.title}</h1>
+          <h1 class="text-body font-semibold text-primary">{t.title}</h1>
           <p class="mt-1 max-w-3xl text-xs text-dimmed">{t.description}</p>
         </div>
 

@@ -61,7 +61,7 @@ export default function MailAdminKeptDetail(props: {
     <article class="flex max-w-4xl flex-col gap-6" data-kept-detail>
       <header class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
-          <h1 class="text-lg font-semibold text-primary">{props.conversation.subject?.trim() || t().noSubject}</h1>
+          <h1 class="text-lead font-semibold text-primary">{props.conversation.subject?.trim() || t().noSubject}</h1>
           <p class="mt-1 flex items-center gap-1.5 text-xs text-secondary" data-kept-since>
             <i class="ti ti-lock text-dimmed" aria-hidden="true" />
             {t().keptSince({
@@ -124,7 +124,7 @@ export default function MailAdminKeptDetail(props: {
                 </dd>
                 <Show when={message.messageId}>
                   <dt class="text-dimmed">{t().messageIdHeader}</dt>
-                  <dd class="break-all font-mono text-[11px] text-dimmed">{message.messageId}</dd>
+                  <dd class="break-all font-mono text-meta text-dimmed">{message.messageId}</dd>
                 </Show>
               </dl>
               {message.text ? (

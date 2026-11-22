@@ -11,7 +11,7 @@ export function MailTemplateToken(props: { value: string; muted?: boolean }) {
   return (
     <button
       type="button"
-      class={`focus-ui inline-flex items-center gap-1 rounded bg-[var(--ui-surface)] px-1.5 py-0.5 font-mono text-[11px] transition-colors hover:bg-[var(--ui-hover)] ${
+      class={`focus-ui inline-flex items-center gap-1 rounded bg-[var(--ui-surface)] px-1.5 py-0.5 font-mono text-meta transition-colors hover:bg-[var(--ui-hover)] ${
         props.muted ? "text-dimmed" : "text-primary"
       }`}
       aria-label={wasCopied() ? messages().copiedValue({ value: props.value }) : messages().copyValue({ value: props.value })}

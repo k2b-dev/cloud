@@ -37,7 +37,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: mailbox.data.name, href: `/app/mail/${mailboxShortId}` }, { title }]}
     >
       <main class="mx-auto max-w-4xl space-y-4 p-4" data-print-region>
-        <h1 class="text-xl font-semibold">{title}</h1>
+        <h1 class="text-lead font-semibold">{title}</h1>
         <p class="text-secondary">{t.retiredRuleHistoryDescription}</p>
         <form method="get" class="flex gap-2">
           <label for="mail-rule-history-day">
@@ -73,7 +73,7 @@ export default ssr<AuthContext>(async (c) => {
         <Show when={runs.ok && runs.data}>
           {(history) => (
             <section class="space-y-3">
-              <h2 class="text-lg font-semibold">{t.retiredRuleHistoryEarlierRuns}</h2>
+              <h2 class="text-lead font-semibold">{t.retiredRuleHistoryEarlierRuns}</h2>
               <For each={history().items}>
                 {(run) => (
                   <article class="rounded border border-default p-3">

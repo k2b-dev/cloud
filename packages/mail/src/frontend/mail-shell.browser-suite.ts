@@ -1758,8 +1758,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(flow.find((area) => area.area === "list")?.scrolls, `${state}: the list scrolls`).toBe(state === "split");
             expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
             // The flat kinds of the shared check (short edge, near-double line, grip off centre, type role) on Mail's own
-            // areas, list and reader (data-layout-area). The sidebar and the head are @k2b/ui primitives whose type the
-            // type-role lane moves to the roles; widen this root to "main" when it has landed.
+            // areas, list and reader (data-layout-area). The sidebar's @k2b/ui rows still have off-role line heights
+            // (13/18, meta 12/12); widen this root to "main" when the type-role lane has moved them.
             expect((await page.evaluate(layoutProblems, { root: ".mail-split-panes", flat: true })).problems).toEqual([]);
             // The line between list and reader is one sharp pixel: it starts on a whole pixel and is not transformed.
             const handleLine = await page.evaluate(() => {
