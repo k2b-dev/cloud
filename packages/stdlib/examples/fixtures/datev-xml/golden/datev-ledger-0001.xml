@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LedgerImport xmlns="http://xml.datev.de/bedi/tps/ledger/v060" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://xml.datev.de/bedi/tps/ledger/v060 Belegverwaltung_online_ledger_import_v060.xsd" version="6.0" generator_info="Muster GmbH" generating_system="Example Software" xml_data="Kopie nur zur Verbuchung berechtigt nicht zum Vorsteuerabzug">
+  <consolidate consolidatedAmount="129.70" consolidatedDate="2026-10-14" consolidatedInvoiceId="R-2026-0815" consolidatedCurrencyCode="EUR" consolidatedDeliveryDate="2026-10-10">
+    <accountsPayableLedger>
+      <date>2026-10-14</date>
+      <amount>119.00</amount>
+      <costCategoryId>100</costCategoryId>
+      <tax>19.00</tax>
+      <currencyCode>EUR</currencyCode>
+      <invoiceId>R-2026-0815</invoiceId>
+      <bookingText>Büromaterial 19 %</bookingText>
+      <iban>DE89370400440532013000</iban>
+      <dueDate>2026-10-28</dueDate>
+      <deliveryDate>2026-10-10</deliveryDate>
+      <supplierName>Bürobedarf Müller &amp; Söhne</supplierName>
+      <supplierCity>Nürnberg</supplierCity>
+    </accountsPayableLedger>
+    <accountsPayableLedger>
+      <date>2026-10-14</date>
+      <amount>10.70</amount>
+      <costCategoryId>100</costCategoryId>
+      <tax>7.00</tax>
+      <currencyCode>EUR</currencyCode>
+      <invoiceId>R-2026-0815</invoiceId>
+      <bookingText>Fachbuch 7 %</bookingText>
+      <iban>DE89370400440532013000</iban>
+      <dueDate>2026-10-28</dueDate>
+      <deliveryDate>2026-10-10</deliveryDate>
+      <supplierName>Bürobedarf Müller &amp; Söhne</supplierName>
+      <supplierCity>Nürnberg</supplierCity>
+    </accountsPayableLedger>
+  </consolidate>
+</LedgerImport>

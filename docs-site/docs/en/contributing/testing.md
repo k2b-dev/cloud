@@ -142,6 +142,17 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Build shared fixtures outside test deadlines
+
+Bun gives each test 5 s unless the test sets its own timeout. A fixture that
+several tests share and that starts its own process, such as a packed CLI
+plugin or a bundle, is built once at module scope. Its cost then stays
+outside every test's deadline, and the deadline covers only the steps the
+test checks. `packages/cloud-cli/src/served-plugins.test.ts` and
+`plugins.test.ts` pack the echo plugin once at the top of the file. Installing
+a plugin from a directory reads the directory in place, so every test can use
+the same build.
+
 ## Pin the clock
 
 Tests that render dates use a fixed instant. In behavior tests, use
@@ -1356,6 +1367,13 @@ the tests, CI waits up to 90 seconds for `/jmap/session` to return `200` (the
 measured 60-second startup plus 30 seconds of reserve). Nightly uses the same
 server and readiness check in each Postgres matrix entry.
 
+The path-filtered `stdlib` job runs when `packages/stdlib` changed. It checks
+the finance generators of `@k2b/stdlib` against independent validators: the
+EN16931 Schematron with Saxon on the runner's Java, a Python cross-check,
+DATEV's pinned schemas, and original CII invoices. The scripts download their
+pinned inputs and verify their SHA-256. The unit tests of `@k2b/stdlib` run in
+the `unit` shards; its DATEV schema tests also fetch the pinned DATEV archives.
+
 The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
 fixture. UI tests run in the existing unfiltered `unit` shards, including the
 package's test parts, behavior suite, standalone fixture render test, and
@@ -1465,7 +1483,7 @@ One third of the job limit stays in reserve because setup and GitHub's job
 finalization count against it. Finalization took up to about 5 minutes during
 a GitHub Actions incident.
 
-The `packed` job packs `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` with
+The `packed` job packs `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, `@k2b/editor`, and `@k2b/stdlib` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
 fresh project outside the workspace, typechecks the public source, builds a
 page with an island using the installed production build script, and starts
@@ -1715,7 +1733,7 @@ step from `ci.yml` against these results. Like the runner, it needs `jq` on
 
 The gate also builds the production bundle of every application whose package
 changed, and of every application when `packages/cloud`, `packages/ssr`,
-`packages/ui`, or another shared input changed. The production build rejects code that
+`packages/stdlib`, `packages/ui`, or another shared input changed. The production build rejects code that
 development and the tests accept, such as a Bun builtin imported into browser
 code. Build one application the same way with:
 

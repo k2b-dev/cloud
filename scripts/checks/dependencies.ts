@@ -51,7 +51,14 @@ export const rule: Rule = {
     if (root.dependencies && Object.keys(root.dependencies).length > 0) {
       report("package.json", "root dependencies must not provide packages to workspaces through hoisting");
     }
+    const workspaces = workspacePackages(workspaceRoot).map((workspace) => {
+      const file = join(workspace, "package.json");
+      return { file, pkg: readPackage(join(workspaceRoot, file)) };
+    });
+    const workspaceVersions = new Map(workspaces.flatMap(({ pkg }) => (pkg.name ? [[pkg.name, pkg.version] as const] : [])));
     for (const [name, spec] of Object.entries(root.devDependencies ?? {})) {
+      // The private root uses a workspace library (`@k2b/stdlib` in scripts) from the checkout.
+      if (spec === "workspace:*" && workspaceVersions.has(name)) continue;
       if (!exactVersion.test(spec)) report("package.json", `devDependencies.${name} must use an exact version`);
       reportCatalogDrift("package.json", `devDependencies.${name}`, name, spec);
     }
@@ -63,11 +70,6 @@ export const rule: Rule = {
       if (!exactVersion.test(version)) report("package.json", `catalog entry ${name} must use an exact version`);
     }
 
-    const workspaces = workspacePackages(workspaceRoot).map((workspace) => {
-      const file = join(workspace, "package.json");
-      return { file, pkg: readPackage(join(workspaceRoot, file)) };
-    });
-    const workspaceVersions = new Map(workspaces.flatMap(({ pkg }) => (pkg.name ? [[pkg.name, pkg.version] as const] : [])));
     const workspaceNames = new Set(workspaceVersions.keys());
     for (const { file, pkg } of workspaces) {
       const published = pkg.private !== true;

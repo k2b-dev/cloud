@@ -36,6 +36,11 @@ try {
     run([npm, "pack", "--ignore-scripts", "--json", "--silent", "--pack-destination", packDir], resolve(packageRoot, "../ssr")),
   ) as Array<{ filename: string }>;
   const ssrArchive = join(packDir, ssrPacked[0]?.filename ?? "");
+  // The pinned @k2b/stdlib is the workspace version: a stdlib release bumps this pin and releases together with @k2b/ui.
+  const stdlibPacked = JSON.parse(
+    run([npm, "pack", "--ignore-scripts", "--json", "--silent", "--pack-destination", packDir], resolve(packageRoot, "../stdlib")),
+  ) as Array<{ filename: string }>;
+  const stdlibArchive = join(packDir, stdlibPacked[0]?.filename ?? "");
   run([tar, "-xzf", archive, "-C", unpackDir], packageRoot);
 
   const extractedPackage = join(unpackDir, "package");
@@ -87,7 +92,7 @@ try {
     JSON.stringify({
       private: true,
       type: "module",
-      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies, "@k2b/ssr": ssrArchive },
+      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies, "@k2b/ssr": ssrArchive, "@k2b/stdlib": stdlibArchive },
     }),
   );
   // The consumer lives outside the repository and does not inherit its bunfig.toml.

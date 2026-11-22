@@ -1,4 +1,4 @@
-export const packedSiblings = ["@k2b/ui", "@k2b/ssr", "@k2b/editor"] as const;
+export const packedSiblings = ["@k2b/ui", "@k2b/ssr", "@k2b/editor", "@k2b/stdlib"] as const;
 type Sibling = (typeof packedSiblings)[number];
 type SiblingValues = Record<Sibling, string>;
 export type PackedConsumerMode = "workspace" | "release";
@@ -38,5 +38,6 @@ export const resolvePackedConsumerPins = async (input: {
     "@k2b/ui": await resolvePin("@k2b/ui"),
     "@k2b/ssr": await resolvePin("@k2b/ssr"),
     "@k2b/editor": await resolvePin("@k2b/editor"),
+    "@k2b/stdlib": await resolvePin("@k2b/stdlib"),
   };
 };
