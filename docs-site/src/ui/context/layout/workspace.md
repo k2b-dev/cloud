@@ -165,6 +165,16 @@ The lead statement keeps its place and size in every state. The status row
 draws no line above itself, because the head line is there; `line` adds a
 hairline below it only where the list below has no column head.
 
+From 768 px the filters never scroll sideways and are never cut (K15). They
+keep their width while the key figures or a disturbance give way; then the
+filters that do not fit fold behind "Filters +n". The button opens the same
+filters, with their state and their own menus, in a panel below the row; the
+row moves nothing. Escape, a press outside, or focus leaving the panel closes
+it, and Escape returns focus to the button. The fold is measured before the
+page paints, so the server frame is the final frame. On a phone the filters
+take their own line and scroll sideways with a fade at the edge where they
+continue. Pass filters up to 36 px tall, such as `FilterChip`.
+
 ### Reading column
 
 A column of running text, such as a note, has neither head nor status row
