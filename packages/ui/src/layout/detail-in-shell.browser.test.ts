@@ -12,7 +12,8 @@ import { layoutProblems } from "../layout-check";
 // - K9, K12: the Detail column is 380 px and flush with the workspace's top, end, and bottom edges;
 // - K1: Main's head and the Detail's head are exactly 56 px and share one head line, the head row never wraps;
 // - K2, K5a: the panel's text starts 20 px after the column's hairline, its topic lines run from edge to edge;
-// - nothing overlaps, spills, is cut, or draws a double line, and no container scrolls sideways.
+// - nothing overlaps, spills, is cut, or draws a double line, and no container scrolls sideways. A table in a narrow
+//   column gives way by column priority (3 below 560 px, 2 below 420 px), as the apps do; it never scrolls.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "detail-in-shell.fixture.ts");
@@ -52,7 +53,7 @@ render(() => createComponent(AppWorkspace, { resizable: true, get children() { r
   createComponent(AppWorkspace.Content, { get children() { return [
     createComponent(AppWorkspace.Main, { get children() { return createComponent(DataTable, {
       ariaLabel: "People", rows: people, getRowId: (row) => row.id, selectedRowId: "p0",
-      columns: [{ id: "name", header: "Name", value: "name" }, { id: "email", header: "Email", value: "email" }, { id: "updated", header: "Updated", value: "updated" }],
+      columns: [{ id: "name", header: "Name", value: "name" }, { id: "email", header: "Email", value: "email" }, { id: "updated", header: "Updated", value: "updated", priority: 3 }],
     }); } }),
     createComponent(AppWorkspace.Detail, { id: "person", open: true, get children() { return createComponent(DetailPanel, { get children() { return [
       createComponent(DetailPanel.Header, { title: people[0].name }),
@@ -60,7 +61,7 @@ render(() => createComponent(AppWorkspace, { resizable: true, get children() { r
         createComponent(Section, { title: "Contact", get children() { return element("p", people[0].email + ", +49 30 1234567"); } }),
         createComponent(Section, { title: "Orders", get children() { return createComponent(DataTable, {
           ariaLabel: "Orders", rows: orders, getRowId: (row) => row.id,
-          columns: [{ id: "order", header: "Order", value: "order" }, { id: "date", header: "Date", value: "date" }, { id: "amount", header: "Amount", value: "amount" }],
+          columns: [{ id: "order", header: "Order", value: "order" }, { id: "date", header: "Date", value: "date", priority: 2 }, { id: "amount", header: "Amount", value: "amount" }],
         }); } }),
         createComponent(Section, { title: "Notes", get children() {
           return Array.from({ length: many ? 12 : 1 }, (_, index) => element("p", "Prefers mail in the morning; call before noon. Note " + (index + 1) + "."));
