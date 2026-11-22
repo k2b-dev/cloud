@@ -1646,7 +1646,7 @@ describe("text editor presentation", () => {
 
     expect(activeHtml).toContain("Review mail · waiting");
     expect(activeHtml).toContain('class="group w-full min-w-0 text-xs"');
-    expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
+    expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md not-dark:bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
     expect(activeHtml).not.toContain("Waiting for Gustav to continue");

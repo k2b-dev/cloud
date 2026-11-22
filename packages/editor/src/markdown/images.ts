@@ -50,8 +50,8 @@ class ImageWidget extends WidgetType {
     // the user's `=WxH` actually wins.
     img.className =
       this.width || this.height
-        ? "block rounded border border-gray-200 dark:border-gray-700"
-        : "block max-h-[400px] rounded border border-gray-200 dark:border-gray-700";
+        ? "block rounded border not-dark:border-gray-200 dark:border-gray-700"
+        : "block max-h-[400px] rounded border not-dark:border-gray-200 dark:border-gray-700";
     img.src = this.url;
     img.alt = this.alt || "";
     if (this.title !== null) img.title = this.title;
@@ -70,7 +70,7 @@ class ImageWidget extends WidgetType {
 
     if (this.alt) {
       const caption = document.createElement("figcaption");
-      caption.className = "text-sm text-gray-500 dark:text-gray-400 mt-2 italic";
+      caption.className = "text-sm not-dark:text-gray-500 dark:text-gray-400 mt-2 italic";
       caption.textContent = this.alt;
       figure.appendChild(img);
       figure.appendChild(caption);

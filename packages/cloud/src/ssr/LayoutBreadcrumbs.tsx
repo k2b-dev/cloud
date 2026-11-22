@@ -19,13 +19,13 @@ export default function LayoutBreadcrumbs(props: Props) {
   });
 
   return (
-    <nav class="flex items-center gap-1 sm:gap-2 min-w-0 text-xs">
+    <nav class="flex items-center max-sm:gap-1 sm:gap-2 min-w-0 text-xs">
       <For each={breadcrumbs()}>
         {(crumb, i) => {
           const isLast = () => i() === breadcrumbs().length - 1;
           return (
             <>
-              {i() > 0 && <span class="text-zinc-400 dark:text-zinc-600 text-xs">/</span>}
+              {i() > 0 && <span class="not-dark:text-zinc-400 dark:text-zinc-600 text-xs">/</span>}
               {crumb.href && !isLast() ? (
                 <a href={crumb.href} class="text-dimmed hover:text-primary truncate">
                   {crumb.title}

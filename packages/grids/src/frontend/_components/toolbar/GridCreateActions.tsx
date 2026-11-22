@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Dropdown, prompts, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form, PublicGridRecord } from "../../../api/public-dto";
 import { isUserEditable } from "../fields/field-prompt-schema";
@@ -34,11 +34,11 @@ const activeFormsOf = (props: Pick<Props, "canSubmitForms" | "forms">): Form[] =
 export const offersGridCreateActions = (props: CreateAccess): boolean =>
   props.canWrite && (activeFormsOf(props).length > 0 || !props.canDirectWrite || !props.disableDirectInsert);
 
-export function GridCreateActions(props: Props) {
+/** The two ways to add a record, shared by the toolbar buttons and the head's main action. */
+const createGridCreate = (props: Props) => {
   const locale = useLocale();
   const t = () => toolbarMessages.resolve([locale()]).t;
   const activeForms = createMemo(() => activeFormsOf(props));
-  const blockedReason = () => (props.canSubmitForms ? t().activeFormRequired : t().changesUnavailable);
   const [creating, setCreating] = createSignal(false);
   const saveRecord = async (payload: Record<string, unknown>) => {
     setCreating(true);
@@ -78,6 +78,57 @@ export function GridCreateActions(props: Props) {
       onSubmitted: () => props.onRecordsChanged?.(),
       dateConfig: props.dateConfig,
     });
+  const direct = () => props.canWrite && props.canDirectWrite && !props.disableDirectInsert;
+  return { t, activeForms, creating, addRecord, submitForm, direct };
+};
+
+/**
+ * Takes over the head's main action "Add record" (K6, K8): a menu when forms add records too, else the record dialog.
+ * It renders nothing itself; the head's server link stays the control. A page opened with `?new=1`, which the link
+ * targets before this island runs, starts the same flow once and drops the parameter.
+ */
+export function GridCreatePrimary(props: Props & { param: string }) {
+  const create = createGridCreate(props);
+  const items = () => [
+    ...(create.direct() ? [{ icon: "ti ti-plus", label: create.t().addRecord, action: () => void create.addRecord() }] : []),
+    ...create.activeForms().map((form) => ({ icon: "ti ti-forms", label: form.name, action: () => void create.submitForm(form) })),
+  ];
+  const primary = () => document.querySelector<HTMLElement>("[data-workspace-primary]");
+  const start = () => {
+    const only = items().length === 1 ? items()[0] : undefined;
+    if (only) only.action();
+    else if (items().length > 1) primary()?.click();
+  };
+  onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(props.param) === "1") {
+      url.searchParams.delete(props.param);
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      queueMicrotask(start);
+    }
+    const target = primary();
+    if (!target) return;
+    // Decided at click time: with one way the click opens it; with more, the attached menu takes the click.
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (items().length !== 1) return;
+      event.preventDefault();
+      start();
+    };
+    target.addEventListener("click", onClick);
+    onCleanup(() => target.removeEventListener("click", onClick));
+  });
+  return (
+    <Show when={items().length > 1}>
+      <Dropdown.Root position="bottom-right" attach={primary} items={items()} />
+    </Show>
+  );
+}
+
+export function GridCreateActions(props: Props & { variant?: "primary" | "secondary" }) {
+  const { t, activeForms, creating, addRecord, submitForm } = createGridCreate(props);
+  const variant = () => props.variant ?? "primary";
+  const blockedReason = () => (props.canSubmitForms ? t().activeFormRequired : t().changesUnavailable);
 
   return (
     <Show when={props.canWrite}>
@@ -86,7 +137,7 @@ export function GridCreateActions(props: Props) {
         fallback={
           <>
             <Show when={props.canDirectWrite && !props.disableDirectInsert}>
-              <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={creating()}>
+              <Button variant={variant()} size="sm" type="button" onClick={addRecord} disabled={creating()}>
                 <Show when={creating()} fallback={<i class="ti ti-plus" />}>
                   <i class="ti ti-loader-2 animate-spin" />
                 </Show>
@@ -120,7 +171,7 @@ export function GridCreateActions(props: Props) {
                 action: () => void submitForm(form),
               }))}
             >
-              <Dropdown.Trigger variant="primary" size="sm">
+              <Dropdown.Trigger variant={variant()} size="sm">
                 <i class="ti ti-forms" />
                 {t().addWithForm}
                 <i class="ti ti-chevron-down text-[10px] opacity-60" />
@@ -129,14 +180,14 @@ export function GridCreateActions(props: Props) {
           }
         >
           {(form) => (
-            <Button variant="primary" size="sm" type="button" onClick={() => void submitForm(form())}>
+            <Button variant={variant()} size="sm" type="button" onClick={() => void submitForm(form())}>
               <i class="ti ti-forms" />
               {t().addWithForm}
             </Button>
           )}
         </Show>
         <Show when={props.canDirectWrite && !props.disableDirectInsert}>
-          <Button variant="primary" size="sm" type="button" onClick={addRecord} disabled={creating()}>
+          <Button variant={variant()} size="sm" type="button" onClick={addRecord} disabled={creating()}>
             <Show when={creating()} fallback={<i class="ti ti-plus" />}>
               <i class="ti ti-loader-2 animate-spin" />
             </Show>

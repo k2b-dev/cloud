@@ -182,7 +182,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("every pane has the same head: title 14/600, meta 12/400, at most two actions and “…” with what Cloud can do", async () => {
+  test("every pane has the same head, a 52 px status row: title 18/600, facts 13/400, at most two actions and “…”", async () => {
     const { page } = await openPage();
     try {
       await open(page, "report");
@@ -194,6 +194,9 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
           return `${Number.parseFloat(node.fontSize)}/${node.fontWeight}`;
         };
         return {
+          // Gustav flat: the status row under the tabs, with the hairline it owns.
+          height: element.getBoundingClientRect().height,
+          line: getComputedStyle(element).borderBottomWidth,
           title: style(".artifact-pane__title"),
           meta: style(".artifact-pane__meta"),
           // Download and "…": at most two actions beside the title.
@@ -202,7 +205,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
           ).length,
         };
       });
-      expect(type).toEqual({ title: "14/600", meta: "12/400", actions: 2 });
+      expect(type).toEqual({ height: 52, line: "1px", title: "18/600", meta: "13/400", actions: 2 });
       await head.locator(".artifact-pane__more").click();
       const labels = await page.getByRole("menuitem").allTextContents();
       for (const label of [

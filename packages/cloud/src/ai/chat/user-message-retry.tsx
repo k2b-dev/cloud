@@ -41,7 +41,7 @@ export const openModifyRetryDialog = (
             onSubmit={retry}
           />
           <Show when={retryMutation.error()}>
-            <p class="text-xs text-red-600 dark:text-red-400" role="alert">
+            <p class="text-xs not-dark:text-red-600 dark:text-red-400" role="alert">
               {t.retryFailed}
             </p>
           </Show>

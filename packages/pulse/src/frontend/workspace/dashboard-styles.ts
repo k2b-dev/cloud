@@ -30,7 +30,6 @@ export const dashboardStyles = `
 .pulse-dashboard__stats .k2b-stat-cell__label{padding-right:32px}
 .pulse-dashboard__number-sql{position:absolute;top:8px;right:8px}
 .pulse-dashboard__stats .k2b-stat-cell__value{font-size:28px;line-height:1.2;letter-spacing:-.02em}
-@container k2b-app-area (min-width:1024px){.pulse-dashboard__heading{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
 @container k2b-app-area (max-width:767px){.pulse-dashboard__heading h1{font-size:30px;letter-spacing:-.025em}}
 .pulse-dashboard__panel-head{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:28px;font-weight:600}
 .pulse-dashboard__panel-head h3{min-width:0;overflow-wrap:anywhere;font-size:16px}

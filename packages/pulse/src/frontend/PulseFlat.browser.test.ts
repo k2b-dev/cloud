@@ -1,0 +1,245 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { launchBrowser } from "../../../ui/test/browser";
+import { layoutProblems } from "../../../ui/test/head-overlap";
+import {
+  buildWorkspaceHarness,
+  flatAccess,
+  flatKeys,
+  flatSchema,
+  flatStates,
+  origin,
+  pauseWorkspaceClock,
+  troubledSources,
+} from "./PulseWorkspace.browser-fixture";
+import { buildPulseWorkspaceHref } from "./workspace/routes";
+import { sqlTestLimits } from "./workspace/sql-test-fixtures";
+import type { PulseWorkspaceProps } from "./workspace/types";
+
+// The flat base page in every state of the concept, at phone and desktop width: nothing overlaps, spills, is cut,
+// draws a double line, or moves when a scrollbar appears. Set PULSE_FLAT_SHOTS to a folder to keep light screenshots.
+type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+let browser: Browser;
+let page: Awaited<ReturnType<typeof buildWorkspaceHarness>>;
+const shots = process.env.PULSE_FLAT_SHOTS;
+
+beforeAll(async () => {
+  page = await buildWorkspaceHarness();
+  browser = await launchBrowser();
+  if (shots) mkdirSync(shots, { recursive: true });
+}, 60_000);
+
+afterAll(async () => {
+  await browser?.close();
+});
+
+const widths = [390, 1440] as const;
+const answer = (url: string, many: boolean) => {
+  const path = new URL(url).pathname;
+  if (path.endsWith("/schema")) return { status: 200, json: flatSchema(new URL(url).searchParams.get("kind"), many) };
+  if (path.endsWith("/access")) return { status: 200, json: flatAccess };
+  if (path.endsWith("/api-keys")) return { status: 200, json: path.includes("Src201") ? flatKeys : [] };
+  if (path.endsWith("/scrapes")) return { status: 200, json: [] };
+  return { status: 500, json: { code: "UNEXPECTED" } };
+};
+const open = async (
+  width: number,
+  props: PulseWorkspaceProps,
+  options: { many?: boolean; hold?: boolean; touch?: boolean } = {},
+  on: Browser = browser,
+) => {
+  const touch = options.touch ?? width < 768;
+  const tab = await on.newPage({ viewport: { width, height: touch ? 844 : 900 }, isMobile: touch, hasTouch: touch });
+  await pauseWorkspaceClock(tab.clock, new Date(props.initialNow));
+  await tab.route(`${origin}/api/**`, (route) => route.fulfill(answer(route.request().url(), options.many ?? false)));
+  let served = false;
+  await tab.route(`${origin}/app/pulse/**`, async (route) => {
+    // The first document is the page; a later request is a base switch that stays open while `hold` is set.
+    if (served && options.hold) return;
+    served = true;
+    await route.fulfill({ contentType: "text/html", body: page(props, "de") });
+  });
+  await tab.goto(`${origin}${buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: props.initialRouteState })}`);
+  await tab.waitForSelector("#root[data-mounted='true']");
+  await tab.evaluate(() => document.fonts.ready);
+  return tab;
+};
+// Findings inside building blocks go to their owning lanes and are left out here (see the PR text):
+// the detail panel's header actions and collapsible group sections reach 8 px past the 7 px slack (K5),
+// and the status row cuts its key figures at 390 px instead of letting them give way (K6).
+const blockFindings =
+  ".k2b-detail-panel__header, .k2b-detail-panel__group, .k2b-status-row__middle, .k2b-avatar-stack, [data-layout-check='skip']";
+const problems = async (tab: Awaited<ReturnType<typeof open>>) =>
+  (await tab.evaluate(layoutProblems, { root: "#root", ignore: blockFindings })).problems;
+const shoot = async (tab: Awaited<ReturnType<typeof open>>, name: string, width: number) => {
+  if (shots) await tab.screenshot({ path: `${shots}/${name}-light-${width}.png` });
+};
+const many = (props: PulseWorkspaceProps): PulseWorkspaceProps => ({
+  ...props,
+  initialSources: [
+    ...props.initialSources,
+    ...Array.from({ length: 30 }, (_, index) => ({
+      ...troubledSources[2]!,
+      id: `Mny${String(index).padStart(3, "0")}`,
+      name: `Kurzlink ${index + 1}`,
+    })),
+  ],
+});
+
+// Required since 21.11. ~22:30Z: classic scrollbars that take layout space, at 390/768/1100/1440 px (desktop windows
+// without touch), with the detail column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Chromium
+// only: the flag belongs to Chromium's launch; the WebKit run keeps the checks above.
+const classic = process.env.TEST_BROWSER === "webkit" ? describe.skip : describe;
+classic("Pulse flat base page with classic scrollbars", () => {
+  let scrollbars: Browser;
+  beforeAll(async () => {
+    scrollbars = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  }, 60_000);
+  afterAll(async () => {
+    await scrollbars?.close();
+  });
+  for (const width of [390, 768, 1100, 1440]) {
+    test(`${width} px with classic scrollbars: Sources with the detail open and Data, with many rows`, async () => {
+      const cases: [PulseWorkspaceProps, string, { many?: boolean }][] = [
+        [many(flatStates.error), "Anfragen abgelehnt, zuletzt", {}],
+        [flatStates.data, "/sammlung/vasen", { many: true }],
+      ];
+      for (const [props, text, options] of cases) {
+        // A narrow desktop window, never touch: with isMobile or hasTouch Chromium uses overlay scrollbars that take no room.
+        const tab = await open(width, props, { ...options, touch: false }, scrollbars);
+        // From 768 to 1023 px the detail is a drawer that waits closed until Details opens it (shell contract).
+        if (width >= 768 && width < 1024 && props !== flatStates.data)
+          await tab.locator("[data-app-workspace-detail-toggle]").first().click();
+        await tab.getByText(text, { exact: false }).filter({ visible: true }).first().waitFor();
+        // The run only measures something when a scrollbar really takes room.
+        const gutter = await tab.evaluate(() => {
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+          document.body.append(probe);
+          const room = probe.offsetWidth - probe.clientWidth;
+          probe.remove();
+          return room;
+        });
+        expect(gutter).toBeGreaterThan(0);
+        if (width === 1100 && props !== flatStates.data) expect(await tab.locator(".k2b-detail-panel").count()).toBeGreaterThan(0);
+        expect({ width, problems: await problems(tab) }).toEqual({ width, problems: [] });
+        await tab.close();
+      }
+    }, 60_000);
+  }
+});
+
+describe("Pulse flat base page", () => {
+  for (const width of widths) {
+    test(`${width} px: Sources with a source in detail, with few and with many rows`, async () => {
+      for (const props of [flatStates.error, many(flatStates.error)]) {
+        const tab = await open(width, props);
+        await tab.getByText("Anfragen abgelehnt, zuletzt", { exact: false }).first().waitFor();
+        if (props === flatStates.error) await shoot(tab, "02-quelle-fehler", width);
+        expect(await problems(tab)).toEqual([]);
+        await tab.close();
+      }
+    }, 60_000);
+
+    test(`${width} px: Data with few and with many kinds and fields`, async () => {
+      for (const rows of [false, true]) {
+        const tab = await open(width, flatStates.data, { many: rows });
+        await tab.getByText("Stichprobe", { exact: false }).first().waitFor();
+        await tab.getByText("/sammlung/vasen").first().waitFor();
+        if (!rows) await shoot(tab, "06-daten", width);
+        expect(await problems(tab)).toEqual([]);
+        await tab.close();
+      }
+    }, 60_000);
+
+    test(`${width} px: every other state keeps the head and draws no layout problem`, async () => {
+      const states: [string, PulseWorkspaceProps, string][] = [
+        ["01-quellen-gesund", flatStates.healthy, "Alle 4 Quellen empfangen"],
+        ["03-base-leer", flatStates.empty, "Noch keine Daten in „Lager“"],
+        ["04-kein-zugriff", flatStates.noAccess, "Diese Basis ist nicht mit dir geteilt."],
+        ["07-nutzung", flatStates.usage, "Shop-Auswertung"],
+        ["09-nur-lesen", flatStates.readOnly, "Du kannst diese Basis lesen."],
+        ["10-speicher-weg", flatStates.storeDown, "Datenspeicher nicht erreichbar"],
+        ["12-alarm", flatStates.alert, "Mit Gustav anpassen"],
+        ["11-sql-konsole", { ...flatStates.sql, initialSql: { limits: sqlTestLimits, query: null, error: null } }, "Beispiel einsetzen"],
+      ];
+      for (const [name, props, text] of states) {
+        const tab = await open(width, props);
+        await tab.getByText(text, { exact: false }).first().waitFor();
+        await shoot(tab, name, width);
+        expect({ name, problems: await problems(tab) }).toEqual({ name, problems: [] });
+        await tab.close();
+      }
+    }, 120_000);
+  }
+
+  test("768 and 1920 px: Sources with detail and Data fit the tablet drawer and the wide screen", async () => {
+    for (const width of [768, 1920]) {
+      for (const props of [flatStates.error, flatStates.data]) {
+        const tab = await open(width, props);
+        // At 768 px the detail is a drawer over the list; the list is what must fit.
+        await tab
+          .getByText(props === flatStates.data ? "/sammlung/vasen" : "Shop-Backend")
+          .first()
+          .waitFor();
+        expect({ width, view: props.initialRouteState.view, problems: await problems(tab) }).toEqual({
+          width,
+          view: props.initialRouteState.view,
+          problems: [],
+        });
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("the head keeps its height in every state, also without tabs", async () => {
+    const heights: number[] = [];
+    for (const props of [flatStates.healthy, flatStates.noAccess, flatStates.data, flatStates.storeDown]) {
+      const tab = await open(1440, props);
+      // The page's own condition: loading placeholders animate on, so the page never "settles" in every state.
+      await tab.locator(".k2b-app-workspace__head").first().waitFor();
+      heights.push(
+        await tab
+          .locator(".k2b-app-workspace__head")
+          .first()
+          .evaluate((head) => head.getBoundingClientRect().height),
+      );
+      await tab.close();
+    }
+    expect(new Set(heights).size).toBe(1);
+  }, 60_000);
+
+  test("states say what matters: attention order, read-only without the main action, no access without the base", async () => {
+    const error = await open(1440, flatStates.error);
+    const rows = await error.locator(".pulse-attention .pulse-row-cell__title").allTextContents();
+    expect(rows).toEqual([
+      "Website-Server: seit 14:01 kommt nichts an",
+      "Alarm „Kontaktanfragen zu niedrig“ ausgelöst",
+      "Shop-Backend ist veraltet",
+    ]);
+    expect(await error.getByText("2 Quellen brauchen Aufmerksamkeit").count()).toBe(1);
+    await error.close();
+    const readOnly = await open(1440, flatStates.readOnly);
+    expect(await readOnly.getByRole("button", { name: "Quelle anlegen" }).count()).toBe(0);
+    await readOnly.close();
+    const denied = await open(1440, flatStates.noAccess);
+    expect(await denied.getByText("Website").count()).toBe(0);
+    expect(await denied.getByText("Kein Zugriff").count()).toBeGreaterThan(0);
+    await denied.close();
+  }, 60_000);
+
+  test("switching the base shows a placeholder of fixed size until the new base arrives", async () => {
+    // On a phone the host's title switches the base; the sidebar's links switch it from 768 px on.
+    for (const width of [1440]) {
+      const tab = await open(width, flatStates.healthy, { hold: true });
+      // The document request of the next base stays open: keep this page and look at it while it waits.
+      await tab.evaluate(() => document.addEventListener("click", (event) => event.preventDefault(), { once: true }));
+      await tab.locator(".k2b-app-workspace__sidebar a[href='/app/pulse/Web001']").first().click();
+      await tab.locator(".k2b-status-row__lead .k2b-skeleton").waitFor();
+      expect(await tab.getByText("Basis wird geladen").count()).toBe(1);
+      await shoot(tab, "05-laedt", width);
+      expect(await problems(tab)).toEqual([]);
+      await tab.close();
+    }
+  }, 60_000);
+});

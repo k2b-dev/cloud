@@ -25,7 +25,7 @@ const renderContent = (content: string): string => {
   const codeSpans: string[] = [];
   return escapeHtml(content)
     .replace(/`([^`]+)`/g, (_match, body: string) => {
-      const index = codeSpans.push(`<code class="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-sm">${body}</code>`) - 1;
+      const index = codeSpans.push(`<code class="not-dark:bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-sm">${body}</code>`) - 1;
       return `\u0000CODE${index}\u0000`;
     })
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
