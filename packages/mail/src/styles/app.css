@@ -1210,13 +1210,15 @@
   }
 }
 
-/* The rows have no gap; the collapse ends at zero height, so nothing moves when the row is dropped. */
+/* The rows have no gap; the collapse ends at zero height with the hairline above the row, so nothing moves when the
+   row is dropped. */
 @keyframes mail-list-row-leave {
   from {
     height: var(--mail-row-size);
   }
   to {
     height: 0;
+    border-block-start-width: 0;
     opacity: 0;
   }
 }

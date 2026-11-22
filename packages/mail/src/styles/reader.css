@@ -44,7 +44,9 @@
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
+/* Close keeps its size at the end; only the subject gives way. */
 .k2b-ui .mail-reader-head-line > .mail-reader-close {
+  flex: none;
   order: 99;
 }
 
