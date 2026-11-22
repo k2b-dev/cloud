@@ -107,8 +107,10 @@ function expectedFrame(actual: Awaited<ReturnType<typeof frame>>, width: number,
   expect(Math.abs(actual.pane.width - pane)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(actual.workspaceWidth - width)).toBeLessThanOrEqual(0.5);
   const min = typeof minimum === "number" ? minimum : pane + 440;
-  expect(actual.column).toBe(width - 2 - actual.sidebar - 488 >= min);
-  if (actual.column) expect(actual.primary.width).toBeGreaterThanOrEqual(min - pane - 0.5);
+  // The lg Detail is 480 px; the flat column has no inset of its own (K5a), so the threshold no longer adds 8 px.
+  expect(actual.column).toBe(width - 2 - actual.sidebar - 480 >= min);
+  // Main keeps its minimum beside the Detail; the pane's boundary inside Main is part of that minimum.
+  if (actual.column) expect(actual.main.width).toBeGreaterThanOrEqual(min - 0.5);
 }
 
 function sameFrame(actual: ReturnType<typeof frame>, expected: ReturnType<typeof frame>) {

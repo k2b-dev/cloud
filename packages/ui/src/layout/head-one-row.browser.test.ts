@@ -104,9 +104,16 @@ for (const kind of ["mail", "files", "spaces"] as const)
             mark: current ? Math.round(current.getBoundingClientRect().bottom - box.top) : null,
             sideways: [...element.querySelectorAll<HTMLElement>("*")]
               .filter((node) => !node.closest(".k2b-app-workspace__head-filters"))
-              .filter(
-                (node) => getComputedStyle(node).overflowX !== "visible" && node.clientWidth > 1 && node.scrollWidth > node.clientWidth + 1,
-              )
+              // A label that ends in an ellipsis, like the path's current level on a phone, does not scroll.
+              .filter((node) => {
+                const style = getComputedStyle(node);
+                return (
+                  style.overflowX !== "visible" &&
+                  style.textOverflow !== "ellipsis" &&
+                  node.clientWidth > 1 &&
+                  node.scrollWidth > node.clientWidth + 1
+                );
+              })
               .map((node) => `${node.tagName.toLowerCase()}.${node.className.split(" ")[0]} ${node.scrollWidth}/${node.clientWidth}`),
           };
         });

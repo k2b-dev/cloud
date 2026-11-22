@@ -1357,14 +1357,14 @@ test("early links keep multiple guards through disposal and late runtime without
 test("1440px: the panel parks Detail without a squeezed frame, closing restores its dragged width, the drawer has no grip", async () => {
   const { context, page } = await fixture(1440);
   try {
-    await settle(page);
+    await settled(page);
     const handle = page.locator('[data-app-workspace-resize="detail"]');
     const column = async () => (await page.locator(workspaceDetail).boundingBox())!.width;
     const start = await column();
     await handle.focus();
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowLeft");
-    await settle(page);
+    await settled(page);
     const dragged = await column();
     expect(dragged).not.toBe(start);
     const list = (await page.locator(mainArea).boundingBox())!;
@@ -1420,7 +1420,7 @@ test("1440px: the panel parks Detail without a squeezed frame, closing restores 
     // Closing the panel brings the column back at its dragged width.
     await page.locator("[data-cloud-panel-close]").click();
     await closed(page);
-    await settle(page);
+    await settled(page);
     expect(await column()).toBeCloseTo(dragged, 0);
     expect(await page.locator(workspaceDetail).evaluate((detail) => detail.scrollTop)).toBe(300);
   } finally {

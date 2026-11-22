@@ -258,7 +258,9 @@ test("the Plex Details glyph aligns with its label and keeps keyboard focus", as
           for (let x = Math.floor(box.x - clip.x); x < Math.ceil(box.x + box.width - clip.x); x++) {
             for (let y = Math.floor(box.y - clip.y); y < Math.ceil(box.y + box.height - clip.y); y++) {
               const [r, g, b] = context.getImageData(x, y, 1, 1).data;
-              if (Math.max(r!, g!, b!) < 180) {
+              // Ink is any colour well off the white surface: the label's text and the glyph, also in the platform blue
+              // the Details button takes while its Detail is parked.
+              if (Math.min(r!, g!, b!) < 180) {
                 top = Math.min(top, y);
                 bottom = Math.max(bottom, y);
               }
@@ -327,9 +329,11 @@ test("More lists exactly the CSS-hidden views at each level and always keeps the
   }
 });
 
+// The compact level starts below a 32 rem head lead. In the flat head a 640 px host leaves a 514 px lead, just above
+// it, so all four views stay; 560 px is the narrow host.
 test("a narrow head opens More for views that fit the wide strip, at a narrow host and on a phone", async () => {
   for (const [viewport, host] of [
-    [1440, 640],
+    [1440, 560],
     [390, 390],
   ] as const) {
     const page = await load({ head: { items: 4, current: "1" } }, viewport, host, true);
