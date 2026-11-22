@@ -87,6 +87,23 @@ already behave this way.
 </ScrollArea>
 ```
 
+## Rows that reach the edge
+
+Set `scrollbar="overlay"` when the scroller holds full-width rows whose lines
+or fills must reach the column's edge, such as a list or a reader with
+hairlines between its rows. The area then reserves no track: its content
+takes the whole width, and with a mouse a thin thumb stands over the content
+at the end edge while the pointer is over the area or it scrolls. Drag the
+thumb to scroll. The content never moves when the area starts or stops
+scrolling. Touch screens keep their native overlay scrollbars, and forced
+colors mode keeps the system ones. The option applies to vertical areas only.
+
+```tsx
+<ScrollArea scrollbar="overlay">
+  <ConversationRows />
+</ScrollArea>
+```
+
 ## Scrollbars
 
 Cloud draws one scrollbar everywhere, from one rule in `@k2b/ui`: no track,

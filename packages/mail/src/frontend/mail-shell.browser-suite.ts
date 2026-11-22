@@ -14,6 +14,7 @@ import { mailTagSearch } from "../search-url";
 import { renderComposeContent, renderComposeSignatureBlock } from "../service/compose-renderer";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
 import { buildMessageDocument } from "./_components/mail-message-document";
+import { probeFlat } from "./mail-flat-probe.browser-source";
 import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 
 setDefaultTimeout(20_000);
@@ -289,6 +290,37 @@ beforeAll(async () => {
         await Bun.sleep(300);
         return new Response(Buffer.from(photoPng, "base64"), { headers: { "content-type": "image/png" } });
       }
+      // A reply box asks for its seed when it opens; the fixture answers with an empty reply to the open message.
+      if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
+        const body: { origin: { kind: "compose"; input: { senderIdentityId: string; conversationId?: string; sourceMessageId?: string } } } =
+          await request.json();
+        const input = body.origin.input;
+        return Response.json({
+          id: "20000000-0000-4000-8000-000000000003",
+          mailboxId: url.pathname.split("/").at(-2),
+          conversationId: input.conversationId ?? null,
+          intent: "reply",
+          sourceMessageId: input.sourceMessageId ?? null,
+          derivedFromMessageId: null,
+          derivationKind: null,
+          content: {
+            quoteSource: null,
+            senderIdentityId: input.senderIdentityId,
+            to: [{ name: "Holzwerk Brandt", address: "einkauf@holzwerk-brandt.example" }],
+            cc: [],
+            bcc: [],
+            subject: "Re: Angebot Eichenplatten – Liefertermin",
+            body: "",
+            format: "markdown",
+            priority: "normal",
+            requestDeliveryReceipt: false,
+            requestReadReceipt: false,
+          },
+          attachments: [],
+          origin: body.origin,
+          createdAt: MAIL_SHELL_NOW,
+        });
+      }
       if (url.pathname.startsWith("/api/")) return Response.json({ error: "Outside synthetic fixture" }, { status: 404 });
       return new Response(pageHtml(url, request.headers.get("cookie")), { headers: { "content-type": "text/html; charset=utf-8" } });
     },
@@ -536,7 +568,17 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "drag" | "performance";
+export type MailShellPart =
+  | "head"
+  | "mailboxes"
+  | "layout"
+  | "wide"
+  | "reader"
+  | "events"
+  | "drafts"
+  | "drag"
+  | "performance"
+  | "flat";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
@@ -1644,6 +1686,41 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
     });
 
+    section("flat", () => {
+      // Cloud flach (K2, K7, K11): lines and fills run from area edge to area edge, no line is doubled, and text uses
+      // only the four sizes of the mockup: 12 meta, 13 rows and controls, 14 reading text and head titles, 18 lead.
+      const states = [
+        ["split", `${boxPath}?conversation=Conv01&locale=de&shell=1&demo=1&identity=1&summary=ai&notes=1`, 1440, 900],
+        ["list", `${boxPath}?locale=de&demo=1`, 390, 844],
+        ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1`, 390, 844],
+      ] as const;
+      for (const [state, path, width, height] of states)
+        test(`flat ${state} at ${width}: edge-to-edge lines and fills, no doubled line, four type sizes`, async () => {
+          const page = await open(path, width, height);
+          try {
+            await settled(page);
+            if (screenshots) {
+              mkdirSync(screenshots, { recursive: true });
+              await page.screenshot({ path: join(screenshots, `flat-${state}-light-${width}.png`) });
+            }
+            const probe = await page.evaluate(probeFlat, [
+              ["list", ".mail-split-list"],
+              ["reader", ".mail-reader"],
+            ] as [string, string][]);
+            if (screenshots) writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify(probe, null, 1));
+            expect(probe.areas.length).toBeGreaterThan(0);
+            for (const area of probe.areas) {
+              expect(area.short, `${state} ${area.name}: lines and fills reach both edges`).toEqual([]);
+              expect(area.double, `${state} ${area.name}: no doubled line`).toEqual([]);
+              const sizes = new Set(Object.keys(area.sizes).map((key) => key.split("/")[0]));
+              expect([...sizes].filter((size) => !["12px", "13px", "14px", "18px"].includes(size!)), `${state} ${area.name}: type sizes`).toEqual([]);
+            }
+          } finally {
+            await close(page);
+          }
+        });
+    });
+
     section("layout", () => {
       // #2507: on a phone the list always has its head; the reader hides it and Back brings it back.
       for (const selected of [false, true])
@@ -1721,7 +1798,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const panes = shown.panes!.width;
             const expected = Math.min(Math.max(320, panes * 0.4), panes - 492);
             expect(Math.abs(shown.list!.width - expected)).toBeLessThanOrEqual(1);
-            expect(shown.handle!.width).toBe(12);
+            // The handle is its 1 px line in the flow; its 13 px hit area lies over list and reader (K13).
+            expect(shown.handle!.width).toBe(13);
             expect(Math.abs(shown.reader!.x + shown.reader!.width - (shown.panes!.x + panes))).toBeLessThanOrEqual(1);
             // The reader's head and text use its whole width: nothing narrower stands centered in it.
             const text = await page.locator(".mail-reader-scroll").evaluate((element) => {

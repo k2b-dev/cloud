@@ -142,6 +142,7 @@
 .k2b-ui .assistant-context-grip {
   position: absolute !important;
   inset-block: 0;
+  margin: 0;
   inset-inline-start: -6px;
   z-index: 1;
 }

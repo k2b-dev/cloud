@@ -459,12 +459,12 @@ export default function MailMessageBody(props: {
                         <span class="invisible [grid-area:1/1] group-open/quote:visible">{messages().hideQuotedText}</span>
                       </span>
                     </summary>
-                    <pre class="mt-2 whitespace-pre-wrap break-words border-l-2 border-default pl-3 font-sans text-sm">
+                    <pre class="mt-2 whitespace-pre-wrap break-words border-l-2 border-default pl-3 font-sans text-sm leading-[1.375rem]">
                       <PlainText value={segment.text} linksDisabled={props.linksDisabled} />
                     </pre>
                   </details>
                 ) : (
-                  <pre class="whitespace-pre-wrap break-words font-sans text-sm">
+                  <pre class="whitespace-pre-wrap break-words font-sans text-sm leading-[1.375rem]">
                     <PlainText value={segment.text} linksDisabled={props.linksDisabled} />
                   </pre>
                 )

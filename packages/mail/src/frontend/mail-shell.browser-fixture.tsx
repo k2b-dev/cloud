@@ -786,7 +786,49 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>,
         : "",
     selectedReference: null,
   };
+  if (url.searchParams.get("demo") === "1") return demoMailboxData(data);
   return largeMailbox ? scaleMailboxData(data, url) : data;
+}
+
+/**
+ * `?demo=1`: the same mailbox with the invented, realistic conversations of the flat mockup (ui-flach v10, Mail), for
+ * review screenshots that compare built and mockup side by side. Names, firms and addresses are invented.
+ */
+const demoRows: [from: string, subject: string, preview: string][] = [
+  ["Holzwerk Brandt", "Angebot Eichenplatten – Liefertermin", "Guten Tag Frau Solberg, die Platten können wir in KW 49 liefern."],
+  ["Jonas Hartwig", "Frage zur Rechnung 2026-1184", "Hallo, auf der Rechnung steht ein anderer Betrag als im Angebot."],
+  ["Stadtwerke Auental", "Zählerwechsel am 02.12.", "Sehr geehrte Damen und Herren, wir tauschen an diesem Tag den Zähler."],
+  ["Petra Lindqvist", "Küche Maß nehmen – Terminvorschlag", "Dienstag oder Donnerstag ab 16 Uhr würde bei uns passen."],
+  ["Lackfabrik Nordhaus", "Preisliste 2027", "Anbei erhalten Sie unsere neue Preisliste, gültig ab 1. Januar."],
+  ["Architekturbüro Winter", "Re: Treppe Haus am Hang", "Danke für die Zeichnung. Wir brauchen noch die Höhe der Stufen."],
+  ["Bauhof Nordtal", "Abholung Altholz", "Der Container steht ab Montag bereit, Abholung nach Anruf."],
+  ["Familie Oswald", "Erinnerung: offenes Angebot Einbauschrank", "Das Angebot vom 02.11. läuft am 30.11. aus. Sollen wir verlängern?"],
+  ["Karla Oswald", "Bewerbung um einen Ausbildungsplatz", "Sehr geehrte Frau Renz, hiermit bewerbe ich mich um einen Platz."],
+  ["Spedition Falk", "Lieferavis 4471", "Ihre Sendung wird am 23.11. zwischen 7 und 11 Uhr zugestellt."],
+  ["Tischlerinnung Auental", "Einladung zur Mitgliederversammlung", "Die Versammlung findet am 4. Dezember um 19 Uhr statt."],
+  ["Mira Solberg", "Material für Baustelle Lindqvist", "Bitte die Kantenumleimer mit auf die Liste setzen."],
+];
+const demoBody =
+  "Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern, wenn die Bestellung bis Freitag bei uns ist. Der Preis aus dem Angebot bleibt bis dahin gültig. Die Lieferung kommt auf zwei Paletten, bitte halten Sie die Einfahrt frei.\n\nFreundliche Grüße\nHenrik Brandt";
+function demoMailboxData(data: MailboxPageData): MailboxPageData {
+  return {
+    ...data,
+    listItems: data.listItems.map((row, index) => {
+      const [from, subject, preview] = demoRows[index % demoRows.length]!;
+      const { participants: _participants, participantCount: _count, ...rest } = row;
+      return { ...rest, subject, preview, participantSummary: from, participantLabels: [from] };
+    }),
+    detailMessages: data.detailMessages.map((message) => ({
+      ...message,
+      subject: demoRows[0]![1],
+      from: [{ name: "Holzwerk Brandt", address: "einkauf@holzwerk-brandt.example" }],
+      to: [{ name: "Kontakt", address: "kontakt@solberg-kramer.example" }],
+      preview: demoBody.slice(0, 80),
+      plainText: demoBody,
+      forwardText: demoBody,
+    })),
+    selectedSubject: data.selectedSubject ? demoRows[0]![1] : "",
+  };
 }
 export function mailboxList(url: URL, largeMailbox = false): MailboxListView {
   const {

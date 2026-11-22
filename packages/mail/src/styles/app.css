@@ -26,10 +26,17 @@
     --mail-col-time: 7rem;
   }
 
-  /* The list scrolls edge to edge: rows fill the column, their hairlines stop at the reserved scroll track. */
+  /* On a phone a stacked row is 80 px: the same three lines with 12 px above and below (mockup, K12). */
+  @media not all and (min-width: 48rem) {
+    .mail-list-column {
+      --mail-row-height-3: 5rem;
+    }
+  }
+
+  /* The list scrolls edge to edge (K2): no scroll track, the thumb stands over the rows (ScrollArea overlay), so
+     every hairline and row fill reaches the column's edge. */
   .mail-list-scroll {
     padding-inline: 0;
-    scrollbar-gutter: stable;
   }
 
   .mail-list-entry {
@@ -90,6 +97,33 @@
   .mail-list-entry-selected,
   .mail-list-entry-selected:hover {
     background: var(--k2b-row-selected);
+  }
+
+  /* With a mouse the start column shows the unread dot; the checkbox takes its place under the pointer, in focus,
+     when checked, and while any row is checked, so a selection is always visible. Touch keeps the checkbox. */
+  @media (hover: hover) and (pointer: fine) {
+    .mail-row-dot {
+      position: absolute;
+      top: calc(0.5rem + (var(--mail-row-line, 1.25rem) - 0.5rem) / 2);
+      inset-inline-start: calc(var(--mail-row-gutter) + 0.25rem);
+      width: 0.5rem;
+      height: 0.5rem;
+    }
+
+    .mail-list-rows:not(:has(.mail-list-entry-selected)) .mail-list-entry:not(:hover, :focus-within) .mail-list-checkbox {
+      opacity: 0;
+    }
+
+    .mail-list-rows:has(.mail-list-entry-selected) .mail-row-dot,
+    .mail-list-entry:is(:hover, :focus-within) .mail-row-dot {
+      opacity: 0;
+    }
+  }
+
+  @container mail-list (width >= 40rem) {
+    .mail-row-dot {
+      top: calc(50% - 0.25rem);
+    }
   }
 
   /* A row an action takes out of the list closes its gap from its measured height, so the rows below slide up
@@ -468,7 +502,7 @@
   .mail-row-from {
     font-size: 0.8125rem;
     line-height: var(--mail-row-line);
-    color: var(--k2b-text-secondary);
+    color: var(--k2b-text);
   }
 
   .mail-row-sender {
@@ -495,11 +529,15 @@
     min-width: 3.5rem;
   }
 
+  /* The unread dot stands before the date. With a mouse it stands in the 16 px start column on the first line
+     (mockup column "u"), and the checkbox takes that place only under the pointer, in focus, or while a selection
+     runs. */
   .mail-row-dot {
     flex: none;
     width: 0.4375rem;
     height: 0.4375rem;
     border-radius: 9999px;
+    pointer-events: none;
   }
 
   .mail-list-entry-unread .mail-row-dot {
@@ -509,17 +547,13 @@
   .mail-row-time {
     flex: none;
     font-size: 0.75rem;
+    line-height: var(--mail-row-line);
     font-variant-numeric: tabular-nums;
     color: var(--k2b-text-muted);
   }
 
-  .mail-list-entry-unread .mail-row-time {
-    font-weight: 500;
-    color: var(--k2b-text-secondary);
-  }
-
   .mail-row-subject-line {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     line-height: var(--mail-row-line);
     color: var(--k2b-text);
   }
@@ -1682,7 +1716,8 @@
   background: transparent;
   color: var(--k2b-text-muted);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
   cursor: pointer;
 }
 .k2b-ui .mail-quote-add:hover:not(:disabled) {
@@ -1969,20 +2004,9 @@
   }
 }
 
-/* The scroller keeps its scrollbar's room, so text never moves when the scrollbar appears. */
-/* The reader scrolls edge to edge (K6): every row draws its own text edge, the hairlines between them stop at the
-   reserved scroll track, with and without a scrollbar. */
-.k2b-ui .mail-reader-scroll {
-  scrollbar-gutter: stable;
-}
-
-@media (pointer: fine) and (forced-colors: none) {
-  @supports selector(::-webkit-scrollbar) {
-    .k2b-ui .mail-reader-scroll {
-      overflow-y: scroll;
-    }
-  }
-}
+/* The reader scrolls edge to edge (K2, K6): every row draws its own text edge, and the hairlines between them reach
+   the column's edge. It has no scroll track; the thumb stands over the content (ScrollArea overlay), so text never
+   moves when the conversation starts to scroll. */
 
 /* The landing Main draws no shadow inside the workspace. Keep this outside
    layers, like the standalone workspace styles it overrides. */
@@ -3124,4 +3148,11 @@
 /* The hint's place above a composer's bar takes no room while there is nothing to say. */
 .k2b-ui .mail-draft-hint-slot:empty {
   display: none;
+}
+
+/* Cloud flach (K11): the text of a reply is reading text, 14 px on 22 px like the messages below it (mockup Composer A),
+   not the shared editor's 15 px. */
+.k2b-ui :is(.mail-inline-draft, .mail-reply-box) .k2b-ste-host .cm-editor {
+  font-size: 0.875rem;
+  line-height: 1.375rem;
 }

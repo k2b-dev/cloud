@@ -3872,6 +3872,74 @@ html {
   }
 }
 
+/* ScrollArea scrollbar="overlay" (Cloud flach, K2): no scroll track. The content takes the scrollport's whole width, so
+   row lines and fills reach the area's edge also where the track was, and nothing narrows when content starts to
+   scroll. With a mouse a thin thumb stands over the content at the end edge, visible while the pointer is over the area
+   or it scrolls. Touch screens keep their native overlay scrollbar, which takes no room; forced colors keep the system
+   one. The overlay line is sticky and zero-high, so it takes no room either. */
+.k2b-ui .k2b-scroll-area__overlay {
+  display: none;
+}
+
+@media (pointer: fine) and (forced-colors: none) {
+  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"] {
+    overflow-y: auto;
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"]::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"] > .k2b-scroll-area__overlay[data-overflow="true"] {
+    position: sticky;
+    z-index: 4;
+    top: 0;
+    display: block;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .k2b-ui .k2b-scroll-area__thumb {
+    position: absolute;
+    top: var(--k2b-scroll-thumb-offset, 0px);
+    right: 0;
+    width: 0.5rem;
+    height: var(--k2b-scroll-thumb-size, 0px);
+    opacity: 0;
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  /* The thumb is 4 px at rest and 6 px under the pointer or while dragged, like the shared scrollbar. */
+  .k2b-ui .k2b-scroll-area__thumb::before {
+    position: absolute;
+    inset: 0.125rem 0.125rem 0.125rem auto;
+    width: 0.25rem;
+    border-radius: 9999px;
+    background: var(--k2b-scrollbar-thumb);
+    content: "";
+  }
+
+  .k2b-ui .k2b-scroll-area__thumb:is(:hover, [data-dragging])::before {
+    width: 0.375rem;
+    background: var(--k2b-scrollbar-thumb-hover);
+  }
+
+  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"]:is(:hover, :focus-visible, [data-scrolling="true"]) > .k2b-scroll-area__overlay > .k2b-scroll-area__thumb,
+  .k2b-ui .k2b-scroll-area__thumb[data-dragging] {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .k2b-ui .k2b-scroll-area__thumb {
+      transition: opacity 160ms ease;
+    }
+  }
+}
+
 /* The last shown level takes what is left. Its flex basis is 0, not its
    content: a long title or paragraph in the selected item would otherwise
    shrink the levels before it, away from their stored widths. */
@@ -6063,9 +6131,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
    the workspace's resize handles, defined with them. */
 .k2b-ui .k2b-resize-separator {
   position: relative;
+  z-index: 3;
   flex: none;
-  /* In the flow between two regions, so applications size their split by it; the grip and line sit centred. */
-  width: 12px;
+  /* Cloud flach (K2, K13): in the flow it is only its 1 px line, so the regions on both sides reach that line and
+     their row lines and fills meet it. The 13 px hit area lies 6 px over each neighbour, with the grip centred on
+     the line above them. */
+  width: 13px;
+  margin-inline: -6px;
   align-self: stretch;
   cursor: col-resize;
   outline: 0;
@@ -6076,7 +6148,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
   width: auto;
-  height: 12px;
+  height: 13px;
+  margin-inline: 0;
+  margin-block: -6px;
   cursor: row-resize;
 }
 /* An app with separate visibility keeps one shared way to reopen its current

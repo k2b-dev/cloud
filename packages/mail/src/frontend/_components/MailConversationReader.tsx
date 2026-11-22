@@ -1340,6 +1340,7 @@ export default function MailConversationReader(props: {
             <ScrollArea
               ref={historyScroller}
               class="mail-reader-scroll absolute inset-0"
+              scrollbar="overlay"
               scrollPreserveKey={`mail-reader-${props.selectionKey}`}
               onScroll={handleReaderScroll}
             >

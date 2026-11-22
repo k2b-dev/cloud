@@ -257,6 +257,7 @@
 .cloud-panel__resize {
   position: absolute !important;
   inset-block: 0;
+  margin: 0;
   inset-inline-start: calc(-6px - var(--cloud-card-inset, 0.5rem) / 2);
   z-index: 4;
 }
