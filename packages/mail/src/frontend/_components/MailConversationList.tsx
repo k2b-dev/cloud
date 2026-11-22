@@ -4,12 +4,11 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
-  type DragPayload,
-  DragSource,
   HoverPreview,
   IconButton,
   NoticeCard,
   Placeholder,
+  ProgressRing,
   PullToRefresh,
   ScrollArea,
   Tooltip,
@@ -29,7 +28,6 @@ import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import type { MailRespondIntent } from "./mail-conversation-menu";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { MAIL_CONVERSATION_DRAG } from "./mail-drag";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
@@ -98,8 +96,6 @@ export default function MailConversationList(props: {
   onNavigationStart?: () => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
-  /** Which rows can be dragged (write access, a conversation) and what a drag carries, read only when it starts. */
-  drag?: { enabled: (item: MailListItem) => boolean; payload: (item: MailListItem) => DragPayload };
   /** Who is responsible for a row, in a mailbox where more than one person can be. */
   assignees?: (userIds: readonly string[]) => MailRowAssignee[];
   /** Conversations done today and how many still need action; drives the done line and "All done." */
@@ -278,16 +274,55 @@ export default function MailConversationList(props: {
       }
       width = next;
       remember();
+      hold();
     });
+    // Rows added or removed above the place someone works on (a new mail on top) leave that row where it was: the
+    // focused row, else the first visible one. Browsers with CSS scroll anchoring already hold it, so `moved` is 0
+    // there; WebKit has none. At the very top nothing is held, so a new mail shows up there.
+    let held: { row: HTMLElement; top: number } | null = null;
+    const hold = () => {
+      const view = scroller.getBoundingClientRect();
+      const focused = document.activeElement?.closest<HTMLElement>(".mail-list-entry");
+      const visible = (row: HTMLElement) => {
+        const box = row.getBoundingClientRect();
+        return box.bottom > view.top && box.top < view.bottom;
+      };
+      const row =
+        scroller.scrollTop <= 0
+          ? null
+          : focused && scroller.contains(focused) && visible(focused)
+            ? focused
+            : Array.from(scroller.querySelectorAll<HTMLElement>(".mail-list-entry")).find(
+                (entry) => entry.getBoundingClientRect().top >= view.top,
+              );
+      held = row ? { row, top: row.getBoundingClientRect().top - view.top } : null;
+    };
+    const rowsChanged = (records: MutationRecord[]) => {
+      const isRow = (node: Node) =>
+        node instanceof HTMLElement && (node.classList.contains("mail-list-entry") || node.querySelector(".mail-list-entry") !== null);
+      if (!records.some((record) => [...record.addedNodes, ...record.removedNodes].some(isRow))) return;
+      if (held?.row.isConnected) {
+        const moved = held.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - held.top;
+        if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
+      }
+      hold();
+    };
+    const rows = new MutationObserver(rowsChanged);
     const scrolled = () => {
       if (column.getBoundingClientRect().width === width) remember();
+      hold();
     };
     observer.observe(column);
+    rows.observe(scroller, { childList: true, subtree: true });
     scroller.addEventListener("scroll", scrolled, { passive: true });
+    scroller.addEventListener("focusin", hold);
     remember();
+    hold();
     onCleanup(() => {
       observer.disconnect();
+      rows.disconnect();
       scroller.removeEventListener("scroll", scrolled);
+      scroller.removeEventListener("focusin", hold);
     });
   });
 
@@ -392,7 +427,8 @@ export default function MailConversationList(props: {
           ref={(element) => {
             listScrollElement = element;
           }}
-          class="mail-list-scroll flex-1"
+          class="mail-list-scroll flex-1 pb-2"
+          inset
           scrollPreserveKey={`mail-list-${props.mailboxId}`}
         >
           {props.error ? (
@@ -470,20 +506,23 @@ export default function MailConversationList(props: {
             />
           ) : (
             <>
-              {/* The table's column head: the rows' template, sticky in the same scroll area; hidden below 40 rem. */}
-              <div class="mail-list-colhead" aria-hidden="true" data-mail-list-colhead>
-                <span />
-                <span />
-                <div class="mail-list-colhead-cells">
-                  <span data-col="from">{messages().sender}</span>
-                  <span data-col="subject">{messages().subject}</span>
-                  <span data-col="preview">{messages().columnPreview}</span>
-                  <span data-col="marks">{messages().columnMarks}</span>
-                  <span data-col="time">{messages().columnTime}</span>
-                </div>
-              </div>
+              <Show when={!searchActive() && props.doneToday && props.doneToday.done > 0 ? props.doneToday : null}>
+                {(done) => (
+                  <p class="mail-done-line" data-mail-done-line>
+                    <ProgressRing
+                      value={(done().done / Math.max(1, done().done + done().open)) * 100}
+                      tone="accent"
+                      label={messages().doneRing({ done: done().done, total: done().done + done().open })}
+                    />
+                    <b>{messages().doneToday({ count: done().done })}</b>
+                    <Show when={done().automated > 0}>
+                      <span>· {messages().doneAutomated({ count: done().automated })}</span>
+                    </Show>
+                  </p>
+                )}
+              </Show>
               <div
-                class="mail-list-rows k2b-divided"
+                class="flex flex-col gap-0.5"
                 role="list"
                 aria-label={
                   props.listMode === "conversations"
@@ -506,89 +545,72 @@ export default function MailConversationList(props: {
                           </div>
                         )}
                       </Show>
-                      <DragSource
-                        class="mail-list-drag"
-                        payload={
-                          props.drag ? props.drag.payload(item) : { type: MAIL_CONVERSATION_DRAG, value: item.id, label: item.subject }
-                        }
-                        disabled={!props.drag?.enabled(item)}
-                        threshold={6}
-                        touch="none"
-                        onLongPress={(point) => {
-                          // A held finger opens the row's menu, the same targets as the drag (S7).
-                          const hit = document.elementFromPoint(point.x, point.y);
-                          hit?.dispatchEvent(
-                            new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y }),
-                          );
+                      <MailConversationRow
+                        item={item}
+                        assignees={props.assignees?.(item.assigneeUserIds) ?? null}
+                        leaving={props.leavingKeys?.has(mailListRowKey(item))}
+                        requestUrl={requestUrl()}
+                        state={{
+                          selectedConversationId: props.selectedConversationId,
+                          selectedMessageId: props.selectedMessageId,
+                          selectedConversationIds: props.selectedConversationIds,
+                          selectionMode: props.selectionMode,
+                          canWrite: props.canWrite,
+                          spamAction: spamAction(item),
+                          dateConfig: props.dateConfig,
+                          currentUserId: props.currentUserId,
                         }}
-                      >
-                        <MailConversationRow
-                          item={item}
-                          assignees={props.assignees?.(item.assigneeUserIds) ?? null}
-                          leaving={props.leavingKeys?.has(mailListRowKey(item))}
-                          requestUrl={requestUrl()}
-                          state={{
-                            selectedConversationId: props.selectedConversationId,
-                            selectedMessageId: props.selectedMessageId,
-                            selectedConversationIds: props.selectedConversationIds,
-                            selectionMode: props.selectionMode,
-                            canWrite: props.canWrite,
-                            spamAction: spamAction(item),
-                            dateConfig: props.dateConfig,
-                            currentUserId: props.currentUserId,
-                          }}
-                          actions={{
-                            navigate: props.onNavigateItem,
-                            toggleSelection: props.onToggleSelection,
-                            itemAction: props.onItemAction,
-                            manageTags: props.onManageTags,
-                            merge: props.onMergeItem,
-                            respond: props.onRespondItem,
-                            assignToMe: props.onAssignItemToMe,
-                            assigneeNames: props.assigneeNames,
-                            setCompletion: props.onSetItemCompletion,
-                          }}
-                          quickLook={{
-                            id: quickLook.id,
-                            anchor: quickLook.anchor,
-                            active: quickLook.active,
-                            begin: () => {
-                              cancelPrefetch();
-                              hoverAttempt = null;
-                            },
-                            // Every mouse move restarts the rest, so the card usually opens with its data.
-                            prefetch: (item, row, pointer) => {
-                              cancelPrefetch();
-                              if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
-                              prefetchTimer = setTimeout(() => {
-                                prefetchTimer = undefined;
-                                // The list may have moved another row under the still mouse before its scroll event.
-                                const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
-                                if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
-                                const key = attemptKey(item);
-                                if (key === hoverAttempt) return;
-                                hoverAttempt = key;
-                                quickLookData.load(item);
-                              }, QUICK_LOOK_PREFETCH_DELAY);
-                            },
-                            release: (item) => {
-                              cancelPrefetch();
-                              if (quickLook.active() !== item.conversationId) {
-                                if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
-                                quickLookData.cancel(item);
-                              }
-                            },
-                          }}
-                        />
-                      </DragSource>
+                        actions={{
+                          navigate: props.onNavigateItem,
+                          toggleSelection: props.onToggleSelection,
+                          itemAction: props.onItemAction,
+                          manageTags: props.onManageTags,
+                          merge: props.onMergeItem,
+                          respond: props.onRespondItem,
+                          assignToMe: props.onAssignItemToMe,
+                          assigneeNames: props.assigneeNames,
+                          setCompletion: props.onSetItemCompletion,
+                        }}
+                        quickLook={{
+                          id: quickLook.id,
+                          anchor: quickLook.anchor,
+                          active: quickLook.active,
+                          begin: () => {
+                            cancelPrefetch();
+                            hoverAttempt = null;
+                          },
+                          // Every mouse move restarts the rest, so the card usually opens with its data.
+                          prefetch: (item, row, pointer) => {
+                            cancelPrefetch();
+                            if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
+                            prefetchTimer = setTimeout(() => {
+                              prefetchTimer = undefined;
+                              // The list may have moved another row under the still mouse before its scroll event.
+                              const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+                              if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
+                              const key = attemptKey(item);
+                              if (key === hoverAttempt) return;
+                              hoverAttempt = key;
+                              quickLookData.load(item);
+                            }, QUICK_LOOK_PREFETCH_DELAY);
+                          },
+                          release: (item) => {
+                            cancelPrefetch();
+                            if (quickLook.active() !== item.conversationId) {
+                              if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
+                              quickLookData.cancel(item);
+                            }
+                          },
+                        }}
+                      />
                     </>
                   )}
                 </For>
               </div>
             </>
           )}
-          <Show when={!allDone() && props.items.length > 0}>
-            <p class="mail-list-foot text-xs text-muted" data-mail-list-count>
+          <Show when={!allDone()}>
+            <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
               {messages().shown({ count: props.items.length })}
             </p>
           </Show>

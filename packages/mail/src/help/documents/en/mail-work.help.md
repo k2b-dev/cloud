@@ -102,16 +102,6 @@ In the head of the conversation, you decide only whether the conversation is **D
 
 Choose **Move to folder** in the conversation actions to choose a destination with the keyboard, a pointer, or touch. On a desktop, you can also drag a conversation row onto a selectable folder in the left navigation. Mail queues the move, and synchronization confirms the result at the provider.
 
-With a mouse, you can also drag a row. Once it moves a few pixels, a surface of targets covers the list and the reader:
-
-- **Assign to me** and **Assign to someone else** (only in team mailboxes, and only when you may assign), **Move to folder**, **Mark as done**, and **Add tag**.
-- Rest on a target with an arrow for a moment to open the next level, such as the people or the folders. **Back** returns one level.
-- Let go straight on **Assign to someone else** to open the person search.
-- A locked target says why, such as "Already here".
-- **Drop here: nothing happens**, **Esc**, or letting go beside a target cancels. The folders in the left navigation stay targets.
-
-After you let go, Mail shows a notice with **Undo**. If the change fails, Mail changes nothing and offers **Try again**. Dragging a selected row drags the whole selection. A finger never drags: a long press opens the row's menu with the same targets. In a mailbox you may only read, nothing can be dragged.
-
 To act on several conversations, select their checkboxes. Hold **Shift** while you select another checkbox or row to select the loaded range between them. One selection has at most 50 conversations, so you can follow the work at the provider.
 
 :::reference

@@ -3,13 +3,10 @@ import type { MailCollaborator } from "../../service/collaboration";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
 import {
+  MAIL_DROP_LEVEL_SIZE,
   type MailDropContext,
   type MailDropTarget,
-  mailDraggedRows,
-  mailDropFolderTargets,
-  mailDropPeople,
-  mailDropRoot,
-  mailDropTags,
+  mailDropView,
   readMailDropRecentFolders,
   rememberMailDropFolder,
 } from "./mail-drop-targets";
@@ -80,57 +77,98 @@ const ids = (targets: MailDropTarget[]) => targets.map((target) => target.id);
 
 describe("Mail drop targets", () => {
   test("a team mailbox offers five first-level targets with their second lines", () => {
-    const targets = mailDropRoot(context());
-    expect(ids(targets)).toEqual(["assign-me", "assign", "folder", "done", "tag"]);
-    expect(targets.map((target) => [target.label, target.description ?? ""])).toEqual([
+    const view = mailDropView({ kind: "root" }, context());
+    expect(ids(view.targets)).toEqual(["assign-me", "assign", "folder", "done", "tag"]);
+    expect(view.targets.map((target) => [target.label, target.description ?? ""])).toEqual([
       ["Mir zuweisen", "Andere bleiben zuständig"],
-      ["Jemand anderem zuweisen", ""],
-      ["In Ordner verschieben", ""],
+      ["Jemand anderem zuweisen", "Kurz verweilen"],
+      ["In Ordner verschieben", "Kurz verweilen"],
       ["Als erledigt markieren", ""],
-      ["Tag hinzufügen", ""],
+      ["Tag hinzufügen", "Kurz verweilen"],
     ]);
   });
 
-  test("a drop straight on Assign to someone else opens the assignment search; resting opens the people", () => {
-    const assign = mailDropRoot(context()).find((target) => target.id === "assign");
+  test("a drop straight on Assign to someone else opens the assignment search", () => {
+    const assign = mailDropView({ kind: "root" }, context()).targets.find((target) => target.id === "assign");
     expect(assign?.action).toEqual({ kind: "choose-assignee" });
-    expect(assign?.level).toBe("assign");
+    expect(assign?.level).toEqual({ kind: "assign" });
   });
 
-  test("people who may not assign, and a personal mailbox, get no assignment targets and no people", () => {
-    expect(ids(mailDropRoot(context({ assignees: null })))).toEqual(["folder", "done", "tag"]);
-    expect(ids(mailDropRoot(context({ teamMailbox: false })))).toEqual(["folder", "done", "tag"]);
-    expect(mailDropPeople(context({ assignees: null })).targets).toEqual([]);
+  test("people who may not assign, and a personal mailbox, get no assignment targets", () => {
+    expect(ids(mailDropView({ kind: "root" }, context({ assignees: null })).targets)).toEqual(["folder", "done", "tag"]);
+    expect(ids(mailDropView({ kind: "root" }, context({ teamMailbox: false })).targets)).toEqual(["folder", "done", "tag"]);
   });
 
   test("locked targets stay in place and name why", () => {
-    const targets = mailDropRoot(
+    const view = mailDropView(
+      { kind: "root" },
       context({ items: [item({ assigneeUserIds: [ME], workStatus: "done" }), item({ assigneeUserIds: ["p0", ME], workStatus: "done" })] }),
     );
-    expect(targets.find((target) => target.id === "assign-me")).toMatchObject({ disabled: true, description: "Ist schon dir zugewiesen" });
-    expect(targets.find((target) => target.id === "done")).toMatchObject({ disabled: true, description: "Ist schon erledigt" });
+    const me = view.targets.find((target) => target.id === "assign-me");
+    const done = view.targets.find((target) => target.id === "done");
+    expect(me).toMatchObject({ disabled: true, description: "Ist schon dir zugewiesen" });
+    expect(done).toMatchObject({ disabled: true, description: "Ist schon erledigt" });
   });
 
   test("a selection is locked only when every dragged conversation already has the change", () => {
-    const targets = mailDropRoot(context({ items: [item({ assigneeUserIds: [ME] }), item()] }));
-    expect(targets.find((target) => target.id === "assign-me")).toMatchObject({ disabled: false, description: "Andere bleiben zuständig" });
+    const view = mailDropView({ kind: "root" }, context({ items: [item({ assigneeUserIds: [ME] }), item()] }));
+    expect(view.targets.find((target) => target.id === "assign-me")).toMatchObject({
+      disabled: false,
+      description: "Andere bleiben zuständig",
+    });
   });
 
-  test("people come most frequent first as the server orders them, then A–Z, without the dragging person", () => {
-    const { targets, more } = mailDropPeople(context({ assignees: { people: people(17), more: true } }));
-    expect(more).toBe(true);
-    expect(targets.slice(0, 11).map((target) => target.label.split(" ")[0])).toEqual(FIRST);
-    const rest = targets.slice(11).map((target) => target.label);
-    expect(rest).toEqual([...rest].sort((a, b) => a.localeCompare(b, "de")));
-    expect(targets.some((target) => target.id === `person:${ME}`)).toBe(false);
+  test("the people level shows the eleven most frequent, leaves out the dragging person, and offers the rest", () => {
+    const view = mailDropView({ kind: "assign" }, context());
+    expect(view.crumb).toBe("Jemand anderem zuweisen · Häufig");
+    expect(view.targets[0]).toMatchObject({ id: "back", back: true, level: { kind: "root" } });
+    expect(view.targets.slice(1, 12).map((target) => target.label.split(" ")[0])).toEqual(FIRST);
+    expect(view.targets.some((target) => target.id === `person:${ME}`)).toBe(false);
+    expect(view.targets.at(-1)).toMatchObject({
+      id: "more",
+      label: "Weitere 6 Personen",
+      level: { kind: "assign-more", path: [] },
+      action: { kind: "choose-assignee" },
+    });
   });
 
   test("someone already responsible is named, and locked when responsible for every dragged conversation", () => {
-    const some = mailDropPeople(context({ items: [item({ assigneeUserIds: ["p1"] }), item()] })).targets;
-    expect(some.find((target) => target.id === "person:p1")).toMatchObject({ disabled: false, description: "Ist schon zuständig" });
-    const all = mailDropPeople(context({ items: [item({ assigneeUserIds: ["p1"] })] })).targets;
-    expect(all.find((target) => target.id === "person:p1")).toMatchObject({ disabled: true });
-    expect(all.find((target) => target.id === "person:p1")?.action).toEqual({ kind: "assign", userId: "p1", name: "Mira Person" });
+    const some = mailDropView({ kind: "assign" }, context({ items: [item({ assigneeUserIds: ["p1"] }), item()] }));
+    expect(some.targets.find((target) => target.id === "person:p1")).toMatchObject({ disabled: false, description: "Ist schon zuständig" });
+    const all = mailDropView({ kind: "assign" }, context({ items: [item({ assigneeUserIds: ["p1"] })] }));
+    expect(all.targets.find((target) => target.id === "person:p1")).toMatchObject({ disabled: true });
+    expect(all.targets.find((target) => target.id === "person:p1")?.action).toEqual({ kind: "assign", userId: "p1", name: "Mira Person" });
+  });
+
+  test("sixty people split the rest into A–Z ranges of at most twelve", () => {
+    const view = mailDropView({ kind: "assign-more", path: [] }, context({ assignees: { people: people(59), more: false } }));
+    const ranges = view.targets.filter((target) => target.id.startsWith("range:"));
+    expect(ranges).toHaveLength(4);
+    expect(ranges.map((target) => target.description)).toEqual(["12 Personen", "12 Personen", "12 Personen", "12 Personen"]);
+    expect(ranges[0]?.label).toBe("Name011 – Name022");
+    const inner = mailDropView({ kind: "assign-more", path: [1] }, context({ assignees: { people: people(59), more: false } }));
+    expect(inner.targets).toHaveLength(13);
+    expect(inner.targets[0]).toMatchObject({ id: "back", level: { kind: "assign-more", path: [] } });
+  });
+
+  test("two hundred people nest their ranges so no level holds more than twelve targets", () => {
+    const context200 = context({ assignees: { people: people(200), more: true } });
+    const outer = mailDropView({ kind: "assign-more", path: [] }, context200);
+    expect(outer.targets.filter((target) => !target.back && target.id !== "search").length).toBeLessThanOrEqual(MAIL_DROP_LEVEL_SIZE);
+    // More than the drag holds: the search stays one drop away.
+    expect(outer.targets.at(-1)).toMatchObject({ id: "search", action: { kind: "choose-assignee" } });
+    const first = mailDropView({ kind: "assign-more", path: [0] }, context200);
+    const leaf = first.targets.some((target) => target.level?.kind === "assign-more")
+      ? mailDropView({ kind: "assign-more", path: [0, 0] }, context200)
+      : first;
+    expect(leaf.targets.filter((target) => target.action?.kind === "assign").length).toBeLessThanOrEqual(MAIL_DROP_LEVEL_SIZE);
+    expect(mailDropView({ kind: "assign" }, context200).targets.at(-1)).toMatchObject({ id: "more", label: "Weitere Personen" });
+  });
+
+  test("a stale range path falls back to Back instead of failing", () => {
+    expect(mailDropView({ kind: "assign-more", path: [9, 9] }, context()).targets).toEqual([
+      expect.objectContaining({ id: "back", level: { kind: "assign" } }),
+    ]);
   });
 
   test("folders list recently used ones first, lock where everything is already, and leave out unselectable ones", () => {
@@ -139,55 +177,33 @@ describe("Mail drop targets", () => {
       ...Array.from({ length: 14 }, (_, index) => folder(`f${index}`, { name: `Ordner ${String(index).padStart(2, "0")}` })),
       folder("parent", { name: "Nur Eltern", selectable: false }),
     ];
-    const targets = mailDropFolderTargets(context({ folders, recentFolderIds: ["f13", "gone"] }));
-    expect(ids(targets).slice(0, 3)).toEqual(["folder:f13", "folder:inbox", "folder:f0"]);
-    expect(targets).toHaveLength(15);
-    expect(targets.find((target) => target.id === "folder:inbox")).toMatchObject({ disabled: true, description: "Liegt schon hier" });
-    expect(targets.some((target) => target.id === "folder:parent")).toBe(false);
-    // After the first page, the rest stands A–Z.
-    expect(ids(targets.slice(11))).toEqual(["folder:f9", "folder:f10", "folder:f11", "folder:f12"]);
-    expect(targets[1]?.action).toEqual({ kind: "move", folderId: "inbox", name: "Posteingang" });
+    const view = mailDropView({ kind: "folder" }, context({ folders, recentFolderIds: ["f9", "gone"] }));
+    expect(view.crumb).toBe("In Ordner verschieben · Zuletzt genutzt");
+    expect(ids(view.targets).slice(0, 4)).toEqual(["back", "folder:f9", "folder:inbox", "folder:f0"]);
+    expect(view.targets.find((target) => target.id === "folder:inbox")).toMatchObject({ disabled: true, description: "Liegt schon hier" });
+    expect(view.targets.some((target) => target.id === "folder:parent")).toBe(false);
+    expect(view.targets.at(-1)).toMatchObject({ id: "more", label: "Weitere 4 Ordner", level: { kind: "folder-more", path: [] } });
+    const more = mailDropView({ kind: "folder-more", path: [] }, context({ folders, recentFolderIds: ["f9"] }));
+    expect(ids(more.targets)).toEqual(["back", "folder:f10", "folder:f11", "folder:f12", "folder:f13"]);
+    expect(more.targets[1]?.action).toEqual({ kind: "move", folderId: "f10", name: "Ordner 10" });
   });
 
   test("tags lock where every dragged conversation has them; no tags means no tag target", () => {
-    const targets = mailDropTags(context({ items: [item({ localTags: [tag("t1", "Rechnung")] })] }));
-    expect(ids(targets)).toEqual(["tag:t1", "tag:t2"]);
-    expect(targets[0]).toMatchObject({ disabled: true, description: "Hat diesen Tag schon" });
-    expect(targets[1]?.action).toEqual({ kind: "tag", tagId: "t2", name: "Dringend" });
-    expect(ids(mailDropRoot(context({ tags: [] })))).toEqual(["assign-me", "assign", "folder", "done"]);
+    const view = mailDropView({ kind: "tag" }, context({ items: [item({ localTags: [tag("t1", "Rechnung")] })] }));
+    expect(ids(view.targets)).toEqual(["back", "tag:t1", "tag:t2"]);
+    expect(view.targets[1]).toMatchObject({ disabled: true, description: "Hat diesen Tag schon" });
+    expect(view.targets[2]?.action).toEqual({ kind: "tag", tagId: "t2", name: "Dringend" });
+    expect(ids(mailDropView({ kind: "root" }, context({ tags: [] })).targets)).toEqual(["assign-me", "assign", "folder", "done"]);
   });
 
   test("English names the same targets", () => {
-    expect(mailDropRoot(context({ locale: "en" })).map((target) => target.label)).toEqual([
+    expect(mailDropView({ kind: "root" }, context({ locale: "en" })).targets.map((target) => target.label)).toEqual([
       "Assign to me",
       "Assign to someone else",
       "Move to folder",
       "Mark as done",
       "Add tag",
     ]);
-  });
-});
-
-describe("Mail dragged rows", () => {
-  // A message list: the question sits in the Inbox, its conversation's newer reply has its own row from Sent.
-  const rows = [
-    { id: "Msg003", conversationId: "Conv01" },
-    { id: "Msg002", conversationId: "Conv01" },
-    { id: "Msg004", conversationId: "Conv02" },
-    { id: "Msg005", conversationId: "Conv03" },
-  ];
-
-  test("a drag carries the dragged row itself, not another row of its conversation", () => {
-    expect(mailDraggedRows(rows, new Set(), "Msg002")).toEqual([{ id: "Msg002", conversationId: "Conv01" }]);
-  });
-
-  test("a row of a selection carries every selected row; a row outside it only itself", () => {
-    expect(mailDraggedRows(rows, new Set(["Conv02", "Conv03"]), "Msg004").map((row) => row.id)).toEqual(["Msg004", "Msg005"]);
-    expect(mailDraggedRows(rows, new Set(["Conv02", "Conv03"]), "Msg002").map((row) => row.id)).toEqual(["Msg002"]);
-  });
-
-  test("a row that left the list carries nothing", () => {
-    expect(mailDraggedRows(rows, new Set(), "gone")).toEqual([]);
   });
 });
 
