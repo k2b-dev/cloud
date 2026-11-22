@@ -438,7 +438,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(metaRule).toContain("inline-flex");
     expect(metaRule).toContain("items-center");
-    expect(metaRule).toContain("line-height: 1");
+    // K11: metadata is the meta role, 12/16, centred on the row's line.
+    expect(metaRule).toContain("line-height: var(--k2b-line-height-meta)");
     expect(leafMetaRule).toContain("min-width: 1.5rem");
     expect(leafMetaRule).toContain("justify-content: flex-end");
     expect(actionRule).toContain("place-items: center");
