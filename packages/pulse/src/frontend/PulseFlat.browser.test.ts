@@ -107,7 +107,10 @@ classic("Pulse flat base page with classic scrollbars", () => {
       for (const [props, text, options] of cases) {
         // A narrow desktop window, never touch: with isMobile or hasTouch Chromium uses overlay scrollbars that take no room.
         const tab = await open(width, props, { ...options, touch: false }, scrollbars);
-        await tab.getByText(text, { exact: false }).first().waitFor();
+        // From 768 to 1023 px the detail is a drawer that waits closed until Details opens it (shell contract).
+        if (width >= 768 && width < 1024 && props !== flatStates.data)
+          await tab.locator("[data-app-workspace-detail-toggle]").first().click();
+        await tab.getByText(text, { exact: false }).filter({ visible: true }).first().waitFor();
         // The run only measures something when a scrollbar really takes room.
         const gutter = await tab.evaluate(() => {
           const probe = document.createElement("div");
@@ -193,6 +196,8 @@ describe("Pulse flat base page", () => {
     const heights: number[] = [];
     for (const props of [flatStates.healthy, flatStates.noAccess, flatStates.data, flatStates.storeDown]) {
       const tab = await open(1440, props);
+      // The page's own condition: loading placeholders animate on, so the page never "settles" in every state.
+      await tab.locator(".k2b-app-workspace__head").first().waitFor();
       heights.push(
         await tab
           .locator(".k2b-app-workspace__head")
