@@ -6416,11 +6416,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   overflow: hidden;
 }
 
-/* A zero-width first item, so even the first key figure can wrap away whole. */
+/* A zero-width first item, so even the first key figure can wrap away whole. It takes back the gap after it, so the
+   first figure stands one row gap (20 px, K6) after the lead statement, not two. */
 .k2b-ui .k2b-status-row__middle::before {
   content: "";
   width: 0;
   height: 1.25rem;
+  margin-inline-end: -1.25rem;
 }
 
 .k2b-ui :is(.k2b-status-row__fact, .k2b-status-row__state, .k2b-status-row__announcement) {

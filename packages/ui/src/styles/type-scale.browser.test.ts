@@ -180,7 +180,8 @@ const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)", muted: "rgb(6
 const scale = {
   sidebarItem: ["13px", "400", ink.text],
   sidebarSection: ["12px", "600", ink.secondary],
-  sidebarCount: ["12px", "600", ink.text],
+  // A count is a plain quiet number (Cloud flach, mockup .nav .n), not a bold pill.
+  sidebarCount: ["12px", "400", ink.muted],
   sidebarDescription: ["13px", "400", ink.secondary],
   // Secondary buttons carry body ink on their white face.
   buttonXs: ["12px", "600", ink.text],

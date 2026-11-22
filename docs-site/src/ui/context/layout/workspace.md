@@ -135,7 +135,9 @@ one filled main action, the head's `primary`.
 
 The first line under a column's head is the status row, `StatusRow` (K6, K10):
 52 px, a lead statement in 18 px bold that is never shortened, up to three key
-figures in 13 px with the number bold, and filters at the end. It shows only
+figures in 13 px with the number bold, and filters at the end. The first figure
+stands 20 px after the lead statement. A figure may lead with a word
+(`prefix`), so it reads "Today **12** done". It shows only
 data that exists. A selection puts a check and its count, such as "3 selected",
 in the lead statement's place, its figures (`selection.facts`) in the key
 figures' place, and its actions at the end; a disturbance of the whole page that needs nobody keeps the lead
@@ -968,8 +970,8 @@ scrollbar.
 
 The sidebar compound members cover these jobs:
 
-- `SidebarDesktop`, `SidebarBody`, `SidebarSection`, and `SidebarFooter`
-  compose the persistent navigation;
+- `SidebarTitle`, `SidebarDesktop`, `SidebarBody`, `SidebarSection`, and
+  `SidebarFooter` compose the persistent navigation;
 - `SidebarItem`, `SidebarItemIcon`, `SidebarItemLabel`, `SidebarItemMeta`,
   `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
   navigation row;
@@ -992,8 +994,9 @@ hover or focus replaces it, so no name shows twice. `SidebarIconAction` shows
 its `label` as a hint in every state, beside the icon in the rail. Entries
 mount their hint only on the first hover or focus that needs it.
 
-Desktop sidebars are action-first: begin with primary actions or navigation,
-not a repeated application title. Put persistent secondary navigation in
+A desktop sidebar opens with the application's name: `SidebarTitle` with its
+symbol (`icon`) and name (`title`), 56 px high beside the workspace head, so its
+foot lines up with the head's line (Cloud flach). Navigation follows it. Put persistent secondary navigation in
 `SidebarFooter` as `SidebarItem` rows with an icon and visible label, like the
 tree rows above them. Use it for app-level destinations such as Attachments and
 Settings; when Settings exists, it is the final footer item. The host owns the
@@ -1217,7 +1220,9 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
 `meta` to show what is new in a conversation, inbox, or feed:
 
 - `unread` as a positive number shows a count, above 99 as "99+", and sets
-  the label in a stronger weight than the regular label of its row variant;
+  the label in a stronger weight than the regular label of its row variant.
+  The count is a plain quiet number at the row's end, in the row's colour when
+  the row is current; only a mention keeps a filled mark;
 - `unread={true}` shows a quiet dot for new activity that should not draw
   attention, such as in a muted conversation or a channel that notifies only
   on mentions; the label keeps its regular weight;

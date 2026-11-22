@@ -36,6 +36,7 @@ export type {
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionActionProps,
   AppWorkspaceSidebarSectionProps,
+  AppWorkspaceSidebarTitleProps,
   AppWorkspaceSidebarToggleProps,
   AppWorkspaceSidebarVisibility,
   AppWorkspaceWidthShare,

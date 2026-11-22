@@ -1759,6 +1759,35 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0;
 }
 
+/* The app's name beside the workspace head: 56 px, so its foot lines up with the head's line (K6). It stands in the
+   sidebar's top inset, on the items' text edge. */
+.k2b-ui .k2b-app-workspace__sidebar-title {
+  display: flex;
+  flex: none;
+  height: var(--k2b-h-head);
+  margin-top: -0.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 0.5rem;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-title-icon {
+  color: var(--k2b-app-workspace-active);
+  /* type-scale: allow sign: the app's symbol */
+  font-size: 1.125rem;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .k2b-ui .k2b-app-workspace__sidebar-section {
   @apply flex min-w-0 flex-col;
   gap: 0.125rem;
@@ -2030,22 +2059,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: flex-start;
 }
 
+/* Cloud flach (mockup .nav .n): a count is a plain quiet number at the row's end, not a pill; in the current row it
+   takes the row's colour. A mention keeps its filled mark, because it asks for the person. */
 .k2b-ui .k2b-app-workspace__sidebar-status-count {
   box-sizing: border-box;
   min-width: 1rem;
   height: 1rem;
-  padding-inline: 0.25rem;
+  padding-inline: 0;
   border-radius: 999px;
-  color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  color: var(--k2b-text-muted);
+  background: transparent;
   font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1rem;
-  text-align: center;
+  text-align: end;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-item.is-active .k2b-app-workspace__sidebar-status-count:not([data-mention="true"]) {
+  color: inherit;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-count[data-mention="true"] {
+  padding-inline: 0.25rem;
+  text-align: center;
   color: #ffffff;
   background: var(--k2b-action-solid);
 }
@@ -2053,7 +2090,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A waiting count that dropped to zero stays in place, muted, until the row goes away on the next navigation. */
 .k2b-ui .k2b-app-workspace__sidebar-status[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count {
   color: var(--k2b-text-muted);
-  background: color-mix(in srgb, var(--k2b-text) 5%, transparent);
+  background: transparent;
 }
 
 /* Needs attention: a warning dot in its own 0.875rem mark, the width of the bell and "@", so it never moves another mark. */
@@ -2098,7 +2135,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A muted item is set aside: its label and count stay quiet, even with unread mentions. */
 .k2b-ui .k2b-app-workspace__sidebar-status[data-muted] .k2b-app-workspace__sidebar-status-count {
   color: var(--k2b-text-muted);
-  background: color-mix(in srgb, var(--k2b-text) 7%, transparent);
+  background: transparent;
 }
 
 .k2b-ui
@@ -2112,7 +2149,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (forced-colors: active) {
-  .k2b-ui .k2b-app-workspace__sidebar-status-count {
+  .k2b-ui .k2b-app-workspace__sidebar-status-count[data-mention="true"] {
     outline: 1px solid CanvasText;
     outline-offset: -1px;
   }

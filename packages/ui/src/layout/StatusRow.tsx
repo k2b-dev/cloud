@@ -2,7 +2,8 @@ import { For, type JSX, Show } from "solid-js";
 import { useWorkspaceMessages } from "./workspace-messages";
 
 /** A key figure of the status row: the number (bold) and what it counts. */
-export type StatusRowFact = { value: JSX.Element; label: JSX.Element };
+/** A key figure: the value in bold, its label after it, and an optional word before it ("Today 12 done"). */
+export type StatusRowFact = { prefix?: JSX.Element; value: JSX.Element; label: JSX.Element };
 
 /** A page-wide disturbance that needs nobody: the page tries again by itself (K10). */
 export type StatusRowState = {
@@ -88,6 +89,7 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
           <For each={((mode() === "selection" ? props.selection?.facts : props.facts) ?? []).slice(0, 3)}>
             {(fact) => (
               <span class="k2b-status-row__fact">
+                <Show when={fact.prefix}>{(prefix) => <>{prefix()} </>}</Show>
                 <b>{fact.value}</b> {fact.label}
               </span>
             )}

@@ -467,6 +467,8 @@ export type AppWorkspaceSidebarProps = {
 };
 export type AppWorkspaceSidebarVisibility = "always" | "expanded" | "collapsed";
 export type AppWorkspaceSidebarAccessoryVisibility = "always" | "hover";
+/** The app's name at the top of the sidebar, beside the workspace head (Cloud flach, K6): symbol and name, 56 px. */
+export type AppWorkspaceSidebarTitleProps = { title: string; icon?: string; class?: string };
 type AppWorkspaceSidebarContentProps = {
   children: JSX.Element;
   class?: string;
@@ -1505,6 +1507,12 @@ const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
     </>
   );
 };
+const AppWorkspaceSidebarTitle = (props: AppWorkspaceSidebarTitleProps) => (
+  <div class={`k2b-app-workspace__sidebar-title ${props.class ?? ""}`}>
+    <Show when={props.icon}>{(icon) => <i class={`${icon()} k2b-app-workspace__sidebar-title-icon`} aria-hidden="true" />}</Show>
+    <span class="k2b-app-workspace__sidebar-title-text">{props.title}</span>
+  </div>
+);
 const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarContentProps) => (
   <footer class={`k2b-app-workspace__sidebar-footer ${props.class ?? ""}`} {...modeAttrs(props.sidebarMode)}>
     {props.children}
@@ -2443,6 +2451,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarSection: (props: AppWorkspaceSidebarSectionProps) => JSX.Element;
   SidebarBody: (props: AppWorkspaceSidebarBodyProps) => JSX.Element;
   SidebarFooter: (props: AppWorkspaceSidebarContentProps) => JSX.Element;
+  SidebarTitle: (props: AppWorkspaceSidebarTitleProps) => JSX.Element;
   SidebarItem: (props: AppWorkspaceSidebarItemProps) => JSX.Element;
   SidebarItemIcon: (props: AppWorkspaceSidebarItemIconProps) => JSX.Element;
   SidebarItemLabel: (props: AppWorkspaceSidebarItemLabelProps) => JSX.Element;
@@ -2745,6 +2754,7 @@ AppWorkspace.SidebarSwitcher = AppWorkspaceSidebarSwitcher;
 AppWorkspace.SidebarSection = AppWorkspaceSidebarSection;
 AppWorkspace.SidebarBody = AppWorkspaceSidebarBody;
 AppWorkspace.SidebarFooter = AppWorkspaceSidebarFooter;
+AppWorkspace.SidebarTitle = AppWorkspaceSidebarTitle;
 AppWorkspace.SidebarItem = AppWorkspaceSidebarItem;
 AppWorkspace.SidebarItemIcon = AppWorkspaceSidebarItemIcon;
 AppWorkspace.SidebarItemLabel = AppWorkspaceSidebarItemLabel;
