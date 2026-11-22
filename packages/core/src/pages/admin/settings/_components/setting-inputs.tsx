@@ -357,7 +357,7 @@ function TemplateSettingInput(props: FieldInputProps) {
 
   return (
     <div class="flex flex-col gap-2">
-      <div class="grid gap-2 rounded-[var(--k2b-radius-control)] border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div class="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div class="min-w-0">
           <p class="text-xs font-medium text-primary">{isActionNotice() ? t().actionNotice : t().htmlBodyTemplate}</p>
           <p class="mt-1 truncate text-xs text-dimmed">{props.entry.description}</p>
@@ -367,7 +367,7 @@ function TemplateSettingInput(props: FieldInputProps) {
         </Button>
       </div>
 
-      <details class="group rounded-[var(--k2b-radius-control)] border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <details class="group rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-secondary">
           <i class="ti ti-eye text-dimmed" />
           {t().preview}

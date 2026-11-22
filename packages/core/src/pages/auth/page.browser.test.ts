@@ -333,7 +333,7 @@ describe("sign-in page in a browser", () => {
   test("keeps the card from the tablet width up and the single action row in a wide form column", async () => {
     // The two-column card of a small tablet has a narrow form column and the same even grid as a phone.
     const tablet = await measure({ width: 768, height: 1024, touch: true }, forms.password, { locale: "de" });
-    expect([tablet.surface.border, tablet.surface.radius, tablet.aside]).toEqual(["1px", "14px", "flex"]);
+    expect([tablet.surface.border, tablet.surface.radius, tablet.aside]).toEqual(["1px", "16px", "flex"]);
     expect(tablet.actions[1]!.top).toBe(tablet.actions[2]!.top);
     expect(tablet.actions[0]!.bottom).toBeLessThan(tablet.actions[1]!.top);
 
@@ -342,9 +342,8 @@ describe("sign-in page in a browser", () => {
       const page = await measure(view, forms.password);
       expect(page.surface, context).toEqual({
         border: "1px",
-        // A standalone page card sits on the canvas like the app card: its 1 px edge, the card radius, and no shadow
-        // (Cloud flach K3, K4).
-        radius: "14px",
+        radius: "16px",
+        // A standalone page card sits on the canvas with its 1 px edge and no shadow (Cloud flach K3).
         shadow: "none",
         background: "rgb(255, 255, 255)",
       });
@@ -450,7 +449,7 @@ describe("sign-in page in a browser", () => {
       expect([narrow.surface, narrow.aside]).toEqual([flat, "none"]);
       for (const field of narrow.fields) expect([field.left, field.right]).toEqual([120, 680]);
       const wide = await measure({ width: 1000, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
-      expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "14px", "flex"]);
+      expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "20px", "flex"]);
     },
     30_000,
   );

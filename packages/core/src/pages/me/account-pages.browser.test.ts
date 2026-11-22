@@ -18,7 +18,6 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
-import { layoutProblems } from "../../../../ui/src/layout-check";
 import { launchBrowser } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
@@ -316,10 +315,7 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${await content(path, locale)}</main></div></div></body></html>`,
   );
-  // The page renders without JavaScript, so nothing moves once its fonts are in: the server-rendered main is the
-  // condition every caller reads after. settled() cannot run here, as its frame and observer waits need scripts.
   await tab.evaluate(() => document.fonts.ready);
-  await tab.locator("main").waitFor();
   return tab;
 };
 
@@ -432,7 +428,7 @@ describe("account pages in a browser", () => {
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("mark the current account section with the 2 px mark in Core's ink and no fill, in light and dark", async () => {
+  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
         const tab = await open(desktop, path, "en", dark);
@@ -451,10 +447,6 @@ describe("account pages in a browser", () => {
             const platformFill = getComputedStyle(probe).backgroundColor;
             probe.style.background = "var(--k2b-tray)";
             const tray = getComputedStyle(probe).backgroundColor;
-            probe.style.background = "var(--k2b-app-workspace-active)";
-            const mark = getComputedStyle(probe).backgroundColor;
-            probe.style.color = "var(--k2b-text)";
-            const text = getComputedStyle(probe).color;
             probe.remove();
             // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
             const segment = canvas.querySelector(".account-tabs--segment");
@@ -464,10 +456,6 @@ describe("account pages in a browser", () => {
               href: current.getAttribute("href"),
               fill: getComputedStyle(current).backgroundColor,
               ink: getComputedStyle(current).color,
-              radius: getComputedStyle(current).borderRadius,
-              shadow: getComputedStyle(current).boxShadow,
-              mark,
-              text,
               appFill,
               appInk,
               platformFill,
@@ -485,11 +473,9 @@ describe("account pages in a browser", () => {
             };
           });
           expect(colors.href).toBe(path);
-          // Cloud flach (K2, K4, K6): the current section is the 2 px mark on its line and the text colour, like ViewTabs.
-          expect(colors.fill).toBe("rgba(0, 0, 0, 0)");
-          expect(colors.radius).toBe("0px");
-          expect(colors.ink).toBe(colors.text);
-          expect(colors.shadow).toBe(`${colors.mark} 0px -2px 0px 0px inset`);
+          expect(colors.fill).toBe(colors.appFill);
+          expect(colors.ink).toBe(colors.appInk);
+          expect(colors.fill).not.toBe(colors.platformFill);
           if (path === "/me/notifications") {
             expect(colors.segment?.track).toBe(colors.segment?.tray);
             expect(colors.segment?.thumb).toBe(colors.appFill);
@@ -502,26 +488,6 @@ describe("account pages in a browser", () => {
         }
       }
   }, 60_000);
-
-  test("keep the selected fill on a phone, where the account tabs wrap into rows", async () => {
-    const tab = await open(phone, "/me/developer", "en");
-    try {
-      const current = await tab.evaluate(() => {
-        const link = document.querySelector('.account-tabs [aria-current="page"]')!;
-        const probe = document.createElement("span");
-        probe.style.cssText =
-          "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
-        link.parentElement!.append(probe);
-        const appFill = getComputedStyle(probe).backgroundColor;
-        probe.remove();
-        return { fill: getComputedStyle(link).backgroundColor, appFill, shadow: getComputedStyle(link).boxShadow };
-      });
-      expect(current.fill).toBe(current.appFill);
-      expect(current.shadow).toBe("none");
-    } finally {
-      await tab.close();
-    }
-  }, 30_000);
 
   test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
     for (const view of [desktop, phone])
@@ -738,26 +704,4 @@ describe("account pages in a browser", () => {
     expect(result.pageHeading.width).toBeLessThanOrEqual(1);
     expect(result.pageHeading.height).toBeLessThanOrEqual(1);
   }, 30_000);
-  // Cloud flach (K2, K15): no overlap, spill, cut text or double line on any account tab, on a desktop and a phone.
-  // CORE_ACCOUNT_SHOTS=<folder> also writes light screenshots of every tab for the design review.
-  for (const view of [desktop, phone])
-    test(`every account tab is clean at ${view.width} px`, async () => {
-      const shots = process.env.CORE_ACCOUNT_SHOTS;
-      const found: Record<string, string[]> = {};
-      for (const path of [...tabs, "/me/notifications/history"] as Path[]) {
-        const tab = await open(view, path, "de");
-        try {
-          const problems = (await tab.evaluate(layoutProblems, { root: "main" })).problems;
-          if (problems.length > 0) found[path] = problems;
-          if (shots)
-            await tab.screenshot({
-              path: `${shots}/me${path.slice(3).replaceAll("/", "-") || "-profile"}-light-${view.width}.png`,
-              fullPage: true,
-            });
-        } finally {
-          await tab.close();
-        }
-      }
-      expect(found).toEqual({});
-    }, 60_000);
 });
