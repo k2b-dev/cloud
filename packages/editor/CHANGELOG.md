@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.14.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.13.0...npm-editor-v0.14.0) (2026-11-22)
+
+
+### Features
+
+* **notebooks:** notebooks is flat – a note is a reading column with pills, the overview a flat list ([#3947](https://github.com/k2b-dev/cloud/issues/3947)) ([9db30ba](https://github.com/k2b-dev/cloud/commit/9db30baade6f52b2d64c51edeed1efd37a058af3))
+* **ui:** flat tables, fields, sections, areas and alert cells ([#3902](https://github.com/k2b-dev/cloud/issues/3902)) ([7dcd200](https://github.com/k2b-dev/cloud/commit/7dcd200ec7f9bca06024daa01a45eb2ba3f3cca9))
+
+
+### Bug Fixes
+
+* **cloud:** a Cloud variant keeps its value when an app's own utility comes later ([#3970](https://github.com/k2b-dev/cloud/issues/3970)) ([8025e1e](https://github.com/k2b-dev/cloud/commit/8025e1ecea6e4001aad559294d294f598cabb513))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.63.0 to 0.64.0
+
 ## [0.13.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.12.2...npm-editor-v0.13.0) (2026-11-21)
 
 

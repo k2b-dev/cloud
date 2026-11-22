@@ -3,6 +3,70 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.84.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.83.0...cloud-v0.84.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pulse:** Pulse drops dashboards and the overview; Sources keeps fired alerts and the store state ([#3936](https://github.com/k2b-dev/cloud/issues/3936))
+
+### Features
+
+* **assistant:** Gustav asks for a secret as a card in the conversation, also for an automation ([#3871](https://github.com/k2b-dev/cloud/issues/3871)) ([f0efaae](https://github.com/k2b-dev/cloud/commit/f0efaae61ed93ef80bd92144692262fa3c88cb81))
+* **assistant:** Gustav asks for a secret in the conversation, also for an automation ([#3791](https://github.com/k2b-dev/cloud/issues/3791)) ([96b1f45](https://github.com/k2b-dev/cloud/commit/96b1f45a171da1dc5cab215a84b58469c9f118ec))
+* **assistant:** Gustav is flat – cards in the reading column and a docked "In this chat" column with a grip ([#3930](https://github.com/k2b-dev/cloud/issues/3930)) ([aa21c44](https://github.com/k2b-dev/cloud/commit/aa21c44bb3cbda93af30e9e8645fb37dace35449))
+* **contacts:** contacts are flat – the record has facts beside its topics, list rows divided by hairlines ([#3964](https://github.com/k2b-dev/cloud/issues/3964)) ([9e5ac96](https://github.com/k2b-dev/cloud/commit/9e5ac96764df70c131d8d60ed6e06fd7a8be2ffb))
+* **core:** profile, settings, admin and sign-in are flat ([#3926](https://github.com/k2b-dev/cloud/issues/3926)) ([f1f31f5](https://github.com/k2b-dev/cloud/commit/f1f31f5371a75f6927da5dd827c9dd93043b7e8b))
+* **faq:** faq is flat – questions as reading rows divided by hairlines, an admin list without a frame ([#3925](https://github.com/k2b-dev/cloud/issues/3925)) ([aeecb6a](https://github.com/k2b-dev/cloud/commit/aeecb6a0d51a4e3b861c837bf6545a0f40e84f84))
+* **filesv2:** Files is flat – path in the head, status row, flat table and detail ([#3965](https://github.com/k2b-dev/cloud/issues/3965)) ([5563249](https://github.com/k2b-dev/cloud/commit/5563249c6327b2f167b0dc4c83838210411c354c))
+* **grids:** grids is flat – views as tabs, a status row, K7 table columns, and record fields in rows ([#3957](https://github.com/k2b-dev/cloud/issues/3957)) ([482f1c5](https://github.com/k2b-dev/cloud/commit/482f1c5c9d68287693198db26a46b825c4041755))
+* **mail:** a drag knows its targets from the first load – people, folders and tags, without a request before the drop ([#3908](https://github.com/k2b-dev/cloud/issues/3908)) ([9679615](https://github.com/k2b-dev/cloud/commit/9679615efc86a50b2536da89add8f714b692521d))
+* **mail:** load JMAP account runtime access ([#3869](https://github.com/k2b-dev/cloud/issues/3869)) ([6b3d940](https://github.com/k2b-dev/cloud/commit/6b3d9400a1e1f2730ac2a12ac9408dc25f74fb48))
+* **mail:** scan JMAP accounts completely ([#3877](https://github.com/k2b-dev/cloud/issues/3877)) ([192b4dd](https://github.com/k2b-dev/cloud/commit/192b4dd0fedd7c440896ca6ace2a6dda8965b9ed))
+* **mail:** the composer is one surface that scrolls, as high as its content ([#3876](https://github.com/k2b-dev/cloud/issues/3876)) ([910ca8b](https://github.com/k2b-dev/cloud/commit/910ca8b7ffebed8d893341cf114e523a2e7b33ae))
+* **notebooks:** notebooks is flat – a note is a reading column with pills, the overview a flat list ([#3947](https://github.com/k2b-dev/cloud/issues/3947)) ([9db30ba](https://github.com/k2b-dev/cloud/commit/9db30baade6f52b2d64c51edeed1efd37a058af3))
+* **pulse:** Pulse drops dashboards and the overview; Sources keeps fired alerts and the store state ([#3936](https://github.com/k2b-dev/cloud/issues/3936)) ([183937f](https://github.com/k2b-dev/cloud/commit/183937fe7fdb627905f2771f4aeaaa07257c37e0))
+* **pulse:** Pulse is flat – sources, data, usage and SQL in one head ([#3968](https://github.com/k2b-dev/cloud/issues/3968)) ([0880cd7](https://github.com/k2b-dev/cloud/commit/0880cd783d9dca3c063b0181cb1e9caed5563229))
+* **pulse:** Pulse serves data that Code pages show only to people who may read it ([#3910](https://github.com/k2b-dev/cloud/issues/3910)) ([e1b301d](https://github.com/k2b-dev/cloud/commit/e1b301df433551d15d3dc3c974c2d1b7ad66fa0d))
+* **ui:** a table that scrolls sideways fades at the edge where it continues ([#3948](https://github.com/k2b-dev/cloud/issues/3948)) ([904857e](https://github.com/k2b-dev/cloud/commit/904857ed718f048a84a17e3a698dec6ea434eaee))
+* **ui:** Cloud flach foundation – tokens, radius roles, and checks ([#3895](https://github.com/k2b-dev/cloud/issues/3895)) ([8053203](https://github.com/k2b-dev/cloud/commit/805320338d803eca667523bf5657afd256b6fb74))
+* **ui:** decision cards can ask for one value ([#3796](https://github.com/k2b-dev/cloud/issues/3796)) ([f673047](https://github.com/k2b-dev/cloud/commit/f6730477738e595a827cdc0ea61a972a79d30b61))
+* **ui:** drag and drop that never jumps – dimmed card in place, target line, drop overlay, keyboard and touch ([#3904](https://github.com/k2b-dev/cloud/issues/3904)) ([31f5b8b](https://github.com/k2b-dev/cloud/commit/31f5b8bcdf197ba0c0c7c7c300d8afb53818fa2f))
+* **ui:** flat app shell with hairlines, grips, a status row, and tabs or a path in the head ([#3909](https://github.com/k2b-dev/cloud/issues/3909)) ([23ec84e](https://github.com/k2b-dev/cloud/commit/23ec84e6b26fedea9aade60f56b3155cb95501fb))
+* **ui:** flat overlays – dialog B, sheet, menus with submenus, toast ([#3898](https://github.com/k2b-dev/cloud/issues/3898)) ([594ec25](https://github.com/k2b-dev/cloud/commit/594ec25b4a3ef7f95f456c571c13f2d4ceb350d7))
+* **ui:** flat tables, fields, sections, areas and alert cells ([#3902](https://github.com/k2b-dev/cloud/issues/3902)) ([7dcd200](https://github.com/k2b-dev/cloud/commit/7dcd200ec7f9bca06024daa01a45eb2ba3f3cca9))
+* **ui:** flat task row, a progress path with the current step, and the layout self-check for apps ([#3903](https://github.com/k2b-dev/cloud/issues/3903)) ([dd73fe5](https://github.com/k2b-dev/cloud/commit/dd73fe5c2f70554887c35020455f637cb730f888))
+* **weather:** weather is flat – topics divided by hairlines, options in the head, a calm state without a forecast ([#3963](https://github.com/k2b-dev/cloud/issues/3963)) ([190d71c](https://github.com/k2b-dev/cloud/commit/190d71cba2768aba737a0bb5d7766e264f9c1c01))
+
+
+### Bug Fixes
+
+* **chat:** a message sent right after Quote carries its quote instead of leaving it in the field ([#3998](https://github.com/k2b-dev/cloud/issues/3998)) ([0c40d58](https://github.com/k2b-dev/cloud/commit/0c40d5809a3438340e4ead79aac492ba7ccc917a))
+* **cloud:** a Cloud variant keeps its value when an app's own utility comes later ([#3970](https://github.com/k2b-dev/cloud/issues/3970)) ([8025e1e](https://github.com/k2b-dev/cloud/commit/8025e1ecea6e4001aad559294d294f598cabb513))
+* **cloud:** an app's own stylesheet loads after the shared one, so its utilities win ([#3928](https://github.com/k2b-dev/cloud/issues/3928)) ([1cc7b4f](https://github.com/k2b-dev/cloud/commit/1cc7b4f6746119558a8fef18ed61f49be31d8bda))
+* **cloud:** apps typecheck with @k2b/ssr again ([#3914](https://github.com/k2b-dev/cloud/issues/3914)) ([aceefa8](https://github.com/k2b-dev/cloud/commit/aceefa87710535ad22a6bb3eb6ffd6497f706e87)), closes [#3912](https://github.com/k2b-dev/cloud/issues/3912)
+* **cloud:** capability manifests share repeated schemas, so Core keeps 41 KiB below its limit ([#3915](https://github.com/k2b-dev/cloud/issues/3915)) ([422fd59](https://github.com/k2b-dev/cloud/commit/422fd593c3e83c42cd6f8ebae13f0ae2bc2bbc43))
+* **cloud:** older apps that return a presentation keep working ([#3919](https://github.com/k2b-dev/cloud/issues/3919)) ([35e4918](https://github.com/k2b-dev/cloud/commit/35e4918d94bd4bd0f27831216a70e3a6b4668822))
+* **cloud:** public pages keep their language after loading ([#3913](https://github.com/k2b-dev/cloud/issues/3913)) ([cd55f7d](https://github.com/k2b-dev/cloud/commit/cd55f7db46c493399f1c200c4a7fdb67ee908f3d))
+* **core:** admin apps keeps its counts and dates whole, and the profile notice is a flat cell ([#3938](https://github.com/k2b-dev/cloud/issues/3938)) ([c16add0](https://github.com/k2b-dev/cloud/commit/c16add03a88dcab6b6ff0cb594139ec5c004309b))
+* **core:** the admin apps list no longer scrolls sideways on a phone ([#3944](https://github.com/k2b-dev/cloud/issues/3944)) ([25eee83](https://github.com/k2b-dev/cloud/commit/25eee83156c548e30e7a270e4ac421c88da67b4d))
+* **core:** the profile's notice is a flat cell from edge to edge of the page ([#3952](https://github.com/k2b-dev/cloud/issues/3952)) ([1c3725a](https://github.com/k2b-dev/cloud/commit/1c3725a197b17d35237c4eac9b3d3f85309d0347))
+* **pulse:** a 5-second refresh keeps the sources tab, its scroll position and the focused row ([#3997](https://github.com/k2b-dev/cloud/issues/3997)) ([d85bd55](https://github.com/k2b-dev/cloud/commit/d85bd55e29ceaf2bc4cdb5fd9cf0e9c6c41cc457))
+* **ssr:** keep unused barrel modules out of island static closures ([#3901](https://github.com/k2b-dev/cloud/issues/3901)) ([1257c4b](https://github.com/k2b-dev/cloud/commit/1257c4bf3f6f975d4f31bd890f909c1a91b5f35e))
+* **test:** a browser launch gets its own budget instead of failing inside a hook's 5 s default ([#3874](https://github.com/k2b-dev/cloud/issues/3874)) ([09aeea8](https://github.com/k2b-dev/cloud/commit/09aeea8facc180a2576808d94c61bf7560bf9f02))
+* **tools:** the webhook tester's tables fit without a sideways scroll ([#3942](https://github.com/k2b-dev/cloud/issues/3942)) ([8b822a5](https://github.com/k2b-dev/cloud/commit/8b822a5613ff8774d5a3214cf8e391d100601265))
+* **ui:** a date field loads its month panel on demand, so Button and DatePicker fit their bundle budget again ([#3934](https://github.com/k2b-dev/cloud/issues/3934)) ([17a7376](https://github.com/k2b-dev/cloud/commit/17a7376ecd0b4e4e176f65823abbe7d25deecfd5))
+* **ui:** a dialog's footer stays put when an error appears, and panel dialogs open as a sheet on a phone ([#3929](https://github.com/k2b-dev/cloud/issues/3929)) ([f72677b](https://github.com/k2b-dev/cloud/commit/f72677b7055a4fb2f481d28a9f519f3ffa874251))
+* **ui:** a file name reads as one word to screen readers ([#3979](https://github.com/k2b-dev/cloud/issues/3979)) ([191145c](https://github.com/k2b-dev/cloud/commit/191145c10a99e0baa3874fdf6615ac3a555e78c8))
+* **ui:** a number input keeps grouped amounts instead of cutting them ([#3899](https://github.com/k2b-dev/cloud/issues/3899)) ([218c68d](https://github.com/k2b-dev/cloud/commit/218c68d748f001ba42e4e4bc40ec0eef9e5ba16a))
+* **ui:** a status row drops a label it would cut to a letter, and the icon carries the state ([#3973](https://github.com/k2b-dev/cloud/issues/3973)) ([cc14b90](https://github.com/k2b-dev/cloud/commit/cc14b90a57994891bf4e8e623c975cf97217a1c4))
+* **ui:** a workspace clips without being a scroll box, so Main's minimum never counts as hidden width on a tablet ([#3982](https://github.com/k2b-dev/cloud/issues/3982)) ([e579466](https://github.com/k2b-dev/cloud/commit/e57946662b760e14214ea9f87680c69cac798d2d))
+* **ui:** Escape closes a dialog from the moment it opens; no hint opens on the browser's first focus ([#3922](https://github.com/k2b-dev/cloud/issues/3922)) ([3feb32e](https://github.com/k2b-dev/cloud/commit/3feb32ecba16f28045f39d5ca0ff27e44908c085))
+* **ui:** over a drop overlay the drag preview is a small badge at the pointer and covers no tile's words ([#3931](https://github.com/k2b-dev/cloud/issues/3931)) ([d8f5564](https://github.com/k2b-dev/cloud/commit/d8f556499d584ed0952514800128447aa671aeb9))
+* **ui:** the date picker's phone touch target is at least 44 px in every engine ([#3920](https://github.com/k2b-dev/cloud/issues/3920)) ([71b58ec](https://github.com/k2b-dev/cloud/commit/71b58ec33af4c174a4f2d35e1779509b6324dffa))
+* **ui:** the layout check ignores visually hidden text when it allows touch hit areas ([#3988](https://github.com/k2b-dev/cloud/issues/3988)) ([a2c823d](https://github.com/k2b-dev/cloud/commit/a2c823d1b71ed7b598d434f87405d8f227a0d271))
+* **ui:** the layout self-check knows touch hit areas and no longer reports them as spills ([#3923](https://github.com/k2b-dev/cloud/issues/3923)) ([8770056](https://github.com/k2b-dev/cloud/commit/8770056cc727489d24ae2430468698a902b6783b))
+
 ## [0.83.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.82.0...cloud-v0.83.0) (2026-11-21)
 
 
