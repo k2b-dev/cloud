@@ -2811,23 +2811,6 @@ export default function MailComposer(props: {
           {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
           <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />
           <footer class="mail-inline-draft-foot mail-reply-box-foot">
-            <SplitButton
-              class="mail-compose-action"
-              size="sm"
-              type="button"
-              loading={send.loading()}
-              disabled={sendHeld()}
-              menuLabel={t().moreSendOptions}
-              menuPosition="top-left"
-              tooltip={sendBlockedReason() ?? `${t().send} (${sendShortcutLabel()})`}
-              aria-describedby={sendBlockedReason() ? `${surfaceId}-blocked` : undefined}
-              data-mail-reply-send
-              data-mail-send-again={sendFailure() ? "" : undefined}
-              items={sendLaterItems()}
-              onClick={() => void sendDraft(sendFailure() ? currentDelivery : {})}
-            >
-              {t().send}
-            </SplitButton>
             <span class="mail-inline-draft-tools mail-reply-box-tools">
               <Show when={format() === "markdown"}>
                 <Tooltip.Anchor content={t().formatting}>
@@ -2935,6 +2918,25 @@ export default function MailComposer(props: {
                 <i class="ti ti-trash" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
+            {/* Composer A: Send stands at the end of the bar, on the right like a chat, after Discard. */}
+            <SplitButton
+              class="mail-compose-action"
+              size="sm"
+              type="button"
+              loading={send.loading()}
+              disabled={sendHeld()}
+              menuLabel={t().moreSendOptions}
+              menuPosition="top-left"
+              tooltip={sendBlockedReason() ?? `${t().send} (${sendShortcutLabel()})`}
+              aria-describedby={sendBlockedReason() ? `${surfaceId}-blocked` : undefined}
+              data-mail-reply-send
+              data-mail-send-again={sendFailure() ? "" : undefined}
+              items={sendLaterItems()}
+              onClick={() => void sendDraft(sendFailure() ? currentDelivery : {})}
+            >
+              <i class="ti ti-send" aria-hidden="true" />
+              {t().send}
+            </SplitButton>
           </footer>
           <EmojiPicker.Popover
             anchor={emojiAnchor()}

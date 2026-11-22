@@ -130,7 +130,6 @@ packages/mail/src/frontend/_components/MailConversationRow.tsx | class | rounded
 packages/mail/src/frontend/_components/mail-draft-document-presence.ts | style | 3px
 packages/mail/src/frontend/_components/mail-message-document.ts | style | 6px
 packages/mail/src/service/compose-renderer.ts | style | 3px
-packages/mail/src/styles/app.css | css | 0.375rem
 packages/mail/src/styles/app.css | css | 0.3rem
 packages/notebooks/src/service/note-pdf.ts | style | 3px
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | class | rounded-[10px]

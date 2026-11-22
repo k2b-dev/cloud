@@ -201,9 +201,9 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Primary action: Mail Compose uses the approved app accent; this is not a selection fill.",
   },
   {
-    file: "packages/mail/src/frontend/_components/MailSidebar.tsx",
-    subject: 'class={dropFolderId() === folder.id ? "bg-[var(--ui-selected)]" : undefined}',
-    reason: "Control: drop target under a dragged message.",
+    file: "packages/mail/src/styles/app.css",
+    subject: '.k2b-ui .mail-sidebar .k2b-app-workspace__nav-tree-row:has(.mail-folder-drop[data-drop="over"]) { background }',
+    reason: "Control: a sidebar folder under a dragged conversation, in the platform's drop-target look (S7).",
   },
   {
     file: "packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx",
