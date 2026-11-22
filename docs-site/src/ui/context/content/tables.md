@@ -162,6 +162,13 @@ they never shrink (K7).
 Mark the name column with `primary`: it keeps at least 200 px and grows to at
 most 560 px, so on a wide screen a value stays beside its name.
 
+A table that is still too wide scrolls sideways and fades 24 px at each edge
+where more columns follow: only the end at the start, both edges in the middle,
+only the start at the end. The fade follows the scroll position without script,
+moves nothing, and shows in the server frame. A table that fits has no fade. The
+layout self-check still reports a table that scrolls sideways; give its columns
+a `priority` so it fits. Browsers without scroll timelines show the cut edge.
+
 ### List on a phone
 
 Give columns a `list` role to show the table as a list of two-line entries
