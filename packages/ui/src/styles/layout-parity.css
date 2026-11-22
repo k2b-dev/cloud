@@ -6202,7 +6202,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   white-space: nowrap;
 }
 
-.k2b-ui .k2b-breadcrumbs__item[hidden] {
+.k2b-ui .k2b-breadcrumbs__item:is([hidden], [data-fit-hidden]) {
   display: none;
 }
 

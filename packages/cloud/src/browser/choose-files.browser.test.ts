@@ -951,10 +951,10 @@ describe("choosing files in a browser", () => {
       expect(await page.locator('dialog .cloud-file-dialog__source[aria-current="true"] i').getAttribute("class")).toBe("ti ti-scan");
       // K15: beside the open preview the path is narrow, so the levels above wait behind "…" and the current one stays
       // whole. Chevrons part the levels; they are icons without text.
-      await page.waitForFunction(() => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more") !== null);
-      expect(await page.locator(".cloud-file-chooser__crumbs li:not([hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual([
-        longNames.ablage,
-      ]);
+      await page.waitForFunction(() => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more:not([hidden])") !== null);
+      expect(await page.locator(".cloud-file-chooser__crumbs li:not([data-fit-hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual(
+        [longNames.ablage],
+      );
       expect(await page.locator(".cloud-file-chooser__crumbs li:not(.k2b-breadcrumbs__more)").allTextContents()).toEqual([
         "Scanner",
         "Büro",
@@ -1039,7 +1039,9 @@ describe("choosing files in a browser", () => {
         await row(page, "Hinweis Eingang.pdf").waitFor();
         await settled(page);
         // The collapse measures after a frame.
-        await page.waitForFunction(() => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more") !== null);
+        await page.waitForFunction(
+          () => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more:not([hidden])") !== null,
+        );
         const path = await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
           const last = list.lastElementChild!.getBoundingClientRect();
           const box = list.getBoundingClientRect();
@@ -1114,10 +1116,9 @@ describe("choosing files in a browser", () => {
       // The same page opens there next time without asking the server again.
       await attach(page, false, true);
       await row(page, longNames.ablage).waitFor();
-      expect(await page.locator(".cloud-file-chooser__crumbs li:not([hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual([
-        "Scanner",
-        "Büro",
-      ]);
+      expect(await page.locator(".cloud-file-chooser__crumbs li:not([data-fit-hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual(
+        ["Scanner", "Büro"],
+      );
     } finally {
       serverPlace = null;
       await close();
