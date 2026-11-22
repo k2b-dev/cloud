@@ -882,8 +882,11 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
               const box = document.querySelector(selector)!.getBoundingClientRect();
               return { x: box.x, y: box.y, width: box.width, height: box.height };
             };
+            const row = document.querySelector(".notebooks-editor-toolbar")!;
             return {
               row: rect(".notebooks-editor-toolbar"),
+              // The row's text edge, where a pill that spans the row starts.
+              rowStart: row.getBoundingClientRect().x + Number.parseFloat(getComputedStyle(row).paddingLeft),
               // The first pill: the formatting pill, or the red pill that replaces both.
               pill: rect(".notebooks-editor-pill, .k2b-toolbar[data-variant=floating]"),
               scroller: rect("[data-editor-scroller]"),
@@ -891,14 +894,17 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
             };
           });
         const original = await bounds();
-        const same = (actual: Awaited<ReturnType<typeof bounds>>) => {
+        const same = (actual: Awaited<ReturnType<typeof bounds>>, ended = true) => {
           // The recovery bar is one pill where the toolbar had two; the note around it never moves.
           for (const surface of ["scroller", "editor"] as const)
             for (const dimension of ["x", "y", "width", "height"] as const)
               expect(Math.abs(actual[surface][dimension] - original[surface][dimension])).toBeLessThanOrEqual(0.5);
-          // The red pill starts where the pills start and has their height: its edges never jump.
-          for (const dimension of ["x", "y", "height"] as const)
+          // The red pill has the pills' height on their line, so nothing moves up or down; it spans the row from its
+          // text edge, where the centered pills stood inside (K6).
+          for (const dimension of ["y", "height"] as const)
             expect(Math.abs(actual.pill[dimension] - original.pill[dimension])).toBeLessThanOrEqual(0.5);
+          if (ended) expect(Math.abs(actual.pill.x - actual.rowStart)).toBeLessThanOrEqual(0.5);
+          else expect(Math.abs(actual.pill.x - original.pill.x)).toBeLessThanOrEqual(0.5);
         };
         for (const [code, recovery] of [
           ["STORAGE_EXHAUSTED", false],
@@ -967,7 +973,7 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
             window.toolbarHarness.resumeSync();
             await window.toolbarHarness.settle();
           });
-          same(await bounds());
+          same(await bounds(), false);
         }
       } finally {
         await page.context().close();

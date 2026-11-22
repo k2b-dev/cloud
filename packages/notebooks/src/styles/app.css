@@ -464,7 +464,7 @@
 .notebook-book-content table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875em;
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 .notebook-book-content .md-table-cell:not(.md-formula-ok):not(.md-formula-error):not(.md-table-progress) {
