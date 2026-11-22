@@ -1,0 +1,6 @@
+### A new mail on top pushed the focused row down in WebKit
+
+- **What happened:** In the Mail list from before the flat build, a new mail that arrived above the focused row moved that row down by one row height in Safari and the WebKit test run. The focus stayed on the row, but the row left its place under the pointer and the eye. Chromium and Firefox kept it in place.
+- **Root cause:** The list relied on CSS scroll anchoring to hold its place when rows were added above. WebKit does not implement scroll anchoring, so its scroll position stayed the same while the content above grew.
+- **Error class:** A list that inserts rows above the reading position relies on a browser feature that WebKit does not have, so the place someone works on moves in one engine only.
+- **Guard:** `packages/mail/src/frontend/_components/MailConversationList.tsx` holds the focused row, or else the first visible row, itself: it records the row's offset and scrolls by as much as the row moved when rows are added or removed. Browsers with native anchoring see no movement and change nothing. The case "a new mail above the focused row … keeps that row's focus and place" in `packages/mail/src/frontend/mail-shell.browser-suite.ts` runs in Chromium and WebKit.
