@@ -233,12 +233,14 @@ for (const width of [1440, 768, 390])
 // the edge of fitting and depends on the engine's text metrics (WebKit fits it, Chromium does not): there it is whole
 // or wholly away.
 // Rule 15: what is wrong shows at least about a word (4.5 em, or all of it if shorter) or not at all; a letter and an
-// ellipsis help nobody, so then the sign carries the state and the hint keeps the words.
+// ellipsis help nobody, so then the sign carries the state and the hint keeps the words. At 520 px the label sits on
+// the edge of a word and depends on the engine's text metrics (WebKit keeps a word, Chromium does not): there it is a
+// word or wholly away, never cut.
 for (const [viewport, width, time, words, label] of [
-  [390, 390, "shown", false, true],
-  [1440, 441, "whole or away", false, false],
-  [1440, 520, "shown", false, false],
-  [1440, 760, "shown", true, true],
+  [390, 390, "shown", false, "word"],
+  [1440, 441, "whole or away", false, "away"],
+  [1440, 520, "shown", false, "word or away"],
+  [1440, 760, "shown", true, "word"],
 ] as const)
   test(`a ${width} px row with a disturbance keeps its filters and the whole time of the next attempt`, async () => {
     const html = renderToString(() =>
@@ -302,7 +304,9 @@ for (const [viewport, width, time, words, label] of [
       });
       const { timeShown, timeAway, words: wordsShown, label: labelState, ...rest } = shape;
       // The time is whole on the row's line or wholly away, never cut; the label is at least a word or away.
-      expect({ words: wordsShown, label: labelState }).toEqual({ words, label: label ? "word" : "away" });
+      expect(wordsShown).toBe(words);
+      if (label === "word or away") expect(["word", "away"]).toContain(labelState);
+      else expect(labelState).toBe(label);
       if (time === "whole or away") expect(timeShown !== timeAway).toBe(true);
       else expect({ timeShown, timeAway }).toEqual({ timeShown: true, timeAway: false });
       expect(rest).toEqual({
