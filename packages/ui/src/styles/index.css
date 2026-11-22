@@ -256,12 +256,26 @@
   --k2b-h-head-phone: 52px;
   --k2b-h-tabs-phone: 44px;
   --k2b-h-row-phone: 60px;
-  /* Four sizes in the controls (K11): meta 12, rows and controls 13, reading
-     text and the head title 14, the lead statement 18. */
-  --k2b-font-size-meta: var(--k2b-type-12);
-  --k2b-font-size-row: var(--k2b-type-13);
-  --k2b-font-size-body: var(--k2b-type-14);
-  --k2b-font-size-lead: var(--k2b-type-18);
+  /* The four type roles (K11), the only text sizes in the controls; each role
+     is a size, a line height, and its usual weight. Meta 12/16 for labels,
+     counts, badges, tags, and help; row 13/20 for rows, controls, and the body
+     of a page; body 14/20 for the head title and reading text (prose sets its
+     own 22 px leading); lead 18/24 for the one statement of a status row or an
+     empty state. Weights are 400, 500, or 600 and nothing else. The
+     `type-scale` rule holds @k2b/ui to these roles; `layoutProblems` reads
+     them at runtime. Measured from the approved flat mockup (v10). */
+  --k2b-font-size-meta: 0.75rem;
+  --k2b-line-height-meta: 1rem;
+  --k2b-font-weight-meta: 400;
+  --k2b-font-size-row: 0.8125rem;
+  --k2b-line-height-row: 1.25rem;
+  --k2b-font-weight-row: 400;
+  --k2b-font-size-body: 0.875rem;
+  --k2b-line-height-body: 1.25rem;
+  --k2b-font-weight-body: 400;
+  --k2b-font-size-lead: 1.125rem;
+  --k2b-line-height-lead: 1.5rem;
+  --k2b-font-weight-lead: 600;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
@@ -302,11 +316,6 @@
   --k2b-ease-pop-strong: cubic-bezier(0.2, 1.4, 0.4, 1); /* a small mark that lands with a visible spring */
   --k2b-ease-rise: cubic-bezier(0.2, 0.8, 0.2, 1); /* something rises or slides into place */
   --k2b-ease-settle: ease; /* colour and text settle */
-  /* Type steps of the calm surfaces: meta 12, entry 13, title 14, question 18. A text style is size plus weight. */
-  --k2b-type-12: 0.75rem;
-  --k2b-type-13: 0.8125rem;
-  --k2b-type-14: 0.875rem;
-  --k2b-type-18: 1.125rem;
   /* Shadows only for what floats (K3, K16). A shadow means "lies above the
      page": small for a menu, popover, toast, floating pill, a phone's main
      action, and a drag preview; large for a dialog; directed for a drawer
@@ -5443,7 +5452,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-block: 0.125rem;
   padding-inline: 0.6875rem 0.75rem;
   border-inline-start: 1px solid var(--k2b-control-border-soft);
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
   outline: none;
 }
@@ -5469,7 +5478,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > strong {
   flex: 0 1 auto;
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
 }
 /* Role and time follow the name in the quiet meta step, each after a middle dot. */
@@ -5477,7 +5486,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   margin: 0;
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
-  font-size: var(--k2b-type-12, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.1875rem;
   white-space: nowrap;
@@ -5496,7 +5505,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-discussion-thread .k2b-discussion__content > .k2b-content-markdown {
   margin: 0;
   color: var(--k2b-text);
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
   overflow-wrap: anywhere;
 }
@@ -5543,7 +5552,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
-  font-size: var(--k2b-type-12, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-discussion-thread__status > span {
@@ -22002,7 +22011,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: var(--k2b-type-13);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   text-align: start;
   cursor: pointer;
@@ -22030,7 +22039,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-tasks__count {
   min-width: 4.2em;
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-type-12);
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   text-align: end;
   white-space: nowrap;
@@ -22089,7 +22098,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2rem;
   padding: 0.4375rem 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-type-13);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   overflow-wrap: anywhere;
   transition: color var(--k2b-motion-ink) var(--k2b-ease-settle);

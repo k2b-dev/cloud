@@ -77,11 +77,27 @@ Secondary ink keeps at least 10:1 contrast and muted ink at least 7:1 on both
 keeps 4.5:1 on `--k2b-surface`; use it on the surface, not on muted or tinted
 fills. Placeholder color stays separate in `--k2b-placeholder-color`.
 
-## Type steps of calm surfaces
+## Type roles
 
-`--k2b-type-12`, `--k2b-type-13`, `--k2b-type-14`, and `--k2b-type-18` are the
-only sizes of the calm surfaces (the working plan, approvals, comment threads,
-and the surfaces built on them). A box or section uses at most two text styles,
+Four type roles are the only text sizes in the controls (K11). Each role is a
+size, a line height, and its usual weight; weights are 400, 500, or 600.
+
+| Role | Tokens | Value | Use |
+| --- | --- | --- | --- |
+| meta | `--k2b-font-size-meta`, `--k2b-line-height-meta`, `--k2b-font-weight-meta` | 12/16, 400 | labels, counts, badges, tags, help, timestamps |
+| row | `--k2b-font-size-row`, `--k2b-line-height-row`, `--k2b-font-weight-row` | 13/20, 400 | rows, controls, the body of a page |
+| body | `--k2b-font-size-body`, `--k2b-line-height-body`, `--k2b-font-weight-body` | 14/20, 400 | the head title, reading text |
+| lead | `--k2b-font-size-lead`, `--k2b-line-height-lead`, `--k2b-font-weight-lead` | 18/24, 600 | the statement of a status row or an empty state |
+
+In Tailwind classes, `text-meta`, `text-row`, `text-body`, and `text-lead` set a
+role's size and line height. Reading text (Markdown and the editors) sets a 22 px
+leading and may add headings in 16 and 18 px. Icons and avatar initials are
+signs, not text, and size with their box. The `type-scale` rule holds `@k2b/ui`
+to the roles; an app's remaining fixed sizes are known findings in
+`scripts/checks/type-scale.baseline` that only shrink.
+
+The calm surfaces (the working plan, approvals, comment threads, and the
+surfaces built on them) use the same roles. A box or section uses at most two text styles,
 title and entry, plus one quiet meta style; a style is size plus weight, and a
 status word in its colour is no style of its own. The leading signs of its rows
 stand on one axis. Typical pairs are title 13/600 or 14/600, entry 13/400, and
