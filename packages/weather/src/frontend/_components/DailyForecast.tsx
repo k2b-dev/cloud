@@ -128,13 +128,13 @@ export default function DailyForecast({ daily, size = "md", showBar = true, refe
           </div>
           <div class={`flex items-center justify-end gap-2 ${s.meta}`}>
             {d.precipitationProbability != null && d.precipitationProbability > 0 && (
-              <span class={`${s.rain} whitespace-nowrap text-blue-500`}>
-                <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {percent(d.precipitationProbability)}
+              <span class={`${s.rain} whitespace-nowrap text-dimmed`}>
+                <i class={`ti ti-droplet ${s.rainIcon} text-blue-500`} aria-hidden="true" /> {percent(d.precipitationProbability)}
               </span>
             )}
             {d.sunshine > 0 && (
-              <span class={`${s.sun} whitespace-nowrap text-amber-500`}>
-                <i class={`ti ti-sun ${s.sunIcon}`} aria-hidden="true" /> {number(d.sunshine / 60)} h
+              <span class={`${s.sun} whitespace-nowrap text-dimmed`}>
+                <i class={`ti ti-sun ${s.sunIcon} text-amber-500`} aria-hidden="true" /> {number(d.sunshine / 60)} h
               </span>
             )}
           </div>
