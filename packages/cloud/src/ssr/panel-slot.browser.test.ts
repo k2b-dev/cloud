@@ -1350,3 +1350,63 @@ test("early links keep multiple guards through disposal and late runtime without
     await context.close();
   }
 });
+
+// K12 beside the panel (flat QA): at 1440 px an open panel makes the app area a tablet's, so Detail waits. Opening the
+// panel never shows a squeezed Detail column in between and never narrows the list; closing it brings the column back at
+// the width the person dragged, not the default. The drawer has no grip (K13), and Escape closes only the drawer.
+test("1440px: the panel parks Detail without a squeezed frame, closing restores its dragged width, the drawer has no grip", async () => {
+  const { context, page } = await fixture(1440);
+  try {
+    await settle(page);
+    const handle = page.locator('[data-app-workspace-resize="detail"]');
+    const column = async () => (await page.locator(workspaceDetail).boundingBox())!.width;
+    const start = await column();
+    await handle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await settle(page);
+    const dragged = await column();
+    expect(dragged).not.toBe(start);
+    const list = (await page.locator(mainArea).boundingBox())!;
+    // Every frame while the panel opens shows the Detail at its column width or not at all.
+    await page.evaluate((selector) => {
+      const detail = document.querySelector(selector)!;
+      const frames: number[] = [];
+      (window as unknown as { detailFrames: number[] }).detailFrames = frames;
+      const tick = () => {
+        frames.push(Math.round(detail.getBoundingClientRect().width));
+        if (frames.length < 90) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, workspaceDetail);
+    await open(page);
+    await page.waitForFunction(() => (window as unknown as { detailFrames: number[] }).detailFrames.length >= 90);
+    const frames = await page.evaluate(() => (window as unknown as { detailFrames: number[] }).detailFrames);
+    expect(frames.filter((width) => width !== 0 && width !== Math.round(dragged))).toEqual([]);
+    expect(await page.locator(workspaceDetail).isVisible()).toBe(false);
+    // The list never narrows: the sidebar waits behind its button beside the panel, so the list moves to the start and
+    // grows by the Detail's and the sidebar's width.
+    expect((await page.locator(mainArea).boundingBox())!.width).toBeGreaterThanOrEqual(list.width);
+    // The drawer: no grip, and Escape closes it while the panel stays.
+    await page.locator("[data-app-workspace-detail-toggle]").click();
+    await page.waitForFunction(
+      (selector) => document.querySelector<HTMLElement>(selector)?.dataset.workspaceDetailDrawer === "open",
+      workspaceDetail,
+    );
+    expect(await handle.isVisible()).toBe(false);
+    await page.locator(workspaceDetail).locator("button").first().focus();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      (selector) => document.querySelector<HTMLElement>(selector)?.dataset.workspaceDetailDrawer === undefined,
+      workspaceDetail,
+    );
+    expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
+    // Closing the panel brings the column back at its dragged width.
+    await page.locator("[data-cloud-panel-close]").click();
+    await closed(page);
+    await settle(page);
+    expect(await column()).toBeCloseTo(dragged, 0);
+  } finally {
+    await context.close();
+  }
+});
