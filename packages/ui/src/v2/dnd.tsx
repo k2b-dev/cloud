@@ -151,8 +151,14 @@ export function createDragOnto(options: {
   accepts?: (key: string, target: string) => boolean;
   onDrop: (key: string, target: string) => void;
 }) {
-  const [moving, setMoving] = createSignal<string | null>(null);
-  const [over, setOver] = createSignal<string | null>(null);
+  // Solid 2 reads return the old value until the next flush, and bindDrag runs the last move and onEnd in one turn.
+  // The drag logic therefore reads plain variables; the signals only mirror them for rendering.
+  const [moving, showMoving] = createSignal<string | null>(null);
+  const [over, showOver] = createSignal<string | null>(null);
+  let movingNow: string | null = null;
+  let overNow: string | null = null;
+  const setMoving = (key: string | null) => showMoving((movingNow = key));
+  const setOver = (target: string | null) => showOver((overNow = target));
   const label = (target: string | null) => options.targets().find((entry) => entry.id === target)?.label ?? "";
   const accepted = (key: string, target: string) => options.accepts?.(key, target) ?? true;
   let stop: (() => void) | undefined;
@@ -171,7 +177,12 @@ export function createDragOnto(options: {
   };
 
   const targetAt = (key: string, x: number, y: number): string | null => {
-    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-drop-target]");
+    // Geometry, not hit-testing: WebKit's elementsFromPoint misses the target while the copy sits in the top layer.
+    const el = [...document.querySelectorAll<HTMLElement>("[data-drop-target]")].find((target) => {
+      if (target.closest("[data-drag-preview]")) return false;
+      const rect = target.getBoundingClientRect();
+      return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+    });
     const id = el?.dataset.dropTarget ?? null;
     return id && accepted(key, id) ? id : null;
   };
@@ -181,7 +192,7 @@ export function createDragOnto(options: {
     let point = { x: event.clientX, y: event.clientY };
     const retarget = () => {
       const target = targetAt(key, point.x, point.y);
-      if (target !== over()) {
+      if (target !== overNow) {
         setOver(target);
         if (target) announce(label(target));
       }
@@ -198,6 +209,13 @@ export function createDragOnto(options: {
       onStart: () => {
         setMoving(key);
         preview = bindDragPreview(el, point);
+        // A compact copy hangs 16 px below the pointer, so the target under the pointer stays readable.
+        Object.assign(preview.el.style, {
+          left: `${point.x - 16}px`,
+          top: `${point.y + 16}px`,
+          width: `${Math.min(el.getBoundingClientRect().width, 360)}px`,
+          backgroundColor: "var(--k2-surface)",
+        });
         announce(`${options.itemLabel(key)} aufgenommen. Über einem Ordner loslassen.`);
       },
       onMove: ({ x, y, event: move }) => {
@@ -210,8 +228,8 @@ export function createDragOnto(options: {
       onEnd: (_event, canceled) => {
         end();
         // A press that never passed the threshold is a click, not a drag.
-        if (!moving()) return;
-        finish(key, canceled ? null : over(), canceled || !over() ? "cancel" : "drop");
+        if (!movingNow) return;
+        finish(key, canceled ? null : overNow, canceled || !overNow ? "cancel" : "drop");
       },
     });
     const cleanup = stop;
@@ -223,7 +241,7 @@ export function createDragOnto(options: {
 
   /** Bind on the item's pointerdown. */
   const pointerdown = (event: PointerEvent, el: HTMLElement, key: string) => {
-    if (event.button !== 0 || moving()) return;
+    if (event.button !== 0 || movingNow) return;
     if (event.pointerType !== "touch") return startPointerDrag(el, event, key, MOUSE_THRESHOLD_PX);
     // Touch: the finger scrolls unless it holds still. After the hold, a non-passive touchmove stops the scroll.
     const start = { x: event.clientX, y: event.clientY };
@@ -252,7 +270,7 @@ export function createDragOnto(options: {
 
   /** Bind on the grip's keydown. */
   const keydown = (event: KeyboardEvent, key: string) => {
-    const current = moving();
+    const current = movingNow;
     const choices = options.targets().filter((target) => accepted(key, target.id));
     if (!current) {
       if (event.key !== " " && event.key !== "Enter") return;
@@ -267,13 +285,13 @@ export function createDragOnto(options: {
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      const at = choices.findIndex((target) => target.id === over());
+      const at = choices.findIndex((target) => target.id === overNow);
       const next = (at + (event.key === "ArrowDown" ? 1 : choices.length - 1)) % choices.length;
       setOver(choices[next]!.id);
       announce(`${choices[next]!.label}, ${next + 1} von ${choices.length}.`, { priority: "assertive" });
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      finish(current, over(), "drop");
+      finish(current, overNow, "drop");
     } else if (event.key === "Escape" || event.key === "Tab") {
       if (event.key === "Escape") event.preventDefault();
       finish(current, null, "cancel");

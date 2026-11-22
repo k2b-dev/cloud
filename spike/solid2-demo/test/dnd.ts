@@ -81,6 +81,8 @@ try {
   // 1. Sort by mouse: the first folder goes below the third.
   await mouseDrag(page, await center(page, ".k2-sortable__item >> nth=0"), await below(page, ".k2-sortable__item >> nth=2"), async () => {
     check("Mouse sort: a dragged copy follows the pointer", (await page.locator("[data-drag-preview]").count()) === 1);
+    // ui-sdk renders the draft while dragging, so the order has changed before the drop (unlike K7).
+    check("Mouse sort: the draft order shows during the drag", (await folderOrder(page))[2] === before[0], await folderOrder(page));
     if (shots) await page.screenshot({ path: `${root}/shots/${engineName}-dnd-sort-mouse-1440.png` });
   });
   const afterMouse = await folderOrder(page);
