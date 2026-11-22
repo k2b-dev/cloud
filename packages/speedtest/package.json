@@ -24,7 +24,7 @@
   "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@k2b/ssr": "workspace:*",
-    "@k2b/stdlib": "catalog:",
+    "@k2b/stdlib": "workspace:*",
     "@k2b/ui": "workspace:*",
     "solid-js": "catalog:"
   }

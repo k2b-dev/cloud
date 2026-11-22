@@ -131,7 +131,6 @@ export default function RecordsResultSurface(props: Props) {
         fallback={
           <DatabaseTable
             scrollClass="k2b-detail-trail"
-            readFailed={props.readFailed}
             result={{ items: props.items, fields: props.fields, nextCursor: null }}
             baseId={props.baseId}
             fieldsByTable={fieldsByTable()}
@@ -205,46 +204,41 @@ export default function RecordsResultSurface(props: Props) {
             onLoadMore={props.onLoadMore}
           />
         </Match>
-        {/* Cards and the calendar are not a table on the column's edge: they keep the column's gutter (K5). */}
         <Match when={props.mode === "cards"}>
-          <div class="flex min-h-0 flex-1 flex-col px-[var(--k2b-gutter)] pb-[var(--k2b-gutter)]">
-            <RecordCardsView
-              items={props.items}
-              fields={props.fields}
-              displayConfig={props.displayConfig}
-              filePreviews={props.filePreviews}
-              baseId={props.baseId}
-              tableId={props.tableId}
-              fieldsByTable={fieldsByTable()}
-              relationLabels={props.relationLabels}
-              selectedId={props.selectedRecordId}
-              highlightedIds={props.highlightedRecordIds}
-              onRecordClick={props.onRecordClick}
-              cardSize={props.cardSize}
-              hasMore={hasMore()}
-              loadingMore={loadingMore()}
-              onLoadMore={props.onLoadMore}
-              dateConfig={props.dateConfig}
-            />
-          </div>
+          <RecordCardsView
+            items={props.items}
+            fields={props.fields}
+            displayConfig={props.displayConfig}
+            filePreviews={props.filePreviews}
+            baseId={props.baseId}
+            tableId={props.tableId}
+            fieldsByTable={fieldsByTable()}
+            relationLabels={props.relationLabels}
+            selectedId={props.selectedRecordId}
+            highlightedIds={props.highlightedRecordIds}
+            onRecordClick={props.onRecordClick}
+            cardSize={props.cardSize}
+            hasMore={hasMore()}
+            loadingMore={loadingMore()}
+            onLoadMore={props.onLoadMore}
+            dateConfig={props.dateConfig}
+          />
         </Match>
         <Match when={props.mode === "calendar"}>
-          <div class="flex min-h-0 flex-1 flex-col px-[var(--k2b-gutter)] pb-[var(--k2b-gutter)]">
-            <RecordCalendarView
-              items={props.items}
-              fields={props.fields}
-              displayConfig={props.displayConfig}
-              calendarState={props.calendarState}
-              onCalendarChange={props.onCalendarChange}
-              selectedRecordId={props.selectedRecordId}
-              onRecordClick={props.onRecordClick}
-              dateConfig={props.dateConfig}
-              fieldsByTable={fieldsByTable()}
-              hasMore={hasMore()}
-              loadingMore={loadingMore()}
-              onLoadMore={props.onLoadMore}
-            />
-          </div>
+          <RecordCalendarView
+            items={props.items}
+            fields={props.fields}
+            displayConfig={props.displayConfig}
+            calendarState={props.calendarState}
+            onCalendarChange={props.onCalendarChange}
+            selectedRecordId={props.selectedRecordId}
+            onRecordClick={props.onRecordClick}
+            dateConfig={props.dateConfig}
+            fieldsByTable={fieldsByTable()}
+            hasMore={hasMore()}
+            loadingMore={loadingMore()}
+            onLoadMore={props.onLoadMore}
+          />
         </Match>
       </Switch>
     </div>

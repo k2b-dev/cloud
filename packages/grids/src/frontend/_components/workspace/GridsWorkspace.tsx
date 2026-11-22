@@ -2,7 +2,6 @@ import { AppWorkspace } from "@k2b/ui";
 import RememberGridsPath from "../sidebar/RememberGridsPath.island";
 import GridsRoute from "./GridsRoute.island";
 import GridsSidebar from "./GridsSidebar";
-import { RecordsHead } from "./records-head";
 import WorkspaceMetadataRefresh from "./WorkspaceMetadataRefresh.island";
 import { workspaceRootClass } from "./workspace-layout";
 import type { PublicOkWorkspaceState, PublicWorkspaceCatalog } from "./workspace-public-state-model";
@@ -107,7 +106,6 @@ export default function GridsWorkspace(props: { userId?: string; state: PublicOk
       <div id={`grids-workspace-${props.state.base.id}`} class="contents">
         <AppWorkspace mobileSurface="flush" class={workspaceRootClass(props.state.adminModeRequested)}>
           <GridsSidebar userId={props.userId} state={props.state} />
-          <RecordsHead state={props.state} />
           <AppWorkspace.Content>
             <GridsRoute state={routeClientState(props.state)} userId={props.userId} now={now} />
           </AppWorkspace.Content>

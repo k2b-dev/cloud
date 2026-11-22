@@ -72,7 +72,7 @@ const open = async (options: BrowserContextOptions, hash: string, lang = "en") =
     return route.fulfill({ status: 404, body: "{}" });
   });
   await tab.goto(`http://files-search.test/app/filesv2#${hash}`);
-  await tab.waitForSelector(".k2b-status-row");
+  await tab.waitForSelector(".filesv2-browser__header");
   await tab.evaluate(() => document.fonts.ready);
   return { tab, errors };
 };
@@ -117,10 +117,8 @@ describe("Files search in a browser", () => {
         expect(await tab.locator(".filesv2-toolbar").getByText(loadingLabel, { exact: true }).isVisible()).toBe(false);
         expect(await tab.getByRole("button", { name: selectLabel, exact: true }).isVisible()).toBe(true);
         await settled(tab);
-        // K1: a row is 40 px; on a phone every entry has two lines and 60 px.
-        const rowHeight = device === "desktop" ? 40 : 60;
         const heights = await tab.$$eval(".filesv2-list__row", (rows) => rows.map((item) => item.getBoundingClientRect().height));
-        expect(new Set(heights)).toEqual(new Set([rowHeight]));
+        expect(new Set(heights)).toEqual(new Set([40]));
         const mark = await row.locator(".filesv2-list__name mark").evaluate((element) => {
           const style = getComputedStyle(element);
           return { background: style.backgroundColor, padding: style.paddingLeft };
@@ -139,7 +137,7 @@ describe("Files search in a browser", () => {
         expect(await tab.locator(".filesv2-toolbar").getByText(loadingLabel, { exact: true }).isVisible()).toBe(true);
         expect(await tab.getByRole("button", { name: selectLabel, exact: true }).isVisible()).toBe(false);
         const rows = await tab.$$eval(".filesv2-search-loading__row", (items) => items.map((item) => item.getBoundingClientRect()));
-        expect(new Set(rows.map((item) => item.height))).toEqual(new Set([rowHeight]));
+        expect(new Set(rows.map((item) => item.height))).toEqual(new Set([40]));
         expect(rows[0]!.top).toBe(firstHit.top);
         expect(await tab.locator(".filesv2-list__row").count()).toBe(0);
         await show(tab, "results");

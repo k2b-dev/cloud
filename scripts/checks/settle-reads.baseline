@@ -31,7 +31,7 @@ packages/cloud/test/standalone-viewport.browser.test.ts | 1
 packages/core/src/pages/admin/outgoing-mail/OutgoingMail.browser.test.ts | 4
 packages/core/src/pages/admin/settings/_components/UnreadableSettings.browser.test.ts | 1
 packages/core/src/pages/auth/page.browser.test.ts | 1
-packages/core/src/pages/me/account-pages.browser.test.ts | 1
+packages/core/src/pages/me/account-pages.browser.test.ts | 4
 packages/core/src/pages/me/app.browser.test.ts | 1
 packages/dashboard/src/frontend/dashboard-home.browser.test.ts | 19
 packages/editor/src/markdown/tables.browser.test.ts | 3

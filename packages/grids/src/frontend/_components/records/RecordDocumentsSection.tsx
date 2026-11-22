@@ -374,6 +374,7 @@ export default function RecordDocumentsSection(props: {
         <Show when={props.live}>
           <DetailPanel.Action
             type="button"
+            class="grids-details-add"
             leading={<i aria-hidden="true" class={createSnapshotMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-camera-plus"} />}
             title={t().createSnapshot}
             onClick={() => createSnapshotMut.mutate(undefined)}

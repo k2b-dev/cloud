@@ -1,0 +1,4 @@
+# DATEV golden files require byte-exact BOM and CRLF, independent of Git settings.
+examples/fixtures/datev/*.csv -text whitespace=cr-at-eol
+# DATEV XML golden files and DATEV's samples are compared byte for byte.
+examples/fixtures/datev-xml/** -text

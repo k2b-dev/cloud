@@ -145,7 +145,6 @@ describe("Filesv2 server-rendered feedback", () => {
       size: "Size",
       modified: "Modified",
       details: String,
-      folder: "Folder",
       toggle: String,
       select: String,
       more: "More",

@@ -34,12 +34,13 @@ FROM deps AS deps-dev
 ENV NODE_ENV=production
 
 # @k2b/ui's stylesheet is compiled in this disposable stage, so install its
-# build-time toolchain here. Only packages/ui and the @k2b/ssr source its
-# declarations import are copied: this layer must stay identical for every
+# build-time toolchain here. Only packages/ui and the @k2b/ssr and @k2b/stdlib
+# sources its declarations import are copied: this layer must stay identical for every
 # APP_ID and for source changes elsewhere.
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY tsconfig.base.json ./
 COPY packages/ssr/src packages/ssr/src
+COPY packages/stdlib/src packages/stdlib/src
 COPY packages/ui packages/ui
 RUN bun run --cwd packages/ui build
 

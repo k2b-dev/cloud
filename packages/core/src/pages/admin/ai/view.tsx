@@ -272,7 +272,7 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
             <AiModelIcon icon={aiModelDisplayIcon(found.model.icon, providerOf(found.model))} size="sm" />
           ) : (
             <span
-              class="inline-grid size-7 place-items-center rounded-[var(--k2b-radius-tile)] border border-dashed border-(--k2b-border-strong)"
+              class="inline-grid size-7 place-items-center rounded-md border border-dashed border-(--k2b-border-strong)"
               aria-hidden="true"
             />
           )}

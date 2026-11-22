@@ -263,7 +263,6 @@ export const rule: Rule = {
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
       "--assistant-context-box-accent", // AssistantChatContextBox.tsx: the app colour of a row's tile
-      "--assistant-context-column", // AssistantChatContextBox.tsx: the width the person gave "In this chat" with its grip
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
       "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar

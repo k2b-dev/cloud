@@ -192,7 +192,8 @@ describe("ApprovalCard draft and host parity", () => {
         expect(styles[1]).toEqual(styles[0]);
         expect(styles[2]).toEqual(styles[0]);
         expect(styles[0]!.background).not.toBe("rgba(0, 0, 0, 0)");
-        expect(styles[0]!.radius).toBe("8px");
+        // K4/K10: the approval is a square tinted cell in every host (the driver's decision: no chat special case).
+        expect(styles[0]!.radius).toBe("0px");
         expect(errors).toEqual([]);
       } finally {
         await close();

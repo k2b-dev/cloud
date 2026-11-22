@@ -38,7 +38,7 @@ export default function RadarCard({ showLegend = true, size = "md", maxHeight }:
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <div class={`aspect-[540/500] w-full shrink-0 overflow-hidden bg-zinc-100 dark:bg-zinc-800 ${maxHeight ?? ""}`}>
+      <div class={`thumbnail aspect-[540/500] w-full shrink-0 overflow-hidden bg-zinc-100 dark:bg-zinc-800 ${maxHeight ?? ""}`}>
         <img src={DWD_RADAR_URL} alt={t().radarAlt} class="h-full w-full object-cover" loading="lazy" />
       </div>
 

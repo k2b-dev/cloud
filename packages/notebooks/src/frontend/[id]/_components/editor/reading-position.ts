@@ -2,15 +2,9 @@ import { EditorView } from "@codemirror/view";
 
 const lineBox = (view: EditorView, from: number) => {
   const line = view.state.doc.lineAt(Math.min(from, view.state.doc.length));
-  // The drawn line's own box, read from the live layout. The boxes of its first and last characters would sit inside
-  // the line height by half the gap between the type and its line, a fraction of a pixel at some sizes (14 px on
-  // 22 px), which moves the text each time the correction rounds it.
-  const node = view.coordsAtPos(line.from, 1) ? view.domAtPos(line.from).node : null;
-  const drawn = (node instanceof Element ? node : node?.parentElement)?.closest(".cm-line");
-  if (drawn && view.contentDOM.contains(drawn)) {
-    const { top, height } = drawn.getBoundingClientRect();
-    return { top, height: Math.max(1, height) };
-  }
+  const top = view.coordsAtPos(line.from, 1)?.top;
+  const bottom = view.coordsAtPos(line.to, -1)?.bottom;
+  if (top !== undefined && bottom !== undefined) return { top, height: Math.max(1, bottom - top) };
   // A large rewrap can leave the line outside the range the editor draws;
   // its height map still places it, with estimated heights.
   const block = view.lineBlockAt(line.from);
@@ -45,16 +39,13 @@ export const keepReadingPosition = (
   const before = visible ? selectedBox : lineBox(view, from);
   // Nothing above the port's top edge can move while the note starts below it.
   const moves = view.documentTop < portTop;
-  // How far the line starts above the edge, or below it. In whole pixels,
-  // like the correction: a sub-pixel rest of the scroll offset is no reading
-  // position, and the share would scale it with the line's new height on
-  // every switch.
+  // The share of the line above the edge, or the distance of a line that
+  // starts just below it. In whole pixels, like the correction: a sub-pixel
+  // rest of the scroll offset is no reading position, and the share would
+  // scale it with the line's new height on every switch.
   const above = Math.round(portTop - before.top);
-  // Within the line's first row a rewrap moves nothing above the edge, so the distance itself is kept; further down,
-  // the share of the line, which keeps a long paragraph's reading place.
-  const firstRow = above < view.defaultLineHeight;
-  const within = firstRow ? 0 : above / before.height;
-  const offset = firstRow ? -above : 0;
+  const within = Math.max(0, above / before.height);
+  const offset = Math.max(0, -above);
   return () => {
     // The editor takes in the new width now instead of a frame late. A
     // focused one, also one that just got focus from the navigation, scrolls

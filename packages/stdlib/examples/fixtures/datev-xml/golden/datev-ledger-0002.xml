@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LedgerImport xmlns="http://xml.datev.de/bedi/tps/ledger/v060" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://xml.datev.de/bedi/tps/ledger/v060 Belegverwaltung_online_ledger_import_v060.xsd" version="6.0" generator_info="Muster GmbH" generating_system="Example Software" xml_data="Kopie nur zur Verbuchung berechtigt nicht zum Vorsteuerabzug">
+  <consolidate consolidatedAmount="-50.00" consolidatedDate="2026-10-20" consolidatedInvoiceId="RE2026-00012" consolidatedCurrencyCode="EUR">
+    <accountsReceivableLedger>
+      <date>2026-10-20</date>
+      <amount>-50.00</amount>
+      <tax>19.00</tax>
+      <currencyCode>EUR</currencyCode>
+      <invoiceId>RE2026-00012</invoiceId>
+      <bookingText>Gutschrift Versand</bookingText>
+      <customerName>Erika Mustermann</customerName>
+      <customerCity>Köln</customerCity>
+    </accountsReceivableLedger>
+  </consolidate>
+</LedgerImport>

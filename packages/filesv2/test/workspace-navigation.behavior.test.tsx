@@ -325,7 +325,7 @@ describe("Filesv2 progressive navigation", () => {
       expect(dom.root.querySelectorAll('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]').length).toBe(0);
       expect(dom.root.querySelectorAll(".filesv2-list__row--up").length).toBe(0);
       expect(dom.root.querySelectorAll(".k2b-link-card").length).toBe(0);
-      expect(dom.root.querySelectorAll(".filesv2-browser__surface").length).toBe(1);
+      expect(dom.root.querySelectorAll(".filesv2-browser__header").length).toBe(1);
       expect(dom.root.textContent).not.toContain("All storage");
     };
     await flush();
@@ -399,7 +399,7 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[2]!.input).toEqual({ query: { actor: "me", limit: "5" } });
     expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    expect(dom.root.querySelector(".filesv2-browser__surface")).toBeNull();
+    expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
     // The overview has no search button of its own any more; the sidebar's Search is the one way.
     expect([...dom.root.querySelectorAll(".filesv2-overview button")].some((button) => button.textContent?.includes("Search"))).toBe(false);
     expect(dom.root.textContent).toContain("No favorites yet.");
@@ -526,8 +526,7 @@ describe("Filesv2 progressive navigation", () => {
     const places = dom.root.querySelector(".k2b-app-workspace__sidebar-section")!;
     expect(
       [...places.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-item-label")].map((item) => item.textContent?.trim()),
-      // Decision 4 (21.11.): a folder that takes new files also offers Upload, quiet, at the top.
-    ).toEqual(["Upload", "All storage", "Activity", "Favorites", "Shares"]);
+    ).toEqual(["All storage", "Activity", "Favorites", "Shares"]);
     // Activity took Recent's place and always opens "Me" across all storage, even from inside one.
     expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&who=me");
     expect(link("Favorites").getAttribute("href")).toBe("/app/filesv2?view=favorites");

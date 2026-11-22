@@ -26,10 +26,6 @@ export type PulseWorkspaceProps = {
   initialSources: PulseSource[];
   initialSettings?: { maxRawRetentionDays: number; admins: string[] };
   initialPermissions?: { write: boolean; admin: boolean };
-  /** The base is not shared with the person: the page shows who gives access instead of the base. */
-  initialAccess?: { denied: true; managers: string[] };
-  /** Display name of the person who created the base, for the empty state. */
-  initialCreator?: string | null;
   /** On Sources: fired alerts and the data store state, read on the server. */
   initialAttention?: BaseAttention;
   initialSql?: { limits: SqlLimits | null; query: SavedQuery | null; error: { code: string; details: SqlClientError["details"] } | null };

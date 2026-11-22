@@ -2,9 +2,9 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, type JSX, on, Show, untrack } from "solid-js";
+import { createEffect, createSignal, on, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { PublicField as Field, PublicView } from "../../../api/public-dto";
+import type { PublicField as Field, PublicForm as Form, PublicGridRecord, PublicView } from "../../../api/public-dto";
 import type { ColumnSpec, RecordQuery } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import type { CardSize } from "../records-view/query-url";
@@ -13,12 +13,16 @@ import { type AggregationRow, isAggregationRowComplete } from "./AggregationsPan
 import { CardSizeDropdown } from "./CardSizeDropdown";
 import FilterPanel, { blankLeaf, type FilterLeaf, isFilterLeafComplete } from "./FilterPanel";
 import { filterableFields } from "./filter-ops";
+import { GridCreateActions } from "./GridCreateActions";
 import { type GroupByRow, isGroupByRowComplete } from "./GroupByPanel";
 import { toolbarMessages } from "./messages";
 import SortPanel, { blankSortRow, isSortRowComplete, type SortRow } from "./SortPanel";
 
 type Props = {
+  baseId: string;
   tableId: string;
+  tableName: string;
+  disableDirectInsert: boolean;
   fields: Field[];
   initialFilter: FilterLeaf[];
   initialSort: SortRow[];
@@ -33,8 +37,10 @@ type Props = {
   currentSearch: { q: string; fieldIds: string[] };
   /** Record id -> label for relation filter values, from the query response. */
   relationLabels?: Record<string, string>;
-  /** Sharing a saved view needs write access to the table. */
+  forms?: Form[];
   canWrite: boolean;
+  canDirectWrite: boolean;
+  canSubmitForms: boolean;
   /**
    * Emit the toolbar's current filter / sort / group / aggregations
    * shape to the parent (RecordsView). The parent owns the canonical
@@ -48,12 +54,19 @@ type Props = {
     groupBy?: RecordQuery["groupBy"];
     aggregations?: RecordQuery["aggregations"];
   }) => void;
+  /**
+   * Emitted after a successful manual row create. The parent
+   * (RecordsView) opens the detail panel for the new record and
+   * refetches the table.
+   */
+  onRecordCreated?: (record: PublicGridRecord) => void;
+  /** Emitted after form submit where there is no single record-open
+   *  intent; the parent just refetches the records resource. */
+  onRecordsChanged?: () => void;
   dateConfig?: DateContext;
   showCardSize?: boolean;
   cardSize?: CardSize;
   onCardSizeChange?: (size: CardSize) => void;
-  /** Places the chips (in the status row) and the open filter and sort panels (under it). */
-  frame: (chips: JSX.Element, panels: JSX.Element) => JSX.Element;
 };
 
 /**
@@ -248,107 +261,117 @@ export default function GridToolbar(props: Props) {
 
   // GridToolbar is only rendered in live + non-view mode (RecordsView
   // wraps it in `<Show when={!viewMode && !trashMode}>`). So this whole
-  // file no longer needs to handle trash mode or view mode — every panel
-  // and every chip is unconditionally meaningful here. Adding a record is
-  // the head's main action (K6); the chips stand at the end of the status
-  // row, which `frame` places, and the open panels follow under it.
-  const chips = (
-    <>
-      <Show when={props.onOpenQuery || props.queryHref}>
-        {(queryTarget) => (
-          <Show
-            when={props.onOpenQuery}
-            fallback={
-              <ButtonLink href={queryTarget() as string} variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()}>
-                <i class="ti ti-code" />
-                {t().query}
-              </ButtonLink>
-            }
-          >
-            {(openQuery) => (
-              <Button variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()} onClick={openQuery()}>
-                <i class="ti ti-code" />
-                {t().query}
-              </Button>
-            )}
-          </Show>
-        )}
-      </Show>
+  // file no longer needs to handle trash mode or view mode — direct insert,
+  // every panel, every action button is unconditionally meaningful here.
+  return (
+    <div class="flex flex-col gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <GridCreateActions
+          baseId={props.baseId}
+          tableId={props.tableId}
+          tableName={props.tableName}
+          disableDirectInsert={props.disableDirectInsert}
+          fields={props.fields}
+          forms={props.forms}
+          canWrite={props.canWrite}
+          canDirectWrite={props.canDirectWrite}
+          canSubmitForms={props.canSubmitForms}
+          onRecordCreated={props.onRecordCreated}
+          onRecordsChanged={props.onRecordsChanged}
+          dateConfig={props.dateConfig}
+        />
 
-      {/* Filter — clicking adds a blank row; the panel below renders iff rows > 0. */}
-      <Tooltip.Anchor content={hasFilterableFields() ? "" : t().noFilterableFields} disabled={hasFilterableFields()}>
-        <span class="inline-flex">
-          <Button variant="secondary" size="sm" aria-pressed={hasFilter()} onClick={onFilterClick} disabled={!hasFilterableFields()}>
-            <i class="ti ti-filter" />
-            {t().filter}
-          </Button>
-        </span>
-      </Tooltip.Anchor>
-
-      {/* Sort */}
-      <Button variant="secondary" size="sm" aria-pressed={hasSort()} onClick={onSortClick}>
-        <i class="ti ti-arrows-sort" />
-        {t().sort}
-      </Button>
-
-      <Show when={props.onAddComputedColumn}>
-        <Button variant="secondary" size="sm" aria-pressed={hasCustomColumns()} onClick={props.onAddComputedColumn}>
-          <i class="ti ti-calculator" />
-          {t().computed}
-        </Button>
-      </Show>
-
-      <Show when={props.showCardSize && props.onCardSizeChange}>
-        <CardSizeDropdown value={props.cardSize ?? "medium"} onChange={(size) => props.onCardSizeChange?.(size)} />
-      </Show>
-
-      {/* Smart Clear — appears when any query dimension is active.
-          Label names exactly what goes away. */}
-      <Show when={hasToolbarQuery()}>
-        <Button variant="secondary" size="sm" type="button" class="text-red-500" onClick={clearAll}>
-          <i class="ti ti-filter-off" />
-          {clearLabel()}
-        </Button>
-      </Show>
-
-      {/* Save as view — captures the current query into a frozen
-          preset. The view settings modal handles renaming / sharing; the query
-          becomes read-only after save. */}
-      <Show when={hasSaveableQuery()}>
-        <Button variant="secondary" size="sm" type="button" onClick={handleSaveView} disabled={saveViewMut.loading()}>
-          <i class={`ti ${saveViewMut.loading() ? "ti-loader-2 animate-spin" : "ti-bookmark-plus"}`} />
-          {saveViewMut.loading() ? t().saving : t().saveAsView}
-        </Button>
-      </Show>
-    </>
-  );
-
-  // No Apply / Cancel chips — auto-commit on every signal change
-  // (debounced 300ms) handles it. URL stays the source of truth so
-  // reload / copy-paste / save-as-view all work. An open panel is a band
-  // under the status row with the column's hairline above it.
-  const panels = (
-    <Show when={hasFilter() || hasSort()}>
-      <div class="grids-toolbar-panels k2b-divided">
-        <Show when={hasFilter()}>
-          <div class="grids-toolbar-panel">
-            <FilterPanel
-              fields={props.fields}
-              rows={filterRows}
-              onRowsChange={setFilterRows}
-              relationLabels={props.relationLabels}
-              dateConfig={props.dateConfig}
-            />
-          </div>
+        <Show when={props.onOpenQuery || props.queryHref}>
+          {(queryTarget) => (
+            <Show
+              when={props.onOpenQuery}
+              fallback={
+                <ButtonLink href={queryTarget() as string} variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()}>
+                  <i class="ti ti-code" />
+                  {t().query}
+                </ButtonLink>
+              }
+            >
+              {(openQuery) => (
+                <Button variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()} onClick={openQuery()}>
+                  <i class="ti ti-code" />
+                  {t().query}
+                </Button>
+              )}
+            </Show>
+          )}
         </Show>
-        <Show when={hasSort()}>
-          <div class="grids-toolbar-panel">
-            <SortPanel fields={props.fields} rows={sortRows} onRowsChange={setSortRows} />
-          </div>
+
+        {/* Filter — clicking adds a blank row; the panel below renders iff rows > 0. */}
+        <Tooltip.Anchor content={hasFilterableFields() ? "" : t().noFilterableFields} disabled={hasFilterableFields()}>
+          <span class="inline-flex">
+            <Button variant="secondary" size="sm" aria-pressed={hasFilter()} onClick={onFilterClick} disabled={!hasFilterableFields()}>
+              <i class="ti ti-filter" />
+              {t().filter}
+            </Button>
+          </span>
+        </Tooltip.Anchor>
+
+        {/* Sort */}
+        <Button variant="secondary" size="sm" aria-pressed={hasSort()} onClick={onSortClick}>
+          <i class="ti ti-arrows-sort" />
+          {t().sort}
+        </Button>
+
+        <Show when={props.onAddComputedColumn}>
+          <Button variant="secondary" size="sm" aria-pressed={hasCustomColumns()} onClick={props.onAddComputedColumn}>
+            <i class="ti ti-calculator" />
+            {t().computed}
+          </Button>
+        </Show>
+
+        <Show when={props.showCardSize && props.onCardSizeChange}>
+          <CardSizeDropdown value={props.cardSize ?? "medium"} onChange={(size) => props.onCardSizeChange?.(size)} />
+        </Show>
+
+        {/* Smart Clear — appears when any query dimension is active.
+            Label names exactly what goes away. */}
+        <Show when={hasToolbarQuery()}>
+          <Button variant="secondary" size="sm" type="button" class="text-red-500" onClick={clearAll}>
+            <i class="ti ti-filter-off" />
+            {clearLabel()}
+          </Button>
+        </Show>
+
+        {/* Save as view — captures the current query into a frozen
+            preset. The view settings modal handles renaming / sharing; the query
+            becomes read-only after save. */}
+        <Show when={hasSaveableQuery()}>
+          <Button variant="secondary" size="sm" type="button" class="ml-auto" onClick={handleSaveView} disabled={saveViewMut.loading()}>
+            <i class={`ti ${saveViewMut.loading() ? "ti-loader-2 animate-spin" : "ti-bookmark-plus"}`} />
+            {saveViewMut.loading() ? t().saving : t().saveAsView}
+          </Button>
         </Show>
       </div>
-    </Show>
-  );
 
-  return props.frame(chips, panels);
+      {/* Filter panel — render iff there's at least one filter row */}
+      <Show when={hasFilter()}>
+        <div class="paper p-2.5">
+          <FilterPanel
+            fields={props.fields}
+            rows={filterRows}
+            onRowsChange={setFilterRows}
+            relationLabels={props.relationLabels}
+            dateConfig={props.dateConfig}
+          />
+        </div>
+      </Show>
+
+      {/* Sort panel */}
+      <Show when={hasSort()}>
+        <div class="paper p-2.5">
+          <SortPanel fields={props.fields} rows={sortRows} onRowsChange={setSortRows} />
+        </div>
+      </Show>
+
+      {/* No Apply / Cancel chips — auto-commit on every signal change
+          (debounced 300ms) handles it. URL stays the source of truth so
+          reload / copy-paste / save-as-view all work. */}
+    </div>
+  );
 }

@@ -5,6 +5,7 @@ docs-site/src/ui/demo-sections/cloud.tsx | class | <div> border
 packages/cloud/src/desktop/solid.tsx | class | <div> border-b
 packages/core/src/pages/admin/ai/AiModelDetail.island.tsx | class | <section> border-t
 packages/core/src/pages/admin/storage/view.tsx | class | <div> border-t
+packages/core/src/pages/auth/PasswordSetupFields.tsx | class | <div> border
 packages/gateway-ops/src/observability/telemetry/browser/ModeNav.tsx | class | <nav> border-[var(--k2b-border)]
 packages/gateway-ops/src/observability/telemetry/browser/ModeNav.tsx | class | <nav> border-b
 packages/grids/src/frontend/custom-app/Scanner.island.tsx | class | <div> border

@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
-    "@k2b/stdlib": "catalog:",
+    "@k2b/stdlib": "workspace:*",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "zod": "catalog:"

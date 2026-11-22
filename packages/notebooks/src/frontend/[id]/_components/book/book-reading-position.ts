@@ -23,10 +23,8 @@ const readingAnchor = (article: HTMLElement, portTop: number): Anchor | null => 
     const { top } = next.getBoundingClientRect();
     if (top >= portTop) return { element, within: 0, offset: top - portTop };
   }
-  // In whole pixels, like the correction: WebKit keeps only whole pixels of a scroll offset, and a rest of a pixel
-  // would be scaled with the block's new height on every switch.
   const { top, height } = element.getBoundingClientRect();
-  return { element, within: Math.round(portTop - top) / Math.max(1, height), offset: 0 };
+  return { element, within: (portTop - top) / Math.max(1, height), offset: 0 };
 };
 
 /**
@@ -46,7 +44,7 @@ export const keepBookReadingPosition = (article: HTMLElement, scroller: HTMLElem
   if (!anchor) return () => {};
   return () => {
     const { top, height } = anchor.element.getBoundingClientRect();
-    const delta = Math.round(top + anchor.within * height - anchor.offset - scroller.getBoundingClientRect().top);
-    if (delta !== 0) scroller.scrollTop += delta;
+    const delta = top + anchor.within * height - anchor.offset - scroller.getBoundingClientRect().top;
+    if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
   };
 };

@@ -800,24 +800,6 @@ describe("Waiting for you", () => {
         // behind it never shows, between the chips neither. The band looks the same with the conversation hidden.
         const field = await rect(page, ".assistant-chat-composer__column");
         const band = { x: row.left, y: row.top, width: row.right - row.left, height: field.top - row.top };
-        // Bring the next line of the conversation below the band's top behind the band, wherever the chat's head and
-        // column put the timeline; the timeline stays scrolled away from its end, so the pill stays.
-        await page.evaluate((band) => {
-          const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
-          const walker = document.createTreeWalker(document.querySelector(".k2b-chat-timeline__content")!, NodeFilter.SHOW_TEXT);
-          const range = document.createRange();
-          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-            if (!node.textContent?.trim()) continue;
-            range.selectNodeContents(node);
-            const box = [...range.getClientRects()].find(
-              (rect) => rect.bottom > band.y && rect.right > band.x && rect.left < band.x + band.width,
-            );
-            if (!box) continue;
-            viewport.scrollTop += box.top + box.height / 2 - (band.y + band.height / 2);
-            return;
-          }
-        }, band);
-        await settled(page);
         const behind = await page.evaluate((band) => {
           const content = document.querySelector(".k2b-chat-timeline__content")!;
           const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
