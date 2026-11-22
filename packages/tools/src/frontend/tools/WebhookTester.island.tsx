@@ -424,7 +424,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     }
   };
 
-  // A primary list never scrolls sideways (K7, K15): no column has a fixed minimum width. One long text per table (URL,
+  // A primary list never scrolls sideways: no column has a fixed minimum width. One long text per table (URL,
   // target) takes the room that is left (`w-full! max-w-0!`: the table's own cell cap outranks a plain utility);
   // content type and body end at a fixed width inside their cell; all three end with an ellipsis. Side columns wait
   // in the row details when the table is narrow.

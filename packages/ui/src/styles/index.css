@@ -19394,7 +19394,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The preview floats with a small shadow and hangs below the pointer, so it
-   never covers the line that shows the target (K7, K16). */
+   never covers the line that shows the target. */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) {
   position: fixed;
   z-index: 2147483000;
