@@ -345,6 +345,8 @@
 .k2b-ui .spaces-kanban-cards .spaces-kanban-card { min-height: calc(3.5rem - 1px); padding-top: calc(var(--k2b-space-2) - 1px); }
 .k2b-ui .spaces-kanban-card:hover { --spaces-card-bg: var(--k2b-hover); }
 .k2b-ui .spaces-kanban-card[data-selected] { --spaces-card-bg: var(--ui-app-selected); }
+/* A finger held 300 ms lifts the card (K7): the card shows the engine's held colour through its own background. */
+.k2b-ui .k2b-drag-source[data-held] > .spaces-kanban-card { --spaces-card-bg: var(--k2b-surface-muted); }
 .spaces-kanban-card__glyph { display: grid; height: 1.25rem; grid-column: 1; align-self: start; place-items: center; font-size: .875rem; }
 .spaces-kanban-card__title {
   display: -webkit-box; overflow: hidden; grid-column: 2 / -1; padding-inline-end: var(--spaces-card-tools, 0px);

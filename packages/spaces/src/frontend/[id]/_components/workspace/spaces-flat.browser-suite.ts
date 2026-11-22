@@ -67,9 +67,18 @@ test("1440 px kanban: a card is a row of its column, 56 px with one title line, 
           tall: [...element.querySelectorAll<HTMLElement>(".spaces-kanban-card__meta *, .spaces-kanban-card__people *")]
             .filter((part) => part.getBoundingClientRect().height > 20.5 && part.checkVisibility())
             .map((part) => `${part.className} ${Math.round(part.getBoundingClientRect().height)}`),
+          // A held finger shows on the card itself, not only behind it (K7).
+          held: (() => {
+            const source = element.closest<HTMLElement>(".k2b-drag-source")!;
+            const rest = getComputedStyle(element).backgroundColor;
+            source.dataset.held = "";
+            const colours = [getComputedStyle(element).backgroundColor, getComputedStyle(source).backgroundColor];
+            delete source.dataset.held;
+            return colours[0] !== rest && colours[0] === colours[1];
+          })(),
         };
       });
-    expect(look).toEqual({ height: 56, radius: "0px", shadow: "none", border: "0px", tall: [] });
+    expect(look).toEqual({ height: 56, radius: "0px", shadow: "none", border: "0px", tall: [], held: true });
   } finally {
     await page.context().close();
   }
