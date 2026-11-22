@@ -16,10 +16,12 @@ export const mirrorPendingSources = async (baseId: string, store: IngestStore = 
     const base = await loadStoreRow(baseId, tx);
     if (!base || !sameCheckpoint(base, checkpoint)) return;
     // One synchronous insert, bounded by the same row budget as internal telemetry batches.
+    // NO KEY UPDATE excludes source changes and other mirrors but not running ingest writes (KEY SHARE). SKIP LOCKED
+    // never waits while holding other sources: a busy source keeps mirror_pending for the next pass.
     const sources = await tx<{ id: string; short_id: string; kind: string; name: string; deleted: boolean; version: string }[]>`
     SELECT id,short_id,kind,name,deleted,floor(extract(epoch FROM updated_at)*1000000)::text AS version FROM pulse.sources
     WHERE base_id=${baseId}::uuid AND mirror_pending AND (${sourceId ?? null}::uuid IS NULL OR id=${sourceId ?? null}::uuid)
-    ORDER BY updated_at,id LIMIT ${PULSE_INTERNAL_INGEST_BATCH_LIMIT} FOR UPDATE`;
+    ORDER BY updated_at,id LIMIT ${PULSE_INTERNAL_INGEST_BATCH_LIMIT} FOR NO KEY UPDATE SKIP LOCKED`;
     if (!sources.length) return;
     await insertStoreRows(
       store,
