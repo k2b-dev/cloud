@@ -224,7 +224,8 @@ for (const labels of ["en", "de"]) {
     test(`${labels} labels and counts keep their max-content width in a ${host}`, async () => {
       const page = await browser!.newPage(host === "phone" ? phone : { viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
       try {
-        await load(page, { labels, ...(host === "phone" ? {} : { width: "640", primary: "true", current: "4" }) });
+        // K15: the strip moves what does not fit into More instead of shrinking or scrolling its tabs.
+        await load(page, { labels, fit: "true", ...(host === "phone" ? {} : { width: "640", primary: "true", current: "4" }) });
         const measurements = await page.locator(listSelector).evaluate((list) => {
           const labels = Array.from(list.querySelectorAll<HTMLElement>(".k2b-view-tabs__label"))
             .filter((label) => label.getClientRects().length > 0)
@@ -244,10 +245,10 @@ for (const labels of ["en", "de"]) {
             });
           return { labels, tabs, scrollWidth: list.scrollWidth, clientWidth: list.clientWidth };
         });
-        // The strip must overflow by a clear margin in every engine, or nothing would press the tabs to shrink.
-        expect(measurements.scrollWidth).toBeGreaterThan(measurements.clientWidth + 24);
+        // The shown tabs keep their full width and the rest waits under More: nothing scrolls sideways.
+        expect(measurements.scrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1);
         expect(measurements.labels.length).toBeGreaterThan(0);
-        expect(measurements.tabs).toHaveLength(4);
+        expect((await fitState(page)).count).toBeGreaterThan(0);
         for (const label of measurements.labels) expect(label.scroll, label.text ?? "label").toBeLessThanOrEqual(label.width);
         for (const tab of measurements.tabs) {
           expect(tab.width, tab.text ?? "tab").toBeGreaterThanOrEqual(tab.maxTab - 0.5);
@@ -632,11 +633,15 @@ test("a strip without fit keeps scrolling its views", async () => {
   }
 });
 
-test("a fitting strip keeps the phone's scrolling head row", async () => {
+// K15 (B9): the phone's head row fits its strip too; views that do not fit wait under "More +n", none scrolls.
+test("a fitting strip moves views into More in the phone's head row too", async () => {
   const page = await browser!.newPage(phone);
   try {
     await load(page, { fit: "true", pinned: "true", current: "5" });
-    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
+    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBeGreaterThan(0);
+    const state = await fitState(page);
+    expect(state.count).toBeGreaterThan(0);
+    expect(state.currentInside).toBe(true);
     expectVisible(await snapshot(page));
   } finally {
     await page.close();
