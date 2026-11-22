@@ -4,16 +4,12 @@ import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { Hono } from "hono";
 import { suiteFor, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sendWebsiteDelivery, WebsiteDeliverySchema } from "../../examples/website-tracking";
-import { DashboardSaveSchema, dashboardParameters } from "../dashboard-contracts";
-import { projectDashboardPanel } from "../dashboard-result";
 
 let pulseCapabilities: typeof import("../capabilities")["pulseCapabilities"];
 let pulseService: typeof import("../service")["pulseService"];
 let createBaseLifecycle: typeof import("../service/base-lifecycle")["createBaseLifecycle"];
 let ingestQuota: typeof import("../service/ingest-quota")["ingestQuota"];
 let createIngestWriter: typeof import("../service/ingest-writer")["createIngestWriter"];
-let createOverviewQueries: typeof import("../service/overview-queries")["createOverviewQueries"];
-let savedQueries: typeof import("../service/saved-queries")["savedQueries"];
 let createSourceApiKey: typeof import("../service/source-management")["createSourceApiKey"];
 let sqlAdmission: typeof import("../service/sql-admission")["sqlAdmission"];
 let adminFixtureIdentity: typeof import("../store/admin-identity.test-fixture")["adminFixtureIdentity"];
@@ -54,8 +50,6 @@ suiteFor(
     ({ createBaseLifecycle } = await import("../service/base-lifecycle"));
     ({ ingestQuota } = await import("../service/ingest-quota"));
     ({ createIngestWriter } = await import("../service/ingest-writer"));
-    ({ createOverviewQueries } = await import("../service/overview-queries"));
-    ({ savedQueries } = await import("../service/saved-queries"));
     ({ createSourceApiKey } = await import("../service/source-management"));
     ({ sqlAdmission } = await import("../service/sql-admission"));
     ({ adminFixtureIdentity } = await import("../store/admin-identity.test-fixture"));
@@ -79,7 +73,7 @@ suiteFor(
     await database?.drop();
   });
 
-  test("backend source token, replay, Berlin days, paths, sessions, overview and sql.run agree", async () => {
+  test("backend source token, replay, Berlin days, paths, sessions and sql.run agree", async () => {
     setSystemTime(new Date("2026-10-20T12:00:00Z"));
     const base = await fixtureBase("b2111111-1111-4111-8111-111111111111");
     const store = fixtureStore(() => new Date("2026-10-20T12:00:00Z"));
@@ -190,39 +184,23 @@ suiteFor(
         context,
       );
       expect(totals.ok && totals.data.data.rows.map((row) => row.map(Number))).toEqual([[4, 2, 1]]);
-      const example = DashboardSaveSchema.parse(await Bun.file(`${import.meta.dir}/../../examples/website-dashboard.json`).json());
-      const panelData = async (panel: (typeof example.definition.panels)[number]) => {
-        const run = await pulseCapabilities.queries["sql.run"].run(
-          {
-            baseId: base.shortId,
-            sql: panel.sql,
-            params: dashboardParameters(panel, { from: "2026-10-19T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z", bucket: "1d" }),
-          },
-          context,
-        );
-        if (!run.ok) throw new Error(`${panel.id}: ${run.error.code}: ${run.error.message}`);
-        return projectDashboardPanel(panel, run.data.data);
+      // A Code page reads the same numbers with sql.run and the time window as parameters.
+      const window = { from: "2026-10-19T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z" };
+      const pageRead = async (sqlText: string) => {
+        const run = await pulseCapabilities.queries["sql.run"].run({ baseId: base.shortId, sql: sqlText, params: window }, context);
+        if (!run.ok) throw new Error(`${run.error.code}: ${run.error.message}`);
+        return run.data.data.rows;
       };
-      const results = new Map<string, Awaited<ReturnType<typeof panelData>>>();
-      for (const panel of example.definition.panels) results.set(panel.id, await panelData(panel));
-      expect(Number(results.get("views")?.rows[0]?.[0])).toBe(4);
-      expect(results.get("countries")?.rows.map(([country, views]) => [country, Number(views)])).toEqual([
+      const views = await pageRead("SELECT count() AS value FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to");
+      expect(Number(views[0]?.[0])).toBe(4);
+      const countries = await pageRead(
+        "SELECT JSONExtractString(dimensions, 'country') AS country, count() AS views FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to GROUP BY country ORDER BY views DESC, country LIMIT 480",
+      );
+      expect(countries.map(([country, count]) => [country, Number(count)])).toEqual([
         ["DE", 2],
         ["", 1],
         ["FR", 1],
       ]);
-      const pin = await savedQueries.save({
-        ...identity,
-        baseId: base.shortId,
-        name: "Website page views",
-        sql: "SELECT countIf(kind='page_view') AS value FROM events",
-        pinned: true,
-        idempotencyKey: "website-pin",
-      });
-      expect(pin.ok).toBe(true);
-      const overview = createOverviewQueries({ testOnly: { now: () => new Date("2026-10-20T12:00:00Z") } });
-      const tiles = await overview({ ...identity, baseId: base.id, scope: { id: user!.id } });
-      expect(tiles).toMatchObject([{ name: "Website page views", status: "ready", lastGood: { data: { value: 4 } } }]);
       // The capability's own-source path reuses the writer's durable reservation.
       const writer = createIngestWriter({ store });
       const writing = spyOn(pulseService.ingest, "batch").mockImplementation(writer);

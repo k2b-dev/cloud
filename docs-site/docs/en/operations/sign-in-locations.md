@@ -54,7 +54,7 @@ and otherwise unmodified. The admin page shows this attribution while any
 active database is from DB-IP. Any page that displays or uses DB-IP database
 results must link to DB-IP.com. Application authors receive this requirement
 in the lookup result’s `attribution` field; it applies to reports using saved country
-results too. Pulse dashboards show the link on panels with country data. A non-DB-IP City upload removes that attribution from country
+results too, including Code pages that show Pulse country data. A non-DB-IP City upload removes that attribution from country
 lookup results, even if the ASN database still uses DB-IP.
 
 ## Application country lookups

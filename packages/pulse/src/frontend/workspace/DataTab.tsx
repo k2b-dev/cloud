@@ -239,7 +239,7 @@ export default function DataTab(props: {
                 />
               </div>
               <span class="sr-only" role="status">
-                {t().overviewLoading}
+                {t().loadingShort}
               </span>
             </div>
           }

@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
@@ -63,11 +62,8 @@ suiteFor("database")("saved SQL queries", () => {
       if (!saved.ok) throw new Error("SAVE_FAILED");
       expect(saved.data).toMatchObject({ baseId: baseRef, revision: 1, params: input.params, createdBy: writer!.id });
       expect(await savedQueries.save(input)).toEqual(saved);
-      // Simulate an unexpired pre-pin receipt: identical legacy hash and no new field.
-      const legacyHash = createHash("sha256")
-        .update(JSON.stringify([null, null, input.name, input.sql, input.params]))
-        .digest("hex");
-      await sql`UPDATE pulse.saved_query_operations SET input_hash=${legacyHash},response=response-'pinned' WHERE base_id=${baseId}::uuid`;
+      // A receipt written before 0.84 still carries the removed pin flag; its replay drops it.
+      await sql`UPDATE pulse.saved_query_operations SET response=response||'{"pinned":true}'::jsonb WHERE base_id=${baseId}::uuid`;
       expect(await savedQueries.save(input)).toEqual(saved);
       expect(await savedQueries.save({ ...input, name: "Changed" })).toMatchObject({ ok: false, error: { status: 409 } });
       expect(await savedQueries.get({ ...read, queryId: saved.data.id })).toEqual(saved);
@@ -142,36 +138,16 @@ suiteFor("database")("saved SQL queries", () => {
         ok: false,
         error: { code: "INPUT_TOO_LARGE" },
       });
-      const pins = await Promise.all(
-        Array.from({ length: 5 }, (_, index) =>
-          savedQueries.save({ ...identity, name: `Pinned ${index}`, sql: "SELECT 1", pinned: true, requestId: `pin-${index}` }),
+      const saves = await Promise.all(
+        Array.from({ length: 2 }, (_, index) =>
+          savedQueries.save({ ...identity, name: `Activity ${index}`, sql: "SELECT 1", requestId: `activity-${index}` }),
         ),
       );
-      expect(pins.filter((result) => result.ok)).toHaveLength(4);
-      expect(pins.filter((result) => !result.ok && result.error.status === 409)).toHaveLength(1);
-      const pinned = pins.find((result) => result.ok);
-      if (!pinned?.ok) throw new Error("PIN_FAILED");
-      expect(
-        await savedQueries.save({ ...identity, queryId: pinned.data.id, expectedRevision: 1, name: pinned.data.name, sql: "SELECT 2" }),
-      ).toMatchObject({ ok: true, data: { pinned: true, revision: 2 } });
-      expect(
-        await savedQueries.save({
-          ...identity,
-          queryId: pinned.data.id,
-          expectedRevision: 2,
-          name: pinned.data.name,
-          sql: "SELECT 2",
-          pinned: false,
-        }),
-      ).toMatchObject({ ok: true, data: { pinned: false, revision: 3 } });
-      expect(await savedQueries.save({ ...identity, name: "Replacement pin", sql: "SELECT 1", pinned: true })).toMatchObject({
-        ok: true,
-        data: { pinned: true },
-      });
+      expect(saves.every((result) => result.ok && !("pinned" in result.data))).toBe(true);
       const activities = await sql<
         { actor: { id: string }; request_id: string }[]
-      >`SELECT actor,request_id FROM pulse.base_activity WHERE base_id=${baseId}::uuid AND request_id LIKE 'pin-%'`;
-      expect(activities).toHaveLength(4);
+      >`SELECT actor,request_id FROM pulse.base_activity WHERE base_id=${baseId}::uuid AND request_id LIKE 'activity-%'`;
+      expect(activities).toHaveLength(2);
       expect(activities.every((row) => row.actor.id === user!.id)).toBe(true);
       expect(await savedQueries.list({ ...identity, limit: 1001 })).toMatchObject({ ok: false, error: { status: 400 } });
     } finally {

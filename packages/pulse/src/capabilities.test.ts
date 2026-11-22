@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
-import { err, fail, ok } from "@k2b/stdlib";
+import { ok } from "@k2b/stdlib";
 import { pulseCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -11,13 +11,12 @@ import {
   IngestWriteInputSchema,
   SourceReadInputSchema,
 } from "./capability-contracts";
-import { dashboards } from "./service/dashboards";
 import { savedQueries } from "./service/saved-queries";
 import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { fixturePolicy } from "./store/base-store.test-fixture";
 
 test("declares SQL and saved query capabilities with base and source readers", () => {
-  expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "dashboard", "source"]);
+  expect(Object.keys(pulseCapabilities.types).sort()).toEqual(["base", "source"]);
   expect(Object.keys(pulseCapabilities.queries).sort()).toEqual([
     "alert.list",
     "alert.read",
@@ -29,8 +28,6 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "base.search",
     "base.source.list",
     "base.sql.run",
-    "dashboard.list",
-    "dashboard.read",
     "saved_query.list",
     "schema.read",
     "source.list",
@@ -39,7 +36,7 @@ test("declares SQL and saved query capabilities with base and source readers", (
   ]);
   // G1: every Query that reads one base names it, as a target or as baseId (inputRefs), so Cloud checks it for each
   // visitor of a Code page. The app-wide forms stay available to Code until the removal release.
-  for (const id of ["alert.list", "alert.read", "dashboard.list", "saved_query.list", "source.list", "sql.run"] as const) {
+  for (const id of ["alert.list", "alert.read", "saved_query.list", "source.list", "sql.run"] as const) {
     expect(pulseCapabilities.queries[id].inputRefs).toEqual({ baseId: "base" });
     expect("code" in pulseCapabilities.queries[id]).toBe(false);
   }
@@ -59,10 +56,6 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "base.clear_data",
     "base.create",
     "base.delete",
-    "dashboard.delete",
-    "dashboard.publish",
-    "dashboard.save",
-    "dashboard.unpublish",
     "ingest.write",
     "saved_query.delete",
     "saved_query.save",
@@ -221,48 +214,9 @@ test("saved-query actions reject UUID Base targets instead of giving one Base tw
   expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
 });
 
-test("dashboard mutations take the Base from the capability target", async () => {
-  const context: CapabilityExecutionContext = {
-    ...adminFixtureIdentity(),
-    user: null,
-    locale: "en",
-    requestId: "dashboard-target-test",
-    target: { type: "pulse.base", id: "Base01" },
-    origin: "http",
-    signal: new AbortController().signal,
-    idempotencyKey: "dashboard-target-test",
-  };
-  const definition = { panels: [] };
-  const draft = { name: "Dashboard", definition };
-  const revision = { dashboardId: "Dash01", expectedRevision: 1 };
-  const publication = { ...revision, columns: { visits: ["visits"] } };
-  const save = spyOn(dashboards, "save").mockResolvedValue(fail(err.conflict("Fixture already exists")));
-  const publish = spyOn(dashboards, "publish").mockResolvedValue(fail(err.conflict("Fixture already exists")));
-  const remove = spyOn(dashboards, "remove").mockResolvedValue(fail(err.conflict("Fixture already exists")));
-  try {
-    const actions = pulseCapabilities.actions;
-    for (const [action, input] of [
-      [actions["dashboard.save"], draft],
-      [actions["dashboard.publish"], publication],
-      [actions["dashboard.unpublish"], revision],
-      [actions["dashboard.delete"], revision],
-    ] as const) {
-      expect(action.target).toBe("base");
-      expect(action.input.safeParse(input).success).toBeTrue();
-      expect(action.input.safeParse({ ...input, baseId: "Other1" }).success).toBeFalse();
-    }
-    await actions["dashboard.save"].run(draft, context);
-    await actions["dashboard.publish"].run(publication, context);
-    await actions["dashboard.unpublish"].run(revision, context);
-    await actions["dashboard.delete"].run(revision, context);
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ baseId: "Base01", ...draft }));
-    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ baseId: "Base01", ...publication }));
-    expect(remove).toHaveBeenCalledTimes(2);
-    expect(remove).toHaveBeenNthCalledWith(1, expect.objectContaining({ baseId: "Base01", ...revision, unpublish: true }));
-    expect(remove).toHaveBeenNthCalledWith(2, expect.objectContaining({ baseId: "Base01", ...revision }));
-  } finally {
-    save.mockRestore();
-    publish.mockRestore();
-    remove.mockRestore();
-  }
+test("saved queries carry no overview pin", () => {
+  const save = pulseCapabilities.actions["saved_query.save"].input;
+  expect(save.safeParse({ name: "CPU", sql: "SELECT 1" }).success).toBeTrue();
+  expect(save.safeParse({ name: "CPU", sql: "SELECT 1", pinned: true }).success).toBeFalse();
+  expect(JSON.stringify(compileCapabilityManifest("pulse", pulseCapabilities))).not.toContain("pinned");
 });

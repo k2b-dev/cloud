@@ -1904,7 +1904,7 @@ one. A plain object-row icon sits in a soft chip of the accent ink
 `--k2b-app-workspace-active`, as far from the row's start as from its top and
 bottom; custom
 icon content, such as an avatar, keeps its own treatment in the same 2rem box.
-Entries inside one resource, such as the dashboards of a Pulse base, are not
+Entries inside one resource, such as the sections of an opened base, are not
 object rows: they use the default row with a plain glyph and no chip.
 Object rows keep their title on one line that fades out.
 

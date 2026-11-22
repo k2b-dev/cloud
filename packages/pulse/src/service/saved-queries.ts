@@ -19,7 +19,6 @@ export type SavedQuery = {
   name: string;
   sql: string;
   params: Record<string, string>;
-  pinned: boolean;
   revision: number;
   createdBy: string | null;
   updatedBy: string | null;
@@ -34,7 +33,6 @@ export type SaveQueryInput = BaseInput & {
   sql: string;
   params?: Record<string, string>;
   idempotencyKey?: string;
-  pinned?: boolean;
 };
 type Row = {
   id: string;
@@ -43,7 +41,6 @@ type Row = {
   name: string;
   sql: string;
   params: Record<string, string>;
-  pinned: boolean;
   revision: number;
   created_by: string | null;
   updated_by: string | null;
@@ -56,7 +53,6 @@ const map = (row: Row): SavedQuery => ({
   name: row.name,
   sql: row.sql,
   params: row.params,
-  pinned: row.pinned,
   revision: row.revision,
   createdBy: row.created_by,
   updatedBy: row.updated_by,
@@ -74,7 +70,11 @@ const authorize = async (input: BaseInput, permission: "read" | "write") => {
 const queryCondition = (reference: string) =>
   z.uuid().safeParse(reference).success ? sql`q.id=${reference}::uuid` : sql`q.short_id=${reference}`;
 const find = async (baseId: string, queryId: string, db: typeof sql = sql): Promise<Row | undefined> => {
-  const [row] = await db<Row[]>`SELECT q.*,b.short_id AS base_short_id FROM pulse.saved_queries q JOIN pulse.bases b ON b.id=q.base_id
+  // Named columns: the unused `pinned` column stays in the table, but nothing reads it.
+  const [row] = await db<
+    Row[]
+  >`SELECT q.id,q.short_id,q.name,q.sql,q.params,q.revision,q.created_by,q.updated_by,q.created_at,q.updated_at,b.short_id AS base_short_id
+    FROM pulse.saved_queries q JOIN pulse.bases b ON b.id=q.base_id
     WHERE q.base_id=${baseId}::uuid AND ${queryCondition(queryId)}`;
   return row;
 };
@@ -88,7 +88,10 @@ const list = async (input: BaseInput & { limit?: number; offset?: number }): Pro
   if (!paging.success) return fail(err.badInput("Use a page size from 1 to 1000 and a non-negative offset"));
   const { limit, offset } = paging.data,
     { baseId } = authorized.data;
-  const rows = await sql<Row[]>`SELECT q.*,b.short_id AS base_short_id FROM pulse.saved_queries q JOIN pulse.bases b ON b.id=q.base_id
+  const rows = await sql<
+    Row[]
+  >`SELECT q.id,q.short_id,q.name,q.sql,q.params,q.revision,q.created_by,q.updated_by,q.created_at,q.updated_at,b.short_id AS base_short_id
+    FROM pulse.saved_queries q JOIN pulse.bases b ON b.id=q.base_id
     WHERE q.base_id=${baseId}::uuid ORDER BY q.updated_at DESC,q.id LIMIT ${limit} OFFSET ${offset}`;
   const [count] = await sql<{ total: number }[]>`SELECT count(*)::int AS total FROM pulse.saved_queries WHERE base_id=${baseId}::uuid`;
   const total = count?.total ?? 0;
@@ -127,7 +130,6 @@ const record = async (db: typeof sql, baseId: string, key: string | null, hash: 
 const save = async (input: SaveQueryInput): Promise<Result<SavedQuery>> => {
   const authorized = await authorize(input, "write");
   if (!authorized.ok) return authorized;
-  if (input.pinned !== undefined && typeof input.pinned !== "boolean") return fail(err.badInput("pinned must be a boolean"));
   if (!idempotencyValid(input.idempotencyKey)) return fail(err.badInput("Idempotency-Key must contain 1 to 200 bytes"));
   const name = input.name.trim();
   if (!name || name.length > 120) return fail(err.badInput("Query name must contain 1 to 120 characters"));
@@ -144,36 +146,26 @@ const save = async (input: SaveQueryInput): Promise<Result<SavedQuery>> => {
   const params = Object.fromEntries(Object.entries(input.params ?? {}).sort(([a], [b]) => a.localeCompare(b)));
   const { baseId, scope } = authorized.data,
     key = receiptKey(input, "save"),
-    // Preserve replay hashes for existing clients and pre-pin receipts.
-    hash = digest([
-      input.queryId ?? null,
-      input.expectedRevision ?? null,
-      name,
-      checked.sql,
-      params,
-      ...(input.pinned === undefined ? [] : [input.pinned]),
-    ]);
+    // Same hash as before pinning was removed, so earlier receipts still replay.
+    hash = digest([input.queryId ?? null, input.expectedRevision ?? null, name, checked.sql, params]);
   try {
     return await withShortId("saved_query", (shortId) =>
       sql.begin(async (tx): Promise<Result<SavedQuery>> => {
         await tx`SELECT id FROM pulse.bases WHERE id=${baseId}::uuid FOR UPDATE`;
         const access = await requireBaseAccess(baseId, scope, "write", tx);
         if (!access.ok) return access;
-        const replay = await receipt<Omit<SavedQuery, "pinned"> & { pinned?: boolean }>(tx, baseId, key, hash);
-        // Historical receipts describe an unpinned result, even if the query has
-        // since changed or been deleted. Never replace replay with a current read.
-        if (replay) return replay.ok ? ok({ ...replay.data, pinned: replay.data.pinned ?? false }) : replay;
+        const replay = await receipt<SavedQuery & { pinned?: boolean }>(tx, baseId, key, hash);
+        // Receipts from before 0.84 may still carry the removed pin flag. Never
+        // replace replay with a current read, even if the query changed since.
+        if (replay) {
+          if (!replay.ok) return replay;
+          const { pinned: _removedPin, ...data } = replay.data;
+          return ok(data);
+        }
         const active = await requireBaseActive(baseId, tx);
         if (!active.ok) return active;
         const before = input.queryId ? await find(baseId, input.queryId, tx) : undefined;
         if (input.queryId && !before) return fail(err.notFound("Saved query"));
-        const pinned = input.pinned ?? before?.pinned ?? false;
-        if (pinned && !before?.pinned) {
-          const [count] = await tx<
-            { n: number }[]
-          >`SELECT count(*)::int AS n FROM pulse.saved_queries WHERE base_id=${baseId}::uuid AND pinned`;
-          if ((count?.n ?? 0) >= 4) return fail(err.conflict("At most four saved queries can be pinned to the overview"));
-        }
         let id: string;
         if (input.queryId) {
           if (!before) return fail(err.notFound("Saved query"));
@@ -181,12 +173,12 @@ const save = async (input: SaveQueryInput): Promise<Result<SavedQuery>> => {
             return fail(err.conflict("Saved query changed. Read its current revision and retry."));
           id = before.id;
           await tx`UPDATE pulse.saved_queries SET name=${name},sql=${checked.sql},params=(${JSON.stringify(params)}::jsonb #>> '{}')::jsonb,
-          pinned=${pinned},revision=revision+1,updated_by=${actorId(input.actor)},updated_at=now() WHERE id=${id}::uuid`;
+          revision=revision+1,updated_by=${actorId(input.actor)},updated_at=now() WHERE id=${id}::uuid`;
         } else {
           const [created] = await tx<
             { id: string }[]
-          >`INSERT INTO pulse.saved_queries(short_id,base_id,name,sql,params,pinned,created_by,updated_by)
-          VALUES(${shortId},${baseId}::uuid,${name},${checked.sql},(${JSON.stringify(params)}::jsonb #>> '{}')::jsonb,${pinned},${actorId(input.actor)},${actorId(input.actor)}) RETURNING id`;
+          >`INSERT INTO pulse.saved_queries(short_id,base_id,name,sql,params,created_by,updated_by)
+          VALUES(${shortId},${baseId}::uuid,${name},${checked.sql},(${JSON.stringify(params)}::jsonb #>> '{}')::jsonb,${actorId(input.actor)},${actorId(input.actor)}) RETURNING id`;
           if (!created) return fail(err.internal("Could not save query"));
           id = created.id;
         }
@@ -198,7 +190,7 @@ const save = async (input: SaveQueryInput): Promise<Result<SavedQuery>> => {
           actor: input.actor,
           requestId: input.requestId,
           kind: "query_saved",
-          data: { queryId: row.short_id, name, pinned },
+          data: { queryId: row.short_id, name },
         });
         await record(tx, baseId, key, hash, result);
         return ok(result);

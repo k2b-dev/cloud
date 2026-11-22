@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PulseSource } from "../../contracts";
-import type { OverviewAttention } from "../../overview-contracts";
+import type { AlertAttention } from "../../service/base-attention";
 import { attentionItems, basePageState, newestArrival, sourceProblem, sourcesSummary } from "./flat-state";
 
 const source = (id: string, overrides: Partial<PulseSource> = {}, status: Partial<PulseSource["status"]> = {}): PulseSource => ({
@@ -34,14 +34,7 @@ const source = (id: string, overrides: Partial<PulseSource> = {}, status: Partia
   updatedAt: "2026-10-01T08:00:00.000Z",
   ...overrides,
 });
-const alert = (
-  id: string,
-  state: OverviewAttention["state"],
-  severity: OverviewAttention["severity"],
-  since: string,
-): OverviewAttention => ({
-  id: `alert:${id}`,
-  kind: "alert",
+const alert = (id: string, state: AlertAttention["state"], severity: AlertAttention["severity"], since: string): AlertAttention => ({
   reference: id,
   name: id,
   state,
@@ -51,11 +44,8 @@ const alert = (
   errorCode: null,
   key: null,
   value: null,
-  comparison: null,
+  comparison: "above",
   threshold: null,
-  newestDataAt: null,
-  expectEverySeconds: null,
-  expectDailyBy: null,
 });
 
 describe("base page state", () => {
@@ -130,14 +120,17 @@ describe("attention order", () => {
     expect(items.map((item) => item.tone)).toEqual(["danger", "danger", "warning", "warning", "warning", "warning"]);
   });
 
-  test("older problems come first within one rank, and the overview's stale rows do not repeat sources", () => {
+  test("older problems come first within one rank", () => {
     const items = attentionItems(
       [
         source("later", {}, { lastError: "x", lastErrorAt: "2026-10-19T12:00:00.000Z" }),
         source("earlier", {}, { lastError: "x", lastErrorAt: "2026-10-19T10:00:00.000Z" }),
       ],
-      [{ ...alert("stale-source", "no_data", null, "2026-10-19T08:00:00.000Z"), kind: "source", state: "stale" }],
+      [
+        alert("no-data-later", "no_data", null, "2026-10-19T09:00:00.000Z"),
+        alert("no-data-earlier", "no_data", null, "2026-10-19T08:00:00.000Z"),
+      ],
     );
-    expect(items.map((item) => item.id)).toEqual(["source:earlier", "source:later"]);
+    expect(items.map((item) => item.id)).toEqual(["source:earlier", "source:later", "alert:no-data-earlier", "alert:no-data-later"]);
   });
 });

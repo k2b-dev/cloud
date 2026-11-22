@@ -55,7 +55,7 @@ const props: PulseWorkspaceProps = {
   initialNow: "2026-01-01T00:00:00.000Z",
   initialOrigin: "https://cloud.example.test",
 };
-const render = (view: "sources" | "dashboards", locale = "en") =>
+const render = (view: "sources", locale = "en", extra: Partial<PulseWorkspaceProps> = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -63,7 +63,7 @@ const render = (view: "sources" | "dashboards", locale = "en") =>
         return createComponent(PulseWorkspace, {
           ...props,
           initialRouteState: { view, sourceId: "" },
-          initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+          ...extra,
         });
       },
     }),
@@ -81,16 +81,30 @@ test("sources render from their server snapshot without measurement counts or re
   expect(html).not.toContain("No sources");
 });
 
-test("empty dashboards render SQL and Assistant actions in each locale", () => {
-  for (const [locale, title, action] of [
-    ["en", "No dashboard yet", "Open SQL console"],
-    ["de", "Noch kein Dashboard", "SQL-Konsole öffnen"],
+test("the sidebar offers sources, SQL and settings, but no overview or dashboards", () => {
+  for (const [locale, gone] of [
+    ["en", ["Overview", "Dashboards", "No dashboard yet"]],
+    ["de", ["Übersicht", "Dashboards", "Noch kein Dashboard"]],
   ] as const) {
-    const html = render("dashboards", locale);
-    expect(html.split(`<h2>${title}</h2>`)).toHaveLength(2);
-    expect(html).toContain(action);
-    expect(html).not.toContain("Warehouse importer");
-    expect(html).not.toContain("<hr");
+    const html = render("sources", locale);
+    expect(html).toContain("SQL");
+    for (const text of gone) expect(html).not.toContain(text);
+  }
+});
+
+test("an old dashboard link opens the base with a notice the server renders, and only then", () => {
+  for (const [locale, title, way, usage] of [
+    ["en", "Dashboards are gone", "in Code", "Open Usage"],
+    ["de", "Dashboards gibt es nicht mehr", "in Code", "Nutzung öffnen"],
+  ] as const) {
+    const html = render("sources", locale, { initialNotice: "dashboards-removed" });
+    expect(html).toContain(title);
+    expect(html).toContain(way);
+    // The notice leads to Usage, which lists the pages that read the base.
+    expect(html).toContain(usage);
+    expect(html).toContain('href="/app/pulse/Base01/usage"');
+    expect(html).toContain("Warehouse importer");
+    expect(render("sources", locale)).not.toContain(title);
   }
 });
 
@@ -118,4 +132,39 @@ test("SQL console SSR renders the same initial draft as the controller without b
     expect(html).not.toContain(save);
     expect(html).toContain(helper);
   }
+});
+
+const firedAlert = {
+  reference: "Alt001",
+  name: "Orders too low",
+  state: "firing" as const,
+  severity: "critical" as const,
+  since: "2025-12-31T23:30:00.000Z",
+  lastCheckedAt: "2025-12-31T23:58:00.000Z",
+  errorCode: null,
+  key: "orders",
+  value: 0,
+  comparison: "below" as const,
+  threshold: 2,
+};
+
+test("Sources renders fired alerts, the alert detail and a lost store from the server read", () => {
+  const attention = { readAt: "2026-01-01T00:00:00.000Z", store: { unavailable: false, since: null }, alerts: [firedAlert] };
+  const list = render("sources", "en", { initialAttention: attention });
+  expect(list).toContain("Alert “Orders too low” fired");
+  expect(list).toContain("Critical");
+  const detail = render("sources", "en", {
+    initialAttention: attention,
+    initialRouteState: { view: "sources", sourceId: "", alertId: "Alt001" },
+  });
+  expect(detail).toContain("Fires when the value is below 2.");
+  expect(detail).toContain("Adjust with Gustav");
+  expect(detail).toContain('href="/app/pulse/Base01/sql?alert=Alt001"');
+  // An outage of the store comes from the read, not from a failed base store.
+  const down = render("sources", "de", {
+    initialAttention: { ...attention, alerts: [], store: { unavailable: true, since: "2025-12-31T23:05:00.000Z" } },
+  });
+  expect(down).toContain("Datenspeicher nicht erreichbar");
+  expect(down).toContain("Pulse prüft das automatisch");
+  expect(render("sources", "de")).not.toContain("Datenspeicher nicht erreichbar");
 });

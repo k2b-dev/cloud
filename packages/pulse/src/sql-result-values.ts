@@ -2,7 +2,7 @@ import { dates } from "@k2b/stdlib";
 
 /**
  * A calendar date (`Date`, `toDate(ts, :base_tz)`) has no zone of its own; `dateZone` names the zone whose
- * midnight it starts at, such as the base's zone on a dashboard.
+ * midnight it starts at, such as the base's zone in the SQL console.
  */
 export const sqlTimestamp = (value: unknown, type: string, dateZone = "UTC"): number => {
   if (typeof value === "number") return value * 1000; // ClickHouse Unix seconds.

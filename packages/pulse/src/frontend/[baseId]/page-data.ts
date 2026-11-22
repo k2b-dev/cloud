@@ -7,9 +7,8 @@ import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
 import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
 import { alertRules } from "../../service/alert-rules";
+import { readBaseAttention } from "../../service/base-attention";
 import { readBasePolicy } from "../../service/base-policy";
-import { dashboards } from "../../service/dashboards";
-import { readOverview } from "../../service/overview";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
@@ -40,8 +39,6 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
   const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
-  // The tab count and the Usage tab need the sources on every tab of the base; the views behind "…" do not.
-  const needsSources = route.view !== "overview" && route.view !== "dashboards";
   const [base, bases, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
@@ -76,9 +73,8 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     };
   }
   if (!base.ok) return { kind: "error", status: base.error.status };
-  const sources = needsSources
-    ? await pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
-    : { ok: true as const, data: [] };
+  // The tab count and the Usage tab need the sources on every tab of the base.
+  const sources = await pulseService.source.list(baseId, user, { signal: c.req.raw.signal });
   if (!sources.ok) return { kind: "error", status: sources.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const [write, admin] = scope.ok
@@ -101,43 +97,17 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: needsSources, sourceDetail: true },
+    initialQueryCoverage: { bases: bases.ok, baseData: true, sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
+    ...(url.searchParams.get("notice") === "dashboards-removed" ? { initialNotice: "dashboards-removed" as const } : {}),
   };
-  const dashboardIdentity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
-  const dashboardPage = await dashboards.list(dashboardIdentity);
-  const dashboard =
-    route.view === "dashboards" && route.dashboardId
-      ? await dashboards.get({ ...dashboardIdentity, dashboardId: route.dashboardId })
-      : null;
-  props.initialDashboards = {
-    items: dashboardPage.ok ? dashboardPage.data.items : [],
-    total: dashboardPage.ok ? dashboardPage.data.total : 0,
-    nextOffset: dashboardPage.ok ? dashboardPage.data.nextOffset : null,
-    selected:
-      route.view === "dashboards"
-        ? dashboard?.ok
-          ? dashboard.data
-          : !route.dashboardId && dashboardPage.ok
-            ? (dashboardPage.data.items[0] ?? null)
-            : null
-        : null,
-    error:
-      dashboard && !dashboard.ok
-        ? { code: dashboard.error.code, message: dashboard.error.message }
-        : dashboardPage.ok
-          ? null
-          : { code: dashboardPage.error.code, message: dashboardPage.error.message },
-  };
-  // Sources renders the alerts that fired and the store state on the server, from the same read as the overview.
-  if (route.view === "sources" || route.view === "overview" || route.view === "dashboards") {
-    const overview = await readOverview({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId, signal: c.req.raw.signal });
-    if (!overview.ok && [403, 404].includes(overview.error.status)) return { kind: "error", status: overview.error.status };
-    props.initialOverview = overview.ok
-      ? { data: overview.data, error: null }
-      : { data: null, error: { code: overview.error.code, message: overview.error.message } };
+  // Sources renders the alerts that fired and the data store state on the server.
+  if (route.view === "sources") {
+    const attention = await readBaseAttention({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId });
+    if (!attention.ok) return { kind: "error", status: attention.error.status };
+    props.initialAttention = attention.data;
   }
   if (route.view === "sql") {
     const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };

@@ -1,5 +1,5 @@
 import type { PulseSource } from "../../contracts";
-import type { OverviewAttention } from "../../overview-contracts";
+import type { AlertAttention } from "../../service/base-attention";
 
 /**
  * The decisions behind the Sources tab, free of rendering: which state the base page shows, what the status row says
@@ -17,7 +17,7 @@ export type AttentionTone = "danger" | "warning";
 
 export type AttentionItem =
   | { kind: "source"; id: string; tone: AttentionTone; problem: SourceProblem; since: string | null; source: PulseSource }
-  | { kind: "alert"; id: string; tone: AttentionTone; since: string | null; alert: OverviewAttention };
+  | { kind: "alert"; id: string; tone: AttentionTone; since: string | null; alert: AlertAttention };
 
 /**
  * The most urgent problem of one source, or null. Refused requests come first: the source still sends, but nothing
@@ -58,9 +58,8 @@ const rank = (item: AttentionItem): number => {
 /**
  * Everything that needs a person, most urgent first: sources that send without arriving, fired critical then warning
  * alerts, throttled and stale sources, then alerts that cannot be checked. Older problems first within one rank.
- * Stale sources come from the source list; the overview's own stale rows would repeat them.
  */
-export const attentionItems = (sources: readonly PulseSource[], alerts: readonly OverviewAttention[]): AttentionItem[] => {
+export const attentionItems = (sources: readonly PulseSource[], alerts: readonly AlertAttention[]): AttentionItem[] => {
   const items: AttentionItem[] = [];
   for (const source of sources) {
     const problem = sourceProblem(source);
@@ -75,10 +74,9 @@ export const attentionItems = (sources: readonly PulseSource[], alerts: readonly
     });
   }
   for (const alert of alerts) {
-    if (alert.kind !== "alert") continue;
     items.push({
       kind: "alert",
-      id: alert.id,
+      id: `alert:${alert.reference}`,
       tone: alert.state === "firing" && alert.severity === "critical" ? "danger" : "warning",
       since: alert.since,
       alert,
