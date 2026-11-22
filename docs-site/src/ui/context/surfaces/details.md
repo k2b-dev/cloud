@@ -4,7 +4,8 @@
 
 ## Use DescriptionList
 
-Use it for metadata, summaries, and compact detail panels. In `layout="rows"`, a
+Use it for metadata, summaries, and compact detail panels. In `layout="rows"`,
+each row is a dense 32 px row with a quiet 12 px label and a 13 px value. A
 value may contain one compact control such as a status or assignee picker when
 that control has its own accessible name. Use a normal form layout for broader
 editing, and do not use the component for arbitrary card layouts.

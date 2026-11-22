@@ -127,9 +127,10 @@ the workspace sidebar, the settings page, `DetailPanel.Body`, `ChatTimeline`,
 when it starts to scroll. Where a scroller already has an end inset or
 padding, the track takes it instead of adding room, so the content keeps its
 width: an inset `ScrollArea`, a level body, and the sidebar keep 0.5 rem on
-both sides. `Main` and `MainPane` are layout regions that often do not
-scroll; they reserve the gutter in Chromium and Firefox but draw no empty
-track in Safari.
+both sides. `Main`, `MainPane`, and `DetailPanel.Body` reserve nothing: their
+rows and hairlines reach the column edge, and a classic scrollbar takes its
+room only while they really scroll. A navigation `MainPane` keeps its gutter,
+because its inset rows use it as their end space.
 
 A `ScrollArea` with its own end padding takes the track from that padding
 with one rule, so its content keeps the width it had without a scrollbar:

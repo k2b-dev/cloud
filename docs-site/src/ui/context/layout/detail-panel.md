@@ -111,15 +111,12 @@ and wraps inside the header instead of hiding the subtitle; plain
 text in `meta` uses the subtitle's size and color, while badges and buttons keep
 their own.
 `DetailPanel.Body` is the single scrolling element and accepts a
-`scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting
-when expanding content first makes the panel overflow. Inside
-`AppWorkspace.Detail`, that gutter occupies the host's existing trailing inset
-instead of adding a second gap. On a device whose primary pointer is coarse,
-which usually draws overlay scrollbars that reserve no gutter, the panel keeps
-the host inset instead, so its content has the same margin on both sides. The
-pointer only stands in for the scrollbar style: a touch device with classic
-scrollbars shows the gutter next to the inset, and a desktop with overlay
-scrollbars keeps the panel at the trailing edge. Do not add a second
+`scrollPreserveKey`. It reserves no scrollbar gutter, so the hairlines between
+its topics and a tinted alert cell reach the column's edge. A classic scrollbar
+takes its room only while the body really scrolls. Inside `AppWorkspace.Detail`
+as a drawer, the panel takes the host's trailing inset into its width and the
+body keeps it as end padding, so its content has the same margin on both sides.
+Do not add a second
 full-height scroller inside it. Every topic of the body stands borderless on
 the column's 20 px text edge, and one hairline separates each topic from the
 one before; a group's own sections stay together without lines.
@@ -232,8 +229,10 @@ on the title's text edge: chips, sub-labels such as "Linked from 3", rows
 with their icons and avatars, comments, properties, and the summary of a
 closed section, which follows the title on its row. Nothing sits under the
 section icon. Only a real sub-level, such as an H3 in an outline, indents
-further. Hover fills may reach past the edge into the panel gutter; text and
-icons never do. `Section`, `Discussion`, `DetailPanel.Action`,
+further. In the detail column the symbol is 16 px and the title follows 8 px
+later, so the edge is 24 px; a symbol in a coloured tile (an area colour or a
+tone) keeps its 20 px tile and a 28 px edge. Hover fills may reach past the
+edge; text and icons never do. `Section`, `Discussion`, `DetailPanel.Action`,
 `DetailPanel.Row`, `FileGrid` in a section, and the shared sections below
 keep this edge on their own; app content inside a section must not add an
 indent or step back from it. To check it, measure: the left edge of every

@@ -128,11 +128,12 @@ describe("DetailPanel", () => {
     // The 56 px bar carries its own insets; the header itself has none.
     expect(headerRule).toContain("padding: 0;");
     expect(bodyRule).toContain("overflow-y: auto");
-    expect(bodyRule).toContain("scrollbar-gutter: stable");
+    // K2: no reserved gutter; the sections' lines reach the column edge.
+    expect(bodyRule).not.toContain("scrollbar-gutter");
     expect(bodyRule).toContain("padding: 0 0 1rem");
   });
 
-  test("absorbs its stable scrollbar gutter into the workspace trailing inset", async () => {
+  test("takes the workspace trailing inset into its width and reserves no scroll gutter (K2)", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const layoutCss = await Bun.file(resolve(import.meta.dir, "../styles/layout-parity.css")).text();
     const panelRule = css.match(/\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
@@ -146,9 +147,18 @@ describe("DetailPanel", () => {
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
     // The bar holds the inset beside its own 12 px edge, so the header's lines run from edge to edge.
     expect(barRule).toContain("padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem))");
-    expect(barRule).toContain("scrollbar-gutter: stable");
+    expect(barRule).not.toContain("scrollbar-gutter");
     expect(bodyRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
-    expect(bodyRule).toContain("scrollbar-gutter: stable");
+    expect(bodyRule).not.toContain("scrollbar-gutter");
+  });
+
+  test("an alert cell, or a wrapper holding only alert cells, takes no text-edge margin and no gap above (K10, K14)", async () => {
+    const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
+    const cells =
+      ".k2b-notice-card, .k2b-notice-card-container, :has(> :is(.k2b-notice-card, .k2b-notice-card-container)):not(:has(> :not(.k2b-notice-card, .k2b-notice-card-container)))";
+    // The text-edge margin, the first child's gap, and the gap after a sibling all leave such a cell out.
+    for (const tail of [") {\n  /* A child that sets", "):first-child {", ") {\n  margin-top: 0.75rem;"])
+      expect(css).toContain(`template, script, style, ${cells}${tail}`);
   });
 
   test("keeps the host inset on touch devices whose overlay scrollbars reserve no gutter", async () => {
@@ -344,7 +354,8 @@ describe("DetailPanel", () => {
     expect(css).toContain(".k2b-description-list__item:focus-within");
     expect(css).toContain('grid-template-areas: "term description action";');
     expect(css).toContain("grid-template-columns: subgrid;");
-    expect(css).toContain("grid-template-rows: minmax(2.25rem, auto);");
+    // K1, K17: a value row is a dense row (32 px).
+    expect(css).toContain("grid-template-rows: minmax(var(--k2b-h-row-dense), auto);");
     expect(css).toContain("align-content: stretch;");
     expect(css).toContain("grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr) auto;");
     expect(css).toContain("text-transform: uppercase;");

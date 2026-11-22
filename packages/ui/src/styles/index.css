@@ -2103,17 +2103,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Cloud flach (K2): no reserved scroll gutter, so rows, lines and fills reach the column edge; a classic scrollbar
+   takes its room only while the column really scrolls. */
 .k2b-ui .k2b-app-workspace__main {
   @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
   z-index: 1;
   overflow: auto;
-  scrollbar-gutter: stable;
   background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-app-workspace__main[data-scroll="false"] {
   overflow: hidden;
-  scrollbar-gutter: auto;
 }
 
 /* A reading column: the same 72rem page width AppOverview uses, centered on
@@ -3830,11 +3830,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   column-gap: 0.5rem;
   padding: 0 0.75rem 0 var(--k2b-gutter);
   padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem));
-  /* The same gutter as the body's scrollbar, without a scrollbar, so the bar's
-     trailing controls end on the body's trailing edge. Popovers and tooltips
-     sit in the top layer and are not clipped. */
+  /* Popovers and tooltips sit in the top layer and are not clipped. */
   overflow: hidden;
-  scrollbar-gutter: stable;
 }
 
 .k2b-ui .k2b-detail-panel__header-main[data-identity="true"] {
@@ -4003,7 +4000,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   overflow-y: auto;
-  scrollbar-gutter: stable;
   padding: 0 0 1rem;
   padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
   overscroll-behavior: contain;
@@ -4432,6 +4428,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the card's edge; sections outside a panel or page, such as the form
    sections of an editor dialog, keep their full width. */
 .k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"] > .k2b-section__body {
+  padding-inline-start: 1.5rem;
+}
+
+/* K9 in the detail column (mockup .psec): a 16 px symbol and 8 px to the
+   title, so the content edge is 24 px. A symbol in a coloured tile (K17) keeps
+   its 20 px tile and the 28 px edge. */
+.k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"]:not([data-tone]) > .k2b-section__header .k2b-section__icon:not([data-color]) {
+  width: 1rem;
+  flex-basis: 1rem;
+}
+
+.k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"]:is([data-tone], :has(> .k2b-section__header .k2b-section__icon[data-color])) > .k2b-section__body {
   padding-inline-start: 1.75rem;
 }
 
@@ -5118,7 +5126,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
@@ -5139,19 +5147,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Other content placed straight into the body, such as guidance, a button, or
    a preview, stands on the same text edge with the body's 12 px rhythm. An
-   alert cell keeps its edge-to-edge tint (K10). */
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container) {
+   alert cell is the whole cell from edge to edge, with no gap above it (K10);
+   so is a wrapper that holds nothing but alert cells, because a square area
+   with only one area inside has no inner one (K14). */
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container, :has(> :is(.k2b-notice-card, .k2b-notice-card-container)):not(:has(> :not(.k2b-notice-card, .k2b-notice-card-container)))) {
   /* A child that sets its own full width still ends on the text edge, so the
      detail never scrolls sideways (QA B1). */
   max-width: calc(100% - 2 * var(--k2b-gutter));
   margin-inline: var(--k2b-gutter);
 }
 
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style):first-child {
+.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container, :has(> :is(.k2b-notice-card, .k2b-notice-card-container)):not(:has(> :not(.k2b-notice-card, .k2b-notice-card-container)))):first-child {
   margin-top: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style) {
+.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container, :has(> :is(.k2b-notice-card, .k2b-notice-card-container)):not(:has(> :not(.k2b-notice-card, .k2b-notice-card-container)))) {
   margin-top: 0.75rem;
 }
 
@@ -21641,12 +21651,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-description-list[data-size="sm"] .k2b-description-list__item dd {
   line-height: 1.25rem;
 }
+/* K1, K17: a value row is a dense row (32 px), like the mockup's detail fields. */
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
-  min-height: 2.25rem;
+  min-height: var(--k2b-h-row-dense);
   grid-column: 1 / -1;
   grid-template-areas: "term description action";
   grid-template-columns: subgrid;
-  grid-template-rows: minmax(2.25rem, auto);
+  grid-template-rows: minmax(var(--k2b-h-row-dense), auto);
   align-content: stretch;
   align-items: center;
   column-gap: 0.75rem;
@@ -21664,14 +21675,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
   align-self: start;
-  padding-block-start: 0.5rem;
+  padding-block-start: calc((var(--k2b-h-row-dense) - 1.25rem) / 2);
 }
+/* K11, K17: the label is quiet meta (12 px), the value a row's text (13 px). */
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt,
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
+}
+.k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-size: var(--k2b-font-size-row);
 }
 /* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
    which aligns right in tabular figures. Never the default; first keep rows within the row measure. */

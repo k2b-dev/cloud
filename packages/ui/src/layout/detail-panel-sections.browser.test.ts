@@ -525,8 +525,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([0, 0, 0]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
           // Inside a section it starts on the section's text edge, after the icon column, and adds no inset of its own.
-          // Cloud flach K9: the title's text edge is the 20 px icon column plus the 8 px gap, so 28 px.
-          expect(result.inSection).toEqual({ left: 28, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+          // Cloud flach K9 (mockup .psec): the title's text edge is the 16 px symbol plus the 8 px gap, so 24 px.
+          expect(result.inSection).toEqual({ left: 24, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
           // Hosted in a tinted dialog group, the panel's topics stay flat (Cloud flach K9, K14: they paint no
           // surface of their own). Their fields are white with their own edge, as on every surface.

@@ -986,7 +986,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__sidebar-body")).toContain("padding:0");
       expect(rule(".k2b-app-workspace__sidebar-footer")).toContain("padding:0");
-      expect(rule(".k2b-app-workspace__main")).toContain("scrollbar-gutter:stable");
+      // K2: the main column reserves no scroll gutter, so its lines reach the column edge.
+      expect(rule(".k2b-app-workspace__main")).not.toContain("scrollbar-gutter");
       expect(rule(".k2b-app-workspace__main[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane")).not.toContain("border-right");
