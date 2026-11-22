@@ -148,6 +148,36 @@ describe(`layout self-check with touch in ${browserName}`, () => {
     expect(result.problems).toEqual([]);
   });
 
+  // Mail at 390 px in WebKit (coarse pointer): the head's actions carry hit areas, and the primary action keeps its
+  // label for screen readers in a 1 px clipped box whose text runs on past the head. That text is no reason to report
+  // the hit areas; the same label drawn visibly is.
+  const headActions = (label: string) => `${hitAreaStyle}
+    <div data-probe="head-actions" style="display:flex;justify-content:flex-end;gap:4px;width:200px">
+      <button type="button" class="app-hit" aria-label="Filter"></button>
+      <button type="button" class="app-hit"><span style="position:relative">+</span>${label}</button>
+    </div>`;
+  test("390 px: a visually hidden label beside hit areas is no spill", async () => {
+    const result = await checkTouch(
+      headActions(
+        '<span class="k2b-sr-only">Write a new message to someone</span><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">Write a new message</span>',
+      ),
+    );
+    // Without the hit-area rule this box would spill: its hit areas reach past it by more than the slack.
+    expect(await touch.locator('[data-probe="head-actions"]').evaluate((box) => box.scrollWidth - box.clientWidth)).toBeGreaterThan(7);
+    expect(result.problems).toEqual([]);
+  });
+
+  test("390 px: the same label drawn visibly beside hit areas still spills", async () => {
+    const result = await checkTouch(
+      headActions('<span style="position:absolute;white-space:nowrap">Write a new message to someone</span>'),
+    );
+    // The head and the button whose label runs past it both spill.
+    expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
+      '[data-probe="head-actions"]',
+      'button.app-hit "+Write a new message to "',
+    ]);
+  });
+
   test("390 px: a drawn pseudo-element or real content beside a hit area still spills", async () => {
     const result = await checkTouch(touchDefects);
     expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
