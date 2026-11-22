@@ -33,7 +33,10 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const ui = await import("../index");
 const { DatePicker, DateRangePicker, DateTimePicker } = ui;
-const { placeDatePopover } = await import("./DatePicker");
+const { placeDatePopover, preloadDatePickerPanel } = await import("./DatePicker");
+// The month panel loads apart from the field and the server never asks for it (field-markup.render.test.tsx pins
+// that markup). These tests read the panel's semantics through server HTML, so they load it first.
+await preloadDatePickerPanel();
 const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui complete date picker migration", () => {

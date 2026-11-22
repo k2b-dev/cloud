@@ -321,6 +321,7 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
     comments: [],
     commentsCursor: null,
     assignableUsers: [],
+    dropAssignees: null,
     activity: [],
     reminder: null,
     keep: null,
