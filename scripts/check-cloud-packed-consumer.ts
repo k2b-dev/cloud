@@ -12,7 +12,7 @@ if (unknown.length) throw new Error(`Unknown argument(s): ${unknown.join(", ")}.
 if (args.includes("--help")) {
   console.log(`Usage: bun scripts/check-cloud-packed-consumer.ts [--release] [--help]
 
-Pack @k2b/cloud, @k2b/ui, @k2b/ssr and @k2b/editor with npm, then install, typecheck,
+Pack @k2b/cloud, @k2b/ui, @k2b/ssr, @k2b/editor and @k2b/stdlib with npm, then install, typecheck,
 build an island page and run it against disposable services outside the workspace.
 Build UI first: bun run --cwd packages/ui build. Requires npm and Docker.
 
@@ -58,6 +58,7 @@ const cloudRoot = join(root, "packages/cloud");
 const uiRoot = join(root, "packages/ui");
 const ssrRoot = join(root, "packages/ssr");
 const editorRoot = join(root, "packages/editor");
+const stdlibRoot = join(root, "packages/stdlib");
 const cleanEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
@@ -98,7 +99,12 @@ try {
   const cloudManifest = z
     .object({
       version: exactVersion,
-      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion, "@k2b/editor": exactVersion }),
+      dependencies: z.object({
+        "@k2b/ui": exactVersion,
+        "@k2b/ssr": exactVersion,
+        "@k2b/editor": exactVersion,
+        "@k2b/stdlib": exactVersion,
+      }),
       peerDependencies: z.record(z.string(), z.string()),
       devDependencies: z.object({ "@types/bun": z.string(), typescript: z.string() }),
     })
@@ -106,6 +112,7 @@ try {
   const uiManifest = versionManifest.parse(await Bun.file(join(uiRoot, "package.json")).json());
   const ssrManifest = versionManifest.parse(await Bun.file(join(ssrRoot, "package.json")).json());
   const editorManifest = versionManifest.parse(await Bun.file(join(editorRoot, "package.json")).json());
+  const stdlibManifest = versionManifest.parse(await Bun.file(join(stdlibRoot, "package.json")).json());
   await mkdir(join(consumer, "src"), { recursive: true });
   // The caller builds UI first. Never silently rebuild a shared local dist tree.
   if (!(await Bun.file(join(uiRoot, "dist/.build-complete")).exists())) {
@@ -126,13 +133,19 @@ try {
   const uiArchive = await pack("UI", uiRoot);
   const ssrArchive = await pack("SSR", ssrRoot);
   const editorArchive = await pack("Editor", editorRoot);
+  const stdlibArchive = await pack("Stdlib", stdlibRoot);
   if ((await stat(join(uiRoot, "dist/.build-complete"))).mtimeMs !== uiBuildTime) {
     throw new Error("UI was rebuilt while packing; rerun after the build finishes");
   }
   const pins = await resolvePackedConsumerPins({
     pins: cloudManifest.dependencies,
-    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version, "@k2b/editor": editorManifest.version },
-    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive, "@k2b/editor": editorArchive },
+    workspaceVersions: {
+      "@k2b/ui": uiManifest.version,
+      "@k2b/ssr": ssrManifest.version,
+      "@k2b/editor": editorManifest.version,
+      "@k2b/stdlib": stdlibManifest.version,
+    },
+    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive, "@k2b/editor": editorArchive, "@k2b/stdlib": stdlibArchive },
     mode,
     isPublished,
     cloudPublished: mode === "release" && (await isPublished("@k2b/cloud", cloudManifest.version)),
@@ -169,7 +182,7 @@ try {
           : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
     console.log(`${name}@${pin.pin} from ${origin}`);
   }
-  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec, "@k2b/editor": pins["@k2b/editor"].spec };
+  const siblingSpecs = Object.fromEntries(packedSiblings.map((name) => [name, pins[name].spec]));
   await Bun.write(
     join(consumer, "package.json"),
     JSON.stringify(
@@ -301,7 +314,8 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   );
   for (const name of ["@k2b/cloud", ...packedSiblings]) {
     const installed = await realpath(join(consumer, "node_modules", name));
-    const pin = name === "@k2b/ui" || name === "@k2b/ssr" || name === "@k2b/editor" ? pins[name] : undefined;
+    const sibling = packedSiblings.find((candidate) => candidate === name);
+    const pin = sibling ? pins[sibling] : undefined;
     const isolatedRoot = pin?.source === "npm" ? join(consumer, "node_modules") : temporaryRoot;
     if (!installed.startsWith(`${await realpath(isolatedRoot)}${sep}`)) {
       throw new Error(`${name} resolved outside the isolated consumer: ${installed}`);

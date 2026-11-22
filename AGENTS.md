@@ -49,6 +49,8 @@ Use these words consistently:
   `packages/ssr`;
 - **`@k2b/editor`** means the standalone SolidJS Markdown editor package in
   `packages/editor`;
+- **`@k2b/stdlib`** means the standalone headless utility library (crypto,
+  dates, i18n, finance, browser and SolidJS primitives) in `packages/stdlib`;
 - **documentation** means the canonical Fibel sources under `docs-site`;
 - **deployment** means placement, networking, configuration, and runtime
   infrastructure.
@@ -221,6 +223,8 @@ Before calling a change complete, decide which of these apply:
   dependencies; its `AGENTS.md` covers framework internals;
 - `packages/editor` — standalone `@k2b/editor` package (editor, toolbar,
   bubble menu, slash menu) on `@k2b/ui`, with no Cloud dependencies;
+- `packages/stdlib` — standalone `@k2b/stdlib` library with no Cloud or UI
+  dependencies, also used by projects outside Cloud;
 - other `packages/*` — independently owned built-in applications;
 - `docs-site/docs/en` — canonical developer and operations documentation;
 - `docs-site/src/ui/context` and `docs-site/src/ui/demo-sections` — canonical
@@ -229,6 +233,7 @@ Before calling a change complete, decide which of these apply:
   stable cross-cutting invariants;
 - `skills/cloud-cli` — operating an installed Cloud through `cld`;
 - `skills/ssr` — building applications with `@k2b/ssr`;
+- `skills/stdlib` — using `@k2b/stdlib`;
 - `.github/workflows` — `ci.yml` (PR gate), `nightly.yml`, `main.yml`
   (sha images and release-please), `release.yml`, `build-images.yml`;
 - `scripts/checks` — repository rules;

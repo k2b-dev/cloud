@@ -16,6 +16,7 @@ const allowed: RegExp[] = [
   // Standalone libraries without the Cloud config registry.
   /^packages\/ui\//,
   /^packages\/ssr\//,
+  /^packages\/stdlib\//,
   // Operator verification tools that run against a live installation, not application runtime.
   /^packages\/oauth\/src\/verification\//,
   // Test-only worker process; the parent test passes its targets explicitly.

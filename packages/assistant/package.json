@@ -16,7 +16,7 @@
     "@agentclientprotocol/sdk": "1.7.0",
     "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "workspace:*",
-    "@k2b/stdlib": "catalog:",
+    "@k2b/stdlib": "workspace:*",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
     "hucre": "1.1.0",

@@ -61,6 +61,12 @@ test("accepts concrete pins and one resolved copy that match the catalog", async
   ).toEqual([]);
 });
 
+test("lets the private root use a workspace package from the checkout, but nothing else", async () => {
+  expect(await findings({ rootDev: { "@k2b/lib": "workspace:*", "left-pad": "workspace:*" } })).toEqual([
+    "package.json: devDependencies.left-pad must use an exact version",
+  ]);
+});
+
 test("reports concrete pins that drifted from the catalog", async () => {
   expect(
     await findings({

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archive xmlns="http://xml.datev.de/bedi/tps/document/v06.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://xml.datev.de/bedi/tps/document/v06.0 Document_v060.xsd" version="6.0" generatingSystem="Example Software">
+  <header>
+    <date>2026-11-02T09:15:00</date>
+    <description>Belege Oktober 2026</description>
+  </header>
+  <content>
+    <document guid="0f8fad5b-d9cb-469f-a165-70867728950e">
+      <extension xsi:type="accountsPayableLedger" datafile="datev-ledger-0001.xml">
+        <property key="1" value="2026-10"/>
+        <property key="3" value="Eingangsrechnungen"/>
+      </extension>
+      <extension xsi:type="File" name="ER-R-2026-0815.pdf"/>
+    </document>
+    <document>
+      <extension xsi:type="accountsReceivableLedger" datafile="datev-ledger-0002.xml">
+        <property key="1" value="2026-10"/>
+        <property key="3" value="Ausgangsrechnungen"/>
+      </extension>
+      <extension xsi:type="File" name="RE2026-00012.pdf"/>
+    </document>
+    <document>
+      <extension xsi:type="cashLedger" datafile="datev-ledger-0003.xml">
+        <property key="1" value="2026-10"/>
+        <property key="3" value="Kasse"/>
+      </extension>
+      <extension xsi:type="File" name="KB-0042.pdf"/>
+    </document>
+  </content>
+</archive>
