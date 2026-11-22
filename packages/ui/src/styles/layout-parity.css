@@ -97,6 +97,7 @@
   width: 2.5rem;
   height: 2.5rem;
   color: var(--k2b-app-workspace-active);
+  /* type-scale: allow a sign: k2b-app-overview__icon */
   font-size: 1.25rem;
 }
 
@@ -214,7 +215,7 @@
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-lead);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: var(--k2b-line-height-lead);
   letter-spacing: -0.018em;
 }
 
@@ -323,7 +324,7 @@
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* Actions never grow past the header, so more actions than a narrow row holds
@@ -459,7 +460,7 @@
   font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   letter-spacing: 0.06em;
-  line-height: 1.3;
+  line-height: var(--k2b-line-height-meta);
   text-transform: uppercase;
 }
 
@@ -483,7 +484,7 @@
   color: var(--k2b-text-muted);
   background: transparent;
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.25;
+  line-height: var(--k2b-line-height-meta);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -516,7 +517,7 @@
 
 .k2b-ui .k2b-settings__tabs button > span {
   min-width: 0;
-  line-height: 1.3;
+  line-height: var(--k2b-line-height-meta);
   text-wrap: balance;
 }
 
@@ -580,14 +581,14 @@
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-lead);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: var(--k2b-line-height-lead);
 }
 
 .k2b-ui .k2b-settings__section-heading p {
   margin: 0.5rem 0 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-body);
-  line-height: 1.625;
+  line-height: 1.375rem;
 }
 
 /* Cloud tints a `tone: "danger"` section title red. */
@@ -656,7 +657,7 @@
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-settings-group__action,
@@ -717,6 +718,7 @@
   flex-shrink: 0;
   place-items: center;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-settings-collection__item-icon */
   font-size: 0.875rem;
 }
 
@@ -725,7 +727,7 @@
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-row);
   font-weight: 500;
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-row);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -735,7 +737,7 @@
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -797,7 +799,7 @@
   gap: 0.375rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
   text-align: end;
   grid-area: source;
 }
@@ -896,7 +898,7 @@
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* Cloud: `text-xs text-red-600 flex items-center gap-1`. */
@@ -1251,7 +1253,8 @@ html {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 20;
+  /* K13: the grip lies over its line; the column lines are pseudo-elements at z-index 20. */
+  z-index: 21;
   display: none;
   width: var(--k2b-workspace-resize-hit-size);
   margin: 0;
@@ -1263,7 +1266,6 @@ html {
   /* WebKit may resolve a selection gesture before the drag's pointerdown handler suppresses selection. */
   -webkit-user-select: none;
   user-select: none;
-  transform: translateX(-50%);
 }
 
 .k2b-ui .k2b-app-workspace[data-workspace-resizable="false"] .k2b-app-workspace__resize {
@@ -1271,7 +1273,12 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
-  left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
+  /* K13: the sidebar's line is the last pixel of its track; the hit area is centred on that pixel, so line, area,
+     and grip lie on whole pixels. */
+  left: calc(
+    var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px))) -
+      (var(--k2b-workspace-resize-hit-size) + 1px) / 2
+  );
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
@@ -1279,10 +1286,13 @@ html {
   right: 0;
   bottom: var(--k2b-workspace-panel-size);
   left: 0;
+  /* K13: as long as the drawer's line, so the grip sits on its middle. */
+  grid-area: drawer;
   width: auto;
   height: var(--k2b-workspace-resize-hit-size);
   cursor: row-resize;
-  transform: translateY(50%);
+  /* Centred on the drawer's line, the last pixel above its top edge: whole pixels, no half-pixel shift. */
+  transform: translateY(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
 }
 
 /* K13: a boundary that can be dragged carries a grip; every other line is
@@ -1310,26 +1320,31 @@ html {
 
 /* A standalone separator draws the hairline it sits on, so a region beside it
    needs no border of its own. */
-/* The line stands on a whole pixel: the hit area is 13 px, 6 px on each side of the line, so no transform is needed
-   and the line never lands on a half pixel and blurs into two. */
 .k2b-ui .k2b-resize-separator::before {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(50% - 0.5px);
-  width: 1px;
+  inset: 0;
   content: "";
   pointer-events: none;
   background: var(--k2b-border);
 }
 
-.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
-  top: calc(50% - 0.5px);
+/* Its hit area lies over the neighbours, centred on the line: 13 px, 25 px for a coarse pointer. It draws nothing. */
+.k2b-ui .k2b-resize-separator::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((1px - var(--k2b-resize-hit-size)) / 2);
+  width: var(--k2b-resize-hit-size);
+  content: "";
+}
+
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::after {
+  top: calc((1px - var(--k2b-resize-hit-size)) / 2);
   right: 0;
   bottom: auto;
   left: 0;
   width: auto;
-  height: 1px;
+  height: var(--k2b-resize-hit-size);
 }
 
 .k2b-ui :is(.k2b-resize-separator:focus-visible, .k2b-resize-separator[data-active="true"])::before {
@@ -1338,31 +1353,25 @@ html {
 
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) > span {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  /* Centred, rounded down to whole pixels: an odd 5 px grip on a 1 px line keeps its edges on whole pixels. */
+  top: round(down, calc(50% - 1rem), 1px);
+  left: round(down, calc(50% - 2.5px), 1px);
   width: 5px;
   height: 2rem;
   border-radius: var(--k2b-radius-round);
   background: var(--k2b-resize-grip);
   /* A ring of the surface keeps the grip apart from the line under it. */
   box-shadow: 0 0 0 2px var(--k2b-surface);
-  transform: translate(-50%, -50%);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui
   :is(.k2b-app-workspace__resize[data-app-workspace-resize="drawer"], .k2b-resize-separator[data-orientation="horizontal"])
   > span {
+  top: round(down, calc(50% - 2.5px), 1px);
+  left: round(down, calc(50% - 1rem), 1px);
   width: 2rem;
   height: 5px;
-}
-
-/* A workspace handle is centred on its boundary, and the boundary's line is the pixel before it. The grip covers that
-   pixel and two on each side, so it starts on a whole pixel like the line and stays sharp. A standalone separator
-   centres its own line, so the shared centring fits it. */
-.k2b-ui .k2b-app-workspace__resize:not([data-app-workspace-resize="drawer"]) > span {
-  left: calc(50% - 3px);
-  transform: translateY(-50%);
 }
 
 .k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible),
@@ -1703,7 +1712,8 @@ html {
     bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
     z-index: 21;
     grid-area: detail;
-    transform: translateX(50%);
+    /* Centred on Detail's line, the last pixel before its leading edge: whole pixels, no half-pixel shift. */
+    transform: translateX(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
   }
 }
 
@@ -2286,21 +2296,6 @@ html {
     padding: 0.5rem;
   }
 
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > :is(solid-island, solid-client)
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
-    left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
-  }
 }
 
 /* From 48 rem the work area keeps its columns: panes side by side, the detail
@@ -2356,27 +2351,32 @@ html {
     background-clip: padding-box;
   }
 
-  /* The handle after such a region sits on the boundary's line at the end of the space. */
-  .k2b-ui
-    .k2b-app-workspace__main
-    > .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region])
-    + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
-    /* K13: centred on the boundary's hairline, which lies at the end of the space. */
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
-  }
-
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
     width: auto;
     flex: 1 1 auto;
   }
 
+  /* K13: a pane's handle takes no room in the flow. It is 1 px wide and pulled back by 1 px onto the boundary's line,
+     the last pixel of the region before it (also at the end of a region's space), so it overlaps no neighbour. Its
+     hit area (`::after`, 13 px, 25 px for a coarse pointer) and its grip lie over both regions, centred on the line
+     on whole pixels. */
   .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     position: relative;
     inset: auto;
+    width: 1px;
     height: auto;
-    flex: 0 0 var(--k2b-workspace-resize-hit-size);
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
+    flex: 0 0 1px;
+    margin-inline: -1px 0;
     transform: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc((1px - var(--k2b-workspace-resize-hit-size)) / 2);
+    width: var(--k2b-workspace-resize-hit-size);
+    content: "";
   }
 
   .k2b-ui .k2b-app-workspace__drawer[data-workspace-resizable="true"] {
@@ -2657,6 +2657,7 @@ html {
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
+  /* type-scale: allow the count centres on the head line */
   line-height: var(--k2b-workspace-head-line, 2.5rem);
 }
 
@@ -2705,23 +2706,36 @@ html {
 /* A primary that opens a menu says so with a quiet chevron after its label. */
 .k2b-ui .k2b-app-workspace__head-primary-chevron {
   margin-inline-start: 0.25rem;
+  /* type-scale: allow a sign: k2b-app-workspace__head-primary-chevron */
   font-size: 0.875rem;
   opacity: 0.85;
 }
 
-/* K15: in a head narrower than 48 rem the actions give way first, before any
-   view moves into "More +n": the primary shows only its icon and keeps its
-   name for assistive technology, and an app's search in `actions` turns into
-   its icon by the same query (`@container k2b-head (width < 48rem)`). The
-   views compact only when the lead is still narrower than 32 rem after that.
-   If the lead and actions still cannot fit, flex puts them on separate rows. */
-@container k2b-head (width < 48rem) {
+/* K1, K4: the head's primary action is a control like the mockup's: 36 px
+   high, 8 px corners, its icon and its word in the row size. */
+.k2b-ui .k2b-app-workspace__head-primary {
+  min-height: var(--k2b-h-control);
+  height: var(--k2b-h-control);
+  padding: 0 0.75rem;
+  gap: 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+}
+
+/* K15: the primary keeps its word while the head has room for it (rule 15:
+   a label gives way only when it does not fit). Views move into "More +n"
+   first, when the lead is narrower than 32 rem; the primary shows only its
+   icon in a head narrower than 36 rem, and keeps its name for assistive
+   technology. It stays a 36 px control with 8 px corners: only the floating
+   primary on a phone is round (below). An app's search in `actions` turns
+   into its icon by the same query. If the lead and actions still cannot fit,
+   flex puts them on separate rows. */
+@container k2b-head (width < 36rem) {
   .k2b-ui .k2b-app-workspace__head-primary {
-    width: 2.5rem;
-    min-width: 2.5rem;
-    height: 2.5rem;
+    width: var(--k2b-h-control);
+    min-width: var(--k2b-h-control);
     padding: 0;
-    border-radius: 999px;
   }
 
   .k2b-ui .k2b-app-workspace__head-primary-label {
@@ -3359,7 +3373,9 @@ html {
     height: 1rem;
     color: var(--k2b-app-workspace-active);
     background: transparent;
+    /* type-scale: allow a sign: k2b-app-workspace__sidebar-item-icon */
     font-size: 0.9375rem;
+    /* type-scale: allow a sign: the object icon */
     line-height: 1;
   }
 
@@ -3429,7 +3445,7 @@ html {
     font-size: var(--k2b-font-size-meta);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    line-height: 1;
+    line-height: var(--k2b-line-height-meta);
   }
 
   .k2b-ui
@@ -3721,6 +3737,7 @@ html {
 .k2b-ui .k2b-app-workspace__level-switch-chevron {
   flex: none;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-app-workspace__level-switch-chevron */
   font-size: 1.125rem;
   font-weight: 400;
 }
@@ -4058,6 +4075,15 @@ html {
     + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     flex-basis: 2.75rem;
     margin-inline: 0;
+  }
+
+  /* There the target is the handle's own box; its hit area does not reach into the levels. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after,
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > .k2b-app-workspace__main-pane
+    + .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after {
+    display: none;
   }
 
   /* The target is the space, so the level before it keeps none of its own. */
@@ -4848,7 +4874,7 @@ html[data-k2b-mobile-shell] body {
 }
 
 /* The phone uses the same four type roles as the desktop (K11): lead for the
-   shell and dialog titles, row for text and buttons, body in a heavier weight
+   shell and dialog titles, row for text and buttons, the body role in a heavier weight
    for section headings, and meta for secondary text, field labels, and the
    options of a segmented control. Buttons match the touch menus' items. Icon
    buttons keep their glyph sizes. */
@@ -4988,6 +5014,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
    and the last glyph ends at the gutter, as Back's starts at it. */
 .k2b-ui .k2b-mobile-shell__actions .k2b-icon-button {
   min-width: 44px;
+  /* type-scale: allow a sign: k2b-icon-button */
   font-size: 1.375rem;
 }
 
@@ -5243,7 +5270,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 
 .k2b-ui .k2b-mobile-shell__sidebar-count {
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-font-size-body);
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -5460,7 +5487,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
   font-weight: 500;
-  line-height: 1.2;
+  line-height: var(--k2b-line-height-meta);
   text-decoration: none;
 }
 
@@ -5592,7 +5619,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-body);
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-body);
 }
 
 .k2b-ui .k2b-install-guide code {
@@ -5628,6 +5655,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   border-radius: 50%;
   background: var(--k2b-surface-muted);
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: k2b-install-guide__step-icon */
   font-size: 1.25rem;
 }
 
@@ -5642,7 +5670,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-body);
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-body);
 }
 
 .k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__note {
@@ -5912,6 +5940,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 0.4375rem;
+  /* type-scale: allow a sign: k2b-sidebar-switcher__icon */
   font-size: 0.875rem;
 }
 
@@ -5920,16 +5949,18 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
+  /* type-scale: allow a sign: k2b-sidebar-switcher__icon */
   font-size: 1rem;
 }
 
 /* Two name lines are always reserved and the text sits centred in them, so a short and a long name give the head one
    height from the server's first paint on. */
 .k2b-ui .k2b-sidebar-switcher__copy {
-  --k2b-sidebar-switcher-line: 1.125rem;
+  /* The row role's line (K11): two lines and the 8 px padding make the 56 px head (K1). */
+  --k2b-sidebar-switcher-line-height: var(--k2b-line-height-row);
   display: grid;
   min-width: 0;
-  min-height: calc(2 * var(--k2b-sidebar-switcher-line));
+  min-height: calc(2 * var(--k2b-sidebar-switcher-line-height));
   flex: 1 1 auto;
   align-content: center;
 }
@@ -5940,7 +5971,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-sidebar-switcher__copy > span {
   font-size: var(--k2b-font-size-row);
   font-weight: 600;
-  line-height: var(--k2b-sidebar-switcher-line);
+  line-height: var(--k2b-sidebar-switcher-line-height);
   overflow-wrap: break-word;
   text-wrap: balance;
 }
@@ -5953,12 +5984,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-sidebar-switcher__copy > small {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-sidebar-switcher__chevron {
   flex: none;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-sidebar-switcher__chevron */
   font-size: 0.875rem;
 }
 
@@ -6024,6 +6056,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 0.3125rem;
+  /* type-scale: allow a sign: k2b-sidebar-switcher__option-icon */
   font-size: 0.75rem;
 }
 
@@ -6069,16 +6102,17 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy {
-  --k2b-sidebar-switcher-line: 1.375rem;
+  /* The phone names its place in the lead role, 18/24, as the mockup's phone title row does (K11). */
+  --k2b-sidebar-switcher-line-height: var(--k2b-line-height-lead);
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > span {
-  font-size: var(--k2b-font-size-row);
+  font-size: var(--k2b-font-size-lead);
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > small {
-  font-size: var(--k2b-font-size-body);
-  line-height: 1.25rem;
+  font-size: var(--k2b-font-size-meta);
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* Its panel takes the phone menu's type scale and 44 px rows, like a touch menu. */
@@ -6103,6 +6137,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 0.375rem;
+  /* type-scale: allow a sign: k2b-sidebar-switcher__option-icon */
   font-size: 0.875rem;
 }
 
@@ -6128,7 +6163,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-toc[data-sticky="true"] { position: sticky; top: 0; align-self: start; }
 .k2b-ui .k2b-toc__title { margin: 0 0 0.375rem 0.875rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); font-weight: 600; }
 .k2b-ui .k2b-toc__list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
-.k2b-ui .k2b-toc__link { position: relative; display: block; padding: 0.3125rem 0.5rem 0.3125rem 0.875rem; border-radius: 0.5rem; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-row); line-height: 1.4; text-decoration: none; }
+.k2b-ui .k2b-toc__link { position: relative; display: block; padding: 0.3125rem 0.5rem 0.3125rem 0.875rem; border-radius: 0.5rem; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-row); line-height: var(--k2b-line-height-row); text-decoration: none; }
 .k2b-ui .k2b-toc__link::before { content: ""; position: absolute; top: 0.4375rem; bottom: 0.4375rem; left: 0.25rem; width: 0.1875rem; border-radius: 999px; background: transparent; }
 .k2b-ui .k2b-toc__link[aria-current] { color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); }
 .k2b-ui .k2b-toc__link[aria-current]::before { background: currentColor; }
@@ -6138,17 +6173,17 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
 
-/* A standalone separator is an invisible hit area. It shows the drag cue of
-   the workspace's resize handles, defined with them. */
+/* K13: a standalone separator is its 1 px line in the flow between two
+   regions, so applications size their split by it and no gap opens beside the
+   line. Its hit area and grip lie over the neighbours, centred on the line on
+   whole pixels. It shows the drag cue of the workspace's resize handles,
+   defined with them. */
 .k2b-ui .k2b-resize-separator {
+  --k2b-resize-hit-size: 13px;
   position: relative;
-  z-index: 3;
+  z-index: 1;
   flex: none;
-  /* Cloud flach (K2, K13): in the flow it is only its 1 px line, so the regions on both sides reach that line and
-     their row lines and fills meet it. The 13 px hit area lies 6 px over each neighbour, with the grip centred on
-     the line above them. */
-  width: 13px;
-  margin-inline: -6px;
+  width: 1px;
   align-self: stretch;
   cursor: col-resize;
   outline: 0;
@@ -6159,10 +6194,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
   width: auto;
-  height: 13px;
-  margin-inline: 0;
-  margin-block: -6px;
+  height: 1px;
   cursor: row-resize;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-resize-separator {
+    --k2b-resize-hit-size: 25px;
+  }
 }
 /* An app with separate visibility keeps one shared way to reopen its current
    object, including a closed column and a phone sheet. Selection-only panels
@@ -6553,6 +6592,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   border-radius: var(--k2b-radius-round);
   color: var(--k2b-warning-text);
   background: var(--k2b-warning-surface);
+  /* type-scale: allow a sign: the status sign (aria-hidden) */
   font-size: 0.8125rem;
 }
 

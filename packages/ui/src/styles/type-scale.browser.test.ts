@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
+import { TYPE_ROLES, TYPE_SIZES, TYPE_WEIGHTS } from "../../../../scripts/fixtures/type-roles";
 import { browserName, launchBrowser } from "../../test/browser";
 
 // The type scale grows inside fixed boxes: every primitive below keeps the
@@ -16,7 +17,7 @@ const TEST_TIMEOUT = 20_000;
 const entry = resolve(import.meta.dir, "type-scale.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, Button, DataTable, DetailPanel, FactGroup, Kbd, NoticeCard, PanelHeader, Section, StatusBadge, Tag, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, Button, ChoiceList, DataTable, DetailPanel, FactGroup, Kbd, NoticeCard, PanelHeader, Section, StatusBadge, Tag, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const label = (children) => createComponent(AppWorkspace.SidebarItemLabel, { children });
 const button = (size, probe = "button-" + size) => createComponent(Button, { size, variant: "secondary", "data-probe": probe, children: "Save changes" });
 render(() => createComponent(AppWorkspace, {
@@ -50,6 +51,15 @@ render(() => createComponent(AppWorkspace, {
             createComponent(Tag, { color: "#2563eb", children: "Customer" }),
             createComponent(Tag, { size: "sm", children: "Draft" }),
             createComponent(Kbd, { keys: "Mod+K" }),
+            createComponent(ChoiceList, {
+              label: "Model",
+              value: "fast",
+              variant: "list",
+              options: [
+                { value: "fast", label: "Fast", description: "Short answers", marker: "Standard" },
+                { value: "deep", label: "Thorough", marker: "Current" },
+              ],
+            }),
             createComponent(DetailPanel, {
               get children() { return [
                 createComponent(DetailPanel.Header, { title: "Follow up the offer", kind: "Task", subtitle: "Sales · due tomorrow" }),
@@ -157,7 +167,7 @@ const baseline = {
   sidebarItem: 32,
   sidebarSection: 16,
   sidebarCount: 16,
-  sidebarDescription: 18,
+  sidebarDescription: 20,
   buttonXs: 24,
   buttonSm: 28,
   buttonMd: 32,
@@ -218,8 +228,8 @@ describe(`type scale in ${browserName}`, () => {
           }),
         );
         expect(type).toEqual(scale);
-        // Two-line sidebar labels keep their height too, whatever the host's line height.
-        expect(probe.sidebarItem.lineHeight).toBe("18px");
+        // K11: sidebar labels are the row role, 13/20, whatever the host's line height.
+        expect(probe.sidebarItem.lineHeight).toBe("20px");
         expect(probe.title.letterSpacing).toBe(`${-0.018 * 14}px`);
       } finally {
         await page.close();
@@ -246,7 +256,7 @@ describe(`type scale in ${browserName}`, () => {
             }),
           ),
         );
-        expect(sizes).toEqual({ meta: "12px", row: "13px", body: "14px", lead: "18px" });
+        expect(sizes).toEqual(Object.fromEntries(TYPE_ROLES.map((role) => [role.name, `${role.size}px`])));
       } finally {
         await page.close();
       }
@@ -271,7 +281,7 @@ describe(`type scale in ${browserName}`, () => {
             return out;
           }),
         );
-        expect(tokens).toEqual(["meta 12px/16px 400", "row 13px/20px 400", "body 14px/20px 400", "lead 18px/24px 600"]);
+        expect(tokens).toEqual(TYPE_ROLES.map((role) => `${role.name} ${role.size}px/${role.lineHeight}px ${role.weight}`));
 
         const styles = await page.evaluate(() => {
           const found: Record<string, string> = {};
@@ -289,12 +299,12 @@ describe(`type scale in ${browserName}`, () => {
         });
         const off = Object.entries(styles).filter(([style]) => {
           const [size, weight] = style.split("/");
-          return !["12px", "13px", "14px", "18px"].includes(size!) || !["400", "500", "600"].includes(weight!);
+          return !TYPE_SIZES.includes(Number.parseFloat(size!)) || !TYPE_WEIGHTS.includes(Number(weight));
         });
         expect(off).toEqual([]);
         // The sample really covers the roles it claims: meta, row, and body text are all on the page.
         const sizes = new Set(Object.keys(styles).map((style) => style.split("/")[0]));
-        for (const size of ["12px", "13px", "14px"]) expect(sizes.has(size)).toBe(true);
+        for (const size of TYPE_SIZES.slice(0, 3)) expect(sizes.has(`${size}px`)).toBe(true);
       } finally {
         await page.close();
       }

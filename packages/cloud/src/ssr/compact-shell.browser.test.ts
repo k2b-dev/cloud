@@ -88,6 +88,14 @@ const geometry = (page: Page, rounded = true): Promise<Geometry> =>
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       if (style.visibility === "hidden" || style.display === "none" || Number(style.opacity) === 0) return [];
+      // Only a box that draws is a divider; a resize handle's 1 px box on its line is transparent (K13).
+      const draws =
+        !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(style.backgroundColor) ||
+        ["Top", "Right", "Bottom", "Left"].some(
+          (side) => Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0,
+        ) ||
+        style.boxShadow !== "none";
+      if (!draws) return [];
       const vertical = rect.width > 0 && rect.width <= 2 && rect.height >= window.innerHeight / 2;
       const horizontal = rect.height > 0 && rect.height <= 2 && rect.width >= appWidth / 2;
       return vertical || horizontal ? [element.className.toString() || element.localName] : [];

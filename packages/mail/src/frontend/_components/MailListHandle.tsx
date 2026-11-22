@@ -11,8 +11,8 @@ export const MAIL_DEFAULT_LIST_SHARE = 0.4;
 /** The list never gets narrower than this, the reader never narrower than `MAIL_READER_MIN`, in px. */
 export const MAIL_LIST_MIN = 320;
 export const MAIL_READER_MIN = 480;
-/** The handle's own width between list and reader, in px. */
-const HANDLE_WIDTH = 12;
+/** The handle's own width between list and reader, in px: its 1 px line; the hit area lies over both (K13). */
+const HANDLE_WIDTH = 1;
 
 /** The list's share in percent, one decimal, as the stylesheet and the handle use it. */
 export const mailListPercent = (share: number | null): number => Math.round((share ?? MAIL_DEFAULT_LIST_SHARE) * 1000) / 10;

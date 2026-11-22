@@ -441,7 +441,15 @@ for (const touch of [false, true])
               const after = levels[index + 1]!.getBoundingClientRect();
               const y = after.top + after.height / 2;
               return {
-                width: Math.round(box.width),
+                // The grabbing width: the handle's box, or its invisible `::after` where the box takes no room.
+                width: Math.round(
+                  Math.max(
+                    box.width,
+                    getComputedStyle(separator, "::after").display === "none" || getComputedStyle(separator, "::after").content === "none"
+                      ? 0
+                      : Number.parseFloat(getComputedStyle(separator, "::after").width) || 0,
+                  ),
+                ),
                 left: box.left,
                 before: before.right,
                 after: after.left,

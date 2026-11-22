@@ -79,15 +79,17 @@ The head follows these rules as well:
   sidebar lists, neither shows: the marked item is the way up.
 - Tabs, chips, and actions share one row while they fit. As the head narrows,
   the quiet count goes first, filters wrap, and views become compact with
-  “More +n” before scrolling sideways. The primary action then keeps only its
-  icon and accessible name. If the lead and actions still do not fit, they
+  “More +n” before scrolling sideways. The primary action keeps its word
+  while it fits, and below 36 rem of head only its icon and accessible name.
+  It stays a 36 px control with 8 px corners. If the lead and actions still do not fit, they
   use separate rows. The head measures its own width, including space lost
   to neighboring panels; controls never draw over each other.
 - Exactly one action is filled. On the phone it becomes a round button at
   the end of the head.
 - Files keeps its path in the head (exception D1 to "no title").
 
-The sidebar stays resizable; its handle shows on hover and focus. The minimal
+The sidebar stays resizable; its grip shows at rest, centred on the column
+line and drawn over it. The minimal
 Grids table is the reference for tables.
 
 ### Compose the head row
@@ -262,12 +264,13 @@ title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
 
-When the head row runs short of room, the actions give way before the views
-(K15). Below 48 rem of head width the primary shows only its icon. A search
-field in `actions` turns into its icon by the same query,
-`@container k2b-head (width < 48rem)`, in the application's stylesheet. The
-views move into **More +n** only when the lead is still narrower than 32 rem
-after that.
+When the head row runs short of room, an application's search field in
+`actions` turns into its icon first, with its own query in the application's
+stylesheet (Mail and Notebooks use `@container k2b-head (width < 48rem)`).
+The views move into **More +n** when the lead is narrower than 32 rem. The
+primary keeps its word until the head is narrower than 36 rem, then shows only
+its icon (rule 15: a label gives way only when it does not fit). It stays a
+36 px control with 8 px corners.
 
 ### Sidebar button in the page's toolbar
 

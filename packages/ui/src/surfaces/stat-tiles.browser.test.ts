@@ -79,10 +79,11 @@ const measure = () =>
 
 describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
-    ["desktop", 1440, 4, 136, 28],
+    // K11: the figure is the lead role (18 px) at every width.
+    ["desktop", 1440, 4, 136, 18],
     // Narrow tiles give the comparison its own line (showcase review 07.11.), so the dashboard tile is 172 px there.
-    ["600 px grid", 620, 2, 172, 28],
-    ["phone", 390, 2, 172, 23.04],
+    ["600 px grid", 620, 2, 172, 18],
+    ["phone", 390, 2, 172, 18],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -104,10 +105,9 @@ describe("@k2b/ui key figure tiles", () => {
         // The head, figure and support rows start at the same place in every state: nothing jumps when data arrives.
         for (const part of ["head", "main", "support"] as const) expect(new Set(rows.map((row) => row[part])).size).toBe(1);
         const data = rows.find((row) => row.state === "data")!;
-        // In a grid of 600 px or less the taller tile puts the badge under the figure; a phone tile also shrinks it.
+        // In a grid of 600 px or less the taller tile puts the badge under the figure.
         expect(data.badgeBelow).toBe(name !== "desktop");
-        // Engines round container units differently (WebKit: 23.040001px), so compare the number.
-        expect(Number.parseFloat(data.valueSize)).toBeCloseTo(valueSize, 1);
+        expect(Number.parseFloat(data.valueSize)).toBe(valueSize);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       } finally {
         await page.close();

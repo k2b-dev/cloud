@@ -192,7 +192,7 @@ const EXPECTED = {
       background: "color(srgb 0.92549 0.992157 0.960784 / 0.88)",
       clipPath: "none",
       radius: "8px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -213,7 +213,7 @@ const EXPECTED = {
       background: "rgb(16, 185, 129)",
       clipPath: "none",
       radius: "6px",
-      font: "16px 600",
+      font: "14px 600",
       onTop: true,
     },
     {
@@ -234,7 +234,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 0px, calc(100% - 56px) 100%, 56px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -255,7 +255,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 100% 0px, 0px 56px, 0px calc(100% - 56px), 100% 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -276,7 +276,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 56px 0px, calc(100% - 56px) 0px, 100% 100%, 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -297,7 +297,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 56px, 100% calc(100% - 56px), 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -318,7 +318,7 @@ const EXPECTED = {
       background: "color(srgb 0.92549 0.992157 0.960784 / 0.88)",
       clipPath: "none",
       radius: "8px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -339,7 +339,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 0px, calc(100% - 56px) 100%, 56px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -360,7 +360,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 100% 0px, 0px 56px, 0px calc(100% - 56px), 100% 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -381,7 +381,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 56px 0px, calc(100% - 56px) 0px, 100% 100%, 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -402,7 +402,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 56px, 100% calc(100% - 56px), 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -423,7 +423,7 @@ const EXPECTED = {
       background: "color(srgb 0.92549 0.992157 0.960784 / 0.88)",
       clipPath: "none",
       radius: "8px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -444,7 +444,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "none",
       radius: "6px",
-      font: "16px 600",
+      font: "14px 600",
       onTop: true,
     },
     {
@@ -465,7 +465,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 0px, calc(100% - 56px) 100%, 56px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -486,7 +486,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 100% 0px, 0px 56px, 0px calc(100% - 56px), 100% 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -507,7 +507,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 56px 0px, calc(100% - 56px) 0px, 100% 100%, 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
     {
@@ -528,7 +528,7 @@ const EXPECTED = {
       background: "rgb(236, 253, 245)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 56px, 100% calc(100% - 56px), 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
   ],
@@ -551,7 +551,7 @@ const EXPECTED = {
       background: "rgb(16, 185, 129)",
       clipPath: "polygon(round 6px, 0px 0px, 100% 56px, 100% calc(100% - 56px), 0px 100%)",
       radius: "0px",
-      font: "11px 600",
+      font: "12px 600",
       onTop: true,
     },
   ],

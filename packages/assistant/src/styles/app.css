@@ -142,8 +142,9 @@
 .k2b-ui .assistant-context-grip {
   position: absolute !important;
   inset-block: 0;
-  margin: 0;
-  inset-inline-start: -6px;
+  /* The separator is 1 px on the column's start border (the containing block starts after it); its hit area and grip
+     are centred on that pixel. */
+  inset-inline-start: -1px;
   z-index: 1;
 }
 /* The line between the chat and the column is the column's start edge, a border, so it lands on a whole pixel at any

@@ -992,7 +992,7 @@
   box-shadow: var(--k2b-shadow-overlay-sm);
   font-size: var(--k2b-font-size-body);
   font-weight: 400;
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-body);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -1358,7 +1358,9 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   width: 1.75rem;
   height: 1.75rem;
   border-radius: var(--k2b-radius-control);
+  /* type-scale: allow a sign: k2b-toast__icon */
   font-size: 1rem;
+  /* type-scale: allow a sign: the toast icon */
   line-height: 1;
 }
 
@@ -1768,6 +1770,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   flex: 0 0 auto;
   margin-top: 0.1875rem;
   color: inherit;
+  /* type-scale: allow a sign: k2b-inline-guidance__icon */
   font-size: 0.75rem;
 }
 

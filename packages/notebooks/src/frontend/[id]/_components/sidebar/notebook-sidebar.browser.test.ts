@@ -809,9 +809,13 @@ describe("Notebook sidebar order by hand", () => {
       const child = await row(page, "Lang01").boundingBox();
       await page.mouse.move(source!.x + 40, source!.y + source!.height / 2);
       await page.mouse.down();
+      // A synthetic drag delivers each dragover one move late; a last small move over the target settles it, as a
+      // browser does on its own while the pointer rests there.
       await page.mouse.move(home!.x + 40, home!.y + 4, { steps: 8 });
+      await page.mouse.move(home!.x + 41, home!.y + 4);
       expect(await page.locator("[data-k2b-nav-tree-drop]").count()).toBe(0);
       await page.mouse.move(child!.x + 40, child!.y + 4, { steps: 8 });
+      await page.mouse.move(child!.x + 41, child!.y + 4);
       expect(await page.locator("[data-k2b-nav-tree-drop]").count()).toBe(0);
       await page.mouse.up();
       expect(api.requests).toEqual([]);

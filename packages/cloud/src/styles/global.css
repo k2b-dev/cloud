@@ -730,9 +730,10 @@ solid-island {
       text-overflow: ellipsis;
       text-align: start;
       color: inherit;
-      font-size: 0.8125rem;
+      /* The sidebar row's role (K11), so a named rail row matches it. */
+      font-size: var(--k2b-font-size-row);
       font-weight: 400;
-      line-height: 1.125rem;
+      line-height: var(--k2b-line-height-row);
     }
     & .layout-rail-logo .rail-item-label,
     & .rail-item-active .rail-item-label {
@@ -747,7 +748,7 @@ solid-island {
       padding-inline: 0.25rem;
       color: var(--k2b-text);
       background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
-      font-size: 0.6875rem;
+      font-size: var(--k2b-font-size-meta);
       line-height: 1rem;
     }
     & .rail-item-keys {

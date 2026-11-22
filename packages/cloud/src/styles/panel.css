@@ -253,12 +253,12 @@
 }
 
 /* The separator sits in the gap at the panel's start edge. It lies between
-   two cards on the canvas, so it shows its grip without a line. */
+   two cards on the canvas, so it shows its grip without a line. Its 1 px box
+   lies on a whole pixel in the gap; its hit area and grip are centred on it. */
 .cloud-panel__resize {
   position: absolute !important;
   inset-block: 0;
-  margin: 0;
-  inset-inline-start: calc(-6px - var(--cloud-card-inset, 0.5rem) / 2);
+  inset-inline-start: calc(-1px - var(--cloud-card-inset, 0.5rem) / 2);
   z-index: 4;
 }
 

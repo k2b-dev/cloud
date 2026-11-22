@@ -813,13 +813,14 @@ describe("ChatWorkspace browser read state", () => {
           (route) => route.fulfill({ status: 503, json: { message: "Read is temporarily unavailable." } }),
           { times: 1 },
         );
-        await page.locator(".k2b-virtual-feed__viewport").click();
+        // Focus the feed itself: a click at its centre lands on whatever row sits there, such as a message's menu.
+        await page.locator(".k2b-virtual-feed__viewport").focus();
         await page.keyboard.press("Escape");
         await page.getByText(chatMessages.resolve(["en"]).t.readStateFailed, { exact: true }).waitFor();
         expect(await page.getByRole("button", { name: "New messages", exact: true }).isVisible()).toBe(true);
         expect(harness.props({ chat }).open!.conversation.unread).toBe(40);
         // Read failures stay inline beside the composer; Escape retries the same accepted-read action.
-        await page.locator(".k2b-virtual-feed__viewport").click();
+        await page.locator(".k2b-virtual-feed__viewport").focus();
         await page.keyboard.press("Escape");
         await requested.promise;
         // A focus event before the delayed write completes must not resurrect the old gap marker.

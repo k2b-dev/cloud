@@ -1310,6 +1310,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-right: -0.375rem;
   color: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
   font-size: var(--k2b-font-size-body);
+  /* type-scale: allow a sign: the pane grip */
   line-height: 1;
   opacity: 0;
   transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
@@ -1421,7 +1422,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panes__icon {
   display: block;
   flex: none;
+  /* type-scale: allow a sign: k2b-panes__icon */
   font-size: 0.875rem;
+  /* type-scale: allow a sign: the pane icon */
   line-height: 1;
 }
 
@@ -1557,6 +1560,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   border-radius: 999px;
   background: var(--k2b-surface-muted);
+  /* type-scale: allow a sign: the empty-state mark */
   font-size: 1.25rem;
 }
 
@@ -1836,9 +1840,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: transparent;
-  /* The line height holds the 2rem row and two-line labels at their height. */
+  /* The row role, 13/20 (K11): one line fills the 32 px row, two lines the 52 px row of two (K1). */
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-decoration: none;
   cursor: pointer;
 }
@@ -2010,11 +2014,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply inline-flex shrink-0 items-center;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-meta :where(i) {
   display: inline-block;
+  /* type-scale: allow a sign: the meta icon */
   line-height: 1;
 }
 
@@ -2042,6 +2047,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1rem;
   place-items: center;
   font-size: var(--k2b-font-size-meta);
+  /* type-scale: allow a sign: the mention mark */
   line-height: 1;
 }
 
@@ -2120,7 +2126,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] {
-  --k2b-sidebar-item-unread-weight: 700;
+  --k2b-sidebar-item-unread-weight: 600;
 }
 
 .k2b-ui
@@ -2212,7 +2218,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 4px 14px;
   padding: 6px 0 2px;
   font-size: var(--k2b-font-size-meta);
-  line-height: 18px;
+  line-height: var(--k2b-line-height-meta);
 }
 .k2b-ui .k2b-chart__legend-item {
   display: inline-flex;
@@ -2568,7 +2574,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      height whatever line height the host page inherits. */
   font-size: var(--k2b-font-size-row);
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-decoration: none;
   cursor: pointer;
   user-select: none;
@@ -3146,7 +3152,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-field__required {
@@ -3467,6 +3473,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.25rem;
   color: transparent;
   background: var(--k2b-surface);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.6875rem;
 }
 
@@ -3608,13 +3615,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
-/* The heading takes a type role from `size` (K11): meta by default, body
-   (the head title, 14/20) at `size="md"`, lead (18/24) at `size="lg"`. */
+/* The heading takes a type role from `size` (K11): meta by default; the body
+   role (the head title, 14/20) at `size="md"`; lead (18/24) at `size="lg"`. */
 .k2b-ui .k2b-panel-header__title {
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-meta);
   font-weight: 600;
-  line-height: 1.3333;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-panel-header__title.is-medium {
@@ -3630,13 +3637,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header__subtitle {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-panel-header[data-size="md"] .k2b-panel-header__subtitle {
   margin-top: 0.25rem;
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.3333;
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* `size="lg"` is the page-level title of an overview: one strong line with a
@@ -3650,7 +3657,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-header[data-size="lg"] .k2b-panel-header__subtitle {
   margin-top: 0.25rem;
   font-size: var(--k2b-font-size-body);
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-body);
 }
 
 /* Cloud: `paper overflow-hidden`. */
@@ -3918,6 +3925,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-mark);
   color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 14%, var(--k2b-surface));
+  /* type-scale: allow a sign: k2b-detail-panel__header-icon */
   font-size: 0.875rem;
 }
 
@@ -4246,6 +4254,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   border-radius: var(--k2b-radius-mark);
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: k2b-section__icon */
   font-size: 0.875rem;
 }
 
@@ -4321,7 +4330,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-section__none,
@@ -4443,6 +4452,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* The chevron's mark ends on the trailing text edge, like a count or a time, and its box stays inside the row. */
   place-items: center end;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-section__chevron */
   font-size: 0.75rem;
 }
 
@@ -4949,6 +4959,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.25rem;
   text-align: center;
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: k2b-fact-group__icon */
   font-size: 1rem;
 }
 
@@ -5311,7 +5322,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-discussion__status[role="alert"] {
@@ -5336,7 +5347,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
@@ -5422,7 +5433,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-row);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5459,7 +5470,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-top: 0.125rem;
   color: var(--k2b-text-secondary);
   font-size: 0.8125rem;
-  line-height: 1.35rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-discussion__content > .k2b-content-markdown > :first-child {
@@ -5502,7 +5513,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline: 0.6875rem 0.75rem;
   border-inline-start: 1px solid var(--k2b-control-border-soft);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.1875rem;
+  line-height: var(--k2b-line-height-row);
   outline: none;
 }
 .k2b-ui .k2b-discussion-thread[data-writing] {
@@ -5528,7 +5539,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > strong {
   flex: 0 1 auto;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.1875rem;
+  line-height: var(--k2b-line-height-row);
 }
 /* Role and time follow the name in the quiet meta step, each after a middle dot. */
 .k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > :is(.k2b-discussion__meta, .k2b-discussion__timestamp) {
@@ -5537,7 +5548,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
   font-size: var(--k2b-font-size-meta);
   font-weight: 400;
-  line-height: 1.1875rem;
+  line-height: var(--k2b-line-height-row);
   white-space: nowrap;
 }
 .k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > :is(.k2b-discussion__meta, .k2b-discussion__timestamp)::before {
@@ -5555,7 +5566,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.1875rem;
+  line-height: var(--k2b-line-height-row);
   overflow-wrap: anywhere;
 }
 /* A real field on the avatars' edge; the thread's line shows the focus once it opens. */
@@ -5588,7 +5599,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  line-height: 1.1875rem;
+  line-height: var(--k2b-line-height-row);
   resize: none;
   outline: none;
 }
@@ -6418,6 +6429,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2rem;
   height: 2rem;
   color: var(--k2b-app-workspace-active);
+  /* type-scale: allow a sign: k2b-panel-dialog__icon */
   font-size: 1.125rem;
 }
 
@@ -6689,7 +6701,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
   font-weight: 400;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui
@@ -7057,7 +7069,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: calc(var(--k2b-editor-lines, 3) * 1.5rem + 1rem);
   max-height: max(12.5rem, calc(var(--k2b-editor-lines, 3) * 1.5rem + 1rem));
   resize: vertical;
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-number-input {
@@ -7338,7 +7350,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-family: var(--k2b-font-signature);
   /* type-scale: allow a drawing: the typed name rendered as a signature */
   font-size: clamp(1.75rem, 7vw, 2.5rem);
-  line-height: 1.6;
+  line-height: var(--k2b-line-height-row);
   outline: none;
 }
 
@@ -7500,11 +7512,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
   background: transparent;
   font: inherit;
+  /* type-scale: allow a sign: the row action icon */
   line-height: 1;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-action :where(i) {
   display: inline-block;
+  /* type-scale: allow a sign: the row action icon */
   line-height: 1;
 }
 
@@ -7514,10 +7528,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.125rem;
   padding-inline-end: 0.125rem;
+  /* type-scale: allow a sign: the row action icons */
   line-height: 1;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-actions :where(i) {
+  /* type-scale: allow a sign: the row action icons */
   line-height: 1;
 }
 
@@ -8324,6 +8340,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: var(--k2b-action);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.625rem;
 }
 
@@ -8338,6 +8355,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__check {
   flex: 0 0 auto;
   color: var(--k2b-action);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.75rem;
 }
 
@@ -8601,7 +8619,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__copy > small {
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__image {
@@ -9077,7 +9095,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* The entry most people want: its icon carries the action color. */
@@ -9234,6 +9252,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-filter-chip__chevron {
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-filter-chip__chevron */
   font-size: 0.625rem;
 }
 
@@ -9288,6 +9307,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: var(--k2b-action);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.625rem;
 }
 
@@ -9827,6 +9847,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-list__icon {
   flex: 0 0 auto;
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: k2b-choice-list__icon */
   font-size: 1.125rem;
   line-height: 1.25rem;
 }
@@ -9859,9 +9880,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-mark);
   color: var(--k2b-text-muted);
   background: var(--k2b-surface-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-choice-list__busy {
@@ -9874,7 +9895,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-list__description {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.35;
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* Follow-up controls of the chosen card take the whole line under its row of
@@ -10026,6 +10047,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-tiles__visual {
   display: inline-flex;
+  /* type-scale: allow a sign: the tile visual */
   line-height: 0;
 }
 
@@ -10041,7 +10063,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-tiles__label {
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.2;
+  line-height: var(--k2b-line-height-meta);
   text-align: center;
 }
 
@@ -10076,7 +10098,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-success-text);
   font-size: var(--k2b-font-size-meta);
   font-weight: 500;
-  line-height: 1.3;
+  line-height: var(--k2b-line-height-meta);
 }
 
 @media (max-width: 47.999rem) {
@@ -10116,6 +10138,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: transparent;
+  /* type-scale: allow a sign: k2b-icon-choices__option */
   font-size: 1rem;
   cursor: pointer;
 }
@@ -10419,6 +10442,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-option-visual > * {
   flex: none;
+  /* type-scale: allow a sign: the option visual */
   line-height: 1;
 }
 
@@ -10441,6 +10465,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.25rem;
   color: transparent;
   background: var(--k2b-surface);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.6875rem;
 }
 
@@ -10666,6 +10691,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   place-items: center;
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: the item's visual (icon or emoji) */
   font-size: 1rem;
 }
 
@@ -10693,7 +10719,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-rich-select__line {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
   overflow-wrap: anywhere;
 }
 
@@ -10704,6 +10730,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-rich-select__check {
   color: var(--k2b-action);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 1rem;
   visibility: hidden;
 }
@@ -10793,7 +10820,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-lead);
   font-weight: 500;
   letter-spacing: -0.02em;
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-lead);
   overflow-wrap: anywhere;
 }
 
@@ -10816,7 +10843,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-row);
   overflow-wrap: anywhere;
 }
 
@@ -10852,6 +10879,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
+  /* type-scale: allow a sign: k2b-rich-select__state-icon */
   font-size: 1.125rem;
 }
 
@@ -10864,7 +10892,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: 22.5rem;
   font-size: var(--k2b-font-size-body);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-body);
 }
 
 .k2b-ui .k2b-rich-select__footer {
@@ -11007,6 +11035,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
   background: transparent;
+  /* type-scale: allow a sign: the info icon button */
   font-size: 1.25rem;
   cursor: pointer;
 }
@@ -11250,6 +11279,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.25rem;
   color: transparent;
   background: var(--k2b-surface);
+  /* type-scale: allow a sign: the check mark of a control */
   font-size: 0.6875rem;
 }
 
@@ -11665,7 +11695,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
-  line-height: 0.9625rem;
+  line-height: var(--k2b-line-height-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12572,7 +12602,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.35;
+  line-height: var(--k2b-line-height-row);
   text-align: center;
 }
 
@@ -13214,7 +13244,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__header-content {
-  @apply flex flex-col items-start gap-0.5 text-left leading-tight;
+  @apply flex flex-col items-start gap-0.5 text-left leading-4;
   color: inherit;
   text-decoration: none;
 }
@@ -13257,6 +13287,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__sort-icon {
+  /* type-scale: allow a sign: k2b-data-table__sort-icon */
   @apply text-[9px];
 }
 
@@ -13328,7 +13359,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: normal;
   text-overflow: clip;
   overflow-wrap: anywhere;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 /* A bar column: the value, then a short track filled to its share of the column's largest value. */
@@ -13413,6 +13444,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table__group-chevron {
   margin-inline-start: auto;
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: k2b-data-table__group-chevron */
   font-size: 0.75rem;
 }
 
@@ -14012,7 +14044,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     padding: 0.25rem 0.625rem;
     border-radius: var(--k2b-radius-control);
     font-size: var(--k2b-font-size-row);
-    line-height: 1.125rem;
+    line-height: var(--k2b-line-height-row);
     transform: translate(-50%, -50%);
   }
 
@@ -14694,7 +14726,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    collapse is decided from the text, the status line has a fixed height, and the action bar overlays the row. Rows
    tile with padding, never margins, and a row's look depends only on the row before it. */
 .k2b-ui .k2b-message-row {
-  --k2b-message-line: 1.375rem;
+  --k2b-message-line-height: 1.375rem;
   --k2b-message-media-height: 20rem;
   --k2b-message-media-width: 20rem;
   position: relative;
@@ -14703,7 +14735,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.125rem 0.75rem;
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-body);
-  line-height: var(--k2b-message-line);
+  line-height: var(--k2b-message-line-height);
 }
 
 .k2b-ui .k2b-message-row[data-group-start] {
@@ -14792,7 +14824,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   color: var(--k2b-text);
   font-size: inherit;
-  line-height: var(--k2b-message-line);
+  line-height: var(--k2b-message-line-height);
 }
 
 .k2b-ui .k2b-message-row__text :where(p, ul, ol, dl, table, pre, blockquote, .k2b-message-row__code, .k2b-notice-card) {
@@ -14802,9 +14834,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The clamp clips instead of hiding: a hidden box scrolls to a focused link or a find-in-page match and stays scrolled.
    The fade is measured from the top, so text that ends above the clamp is never faded. */
 .k2b-ui .k2b-message-row__text[data-collapsed] {
-  max-height: calc(10 * var(--k2b-message-line));
+  max-height: calc(10 * var(--k2b-message-line-height));
   overflow: clip;
-  mask-image: linear-gradient(to bottom, #000 calc(8 * var(--k2b-message-line)), transparent calc(10 * var(--k2b-message-line)));
+  mask-image: linear-gradient(to bottom, #000 calc(8 * var(--k2b-message-line-height)), transparent calc(10 * var(--k2b-message-line-height)));
 }
 
 /* A Markdown table reaches 0.5rem past the text. The clamp reaches as far and pads the text back into place, so a
@@ -15121,7 +15153,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   padding: 0 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -15147,7 +15179,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: color-mix(in srgb, var(--k2b-action) 7%, transparent);
   font: inherit;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-align: start;
 }
 
@@ -15217,7 +15249,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: color-mix(in srgb, var(--k2b-text) 6%, transparent);
   font: inherit;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-align: start;
 }
 
@@ -15339,7 +15371,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-message-row__writing {
   display: inline-flex;
-  height: var(--k2b-message-line);
+  height: var(--k2b-message-line-height);
   align-items: center;
 }
 
@@ -15410,6 +15442,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   inset: 50% auto auto 50%;
   place-items: center;
   border-radius: 999px;
+  /* type-scale: allow a sign: the play icon */
   font-size: 1.25rem;
   translate: -50% -50%;
 }
@@ -15475,6 +15508,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
+  /* type-scale: allow a sign: k2b-message-row__file-icon */
   font-size: 1.125rem;
 }
 
@@ -15482,7 +15516,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   min-width: 0;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-message-row__file-name {
@@ -15589,7 +15623,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  line-height: 1;
+  line-height: var(--k2b-line-height-meta);
   /* A held finger shows the names, not the system's callout or a text selection. */
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -15643,6 +15677,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  /* type-scale: allow the count centres in its chip */
   line-height: var(--k2b-reaction-height);
   pointer-events: none;
 }
@@ -15663,11 +15698,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   border-radius: 999px;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-reaction-bar__add-button */
   font-size: 1rem;
 }
 
 .k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-icon-button.k2b-reaction-bar__add-button {
   width: var(--k2b-reaction-height);
+  /* type-scale: allow a sign: k2b-reaction-bar__add-button */
   font-size: 0.9375rem;
 }
 
@@ -15974,7 +16011,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__meta {
@@ -16003,11 +16040,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.25rem;
   font-size: var(--k2b-font-size-body);
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-body);
 }
 
 .k2b-ui .k2b-chat-message__status--streaming {
   min-height: 1rem;
+  /* type-scale: allow a sign: the streaming dots */
   line-height: 1;
 }
 
@@ -16016,6 +16054,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.2rem;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: the progress dots */
   line-height: 1;
 }
 
@@ -16053,7 +16092,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.6;
+  line-height: var(--k2b-line-height-row);
 }
 
 /* What a message brings along stands above its words: images as 148 × 110 px previews, files as grey tiles with their
@@ -16525,6 +16564,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: 5;
   justify-self: end;
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: k2b-chat-activity__chevron */
   font-size: 0.9375rem;
 }
 
@@ -16552,6 +16592,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-chat-activity-info-hover);
   box-shadow: 0 0 0 0.1875rem var(--k2b-chat-activity-info-hover);
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: the info icon button */
   font-size: 1rem;
   cursor: pointer;
 }
@@ -16584,7 +16625,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0 0;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.55;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-activity[data-body-inset="false"] > .k2b-chat-activity__body {
@@ -16651,6 +16692,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-line__icon {
   justify-self: start;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-chat-line__icon */
   font-size: 0.9375rem;
   line-height: inherit;
 }
@@ -16704,7 +16746,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-bottom: 0.375rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-decision:not([data-state="open"]) .k2b-chat-decision__head {
@@ -16713,6 +16755,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-decision__kind-icon {
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: k2b-chat-decision__kind-icon */
   font-size: 0.9375rem;
 }
 
@@ -16767,7 +16810,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-lead);
   font-weight: 400;
-  line-height: 1.55;
+  line-height: var(--k2b-line-height-lead);
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
@@ -16799,7 +16842,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-decision__reason[data-tone="danger"] .k2b-chat-line__icon {
@@ -16843,7 +16886,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-meta);
 }
 
 .k2b-ui .k2b-chat-decision__notes {
@@ -16852,7 +16895,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-top: 0.75rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-decision__note {
@@ -17076,6 +17119,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.5rem;
   background: none;
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: k2b-change-list__icon */
   font-size: 0.875rem;
 }
 
@@ -17184,7 +17228,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-decision__fact-line[data-tone="danger"] .k2b-chat-line__icon {
@@ -17262,7 +17306,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.45;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-chat-decision__line {
@@ -17342,7 +17386,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.375rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-body);
-  line-height: 1.6;
+  line-height: 1.375rem;
 }
 
 .k2b-ui .k2b-chat-outcome[data-enter="true"] {
@@ -17854,7 +17898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-float);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   overflow-wrap: anywhere;
   pointer-events: auto;
 }
@@ -18106,7 +18150,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > small,
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-detail > small {
     font-size: var(--k2b-font-size-row);
-    line-height: 1.125rem;
+    line-height: var(--k2b-line-height-row);
   }
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-end {
     height: 1.25rem;
@@ -18350,7 +18394,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
   font: inherit;
   font-size: var(--k2b-font-size-body);
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-body);
 }
 
 .k2b-ui .k2b-chat-composer__input textarea::placeholder {
@@ -19227,7 +19271,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 1rem 0.375rem 0.375rem;
   font-size: var(--k2b-font-size-row);
   /* Fixed line heights keep a loaded row exactly as tall as its placeholder in every engine and font. */
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-person-popover__head {
@@ -19268,7 +19312,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -19643,7 +19687,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.875rem 1rem 0.75rem;
   border-radius: var(--k2b-radius-dialog);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.5;
+  line-height: var(--k2b-line-height-row);
 }
 
 /* On a phone a card spans the screen with a small margin, above its control. */
@@ -20267,6 +20311,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   background: transparent;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: the drag grip */
   font-size: 1rem;
   cursor: grab;
 }
@@ -20466,6 +20511,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-drop-overlay__icon {
   flex: none;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-drop-overlay__icon */
   font-size: 1.375rem;
 }
 
@@ -20512,6 +20558,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   top: var(--k2b-space-2);
   right: var(--k2b-space-2);
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-drop-overlay__chevron */
   font-size: 1rem;
 }
 
@@ -20777,16 +20824,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2rem;
   height: 2rem;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-file-type-icon */
   font-size: 1.125rem;
 }
 .k2b-ui .k2b-file-type-icon[data-size="sm"] {
   width: 1.25rem;
   height: 1.25rem;
+  /* type-scale: allow a sign: k2b-file-type-icon */
   font-size: 0.75rem;
 }
 .k2b-ui .k2b-file-type-icon[data-size="lg"] {
   width: 4.5rem;
   height: 4.5rem;
+  /* type-scale: allow a sign: k2b-file-type-icon */
   font-size: 2.25rem;
 }
 .k2b-ui .k2b-file-type-icon[data-file-type="folder"] { color: var(--k2b-app-workspace-active); }
@@ -21157,7 +21207,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-row);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: var(--k2b-line-height-row);
   cursor: pointer;
   list-style: none;
   -webkit-user-select: none;
@@ -21191,7 +21241,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.25rem 0.75rem 0.875rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
-  line-height: 1.6;
+  line-height: var(--k2b-line-height-row);
 }
 
 .k2b-ui .k2b-toolbar {
@@ -21514,7 +21564,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   left: 50%;
   display: flex;
   transform: translateX(-50%);
-  font: 500 var(--k2b-font-size-meta)/1 var(--k2b-font-sans);
+  font: 500 var(--k2b-font-size-meta)/var(--k2b-line-height-meta) var(--k2b-font-sans);
   color: var(--k2b-text-muted);
   pointer-events: none;
 }
@@ -21811,7 +21861,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-family: var(--k2b-font-sans);
   font-size: var(--k2b-font-size-meta);
   font-weight: 400;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-meta);
   inset: auto;
   margin: 0;
   padding: .75rem;
@@ -21938,6 +21988,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__chart > .k2b-chart { height: 100%; }
 .k2b-ui .k2b-chart-explorer__state { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: .625rem; padding: 0 1rem; text-align: center; }
 .k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-body); line-height: 1.25rem; text-wrap: balance; }
+/* type-scale: allow a sign: k2b-chart-explorer__state-icon */
 .k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
 .k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
 .k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
@@ -22024,7 +22075,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-inspecting="series"]::after { top: var(--k2b-chart-plot-top, 0); bottom: var(--k2b-chart-plot-bottom, 0); }
 .k2b-ui .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before { content: ""; position: absolute; left: var(--k2b-chart-plot-left, 0); right: var(--k2b-chart-plot-right, 0); top: var(--k2b-chart-inspection-y); border-top: 1px dashed currentColor; opacity: .3; pointer-events: none; }
 .k2b-ui .k2b-chart__tooltip-title { display: block; margin-bottom: .375rem; font-weight: 600; }
-.k2b-ui .k2b-chart__tooltip-row { display: flex; align-items: center; gap: .5rem; line-height: 1.6; }
+.k2b-ui .k2b-chart__tooltip-row { display: flex; align-items: center; gap: .5rem; line-height: var(--k2b-line-height-row); }
 .k2b-ui .k2b-chart__tooltip-row > i { width: .625rem; height: .625rem; border-radius: var(--k2b-radius-mark); flex: none; }
 .k2b-ui .k2b-chart__tooltip-row > span { flex: 1; opacity: .75; }
 .k2b-ui .k2b-chart__tooltip-row > b { margin-left: .75rem; font-variant-numeric: tabular-nums; font-weight: 500; }
@@ -22071,7 +22122,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   font: inherit;
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   text-align: start;
   cursor: pointer;
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
@@ -22158,7 +22209,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.4375rem 0.5rem;
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   overflow-wrap: anywhere;
   transition: color var(--k2b-motion-ink) var(--k2b-ease-settle);
 }
@@ -22174,6 +22225,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-top: 0.0625rem;
   border-radius: 50%;
   box-shadow: inset 0 0 0 2px var(--k2b-border-strong);
+  /* type-scale: allow a sign: the leading mark of the row (aria-hidden) */
   font-size: 0.6875rem;
   transition:
     background-color var(--k2b-motion-ink) var(--k2b-ease-settle),
@@ -22199,6 +22251,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   animation: k2b-chat-task-spin var(--k2b-motion-spin) linear infinite;
 }
 .k2b-ui .k2b-chat-task[data-status="cancelled"] .k2b-chat-task__content { text-decoration: line-through; }
+/* type-scale: allow a sign: the leading mark of the row (aria-hidden) */
 .k2b-ui .k2b-chat-task[data-status="cancelled"] .k2b-chat-task__mark { box-shadow: none; font-size: 0.8125rem; }
 @keyframes k2b-chat-task-check {
   from { opacity: 0; transform: scale(0.4); }
@@ -22213,13 +22266,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chat-task__mark { border: 1px solid CanvasText; }
 }
 
-/* Workspace rows accept live secondary content without changing their controls. */
+/* Workspace rows accept live secondary content without changing their controls.
+   Two lines of the row role touch: with the row's padding they make the 52 px row of two (K1). */
 .k2b-ui .k2b-app-workspace__sidebar-item-copy {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  gap: 0.2rem;
+  gap: 0;
 }
 /* One line that fades out at its end (`k2b-truncate-fade`). */
 .k2b-ui .k2b-app-workspace__sidebar-item-description {
@@ -22228,7 +22282,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   font-weight: 400;
 }
 /* A third line for the one fact that needs attention; the tone repeats what its words say. */
@@ -22238,7 +22292,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   font-weight: 400;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-note[data-tone="warning"] { color: var(--k2b-warning-text); }
@@ -22282,6 +22336,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.25rem;
   align-self: stretch;
   color: var(--k2b-text-secondary);
+  /* type-scale: allow a sign: k2b-app-workspace__sidebar-section-chevron */
   font-size: 0.75rem;
   cursor: pointer;
 }
@@ -22453,6 +22508,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   justify-content: center;
   color: var(--k2b-app-workspace-active);
+  /* type-scale: allow a sign: k2b-app-workspace__sidebar-item-icon */
   font-size: 1rem;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-copy {
@@ -22461,7 +22517,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-label-text {
   font-size: var(--k2b-font-size-row);
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-description {
   font-size: var(--k2b-font-size-meta);
@@ -22476,7 +22532,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: var(--k2b-line-height-meta);
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context {
   display: flex;
@@ -22825,7 +22881,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chat-composer__suggestion,
   .k2b-ui .k2b-chat-composer__input textarea {
     font-size: max(1rem, 16px);
-    line-height: 1.3125rem;
+    line-height: var(--k2b-line-height-row);
   }
 
   .k2b-ui .k2b-choice-search > input,
@@ -22840,7 +22896,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-date-time__control input {
     font-size: max(1rem, 16px);
-    line-height: 1.125rem;
+    line-height: var(--k2b-line-height-row);
   }
 
   /* WebKit lays out a single-line field's text at the font's own line height
@@ -23249,7 +23305,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.75rem;
   color: var(--k2b-ai-accent);
   font-size: var(--k2b-font-size-row);
-  line-height: 1.125rem;
+  line-height: var(--k2b-line-height-row);
   white-space: nowrap;
 }
 
@@ -23331,7 +23387,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: 40%;
   height: var(--k2b-h-label);
   font-size: var(--k2b-font-size-row);
-  line-height: var(--k2b-h-label);
+  line-height: var(--k2b-line-height-row);
   text-align: end;
 }
 
@@ -23458,6 +23514,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-ai-suggestion-group__icon {
   flex-shrink: 0;
+  /* type-scale: allow a sign: k2b-ai-suggestion-group__icon */
   font-size: 1.125rem;
 }
 

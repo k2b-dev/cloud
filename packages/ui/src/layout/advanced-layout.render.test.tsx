@@ -438,7 +438,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(metaRule).toContain("inline-flex");
     expect(metaRule).toContain("items-center");
-    expect(metaRule).toContain("line-height: 1");
+    // K11: metadata is the meta role, 12/16, centred on the row's line.
+    expect(metaRule).toContain("line-height: var(--k2b-line-height-meta)");
     expect(leafMetaRule).toContain("min-width: 1.5rem");
     expect(leafMetaRule).toContain("justify-content: flex-end");
     expect(actionRule).toContain("place-items: center");
@@ -628,8 +629,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(rootRule).toBeDefined();
     expect(rootRule).not.toContain("--k2b-workspace-sidebar-width");
     // The sidebar space calculation also inherits the server-rendered width.
-    // From 1920 px the fallback start width grows by --k2b-workspace-sidebar-wide (K12).
-    expect(css.match(/var\(--k2b-workspace-sidebar-width, calc\(13rem \+ var\(--k2b-workspace-sidebar-wide, 0px\)\)\)/g)).toHaveLength(4);
+    // From 1920 px the fallback start width grows by --k2b-workspace-sidebar-wide (K12). The drawer's handle takes the
+    // drawer's grid area and needs no sidebar offset of its own (K13).
+    expect(css.match(/var\(--k2b-workspace-sidebar-width, calc\(13rem \+ var\(--k2b-workspace-sidebar-wide, 0px\)\)\)/g)).toHaveLength(3);
     expect(css).not.toContain("var(--k2b-workspace-sidebar-width)");
   });
 
@@ -939,7 +941,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(resize).toContain("position:absolute");
       expect(resize).toContain("width:var(--k2b-workspace-resize-hit-size)");
       const paneResize = rule(".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane]");
-      expect(paneResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
+      // K13: a pane's handle is its 1 px line in the flow; its hit area lies over both regions as `::after`.
+      expect(paneResize).toContain("flex:0 0 1px");
+      expect(paneResize).toContain("margin-inline-start:-1px");
+      expect(rule(".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane]:after")).toContain(
+        "width:var(--k2b-workspace-resize-hit-size)",
+      );
       const detailResize = rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]");
       expect(detailResize).toContain(
         "right:calc(max(var(--k2b-workspace-panel-min),100% - var(--k2b-workspace-detail-inset)) + var(--k2b-workspace-detail-inset))",
@@ -951,7 +958,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__sidebar/);
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__detail:not\(\[hidden\]\)/);
       expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]")).toContain("grid-area:detail");
-      expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=drawer\]/);
+      // The drawer's handle is placed by the drawer's grid area, so an island wrapper changes nothing.
+      expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=drawer]")).toContain("grid-area:drawer");
     });
 
     test("creates a desktop sidebar track only when a sidebar exists", () => {

@@ -281,8 +281,8 @@
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
 }
 
-/* Fifteen unchanged two-line rows fit before this personal section scrolls. */
-.chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
+/* Fifteen unchanged two-line rows (the 52 px row of two, K1) fit before this personal section scrolls. */
+.chat-list-pins { max-height: calc(15 * var(--k2b-h-row-2)); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
 /* The pins sit in the sidebar, whose own track already takes its inset; an empty second track would narrow the pinned
    rows beside the other rows. The list scrolls only past fifteen pins, when a new pin changes it anyway. */
 .k2b-ui .k2b-scroll-area.chat-list-pins[data-orientation] { overflow-y: auto; }

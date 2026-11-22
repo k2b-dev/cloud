@@ -613,7 +613,7 @@ describe("MessageRow styles", () => {
     expect(declarations(".k2b-ui .k2b-message-row__line").get("height")).toEqual(["1.25rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__meta").get("height")).toEqual(["1.25rem"]);
     const clamp = declarations(".k2b-ui .k2b-message-row__text[data-collapsed]");
-    expect(clamp.get("max-height")).toEqual(["calc(10 * var(--k2b-message-line))"]);
+    expect(clamp.get("max-height")).toEqual(["calc(10 * var(--k2b-message-line-height))"]);
     // A box that can scroll would scroll to a focused link instead of opening.
     expect(clamp.get("overflow")).toEqual(["clip"]);
   });

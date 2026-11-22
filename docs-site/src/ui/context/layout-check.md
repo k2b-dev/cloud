@@ -37,21 +37,30 @@ apply to them.
 
 - `short-edge`: a line or a fill of a row, cell, selection, or notice in a flat
   area stops short of the area's inner edge, or runs past it, by more than
-  0.5 px. A line is a border of at most 1 px or a 1 px box-shadow line; a fill
-  is a background colour with square corners that differs from what lies
-  behind it. Lines and fills of one area at the same height count as one run,
+  0.5 px. A line is a border of at most 1 px, a 1 px box-shadow line, or a thin
+  pseudo-element; a fill is a background colour with square corners that
+  differs from what lies behind it. What a scrolling or clipping box cuts off
+  does not count. The finding names what pushes the line or fill inward when
+  it can: a margin, or an ancestor's padding or scrollbar gutter, such as
+  `inset by div.k2b-detail-panel__body (scrollbar gutter 8 px)`. Lines and fills of one area at the same height count as one run,
   and a run that spans at least half the area must reach both edges. A
   reserved scrollbar gutter is no excuse: lines and fills run under it. Text
   keeps its own inset. Framed elements (round corners, or a border on three
   sides or more), fields, and boxes that float are no rows.
-- `near-double`: two parallel lines 0 to 8 px apart that run side by side over
-  at least half of the shorter one. A pair that `double` already reports is not
-  repeated. The edge of a frame (round corners, or a border on three sides or
-  more), such as a field, button, or card, is no line.
-- `grip-off-center`: the grip of a `role="separator"` is not centred on its
-  edge within 1 px, across or along it, or something lies over it. The edge is
-  the start or end of the column named by `aria-controls`, else the line
-  between the separator's neighbours.
+- `near-double`: two parallel lines at most 8 px apart that run side by side
+  over at least half of the shorter one, in the same layer (a sheet or dialog
+  is a layer of its own). It also sees lines drawn as a box-shadow or a
+  pseudo-element, such as the column lines of a workspace, which `double` does
+  not. A pair that `double` already reports is not repeated. The edge of a
+  frame (round corners, or a border on three sides or more), such as a field,
+  button, or card, counts only beside a drawn line: a card on a column line is
+  a double line, a card below a row line is not.
+- `grip-off-center`: the grip of a `role="separator"` is not centred on the
+  line under it within 0.25 px, sits more than 1 px off the middle of that
+  line's visible length, has no line under it, has its or its line's edges on
+  fractions of a pixel (at a device pixel ratio of 1, where they blur), or is
+  painted behind the line or anything else. The check compares stacking contexts and tree order, so it
+  also sees a line drawn by a pseudo-element.
 - `type-role`: text in a flat area whose font size, line height, and weight
   are no type role. The roles come from the `--k2b-type-roles` token of
   `@k2b/ui`, which derives from the four role tokens

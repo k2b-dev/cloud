@@ -240,7 +240,7 @@ describe("@k2b/ui Cloud content contract", () => {
     );
     expect(contentCss).toMatch(/\.k2b-calendar-preview--timed \{[^}]*right: 0\.25rem;[^}]*left: 0\.25rem;/s);
     expect(contentCss).toMatch(
-      /\.k2b-calendar-month__events > \.k2b-calendar-preview \{[^}]*padding-block: calc\(0\.25rem - 1px\);[^}]*font-size: var\(--k2b-font-size-meta\);[^}]*line-height: 1\.15;/s,
+      /\.k2b-calendar-month__events > \.k2b-calendar-preview \{[^}]*padding-block: calc\(0\.25rem - 1px\);[^}]*font-size: var\(--k2b-font-size-meta\);[^}]*line-height: var\(--k2b-line-height-meta\);/s,
     );
     expect(contentCss).toMatch(/\.k2b-calendar-preview__title \{[^}]*font-size: var\(--k2b-font-size-meta\);[^}]*font-weight: 600;/s);
     expect(contentCss).toMatch(
