@@ -5,13 +5,46 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## The UI returns to the look of 0.83
+
+Operator note: Cloud's UI returns to the look of 0.83. The behavior, backend
+and data changes of 0.84 stay, so no migration, configuration or data step is
+needed. People see the app shell, tables, fields, sections, dialogs, menus,
+sheets and toasts as in 0.83; drag and drop keeps its 0.84 behavior, with the
+dimmed card, the target line and the drop overlay.
+
+`@k2b/ui` removes the components and options that only the flat build had:
+
+- the components `Area`, `FactGroup`, `FieldGrid`, `FileName` with
+  `splitFileName`, `FloatingPill`, `RowGroup`, `StatusRow` and `TaskRow`, with
+  their prop types;
+- the types `DropdownSubmenu`, `PanelDialogError` and `PlaceholderTone`;
+- the entry `@k2b/ui/layout-check`;
+- the options `primary` and `list` of a `DataTable` column,
+  `collapsibleGroups` and `defaultCollapsedGroups` of `DataTable`, `submenu`
+  of a `Dropdown` item, `error` of `PanelDialog`, `tone` of `Placeholder`,
+  `iconColor` of `Section`, `current` of a `ProgressPath` step, and `href` of
+  a `Breadcrumbs` item;
+- the value `"reading"` of `AppWorkspace.Main`'s `width`;
+- the tone `yours` of `NoticeCard` and `StatusBadge`.
+
+`Breadcrumbs` needs its `onSelect` again, because its items no longer carry
+links.
+
+An application that adopted these in `@k2b/ui` 0.64 uses the building blocks
+of 0.63 again: `Section` and `DetailPanel` for grouped facts and fields,
+`DataTable` columns without list roles, `Dropdown` items without submenus, and
+a `NoticeRow` or `NoticeCard` for a dialog's error. `ChatDecisionField` and the drag-and-drop API (`DropOverlay`,
+`dropOverlayPages`, `dragStatus`, `SortableMove` and `useSortableMoveMenu`)
+stay.
 
 ## Pulse dashboards and the overview are removed
 

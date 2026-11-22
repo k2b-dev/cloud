@@ -1759,7 +1759,8 @@ The standalone CLI test's Bun runtime prefetch also gets three attempts before
 the tests start. Each download attempt is limited to 120 seconds.
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
-oldest supported version, and runs the longer acceptance checks that are too
+oldest supported version, 17, and 18, which production runs but the supported
+range does not include yet. It also runs the longer acceptance checks that are too
 slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
 and runs the Grids, Mail, and Chat browser smokes against that stack. It runs

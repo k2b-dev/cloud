@@ -144,7 +144,7 @@
   width: 1.125rem;
   height: 1.125rem;
   border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
-  border-radius: var(--k2b-radius-mark);
+  border-radius: 0.3125rem;
   color: transparent;
   background: var(--k2b-surface);
   font-size: 0.8125rem;

@@ -1,20 +1,7 @@
-import {
-  createContext,
-  createEffect,
-  createRoot,
-  createSignal,
-  createUniqueId,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-  useContext,
-} from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { createContext, createEffect, createSignal, createUniqueId, type JSX, Show, useContext } from "solid-js";
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
-import { holdDialogFoot } from "../feedback/dialog-foot";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
@@ -22,7 +9,6 @@ import { SuccessCheck } from "../feedback/success-check";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { useUiMessages } from "../intl/messages";
 import { usePanelDialogMessages } from "./panel-dialog-messages";
-import { PanelSheetHandle } from "./panel-sheet-handle";
 import { createScrollFade } from "./scroll-fade";
 
 export type PanelDialogSurface = "contained" | "floating";
@@ -60,17 +46,8 @@ export type PanelDialogBodyProps = {
   scrollFade?: boolean;
 };
 
-/** Why the dialog's action failed, with what follows from it, such as "Your entries stay". */
-export type PanelDialogError = string | { title: string; description?: string };
-
 export type PanelDialogFooterProps = {
   children: JSX.Element;
-  /**
-   * Shows why the action failed as a tinted cell directly above the footer, edge to edge, and announces it. The
-   * footer keeps its place on the screen: the dialog grows upwards, so the button under the pointer does not move.
-   * Keep the entries; clear the error when the person tries again.
-   */
-  error?: PanelDialogError;
 };
 
 export type PanelDialogSectionProps = {
@@ -113,49 +90,24 @@ const PanelDialogToneContext = createContext<() => DialogTone | undefined>(() =>
 const PanelDialogCelebrateContext = createContext<() => boolean>(() => false);
 const PanelDialogMediaContext = createContext(false);
 
-/** Below 48rem, where a panel dialog is a sheet (K16). */
-const PHONE = "(max-width: 47.999rem)";
-
-const FIELD =
-  "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])";
-
-/**
- * The first field of the shown level, as every dialog focuses; without one, the first control on a desktop and the
- * ring-less dialog itself on a phone sheet, whose grip would otherwise take the focus (as `BottomSheet` does).
- */
-function panelInitialFocus(dialog: HTMLDialogElement): HTMLElement | null {
-  const level = dialog.lastElementChild ?? dialog;
-  const field = level.querySelector<HTMLElement>(FIELD);
-  if (field) return field;
-  if (window.matchMedia(PHONE).matches) {
-    dialog.tabIndex = -1;
-    return dialog;
-  }
-  return level.querySelector<HTMLElement>(
-    "button:not([disabled]):not(.k2b-bottom-sheet__handle), a[href], [tabindex]:not([tabindex='-1'])",
-  );
-}
-
 const panelDialogBasePanelClass = "k2b-dialog k2b-panel-dialog-frame";
+
 export const panelDialogPanelClass = `${panelDialogBasePanelClass} is-standard`;
 export const panelDialogOptions = {
   panelClassName: panelDialogPanelClass,
   contentClassName: "k2b-panel-dialog-viewport",
-  initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
 export const panelDialogWidePanelClass = `${panelDialogBasePanelClass} is-wide`;
 export const panelDialogWideOptions = {
   panelClassName: panelDialogWidePanelClass,
   contentClassName: "k2b-panel-dialog-viewport",
-  initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
 export const panelDialogFixedPanelClass = `${panelDialogBasePanelClass} is-fixed`;
 export const panelDialogFixedOptions = {
   panelClassName: panelDialogFixedPanelClass,
   contentClassName: "k2b-panel-dialog-viewport is-fixed",
-  initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
 export const panelDialogWorkspacePanelClass = `${panelDialogBasePanelClass} is-workspace`;
@@ -248,36 +200,11 @@ const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => {
   );
 };
 
-type ErrorCellModule = typeof import("./panel-dialog-error");
-/** The error cell loads with the first dialog error, so dialogs without one carry none of it. */
-const [errorCell, setErrorCell] = createRoot(() => createSignal<ErrorCellModule["PanelDialogErrorCell"]>());
-let errorCellLoad: Promise<unknown> | undefined;
-
-const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
-  let footer: HTMLElement | undefined;
-  // K16: whatever grows above it, such as an error in the body or above the footer, the footer stays where it is.
-  onMount(() => {
-    if (footer) onCleanup(holdDialogFoot(footer) ?? (() => {}));
-  });
-  createEffect(() => {
-    if (!props.error || errorCellLoad) return;
-    errorCellLoad = import("./panel-dialog-error").then(
-      (module) => setErrorCell(() => module.PanelDialogErrorCell),
-      (error: unknown) => {
-        // The next error tries again; the footer and its buttons stay usable meanwhile.
-        errorCellLoad = undefined;
-        globalThis.reportError(error);
-      },
-    );
-  });
-  // The cell is the footer's first row, so it moves with the footer, also on a sheet's edge between its rests.
-  return (
-    <footer ref={footer} class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
-      <Show when={errorCell()}>{(Cell) => <Dynamic component={Cell()} error={() => props.error} />}</Show>
-      {props.children}
-    </footer>
-  );
-};
+const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => (
+  <footer class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>
+    {props.children}
+  </footer>
+);
 
 const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
   const id = `k2b-panel-dialog-section-${createUniqueId()}`;
@@ -390,27 +317,12 @@ const PanelDialogTabs = <T extends string>(props: PanelDialogTabsProps<T>): JSX.
 
 const PanelDialog = ((props: PanelDialogProps): JSX.Element => {
   const surface = props.surface ?? "contained";
-  let root!: HTMLDivElement;
-  // K16: opened on a phone (below 48rem) a panel dialog's frame is a sheet from the bottom edge (the stylesheet), and
-  // the dialog brings the sheet's grip; from 48rem it stays the centered dialog it was, without one.
-  const [sheetFrame, setSheetFrame] = createSignal<HTMLDialogElement>();
-  onMount(() => {
-    const frame = root.closest<HTMLDialogElement>(`dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)`);
-    if (frame && window.matchMedia(PHONE).matches && !root.querySelector(":scope > .k2b-bottom-sheet__handle")) setSheetFrame(frame);
-  });
   return (
     <PanelDialogSurfaceContext.Provider value={surface}>
       <PanelDialogToneContext.Provider value={() => props.tone}>
         <PanelDialogCelebrateContext.Provider value={() => Boolean(props.celebrate)}>
           <PanelDialogMediaContext.Provider value={Boolean(props.media)}>
-            <div
-              ref={root}
-              class="k2b-panel-dialog"
-              data-surface={surface}
-              data-tone={props.tone}
-              data-media={props.media ? "" : undefined}
-            >
-              <Show when={sheetFrame()}>{(frame) => <PanelSheetHandle frame={frame()} />}</Show>
+            <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone} data-media={props.media ? "" : undefined}>
               {props.children}
             </div>
           </PanelDialogMediaContext.Provider>

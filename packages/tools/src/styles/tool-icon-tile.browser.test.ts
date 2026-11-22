@@ -105,8 +105,7 @@ test("Tools catalog and header icons keep shared app ink, chip geometry and plat
         expect(result.shadow, label).toBe("none");
         expect(result.width, label).toBe(size);
         expect(result.height, label).toBe(size);
-        // Cloud flach (K4): a tile from 24 px has the control radius.
-        expect(result.radius, label).toBe(8);
+        expect(result.radius, label).toBeCloseTo(size * 0.28, 2);
       }
       // Establish keyboard modality before programmatic focus, including on the second theme pass.
       await page.keyboard.press("Tab");

@@ -1,4 +1,0 @@
-# Known frames around a notice (K10, K14), one per occurrence: <file> | frame | <parent>.
-# Lanes remove lines as the notice becomes the cell itself; the rule never adds lines.
-# `bun scripts/check.ts notice-cards --fix` removes lines whose finding is gone.
-packages/filesv2/src/frontend/public-pages.tsx | frame | <Paper>

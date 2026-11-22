@@ -9,10 +9,9 @@ test("Icon tile documentation matches the shared CSS rule and theme fill values"
   for (const name of ["k2b-icon-tile", "currentColor", "--k2b-icon-tile-fill"]) expect(section).toContain(`\`${name}\``);
 
   const rule = css.match(/\.k2b-ui \.k2b-icon-tile\s*\{([^}]+)\}/)?.[1];
-  // Cloud flach (K4): the tile reads the radius role of a tile, a mark below 24 px and a control from 24 px.
-  const radius = rule?.match(/border-radius:\s*var\((--k2b-radius-[\w-]+)\)/)?.[1];
-  expect(radius).toBe("--k2b-radius-tile");
-  expect(section).toContain(`radius is \`${radius}\``);
+  const radius = rule?.match(/border-radius:\s*(\d+(?:\.\d+)?%)/)?.[1];
+  expect(radius).toBeDefined();
+  expect(section).toContain(`radius is ${radius}`);
   expect(rule).toContain("color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent)");
 
   const scopes = [
@@ -26,5 +25,5 @@ test("Icon tile documentation matches the shared CSS rule and theme fill values"
     expect(section).toContain(`${value} ${theme}`);
     return value!;
   });
-  expect([...(section!.match(/\d+(?:\.\d+)?%/g) ?? [])]).toEqual(fills);
+  expect([...(section!.match(/\d+(?:\.\d+)?%/g) ?? [])]).toEqual([...fills, radius!]);
 });

@@ -48,17 +48,6 @@ Open the shell with `dialogCore.open`.
   content clear of notches and the home indicator. It takes the width of the
   viewport without a reserved scrollbar gutter, so it stays centred.
 
-Opened below 48rem, the first three are a sheet from the bottom edge (K16):
-14 px at the top, the upward shadow, and a grip that a finger pulls or taps to close
-the dialog, as `BottomSheet` has; the dialog's cancel behavior and guard
-decide, as for Escape. From 48rem they are a centered dialog. The first focus
-goes to the first field, else to the first control on a desktop and to the
-ring-less dialog on a phone.
-
-The footer keeps its place on the screen whenever the dialog's height
-changes, also for an error the app shows in the body: a centered dialog grows
-and shrinks at its top.
-
 The corresponding `panelDialogPanelClass`,
 `panelDialogWidePanelClass`, `panelDialogFixedPanelClass`, and
 `panelDialogWorkspacePanelClass` exports are the panel-class strings inside
@@ -213,43 +202,22 @@ fault.
 
 ## Close ownership
 
-The dialog frame is a floating object: 8 px radius, the large overlay shadow
-(`--k2b-shadow-overlay-lg`), and the page behind it dimmed by 28 % without
-blur. Inside it is flat: the header is a 56 px band with one hairline below it,
-the footer a band with one hairline above it, each from edge to edge. Both
-stay outside the scrolling body, so they remain visible while only the body
-scrolls. This is the same frame, bands, and close control as `prompts`
-dialogs. Its header icon sits in a soft chip of the accent ink
-`--k2b-app-workspace-active`.
+Header and footer sit flat on the dialog surface: no grey band and no divider
+line. Both stay outside the scrolling body, so they remain visible while only
+the body scrolls; the body's fade is the only cue that content continues. This
+shares the flat surface and close control of `prompts` dialogs; `PanelDialog`
+uses the larger title for its larger editors. Its header icon sits in a soft
+chip of the accent ink `--k2b-app-workspace-active`.
 
-The header uses a 14 px semibold title and a 12 px secondary subtitle, centered
-beside its icon and actions. Action touch targets keep their size. Header,
-tabs, body, and footer share the 20 px text edge (`--k2b-gutter`), 16 px below
-48rem; body and footer use it at the trailing edge too. The header's trailing
-edge is tighter, 12 px, so the close control sits closer to the corner. Keep
-filenames and other long identifiers in the subtitle or body. The title never
-wraps: it stays on one line and ends with an ellipsis, and the native hint
-shows all of it.
-
-## Show an error
-
-When the footer's action fails, pass the reason to `PanelDialog.Footer error`:
-a string, or `{ title, description }` with what follows from it. It shows as a
-tinted, square cell, the footer's first row above its buttons, from edge to
-edge, and is announced; on a sheet it moves with the footer. The footer keeps its place on the screen: the dialog grows upwards
-by the cell's height, so the button under the pointer does not move. Keep the
-entries, and clear the error when the person tries again. A dialog at its full
-height scrolls its body instead.
-
-```tsx
-<PanelDialog.Footer error={failed() ? { title: "The task was not created", description: "No connection. Your entries stay." } : undefined}>
-  <Button variant="secondary" onClick={() => close()}>Cancel</Button>
-  <Button variant="primary" onClick={() => void save()}>Create</Button>
-</PanelDialog.Footer>
-```
-
-Dialogs do not stack: a dialog opened from a dialog replaces it in the same
-frame, and closing it shows the one below again.
+The header uses a 20 px semibold title and a 13 px secondary subtitle. Without
+a subtitle, it centers the title beside its icon and actions. Headers with a
+subtitle keep their two-line, top-aligned layout. Action touch targets keep
+their size. Header, tabs, body, and footer share a 24 px leading inset, 16 px
+below 48rem; body and footer use it at the trailing edge too. The header's
+trailing edge is tighter, 20 px and 12 px below 48rem, so the close control
+sits closer to the corner. Keep filenames and other long identifiers in the
+subtitle or body. The title never wraps: it stays on one line and ends with an
+ellipsis, and the native hint shows all of it; the subtitle wraps.
 Use whitespace to separate content when additional section frames add no meaning.
 
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
@@ -290,10 +258,8 @@ type PanelDialogBodyProps = {
   children: JSX.Element; scrollPreserveKey?: string; scrollFade?: boolean;
 };
 
-type PanelDialogError = string | { title: string; description?: string };
-
 type PanelDialogFooterProps = {
-  children: JSX.Element; error?: PanelDialogError;
+  children: JSX.Element;
 };
 
 type PanelDialogSectionProps = {
@@ -320,8 +286,7 @@ Types map to the correspondingly named compound members. `PanelDialog` supplies 
 Give the header and every section a clear title. Each section is a `section`
 labelled by its title. A hideable section toggles through a button with
 `aria-expanded` and `aria-controls`; focus order stays the same open and
-closed. Header actions need their own accessible names. A footer `error` is a
-`role="alert"` cell, so screen readers announce it as it appears.
+closed. Header actions need their own accessible names.
 
 Tabs use tab triggers inside a labelled tab list. Pass `ariaLabel` when the default `Dialog tabs` does not describe the choices. Disabled options remain visible but cannot be selected.
 

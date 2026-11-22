@@ -1,9 +1,0 @@
-# Known blurs (K16), one per occurrence: <file> | <selector or utility>.
-# Lanes remove lines as they replace glass with a solid surface or the scrim; the rule never adds lines.
-# `bun scripts/check.ts glass-surfaces --fix` removes lines whose finding is gone.
-packages/cloud/src/styles/effects.css | dialog:has(.launchpad-panel)::backdrop sets backdrop-filter: blur(8px)
-packages/cloud/src/styles/resource-search.css | .cloud-search-dialog::backdrop sets backdrop-filter: blur(5px)
-packages/ui/src/styles/content-parity.css | .k2b-ui .k2b-lightbox::backdrop sets backdrop-filter: blur(14px)
-packages/ui/src/styles/content-parity.css | .k2b-ui .k2b-lightbox::backdrop sets backdrop-filter: blur(14px)
-packages/ui/src/styles/index.css | .k2b-ui .k2b-overlay-surface sets backdrop-filter: blur(22px) saturate(1.6)
-packages/ui/src/styles/index.css | .k2b-ui .k2b-overlay-surface sets backdrop-filter: blur(22px) saturate(1.6)

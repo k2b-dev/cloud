@@ -1,5 +1,5 @@
 import { Button, Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
-import { For, type JSX, Show } from "solid-js";
+import { createMemo, For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
 
@@ -169,6 +169,10 @@ export default function FileList(props: {
       <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info" />
     </div>
   );
+  // Rows are keyed by path: a poll that brings new objects keeps the element of every row whose path stays, so the
+  // list keeps its scroll position and the focus inside a row; the row's content follows the current object in place.
+  const rowsByPath = createMemo(() => new Map(props.rows.map((row) => [row.path, row])));
+  const paths = createMemo(() => props.rows.map((row) => row.path));
   return (
     <div
       class="filesv2-list"
@@ -190,178 +194,181 @@ export default function FileList(props: {
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--info" />
       </div>
       <For each={props.before ?? []}>{virtual}</For>
-      <For each={props.rows}>
-        {(row) => (
-          <Show
-            when={!row.operation}
-            fallback={
-              <div
-                role="row"
-                class="filesv2-list__row filesv2-list__row--operation"
-                data-state={row.operation!.state}
-                style={{ "--depth": row.depth ?? 0 }}
-              >
-                <Show when={props.selecting}>
-                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
-                </Show>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
-                  <span class="filesv2-thumbnail" aria-hidden="true">
-                    <i class={row.operation!.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} />
-                  </span>
-                </span>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-                  <span class="filesv2-list__name" title={row.name}>
-                    {row.name}
-                  </span>
-                  <span class="filesv2-list__operation-text" role={row.operation!.state === "failed" ? "alert" : "status"}>
-                    {row.operation!.text}
-                  </span>
-                </span>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--operation">
-                  <For each={row.operation!.actions}>
-                    {(action) => (
-                      <Button size="xs" variant="link" onClick={action.onClick}>
-                        {action.label}
-                      </Button>
-                    )}
-                  </For>
-                </span>
-              </div>
-            }
-          >
+      <For each={paths()}>
+        {(path) => {
+          const row = createMemo<FileRow>((previous) => rowsByPath().get(path) ?? previous, rowsByPath().get(path)!);
+          return (
             <Show
-              when={!row.more}
+              when={!row().operation}
               fallback={
-                <div role="row" class="filesv2-list__row filesv2-list__row--more" style={{ "--depth": row.depth ?? 0 }}>
+                <div
+                  role="row"
+                  class="filesv2-list__row filesv2-list__row--operation"
+                  data-state={row().operation!.state}
+                  style={{ "--depth": row().depth ?? 0 }}
+                >
                   <Show when={props.selecting}>
                     <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
                   </Show>
-                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon" />
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
+                    <span class="filesv2-thumbnail" aria-hidden="true">
+                      <i class={row().operation!.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} />
+                    </span>
+                  </span>
                   <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-                    <Button size="sm" variant="link" onClick={() => props.onLoadMore?.(row)}>
-                      {props.messages.more}
-                      <i class="ti ti-chevron-down" aria-hidden="true" />
-                    </Button>
+                    <span class="filesv2-list__name" title={row().name}>
+                      {row().name}
+                    </span>
+                    <span class="filesv2-list__operation-text" role={row().operation!.state === "failed" ? "alert" : "status"}>
+                      {row().operation!.text}
+                    </span>
+                  </span>
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--operation">
+                    <For each={row().operation!.actions}>
+                      {(action) => (
+                        <Button size="xs" variant="link" onClick={action.onClick}>
+                          {action.label}
+                        </Button>
+                      )}
+                    </For>
                   </span>
                 </div>
               }
             >
-              <div
-                {...props.rowProps?.(row)}
-                role="row"
-                class="filesv2-list__row"
-                classList={{ "filesv2-list__row--active": active(row) }}
-                style={{ "--depth": row.depth ?? 0 }}
-                aria-selected={props.selection.selected().has(row.path)}
-                aria-expanded={props.tree && row.directory ? !!row.expanded : undefined}
-                aria-current={props.tree && props.currentPath === row.path ? "location" : undefined}
-                ref={(element) => props.selection.register(row.path, element)}
-                tabIndex={props.selection.focused() === row.path ? 0 : -1}
-                onFocus={() => props.selection.markFocused(row.path)}
-                onClick={(event) => {
-                  if (nested(event)) return;
-                  props.onRowClick?.(row, event);
-                }}
-                onDblClick={(event) => {
-                  if (!nested(event)) props.onOpen(row);
-                }}
-                onContextMenu={() => props.onContextMenu?.(row)}
-                onKeyDown={(event) => {
-                  if (nested(event)) return;
-                  if (props.tree && row.directory && event.key === "ArrowRight" && !row.expanded) {
-                    event.preventDefault();
-                    props.onToggle?.(row);
-                    return;
-                  }
-                  if (props.tree && row.directory && event.key === "ArrowLeft" && row.expanded) {
-                    event.preventDefault();
-                    props.onToggle?.(row);
-                    return;
-                  }
-                  if (props.selection.keyDown(event, row.path)) return;
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    props.onOpen(row);
-                  }
-                }}
+              <Show
+                when={!row().more}
+                fallback={
+                  <div role="row" class="filesv2-list__row filesv2-list__row--more" style={{ "--depth": row().depth ?? 0 }}>
+                    <Show when={props.selecting}>
+                      <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
+                    </Show>
+                    <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon" />
+                    <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
+                      <Button size="sm" variant="link" onClick={() => props.onLoadMore?.(row())}>
+                        {props.messages.more}
+                        <i class="ti ti-chevron-down" aria-hidden="true" />
+                      </Button>
+                    </span>
+                  </div>
+                }
               >
-                <Show when={props.selecting}>
-                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check">
-                    <Checkbox
-                      value={props.selection.selected().has(row.path)}
-                      label={<span class="sr-only">{props.messages.select(row.name)}</span>}
-                      onValueChange={() => props.selection.toggle(row.path)}
-                    />
-                  </span>
-                </Show>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
-                  <Show when={props.tree && row.directory} fallback={icon(row)}>
-                    <button
-                      type="button"
-                      class="filesv2-list__disclosure"
-                      aria-label={props.messages.toggle(row.name)}
-                      aria-expanded={!!row.expanded}
-                      onClick={() => props.onToggle?.(row)}
-                    >
-                      {icon(row)}
-                    </button>
-                  </Show>
-                </span>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-                  <Show
-                    when={props.pathBase !== undefined && props.pathBase !== null && hitParts(row.path, props.pathBase, row.highlight)}
-                    fallback={
-                      <span class="filesv2-list__name" title={row.path}>
-                        {row.name}
-                      </span>
+                <div
+                  {...props.rowProps?.(row())}
+                  role="row"
+                  class="filesv2-list__row"
+                  classList={{ "filesv2-list__row--active": active(row()) }}
+                  style={{ "--depth": row().depth ?? 0 }}
+                  aria-selected={props.selection.selected().has(path)}
+                  aria-expanded={props.tree && row().directory ? !!row().expanded : undefined}
+                  aria-current={props.tree && props.currentPath === path ? "location" : undefined}
+                  ref={(element) => props.selection.register(path, element)}
+                  tabIndex={props.selection.focused() === path ? 0 : -1}
+                  onFocus={() => props.selection.markFocused(path)}
+                  onClick={(event) => {
+                    if (nested(event)) return;
+                    props.onRowClick?.(row(), event);
+                  }}
+                  onDblClick={(event) => {
+                    if (!nested(event)) props.onOpen(row());
+                  }}
+                  onContextMenu={() => props.onContextMenu?.(row())}
+                  onKeyDown={(event) => {
+                    if (nested(event)) return;
+                    if (props.tree && row().directory && event.key === "ArrowRight" && !row().expanded) {
+                      event.preventDefault();
+                      props.onToggle?.(row());
+                      return;
                     }
-                  >
-                    {(hit) => (
-                      <>
-                        <span class="filesv2-list__name" title={row.name}>
-                          <MatchText text={hit().name} ranges={hit().nameRanges} />
-                        </span>
-                        <span class="filesv2-list__detail" title={hit().folder || props.hereLabel}>
-                          <Show when={hit().folder} fallback={props.hereLabel}>
-                            <MatchText text={hit().folder} ranges={hit().folderRanges} />
-                          </Show>
-                        </span>
-                      </>
-                    )}
+                    if (props.tree && row().directory && event.key === "ArrowLeft" && row().expanded) {
+                      event.preventDefault();
+                      props.onToggle?.(row());
+                      return;
+                    }
+                    if (props.selection.keyDown(event, path)) return;
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      props.onOpen(row());
+                    }
+                  }}
+                >
+                  <Show when={props.selecting}>
+                    <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check">
+                      <Checkbox
+                        value={props.selection.selected().has(path)}
+                        label={<span class="sr-only">{props.messages.select(row().name)}</span>}
+                        onValueChange={() => props.selection.toggle(path)}
+                      />
+                    </span>
                   </Show>
-                </span>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size">
-                  <Show when={!row.directory}>
-                    <Format.Bytes value={row.size} />
-                  </Show>
-                </span>
-                <Show when={props.showModified}>
-                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified">
-                    <Show when={row.fresh} fallback={<Format.DateTime value={row.modified} timeZone={props.timeZone} />}>
-                      {(label) => (
-                        <span class="filesv2-list__fresh">
-                          <i class="ti ti-circle-check" aria-hidden="true" />
-                          {label()}
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
+                    <Show when={props.tree && row().directory} fallback={icon(row())}>
+                      <button
+                        type="button"
+                        class="filesv2-list__disclosure"
+                        aria-label={props.messages.toggle(row().name)}
+                        aria-expanded={!!row().expanded}
+                        onClick={() => props.onToggle?.(row())}
+                      >
+                        {icon(row())}
+                      </button>
+                    </Show>
+                  </span>
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
+                    <Show
+                      when={props.pathBase !== undefined && props.pathBase !== null && hitParts(path, props.pathBase, row().highlight)}
+                      fallback={
+                        <span class="filesv2-list__name" title={path}>
+                          {row().name}
                         </span>
+                      }
+                    >
+                      {(hit) => (
+                        <>
+                          <span class="filesv2-list__name" title={row().name}>
+                            <MatchText text={hit().name} ranges={hit().nameRanges} />
+                          </span>
+                          <span class="filesv2-list__detail" title={hit().folder || props.hereLabel}>
+                            <Show when={hit().folder} fallback={props.hereLabel}>
+                              <MatchText text={hit().folder} ranges={hit().folderRanges} />
+                            </Show>
+                          </span>
+                        </>
                       )}
                     </Show>
                   </span>
-                </Show>
-                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info">
-                  <IconButton
-                    size="xs"
-                    variant="ghost"
-                    class="filesv2-list__info"
-                    label={props.messages.details(row.name)}
-                    onClick={() => props.onDetails(row)}
-                  >
-                    <i class="ti ti-info-circle" aria-hidden="true" />
-                  </IconButton>
-                </span>
-              </div>
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size">
+                    <Show when={!row().directory}>
+                      <Format.Bytes value={row().size} />
+                    </Show>
+                  </span>
+                  <Show when={props.showModified}>
+                    <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified">
+                      <Show when={row().fresh} fallback={<Format.DateTime value={row().modified} timeZone={props.timeZone} />}>
+                        {(label) => (
+                          <span class="filesv2-list__fresh">
+                            <i class="ti ti-circle-check" aria-hidden="true" />
+                            {label()}
+                          </span>
+                        )}
+                      </Show>
+                    </span>
+                  </Show>
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info">
+                    <IconButton
+                      size="xs"
+                      variant="ghost"
+                      class="filesv2-list__info"
+                      label={props.messages.details(row().name)}
+                      onClick={() => props.onDetails(row())}
+                    >
+                      <i class="ti ti-info-circle" aria-hidden="true" />
+                    </IconButton>
+                  </span>
+                </div>
+              </Show>
             </Show>
-          </Show>
-        )}
+          );
+        }}
       </For>
       <For each={props.after ?? []}>{virtual}</For>
     </div>

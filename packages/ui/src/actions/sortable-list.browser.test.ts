@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
-import { layoutProblems } from "../layout-check";
+import { layoutProblems } from "../../test/layout-check";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");

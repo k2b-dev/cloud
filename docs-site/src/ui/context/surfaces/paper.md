@@ -1,7 +1,5 @@
 # Paper
 
-> **Being replaced.** Under the [flat criteria](/en/ui/surfaces/flat-criteria), `Paper` casts no shadow any more (K3). Its new form, square in columns and with hairlines, comes with the section building block; this page is rewritten then.
-
 `Paper` provides a neutral content surface with a border, radius, background,
 optional elevation and optional interactive focus treatment. The application
 owns spacing and layout.

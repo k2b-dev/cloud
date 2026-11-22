@@ -680,8 +680,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       expect(await rows(page, dropdown)).toEqual([
         ["Rename", 44, true, true],
         ["Open", 44, true, true],
-        // K1: a menu row has 8 px above and below its two lines.
-        ["ShareAnyone with the link", 49, true, true],
+        ["ShareAnyone with the link", 47, true, true],
         ["Show archived", 44, true, true],
         ["English", 44, true, true],
         ["Deutsch", 44, true, true],
@@ -706,9 +705,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   test("keep stacked Dropdown items, FilterChip options, and Select options compact on a device without a touch screen", async () => {
     const page = await browser.newPage(desktop);
     try {
-      // K1: a menu row is a 36 px control row, also without a touch screen.
-      expect((await rows(page, dropdown)).map(([, height]) => height)).toEqual([36, 36, 49, 36, 36, 36, 36]);
-      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([36, 36, 36, 36, 36]);
+      expect((await rows(page, dropdown)).map(([, height]) => height)).toEqual([32, 32, 47, 32, 32, 32, 32]);
+      expect((await rows(page, filters)).map(([, height]) => height)).toEqual([32, 32, 32, 32, 32]);
       expect((await rows(page, select)).map(([, height]) => height)).toEqual([32, 50]);
     } finally {
       await page.close();

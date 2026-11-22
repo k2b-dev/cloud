@@ -104,7 +104,7 @@ test("webhooks shares catalog navigation and retains endpoint counts and recover
   }
 }, 60_000);
 
-// Primary lists never scroll sideways (Cloud flach K7, K15): with classic scrollbars that take room and without touch,
+// Primary lists never scroll sideways: with classic scrollbars that take room and without touch,
 // the request table fits at 768 px and at 1100 px with a request open beside it; side columns wait in the row details.
 test("the webhook request table fits without a sideways scroll at 768 and at 1100 px with a request open", async () => {
   const classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
