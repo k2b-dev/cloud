@@ -1,3 +1,5 @@
+export type { AreaProps } from "./Area";
+export { Area } from "./Area";
 export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize, AvatarTone } from "./Avatar";
 export { Avatar } from "./Avatar";
 export type { AvatarFacesPerson, AvatarFacesProps, AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
@@ -9,8 +11,12 @@ export type { DescriptionListItem, DescriptionListProps } from "./DescriptionLis
 export { DescriptionList } from "./DescriptionList";
 export type { DotStripProps, DotStripTone } from "./DotStrip";
 export { DotStrip } from "./DotStrip";
+export type { FactGroupItem, FactGroupProps } from "./FactGroup";
+export { FactGroup } from "./FactGroup";
 export type { FieldRowProps } from "./Field";
 export { Field } from "./Field";
+export type { FieldGridProps } from "./FieldGrid";
+export { FieldGrid } from "./FieldGrid";
 export type { LinkCardColor, LinkCardProps } from "./LinkCard";
 export { LinkCard } from "./LinkCard";
 export type { NotFoundStateAction, NotFoundStateProps } from "./NotFoundState";
@@ -26,6 +32,7 @@ export type {
   PlaceholderProps,
   PlaceholderState,
   PlaceholderSurface,
+  PlaceholderTone,
   PlaceholderVariant,
 } from "./Placeholder";
 export { default as Placeholder } from "./Placeholder";
@@ -36,6 +43,8 @@ export { ProgressRing } from "./ProgressRing";
 export { PERSON_COLORS, personColor } from "./person-color";
 export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
+export type { RowGroupProps } from "./RowGroup";
+export { RowGroup } from "./RowGroup";
 export type { SectionFrame, SectionPartProps, SectionProps, SectionSize, SectionState, SectionTone } from "./Section";
 export { Section } from "./Section";
 export { createDelayedLoading, type DelayedLoadingOptions, Skeleton, type SkeletonProps } from "./Skeleton";
