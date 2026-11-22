@@ -47,7 +47,7 @@ Eine gruppierte oder nur aggregierte Abfrage liefert Ergebniszeilen, keine bearb
 2. Beschreibe das Ergebnis mit **Abfrage**, **Filter**, **Sortieren** oder **Berechnet**.
 3. Prüfe das Ergebnis mit repräsentativen Daten und ohne Daten.
 4. Wähle den Anzeigemodus und nur die Spalten, die Personen brauchen.
-5. Wähle **Als Ansicht speichern** und gib der Ansicht einen aufgabenbezogenen Namen wie **Offene Rechnungen**.
+5. Wähle im Kopf der Tabelle **⋯ → Als Ansicht speichern** und gib der Ansicht einen aufgabenbezogenen Namen wie **Offene Rechnungen**.
 6. Teile sie nur mit den Personen, die ihr Ergebnis sehen dürfen.
 :::
 

@@ -52,6 +52,7 @@ export default function RecordsHeadActions(props: Props) {
     queueing: false,
     refresh: { needed: false, running: false },
     cardSize: props.initialCardSize ?? null,
+    saveView: null,
   });
   onMount(() => onCleanup(onRecordsHeadStatus(props.tableId, setStatus)));
   // The bar resets its typing buffer when its initial values change, so they change only when the search does.
@@ -129,6 +130,13 @@ export default function RecordsHeadActions(props: Props) {
               items: [
                 { icon: "ti ti-user-search", label: t().recordMetadata, action: () => send({ kind: "metadata" }) },
                 { icon: "ti ti-download", label: t().exportRecords, action: () => send({ kind: "export" }) },
+                ...(status().saveView
+                  ? [
+                      status().saveView?.saving
+                        ? { icon: "ti ti-loader-2 animate-spin", label: toolbar().saving, disabled: true as const }
+                        : { icon: "ti ti-bookmark-plus", label: toolbar().saveAsView, action: () => send({ kind: "saveView" }) },
+                    ]
+                  : []),
               ],
             },
             ...(props.bulkLaunchers.length > 0

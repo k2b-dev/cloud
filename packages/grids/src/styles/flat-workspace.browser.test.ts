@@ -126,4 +126,13 @@ for (const width of [390, 768, 1440])
     expect(await reachable("?rows=15&locked=1", ["Datensatz kann nicht hinzugefügt werden"])).toEqual(
       expected(["Datensatz kann nicht hinzugefügt werden"]),
     );
+    // A query that can be saved: "Save as view" is an action in the head's ⋯, never a chip of the status row.
+    const page = await openFlatWorkspace(width, "/app/grids?rows=15&sorted=1", { touch: false });
+    try {
+      expect(await page.evaluate(() => document.querySelector(".k2b-status-row")?.textContent?.includes("Als Ansicht speichern"))).toBe(
+        false,
+      );
+    } finally {
+      await page.context().close();
+    }
   });

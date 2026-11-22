@@ -49,7 +49,14 @@ type Props = {
   dateConfig?: DateContext;
   /** Places the chips (in the status row) and the open filter and sort panels (under it). */
   frame: (chips: JSX.Element, panels: JSX.Element) => JSX.Element;
+  /**
+   * Receives "Save as view" once: whether the current query can be saved, whether it is saving, and the action. It is
+   * an action on the query, not a filter, so its control stands in the head's "⋯" (K6), not among the chips.
+   */
+  saveView?: (saveView: GridToolbarSaveView) => void;
 };
+
+export type GridToolbarSaveView = { available: () => boolean; saving: () => boolean; open: () => void };
 
 /**
  * Compact toolbar over the records table. Shared button variants keep its
@@ -301,16 +308,6 @@ export default function GridToolbar(props: Props) {
           {clearLabel()}
         </Button>
       </Show>
-
-      {/* Save as view — captures the current query into a frozen
-          preset. The view settings modal handles renaming / sharing; the query
-          becomes read-only after save. */}
-      <Show when={hasSaveableQuery()}>
-        <Button variant="secondary" size="sm" type="button" onClick={handleSaveView} disabled={saveViewMut.loading()}>
-          <i class={`ti ${saveViewMut.loading() ? "ti-loader-2 animate-spin" : "ti-bookmark-plus"}`} />
-          {saveViewMut.loading() ? t().saving : t().saveAsView}
-        </Button>
-      </Show>
     </>
   );
 
@@ -341,5 +338,6 @@ export default function GridToolbar(props: Props) {
     </Show>
   );
 
+  props.saveView?.({ available: hasSaveableQuery, saving: saveViewMut.loading, open: () => void handleSaveView() });
   return props.frame(chips, panels);
 }

@@ -23,6 +23,8 @@ export type RecordsHeadStatus = {
   refresh: { needed: boolean; running: boolean };
   /** The card size while the records show as cards; `null` in every other display. */
   cardSize: CardSize | null;
+  /** The current query can be saved as a view; `saving` while it is. `null` when there is nothing to save. */
+  saveView: { saving: boolean } | null;
 };
 
 export type RecordsHeadCommand =
@@ -32,7 +34,8 @@ export type RecordsHeadCommand =
   | { kind: "audit" }
   | { kind: "workflow"; launcherId: string }
   | { kind: "refresh" }
-  | { kind: "cardSize"; size: CardSize };
+  | { kind: "cardSize"; size: CardSize }
+  | { kind: "saveView" };
 
 const COMMAND = "grids:records-head-command";
 const STATUS = "grids:records-head-status";

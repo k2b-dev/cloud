@@ -47,7 +47,7 @@ A grouped query or an aggregate-only query returns summary rows, not editable re
 2. Describe the result with **Query**, **Filter**, **Sort**, or **Computed**.
 3. Check the result with representative data and with empty data.
 4. Choose the display mode and only the columns that people need.
-5. Choose **Save as view** and give the view a task name, such as **Open invoices**.
+5. In the table head, choose **⋯ → Save as view**. Give the view a task name, such as **Open invoices**.
 6. Share it only with the people who are allowed to see its result.
 :::
 

@@ -32,6 +32,7 @@ const status = (overrides: Partial<Parameters<typeof publishRecordsHeadStatus>[1
   queueing: false,
   refresh: { needed: false, running: false },
   cardSize: null,
+  saveView: null,
   ...overrides,
 });
 
@@ -160,6 +161,28 @@ domTest("where adding is locked, the head shows the locked Add record with its r
     expect(locked?.getAttribute("aria-label")).toBe("Add record unavailable: Add an active form before creating records in this table.");
     expect(head.root.lastElementChild?.contains(locked ?? null)).toBe(true);
   } finally {
+    head.dispose();
+  }
+});
+
+domTest("Save as view is an action in the head's ⋯ while the query can be saved, and sends it to the records view", async () => {
+  const head = await mount("TABLEH", [field]);
+  const received: RecordsHeadCommand[] = [];
+  const stop = onRecordsHeadCommand("TABLEH", (command) => received.push(command));
+  const item = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((node) => node.textContent?.includes("Save as view"));
+  try {
+    expect(item()).toBeUndefined();
+    publishRecordsHeadStatus("TABLEH", status({ saveView: { saving: false } }));
+    item()!.click();
+    expect(received).toEqual([{ kind: "saveView" }]);
+    publishRecordsHeadStatus("TABLEH", status({ saveView: { saving: true } }));
+    expect(item()).toBeUndefined();
+    expect(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).some((node) => node.textContent?.includes("Saving")),
+    ).toBe(true);
+  } finally {
+    stop();
     head.dispose();
   }
 });

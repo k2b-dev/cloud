@@ -46,7 +46,7 @@ import { createRecordAccess } from "../records/record-access";
 import { fieldDisplayFormatForView } from "../records/record-display";
 import type { GroupBucket } from "../table/GroupedTable";
 import { GridCreateActions, GridCreatePrimary, offersGridCreateActions } from "../toolbar/GridCreateActions";
-import GridToolbar from "../toolbar/GridToolbar";
+import GridToolbar, { type GridToolbarSaveView } from "../toolbar/GridToolbar";
 // Plain children share RecordsView's hydrated state; nested islands cannot
 // serialize the callback props used by these controls.
 import { workspaceMainClass } from "../workspace/workspace-layout";
@@ -780,6 +780,8 @@ export default function RecordsView(props: Props) {
   });
 
   // ── Head and status row ────────────────────────────────────────────
+  // "Save as view" acts on the toolbar's query; the toolbar hands it over and the head's "⋯" offers it (K6).
+  const [saveViewAction, setSaveViewAction] = createSignal<GridToolbarSaveView | null>(null);
   // The head's search and "⋯" live in their own island (RecordsHeadActions); they reach this view through
   // records-head-bus, and this view tells them what it shows.
   createEffect(() =>
@@ -791,6 +793,7 @@ export default function RecordsView(props: Props) {
       queueing: bulkQueueing(),
       refresh: { needed: needsManualRefresh(), running: liveRefreshing() },
       cardSize: renderMode() === "cards" ? cardSize() : null,
+      saveView: saveViewAction()?.available() ? { saving: saveViewAction()!.saving() } : null,
     }),
   );
   onCleanup(() => forgetRecordsHeadStatus(props.tableId));
@@ -803,6 +806,7 @@ export default function RecordsView(props: Props) {
         else if (command.kind === "audit") openCombinedAudit();
         else if (command.kind === "refresh") void applyLiveRefresh();
         else if (command.kind === "cardSize") onCardSizeChange(command.size);
+        else if (command.kind === "saveView") saveViewAction()?.open();
         else {
           const launcher = props.bulkSelectionLaunchers.find((entry) => entry.id === command.launcherId);
           if (launcher) void queueBulkWorkflow(launcher);
@@ -887,6 +891,7 @@ export default function RecordsView(props: Props) {
                 relationLabels={mergedRelationLabels()}
                 canWrite={props.canWrite}
                 onCommit={onToolbarCommit}
+                saveView={(action) => setSaveViewAction(() => action)}
                 dateConfig={props.dateConfig}
                 frame={(chips, panels) => (
                   <>
