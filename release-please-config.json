@@ -32,6 +32,10 @@
       "component": "npm-ssr",
       "package-name": "@k2b/ssr"
     },
+    "packages/stdlib": {
+      "component": "npm-stdlib",
+      "package-name": "@k2b/stdlib"
+    },
     "packages/editor": {
       "component": "npm-editor",
       "package-name": "@k2b/editor",

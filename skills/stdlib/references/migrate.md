@@ -28,6 +28,11 @@ dependencies and imports:
 
 The old npm package is deprecated and receives no further releases.
 
+After v0.36.0 the source moved again, without a package change: `@k2b/stdlib`
+is developed in `packages/stdlib` of `k2b-dev/cloud` and released from there
+(tags `npm-stdlib-vX.Y.Z`). Report issues in `k2b-dev/cloud`. Consumers change
+nothing.
+
 ---
 
 ## v0.7 → v0.8 (audit / non-breaking sweep)

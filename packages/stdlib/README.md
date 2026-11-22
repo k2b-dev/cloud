@@ -313,16 +313,23 @@ import { qr } from "@k2b/stdlib/qr";
 
 ## Development
 
+`@k2b/stdlib` is developed in `packages/stdlib` of the
+[Cloud repository](https://github.com/k2b-dev/cloud) and released from there
+with tags `npm-stdlib-vX.Y.Z`. It stays a standalone package without Cloud
+dependencies. From the repository root:
+
 ```bash
-bun test
-bunx tsc --noEmit
-bun run bench:dates
+bun run test --filter packages/stdlib
+bun run --cwd packages/stdlib typecheck
+bun run --cwd packages/stdlib bench:dates
 ```
 
 ## Agent Skills
 
+An agent skill for `@k2b/stdlib` lives in `skills/stdlib` of the Cloud repository:
+
 ```bash
-bunx skills add github.com/k2b-dev/stdlib
+bunx skills add k2b-dev/cloud --skill stdlib
 ```
 
 ## License

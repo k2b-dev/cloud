@@ -4,8 +4,11 @@
   "description": "Generic headless utility library -- crypto, encoding, dates, files, images, SolidJS primitives",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/k2b-dev/stdlib.git"
+    "url": "git+https://github.com/k2b-dev/cloud.git",
+    "directory": "packages/stdlib"
   },
+  "homepage": "https://github.com/k2b-dev/cloud/tree/main/packages/stdlib",
+  "bugs": "https://github.com/k2b-dev/cloud/issues",
   "license": "ISC",
   "type": "module",
   "sideEffects": false,
@@ -16,6 +19,7 @@
   ],
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false && tsc -p tsconfig.scripts.json --noEmit --pretty false",
     "test:finance-conformance": "bun scripts/finance-conformance.ts",
     "datev:fixtures": "bun scripts/datev-xml-fixtures.ts",
     "test:einvoice-external": "bun scripts/einvoice-external.ts",
@@ -31,9 +35,9 @@
     "./finance/validate": "./src/finance/validate.ts"
   },
   "dependencies": {
-    "@types/big.js": "^7.0.0",
-    "big.js": "^7.0.1",
-    "dayjs": "^1.11.0"
+    "@types/big.js": "7.0.0",
+    "big.js": "7.0.1",
+    "dayjs": "1.11.23"
   },
   "peerDependencies": {
     "solid-js": "",
@@ -68,14 +72,14 @@
     }
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.4.2",
     "ibantools": "4.5.4",
-    "lean-qr": "^2.0.0",
+    "lean-qr": "2.7.4",
     "libxml2-wasm": "0.6.0",
+    "pdf-lib": "1.17.1",
     "saxes": "6.0.0",
-    "solid-js": "^1.9.0",
-    "typescript": "^5.0.0",
-    "zod": "4.4.3",
-    "pdf-lib": "1.17.1"
+    "solid-js": "1.9.18",
+    "typescript": "7.0.2",
+    "zod": "4.6.7"
   }
 }

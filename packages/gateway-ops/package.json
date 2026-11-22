@@ -12,7 +12,7 @@
     "@nats-io/transport-node": "catalog:",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
-    "@k2b/stdlib": "catalog:",
+    "@k2b/stdlib": "workspace:*",
     "@k2b/sync": "catalog:",
     "@k2b/ssr": "workspace:*",
     "hono": "catalog:",
