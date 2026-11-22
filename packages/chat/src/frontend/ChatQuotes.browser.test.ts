@@ -267,15 +267,102 @@ test("a send right after Quote carries the quote while its code still loads, and
     await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
     await page.keyboard.type("Thanks!");
     await page.keyboard.press("Enter");
+    // #3999: the message shows as pending at once, while only its post waits for the quote.
+    await page.locator(".k2b-message-row[data-status='pending']", { hasText: "Thanks!" }).waitFor();
+    expect(harness.posted.some((sent) => sent.body === "Thanks!")).toBe(false);
     release();
-    await page.locator(".k2b-message-row[data-status='sent']", { hasText: "Thanks!" }).waitFor();
+    const sent = page.locator(".k2b-message-row[data-status='sent']", { hasText: "Thanks!" });
+    await sent.waitFor();
     const source = harness.props({ chat }).open!.page.items.find((item) => item.author.id === lea.id)!.id;
     expect(harness.posted.at(-1)).toMatchObject({ body: "Thanks!", quotes: [{ message: source }] });
+    expect(await sent.innerText()).toContain(passage);
     await settled(page);
     expect(await page.locator(".k2b-chat-composer__quote").count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     release();
+    await page.context().close();
+  }
+}, 30_000);
+
+// #3999: a send that waited for a quote whose code then failed to load never goes out without it unasked. It stays
+// "not sent" with the reason; Retry loads the code again, "Send without quote" is the person's own choice, and "Back to
+// draft" in its menu puts text and quote back into the field without sending anything.
+for (const answer of ["Retry", "Send without quote", "Back to draft"] as const) {
+  test(`a quote whose code fails to load keeps the message back until ${answer}`, async () => {
+    const chat = seed();
+    const { page, errors } = await load(desktop, chat);
+    try {
+      let fail = true;
+      await page.route("**/chat-quote-selection-*.js", (route) => (fail ? route.abort("failed") : route.continue()));
+      const row = page.locator(".k2b-message-row", { hasText: passage });
+      await row.hover();
+      await row.getByRole("button", { name: "Message actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Quote", exact: true }).click();
+      await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
+      await page.keyboard.type("Thanks!");
+      await page.keyboard.press("Enter");
+      const sent = page.locator(".k2b-message-row[data-own]", { hasText: "Thanks!" });
+      await sent.and(page.locator("[data-status='failed']")).waitFor();
+      expect(await sent.locator(".k2b-message-row__line").innerText()).toContain("The quote could not load");
+      expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
+      fail = false;
+      if (answer === "Back to draft") {
+        await sent.hover();
+        await sent.getByRole("button", { name: "Message actions", exact: true }).click();
+        await page.getByRole("menuitem", { name: answer, exact: true }).click();
+        await sent.waitFor({ state: "detached" });
+        await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value === "Thanks!");
+        await page.locator(".k2b-chat-composer__quote", { hasText: passage }).waitFor();
+        expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
+        expect(errors).toEqual([]);
+        return;
+      }
+      await sent.getByRole("button", { name: answer, exact: true }).click();
+      await sent.and(page.locator("[data-status='sent']")).waitFor();
+      const source = harness.props({ chat }).open!.page.items.find((item) => item.author.id === lea.id)!.id;
+      if (answer === "Retry") {
+        expect(harness.posted.at(-1)).toMatchObject({ body: "Thanks!", quotes: [{ message: source }] });
+        expect(await sent.innerText()).toContain(passage);
+      } else {
+        expect(harness.posted.at(-1)?.body).toBe("Thanks!");
+        expect(harness.posted.at(-1)?.quotes ?? []).toEqual([]);
+      }
+      // The failed load shows Cloud's reload notice; nothing else fails on the page.
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+}
+
+test("a message back in the draft while its quote's code still fails keeps the quote for the next send", async () => {
+  const chat = seed();
+  const { page, errors } = await load(desktop, chat);
+  try {
+    await page.route("**/chat-quote-selection-*.js", (route) => route.abort("failed"));
+    const row = page.locator(".k2b-message-row", { hasText: passage });
+    await row.hover();
+    await row.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Quote", exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
+    await page.keyboard.type("Thanks!");
+    await page.keyboard.press("Enter");
+    const sent = page.locator(".k2b-message-row[data-own][data-status='failed']", { hasText: "Thanks!" });
+    await sent.waitFor();
+    await sent.hover();
+    await sent.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Back to draft", exact: true }).click();
+    await sent.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value === "Thanks!");
+    // The quote could not come back as a chip, so the next send of this draft waits for it again and says so.
+    await page.locator(".k2b-chat-composer textarea").first().focus();
+    await page.keyboard.press("Enter");
+    await sent.waitFor();
+    expect(await sent.locator(".k2b-message-row__line").innerText()).toContain("The quote could not load");
+    expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
     await page.context().close();
   }
 }, 30_000);

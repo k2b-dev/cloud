@@ -135,6 +135,19 @@ describe("MessageRow", () => {
       expect(failed).toMatch(/<button[^>]*type="button"[^>]*>/);
       expect(textOf(failed)).toEndWith(`Hello ${words.failed} ${words.retry}`);
       expect(textOf(row({ own: true, status: "failed" }, locale))).toEndWith(`Hello ${words.failed}`);
+
+      // A failure with its own reason says why instead of "Not sent" and offers its own answer after Retry.
+      const reasoned = row(
+        {
+          own: true,
+          status: "failed",
+          onRetry: () => {},
+          failure: { reason: "The quote could not load", action: { label: "Send without quote", onSelect: () => {} } },
+        },
+        locale,
+      );
+      expect(reasoned).toContain('<span class="k2b-message-row__line-text">The quote could not load</span>');
+      expect(textOf(reasoned)).toEndWith(`Hello The quote could not load ${words.retry} Send without quote`);
     });
 
     test(`collapses a long message from its text alone and labels the controls (${locale})`, () => {

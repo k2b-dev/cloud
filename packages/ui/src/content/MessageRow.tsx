@@ -180,6 +180,11 @@ export type MessageRowProps = {
   /** Called by "Discard" next to "Retry" while `status` is `"failed"`, so both answers to a failure sit where it shows. */
   onDiscard?: () => void;
   /**
+   * While `status` is `"failed"`: why, shown instead of "Not sent", and one more answer beside "Retry", for example
+   * sending the message without a part that could not load.
+   */
+  failure?: { reason: string; action?: { label: string; onSelect: () => void } };
+  /**
    * The message's menu. A quiet "…" beside the bubble opens it while the message is hovered or focused, also from the
    * keyboard; right-click and a long press open the same menu. Showing "…" never moves the layout.
    */
@@ -868,11 +873,20 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                       </Show>
                       <Show when={props.status === "failed"}>
                         <i class="ti ti-alert-circle" aria-hidden="true" />
-                        <span>{chatMessages().messageNotSent}</span>
+                        <Show when={props.failure} fallback={<span>{chatMessages().messageNotSent}</span>}>
+                          {(failure) => <span class="k2b-message-row__line-text">{failure().reason}</span>}
+                        </Show>
                         <Show when={props.onRetry}>
                           {(retry) => (
                             <Button variant="text" size="xs" onClick={() => retry()()}>
                               {chatMessages().messageRetry}
+                            </Button>
+                          )}
+                        </Show>
+                        <Show when={props.failure?.action}>
+                          {(action) => (
+                            <Button variant="text" size="xs" onClick={() => action().onSelect()}>
+                              {action().label}
                             </Button>
                           )}
                         </Show>

@@ -76,6 +76,10 @@ export type ChatFeedItem = {
   retry?: () => void;
   /** Set on a failed send: removes it, so the sends after it go out. */
   discard?: () => void;
+  /** Set on a failed send that can go back into the field instead: its text and quotes, nothing lost. */
+  toDraft?: () => void;
+  /** Set on a failed send that has its own reason, such as a quote whose code did not load. */
+  failure?: { reason: string; action?: { label: string; onSelect: () => void } };
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
@@ -676,6 +680,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               }
               onRetry={item.retry}
               onDiscard={item.discard}
+              failure={item.failure}
               reactions={reactionsOf(item)}
               onToggleReaction={
                 props.onReact && item.messageId
@@ -768,15 +773,20 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                             },
                           ]),
                     ]
-                  : item.discard
+                  : item.discard || item.toDraft
                     ? [
-                        {
-                          id: "discard",
-                          label: t().discardMessage,
-                          icon: "ti ti-trash",
-                          variant: "danger" as const,
-                          onSelect: item.discard,
-                        },
+                        ...(item.toDraft ? [{ id: "to-draft", label: t().backToDraft, icon: "ti ti-pencil", onSelect: item.toDraft }] : []),
+                        ...(item.discard
+                          ? [
+                              {
+                                id: "discard",
+                                label: t().discardMessage,
+                                icon: "ti ti-trash",
+                                variant: "danger" as const,
+                                onSelect: item.discard,
+                              },
+                            ]
+                          : []),
                       ]
                     : undefined
               }
