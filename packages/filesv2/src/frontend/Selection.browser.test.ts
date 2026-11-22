@@ -664,9 +664,10 @@ describe("Files folder states", () => {
       expect(await create.getAttribute("aria-expanded")).toBe("false");
       await create.click();
       await tab.getByRole("menu").waitFor();
-      expect(await create.getAttribute("aria-expanded")).toBe("true");
+      // The menu reports its state with the popover's toggle event, a task after it shows; wait for it, not a time.
+      await tab.locator('[data-workspace-primary][aria-expanded="true"]').first().waitFor();
       await tab.keyboard.press("Escape");
-      await settled(tab);
+      await tab.locator('[data-workspace-primary][aria-expanded="false"]').first().waitFor();
       expect(await create.getAttribute("aria-expanded")).toBe("false");
       expect(errors).toEqual([]);
     } finally {
