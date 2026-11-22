@@ -146,7 +146,7 @@ for (const theme of ["light", "dark"])
       expect(header).toEqual({
         iconSize: "20px",
         iconBackground: "rgba(0, 0, 0, 0)",
-        titleSize: "15px",
+        titleSize: "14px",
         titleWeight: "600",
         sameLine: true,
       });

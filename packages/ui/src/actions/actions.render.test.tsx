@@ -1058,7 +1058,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(item).toContain("min-height: var(--k2b-h-control)");
     expect(item).toContain("padding: 0.5rem 0.75rem");
     expect(item).toContain("border-radius: 0");
-    expect(item).toContain("font-size: 0.8125rem");
+    expect(item).toContain("font-size: var(--k2b-font-size-row)");
     expect(item).toContain("line-height: 1rem");
     expect(filterOption).toContain("line-height: 1rem");
     // K2, K16, one line one owner: the menu draws one hairline from edge to edge above a section that is not first.

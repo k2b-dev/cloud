@@ -61,7 +61,8 @@ apply to them.
   also sees a line drawn by a pseudo-element.
 - `type-role`: text in a flat area whose font size, line height, and weight
   are no type role. The roles come from the `--k2b-type-roles` token of
-  `@k2b/ui`. Reading text (Markdown, an editor) and initials in an avatar are
+  `@k2b/ui`, which derives from the four role tokens
+  ([Type roles](./surfaces/utilities#type-roles)). Reading text (Markdown, an editor) and initials in an avatar are
   left out.
 
 A flat area is a column of an `AppWorkspace` (sidebar, main and its panes,

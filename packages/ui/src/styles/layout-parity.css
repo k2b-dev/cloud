@@ -133,15 +133,15 @@
 }
 
 .k2b-ui .k2b-app-overview__panel-header h2 {
-  font-size: 0.875rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
 }
 
 /* A class, not `p`: the toolbar beside it holds fields with their own
    description and error styles. */
 .k2b-ui .k2b-app-overview__panel-description {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-app-overview__toolbar {
@@ -212,8 +212,8 @@
 
 .k2b-ui .k2b-settings-page__heading h1 {
   color: var(--k2b-text);
-  font-size: 1.125rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-lead);
+  font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.018em;
 }
@@ -221,7 +221,7 @@
 .k2b-ui .k2b-settings-page__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-settings-page__actions,
@@ -313,7 +313,7 @@
    13 px field name. */
 .k2b-ui .k2b-settings-section__heading h2 {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: -0.012em;
@@ -322,7 +322,7 @@
 .k2b-ui .k2b-settings-section__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -456,7 +456,7 @@
   margin: 0;
   padding: 0 0.5rem 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1.3;
@@ -482,7 +482,7 @@
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25;
   text-align: left;
   white-space: nowrap;
@@ -578,7 +578,7 @@
 .k2b-ui .k2b-settings__section-heading h2 {
   margin: 0;
   color: var(--k2b-text);
-  font-size: 1.25rem;
+  font-size: var(--k2b-font-size-lead);
   font-weight: 600;
   line-height: 1.25;
 }
@@ -586,7 +586,7 @@
 .k2b-ui .k2b-settings__section-heading p {
   margin: 0.5rem 0 0;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.625;
 }
 
@@ -645,7 +645,7 @@
 .k2b-ui .k2b-settings-group__heading h3,
 .k2b-ui .k2b-settings-collection__heading h3 {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: -0.012em;
@@ -655,7 +655,7 @@
 .k2b-ui .k2b-settings-collection__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -723,7 +723,7 @@
 .k2b-ui .k2b-settings-collection__item-copy h4 {
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -734,7 +734,7 @@
   margin-top: 0.0625rem;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -796,7 +796,7 @@
   justify-content: flex-end;
   gap: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
   text-align: end;
   grid-area: source;
@@ -876,7 +876,7 @@
    down at 0.75rem, smaller than its own description in Cloud's proportions. */
 .k2b-ui .k2b-settings-field__heading strong {
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.25rem;
 }
@@ -884,7 +884,7 @@
 /* Cloud: `text-[11px] font-medium text-amber-700`. */
 .k2b-ui .k2b-settings-field__heading span {
   color: var(--k2b-warning-text);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
 }
 
@@ -895,7 +895,7 @@
 .k2b-ui .k2b-settings-field__copy > p {
   margin: 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -906,7 +906,7 @@
   gap: 0.25rem;
   margin: 0;
   color: var(--k2b-danger-text);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* Cloud: `text-xs text-dimmed`, with the change count as `font-medium
@@ -915,7 +915,7 @@
 .k2b-ui .k2b-settings-panel-footer__status {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-settings-panel-footer__status strong {
@@ -943,7 +943,7 @@
   border-radius: 999px;
   padding: 0.25rem 0.625rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -2057,7 +2057,7 @@ html {
 
 .k2b-ui .k2b-floating-window[data-mobile="true"]:not([data-state="minimized"]) .k2b-floating-window__title {
   max-width: 100%;
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
   cursor: default;
 }
 
@@ -2648,7 +2648,7 @@ html {
 
 .k2b-ui .k2b-app-workspace__head-reset {
   min-height: 2rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* The quiet result count fills what the row leaves. When its text does not
@@ -2663,7 +2663,7 @@ html {
   align-content: flex-start;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: var(--k2b-workspace-head-line, 2.5rem);
 }
 
@@ -3306,7 +3306,7 @@ html {
     border-radius: 999px;
     color: var(--k2b-text);
     background: var(--k2b-workspace-chip-background, var(--k2b-surface-muted));
-    font-size: 0.8125rem;
+    font-size: var(--k2b-font-size-row);
     font-weight: 600;
     line-height: 1.25rem;
     white-space: nowrap;
@@ -3445,7 +3445,7 @@ html {
     flex-direction: row;
     align-items: center;
     gap: 0.25rem;
-    font-size: 0.75rem;
+    font-size: var(--k2b-font-size-meta);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -3662,7 +3662,7 @@ html {
 
 .k2b-ui .k2b-app-workspace__level-title > h2 {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: -0.018em;
@@ -3676,7 +3676,7 @@ html {
    group title in it (18 > 14 > 13 > 12 px). Columns that lead to the page and
    details beside it keep the 14 px column step. */
 .k2b-ui .k2b-app-workspace__main-pane[data-workspace-heading="page"] > .k2b-app-workspace__level-head .k2b-app-workspace__level-title > h2 {
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   line-height: 1.5rem;
 }
 
@@ -3767,7 +3767,7 @@ html {
 
 .k2b-ui .k2b-app-workspace__level-title > p {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -4791,31 +4791,30 @@ html[data-k2b-mobile-shell] body {
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) textarea {
   min-height: 44px;
+  /* type-scale: allow 16 px keeps iOS from zooming into a focused field in the mobile shell */
   font-size: 16px;
 }
 
-/* One type scale on the phone: 1.125rem for the shell and dialog titles, 1rem
-   for text and buttons with section headings and names in a heavier weight,
-   0.875rem for secondary text and the options of a segmented control, and
-   0.6875rem for tab labels only. Buttons match the touch menus' items, and
-   segmented options stay compact so several fit one row. Shared components
-   that are sized for dense desktop surfaces follow the scale while a shell is
-   mounted; icon buttons keep their glyph sizes. */
+/* The phone uses the same four type roles as the desktop (K11): lead for the
+   shell and dialog titles, row for text and buttons, body in a heavier weight
+   for section headings, and meta for secondary text, field labels, and the
+   options of a segmented control. Buttons match the touch menus' items. Icon
+   buttons keep their glyph sizes. */
 html[data-k2b-mobile-shell] .k2b-ui,
 .k2b-ui .k2b-mobile-shell,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   letter-spacing: normal;
 }
 
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-settings-section__heading h2,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-notice-card__title,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-placeholder__title {
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.5rem;
 }
@@ -4834,8 +4833,8 @@ html[data-k2b-mobile-shell] .k2b-ui,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__label,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__description,
 :is(html[data-k2b-mobile-shell], .k2b-mobile-shell) .k2b-field__error {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: var(--k2b-font-size-meta);
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* Sized to the initial containing block rather than in vh units, so the shell
@@ -4911,7 +4910,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   font-weight: 600;
   letter-spacing: -0.018em;
   text-overflow: ellipsis;
@@ -4922,6 +4921,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
   min-width: 44px;
   margin-inline-start: -0.625rem;
+  /* type-scale: allow a sign: the back arrow of the mobile shell */
   font-size: 1.5rem;
 }
 
@@ -5119,7 +5119,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   min-width: 0;
   min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
   padding: calc(env(safe-area-inset-top) + 0.75rem) 0.25rem 0.75rem 0.75rem;
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   font-weight: 600;
   letter-spacing: -0.018em;
 }
@@ -5160,7 +5160,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-mobile-shell__sidebar h2 {
   margin: 0.75rem 0.75rem 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1rem;
 }
@@ -5173,7 +5173,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   padding: 0 0.75rem;
   border-radius: var(--k2b-radius-control, 0.5rem);
   color: var(--k2b-text-secondary);
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-row);
   text-decoration: none;
 }
 
@@ -5191,7 +5191,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 
 .k2b-ui .k2b-mobile-shell__sidebar-count {
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -5289,7 +5289,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-title > h2 {
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   line-height: 1.5rem;
 }
 
@@ -5406,7 +5406,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   min-height: 3.25rem;
   padding: 0.375rem 0.25rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1.2;
   text-decoration: none;
@@ -5539,7 +5539,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-install-guide__steps p {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.5;
 }
 
@@ -5589,13 +5589,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-qr-scanner > p {
   margin: 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.5;
 }
 
 .k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__note {
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__retry {
@@ -5658,7 +5658,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   height: 1rem;
   align-items: center;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -5766,7 +5766,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   gap: 0.5rem;
   margin: 0;
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: -0.018em;
@@ -5783,7 +5783,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: 0 1 auto;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   text-overflow: ellipsis;
 }
@@ -5886,7 +5886,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
    fact it takes one, so name and fact share the reserved two lines. The full name stays in the button's title and
    accessible name. */
 .k2b-ui .k2b-sidebar-switcher__copy > span {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: var(--k2b-sidebar-switcher-line);
   overflow-wrap: break-word;
@@ -5900,7 +5900,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 
 .k2b-ui .k2b-sidebar-switcher__copy > small {
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -6021,11 +6021,11 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > span {
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > small {
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -6034,12 +6034,12 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   min-height: 2.75rem;
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.375rem;
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__panel .k2b-dropdown__copy > small {
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -6074,9 +6074,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-toc[data-sticky="true"] { position: sticky; top: 0; align-self: start; }
-.k2b-ui .k2b-toc__title { margin: 0 0 0.375rem 0.875rem; color: var(--k2b-text-muted); font-size: 0.8125rem; font-weight: 600; }
+.k2b-ui .k2b-toc__title { margin: 0 0 0.375rem 0.875rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); font-weight: 600; }
 .k2b-ui .k2b-toc__list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
-.k2b-ui .k2b-toc__link { position: relative; display: block; padding: 0.3125rem 0.5rem 0.3125rem 0.875rem; border-radius: 0.5rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.4; text-decoration: none; }
+.k2b-ui .k2b-toc__link { position: relative; display: block; padding: 0.3125rem 0.5rem 0.3125rem 0.875rem; border-radius: 0.5rem; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-row); line-height: 1.4; text-decoration: none; }
 .k2b-ui .k2b-toc__link::before { content: ""; position: absolute; top: 0.4375rem; bottom: 0.4375rem; left: 0.25rem; width: 0.1875rem; border-radius: 999px; background: transparent; }
 .k2b-ui .k2b-toc__link[aria-current] { color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); }
 .k2b-ui .k2b-toc__link[aria-current]::before { background: currentColor; }
@@ -6254,7 +6254,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -6265,7 +6265,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 
 .k2b-ui .k2b-breadcrumbs__separator {
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-breadcrumbs__current {

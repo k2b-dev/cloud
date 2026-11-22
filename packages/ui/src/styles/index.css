@@ -114,7 +114,6 @@
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
   /* Chat questions: the type step of the question sentence. */
-  --k2b-chat-decision-size: 1.125rem;
   /* Reference pills: a neutral fill that follows any surface below it, and
      one icon colour per type. Icons keep at least 3:1 on the hover fill. */
   --k2b-reference-surface: rgb(9 9 11 / 0.045);
@@ -256,12 +255,37 @@
   --k2b-h-head-phone: 52px;
   --k2b-h-tabs-phone: 44px;
   --k2b-h-row-phone: 60px;
-  /* Four sizes in the controls (K11): meta 12, rows and controls 13, reading
-     text and the head title 14, the lead statement 18. */
-  --k2b-font-size-meta: var(--k2b-type-12);
-  --k2b-font-size-row: var(--k2b-type-13);
-  --k2b-font-size-body: var(--k2b-type-14);
-  --k2b-font-size-lead: var(--k2b-type-18);
+  /* The four type roles (K11), the only text sizes in the controls; each role
+     is a size, a line height, and its usual weight. Meta 12/16 for labels,
+     counts, badges, tags, and help; row 13/20 for rows, controls, and the body
+     of a page; body 14/20 for the head title and reading text (prose sets its
+     own 22 px leading); lead 18/24 for the one statement of a status row or an
+     empty state. Weights are 400, 500, or 600 and nothing else. The
+     `type-scale` rule holds @k2b/ui to these roles; `layoutProblems` reads
+     them at runtime. Measured from the approved flat mockup (v10). */
+  --k2b-font-size-meta: 0.75rem;
+  --k2b-line-height-meta: 1rem;
+  --k2b-font-weight-meta: 400;
+  --k2b-font-size-row: 0.8125rem;
+  --k2b-line-height-row: 1.25rem;
+  --k2b-font-weight-row: 400;
+  --k2b-font-size-body: 0.875rem;
+  --k2b-line-height-body: 1.25rem;
+  --k2b-font-weight-body: 400;
+  --k2b-font-size-lead: 1.125rem;
+  --k2b-line-height-lead: 1.5rem;
+  --k2b-font-weight-lead: 600;
+  /* The same roles as one list for the layout check (`type-role`): a role is
+     its size, the line heights it takes, and after the slash its weights. It
+     derives from the tokens above; besides each role's own line height it
+     allows meta set inline in a 20 px row, 22 px reading text, and the 20 px
+     phone title line, as measured in the mockup. The body role is listed as
+     `title`: the `css` rule reads a bare `body` after a comma as a selector. */
+  --k2b-type-roles:
+    meta var(--k2b-font-size-meta) var(--k2b-line-height-meta) var(--k2b-line-height-row) / 400 500 600,
+    row var(--k2b-font-size-row) var(--k2b-line-height-row) / 400 500 600,
+    title var(--k2b-font-size-body) var(--k2b-line-height-body) 1.375rem / 400 600,
+    lead var(--k2b-font-size-lead) var(--k2b-line-height-lead) 1.25rem / 600;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
@@ -302,21 +326,6 @@
   --k2b-ease-pop-strong: cubic-bezier(0.2, 1.4, 0.4, 1); /* a small mark that lands with a visible spring */
   --k2b-ease-rise: cubic-bezier(0.2, 0.8, 0.2, 1); /* something rises or slides into place */
   --k2b-ease-settle: ease; /* colour and text settle */
-  /* Type steps of the calm surfaces: meta 12, entry 13, title 14, question 18. A text style is size plus weight. */
-  --k2b-type-12: 0.75rem;
-  --k2b-type-13: 0.8125rem;
-  --k2b-type-14: 0.875rem;
-  --k2b-type-18: 1.125rem;
-  /* The type roles of a flat area (K11), as measured in the approved mockup (Cloud flach v10): a role is one size, the
-     line heights it takes, and after the slash its weights. Meta 12, rows and controls 13, the head title and
-     reading text 14, the lead statement 18 (20 px high in a phone title). The one list of them: the layout check
-     (`type-role`) reads it, and the sizes are the steps above. Reading text in Markdown or an editor keeps its own
-     scale. */
-  --k2b-type-roles:
-    meta var(--k2b-type-12) 16px 20px / 400 500 600,
-    row var(--k2b-type-13) 20px / 400 500 600,
-    title var(--k2b-type-14) 20px 22px / 400 600,
-    lead var(--k2b-type-18) 20px 24px / 600;
   /* Shadows only for what floats (K3, K16). A shadow means "lies above the
      page": small for a menu, popover, toast, floating pill, a phone's main
      action, and a drag preview; large for a dialog; directed for a drawer
@@ -377,7 +386,8 @@
   color: var(--k2b-text);
   background: var(--k2b-surface-canvas);
   font-family: var(--k2b-font-sans);
-  font-size: 0.9375rem;
+  /* The body of a page is set in the row role (13/20), as in the mockup. */
+  font-size: var(--k2b-font-size-row);
   font-weight: 400;
   color-scheme: light;
 }
@@ -1260,7 +1270,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -1299,7 +1309,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-left: 0.25rem;
   margin-right: -0.375rem;
   color: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1;
   opacity: 0;
   transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
@@ -1341,7 +1351,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   text-align: left;
   cursor: inherit;
@@ -1391,7 +1401,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated, #ffffff);
   box-shadow: var(--k2b-shadow-float, 0 18px 48px rgb(9 9 11 / 0.18));
   font-family: var(--k2b-font-sans, ui-sans-serif, system-ui, sans-serif);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
   opacity: 0.96;
@@ -1477,7 +1487,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panes__shortcut {
   color: var(--k2b-text-muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   white-space: nowrap;
 }
 
@@ -1532,7 +1542,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.625rem;
   padding: 1rem;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   text-align: center;
 }
 
@@ -1607,7 +1617,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-success-text);
   background: var(--k2b-success-surface);
   box-shadow: none;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
   pointer-events: auto;
@@ -1677,7 +1687,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   padding: 0;
   border-radius: 0.375rem;
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-panes__drop-target[data-zone="left"] {
@@ -1765,7 +1775,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-list-group-heading {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
 }
@@ -1774,7 +1784,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
@@ -1798,7 +1808,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   /* The line height holds the 2rem row and two-line labels at their height. */
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   text-decoration: none;
   cursor: pointer;
@@ -1970,7 +1980,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-app-workspace__sidebar-item-meta {
   @apply inline-flex shrink-0 items-center;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1;
 }
 
@@ -2002,13 +2012,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 0.875rem;
   height: 1rem;
   place-items: center;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-mention {
   color: var(--k2b-action);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-unread {
@@ -2028,7 +2038,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text);
   background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1rem;
@@ -2164,7 +2174,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: auto;
   gap: 4px 14px;
   padding: 6px 0 2px;
-  font-size: 12px;
+  font-size: var(--k2b-font-size-meta);
   line-height: 18px;
 }
 .k2b-ui .k2b-chart__legend-item {
@@ -2380,11 +2390,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Category labels and printed values read like text, not like recessive ticks. */
 .k2b-ui .k2b-chart .stdlib-chart-category-label {
-  font-size: 11px;
+  font-size: var(--k2b-font-size-meta);
   opacity: 0.8;
 }
 .k2b-ui .k2b-chart .stdlib-chart-bar-value {
-  font-size: 11px;
+  font-size: var(--k2b-font-size-meta);
   opacity: 0.9;
 }
 .k2b-ui .k2b-chart .stdlib-chart-axis-label {
@@ -2519,7 +2529,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-action-solid);
   /* Each size sets its line height, so the larger type keeps the button's
      height whatever line height the host page inherits. */
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.125rem;
   text-decoration: none;
@@ -2536,7 +2546,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-button[data-size="sm"] {
   min-height: 1.75rem;
   padding: 0.25rem 0.625rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -2544,14 +2554,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.5rem;
   padding: 0.125rem 0.375rem;
   gap: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
 .k2b-ui .k2b-button[data-size="lg"] {
   min-height: 2.5rem;
   padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -3000,7 +3010,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
     0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   cursor: pointer;
   transition:
@@ -3012,7 +3022,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-segmented-control[data-size="sm"] .k2b-segmented-control__option {
   min-height: 1.75rem;
   padding: 0.1875rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -3097,7 +3107,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-check__label,
 .k2b-ui .k2b-switch__label {
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.125rem;
 }
@@ -3275,7 +3285,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: 0;
   color: var(--k2b-text);
   background: transparent;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -3308,7 +3318,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-input-shell__affix {
   @apply shrink-0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-input-shell__icon:first-child,
@@ -3561,18 +3571,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
-/* Cloud sizes the heading from `size`: `text-xs font-semibold` (0.75rem/1rem)
-   by default, `text-base font-semibold` (1rem/1.5rem) at `size="md"`. */
+/* The heading takes a type role from `size` (K11): meta by default, body
+   (the head title, 14/20) at `size="md"`, lead (18/24) at `size="lg"`. */
 .k2b-ui .k2b-panel-header__title {
   color: var(--k2b-text);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1.3333;
 }
 
 .k2b-ui .k2b-panel-header__title.is-medium {
-  font-size: 1rem;
-  line-height: 1.5;
+  font-size: var(--k2b-font-size-body);
+  line-height: var(--k2b-line-height-body);
   letter-spacing: -0.018em;
 }
 
@@ -3582,27 +3592,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the `data-size` attribute the component emits matched no rule at all. */
 .k2b-ui .k2b-panel-header__subtitle {
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.45;
 }
 
 .k2b-ui .k2b-panel-header[data-size="md"] .k2b-panel-header__subtitle {
   margin-top: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.3333;
 }
 
 /* `size="lg"` is the page-level title of an overview: one strong line with a
    one-line subtitle, still without any surface of its own. */
 .k2b-ui .k2b-panel-header__title.is-large {
-  font-size: 1.375rem;
-  line-height: 1.2;
+  font-size: var(--k2b-font-size-lead);
+  line-height: var(--k2b-line-height-lead);
   letter-spacing: -0.018em;
 }
 
 .k2b-ui .k2b-panel-header[data-size="lg"] .k2b-panel-header__subtitle {
   margin-top: 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.4;
 }
 
@@ -3708,6 +3718,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow:
     inset 0 0 0 1px var(--k2b-border),
     var(--k2b-shadow-raised);
+  /* type-scale: allow a sign: the refresh arrow in its round indicator */
   font-size: 1rem;
   opacity: var(--k2b-pull-to-refresh-progress);
   visibility: hidden;
@@ -3759,7 +3770,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-feedback-tooltip-text);
   background: var(--k2b-feedback-tooltip-surface);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   white-space: nowrap;
   transform: translateX(-50%);
@@ -4270,7 +4281,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -4414,7 +4425,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex: 1 1 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
   white-space: nowrap;
@@ -4468,7 +4479,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding-bottom: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
@@ -4526,7 +4537,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -5028,7 +5039,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: baseline;
   column-gap: 0.75rem;
   padding: 0.5rem 0;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -5177,7 +5188,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    as the main topic of a page. */
 .k2b-ui .k2b-discussion[data-surface="bare"] > .k2b-section__header .k2b-section__title {
   color: var(--k2b-text);
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.5rem;
   letter-spacing: normal;
@@ -5187,7 +5198,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-discussion__timestamp,
 .k2b-ui .k2b-discussion__meta {
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
 }
@@ -5262,7 +5273,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: space-between;
   gap: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -5287,7 +5298,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-self: flex-start;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -5373,9 +5384,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  line-height: 1rem;
+  font-size: var(--k2b-font-size-row);
+  font-weight: 500;
+  line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5403,7 +5414,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -5453,7 +5464,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-block: 0.125rem;
   padding-inline: 0.6875rem 0.75rem;
   border-inline-start: 1px solid var(--k2b-control-border-soft);
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
   outline: none;
 }
@@ -5479,7 +5490,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > strong {
   flex: 0 1 auto;
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
 }
 /* Role and time follow the name in the quiet meta step, each after a middle dot. */
@@ -5487,7 +5498,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   margin: 0;
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
-  font-size: var(--k2b-type-12, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.1875rem;
   white-space: nowrap;
@@ -5506,7 +5517,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-discussion-thread .k2b-discussion__content > .k2b-content-markdown {
   margin: 0;
   color: var(--k2b-text);
-  font-size: var(--k2b-type-13, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.1875rem;
   overflow-wrap: anywhere;
 }
@@ -5553,7 +5564,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
-  font-size: var(--k2b-type-12, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-discussion-thread__status > span {
@@ -5589,7 +5600,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    rows, such as "More about this conversation". */
 .k2b-ui .k2b-detail-panel__group-title {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1rem;
 }
@@ -5805,7 +5816,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   justify-content: flex-start;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   /* The title's line: an icon or an empty slot never makes a row taller than its text. */
   line-height: 1rem;
 }
@@ -5820,7 +5831,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-panel__action-title {
   overflow: hidden;
   color: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
   text-overflow: ellipsis;
@@ -5839,7 +5850,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-panel__action-description {
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
   text-overflow: ellipsis;
@@ -5852,7 +5863,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -5885,7 +5896,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-section-label {
   padding: 0.25rem 0 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -5893,7 +5904,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding: 0.25rem 0;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -5903,7 +5914,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-detail-section-error > i {
@@ -5975,7 +5986,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1rem;
   white-space: nowrap;
@@ -6040,7 +6051,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-presence__activity {
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-detail-presence__activity[data-activity="writing"] {
@@ -6067,7 +6078,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -6081,7 +6092,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.375rem;
   white-space: nowrap;
 }
@@ -6102,7 +6113,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-presence__problem {
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-detail-presence__problem > i {
@@ -6150,7 +6161,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-presence-slot__more {
   margin-inline-start: 0.1875rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -6161,7 +6172,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
   column-gap: 0.75rem;
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -6231,7 +6242,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   box-shadow: inset 0 0 0 1px var(--k2b-border);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-decoration: none;
 }
 
@@ -6556,7 +6567,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading h2 {
   display: block;
   min-width: 0;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: 0;
@@ -6570,7 +6581,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 100 auto;
   overflow: hidden;
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -6629,7 +6640,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog__section h3,
 .k2b-ui .k2b-panel-dialog__section-title {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
 }
@@ -6639,7 +6650,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-panel-dialog__section .k2b-panel-dialog__section-subtitle {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.125rem;
 }
@@ -6876,7 +6887,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.875rem;
   padding: 0.375rem 0.625rem;
   border-radius: var(--k2b-radius-control);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* Colour, selection, and hover come from the shared soft tab; the weight never
@@ -6960,7 +6971,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   height: 20px;
   padding: 0 5px;
-  font-size: 12px;
+  font-size: var(--k2b-font-size-meta);
   line-height: 20px;
 }
 .k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input:read-only {
@@ -7244,7 +7255,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   color: var(--k2b-placeholder-color);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   pointer-events: none;
   transition: opacity 150ms ease;
 }
@@ -7288,6 +7299,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
   background: transparent;
   font-family: var(--k2b-font-signature);
+  /* type-scale: allow a drawing: the typed name rendered as a signature */
   font-size: clamp(1.75rem, 7vw, 2.5rem);
   line-height: 1.6;
   outline: none;
@@ -7296,7 +7308,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-signature-input__name::placeholder {
   color: var(--k2b-placeholder-color);
   font-family: var(--k2b-font-sans);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   opacity: 1;
 }
 
@@ -7834,7 +7846,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-app-workspace__sidebar-icon-grid-wrap > h2 {
   margin: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   text-transform: uppercase;
 }
 
@@ -7957,8 +7969,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: inherit;
   background: transparent;
-  font-size: 0.8125rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-row);
+  font-weight: 600;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7977,7 +7989,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.3125rem;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   white-space: nowrap;
 }
 
@@ -8146,7 +8158,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0;
   color: var(--k2b-text-secondary);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1rem;
   text-align: left;
   text-decoration: none;
@@ -8173,7 +8185,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   margin-inline-start: auto;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-dropdown__item--submenu[data-open="true"] {
@@ -8243,7 +8255,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__copy > small {
   max-inline-size: 16rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -8313,7 +8325,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__label {
   padding: 0.625rem 0.75rem 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   letter-spacing: 0.06em;
   overflow-wrap: anywhere;
@@ -8341,7 +8353,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.25rem 0.5rem;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-align: center;
 }
 
@@ -8381,7 +8393,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow:
     inset 0 0 0 var(--k2b-edge-line) var(--k2b-edge-color),
     0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-align: center;
 }
 
@@ -8471,7 +8483,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1rem;
   letter-spacing: normal;
@@ -8542,7 +8554,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 3.25rem;
   padding: 0.875rem 1rem;
   gap: 0.875rem;
-  font-size: 1rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.375rem;
 }
 
@@ -8551,7 +8563,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__copy > small {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
 }
 
@@ -8563,12 +8575,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__checkbox {
   width: 1.25rem;
   height: 1.25rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__label {
   padding: 0.75rem 1rem 0.375rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* A searchable menu: the field stays at the top while the entries below it
@@ -8619,7 +8631,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-dropdown__search > input::-webkit-search-cancel-button {
@@ -8635,7 +8647,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.4375rem 0.75rem;
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search {
@@ -8645,6 +8657,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Phones zoom into fields below 16px. */
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search > input {
+  /* type-scale: allow 16 px keeps iOS from zooming into the focused search field of a touch sheet */
   font-size: 1rem;
 }
 
@@ -8746,7 +8759,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1 1000 0%;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8777,7 +8790,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem 0.625rem;
   padding: 0.25rem 0.25rem 0.25rem 0.75rem;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 500;
   outline: none;
   animation: k2b-command-outcome-in 160ms ease-out;
@@ -8885,7 +8898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding: 0.4375rem 0.75rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-command-list__state > i {
@@ -8928,7 +8941,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-family: var(--k2b-font-mono);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8942,7 +8955,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-command-list__next {
   flex: 0 0 auto;
   color: var(--k2b-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-command-list__step {
@@ -8966,7 +8979,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   cursor: pointer;
 }
@@ -8980,7 +8993,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-left: auto;
   padding-right: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   overflow-wrap: anywhere;
 }
 
@@ -9026,7 +9039,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.75rem 0.25rem;
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
 }
 
@@ -9081,7 +9094,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
     0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1.25rem;
   white-space: nowrap;
@@ -9199,7 +9212,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.375rem;
   color: var(--k2b-text-secondary);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1rem;
   text-align: left;
   cursor: pointer;
@@ -9303,7 +9316,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: var(--k2b-surface);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-control:focus-visible {
@@ -9328,7 +9341,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.4375rem 0.625rem;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: var(--k2b-field-font-size, 0.8125rem);
+  font-size: var(--k2b-field-font-size, var(--k2b-font-size-row));
   line-height: 1rem;
   text-align: left;
   cursor: pointer;
@@ -9408,7 +9421,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: var(--k2b-field-font-size, 0.8125rem);
+  font-size: var(--k2b-field-font-size, var(--k2b-font-size-row));
   /* A placeholder longer than a phone field ends in an ellipsis instead of a cut word. */
   text-overflow: ellipsis;
 }
@@ -9508,7 +9521,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-choice-toolbar {
@@ -9604,7 +9617,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
   font: inherit;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   cursor: pointer;
 }
@@ -9639,7 +9652,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-chips .k2b-choice-groups > button {
   min-height: 2rem;
   padding: 0.3125rem 0.875rem;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   white-space: nowrap;
 }
 
@@ -9799,7 +9812,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
 }
@@ -9818,12 +9831,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: inline-flex;
   width: 0.875rem;
   color: var(--k2b-action);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-choice-list__description {
   color: var(--k2b-text-muted);
-  font-size: 0.78125rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.35;
 }
 
@@ -9889,7 +9902,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-list[data-variant="list"] .k2b-choice-list__description {
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -9990,7 +10003,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-tiles__label {
-  font-size: 0.71875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.2;
   text-align: center;
 }
@@ -10012,7 +10025,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__label {
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   text-align: start;
 }
@@ -10024,8 +10037,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-tiles__status {
   min-height: 0.9375rem;
   color: var(--k2b-success-text);
-  font-size: 0.71875rem;
-  font-weight: 550;
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 500;
   line-height: 1.3;
 }
 
@@ -10339,14 +10352,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    viewport, then wraps, and a long unbroken word breaks rather than
    overflowing. Grid tiles clamp their own text. */
 .k2b-ui .k2b-choice-option strong {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-choice-option small {
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   overflow-wrap: anywhere;
 }
 
@@ -10407,7 +10420,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-choice-status[data-tone="danger"] {
@@ -10461,7 +10474,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem 0.5rem;
   padding: 0.375rem 0.5rem 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* RichSelect: a dropdown whose rows explain each choice. A row is a name
@@ -10511,7 +10524,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   padding: 0.75rem 0.875rem 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.71875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
 }
@@ -10543,7 +10556,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-rich-select__search > input {
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-rich-select__list {
@@ -10565,7 +10578,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-rich-select__heading {
   padding: 0.625rem 0.5rem 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.71875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
 }
@@ -10634,7 +10647,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-rich-select__label {
-  font-size: 0.84375rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.25rem;
   overflow-wrap: anywhere;
@@ -10642,7 +10655,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-rich-select__line {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.125rem;
   overflow-wrap: anywhere;
 }
@@ -10665,7 +10678,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-rich-select__no-results {
   padding: 0.75rem 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-rich-select__placeholder {
@@ -10740,7 +10753,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   margin: 0;
   color: var(--k2b-text);
-  font-size: 1.0625rem;
+  font-size: var(--k2b-font-size-lead);
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.4;
@@ -10758,7 +10771,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0.875rem 0 0;
   padding: 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   list-style: none;
 }
 
@@ -10812,7 +10825,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-rich-select__state-text {
   max-width: 22.5rem;
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -10873,7 +10886,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
   box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   outline: none;
 }
 
@@ -10908,7 +10921,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 0.96875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -11014,7 +11027,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   line-height: 1rem;
 }
@@ -11036,7 +11049,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: color-mix(in srgb, var(--k2b-choice-color, var(--k2b-info-text)) 65%, var(--k2b-text));
   background: var(--k2b-choice-background, var(--k2b-info-surface));
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -11234,7 +11247,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
 }
 
@@ -11292,7 +11305,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: 0;
   color: var(--k2b-text);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   white-space: nowrap;
   cursor: text;
@@ -11351,19 +11364,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: color-mix(in srgb, var(--k2b-choice-color, var(--k2b-info-text)) 65%, var(--k2b-text));
   background: var(--k2b-choice-background, var(--k2b-info-surface));
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-tag[data-size="sm"] {
   padding: 0.125rem 0.3125rem;
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-tag[data-size="lg"] {
   min-height: 1.5rem;
   gap: 0.375rem;
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -11428,7 +11441,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.4375rem 3.75rem 0.4375rem 0.625rem;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   text-align: left;
   cursor: pointer;
 }
@@ -11534,7 +11547,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-field__arrow {
   flex: none;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-date-field__spacer {
@@ -11613,7 +11626,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   line-height: 0.9625rem;
   text-overflow: ellipsis;
@@ -11640,7 +11653,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-date-sheet .k2b-date-grid button {
   min-block-size: 44px;
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-date-popover {
@@ -11700,7 +11713,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   text-align: left;
   cursor: pointer;
 }
@@ -11743,8 +11756,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-date-calendar__title {
   min-width: 0;
-  font-size: 0.75rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 600;
 }
 
 .k2b-ui .k2b-date-calendar__nav:hover,
@@ -11808,7 +11821,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-weekdays > span:not(.k2b-date-weekend) {
   padding-block: 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   text-align: center;
 }
@@ -11826,7 +11839,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
 }
 
@@ -11865,7 +11878,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.75rem;
   padding-top: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-date-grid button[data-outside="true"] {
@@ -11884,7 +11897,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the accent, so the mark stays lighter without fading the number. */
 .k2b-ui .k2b-date-grid button[data-today="true"] {
   position: relative;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .k2b-ui .k2b-date-grid button[data-today="true"]:not([data-outside="true"], [aria-selected="true"]) {
@@ -11934,7 +11947,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-date-time > span:first-child {
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-date-time__control {
@@ -11955,7 +11968,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
   font: inherit;
   font-family: var(--k2b-font-mono);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-date-time__control input:focus-visible {
@@ -11992,8 +12005,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: white;
   background: var(--k2b-action-solid);
   font: inherit;
-  font-size: 0.75rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -12015,7 +12028,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.25rem 0.625rem;
   color: var(--k2b-text);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.25rem;
   text-align: left;
@@ -12091,7 +12104,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-action);
   background: none;
   font-family: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   white-space: nowrap;
   text-align: left;
@@ -12168,7 +12181,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-period-picker__hint {
   flex: none;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -12190,7 +12203,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   cursor: pointer;
 }
 
@@ -12224,7 +12237,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1rem;
   margin: 0.25rem 0 0;
   color: var(--k2b-danger-text);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -12269,7 +12282,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-date-apply {
   min-height: 2.75rem;
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-date-durations {
@@ -12314,7 +12327,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
 }
 
@@ -12352,7 +12365,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.75rem;
   padding: 0 0.75rem 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-date-popover__timezone,
@@ -12521,7 +12534,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.35;
   text-align: center;
 }
@@ -12683,7 +12696,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 3.5rem;
   color: var(--k2b-text-muted);
   font-family: var(--k2b-font-mono);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-align: right;
 }
 
@@ -13201,7 +13214,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__header-subtitle {
-  @apply text-[11px] font-normal;
+  @apply font-normal;
+  font-size: var(--k2b-font-size-meta);
   color: var(--k2b-text-muted);
 }
 
@@ -13442,6 +13456,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.5rem;
   background: transparent;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: the icon of the row details button */
   font-size: 1rem;
   cursor: pointer;
 }
@@ -13773,7 +13788,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-range-picker__caption {
-  @apply mr-1 text-[10px];
+  @apply mr-1;
+  font-size: var(--k2b-font-size-meta);
   color: var(--k2b-text-muted);
 }
 
@@ -13822,7 +13838,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   text-align: center;
   cursor: pointer;
 }
@@ -13865,18 +13881,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropzone__copy > strong {
   color: var(--k2b-text);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 500;
 }
 
 .k2b-ui .k2b-dropzone__subtitle {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-dropzone__hint {
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-dropzone[data-file-drop="over"] {
@@ -13939,7 +13955,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: #ffffff;
   background: var(--k2b-action-solid);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 500;
   line-height: 1.25rem;
   text-align: center;
@@ -13958,7 +13974,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     top: 50%;
     padding: 0.25rem 0.625rem;
     border-radius: var(--k2b-radius-control);
-    font-size: 0.8125rem;
+    font-size: var(--k2b-font-size-row);
     line-height: 1.125rem;
     transform: translate(-50%, -50%);
   }
@@ -14313,7 +14329,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
 }
 
@@ -14349,7 +14365,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toolbar);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
   transform: translateX(-50%);
 }
@@ -14434,7 +14450,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-virtual-feed__marker > span {
   padding: 0.125rem 0.625rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
 }
 
@@ -14463,7 +14479,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toolbar);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   pointer-events: none;
   transform: translateX(-50%);
 }
@@ -14601,7 +14617,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding: 0.25rem 0.75rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-load-more[data-state="done"] {
@@ -14649,7 +14665,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding: 0.125rem 0.75rem;
   color: var(--k2b-text);
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
   line-height: var(--k2b-message-line);
 }
 
@@ -14692,7 +14708,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   padding-inline: 0.125rem;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -14714,7 +14730,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-row__time {
   flex: none;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -14767,7 +14783,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   padding: 0;
   color: var(--k2b-action);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
 }
@@ -14801,7 +14817,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding-inline: 0.75rem 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
 }
 
@@ -14874,7 +14890,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
   padding-inline: 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -14974,13 +14990,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   padding: 0.875rem 0.75rem 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   text-align: center;
 }
 
 .k2b-ui .k2b-message-system-row time {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -14998,7 +15014,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   background: transparent;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   text-align: start;
 }
@@ -15093,7 +15109,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: color-mix(in srgb, var(--k2b-action) 7%, transparent);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   text-align: start;
 }
@@ -15109,7 +15125,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-row__quote-author {
   overflow: hidden;
   color: var(--k2b-action);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -15163,7 +15179,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: color-mix(in srgb, var(--k2b-text) 6%, transparent);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   text-align: start;
 }
@@ -15198,7 +15214,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-message-quote__author {
   overflow: hidden;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -15236,7 +15252,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -15266,7 +15282,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   -webkit-user-select: none;
   user-select: none;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   white-space: nowrap;
 }
 
@@ -15365,7 +15381,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   inset: auto 0.375rem 0.375rem auto;
   padding: 0 0.375rem;
   border-radius: var(--k2b-radius-control);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   line-height: 1.25rem;
 }
@@ -15374,7 +15390,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   inset: 0;
   place-items: center;
-  font-size: 1.25rem;
+  font-size: var(--k2b-font-size-lead);
   font-weight: 600;
 }
 
@@ -15428,7 +15444,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-row__file-copy {
   display: grid;
   min-width: 0;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
 }
 
@@ -15442,7 +15458,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-row__file-detail {
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -15533,7 +15549,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 1;
@@ -15544,17 +15560,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-reaction-bar__chip > span:first-child {
+  /* type-scale: allow a sign: the emoji of a reaction */
   font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__chip {
   gap: 0.1875rem;
   padding: 0 0.4375rem;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__chip > span:first-child {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui button.k2b-reaction-bar__chip {
@@ -15586,7 +15603,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   padding: 0 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: var(--k2b-reaction-height);
@@ -15594,7 +15611,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-reaction-bar[data-density="compact"] .k2b-reaction-bar__more {
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-reaction-bar__add {
@@ -15634,7 +15651,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui [popover].k2b-tooltip.k2b-reaction-bar__hint[data-touch] {
   max-width: min(20rem, calc(100vw - 1rem));
   padding: 0.375rem 0.625rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -15752,7 +15769,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   white-space: nowrap;
   cursor: pointer;
@@ -15777,7 +15794,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-row__thread-time {
   min-width: 0;
   overflow: hidden;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
 }
@@ -15882,7 +15899,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.3125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -15919,7 +15936,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1;
 }
 
@@ -15948,7 +15965,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.5;
 }
 
@@ -15998,7 +16015,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-message__content {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.6;
 }
 
@@ -16050,6 +16067,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 6.875rem;
   padding: 0;
   justify-content: center;
+  /* type-scale: allow a sign: the image placeholder icon of an attachment */
   font-size: 2.125rem;
 }
 
@@ -16080,13 +16098,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-message__attachment-text > strong {
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
 }
 
 .k2b-ui .k2b-chat-message__attachment-text > span {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -16120,6 +16138,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-message__actions .k2b-chat-message__menu {
   min-width: 2rem;
   min-height: 2rem;
+  /* type-scale: allow a sign: the icons of the message action buttons */
   font-size: 0.9375rem;
 }
 
@@ -16148,7 +16167,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: 100%;
   align-self: flex-start;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* Every activity row has one grid: icon, text, meta, duration, and the chevron or ⓘ. Duration and the last column keep
@@ -16161,7 +16180,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   column-gap: 0.5rem;
   padding: 0.375rem 0;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   list-style: none;
 }
@@ -16220,6 +16239,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   justify-content: center;
   color: var(--k2b-text-subtle);
+  /* type-scale: allow a sign: the leading icon of an activity row */
   font-size: 1rem;
 }
 
@@ -16370,7 +16390,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-subtle);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   white-space: nowrap;
 }
 
@@ -16405,7 +16425,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: 4;
   justify-self: end;
   color: var(--k2b-text-subtle);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -16526,7 +16546,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-left: 1.5rem;
   padding: 0.375rem 0 0;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.55;
 }
 
@@ -16646,7 +16666,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.4375rem;
   margin-bottom: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.4;
 }
 
@@ -16676,7 +16696,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.25rem;
   height: 1.25rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-chat-decision__status {
@@ -16708,7 +16728,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0 0 0.125rem;
   border-radius: 0.375rem;
   color: var(--k2b-text);
-  font-size: var(--k2b-chat-decision-size);
+  font-size: var(--k2b-font-size-lead);
   font-weight: 400;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -16741,7 +16761,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-decision__reason {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.45;
 }
 
@@ -16767,7 +16787,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-decision__details-label {
   margin: 0;
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-chat-decision__details-label strong {
@@ -16785,7 +16805,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.4;
 }
 
@@ -16794,7 +16814,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
   margin-top: 0.75rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.45;
 }
 
@@ -16837,7 +16857,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem 0.75rem;
   max-width: 100%;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   white-space: nowrap;
 }
 
@@ -16865,7 +16885,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The remember checkbox is one of the quiet facts: same size and ink, its box keeps the 3:1 edge. */
 .k2b-ui .k2b-chat-decision__meta .k2b-check__label {
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
 }
 
@@ -16878,7 +16898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: var(--k2b-surface);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
 }
 
@@ -16892,7 +16912,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-decision__remember {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-chat-decision__buttons {
@@ -16908,7 +16928,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Inside a decision, status chips keep the smallest step of its type scale (12 px). */
 .k2b-ui .k2b-chat-decision .k2b-status-badge,
 .k2b-ui .k2b-chat-decision .k2b-status-badge > i {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* On the tint every button but the one filled answer takes the surface
@@ -17010,7 +17030,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-decision__details .k2b-change-list__item {
   grid-template-columns: 1rem minmax(0, 1fr);
   gap: 0.5rem;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.5rem;
 }
 
@@ -17126,7 +17146,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.45;
 }
 
@@ -17204,7 +17224,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.45;
 }
 
@@ -17257,7 +17277,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   padding-block: 0.125rem;
   color: var(--k2b-action);
-  font-size: 0.84375rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
 }
 
@@ -17284,7 +17304,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-block: 0.5625rem;
   border-radius: 0.375rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.6;
 }
 
@@ -17360,7 +17380,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-outcome__time {
   margin-inline-start: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   white-space: nowrap;
 }
 
@@ -17369,7 +17389,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-start: 0.375rem;
   padding: 0;
   border: 0;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: inherit;
   vertical-align: baseline;
 }
@@ -17448,7 +17468,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   background: transparent;
   font: inherit;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
 }
 
@@ -17515,7 +17535,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Calm at rest: the share in the meta grey on a light track. Once a part warns, the arc turns warning orange and the
    number appears in the meta step, semibold in the warning text colour (4.5:1). */
 .k2b-ui .k2b-chat-usage__trigger {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-chat-usage__trigger .k2b-progress-ring[data-tone] {
@@ -17601,7 +17621,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
   background: var(--k2b-hover);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: var(--k2b-font-size-body);
   cursor: pointer;
 }
 
@@ -17796,7 +17816,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-float);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   overflow-wrap: anywhere;
   pointer-events: auto;
@@ -17868,7 +17888,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Command names and descriptions wrap instead of truncating, so every entry
    stays readable on a phone. */
-.k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; overflow-wrap: anywhere; flex-shrink: 0; }
+.k2b-ui .k2b-chat-composer__commands strong { font-size: var(--k2b-font-size-row); font-weight: 400; overflow-wrap: anywhere; flex-shrink: 0; }
 .k2b-ui .k2b-chat-composer__commands button > strong { max-width: 55%; }
 /* An unavailable row stays readable: only its name and icon are muted, and its reason reads like a description. */
 .k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] { cursor: default; }
@@ -17879,7 +17899,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex: 1;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   overflow-wrap: anywhere;
 }
 
@@ -17897,7 +17917,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.5625rem 0.625rem 0.25rem;
   color: var(--k2b-text-muted);
   background: var(--k2b-surface-elevated);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-chat-composer__command-heading > i { font-size: 0.875rem; }
@@ -17994,7 +18014,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 .k2b-ui .k2b-chat-composer__icon-action[aria-haspopup="listbox"][aria-expanded="true"] {
   color: var(--k2b-text);
@@ -18043,12 +18063,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     line-height: 1.25rem;
   }
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > strong {
-    font-size: 0.9375rem;
+    font-size: var(--k2b-font-size-body);
     line-height: 1.25rem;
   }
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-text > small,
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-detail > small {
-    font-size: 0.8125rem;
+    font-size: var(--k2b-font-size-row);
     line-height: 1.125rem;
   }
   .k2b-ui .k2b-chat-composer-accessory[data-commands] .k2b-chat-composer__command-end {
@@ -18099,7 +18119,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-chat-composer__attachment-content {
@@ -18200,7 +18220,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-composer__attachment strong {
   overflow: hidden;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -18208,7 +18228,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-composer__attachment small {
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-chat-composer__attachment-remove {
@@ -18292,7 +18312,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.5;
 }
 
@@ -18307,7 +18327,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   padding: 0 0.375rem;
   color: var(--k2b-danger-text);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-chat-composer__footer,
@@ -18420,7 +18440,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-secondary);
   background: transparent;
   font: inherit;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   cursor: pointer;
 }
 
@@ -18629,7 +18649,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-ai-accent);
   background: var(--k2b-ai-surface);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   white-space: nowrap;
   vertical-align: top;
@@ -18643,7 +18663,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-composer__suggestion-mark {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 /* Touch-only devices have no Tab key: the same pill is a button, and its touch area reaches 0.75rem above and below
@@ -18754,7 +18774,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   padding: 0 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -18928,7 +18948,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-emoji-picker__search > input::-webkit-search-cancel-button {
@@ -18971,7 +18991,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-emoji-picker__tones > button {
   flex: 1 1 0;
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
 }
 
 .k2b-ui .k2b-emoji-picker__tones > button[aria-checked="true"] {
@@ -18987,6 +19007,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-emoji-picker__groups > button {
   flex: 1 1 0;
+  /* type-scale: allow a sign: the emoji of a picker group */
   font-size: 1rem;
 }
 
@@ -19167,7 +19188,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: none;
   gap: 0.75rem;
   padding: 1rem 0.375rem 0.375rem;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   /* Fixed line heights keep a loaded row exactly as tall as its placeholder in every engine and font. */
   line-height: 1.125rem;
 }
@@ -19199,8 +19220,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: 0.875rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -19270,7 +19291,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-person-popover__meta {
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -19285,7 +19306,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding-inline: 0.625rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
 }
@@ -19460,7 +19481,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   min-width: 4.25em;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -19482,7 +19503,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0 0.625rem;
   border-radius: 999px;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   white-space: nowrap;
 }
 
@@ -19528,7 +19549,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.84375rem;
+  font-size: var(--k2b-font-size-row);
 }
 
 .k2b-ui .k2b-dictation-bar__status > i {
@@ -19564,7 +19585,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     justify-content: center;
     padding: 0;
     border-radius: var(--k2b-radius-control, 0.5rem);
-    font-size: 1.125rem;
+    font-size: var(--k2b-font-size-lead);
   }
 
   .k2b-ui .k2b-dictation-bar__device-name,
@@ -19584,7 +19605,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dictation-card {
   padding: 0.875rem 1rem 0.75rem;
   border-radius: var(--k2b-radius-dialog);
-  font-size: 0.84375rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.5;
 }
 
@@ -19600,7 +19621,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   margin: 0 0 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
 }
 
@@ -19868,7 +19889,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-settings-save-bar p {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-settings-save-bar p > strong {
@@ -19912,7 +19933,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.375rem 0.75rem 0.25rem;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -19958,7 +19979,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 999px;
   color: var(--k2b-text-muted);
   background: var(--k2b-surface-muted);
-  font-size: 1.125rem;
+  font-size: var(--k2b-font-size-lead);
   opacity: var(--k2b-gesture-menu-progress, 0);
   pointer-events: none;
 }
@@ -20246,7 +20267,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-overlay-sm);
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   pointer-events: none;
   translate: -1rem 1rem;
@@ -20555,7 +20576,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.65rem;
   background: var(--k2b-action-solid);
   color: #ffffff;
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-select-chip {
@@ -20580,7 +20601,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   cursor: pointer;
 }
@@ -20792,7 +20813,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
     inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -20817,7 +20838,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline: 0;
   border-radius: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
     inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
@@ -20949,7 +20970,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
     inset 0 -2px 0 var(--k2b-tab-mark);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   line-height: 1.25rem;
   text-decoration: none;
@@ -20973,7 +20994,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui :is(.k2b-view-tabs__count, .k2b-view-tabs__more-count) {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -20984,7 +21005,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tabs__count {
   margin-inline-start: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
@@ -20994,8 +21015,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.3125rem;
   color: var(--k2b-app-workspace-active);
   background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
-  font-size: 0.6875rem;
-  font-weight: 650;
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 600;
   line-height: 1rem;
 }
 
@@ -21097,7 +21118,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding: 0.625rem 0.75rem;
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.4;
   cursor: pointer;
@@ -21132,7 +21153,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-disclosure__content {
   padding: 0.25rem 0.75rem 0.875rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.6;
 }
 
@@ -21242,7 +21263,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline: 0.75rem;
 }
 .k2b-ui .k2b-toolbar .k2b-toolbar__text {
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -21291,7 +21312,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-block: 0;
   border-radius: 999px;
   flex: none;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-pill .k2b-icon-button:not([data-text], .k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
@@ -21387,7 +21408,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   padding-inline: 0.5rem 0.25rem;
 }
@@ -21434,7 +21455,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label {
   max-inline-size: none;
   padding-inline: 0.75rem 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
 }
 .k2b-ui .k2b-toolbar[data-tone="danger"] .k2b-toolbar__label i {
   margin-inline-end: 0.375rem;
@@ -21456,7 +21477,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   left: 50%;
   display: flex;
   transform: translateX(-50%);
-  font: 500 0.625rem/1 var(--k2b-font-sans);
+  font: 500 var(--k2b-font-size-meta)/1 var(--k2b-font-sans);
   color: var(--k2b-text-muted);
   pointer-events: none;
 }
@@ -21553,7 +21574,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tag-editor__empty {
   margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 .k2b-ui .k2b-tag-editor__form {
   display: flex;
@@ -21586,7 +21607,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
   margin: 0;
   color: var(--k2b-danger-text);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
 }
 
 .k2b-ui .k2b-description-list {
@@ -21620,7 +21641,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-description-list__item dt {
   grid-area: term;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   letter-spacing: 0.02em;
 }
@@ -21629,7 +21650,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   color: var(--k2b-text);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -21678,7 +21699,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt,
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
@@ -21751,7 +21772,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-context-popup {
   position: fixed;
   font-family: var(--k2b-font-sans);
-  font-size: .75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1.125rem;
   inset: auto;
@@ -21837,7 +21858,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    adds no width of its own: it wraps in the space the title leaves, so explorers side by side keep one layout. */
 .k2b-ui .k2b-chart-explorer > .k2b-chart-explorer__header > :first-child { flex: 1 1 auto; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__description { contain: inline-size; }
-.k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: var(--k2b-font-size-body); font-weight: 600; }
 .k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
 /* Labels come from data: the series filter keeps one line and truncates, and next to the pin it takes at most half
    the row. FilterChip renders its chip inside a dropdown wrapper. */
@@ -21848,25 +21869,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The pin stands as tall as the series chip next to it, so the row looks like one set of controls. */
 .k2b-ui .k2b-chart-explorer__pin { min-width: 0; min-height: 2.25rem; flex: 0 1 auto; }
 .k2b-ui .k2b-chart-explorer__pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
+.k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: var(--k2b-font-size-row); }
 .k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
 .k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
 /* A capped table keeps its note inside the viewport, so switching views never changes the block's height. */
 .k2b-ui .k2b-chart-explorer__viewport[data-capped] { display: flex; flex-direction: column; gap: .5rem; }
 .k2b-ui .k2b-chart-explorer__viewport[data-capped] > .k2b-table-shell { flex: 1 1 0; min-height: 0; height: auto; }
-.k2b-ui .k2b-chart-explorer__note { flex: none; margin: 0; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+.k2b-ui .k2b-chart-explorer__note { flex: none; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta); line-height: 1rem; }
 /* A legend takes its rows from the chart, never from the page: the viewport keeps its height. The chart keeps most of
    it however many names there are; a longer legend scrolls in the rest. */
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] { display: flex; flex-direction: column; gap: .5rem; }
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart { flex: 1 1 0; min-height: 60%; }
-.k2b-ui .k2b-chart-legend { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-content: flex-start; gap: .25rem .875rem; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+.k2b-ui .k2b-chart-legend { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-content: flex-start; gap: .25rem .875rem; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta); line-height: 1rem; }
 .k2b-ui .k2b-chart-legend li { display: inline-flex; align-items: center; gap: .375rem; min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .k2b-chart-legend__swatch { flex: none; width: .625rem; height: .625rem; border-radius: var(--k2b-radius-mark); background: var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
 .k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
 /* Frame states (with a request): the subtitle is one reserved line, and every state fills the viewport's height. */
-.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description { min-height: 1.25rem; overflow: hidden; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description { min-height: 1.25rem; overflow: hidden; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description > * { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__status-line { display: flex; align-items: center; gap: .3125rem; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__status-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -21879,7 +21900,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart-explorer__chart { flex: 1 1 0; min-height: 60%; }
 .k2b-ui .k2b-chart-explorer__chart > .k2b-chart { height: 100%; }
 .k2b-ui .k2b-chart-explorer__state { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: .625rem; padding: 0 1rem; text-align: center; }
-.k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; text-wrap: balance; }
+.k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-body); line-height: 1.25rem; text-wrap: balance; }
 .k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
 .k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
 .k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
@@ -21891,7 +21912,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] .k2b-chart-explorer__note { padding: 0 var(--k2b-chart-explorer-inset) .5rem; }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
-.k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
+.k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta); }
 .k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
   stroke-width: 3px;
@@ -21917,10 +21938,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__dimension > .k2b-field { min-width: 0; }
 .k2b-ui .k2b-chart-explorer__dimension .k2b-field__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension .k2b-slider { min-height: 1.125rem; }
-.k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: var(--k2b-font-size-meta); text-align: right; }
 .k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
-.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: var(--k2b-radius-overlay); background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: .625rem; }
+.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: var(--k2b-radius-overlay); background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: var(--k2b-font-size-meta); }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: var(--k2b-radius-mark); font-weight: 500; }
 .k2b-ui .k2b-chart-explorer__dimension:is([data-keyboard="true"], :has(input:active)) .k2b-chart-explorer__steps { visibility: visible; }
@@ -21935,7 +21956,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Reserve the loader slot; brief chart requests never flash a visible indicator.
    The delay is a debounce, not motion: !important on this more specific
    selector keeps it under reduced motion, which only makes the fade instant. */
-.k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: .875rem; opacity: 0; transition: opacity .15s; }
+.k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-body); opacity: 0; transition: opacity .15s; }
 .k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s !important; }
 
 /* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
@@ -21945,13 +21966,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-country-map__svg path { fill: var(--k2b-surface-muted); stroke: var(--k2b-surface); stroke-width: 0.5; }
 .k2b-ui .k2b-country-map__svg circle { stroke: var(--k2b-surface); stroke-width: 1; }
 .k2b-ui .k2b-country-map__svg [data-active="true"] { stroke: var(--k2b-text); stroke-width: 1; }
-.k2b-ui .k2b-country-map__caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; min-height: 1.5rem; margin-top: 0.5rem; font-size: 0.8125rem; color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-country-map__caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; min-height: 1.5rem; margin-top: 0.5rem; font-size: var(--k2b-font-size-row); color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-country-map__readout { color: var(--k2b-text); }
 /* On a narrow map the readout always takes its own line, so a long country name on hover or tap never adds one. */
 @container k2b-country-map (max-width: 30rem) { .k2b-ui .k2b-country-map__readout { flex: 1 1 100%; } }
 .k2b-ui .k2b-country-map__legend { display: inline-flex; align-items: center; gap: 0.375rem; }
 .k2b-ui .k2b-country-map__scale { display: inline-block; width: 4rem; height: 0.375rem; border-radius: 999px; }
-.k2b-ui .k2b-country-map__list { flex: 1 1 12rem; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-country-map__list { flex: 1 1 12rem; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: var(--k2b-font-size-body); font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-country-map__row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0.375rem; border-radius: 0.25rem; }
 .k2b-ui .k2b-country-map__row[data-active="true"] { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-country-map__name { min-width: 0; overflow-wrap: anywhere; }
@@ -22012,7 +22033,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: var(--k2b-type-13);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   text-align: start;
   cursor: pointer;
@@ -22040,7 +22061,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-tasks__count {
   min-width: 4.2em;
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-type-12);
+  font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
   text-align: end;
   white-space: nowrap;
@@ -22099,7 +22120,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2rem;
   padding: 0.4375rem 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-type-13);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   overflow-wrap: anywhere;
   transition: color var(--k2b-motion-ink) var(--k2b-ease-settle);
@@ -22169,7 +22190,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   font-weight: 400;
 }
@@ -22179,7 +22200,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   font-weight: 400;
 }
@@ -22193,7 +22214,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-start;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-note {
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-content { display: contents; }
@@ -22211,7 +22232,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: start;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   line-height: 1rem;
   cursor: pointer;
@@ -22365,7 +22386,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-label-text {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 500;
 }
 
@@ -22401,12 +22422,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-label-text {
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.125rem;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-description {
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-meta {
@@ -22415,7 +22436,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-end;
   gap: 0.125rem;
   color: var(--k2b-text);
-  font-size: 0.75rem;
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -22426,7 +22447,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   margin-bottom: 0.25rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   font-weight: 400;
 }
@@ -22730,7 +22751,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-navigation__copy { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .k2b-navigation__copy small { color: var(--k2b-text-muted); font-weight: 400; }
 .k2b-ui .k2b-navigation__control > i, .k2b-ui .k2b-navigation__badge { flex-shrink: 0; }
-.k2b-ui .k2b-navigation__badge { color: var(--k2b-text-muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-navigation__badge { color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-navigation__color { flex: 0 0 .5rem; height: .5rem; border-radius: 50%; }
 .k2b-ui .k2b-navigation__disclosure { flex: 0 0 44px; height: 44px; border: 0; background: transparent; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-navigation__inline-action { flex: 0 0 44px; width: 44px; height: 44px; }
@@ -22741,7 +22762,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-navigation__status[data-tone="warning"] { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-navigation__status[data-tone="danger"] { color: var(--k2b-danger-text); }
 /* A section is a quiet heading over its rows: no disclosure and no indent. */
-.k2b-ui .k2b-navigation__heading { padding: .75rem .75rem .25rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 500; line-height: 1.25rem; }
+.k2b-ui .k2b-navigation__heading { padding: .75rem .75rem .25rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); font-weight: 500; line-height: 1.25rem; }
 .k2b-ui .k2b-navigation__section > .k2b-navigation__list { padding-inline-start: 0; }
 
 @media (max-width: 47.999rem) {
@@ -23056,10 +23077,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
-.k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
-.k2b-ui .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
-.k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
-.k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
+.k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: var(--k2b-font-size-meta); }
+.k2b-ui .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: var(--k2b-font-size-row); }
+.k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: var(--k2b-font-size-meta); font-weight: 600; opacity: 1; }
+.k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: var(--k2b-font-size-meta); font-weight: 500; fill: currentColor; opacity: 1; }
 /* Category hover paints only the band; keyboard and selection outline marks. */
 .k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
 .k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
@@ -23190,7 +23211,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: flex-end;
   gap: 0.75rem;
   color: var(--k2b-ai-accent);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: 1.125rem;
   white-space: nowrap;
 }
@@ -23246,7 +23267,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-ai-suggestion__action.k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
   flex-shrink: 0;
   color: var(--k2b-ai-accent);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
 }
 
@@ -23272,7 +23293,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   right: 0;
   max-width: 40%;
   height: var(--k2b-h-label);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   line-height: var(--k2b-h-label);
   text-align: end;
 }
@@ -23366,7 +23387,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-ai-suggestion-switch__value {
   min-width: 0;
   color: var(--k2b-ai-accent);
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -23411,7 +23432,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   margin: 0;
   overflow: hidden;
-  font-size: 0.875rem;
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
   white-space: nowrap;
 }
@@ -23430,7 +23451,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 100 auto;
   overflow: hidden;
   color: var(--k2b-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--k2b-font-size-row);
   text-overflow: ellipsis;
 }
 
@@ -23450,13 +23471,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-balance-flow__header { display: flex; justify-content: space-between; align-items: start; gap: 12px; height: 72px; min-height: 72px; }
 .k2b-ui .k2b-balance-flow__header > div:first-child { min-width: 0; }
-.k2b-ui .k2b-balance-flow__header h3 { margin: 0; font-size: 15px; font-weight: 600; line-height: 22px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.k2b-ui .k2b-balance-flow__subtitle { min-height: 20px; font-size: 12px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--k2b-text-muted, #71717a); }
+.k2b-ui .k2b-balance-flow__header h3 { margin: 0; font-size: var(--k2b-font-size-body); font-weight: 600; line-height: 22px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.k2b-ui .k2b-balance-flow__subtitle { min-height: 20px; font-size: var(--k2b-font-size-meta); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--k2b-text-muted, #71717a); }
 .k2b-ui .k2b-balance-flow__views { display: flex; flex: none; gap: 3px; }
 .k2b-ui .k2b-balance-flow__views button,
 .k2b-ui .k2b-balance-flow__nav button,
 .k2b-ui .k2b-balance-flow__status button {
-  font: inherit; font-size: 13px; line-height: 20px; min-height: 44px; color: inherit; background: transparent;
+  font: inherit; font-size: var(--k2b-font-size-row); line-height: 20px; min-height: 44px; color: inherit; background: transparent;
   border: var(--k2b-edge-width) solid transparent; border-radius: var(--k2b-radius-control); padding: calc(7px - var(--k2b-edge-width)) calc(11px - var(--k2b-edge-width)); cursor: pointer; box-shadow: none;
 }
 .k2b-ui .k2b-balance-flow__views button[aria-pressed="true"] { background: var(--k2b-surface-muted, #f4f4f5); border-color: var(--k2b-border, #e4e4e7); }
@@ -23466,7 +23487,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__nav button:focus-visible,
 .k2b-ui .k2b-balance-flow__status button:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-balance-flow__nav { display: flex; justify-content: center; align-items: center; gap: 12px; height: 44px; }
-.k2b-ui .k2b-balance-flow__nav strong { font-size: 14px; font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-balance-flow__nav strong { font-size: var(--k2b-font-size-body); font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* type-scale: allow a sign: the arrows of the period buttons */
 .k2b-ui .k2b-balance-flow__nav button { flex: none; min-width: 44px; min-height: 44px; font-size: 24px; }
 .k2b-ui .k2b-balance-flow__nav button:disabled { opacity: .3; cursor: default; }
 .k2b-ui .k2b-balance-flow__content { container-type: inline-size; container-name: balance-flow; position: relative; }
@@ -23480,12 +23502,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__scroll { display: flex; flex-direction: row-reverse; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding-bottom: 16px; mask-image: linear-gradient(90deg, transparent, #fff 12px, #fff calc(100% - 12px), transparent); }
 .k2b-ui .k2b-balance-flow__track { flex: none; width: calc(var(--k2b-balance-periods) * var(--k2b-balance-period-size)); padding-inline: var(--k2b-balance-peek); box-sizing: content-box; }
 .k2b-ui .k2b-balance-flow__months { display: flex; height: 36px; position: sticky; top: 0; z-index: 1; background: var(--k2b-surface, #fff); }
-.k2b-ui .k2b-balance-flow__months > div { flex: none; width: var(--k2b-balance-period-size); scroll-snap-align: end; padding: 8px 16px; box-sizing: border-box; font-size: 13px; }
+.k2b-ui .k2b-balance-flow__months > div { flex: none; width: var(--k2b-balance-period-size); scroll-snap-align: end; padding: 8px 16px; box-sizing: border-box; font-size: var(--k2b-font-size-row); }
 .k2b-ui .k2b-balance-flow__months strong { position: sticky; left: 12px; }
 .k2b-ui .k2b-balance-flow__data .k2b-chart__svg { width: 100%; max-width: none; height: var(--k2b-balance-flow-height); }
 .k2b-ui .k2b-balance-flow__data .k2b-chart__svg > svg { display: block; width: 100%; height: 100%; overflow: hidden; }
 .k2b-ui .k2b-balance-flow__content-box { height: calc(52px + var(--k2b-balance-flow-height)); }
-.k2b-ui .k2b-balance-flow__table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.k2b-ui .k2b-balance-flow__table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--k2b-font-size-row); }
 .k2b-ui .k2b-balance-flow__table caption { text-align: start; font-weight: 600; padding: 8px 0; }
 .k2b-ui .k2b-balance-flow__table :is(th, td) { padding: 8px 10px; text-align: start; overflow-wrap: anywhere; }
 .k2b-ui .k2b-balance-flow__table :is(th, td):first-child { width: 48%; }
@@ -23512,7 +23534,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-balance-flow__data .k2b-chart__svg { height: var(--k2b-balance-flow-phone-height); overflow: hidden; }
   .k2b-ui .k2b-balance-flow__data .k2b-chart__svg > svg { height: 180px; }
   .k2b-ui .k2b-balance-flow__months > div:not([data-balance-active]) strong { visibility: hidden; }
-  .k2b-ui .k2b-balance-flow__amounts { display: block; height: calc(var(--k2b-balance-flow-rows) * 44px); overflow: auto; overscroll-behavior-y: contain; font-size: 13px; line-height: 20px; }
+  .k2b-ui .k2b-balance-flow__amounts { display: block; height: calc(var(--k2b-balance-flow-rows) * 44px); overflow: auto; overscroll-behavior-y: contain; font-size: var(--k2b-font-size-row); line-height: 20px; }
   .k2b-ui .k2b-balance-flow__amounts > div { min-height: 44px; box-sizing: border-box; padding-block: 1px; align-content: center; border-top: 1px solid var(--k2b-border, #e4e4e7); }
   .k2b-ui .k2b-balance-flow__content-box { min-height: 0; height: calc(44px + var(--k2b-balance-flow-phone-height) + var(--k2b-balance-flow-rows) * 44px); overflow: auto; }
   .k2b-ui .k2b-balance-flow__data > [data-balance-table] { height: calc(44px + var(--k2b-balance-flow-phone-height) + var(--k2b-balance-flow-rows) * 44px); }

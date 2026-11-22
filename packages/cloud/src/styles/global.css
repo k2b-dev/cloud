@@ -57,6 +57,20 @@
   --font-condensed: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
 }
 
+/* The four type roles of @k2b/ui (K11) as Tailwind utilities: `text-meta`,
+   `text-row`, `text-body`, and `text-lead` set the role's size and line height.
+   Inline, so each resolves the token on the element inside its `.k2b-ui`. */
+@theme inline {
+  --text-meta: var(--k2b-font-size-meta);
+  --text-meta--line-height: var(--k2b-line-height-meta);
+  --text-row: var(--k2b-font-size-row);
+  --text-row--line-height: var(--k2b-line-height-row);
+  --text-body: var(--k2b-font-size-body);
+  --text-body--line-height: var(--k2b-line-height-body);
+  --text-lead: var(--k2b-font-size-lead);
+  --text-lead--line-height: var(--k2b-line-height-lead);
+}
+
 .cloud-app-canvas {
   --cloud-canvas-strength: var(--app-canvas-strength, 0%);
   --cloud-canvas-dark-strength: var(--app-canvas-dark-strength, 0%);

@@ -16,7 +16,7 @@ const TEST_TIMEOUT = 20_000;
 const entry = resolve(import.meta.dir, "type-scale.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, Button, DataTable, NoticeCard, PanelHeader, StatusBadge, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, Button, DataTable, DetailPanel, FactGroup, Kbd, NoticeCard, PanelHeader, Section, StatusBadge, Tag, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const label = (children) => createComponent(AppWorkspace.SidebarItemLabel, { children });
 const button = (size, probe = "button-" + size) => createComponent(Button, { size, variant: "secondary", "data-probe": probe, children: "Save changes" });
 render(() => createComponent(AppWorkspace, {
@@ -46,6 +46,21 @@ render(() => createComponent(AppWorkspace, {
             ...["xs", "sm", "md", "lg"].map((size) => button(size)),
             createComponent(TextInput, { label: "Display name", description: "Shown to people you share with.", value: "Ada" }),
             createComponent(StatusBadge, { tone: "ok", label: "Active" }),
+            createComponent(StatusBadge, { tone: "warning", label: "Waiting", variant: "chip" }),
+            createComponent(Tag, { color: "#2563eb", children: "Customer" }),
+            createComponent(Tag, { size: "sm", children: "Draft" }),
+            createComponent(Kbd, { keys: "Mod+K" }),
+            createComponent(DetailPanel, {
+              get children() { return [
+                createComponent(DetailPanel.Header, { title: "Follow up the offer", kind: "Task", subtitle: "Sales · due tomorrow" }),
+                createComponent(DetailPanel.Body, {
+                  get children() { return [
+                    createComponent(FactGroup, { title: "Details", items: [{ label: "Owner", value: "Jonas Weil" }, { label: "Customer", value: "Hofmann GmbH" }] }),
+                    createComponent(Section, { title: "Notes", children: "Confirm the price for 40 pallets." }),
+                  ]; },
+                }),
+              ]; },
+            }),
             createComponent(NoticeCard, { tone: "warning", title: "Settings cannot be read", get children() { return [button("sm", "notice-sm"), button("xs", "notice-xs")]; } }),
             createComponent(DataTable, {
               ariaLabel: "Files",
@@ -156,7 +171,8 @@ const baseline = {
   field: 80,
   input: 32,
   badge: 20,
-  title: 24,
+  // K11: the head title is the body role, 14/20.
+  title: 20,
 } as const;
 
 // The C Kontrast scale: [font size, weight, color] per primitive.
@@ -164,7 +180,7 @@ const ink = { text: "rgb(9, 9, 11)", secondary: "rgb(39, 39, 42)", muted: "rgb(6
 const scale = {
   sidebarItem: ["13px", "400", ink.text],
   sidebarSection: ["12px", "600", ink.secondary],
-  sidebarCount: ["11px", "600", ink.text],
+  sidebarCount: ["12px", "600", ink.text],
   sidebarDescription: ["13px", "400", ink.secondary],
   // Secondary buttons carry body ink on their white face.
   buttonXs: ["12px", "600", ink.text],
@@ -174,7 +190,8 @@ const scale = {
   // K11: labels and help in the 12 px meta size; help in the quiet third grey.
   fieldLabel: ["12px", "500", ink.secondary],
   fieldDescription: ["12px", "400", ink.subtle],
-  badge: ["10px", "600", "rgb(4, 120, 87)"],
+  // K11: a state chip is meta 12/500, as in the mockup.
+  badge: ["12px", "500", "rgb(4, 120, 87)"],
   // K7: the table head is 12 px grey words without a fill.
   tableHeader: ["12px", "500", ink.subtle],
 } as const;
@@ -202,7 +219,7 @@ describe(`type scale in ${browserName}`, () => {
         expect(type).toEqual(scale);
         // Two-line sidebar labels keep their height too, whatever the host's line height.
         expect(probe.sidebarItem.lineHeight).toBe("18px");
-        expect(probe.title.letterSpacing).toBe(`${-0.018 * 16}px`);
+        expect(probe.title.letterSpacing).toBe(`${-0.018 * 14}px`);
       } finally {
         await page.close();
       }
@@ -229,6 +246,54 @@ describe(`type scale in ${browserName}`, () => {
           ),
         );
         expect(sizes).toEqual({ meta: "12px", row: "13px", body: "14px", lead: "18px" });
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // K11: a rendered flat sample — shell, list, detail, badges, tags — shows the four type roles and nothing else.
+  test(
+    "a flat sample shows only the four type roles and weights 400 to 600",
+    async () => {
+      const page = await load();
+      try {
+        const tokens = await page.evaluate(() =>
+          ["meta", "row", "body", "lead"].map((role) => {
+            const probe = document.createElement("span");
+            probe.style.cssText = `font-size:var(--k2b-font-size-${role});line-height:var(--k2b-line-height-${role});font-weight:var(--k2b-font-weight-${role})`;
+            document.getElementById("app")!.append(probe);
+            const style = getComputedStyle(probe);
+            const out = `${role} ${style.fontSize}/${style.lineHeight} ${style.fontWeight}`;
+            probe.remove();
+            return out;
+          }),
+        );
+        expect(tokens).toEqual(["meta 12px/16px 400", "row 13px/20px 400", "body 14px/20px 400", "lead 18px/24px 600"]);
+
+        const styles = await page.evaluate(() => {
+          const found: Record<string, string> = {};
+          const walker = document.createTreeWalker(document.getElementById("app")!, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const text = node.textContent?.trim();
+            const element = node.parentElement;
+            if (!text || !element || element.closest("[aria-hidden='true'], .k2b-sr-only, .k2b-avatar")) continue;
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            if (style.visibility !== "visible" || box.width <= 1 || box.height <= 1) continue;
+            found[`${style.fontSize}/${style.fontWeight}`] ??= text.slice(0, 32);
+          }
+          return found;
+        });
+        const off = Object.entries(styles).filter(([style]) => {
+          const [size, weight] = style.split("/");
+          return !["12px", "13px", "14px", "18px"].includes(size!) || !["400", "500", "600"].includes(weight!);
+        });
+        expect(off).toEqual([]);
+        // The sample really covers the roles it claims: meta, row, and body text are all on the page.
+        const sizes = new Set(Object.keys(styles).map((style) => style.split("/")[0]));
+        for (const size of ["12px", "13px", "14px"]) expect(sizes.has(size)).toBe(true);
       } finally {
         await page.close();
       }
