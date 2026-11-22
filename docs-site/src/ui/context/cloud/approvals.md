@@ -4,9 +4,7 @@ Approvals look the same in every place, so a person always recognises one.
 `ApprovalFrame` draws every approval and `ApprovalCard` fills it for a
 Capability Action: in the Assistant chat, the side panel, the
 **Approvals** list, Code pages, other apps, and on phones. Only its width
-follows the place. It is a card everywhere: the AI tint, a thin edge in the hue
-of that tint, the 8 px radius of a control, and no shadow, as in the chat
-(Cloud flat names this exception to the edge-to-edge notice cell). `Approvals` lists the signed-in person's open approvals with
+follows the place. `Approvals` lists the signed-in person's open approvals with
 that card and lets them approve or reject each one in place. Every app uses the
 same component and the same Core route, `/api/approvals`, for its own scope.
 The app builds no route, table, or card of its own.

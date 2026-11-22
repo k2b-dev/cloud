@@ -45,8 +45,8 @@ test("Notebooks chrome beside a panel matches a window as wide as its host", asy
       await page.setViewportSize({ width: host, height: 900 });
       await page.setContent(content(false));
       expect(besidePanel, `${windowWidth}px window / ${host}px host`).toEqual(await measure());
-      expect(besidePanel.measure).toBe(host < 1024 ? "45rem" : "100%");
-      expect(besidePanel.readingWidth).toBe(host < 1024 ? 720 : host);
+      expect(besidePanel.measure).toBe(host < 1024 ? "44rem" : "100%");
+      expect(besidePanel.readingWidth).toBe(host < 1024 ? 704 : host);
       // From a 48 rem window the toolbar's navigation button always shows: below a 64 rem host it opens the overlay.
       expect(besidePanel.navigation).toEqual(["flex"]);
     } finally {

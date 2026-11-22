@@ -52,8 +52,8 @@ them, are in [Colors and selection](/en/ui/surfaces/color).
 
 AI presentation has a separate semantic theme:
 `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`,
-and `--k2b-ai-surface`, plus `--k2b-ai-edge-rest` and `--k2b-ai-glow` (its focus
-ring) for the assistant prompt's edge, and `--k2b-ai-suggestion` for a suggested next message
+and `--k2b-ai-surface`, plus `--k2b-ai-edge-rest` and `--k2b-ai-glow` for the
+assistant prompt's edge, and `--k2b-ai-suggestion` for a suggested next message
 in its empty field. Override these roles when the assistant identity should
 differ from the general application accent.
 

@@ -90,10 +90,10 @@ for (const width of [1440, 390])
       expect([tile.width, tile.height, tile.radius]).toEqual([20, 20, "6px"]);
       expect(await page.locator(".ai-source").first().getAttribute("aria-label")).toBe("Quelle 1: Messestand Köln · Jana Berger");
 
-      // The person's message: a neutral grey bubble with the 8 px radius of a control all round (Gustav flat, K4).
+      // The person's message: a neutral grey bubble with 16 px corners and a 5 px corner toward the composer.
       const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
       expect(bubble.background).toBe(muted);
-      expect(bubble.radius).toBe("8px");
+      expect(bubble.radius).toBe("16px 16px 5px");
       const own = page.locator(".k2b-chat-message[data-role=user] .k2b-chat-message__actions button");
       expect(await own.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")))).toEqual([
         "Kopieren",

@@ -5,7 +5,7 @@ import {
   Disclosure,
   FilterChip,
   type FilterChipSection,
-  NoticeRow,
+  InlineGuidance,
   Pagination,
   ScrollArea,
   Tag,
@@ -471,7 +471,7 @@ export default function ContactsResults(props: Props) {
           {renderSearchForm()}
         </Disclosure>
       </div>
-      <div class="contacts-results__normal-controls shrink-0 px-[var(--k2b-gutter)] pb-3">
+      <div class="contacts-results__normal-controls shrink-0 px-3 pb-3 sm:px-4">
         <p class="mb-2 text-xs text-dimmed" aria-live="polite">
           <span class="tabular-nums text-secondary">{resultCopy()}</span>
         </p>
@@ -505,7 +505,7 @@ export default function ContactsResults(props: Props) {
             ))}
           </nav>
         </Show>
-        <div class="mt-2 flex flex-wrap items-center gap-2">
+        <div class="no-scrollbar mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible">
           <FilterChip
             label={t().sortLabel}
             icon="ti ti-arrows-sort"
@@ -566,22 +566,17 @@ export default function ContactsResults(props: Props) {
         </Show>
       </div>
 
-      <ScrollArea class="contacts-results__scroll flex-1 pb-3" scrollPreserveKey="contacts-main-list">
+      <ScrollArea class="contacts-results__scroll flex-1 px-3 pb-3 sm:px-4" scrollPreserveKey="contacts-main-list">
         <Show when={results.error()}>
           {(error) => (
-            // K10: the failed reload is an alert cell from edge to edge above the rows it concerns, with its deed.
-            <NoticeRow
-              tone="danger"
-              icon
-              role="alert"
-              actions={
-                <Button type="button" variant="secondary" size="sm" disabled={results.refreshing()} onClick={() => void results.refresh()}>
-                  {t().reloadContacts}
-                </Button>
-              }
-            >
-              {error().message}
-            </NoticeRow>
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                {error().message}
+              </InlineGuidance>
+              <Button type="button" variant="ghost" size="xs" disabled={results.refreshing()} onClick={() => void results.refresh()}>
+                {t().retry}
+              </Button>
+            </div>
           )}
         </Show>
         <Show when={current()} fallback={<p class="py-8 text-center text-sm text-dimmed">{t().loadingContacts}</p>}>
@@ -603,7 +598,7 @@ export default function ContactsResults(props: Props) {
                 emptyAction={emptyState().action === "createBook" ? createBookAction : undefined}
               />
               <Show when={snapshot().totalPages > 1}>
-                <div class="px-[var(--k2b-gutter)] pt-3">
+                <div class="pt-3">
                   <Pagination
                     currentPage={snapshot().page}
                     totalPages={snapshot().totalPages}

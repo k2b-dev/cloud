@@ -137,10 +137,10 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
                 />
               }
             >
-              <div class="k2b-divided flex flex-col">
+              <div class="flex flex-col gap-2">
                 <For each={matches.data() ?? []}>
                   {(match) => (
-                    <section class="py-3">
+                    <section class="paper p-3">
                       <p class="mb-2 text-xs text-dimmed">{match.reasons.map(reasonLabel).join(" · ")}</p>
                       <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                         <For each={[match.first, match.second]}>

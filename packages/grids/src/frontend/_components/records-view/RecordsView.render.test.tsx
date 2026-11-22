@@ -90,21 +90,26 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
   ...overrides,
 });
 
-// The search and its spinner stand in the workspace head (RecordsHeadActions); the view dims nothing on its first paint.
 const loadingState = (html: string) => ({
+  searchInput: html.match(/<input name="grids-record-search"[^>]*>/)?.[0],
+  searchIcon: html.match(/k2b-text-input__icon[^>]*>(.*?)<\/span>/)?.[1],
   recordsArea: html.match(/<div class="([^"]*transition-opacity[^"]*)"/)?.[1],
 });
 
 test("server HTML shows the SSR records as loaded, without the loading spinner or dimming", () => {
   const html = renderToString(() => createComponent(RecordsView, recordsViewProps({})));
 
-  const { recordsArea } = loadingState(html);
+  const { searchInput, searchIcon, recordsArea } = loadingState(html);
   expect(html).toContain("Draft the brochure");
+  expect(searchInput).toBeDefined();
+  expect(searchInput).not.toContain("aria-busy");
+  expect(searchIcon).toContain("ti ti-search");
+  expect(searchIcon).not.toContain("k2b-spin");
   expect(recordsArea).toBeDefined();
   expect(recordsArea).not.toContain("opacity-60");
 });
 
-test("server HTML shows a failed server read as an alert cell whose button loads the records again, not as an empty table that is loading", () => {
+test("server HTML shows a failed server read as its error with a retry, not as an empty table that is loading", () => {
   const html = renderToString(() =>
     createComponent(
       RecordsView,
@@ -116,23 +121,22 @@ test("server HTML shows a failed server read as an alert cell whose button loads
     ),
   );
 
-  const { recordsArea } = loadingState(html);
+  const { searchInput, searchIcon, recordsArea } = loadingState(html);
   expect(html).toContain("Could not refresh records");
   expect(html).toContain("The filter is invalid: unknown field.");
-  expect(html).toContain("Load records");
+  expect(html).toContain("Retry");
   expect(html).not.toContain("No records yet");
-  // The failed read keeps its grid and the head keeps "Add record"; the view itself offers no second one.
-  expect(html).not.toContain("Add record");
+  expect(html.match(/Add record/g)).toHaveLength(1);
+  expect(searchInput).not.toContain("aria-busy");
+  expect(searchIcon).not.toContain("k2b-spin");
   expect(recordsArea).not.toContain("opacity-60");
 });
 
-test("server HTML shows an empty table as one empty state whose quiet action adds a record; the filled one is the head's", () => {
+test("server HTML shows an empty table as one empty state whose action is the toolbar's create control", () => {
   const empty = { initialData: { items: [], nextCursor: null } };
   const writer = renderToString(() => createComponent(RecordsView, recordsViewProps({ ...empty, canWrite: true })));
   expect(writer).toContain("No records yet");
-  // The head's main action lives in the workspace head (records-head); the view adds only the empty state's way out.
-  expect(writer.match(/Add record/g)).toHaveLength(1);
-  expect(writer).not.toContain('data-variant="primary"');
+  expect(writer.match(/Add record/g)).toHaveLength(2);
 
   // Only forms may add records here, and none is active: the toolbar shows nothing, so the empty state has no action slot.
   const noControl = renderToString(() =>

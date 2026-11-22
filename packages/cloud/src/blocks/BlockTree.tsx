@@ -631,7 +631,7 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
         content={() => <TableLeaf {...props} />}
       />
     ) : undefined;
-  // A searchable table in a chat answer says under it what the search finds, and its search is a sign (Gustav flat F3).
+  // A searchable table in a chat answer says under it what the search finds, and its search folds into a sign on a phone.
   const counted = () => frame !== undefined && props.block.search === true;
   const footer = (counts: { query: string; shown: number; total: number }) =>
     counts.query ? words().matches({ count: counts.shown }) : words().rowCount({ count: counts.total });

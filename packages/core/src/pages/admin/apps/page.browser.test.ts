@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { layoutProblems } from "../../../../../ui/src/layout-check";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { adminAppsBrowserFixture } from "./AdminApps.browser-fixture";
 import { FIXTURE_NOW } from "./AdminApps.fixture-data";
@@ -75,8 +74,8 @@ test("the list names every app by name with its state in words and its most impo
   expect(new Set(dots).size).toBe(1);
 }, 20_000);
 
-test("with classic scrollbars, key figures leave whole behind +n and an added date is never cut (K15)", async () => {
-  // A desktop window with classic scrollbars that take room, as on Windows and Linux (Cloud flach QA, blocker 5).
+test("with classic scrollbars the list never scrolls sideways and no state word is cut", async () => {
+  // A desktop window with classic scrollbars that take room, as on Windows and Linux.
   const classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
   try {
     const tab = await classic.newPage();
@@ -105,25 +104,10 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
         document.body.append(probe);
         const gutter = probe.offsetWidth - probe.clientWidth;
         probe.remove();
-        const summary = document.querySelector("[data-apps-summary]")!;
-        const box = summary.getBoundingClientRect();
-        const figures = Array.from(summary.querySelectorAll<HTMLElement>(".apps-figures__figure")).map((figure) => {
-          const rect = figure.getBoundingClientRect();
-          return {
-            state: rect.top >= box.bottom - 0.5 ? "hidden" : rect.right <= box.right + 0.5 ? "whole" : "cut",
-            more: figure.dataset.more ?? null,
-          };
-        });
-        const row = Array.from(document.querySelectorAll("tbody tr")).find((tr) => tr.querySelector('[data-app="inventar"]'));
-        const date = row?.querySelector<HTMLElement>("td .whitespace-nowrap");
-        const cell = date?.closest("td");
-        const address = date?.parentElement;
-        const dateRect = date && date.getClientRects().length > 0 ? date.getBoundingClientRect() : null;
-        const cellRect = cell?.getBoundingClientRect();
         return {
           gutter,
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          // A state word is never cut (K15).
+          // A state word is never cut.
           cutStates: Array.from(document.querySelectorAll("[data-apps-list] tbody .k2b-status-badge"))
             .flatMap((badge) => [badge, ...Array.from(badge.querySelectorAll("*"))])
             .filter((element) => element.scrollWidth > element.clientWidth + 0.5 && element.clientWidth > 0).length,
@@ -132,15 +116,6 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
             const wrap = document.querySelector("[data-apps-list] .k2b-table-wrap");
             return wrap ? wrap.scrollWidth - wrap.clientWidth : null;
           })(),
-          figures,
-          date:
-            dateRect && cellRect && address
-              ? {
-                  text: date!.textContent,
-                  whole: dateRect.left >= cellRect.left - 0.5 && dateRect.right <= cellRect.right + 0.5,
-                  spill: address.scrollWidth - address.clientWidth,
-                }
-              : null,
         };
       });
       const label = `${width} px ${query}`;
@@ -149,25 +124,6 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
       expect(result.listSideways, label).not.toBeNull();
       expect(result.listSideways!, label).toBeLessThanOrEqual(0);
       expect(result.cutStates, label).toBe(0);
-      const states = result.figures.map((figure) => figure.state);
-      expect(states[0], label).toBe("whole");
-      expect(states, label).not.toContain("cut");
-      // Figures leave from the end in their order, and the last shown one counts the rest.
-      const shown = states.lastIndexOf("whole");
-      expect(
-        states.slice(shown + 1).every((state) => state === "hidden"),
-        label,
-      ).toBe(true);
-      const hidden = states.length - 1 - shown;
-      expect(hidden > 0 ? Number(result.figures[shown]!.more) : 0, label).toBe(hidden);
-      // The address column may give way; where it shows, the date stands whole.
-      if (result.date) {
-        expect(result.date.text, label).toMatch(/2026$/);
-        expect(result.date.whole, label).toBe(true);
-        expect(result.date.spill, label).toBeLessThanOrEqual(0);
-      }
-      // Without the detail the list is this file's own layout; beside it the shell's columns take over (L3).
-      if (!query) expect((await tab.evaluate(layoutProblems, { root: "[data-apps-list]" })).problems, label).toEqual([]);
     }
     await tab.close();
   } finally {

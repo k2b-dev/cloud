@@ -111,7 +111,7 @@ for (const mode of ["write", "book"]) {
   test(`${mode}: full width rewraps in the available space without moving the reading anchor before paint`, async () => {
     const page = await open(mode);
     try {
-      closeTo((await measure(page)).width, 720);
+      closeTo((await measure(page)).width, 704);
       await page.evaluate(() => window.harness.scrollMiddle());
       expect(await page.locator(".k2b-scroll-area").evaluate((element) => element.scrollTop)).toBeGreaterThan(2000);
       const before = await page.evaluate(() => window.harness.anchor());
@@ -124,7 +124,7 @@ for (const mode of ["write", "book"]) {
         await settle(page);
         closeTo(await page.evaluate(() => window.harness.anchor()), before);
         if (on) await assertWide(page);
-        else closeTo((await measure(page)).width, 720);
+        else closeTo((await measure(page)).width, 704);
       }
     } finally {
       await page.close();
@@ -260,7 +260,7 @@ test("resizing removes and restores the command without losing the preference", 
       page
         .locator(".notebook-document-surface")
         .evaluate((surface) => getComputedStyle(surface).getPropertyValue("--notebook-measure").trim());
-    expect(await measureValue()).toBe("45rem");
+    expect(await measureValue()).toBe("44rem");
     await page.setViewportSize({ width: 1024, height: 1440 });
     await page.waitForFunction(() => window.harness.command() !== null);
     expect(await toggle(page).isChecked()).toBe(true);
@@ -316,7 +316,7 @@ for (const mode of ["write", "book"]) {
           );
         };
         const narrowOpen = await lineWidth();
-        expect(narrowOpen).toBeLessThan(720);
+        expect(narrowOpen).toBeLessThan(704);
         await toggle(page).click();
         expect(await toggle(page).isVisible()).toBe(true);
         closeTo(await lineWidth(), narrowOpen);
@@ -328,7 +328,7 @@ for (const mode of ["write", "book"]) {
         expect(await toggle(page).isVisible()).toBe(true);
         await setPanelOpen(false);
         const narrowClosed = await lineWidth();
-        closeTo(narrowClosed, 720);
+        closeTo(narrowClosed, 704);
         expect(wideClosed).toBeGreaterThan(narrowClosed);
       } finally {
         await page.close();

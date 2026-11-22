@@ -43,9 +43,7 @@ for (const viewport of [
         }));
         expect(colors.fill, theme).toBe(rgb(appColors("#0f766e")[theme].selected));
         expect(colors.fill, theme).not.toBe(colors.platform);
-        // K7, K8: the chosen row is only the fill in the app colour; its text stays the text colour, never the app ink
-        // and never the action blue.
-        expect(colors.ink, theme).not.toBe(rgb(appColors("#0f766e")[theme].ink));
+        expect(colors.ink, theme).toBe(rgb(appColors("#0f766e")[theme].ink));
         expect(colors.ink, theme).not.toBe(colors.action);
       }
     } finally {

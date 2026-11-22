@@ -37,6 +37,7 @@ export default function DeleteFaqButton(props: { id: string; question: string })
     <Tooltip.Anchor content={t().deleteTitle}>
       <IconButton
         size="sm"
+        variant="danger"
         label={t().deleteLabel({ question: props.question })}
         onClick={handleClick}
         loading={mutation.loading()}

@@ -138,7 +138,7 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
     <div class="flex flex-col gap-3">
       <Show when={stage() === "upload"}>
         <p class="text-xs text-dimmed">{t().uploadHint}</p>
-        <label class="contacts-vcf-dropzone flex cursor-pointer flex-col items-center gap-2 rounded-[var(--k2b-radius-control)] border border-dashed border-[var(--ui-border-strong)] px-6 py-8 text-sm text-dimmed transition-colors hover:bg-[var(--ui-hover)]">
+        <label class="paper flex cursor-pointer flex-col items-center gap-2 px-6 py-8 text-sm text-dimmed transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
           <i class="ti ti-upload text-2xl" />
           <span>{previewMutation.loading() ? t().reading : t().chooseVcfFile}</span>
           <input type="file" accept=".vcf,text/vcard" class="hidden" onChange={handleFileChange} />

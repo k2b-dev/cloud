@@ -119,15 +119,12 @@ async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
   const { default: Browser } = await import("../src/frontend/Browser");
   const { createFilesUploads } = await import("../src/frontend/files-uploads");
   const { UploadSurface } = await import("../src/frontend/UploadPanel");
-  const { AppWorkspace } = await import("@k2b/ui");
   return render(() => {
     const uploads = createFilesUploads();
     return (
       <>
         <UploadSurface queue={uploads} />
-        <AppWorkspace>
-          <Browser {...props} uploads={uploads} />
-        </AppWorkspace>
+        <Browser {...props} uploads={uploads} />
       </>
     );
   }, root);
@@ -410,7 +407,7 @@ test("files dropped on a folder row upload into that folder, and dropped anywher
   const row = [...dom.root.querySelectorAll(".filesv2-list__row")].find((element) => element.textContent?.includes("Invoices"))!;
   drop(row, "march.txt");
   await flush();
-  drop(dom.root.querySelector(".k2b-status-row")!, "notes-2.txt");
+  drop(dom.root.querySelector(".filesv2-browser__header")!, "notes-2.txt");
   await flush();
   expect(calls.filter((call) => call.startsWith("open"))).toEqual([
     "open Documents/Invoices/march.txt 6 error",
@@ -564,7 +561,7 @@ test("a new empty file is created at once instead of waiting behind a running up
   Object.defineProperty(input, "files", { configurable: true, value: [new File(["abcdef"], "large.bin")] });
   input.dispatchEvent(new Event("change", { bubbles: true }));
   await flush();
-  dom.root.querySelector<HTMLButtonElement>("button[data-workspace-primary]")!.click();
+  dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
   await flush();
   [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent?.includes("New file"))!.click();
   await flush();

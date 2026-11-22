@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
-// The assistant prompt carries the AI colour: a light plum edge at rest, the full plum edge with a flat ring outside on
+// The assistant prompt carries the AI colour: a light plum edge at rest, the full plum edge with a soft glow outside on
 // focus, red with an error and a quiet grey edge when disabled. The card is a writing surface with its own frame: the
 // edge stays 2 px in every state and the glow lies outside the box, so neither the card nor its text moves. The
 // conversation composer between people is a neutral field with the 1 px field edge.
@@ -120,15 +120,6 @@ const measure = (page: Page, name: string) =>
         radius: style.borderTopLeftRadius,
         // The glow layer sits on the outer edge of the border, so the glow starts where the edge ends.
         glowInset: getComputedStyle(edge, "::after").top,
-        // Gustav flat (F1): the focus layer is the ring of every field, a spread without offset or blur.
-        glowBlur: (() => {
-          const layer = getComputedStyle(edge, "::after").boxShadow;
-          if (layer === "none") return 0;
-          return layer
-            .split(/,(?![^(]*\))/)
-            .map((part) => [...part.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1])))
-            .filter(([x = 0, y = 0, blur = 0]) => x !== 0 || y !== 0 || blur !== 0).length;
-        })(),
       };
     },
     { name, field: FIELD },
@@ -246,7 +237,6 @@ describe("assistant composer edge in the browser", () => {
               // v12: the assistant card has a 14 px radius, and the glow starts at the outer edge of its 2 px border.
               expect(actual.radius, `${label} ${state} radius`).toBe("14px");
               expect(actual.glowInset, `${label} ${state} glow layer`).toBe("-2px");
-              expect(actual.glowBlur, `${label} ${state} focus ring without blur`).toBe(0);
             }
             const expected: Record<string, [Rgba, Rgba]> = {
               rest: [token.rest, token.surface],
