@@ -606,3 +606,9 @@
   }
 }
 .k2b-ui .k2b-status-row__end > .spaces-head-filters::-webkit-scrollbar { display: none; }
+
+/* The table view keeps all its columns from a table width of 480 px and scrolls sideways there; below that the
+   table is a list of two-line entries that never scrolls sideways (K7, K12). */
+@container k2b-data-table (min-width: 480px) {
+  .k2b-ui .spaces-items-table { min-width: 72rem; }
+}

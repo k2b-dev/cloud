@@ -70,8 +70,9 @@ export default function ItemsTable(props: Props) {
   const priorityLabel: Record<string, string> = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low };
   const columnsById = new Map(props.columns.map((column) => [column.id, column]));
   const tableColumns: DataTableColumn<SpaceItem>[] = [
-    { id: "title", header: t.title, value: (item) => item.title, cellClass: "max-w-[24rem]" },
-    { id: "status", header: t.status, value: (item) => columnsById.get(item.columnId)?.name },
+    // On a phone the table is a list (K7, K12): the title, its schedule below in quiet text, and the status at the right.
+    { id: "title", header: t.title, value: (item) => item.title, cellClass: "max-w-[24rem]", list: "title" },
+    { id: "status", header: t.status, value: (item) => columnsById.get(item.columnId)?.name, list: "end" },
     {
       id: "kind",
       header: t.kind,
@@ -79,7 +80,13 @@ export default function ItemsTable(props: Props) {
       nowrap: true,
     },
     { id: "priority", header: t.priority, value: (item) => item.priority, nowrap: true },
-    { id: "schedule", header: t.schedule, value: (item) => formatSchedule(item, props.dateConfig), cellClass: "max-w-[18rem]" },
+    {
+      id: "schedule",
+      header: t.schedule,
+      value: (item) => formatSchedule(item, props.dateConfig),
+      cellClass: "max-w-[18rem]",
+      list: "meta",
+    },
     {
       id: "assignees",
       header: t.assignees,
@@ -107,7 +114,7 @@ export default function ItemsTable(props: Props) {
         hoverRows
         class="min-h-0 overflow-x-auto"
         scrollClass="k2b-detail-trail"
-        tableClass="min-w-[72rem] w-full"
+        tableClass="spaces-items-table w-full"
         scrollPreserveKey={props.scrollPreserveKey}
         renderCell={({ row: item, col }) => {
           const column = columnsById.get(item.columnId) ?? null;

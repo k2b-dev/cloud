@@ -53,6 +53,33 @@ for (const view of [phone, tablet, laptop, desktop])
       }, 30_000);
     }
 
+test("390 px table: a list of two-line entries without a head that never scrolls sideways (K7, K12)", async () => {
+  const page = await harness.open(phone, { view: "table", many: true });
+  try {
+    const result = await page.evaluate(layoutProblems, { root: "body", ignore: ignored });
+    expect(result.problems).toEqual([]);
+    const look = await page.evaluate(() => {
+      const shell = document.querySelector<HTMLElement>(".k2b-table-shell")!;
+      const row = shell.querySelector<HTMLElement>(".k2b-data-table__row")!;
+      return {
+        // Every box inside the table that could scroll sideways, by class; none may.
+        sideways: [shell, ...shell.querySelectorAll<HTMLElement>("*")]
+          .filter((element) => element.scrollWidth > element.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(element).overflowX))
+          .map((element) => element.className),
+        head: getComputedStyle(shell.querySelector(".k2b-data-table__head")!).display,
+        rowHeight: Math.round(row.getBoundingClientRect().height),
+        shown: [...row.querySelectorAll<HTMLElement>("td")].filter((cell) => cell.checkVisibility()).map((cell) => cell.dataset.list),
+      };
+    });
+    expect(look.sideways).toEqual([]);
+    expect(look.head).toBe("none");
+    expect(look.rowHeight).toBeGreaterThanOrEqual(60);
+    expect(look.shown).toEqual(["title", "end", "meta"]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
 test("1440 px kanban: a card is a row of its column, 56 px with one title line, without frame, tint, or shadow", async () => {
   const page = await harness.open(desktop, { view: "kanban" });
   try {
