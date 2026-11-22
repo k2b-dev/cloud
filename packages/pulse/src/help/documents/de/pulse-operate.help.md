@@ -27,10 +27,6 @@ Bei einer sendenden Quelle öffnest du **Bearbeiten → Erwartete Daten**. Wähl
 
 Ändert jemand die Quelle während deiner Bearbeitung, behält Pulse deine Eingaben und sperrt weiteres Speichern. Schließe und öffne die Quelle erneut, um den aktuellen Stand zu prüfen. Bleibt das Ergebnis einer Neuanlage unklar, wähle **Quellen prüfen**, bevor du die Quelle erneut anlegst.
 
-## Lade die Übersicht erneut
-
-**Erneut versuchen** lädt eine fehlgeschlagene Übersicht neu. Bei einem Speicherausfall bleiben vorhandene Werte mit ihrem Zeitpunkt sichtbar; ein nicht verfügbarer Wert ist nicht null. Wurde dein Zugriff entfernt, bitte die Base-Administration um Zugriff. Ein erneuter Ladeversuch stellt ihn nicht wieder her.
-
 ## Erhalte Alarmmeldungen
 
 Pulse prüft fällige Alarmregeln und die Aktualität der Quellen jede Minute, auch wenn niemand die Base geöffnet hat. Ein ausgelöster oder verschärfter Alarm, fehlende Daten, ein Prüfungsfehler oder die Rückkehr zum Normalzustand können Personen mit Zugriff **Verwalten** auf die Base benachrichtigen. Browser- und E-Mail-Zustellung richten sich nach deinen Cloud-Benachrichtigungseinstellungen. Wer den Zugriff **Verwalten** verliert, erhält auch keine bereits vorgemerkten Base-Alarme mehr.
@@ -74,5 +70,5 @@ Leeren behält Quellen, Tokens, Einstellungen und Zugriff. **Leer neu anlegen** 
 Löschen widerruft Tokens und Datenbank-Lesezugriff und entfernt dann die Base. Du kannst diese Vorgänge in Pulse nicht rückgängig machen.
 :::
 
-Eine Base bleibt während der Löschung auf der Übersicht ihrer Administration, bis die Löschung abgeschlossen ist.
+Eine Base bleibt während der Löschung in der Base-Liste ihrer Administration, bis die Löschung abgeschlossen ist.
 Prüfe den Vorgangszustand, bevor du eine angenommene Anfrage als abgeschlossene Arbeit behandelst.

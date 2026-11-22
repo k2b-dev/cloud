@@ -19,8 +19,9 @@ your saved choice to show or pin it there stays in place.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
-separate interface for these same operations. Dashboards save SQL results as
-numbers, charts, tables, funnels, and world maps.
+separate interface for these same operations. To show results as numbers,
+charts, or tables, build a Code page that reads the base
+([Show Pulse data on a page](#show-pulse-data-on-a-page)).
 
 Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
@@ -40,10 +41,20 @@ for people with edit access. The head keeps its height in every state.
   "2 sources need attention". Below it, sources with refused requests, errors,
   throttling, or late data, and fired alerts, stand most urgent first; the
   server renders them. A row opens the source or alert details on the right
-  (`/sources/:id`, `?alert=:ruleId`). Keys show only to people who manage the
-  base. A base without sources says since when it is empty and offers the three
-  ways to a first source. A lost data store becomes the statement; Pulse checks
-  again every 30 seconds while the page is visible.
+  (`/sources/:id`, `?alert=:ruleId`); the alert details say the condition in
+  words, the value, and since when, and **Adjust with Gustav** opens an unsent
+  draft with the alert's SQL. Keys show only to people who manage the base. A
+  base without sources says since when it is empty and offers the three ways to
+  a first source. A data store that is not reachable becomes the statement
+  "Data store unreachable": no store is configured, the store instance has an
+  outage, or the base's store failed, and nothing can be written or read until
+  it answers again. A running provision, clear or delete is not an outage.
+  While Sources is open and the page is visible, Pulse reads
+  `GET /api/pulse/bases/:baseId` again every 30 seconds; its
+  `outage: { unavailable, since }` field reports the store state, and the page
+  shows the sources again in place once the store answers. An old
+  dashboard link opens Sources with a notice that leads to **Usage**; **Got
+  it** removes `?notice=dashboards-removed` from the address.
 - **Data** reads `GET /api/pulse/bases/:baseId/schema`: kinds, fields with type,
   example and fill rate, and the five newest entries of one kind.
 - **Usage** lists the Code pages and automations that read the base in the
@@ -52,52 +63,13 @@ for people with edit access. The head keeps its height in every state.
   service accounts and source keys that reach it through the API.
 
 A person without access sees "No access" in the head and the base's managers
-who can give it. **…** holds the base settings and, until the next release,
-**Overview** (`/overview`) and **Dashboards**. Existing
-`/app/pulse/:baseId/sources` links still open the sources view.
+who can give it. **…** holds the base settings. Existing
+`/app/pulse/:baseId/sources` links still open the sources view; old
+`/app/pulse/:baseId/overview` links open the base.
 The workspace fills the available app height on desktop and phone. Longer
-content scrolls inside it.
-The overview refreshes every 60 seconds while visible. **View** on an alert
-opens its authorized SQL and parameter values in the console without running
-it. The URL stores the rule reference, so long SQL survives reload and Back.
-
-**Ask AI** opens an unsent Assistant draft asking what needs attention in this
-base and why. The draft carries the base resource and the Pulse skill. Data
-texts remain evidence, never instructions; writing still requires approval.
-
-### Put a saved number on the overview
-
-In SQL's saved list, enable **On overview**, or save with `cld pulse queries
-save --pin`. At most four queries can be pinned per base. This needs write
-access; `--unpin` removes a pin. API `pinned` is optional: omitting it preserves
-an existing pin. Changing a pin uses the saved query's current revision.
-
-The result's first numeric column supplies the value from its last row. The
-first `DateTime` or `DateTime64` column supplies sparkline timestamps in result
-order. A scalar without a time column remains a valid number without a trend.
-Optional String columns in the last row supply `unit` and `detail`.
-`detailTone` accepts `neutral`, `success`, `warning`, or `danger`; missing or
-unknown tones are neutral. Invalid optional presentation metadata does not
-invalidate an otherwise valid number. These columns are text, never HTML or
-CSS. A missing or invalid final numeric value is shown as unavailable.
-
-For referenced parameters, Pulse supplies `from` and `to` for the preceding
-24 hours, aligned to a five-minute slot, and `bucket` for five minutes. Other
-saved parameters are preserved; `base_tz` retains its normal reserved meaning.
-There are at most four execution attempts per base in each aligned five-minute
-slot, shared across readers and replicas. Edits, pin replacement, cache expiry,
-and failed attempts do not refill that slot's budget. These executions use the
-overview budget, separate from questions.
-
-A failed refresh keeps the last successful values with their original times.
-Store outages show that the values are old; an unavailable value is never
-replaced with zero. Removing read access hides the protected overview, including
-previously loaded values. `GET /api/pulse/bases/:baseId/overview` has the same
-read boundary for people and agents. It returns bounded attention pages using
-`attentionLimit`/`attentionOffset` and activity pages using
-`activityLimit`/`activityCursor`; the response supplies the next offset/cursor.
-Page sizes range from 1 to 1,000. Recent activity identifies the actual person
-or service account when recorded; it does not infer an approving person.
+content scrolls inside it. `/sql?alert=:ruleId` opens an alert's authorized SQL
+and parameter values in the console without running it. The URL stores the rule
+reference, so long SQL survives reload and Back.
 
 ## Manage alert rules and source expectations
 
@@ -377,10 +349,10 @@ for retained hourly evidence, the diagnostic names the affected hour.
 
 `GET /api/pulse/bases/:baseId/sql/limits` returns the profile, memory and time
 budget, result limits, hourly usage and reset time, and queue limits.
-Three queries can run per Cloud, with one per base; dashboard panels of a signed-in viewer can use two per base. Up to 20 runs can wait
+Three queries can run per Cloud, with one per base. Up to 20 runs can wait
 for five seconds. Input errors and admission refusals do not consume hourly
 quota. Quota is charged only when a query gets a slot and resets at the next
-clock hour. Overview executions and alert checks do not consume the questions quota.
+clock hour. Alert checks do not consume the questions quota.
 
 | Code | HTTP | Action |
 | --- | --- | --- |
@@ -401,7 +373,7 @@ started the run can cancel it. Closing the request also cancels the run.
 
 Use `/api/pulse/bases/:baseId/queries` to list or create queries, and
 `/queries/:queryId` to get, update, or delete one. Lists use Cloud pagination.
-Saved queries keep a name, SQL, string-valued parameters, revision, and an optional overview pin.
+Saved queries keep a name, SQL, string-valued parameters, and a revision.
 The saved list shows each query’s name, SQL excerpt and last update time.
 Select its row to open it in the console.
 Names are unique within a base without regard to case. A `PATCH` supplies a
@@ -429,69 +401,24 @@ envelope. `saved_query.save` uses an idempotency
 key and revision checks with rememberable approval. Deletion always asks for
 approval. There is no capability for tokens or access changes.
 
-## Build a dashboard
+## Show Pulse data on a page
 
-Use **Ask AI** to propose a dashboard, or save its JSON plus SQL with
-`cld pulse dashboards save --base <base-id> --file dashboard.json`.
-Read `cld pulse reference dashboards.md` for a complete website example.
-The Assistant asks before saving. Updates use the revision from
-`dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
+Pulse has no dashboards. To show numbers, charts, or tables, ask Gustav for a
+Code page. Its route reads the base with the target form, such as
+`pulse.base(baseId).sql.run({ sql, params })`, and returns page blocks such as
+`Stats`, `Chart.Line`, and `Table`
+([Return a page](/en/docs/platform/code-sdk#return-a-page)).
 
-A dashboard groups numbers, charts, tables, funnels, and maps into sections.
-Charts also include pie, donut, scatter, histogram, box plot, heatmap, gauge,
-bar gauge, sparkline, stacked area, and 100% area. Budget lists and balance
-rows show money with a currency. See [Dashboard chart columns](/en/docs/ai/pulse-dashboard-charts)
-for each kind's SQL column mapping and limits.
-A named section can include an icon, color, and caption describing its sources
-or cadence; these come from the saved definition.
-A map panel shades countries by one value and lists the same numbers. Its `x`
-column holds ISO 3166-1 alpha-2 codes; rows without a country stay off the map.
-While the active City database is DB-IP, a map panel and every panel whose SQL
-mentions `country` show the required "IP Geolocation by DB-IP" link below
-their results, also on a published link. The dashboard needs no extra
-definition; the link disappears after an administrator uploads a City database
-from another provider.
-A number panel shows one numeric value. With a DateTime `x`, it uses the last
-returned row and shows up to 480 trend points. Optional String columns
-`unit`, `detail`, and `detailTone` add a unit and change label.
-Choose 24 hours, seven days, 30 days, 90 days, or a custom period. Referenced
-`:from`, `:to`, and `:bucket` parameters follow that range. Other values remain
-in the panel's `params`. Each panel declares the output `columns` it shows;
-charts also choose `x` and optionally `series`. Aggregate to at most eight
-series and 480 points per series, with 36 panels and 3,840 marks per panel.
-Excessive or truncated results show an error instead of silently losing rows.
+Cloud shows the page only to people who may read the base. Anyone else gets
+**No access** and never sees the data
+([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
+Pulse data never appears on a public Code route, so a page with Pulse data
+cannot be shared as a public link.
 
-Panels retain the base's SQL profile and the Cloud's limit of three queries,
-separately from the questions quota. For a signed-in viewer, a dashboard reads
-two panels at a time, so each panel appears when it is ready and a slow panel
-does not hold the others. A published link reads one panel at a time. Refreshes run at most once per revision, range, and
-60-second interval. On failure, the panel keeps its last successful result
-and timestamp when available. Retries back off from one to five minutes.
-
-### Share selected results
-
-Review every output column before publishing. Anyone with the returned link
-can read those results. The public page contains presentation and selected
-columns, without SQL or parameters, and offers the preset ranges only; custom
-periods stay with people who have read access to the base. Publishing requires write access and an
-explicit confirmation. Assistant publication always asks for approval.
-
-SQL, parameters, selected-column, and output changes end the existing link;
-title and layout edits retain it. Publishing again rotates the link. Revoke it
-with **Unpublish** or `cld pulse dashboards unpublish`. Clearing measurements
-preserves definitions and discards old cached results; deleting a base also
-removes its dashboards and public links.
-
-### Dashboard operations in this release
-
-This release adds Postgres dashboard definitions and durable execution
-receipts. Back them up with the other Pulse control data. Valkey holds only
-result snapshots: at most 500 entries or 64 MiB of serialized keys and data,
-evicted by oldest write. Loss or eviction of a snapshot does not permit an
-extra calculation within its current interval. Private and public reads have
-separate cache keys and validate access on every read. A store outage may
-leave a timestamped previous result available; a lost cache means waiting for
-the next permitted refresh.
+Every visit runs the page's queries with the normal SQL profile, admission, and
+hourly quota of the base. Keep the number of queries per page small and
+aggregate in SQL. While the active City database is DB-IP, a page that shows
+country data must show the "IP Geolocation by DB-IP" link.
 
 ## Let an agent create and write telemetry
 
@@ -571,9 +498,9 @@ FROM events GROUP BY day, path ORDER BY day, path
 ```
 
 Run the supplied query with `cld pulse sql --file packages/pulse/examples/website.sql --param bucket=1d`, or pass
-`{baseId, sql, params: {bucket: "1d"}}` to `sql.run` in Assistant. Save and pin
-`SELECT countIf(kind='page_view') AS value FROM events` to show four page
-views on Overview. A session count is scoped to the query's grouping; do not
+`{baseId, sql, params: {bucket: "1d"}}` to `sql.run` in Assistant. To show
+the counts to your team, build a Code page that runs this query
+([Show Pulse data on a page](#show-pulse-data-on-a-page)). A session count is scoped to the query's grouping; do not
 sum per-path sessions to claim a count of unique visitors.
 
 ## Send a batch with HTTP ingest

@@ -227,7 +227,6 @@ export default function SqlConsoleView(props: {
         when={tab() === "console"}
         fallback={
           <SavedQueriesView
-            canWrite={props.canWrite}
             base={props.base}
             onBackToConsole={() => setTab("console")}
             onSelect={async (query) => {

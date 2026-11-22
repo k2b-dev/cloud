@@ -3,8 +3,5 @@ export const pulseWorkspaceStyles = `
 .pulse-sidebar__identity{flex:none;padding:16px 12px 8px;font-size:16px;font-weight:600}
 @container k2b-app-area (max-width:767px){
   .k2b-ui .pulse-workspace{height:auto;flex:1;min-height:0}
-  .pulse-workspace .pulse-overview__assistant-desktop{display:none}
-  .pulse-workspace .pulse-overview__toolbar{min-height:0;gap:0}
-  .pulse-workspace .pulse-overview__assistant-feedback:empty{display:none}
 }
 `;

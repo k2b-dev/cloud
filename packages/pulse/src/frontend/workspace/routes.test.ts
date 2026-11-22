@@ -6,21 +6,39 @@ test("base pages open Sources, and the tab URLs restore their state", () => {
   expect(readWorkspacePathState("/app/pulse/Base01/sources", "Base01")).toEqual({ view: "sources", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
   expect(readWorkspacePathState("/app/pulse/Base01?alert=Alt001", "Base01")).toEqual({ view: "sources", sourceId: "", alertId: "Alt001" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources?alert=Alt001", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "",
+    alertId: "Alt001",
+  });
+  // An open source wins over an alert, and a malformed reference opens no detail.
+  expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001?alert=Alt001", "Base01")).toEqual({
+    view: "sources",
+    sourceId: "Src001",
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01?alert=%2Fbad", "Base01")).toEqual({ view: "sources", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/data?kind=page_view", "Base01")).toEqual({
     view: "data",
     sourceId: "",
     kind: "page_view",
   });
   expect(readWorkspacePathState("/app/pulse/Base01/usage", "Base01")).toEqual({ view: "usage", sourceId: "" });
-  expect(readWorkspacePathState("/app/pulse/Base01/overview", "Base01")).toEqual({ view: "overview", sourceId: "" });
-  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("sources");
+  expect(readWorkspacePathState("/app/pulse/Base012/sql", "Base01").view).toBe("sources");
 });
 
-test("navigation exposes sources and dashboards", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "dashboards" } })).toBe("/app/pulse/Base01/dashboards?range=24h");
+test("removed overview and dashboard paths have no view of their own", () => {
+  // The server redirects these paths to the base; should one reach the client, it reads as the base.
+  expect(readWorkspacePathState("/app/pulse/Base01/overview", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/dashboards/Dsh001", "Base01")).toEqual({ view: "sources", sourceId: "" });
+});
+
+test("navigation exposes the four tabs", () => {
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", alertId: "Alt001" } })).toBe(
     "/app/pulse/Base01?alert=Alt001",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001", alertId: "Alt001" } })).toBe(
+    "/app/pulse/Base01/sources/Src001",
   );
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "data", kind: "page view" } })).toBe(
     "/app/pulse/Base01/data?kind=page+view",
@@ -91,8 +109,7 @@ test("settings tabs preserve underlying source/SQL URL state", () => {
   expect(readWorkspacePathState("/app/pulse/Base01/sources?settings=bogus", "Base01")).not.toHaveProperty("settings");
 });
 
-test("overview and authorized alert references survive settings, reload and oversized SQL", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "overview" } })).toBe("/app/pulse/Base01/overview");
+test("authorized alert references survive settings, reload and oversized SQL", () => {
   const href = buildPulseWorkspaceHref({
     baseId: "Base01",
     state: { view: "sql", alertId: "Alt001", sql: "SELECT '" + "ä".repeat(5000) + "'", params: { host: "web-01" }, settings: "general" },
@@ -101,23 +118,4 @@ test("overview and authorized alert references survive settings, reload and over
   expect(readWorkspacePathState(href, "Base01")).toMatchObject({ view: "sql", alertId: "Alt001", settings: "general" });
   expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?alert=Alt001", "Base01")).not.toHaveProperty("alertId");
   expect(readWorkspacePathState("/app/pulse/Base01/sql?alert=%2Fbad", "Base01")).not.toHaveProperty("alertId");
-});
-
-test("dashboard selection and range survive URLs", () => {
-  const state = {
-    view: "dashboards" as const,
-    dashboardId: "Dash01",
-    dashboardRange: { range: "7d" as const, from: "2026-10-01T00:00:00.000Z", to: "2026-10-08T00:00:00.000Z" },
-  };
-  const href = buildPulseWorkspaceHref({ baseId: "Base01", state });
-  expect(readWorkspacePathState(href, "Base01")).toEqual({ ...state, sourceId: "" });
-  expect(readWorkspacePathState("/app/pulse/Base01/dashboards", "Base01")).toEqual({
-    view: "dashboards",
-    sourceId: "",
-    dashboardId: "",
-    dashboardRange: { range: "24h" },
-  });
-  expect(readWorkspacePathState("/app/pulse/Base01/dashboards/Dash01?range=90d&from=bad&to=no", "Base01").dashboardRange).toEqual({
-    range: "90d",
-  });
 });

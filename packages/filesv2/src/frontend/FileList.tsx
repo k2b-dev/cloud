@@ -1,4 +1,4 @@
-import { Button, Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
+import { Button, Checkbox, type CollectionSelection, FileName, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
@@ -81,6 +81,8 @@ export default function FileList(props: {
     size: string;
     modified: string;
     details: (name: string) => string;
+    /** What a folder is, in place of its size on a phone's second line. */
+    folder: string;
     toggle: (name: string) => string;
     select: (name: string) => string;
     more: string;
@@ -220,7 +222,7 @@ export default function FileList(props: {
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--operation">
                   <For each={row.operation!.actions}>
                     {(action) => (
-                      <Button size="xs" variant="link" onClick={action.onClick}>
+                      <Button size="sm" variant="secondary" onClick={action.onClick}>
                         {action.label}
                       </Button>
                     )}
@@ -311,9 +313,19 @@ export default function FileList(props: {
                   <Show
                     when={props.pathBase !== undefined && props.pathBase !== null && hitParts(row.path, props.pathBase, row.highlight)}
                     fallback={
-                      <span class="filesv2-list__name" title={row.path}>
-                        {row.name}
-                      </span>
+                      <Show
+                        when={!row.directory}
+                        fallback={
+                          <span class="filesv2-list__name" title={row.path}>
+                            {row.name}
+                          </span>
+                        }
+                      >
+                        {/* K15: a file name shortens before its ending; the ending stays. The row keeps its path as hint. */}
+                        <span class="filesv2-list__name filesv2-list__name--file" title={row.path}>
+                          <FileName name={row.name} />
+                        </span>
+                      </Show>
                     }
                   >
                     {(hit) => (
@@ -331,7 +343,17 @@ export default function FileList(props: {
                   </Show>
                 </span>
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size">
-                  <Show when={!row.directory}>
+                  <Show
+                    when={!row.directory}
+                    fallback={
+                      <>
+                        <span class="filesv2-list__none" aria-hidden="true">
+                          —
+                        </span>
+                        <span class="filesv2-list__kind">{props.messages.folder}</span>
+                      </>
+                    }
+                  >
                     <Format.Bytes value={row.size} />
                   </Show>
                 </span>

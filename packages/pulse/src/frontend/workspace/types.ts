@@ -2,8 +2,7 @@ import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
-import type { Overview } from "../../overview-contracts";
-import type { DashboardSnapshot } from "./dashboard-client";
+import type { BaseAttention } from "../../service/base-attention";
 import type { WorkspaceRouteState } from "./routes";
 import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
 
@@ -31,8 +30,8 @@ export type PulseWorkspaceProps = {
   initialAccess?: { denied: true; managers: string[] };
   /** Display name of the person who created the base, for the empty state. */
   initialCreator?: string | null;
-  initialOverview?: { data: Overview | null; error: { code: string; message: string } | null };
-  initialDashboards?: DashboardSnapshot;
+  /** On Sources: fired alerts and the data store state, read on the server. */
+  initialAttention?: BaseAttention;
   initialSql?: { limits: SqlLimits | null; query: SavedQuery | null; error: { code: string; details: SqlClientError["details"] } | null };
   initialSourceScrapes: Record<string, PulseSourceScrape[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;
@@ -40,4 +39,6 @@ export type PulseWorkspaceProps = {
   initialDateConfig: DateContext;
   initialNow: string;
   initialOrigin: string;
+  /** An old dashboard link led here (`?notice=dashboards-removed`); the page says what happened once. */
+  initialNotice?: "dashboards-removed";
 };

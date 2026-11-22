@@ -27,10 +27,6 @@ For a source that sends data, open **Edit → Expected data**. Choose a regular 
 
 If someone changes the source while you edit, Pulse keeps your entries and blocks another save. Close and reopen the source to review its current settings. If creating a source ends with an unknown result, choose **Check sources** before creating it again.
 
-## Recover the overview
-
-**Retry** reloads a failed overview. During a store outage, existing values remain dated; an unavailable value is not zero. If access was removed, ask a base administrator to restore it. Retrying does not restore access.
-
 ## Receive alerts
 
 Pulse checks due alert rules and source freshness every minute, even when no one has the base open. A firing alarm, escalation, missing data, check error, or recovery can notify people with **Manage** access to the base. Browser and email delivery follow your Cloud notification preferences. Losing **Manage** access also stops delivery of queued base alerts.
@@ -74,5 +70,5 @@ Clearing keeps sources, tokens, settings, and access. A Cloud administrator's **
 Deleting revokes tokens, prevents database reads, and then removes the base. These operations cannot be undone in Pulse.
 :::
 
-A deleting base remains on its administrators' overview until deletion finishes.
+A deleting base remains in its administrators' base list until deletion finishes.
 Check the operation's state before treating an accepted request as completed work.

@@ -1,20 +1,27 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
-import { AppWorkspace, appWorkspaceLayoutStyle, Button, type DropdownItem, NoticeCard, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  appWorkspaceLayoutStyle,
+  Button,
+  ButtonLink,
+  type DropdownItem,
+  NoticeCard,
+  NoticeRow,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import type { AlertRule } from "../alert-contracts";
+import type { PulseBaseRead } from "../contracts";
 import { jsonFetch } from "./http";
 import { usePulseMessages } from "./use-messages";
 import AlertDetail from "./workspace/AlertDetail";
 import { createBaseController } from "./workspace/base-controller";
-import DashboardsView from "./workspace/DashboardsView";
 import DataTab from "./workspace/DataTab";
-import { createDashboardActions } from "./workspace/dashboard-actions";
 import { attentionItems, basePageState, sourcesSummary } from "./workspace/flat-state";
 import NoAccessView from "./workspace/NoAccessView";
 import { navigatePulseWorkspace } from "./workspace/navigation";
-import OverviewView from "./workspace/OverviewView";
-import { createOverviewController } from "./workspace/overview-controller";
 import PulseHead from "./workspace/PulseHead";
 import PulseSidebar, { type BaseDot } from "./workspace/PulseSidebar";
 import { installPeriodicRefresh } from "./workspace/periodic-refresh";
@@ -24,13 +31,11 @@ import SourcesTab from "./workspace/SourcesTab";
 import { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
 import SqlConsoleView from "./workspace/SqlConsoleView";
 import { createSourceController } from "./workspace/source-controller";
+import { installStoreRecheck } from "./workspace/store-recheck";
 import type { PulseWorkspaceProps } from "./workspace/types";
 import UsageTab from "./workspace/UsageTab";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 import { pulseWorkspaceStyles } from "./workspace/workspace-styles";
-
-/** Re-checks a lost data store while the tab is visible; no button, no countdown (decided 15.11.). */
-const STORE_RECHECK_MS = 30_000;
 
 export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const t = usePulseMessages();
@@ -53,15 +58,18 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const selectedSourceId = () => props.initialRouteState.sourceId;
   const selectedAlertId = () => (props.initialRouteState.view === "sources" ? (props.initialRouteState.alertId ?? "") : "");
   const [loading, setLoading] = createSignal(false);
+  // An old dashboard link led here: the server read the notice, so the first render already shows it.
+  const [removedNotice, setRemovedNotice] = createSignal(props.initialNotice === "dashboards-removed");
+  const dismissRemovedNotice = () => {
+    setRemovedNotice(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("notice");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  };
   const [settingsDialogOpen, setSettingsDialogOpen] = createSignal(false);
   const activeView = () => props.initialRouteState.view;
   const deniedAtLoad = Boolean(props.initialAccess?.denied);
-  const overview = createOverviewController({
-    baseId: props.initialBaseId,
-    active: () => !deniedAtLoad && ["sources", "overview", "dashboards"].includes(activeView()),
-    initial: props.initialOverview,
-  });
-  const denied = () => deniedAtLoad || overview.accessLost();
+  const denied = () => deniedAtLoad;
   const selectedBaseId = () => props.initialBaseId;
   const [sourcesRequested, setSourcesRequested] = createSignal(false);
   const queries = createPulseWorkspaceQueries(
@@ -96,21 +104,10 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       const rule = await jsonFetch<AlertRule>(`/api/pulse/bases/${props.initialBaseId}/alerts/${encodeURIComponent(alertId)}`);
       return launchPulseSqlAssistant({ base: base(), sql: rule.sql, params: rule.params, queryName: rule.name, locale: locale() });
     });
-  const dashboardActions = createMemo(
-    on(overview.accessLost, (lost) =>
-      props.initialDashboards?.selected && !lost
-        ? createDashboardActions({
-            dashboard: props.initialDashboards.selected,
-            base: base(),
-            canWrite: props.initialPermissions?.write ?? false,
-          })
-        : undefined,
-    ),
-  );
   const selectedSource = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
-  const alerts = () => overview.data()?.attention.items ?? [];
-  const selectedAlert = () =>
-    selectedAlertId() ? (alerts().find((item) => item.kind === "alert" && item.reference === selectedAlertId()) ?? null) : null;
+  // Sources: the alerts that fired and the data store state, as the server read them for this page.
+  const alerts = () => props.initialAttention?.alerts ?? [];
+  const selectedAlert = () => (selectedAlertId() ? (alerts().find((item) => item.reference === selectedAlertId()) ?? null) : null);
   const navigate: Parameters<typeof createSourceController>[0]["navigate"] = (state) =>
     navigatePulseWorkspace({ baseId: props.initialBaseId, state });
   const openSources = () => navigate({ view: "sources" });
@@ -120,13 +117,11 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       : selectedSourceId()
         ? [queries.bases, queries.baseData, queries.sourceDetail]
         : [queries.bases, queries.baseData];
-  const writeBlocked = () =>
-    overview.accessLost() || readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
+  const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
   const refresh = async () => {
     await Promise.all([
       queries.bases.refresh(),
       ...(["sources", "usage"].includes(activeView()) ? [queries.baseData.refresh()] : []),
-      ...(["sources", "overview"].includes(activeView()) ? [overview.refresh()] : []),
       ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : []),
     ]);
     const error = readQueries()
@@ -134,7 +129,19 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       ?.error();
     if (error) throw error;
   };
-  const storeDown = () => overview.data()?.storeUnavailable ?? false;
+  // The store cannot take or answer data: the server read says so, or the base store failed since. The rows then show
+  // the state at the time of that read. Pulse checks again by itself on the Sources tab while the page is visible: the
+  // base read reports the store, only that state follows it, and the list loads again once the store answers.
+  const store = installStoreRecheck({
+    initial: props.initialAttention?.store ?? { unavailable: false, since: null },
+    failedSince: () => selectedBase()?.store.state === "failed",
+    watching: () => activeView() === "sources" && !denied(),
+    check: async () => (await jsonFetch<PulseBaseRead>(`/api/pulse/bases/${props.initialBaseId}`)).outage,
+    recovered: async () => {
+      await Promise.all([queries.bases.refresh(), queries.baseData.refresh()]);
+    },
+  });
+  const storeDown = store.down;
   const pageState = () =>
     basePageState({ denied: denied(), switching: Boolean(switchingTo()), storeDown: storeDown(), sourceCount: sources().length });
   // Only the sources and the open source change with collection; the base list refreshes on demand.
@@ -145,12 +152,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       const error = [queries.baseData, queries.sourceDetail].find((query) => query.error())?.error();
       if (error) throw error;
     },
-  });
-  // A lost data store: Pulse checks again by itself while the page is visible.
-  installPeriodicRefresh({
-    active: () => storeDown() && activeView() === "sources",
-    intervalMs: STORE_RECHECK_MS,
-    refresh: () => overview.refresh(),
   });
   // A running provision, clear or delete ends in active or failed; open settings show that end and its Retry.
   installPeriodicRefresh({
@@ -250,7 +251,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       .find((query) => query.error())
       ?.error();
   const attention = () => attentionItems(sources(), alerts());
-  const firedAlerts = () => alerts().filter((item) => item.kind === "alert" && item.state === "firing").length;
+  const firedAlerts = () => alerts().filter((item) => item.state === "firing").length;
   /** The base's dot in the sidebar: a lost store marks every base; otherwise only the open base's state is known. */
   const baseDot = (item: { id: string }): BaseDot | undefined => {
     if (storeDown()) return "danger";
@@ -261,23 +262,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const menuItems = (): DropdownItem[] =>
     denied()
       ? []
-      : [
-          { label: t().baseSettings, icon: "ti ti-settings", disabled: !selectedBase() || loading(), action: () => void openSettings() },
-          {
-            items: [
-              {
-                label: t().overview,
-                icon: "ti ti-home",
-                href: buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "overview" } }),
-              },
-              {
-                label: t().dashboards,
-                icon: "ti ti-layout-dashboard",
-                href: buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "dashboards" } }),
-              },
-            ],
-          },
-        ];
+      : [{ label: t().baseSettings, icon: "ti ti-settings", disabled: !selectedBase() || loading(), action: () => void openSettings() }];
   // A CSS default lets restored and resized inline geometry keep precedence.
   const renderFrame = (sqlContent?: JSX.Element, sqlAssistant?: { launch: () => void; pending: boolean }) => (
     <>
@@ -296,18 +281,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
               : [
                   { id: "assistant", label: t().askGustav, icon: "ti ti-sparkles", action: "assistant", disabled: assistantPending() },
                   { id: "settings", label: t().baseSettings, icon: "ti ti-settings", action: "settings", disabled: !selectedBase() },
-                  {
-                    id: "overview",
-                    label: t().overview,
-                    icon: "ti ti-home",
-                    href: buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "overview" } }),
-                  },
-                  {
-                    id: "dashboards",
-                    label: t().dashboards,
-                    icon: "ti ti-layout-dashboard",
-                    href: buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "dashboards" } }),
-                  },
                 ]
           }
           onMenu={(action) =>
@@ -337,7 +310,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="pulse-main">
-            <Show when={!denied() && !switchingTo() && activeView() !== "overview" && readError()}>
+            <Show when={!denied() && !switchingTo() && readError()}>
               {(error) => (
                 <div class="pulse-padded pulse-padded--notice">
                   <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
@@ -376,11 +349,15 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       </AppWorkspace>
     </>
   );
-  const sourcesTab = () => {
+  // A memo, read inside the props: the tab is created once per view, and a refresh only updates it.
+  const sourcesState = createMemo(() => {
     const state = pageState();
+    return state === "noAccess" ? "ready" : state;
+  });
+  const sourcesTab = () => {
     return (
       <SourcesTab
-        state={state === "noAccess" ? "ready" : state}
+        state={sourcesState()}
         baseName={baseName()}
         created={{ at: selectedBase()?.createdAt ?? props.initialNow, by: props.initialCreator ?? null }}
         sources={sources()}
@@ -390,8 +367,32 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         selectedAlertId={selectedAlertId()}
         dateContext={dateContext()}
         canWrite={canWrite()}
-        readAt={overview.data()?.readAt ?? props.initialNow}
-        storeDownSince={selectedBase()?.store.errorAt ?? null}
+        readAt={props.initialAttention?.readAt ?? props.initialNow}
+        storeDownSince={store.since() ?? selectedBase()?.store.errorAt ?? null}
+        notice={
+          // Shown on the first render of the base an old dashboard link opened; it leaves only on request.
+          <Show when={removedNotice() && !switchingTo()}>
+            <NoticeRow
+              tone="info"
+              icon
+              reserve={false}
+              detail={t().dashboardsRemovedDetail}
+              detailTitle={t().dashboardsRemovedDetail}
+              actions={
+                <>
+                  <ButtonLink variant="secondary" href={buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: { view: "usage" } })}>
+                    {t().dashboardsRemovedOpenUsage}
+                  </ButtonLink>
+                  <Button variant="secondary" onClick={dismissRemovedNotice}>
+                    {t().dashboardsRemovedDismiss}
+                  </Button>
+                </>
+              }
+            >
+              {t().dashboardsRemovedTitle}
+            </NoticeRow>
+          </Show>
+        }
         openSource={(sourceId) => navigate({ view: "sources", sourceId })}
         openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sources", alertId } })}
         addSource={(kind) => void actions.addSource(kind)}
@@ -401,7 +402,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   };
   const mainView = (sqlContent?: JSX.Element): JSX.Element => {
     const view = activeView();
-    // The console and the views behind "…" keep their own layout: they stand on the text edge.
+    // The console keeps its own layout: it stands on the text edge.
     if (view === "sql") return <div class="pulse-padded">{sqlContent}</div>;
     if (view === "data")
       return (
@@ -423,56 +424,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
           buildPending={assistantPending()}
           manageMembers={() => void openSettings("members")}
         />
-      );
-    if (view === "overview")
-      return (
-        <div class="pulse-padded">
-          <OverviewView
-            data={overview.data()}
-            loading={overview.loading()}
-            error={overview.error()}
-            canWrite={canWrite() && !writeBlocked()}
-            retry={overview.retry}
-            addSource={() => void actions.addSource()}
-            openSource={(sourceId) => navigate({ view: "sources", sourceId })}
-            openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sql", alertId } })}
-            askAssistant={() => void askAssistant()}
-            assistantPending={assistantPending()}
-            assistantError={assistantError()}
-            paging={overview.paging()}
-            loadAttention={overview.loadAttention}
-            loadActivity={overview.loadActivity}
-          />
-        </div>
-      );
-    if (view === "dashboards")
-      return (
-        <div class="pulse-padded">
-          <Show when={overview.error() && !overview.accessLost()}>
-            <NoticeCard role="alert" tone="danger" title={t().pulseDataRefreshFailed} detail={t().overviewLoadFailedHint}>
-              <Button
-                variant="secondary"
-                disabled={overview.loading() || overview.refreshing()}
-                onClick={() => void overview.refresh().catch(() => {})}
-              >
-                {t().retry}
-              </Button>
-            </NoticeCard>
-          </Show>
-          <DashboardsView
-            base={{
-              id: props.initialBaseId,
-              name: baseName(),
-              // A base that left the list is about to show lost access; until then its times read in UTC.
-              timezone: selectedBase()?.timezone ?? "UTC",
-            }}
-            actions={dashboardActions()}
-            route={props.initialRouteState}
-            snapshot={props.initialDashboards}
-            overview={overview.data()}
-            canWrite={canWrite()}
-          />
-        </div>
       );
     return sourcesTab();
   };

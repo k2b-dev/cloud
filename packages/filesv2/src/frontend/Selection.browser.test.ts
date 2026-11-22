@@ -4,8 +4,9 @@ import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page, Route } from "playwright";
 import { appHostCss } from "../../../ui/test/app-host-fixture";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { layoutProblems } from "../../../ui/test/head-overlap";
 
-// The real Browser with its selection pill and PDF actions, on invented files; the pill, the dialogs and the rows of
+// The real Browser with its status row, selection and PDF actions, on invented files; the layout, the dialogs and the rows of
 // files in the making need a layout engine and pdf.js.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 
@@ -118,16 +119,18 @@ let assets: Map<string, [string, Buffer]>;
 let css: string;
 beforeAll(async () => {
   [assets, css] = await Promise.all([buildHarness(), appHostCss(resolve(import.meta.dir, "../styles/app.css"))]);
-  browser = await launchBrowser();
+  // Classic scrollbars that take room in the layout (coordinator 21.11.): with hidden ones a column that scrolls sideways
+  // or a head that wraps went unnoticed. Every layout check in this file runs with them.
+  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 90_000);
 afterAll(async () => {
   await browser?.close();
 });
 
-const html = (lang: string) =>
+const html = (lang: string, theme = "light") =>
   `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
-  `<body class="k2b-ui" data-theme="light" style="margin:0;height:100vh"><div id="root" style="height:100vh;display:flex"></div>` +
+  `<body class="k2b-ui" data-theme="${theme}" style="margin:0;height:100vh"><div id="root" style="height:100vh;display:flex"></div>` +
   `<script type="module" src="/harness.js"></script></body></html>`;
 
 type PdfAnswer = { hold?: Promise<void>; fail?: { code: string; message: string; path?: string } };
@@ -153,7 +156,8 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en", ite
   await tab.route("http://files-selection.test/**", async (route: Route) => {
     const url = new URL(route.request().url());
     const path = decodeURIComponent(url.pathname);
-    if (path === "/app/filesv2") return route.fulfill({ contentType: "text/html", body: html(lang) });
+    if (path === "/app/filesv2")
+      return route.fulfill({ contentType: "text/html", body: html(lang, url.searchParams.get("theme") ?? "light") });
     if (path === "/harness/items") return route.fulfill({ json: session.items.map(entry) });
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css", body: readFileSync(`${ui}dist/tabler.css`, "utf8") });
     if (path.endsWith(".woff2")) return route.fulfill({ contentType: "font/woff2", body: readFileSync(`${ui}dist${path}`) });
@@ -216,65 +220,77 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en", ite
   return session;
 };
 const row = (tab: Page, name: string) => tab.locator(".filesv2-list__row", { hasText: name }).first();
-// The pill keeps its place in the column while nothing is selected; only a selection shows it.
-const pill = (tab: Page) => tab.locator(".filesv2-selection-pill:not(.filesv2-selection-pill--idle)");
-const pillText = async (tab: Page) => ((await pill(tab).locator(".k2b-toolbar__label").first().textContent()) ?? "").trim();
+// While choosing several entries, the status row under the head holds the count and the selection's actions (K6).
+const bar = (tab: Page) => tab.locator('.k2b-status-row[data-mode="selection"]');
+// The count is the row's lead statement while choosing (K6), where the mockup shows it.
+const barText = async (tab: Page) => ((await bar(tab).locator(".k2b-status-row__lead").textContent()) ?? "").trim();
 const actionNames = (tab: Page) =>
-  pill(tab)
-    .locator(".k2b-toolbar__action")
+  bar(tab)
+    .locator(".filesv2-selection-actions button")
     .evaluateAll((buttons) =>
-      buttons.filter((button) => !button.closest('[data-overflow="hidden"]')).map((button) => button.getAttribute("aria-label")),
+      buttons
+        .filter((button) => !button.closest("[role=menu]") && button.checkVisibility())
+        .map((button) => button.textContent?.trim() || button.getAttribute("aria-label")),
     );
+/** Opens the detail column's "…" menu. */
+const detailMenu = async (tab: Page) => {
+  await tab.locator(".k2b-detail-panel").getByRole("button", { name: "More actions" }).first().click();
+  return tab.getByRole("menu");
+};
 
-describe("Files selection pill in a browser", () => {
-  test("a click shows the pill; Shift+click takes a range, Ctrl+click adds or removes one, Escape-free Clear ends it", async () => {
+describe("Files selection in the status row", () => {
+  test("a click opens the details; Shift+click takes a range, Ctrl+click adds or removes one, Done ends it", async () => {
     const { tab, errors } = await open(desktop);
     try {
-      expect(await pill(tab).count()).toBe(0);
+      expect(await bar(tab).count()).toBe(0);
       await row(tab, "Angebot-0412").click();
-      await pill(tab).waitFor();
-      expect(await pillText(tab)).toBe("1 PDF");
-      expect(await actionNames(tab)).toEqual(["Clear selection", "Take out pages", "Download", "Share publicly", "Move to…"]);
+      await tab.locator(".k2b-detail-panel h2", { hasText: "Angebot-0412" }).waitFor();
+      // One file chosen by a click is the detail column's; its rarer commands are in "…".
+      expect(await bar(tab).count()).toBe(0);
+      const menu = await detailMenu(tab);
+      expect(await menu.getByRole("menuitem", { name: "Take out pages" }).count()).toBe(1);
+      await tab.keyboard.press("Escape");
       await row(tab, "Angebot-0413").click({ modifiers: ["Shift"] });
+      await bar(tab).waitFor();
       await settled(tab);
-      expect(await pillText(tab)).toBe("3 PDFs");
+      expect(await barText(tab)).toBe("3 selected");
       expect(await actionNames(tab)).toContain("Merge");
       expect(await tab.locator('.filesv2-list__row[aria-selected="true"]').count()).toBe(3);
       await row(tab, "Expertise").click({ modifiers: ["ControlOrMeta"] });
       await settled(tab);
-      expect(await pillText(tab)).toBe("2 PDFs");
+      expect(await barText(tab)).toBe("2 selected");
       await row(tab, "Sekretär-vorher.jpg").click({ modifiers: ["ControlOrMeta"] });
       await settled(tab);
       // A mixed selection offers no PDF action.
-      expect(await pillText(tab)).toBe("3 selected");
+      expect(await barText(tab)).toBe("3 selected");
       expect(await actionNames(tab)).not.toContain("Merge");
       // The rarer commands stay in More at every width.
-      await pill(tab).getByRole("button", { name: "More actions" }).click();
-      const menu = tab.getByRole("menu");
+      await bar(tab).getByRole("button", { name: "More actions" }).click();
+      const more = tab.getByRole("menu");
       for (const name of ["Move into new folder", "Copy to…", "Move to trash"])
-        expect(await menu.getByRole("menuitem", { name }).count()).toBe(1);
+        expect(await more.getByRole("menuitem", { name }).count()).toBe(1);
       await tab.keyboard.press("Escape");
-      await pill(tab).getByRole("button", { name: "Clear selection" }).click();
+      await bar(tab).getByRole("button", { name: "Done" }).click();
       await settled(tab);
-      expect(await pill(tab).count()).toBe(0);
+      expect(await bar(tab).count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await tab.context().close();
     }
   });
 
-  test("the header says once that its Actions menu moved to the pill", async () => {
+  test("the status row says once that the selection's actions moved from the pill to it", async () => {
     const { tab } = await open(desktop, "?hint");
     try {
       await tab.getByRole("button", { name: "Select", exact: true }).click();
       const hint = tab.locator(".k2b-moved-hint").first();
       await hint.waitFor();
-      expect(await hint.textContent()).toContain("The actions for the selection are now in the bar at the bottom.");
-      // The old menu is gone from the header.
-      expect(await tab.locator(".filesv2-toolbar").getByRole("button", { name: "Actions" }).count()).toBe(0);
+      expect(await hint.textContent()).toContain("The actions for the selection are now up here, with the count.");
+      // The pill at the bottom is gone.
+      expect(await tab.locator(".k2b-toolbar").count()).toBe(0);
       await hint.locator("button", { hasText: "Got it" }).first().click();
       await settled(tab);
-      expect(await tab.evaluate(() => document.cookie)).toContain("filesv2.selection-pill");
+      expect(await tab.evaluate(() => document.cookie)).toContain("filesv2.selection-status-row");
     } finally {
       await tab.context().close();
     }
@@ -292,7 +308,7 @@ describe("Files selection pill in a browser", () => {
     try {
       await row(tab, "Angebot-0412").click();
       await row(tab, "Angebot-0413").click({ modifiers: ["Shift"] });
-      await pill(tab).getByRole("button", { name: "Merge" }).click();
+      await bar(tab).getByRole("button", { name: "Merge" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.waitFor();
       expect(await dialog.getByRole("heading").first().textContent()).toBe("Merge 3 PDFs");
@@ -356,7 +372,7 @@ describe("Files selection pill in a browser", () => {
     try {
       await row(tab, "Angebot-0412").click();
       await row(tab, "Angebot-0413").click({ modifiers: ["Shift"] });
-      await pill(tab).getByRole("button", { name: "Merge" }).click();
+      await bar(tab).getByRole("button", { name: "Merge" }).click();
       await tab.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
       const failed = tab.locator('.filesv2-list__row--operation[data-state="failed"]');
       await failed.waitFor();
@@ -382,7 +398,7 @@ describe("Files selection pill in a browser", () => {
     try {
       for (let round = 0; round < 2; round++) {
         await row(tab, "Rechnung-2026-0388").click();
-        await pill(tab).getByRole("button", { name: "Take out pages" }).click();
+        await (await detailMenu(tab)).getByRole("menuitem", { name: "Take out pages" }).click();
         const dialog = tab.getByRole("dialog");
         await dialog.locator(".k2b-pdf-thumbnails__toggle").first().waitFor();
         expect(await dialog.getByRole("button", { name: "Save as new PDF" }).isDisabled()).toBe(true);
@@ -422,7 +438,7 @@ describe("Files selection pill in a browser", () => {
       await tab.locator(".k2b-file-grid [role=option], .k2b-file-grid [aria-selected]").first().waitFor();
       const tile = (name: string) => tab.locator(".k2b-file-grid > *", { hasText: name }).first();
       await tile("Rechnung-2026-0388").click();
-      await pill(tab).getByRole("button", { name: "Take out pages" }).click();
+      await (await detailMenu(tab)).getByRole("menuitem", { name: "Take out pages" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("button", { name: "Page 1" }).click();
       await dialog.getByRole("button", { name: "Save as new PDF" }).click();
@@ -443,7 +459,7 @@ describe("Files selection pill in a browser", () => {
     try {
       await row(tab, "Angebot-0412").click();
       await row(tab, "Expertise").click({ modifiers: ["Shift"] });
-      await pill(tab).getByRole("button", { name: "Merge" }).click();
+      await bar(tab).getByRole("button", { name: "Merge" }).click();
       await tab.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
       const toast = tab.locator(".k2b-toast", { hasText: "created" });
       await toast.waitFor();
@@ -456,70 +472,41 @@ describe("Files selection pill in a browser", () => {
     }
   });
 
-  test("on a phone the pill keeps its count and first action, the rest in More", async () => {
+  test("on a phone the status row keeps its count and Download, the rest in More", async () => {
     const { tab } = await open(phone);
     try {
       await tab.getByRole("button", { name: "Select", exact: true }).click();
       await row(tab, "Angebot-0412").locator("input[type=checkbox]").check();
       await row(tab, "Expertise").locator("input[type=checkbox]").check();
-      await pill(tab).waitFor();
+      await bar(tab).waitFor();
       await settled(tab);
-      const box = (await pill(tab).boundingBox())!;
+      const box = (await bar(tab).boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(390);
-      expect(await pillText(tab)).toBe("2 PDFs");
-      if (shots) await tab.screenshot({ path: `${shots}/pill-light-390.png` });
-    } finally {
-      await tab.context().close();
-    }
-  });
-
-  test("the list with previews and a selection, as a desktop shows it", async () => {
-    const { tab } = await open(desktop);
-    try {
-      await row(tab, "Angebot-0412").click();
-      await row(tab, "Angebot-0413").click({ modifiers: ["Shift"] });
-      await pill(tab).waitFor();
-      await settled(tab);
-      if (shots) await tab.screenshot({ path: `${shots}/pill-light-1440.png` });
+      if (shots) await tab.screenshot({ path: `${shots}/selection-light-390.png` });
+      expect(await barText(tab)).toBe("2 selected");
+      expect(await actionNames(tab)).toEqual(["Download as ZIP", "More actions", "Done"]);
+      if (shots) await tab.screenshot({ path: `${shots}/selection-light-390.png` });
     } finally {
       await tab.context().close();
     }
   });
 });
 
-/** Where the pill, the end of the column, and every row or tile stand, in window coordinates. */
+/** Where every row or tile stands, in window coordinates. */
 const layout = (tab: Page) =>
-  tab.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>(".filesv2-browser__collection .k2b-scroll-area")!;
-    const shown = document.querySelector<HTMLElement>(".filesv2-selection-pill:not(.filesv2-selection-pill--idle)");
-    const strip = shown?.closest<HTMLElement>(".k2b-toolbar-float");
-    const box = scroller.getBoundingClientRect();
-    const rows = [...scroller.querySelectorAll<HTMLElement>(".filesv2-list__row, .k2b-file-grid > *")].map((item) => {
+  tab.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".filesv2-browser__collection .filesv2-list__row, .k2b-file-grid > *")].map((item) => {
       const rect = item.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom };
-    });
-    return {
-      /** The bottom of the column's visible part. */
-      end: box.top + scroller.clientTop + scroller.clientHeight,
-      pill: shown ? { top: shown.getBoundingClientRect().top, bottom: shown.getBoundingClientRect().bottom } : null,
-      /** The strip's own space below the pill: the fixed distance to the column's end. */
-      gap: strip ? Number.parseFloat(getComputedStyle(strip).paddingBlockEnd) : null,
-      rows,
-    };
-  });
+    }),
+  );
 const scrollToEnd = async (tab: Page) => {
   await tab.evaluate(() => {
     const scroller = document.querySelector<HTMLElement>(".filesv2-browser__collection .k2b-scroll-area")!;
     scroller.scrollTop = scroller.scrollHeight;
   });
   await settled(tab);
-};
-/** The pill stands on the column's end, its strip's gap below it, and no row reaches under it. */
-const expectAtBottom = (shot: Awaited<ReturnType<typeof layout>>) => {
-  expect(shot.pill).not.toBeNull();
-  expect(shot.end - shot.pill!.bottom).toBeCloseTo(shot.gap!, 0);
-  expect(shot.rows.at(-1)!.bottom).toBeLessThanOrEqual(shot.pill!.top);
 };
 const few = () => initialItems().slice(0, 3);
 const many = (): Item[] =>
@@ -529,65 +516,191 @@ const many = (): Item[] =>
     fill: "#1d4ed8",
   }));
 
-describe("Files selection pill at the bottom of the column", () => {
-  for (const [device, options, width] of [
-    ["desktop", desktop, 1440],
-    ["phone", phone, 390],
+/**
+ * The layout self-check (K15, "one line, one owner", "a scrollbar moves nothing") on the harness root. Only the drop
+ * surface is left out: it lies over the column on purpose while files are dragged in.
+ */
+const problems = (tab: Page) =>
+  tab.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target" });
+
+/**
+ * A narrow desktop window for the layout self-check, without `isMobile` and touch: with them Chromium draws overlay
+ * scrollbars that take no room, also without `--hide-scrollbars`, and every button grows an invisible 44 px hit area
+ * (`::after`) that the check would count as content spilling out of its box.
+ */
+const phoneLayout: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 };
+
+describe("Files folder is flat (K1–K15)", () => {
+  // Valentin 21.11.: no two borders on one edge, nothing overlaps or is cut, and a scrollbar moves no line.
+  for (const [options, width] of [
+    [desktop, 1440],
+    [phoneLayout, 390],
   ] as const)
     for (const [amount, items] of [
       ["few", few],
       ["many", many],
     ] as const)
-      test(`${device}, ${amount} files: the pill sits at the column's end and no row moves`, async () => {
+      test(`${width} px, ${amount} files: the folder and its details draw every line once and cut nothing`, async () => {
         const { tab, errors } = await open(options, "", "en", items());
         try {
+          if (shots) await tab.screenshot({ path: `${shots}/folder-${amount}-light-${width}.png` });
+          // With many files the list's classic scrollbar really takes room, so the check sees what a person sees.
+          if (amount === "many")
+            expect(
+              await tab.$eval(".filesv2-browser__collection .k2b-scroll-area", (area) =>
+                area instanceof HTMLElement ? area.offsetWidth - area.clientWidth : 0,
+              ),
+            ).toBeGreaterThan(0);
+          expect((await problems(tab)).problems).toEqual([]);
           const names = items().map((item) => item.name);
-          // A long list is read to its end first: there, a pill that appears or goes would cover or move rows.
-          if (amount === "many") await scrollToEnd(tab);
-          if (device === "phone") {
-            await tab.getByRole("button", { name: "Select", exact: true }).click();
-            await settled(tab);
-          }
-          const before = await layout(tab);
-          const [first, second] = amount === "many" ? names.slice(-2) : names.slice(0, 2);
-          if (device === "phone") {
-            await row(tab, first!).locator("input[type=checkbox]").check();
-            await row(tab, second!).locator("input[type=checkbox]").check();
-          } else {
-            await row(tab, first!).click();
-            await row(tab, second!).click({ modifiers: ["Shift"] });
-          }
-          await pill(tab).waitFor();
+          await row(tab, names[1]!).click();
+          await tab.locator(".k2b-detail-panel h2").first().waitFor();
           await settled(tab);
-          const selected = await layout(tab);
-          expect(selected.rows).toEqual(before.rows);
-          expectAtBottom(selected);
-          if (shots && amount === "few") await tab.screenshot({ path: `${shots}/pill-bottom-light-${width}.png` });
-          await pill(tab).getByRole("button", { name: "Clear selection" }).click();
-          await settled(tab);
-          const cleared = await layout(tab);
-          expect(cleared.pill).toBeNull();
-          expect(cleared.rows).toEqual(before.rows);
+          if (shots) await tab.screenshot({ path: `${shots}/detail-${amount}-light-${width}.png` });
+          expect((await problems(tab)).problems).toEqual([]);
           expect(errors).toEqual([]);
         } finally {
           await tab.context().close();
         }
       });
 
-  test("in the grid and the tree the pill sits at the column's end too", async () => {
-    const { tab, errors } = await open(desktop, "", "en", few());
-    try {
-      for (const view of ["Grid", "Tree"]) {
-        await tab.getByRole("radio", { name: view }).click();
+  for (const [device, options, width] of [
+    ["desktop", desktop, 1440],
+    ["phone", phoneLayout, 390],
+  ] as const)
+    test(`${device}: choosing several moves no row, and Done brings the status row back`, async () => {
+      const { tab, errors } = await open(options, "", "en", many());
+      try {
+        const names = many().map((item) => item.name);
+        await scrollToEnd(tab);
+        await tab.getByRole("button", { name: "Select", exact: true }).click();
         await settled(tab);
-        const item = view === "Grid" ? tab.locator(".k2b-file-grid > *", { hasText: "Expertise" }).first() : row(tab, "Expertise");
-        await item.click();
-        await pill(tab).waitFor();
+        const before = await layout(tab);
+        for (const name of names.slice(-2)) await row(tab, name).locator("input[type=checkbox]").check();
+        await bar(tab).waitFor();
         await settled(tab);
-        expectAtBottom(await layout(tab));
-        await pill(tab).getByRole("button", { name: "Clear selection" }).click();
+        expect(await layout(tab)).toEqual(before);
+        // The self-check does not see what a head or status row covers (K15), so it runs on the list's top.
+        await tab.evaluate(() => {
+          document.querySelector<HTMLElement>(".filesv2-browser__collection .k2b-scroll-area")!.scrollTop = 0;
+        });
         await settled(tab);
+        if (shots) await tab.screenshot({ path: `${shots}/selection-many-light-${width}.png` });
+        expect((await problems(tab)).problems).toEqual([]);
+        await bar(tab).getByRole("button", { name: "Done" }).click();
+        await settled(tab);
+        expect(await bar(tab).count()).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.context().close();
       }
+    });
+});
+
+describe("Files folder states", () => {
+  // K12: the tablet and the very wide screen keep one head row, the name column's cap and every line once.
+  for (const width of [768, 1100, 1920])
+    test(`${width} px with many files${width === 1100 ? " and the detail column open" : ""}: nothing overlaps, spills, is cut, or draws a double line`, async () => {
+      const { tab, errors } = await open({ viewport: { width, height: 900 } }, "", "en", many());
+      try {
+        if (width === 1100) {
+          await row(tab, "Beleg-2026-002").click();
+          await tab.locator(".k2b-detail-panel h2").first().waitFor();
+          await settled(tab);
+        }
+        if (shots) await tab.screenshot({ path: `${shots}/${width === 1100 ? "detail" : "folder"}-many-light-${width}.png` });
+        expect((await problems(tab)).problems).toEqual([]);
+        // The head stays one 56 px row (K6).
+        expect(Math.round((await tab.locator(".k2b-app-workspace__head").first().boundingBox())!.height)).toBeLessThanOrEqual(57);
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+  // K12, PR3: from 768 to 1023 px the detail is a drawer. A file opens it, Escape parks it and gives focus back to the
+  // list, and "Details" in the head opens it again.
+  test("768 px: a file opens the detail as a drawer, Escape parks it with focus back in the list, Details reopens it", async () => {
+    const { tab, errors } = await open({ viewport: { width: 768, height: 900 } }, "", "en", many());
+    try {
+      const detail = tab.locator(".k2b-app-workspace__detail");
+      await row(tab, "Beleg-2026-002").click();
+      await tab.locator(".k2b-detail-panel h2").first().waitFor();
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      if (shots) await tab.screenshot({ path: `${shots}/detail-many-light-768.png` });
+      // The self-check does not see what a floating layer covers (K15), so it checks the drawer itself; the list under it
+      // has its own check at 768 px above.
+      expect(
+        (await tab.evaluate(layoutProblems, { root: ".k2b-app-workspace__detail", ignore: "[data-layout-check='skip']" })).problems,
+      ).toEqual([]);
+      // The head keeps its controls, Details among them, while the drawer is open and after it is parked.
+      const head = async () =>
+        (await tab.evaluate(layoutProblems, { root: ".k2b-app-workspace__head", ignore: "[data-layout-check='skip']" })).problems;
+      expect(await head()).toEqual([]);
+      await tab.keyboard.press("Escape");
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).not.toBe("open");
+      expect(await head()).toEqual([]);
+      // Escape parks the drawer and keeps the chosen file.
+      expect(await row(tab, "Beleg-2026-002").getAttribute("aria-selected")).toBe("true");
+      // Focus returns to Details, the way back to the parked drawer (PR3), never lost on the page or left in the drawer.
+      expect(await tab.evaluate(() => !!document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
+      const toggle = tab.locator("[data-app-workspace-detail-toggle]").first();
+      expect(await toggle.isVisible()).toBe(true);
+      await toggle.click();
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("New says whether its menu is open", async () => {
+    const { tab, errors } = await open(desktop);
+    try {
+      const create = tab.locator("[data-workspace-primary]").first();
+      expect(await create.getAttribute("aria-expanded")).toBe("false");
+      await create.click();
+      await tab.getByRole("menu").waitFor();
+      // The menu reports its state with the popover's toggle event, a task after it shows; wait for it, not a time.
+      await tab.locator('[data-workspace-primary][aria-expanded="true"]').first().waitFor();
+      await tab.keyboard.press("Escape");
+      await tab.locator('[data-workspace-primary][aria-expanded="false"]').first().waitFor();
+      expect(await create.getAttribute("aria-expanded")).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("an empty folder, a failed refresh and keyboard focus keep the column's lines and places", async () => {
+    const { tab, errors } = await open(desktop, "?error", "en", []);
+    try {
+      // The folder is empty: the parent row, then the quiet empty state without a box (K10).
+      expect(await tab.getByText("This folder is empty").first().isVisible()).toBe(true);
+      // A failed refresh says so in the status row, in the key figures' place, and offers the way on (K10).
+      expect(await tab.locator(".k2b-status-row").getByRole("alert").textContent()).toContain("The folder could not be loaded again.");
+      expect(await tab.locator(".k2b-status-row").getByRole("button", { name: "Refresh" }).count()).toBe(1);
+      await tab.locator(".filesv2-list__row--up").focus();
+      await settled(tab);
+      if (shots) await tab.screenshot({ path: `${shots}/folder-empty-light-1440.png` });
+      expect((await problems(tab)).problems).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("dark: the folder and its details stay readable", async () => {
+    const { tab, errors } = await open(desktop, "?theme=dark");
+    try {
+      await row(tab, "Expertise").click();
+      await tab.locator(".k2b-detail-panel h2").first().waitFor();
+      await settled(tab);
+      if (shots) await tab.screenshot({ path: `${shots}/detail-few-dark-1440.png` });
+      expect((await problems(tab)).problems).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await tab.context().close();

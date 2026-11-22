@@ -25,7 +25,9 @@ Eine Alarm-Zeile öffnet den Alarm: Bedingung in Worten, Wert und seit wann er a
 
 Ist der Datenspeicher nicht erreichbar, sagt es die erste Zeile. Pulse prüft alle 30 Sekunden erneut, solange die Seite sichtbar ist. Die Zeilen zeigen den letzten bekannten Stand.
 
-**…** enthält die Einstellungen der Base. Bis zum nächsten Release enthält es auch **Übersicht** und **Dashboards**.
+**…** enthält die Einstellungen der Base.
+
+Um anderen Zahlen oder Diagramme zu zeigen, bitte Gustav um eine Code-Seite, die diese Base liest. Die Seite zeigt Daten nur Personen, die die Base lesen dürfen. Sobald die Seite die Base liest, führt **Nutzung** sie auf.
 
 ## Verbinde eine Quelle
 
@@ -40,6 +42,7 @@ Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht einge
 
 Eine Metrikquelle ruft einen Prometheus-Endpunkt im eingestellten Intervall ab.
 Eine HTTP-Ingest-Quelle nimmt Batches mit einem API Key der Quelle an.
+Unter **Neue Quelle** hilft **Mit KI fragen**, einen Adapter für deinen Shop oder einen anderen Dienst vorzubereiten.
 Erstelle benannte Schlüssel unter **API Keys** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
 
 ## Wähle die Metriken für den Abruf

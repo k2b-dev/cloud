@@ -249,6 +249,8 @@ export const installSqlConsole = async (sql: TransactionSQL, timezone: string): 
 /** Overview and alert state remain in Postgres when the measurement store is unavailable. */
 export const installOverviewAlerts = async (sql: TransactionSQL): Promise<void> => {
   await sql`ALTER TABLE pulse.base_stores ADD COLUMN max_alert_rules INTEGER NOT NULL DEFAULT 20 CHECK (max_alert_rules > 0)`.simple();
+  // `pinned` and `overview_state` are kept unused since the overview was removed in 0.84. A later release drops
+  // them only after a read-only review of production contents and an explicit maintainer decision.
   await sql`ALTER TABLE pulse.saved_queries ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT false`.simple();
   // The base ledger survives query edits/deletion and store resets. A cache
   // miss must never replenish the four-attempt budget for a five-minute slot.
@@ -324,6 +326,8 @@ export const installOverviewAlerts = async (sql: TransactionSQL): Promise<void> 
   await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,base_id,seq) WHERE dispatch_kind='fanout'`.simple();
 };
 
+/** These tables are kept unused since dashboards were removed in 0.84. A later release drops them only after a
+ * read-only review of production contents and an explicit maintainer decision. */
 export const installDashboards = async (sql: TransactionSQL): Promise<void> => {
   await sql`CREATE TABLE pulse.dashboards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), short_id TEXT NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),

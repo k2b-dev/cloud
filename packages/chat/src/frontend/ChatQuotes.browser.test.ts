@@ -246,6 +246,40 @@ test("Quote in the menu takes the message's text without its code bar", async ()
   }
 }, 30_000);
 
+// #3702: the focus is in the field before the quote's code has loaded; a send then must carry the quote, never leave it
+// behind in the field next to the next one.
+test("a send right after Quote carries the quote while its code still loads, and leaves the field without it", async () => {
+  const chat = seed();
+  const { page, errors } = await load(desktop, chat);
+  let release = () => {};
+  try {
+    const loading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/chat-quote-selection-*.js", async (route) => {
+      await loading;
+      await route.continue();
+    });
+    const row = page.locator(".k2b-message-row", { hasText: passage });
+    await row.hover();
+    await row.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Quote", exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
+    await page.keyboard.type("Thanks!");
+    await page.keyboard.press("Enter");
+    release();
+    await page.locator(".k2b-message-row[data-status='sent']", { hasText: "Thanks!" }).waitFor();
+    const source = harness.props({ chat }).open!.page.items.find((item) => item.author.id === lea.id)!.id;
+    expect(harness.posted.at(-1)).toMatchObject({ body: "Thanks!", quotes: [{ message: source }] });
+    await settled(page);
+    expect(await page.locator(".k2b-chat-composer__quote").count()).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
+    release();
+    await page.context().close();
+  }
+}, 30_000);
+
 test("a send whose quote the server refuses never blocks the next send, and comes back into an empty field", async () => {
   const chat = seed();
   const { page, errors } = await load(desktop, chat);

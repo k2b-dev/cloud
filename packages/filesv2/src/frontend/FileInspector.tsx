@@ -7,8 +7,10 @@ import {
   DescriptionList,
   DetailPanel,
   DetailProperties,
+  type DropdownAction,
   type DropdownItem,
   FileGrid,
+  FileName,
   FileTypeIcon,
   Format,
   fileKindLabel,
@@ -66,6 +68,8 @@ export default function FileInspector(props: {
   onTrash: (entry: FileEntry) => void;
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
+  /** Commands the host adds at the top of the "…" menu for one entry, such as taking pages out of a PDF. */
+  extraMenu?: (entry: FileEntry) => DropdownAction[];
   onChanged: (selectPath?: string | null) => void;
   history?: InspectorHistory;
 }) {
@@ -171,6 +175,7 @@ export default function FileInspector(props: {
   const headerMenu = (item: FileEntry): DropdownItem[] => [
     {
       items: [
+        ...(props.extraMenu?.(item) ?? []),
         ...(!item.directory && notPdf() !== revision(item)
           ? [{ label: t().openInTab, icon: "ti ti-external-link", disabled: props.busy, action: () => void openInTab(item) }]
           : []),
@@ -263,7 +268,14 @@ export default function FileInspector(props: {
                 <>
                   <DetailPanel.Header
                     kind={readOnly(item()) ? <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} /> : undefined}
-                    title={<span class="break-all">{item().name}</span>}
+                    title={
+                      item().directory ? (
+                        item().name
+                      ) : (
+                        // K15: the name shortens before its ending; the whole name is the hint.
+                        <FileName name={item().name} />
+                      )
+                    }
                     subtitle={
                       <span>
                         {metaLine(item())}
@@ -273,48 +285,8 @@ export default function FileInspector(props: {
                     }
                     menu={[...headerMenu(item()), ...cloudId.section(entryRef(item()))]}
                     menuLabel={t().moreActions}
-                    actions={close}
-                    primaryActions={
+                    actions={
                       <>
-                        {/* A file whose preview stands in the panel opens it large from the preview itself, so a second
-                            "Preview" here would only repeat it; Download then leads. */}
-                        <Show when={!inlinePreview(item())}>
-                          <Button
-                            size="sm"
-                            variant="subtle"
-                            class="filesv2-details-main"
-                            disabled={props.busy}
-                            onClick={() => props.onOpen(item())}
-                          >
-                            <i
-                              class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
-                              aria-hidden="true"
-                            />
-                            {item().directory
-                              ? t().open
-                              : props.editable?.(item())
-                                ? props.canEdit === false || readOnly(item())
-                                  ? t().openReadOnly
-                                  : t().edit
-                                : t().preview}
-                          </Button>
-                        </Show>
-                        <Button
-                          size="sm"
-                          variant={inlinePreview(item()) ? "subtle" : "secondary"}
-                          class={inlinePreview(item()) ? "filesv2-details-main" : undefined}
-                          disabled={props.busy}
-                          onClick={() => props.onDownload([item()])}
-                        >
-                          <i class="ti ti-download" aria-hidden="true" />
-                          {f().download}
-                        </Button>
-                        <Show when={props.onShare && item().actions?.share !== false}>
-                          <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onShare?.(item())}>
-                            <i class="ti ti-share" aria-hidden="true" />
-                            {t().share}
-                          </Button>
-                        </Show>
                         <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
                           <IconButton
                             size="sm"
@@ -332,6 +304,46 @@ export default function FileInspector(props: {
                             </Show>
                           </IconButton>
                         </Tooltip.Anchor>
+                        {close}
+                      </>
+                    }
+                    primaryActions={
+                      <>
+                        {/* A file whose preview stands in the panel opens it large from the preview itself, so a second
+                            "Preview" here would only repeat it; Download then leads. */}
+                        <Show when={!inlinePreview(item())}>
+                          <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
+                            <i
+                              class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
+                              aria-hidden="true"
+                            />
+                            {item().directory
+                              ? t().open
+                              : props.editable?.(item())
+                                ? props.canEdit === false || readOnly(item())
+                                  ? t().openReadOnly
+                                  : t().edit
+                                : t().preview}
+                          </Button>
+                        </Show>
+                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
+                          <i class="ti ti-download" aria-hidden="true" />
+                          {f().download}
+                        </Button>
+                        {/* K9: two framed actions in a row; a third stands beside them as a sign. */}
+                        <Show when={props.onShare && item().actions?.share !== false}>
+                          <Tooltip.Anchor content={t().share}>
+                            <IconButton
+                              size="sm"
+                              variant="secondary"
+                              label={t().share}
+                              disabled={props.busy}
+                              onClick={() => props.onShare?.(item())}
+                            >
+                              <i class="ti ti-share" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
+                        </Show>
                       </>
                     }
                   />

@@ -1,18 +1,13 @@
-import type { DashboardRange } from "../../dashboard-contracts";
 import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SQL_PARAMETER_MAX_BYTES } from "../../sql-params";
-import { dashboardRangeSearch } from "./dashboard-client";
-import { readDashboardRange } from "./dashboard-data";
 
-/** The four tabs of a base (sources, data, usage, sql) plus the views that wait in "…" until the next release. */
-export type WorkspaceView = "sources" | "data" | "usage" | "sql" | "overview" | "dashboards";
+/** The four tabs of a base. Old overview and dashboard paths are server redirects to the base, not views. */
+export type WorkspaceView = "sources" | "data" | "usage" | "sql";
 export const PULSE_SIDEBAR_SQL_ID = "sql";
 export const PULSE_SETTINGS_TABS = ["general", "members", "retention", "usage", "danger"] as const;
 export type PulseSettingsTab = (typeof PULSE_SETTINGS_TABS)[number];
 export type WorkspaceRouteState = {
   view: WorkspaceView;
   sourceId: string;
-  dashboardId?: string;
-  dashboardRange?: DashboardRange;
   queryId?: string;
   /** On `sources`: the fired alert open in the detail column. On `sql`: the alert whose SQL the console opens. */
   alertId?: string;
@@ -58,15 +53,12 @@ export const readWorkspacePathState = (path: string, baseId: string): WorkspaceR
   if (!view || view === "sources") {
     state = { view: "sources", sourceId: decode(id ?? "") };
     if (!state.sourceId && validAlert) state.alertId = validAlert;
-  } else if (view === "overview") state = { view: "overview", sourceId: "" };
-  else if (view === "usage") state = { view: "usage", sourceId: "" };
+  } else if (view === "usage") state = { view: "usage", sourceId: "" };
   else if (view === "data") {
     state = { view: "data", sourceId: "" };
     const kind = url.searchParams.get("kind");
     if (kind && kind.length <= 500) state.kind = kind;
-  } else if (view === "dashboards")
-    state = { view: "dashboards", sourceId: "", dashboardId: decode(id ?? ""), dashboardRange: readDashboardRange(path) };
-  else if (view === "sql") {
+  } else if (view === "sql") {
     state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
     if (!state.queryId && validAlert) state.alertId = validAlert;
     if (!state.queryId && !state.alertId) state.sql = "";
@@ -91,20 +83,16 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
   if (!baseId) return "/app/pulse";
   const base = `/app/pulse/${encodeURIComponent(baseId)}`;
   const path =
-    state.view === "overview"
-      ? `${base}/overview`
-      : state.view === "usage"
-        ? `${base}/usage`
-        : state.view === "data"
-          ? `${base}/data`
-          : state.view === "dashboards"
-            ? `${base}/dashboards${state.dashboardId ? `/${encodeURIComponent(state.dashboardId)}` : ""}`
-            : state.view === "sql"
-              ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
-              : state.sourceId
-                ? `${base}/sources/${encodeURIComponent(state.sourceId)}`
-                : base;
-  const search = new URLSearchParams(state.view === "dashboards" ? dashboardRangeSearch(state.dashboardRange ?? {}) : undefined);
+    state.view === "usage"
+      ? `${base}/usage`
+      : state.view === "data"
+        ? `${base}/data`
+        : state.view === "sql"
+          ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
+          : state.sourceId
+            ? `${base}/sources/${encodeURIComponent(state.sourceId)}`
+            : base;
+  const search = new URLSearchParams();
   if (state.view === "data" && state.kind) search.set("kind", state.kind);
   if (state.settings) search.set("settings", state.settings);
   if (state.view === "sql" && state.alertId && !state.queryId) search.set("alert", state.alertId);

@@ -30,6 +30,16 @@ export type PulseBase = {
   updatedAt: string;
 };
 
+/**
+ * Whether a base's data store can take and answer data. Unavailable: no store is configured, the instance store has an
+ * outage, or the base store failed; a running provision, clear or delete is not an outage. `since` is the outage start,
+ * else the failed store's last error, and null while available.
+ */
+export type PulseStoreOutage = { unavailable: boolean; since: string | null };
+
+/** One base as `GET /api/pulse/bases/:baseId` returns it: the list fields plus its store outage, read live. */
+export type PulseBaseRead = PulseBase & { outage: PulseStoreOutage };
+
 /** `lastReason` names the first refused field or the refusal in words, never values from the batch. */
 export type PulseSourceRejections = { last24h: number; lastReason: string | null; lastAt: string | null };
 

@@ -1,13 +1,13 @@
 import { Button, ButtonLink, DescriptionList, DetailPanel, IconButton, Section, StatusBadge } from "@k2b/ui";
 import { Show } from "solid-js";
-import type { OverviewAttention } from "../../overview-contracts";
+import type { AlertAttention } from "../../service/base-attention";
 import { usePulseMessages } from "../use-messages";
 import type { PulseDateContext } from "./helpers";
 import { absoluteTime, ago } from "./SourcesTab";
 
 /** A fired alert in the detail column: the condition in words, its value, since when, and the way to change it. */
 export default function AlertDetail(props: {
-  alert: OverviewAttention;
+  alert: AlertAttention;
   sqlHref: string;
   dateContext: PulseDateContext;
   adjust: () => void;
@@ -52,12 +52,12 @@ export default function AlertDetail(props: {
         <Section title={t().alertCondition} icon="ti ti-bell-ringing">
           <p class="pulse-detail-text">
             <Show
-              when={props.alert.comparison !== null && props.alert.threshold !== null}
+              when={props.alert.threshold !== null}
               fallback={
                 props.alert.errorCode ? t().alertCheckFailed({ code: props.alert.errorCode }) : t().alertNoData({ name: props.alert.name })
               }
             >
-              {t().alertConditionWords({ comparison: props.alert.comparison!, threshold: String(props.alert.threshold) })}
+              {t().alertConditionWords({ comparison: props.alert.comparison, threshold: String(props.alert.threshold) })}
             </Show>
           </p>
           <DescriptionList

@@ -138,8 +138,6 @@ packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
-packages/pulse/src/frontend/workspace/dashboard-styles.ts | style | 0 0 calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px)
-packages/pulse/src/styles/app.css | css | 10px
 packages/pulse/src/styles/app.css | css | 10px
 packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | class | rounded-[2px]
 packages/spaces/src/frontend/admin.tsx | class | rounded-md

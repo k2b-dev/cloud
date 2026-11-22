@@ -11,7 +11,6 @@ import { mailEventsMessages } from "../packages/mail/src/frontend/_components/ma
 import { presentMailEvents } from "../packages/mail/src/frontend/_components/mail-events-presentation";
 import type { MailActivityEvent } from "../packages/mail/src/service/collaboration";
 import { activityMessages, noteActivitySentences } from "../packages/notebooks/src/frontend/activity-messages";
-import { pulseMessages } from "../packages/pulse/src/messages";
 import { overviewMessages } from "../packages/spaces/src/frontend/overview-messages";
 import { registerSsrTestPlugin } from "../packages/ui/test/ssr-test-plugin";
 
@@ -84,7 +83,7 @@ const gridsKeys = [
   "documentLinkAccessed",
 ] as const;
 
-test("all five apps render standalone activity sentences after an actor in DE and EN", () => {
+test("all four apps render standalone activity sentences after an actor in DE and EN (Pulse has no activity list since 0.84)", () => {
   for (const locale of ["de", "en"]) {
     const samples: Array<[string, string]> = [];
     const spaces = overviewMessages.resolve([locale]).t;
@@ -95,28 +94,6 @@ test("all five apps render standalone activity sentences after an actor in DE an
     for (const [key, value] of Object.entries(activityMessages.resolve([locale]).t))
       samples.push([`Notebooks/overview/${key}`, value({ target: "Plan", notebook: "Stadtpark", self: false, overview: true })]);
     for (const [key, value] of Object.entries(noteActivitySentences.resolve([locale]).t)) samples.push([`Notebooks/note/${key}`, value]);
-    const pulse = pulseMessages.resolve([locale]).t;
-    const pulseSamples = {
-      overviewActivitySourceCreated: pulse.overviewActivitySourceCreated({ name: "Import" }),
-      overviewActivitySourceUpdated: pulse.overviewActivitySourceUpdated({ name: "Import" }),
-      overviewActivitySourceRemoved: pulse.overviewActivitySourceRemoved({ name: "Import" }),
-      overviewActivityQuerySaved: pulse.overviewActivityQuerySaved({ name: "Import" }),
-      overviewActivityQueryDeleted: pulse.overviewActivityQueryDeleted({ name: "Import" }),
-      overviewActivityAlertSaved: pulse.overviewActivityAlertSaved({ name: "Import" }),
-      overviewActivityAlertDeleted: pulse.overviewActivityAlertDeleted({ name: "Import" }),
-      overviewActivityAlertState: pulse.overviewActivityAlertState({ name: "Import", state: "Warnung" }),
-      overviewActivityAlertChanged: pulse.overviewActivityAlertChanged({ name: "Import" }),
-      overviewActivitySourceStale: pulse.overviewActivitySourceStale({ name: "Import" }),
-      overviewActivitySourceCurrent: pulse.overviewActivitySourceCurrent({ name: "Import" }),
-      overviewActivitySourceFreshness: pulse.overviewActivitySourceFreshness({ name: "Import" }),
-      overviewActivityUnknown: pulse.overviewActivityUnknown({ kind: "Import" }),
-    };
-    expect(
-      Object.keys(pulse)
-        .filter((key) => key.startsWith("overviewActivity") && key !== "overviewActivityKeyState")
-        .sort(),
-    ).toEqual(Object.keys(pulseSamples).sort());
-    samples.push(...Object.entries(pulseSamples).map(([key, value]): [string, string] => [`Pulse/${key}`, value]));
     const grids = recordMessages.resolve([locale]).t;
     for (const key of gridsKeys) samples.push([`Grids/${key}`, grids[key]]);
     const gridsSource = readFileSync(

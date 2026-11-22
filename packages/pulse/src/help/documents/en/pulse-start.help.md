@@ -25,7 +25,9 @@ An alert row opens the alert: its condition in words, its value, and since when 
 
 When the data store is not reachable, the first line says so. Pulse checks again every 30 seconds while the page is visible. The rows show the last known state.
 
-**…** holds the base settings. Until the next release, it also holds **Overview** and **Dashboards**.
+**…** holds the base settings.
+
+To show numbers or charts to other people, ask Gustav for a Code page that reads this base. The page shows data only to people who may read the base. Once the page reads the base, **Usage** lists it.
 
 ## Connect a source
 
@@ -40,6 +42,7 @@ Pulse needs a connected data store. If **Pulse is not set up yet** appears, cont
 
 A metrics source fetches a Prometheus endpoint at its configured interval.
 An HTTP ingest source accepts batches sent with a source API key.
+In **New source**, **Ask AI** helps prepare an adapter for your shop or another service.
 Create labeled keys under **API keys** in the source details. Keep them in your collector's secret store.
 
 ## Choose which metrics to collect

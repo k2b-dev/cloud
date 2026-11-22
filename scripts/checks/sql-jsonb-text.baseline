@@ -26,7 +26,6 @@ packages/pulse/src/service/ingest-bulk.ts | 12
 packages/pulse/src/service/ingest-writer.ts | 2
 packages/pulse/src/service/metric-cardinality.ts | 2
 packages/pulse/src/service/metrics-scraper.ts | 1
-packages/pulse/src/service/overview-queries.ts | 4
 packages/pulse/src/service/saved-queries.ts | 3
 packages/pulse/src/service/source-management.ts | 2
 packages/pulse/src/service/store-health.ts | 1
