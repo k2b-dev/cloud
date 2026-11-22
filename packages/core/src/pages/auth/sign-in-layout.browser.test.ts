@@ -129,12 +129,11 @@ afterAll(async () => {
   }
 });
 
-/** A tab with the page after its islands rendered; the caller closes it. */
+/** A tab with the page after its islands rendered, in its own context; the caller closes that context. */
 const open = async (width: number, path: string, locale: "en" | "de"): Promise<Page> => {
   const context = await browser.newContext({ viewport: { width, height: 900 }, locale, reducedMotion: "reduce" });
   await context.addCookies([{ name: "cloud.locale", value: locale, url: origin }]);
   const tab = await context.newPage();
-  tab.on("close", () => void context.close());
   await tab.goto(`${origin}${path}`);
   // The form is an island: its submit button reacts once the browser rendered it again over the server markup.
   // @k2b/ssr keeps its mounted wrappers in a shared registry (mount.ts); every island of the page is in it.
@@ -159,7 +158,7 @@ describe("sign-in pages in a browser", () => {
           const list = await problems(tab);
           if (list.length > 0) found[`${locale} ${width}`] = list;
         } finally {
-          await tab.close();
+          await tab.context().close();
         }
       }
     }
@@ -179,7 +178,7 @@ describe("sign-in pages in a browser", () => {
           const list = await problems(tab);
           if (list.length > 0) found[`${locale} ${width}`] = list;
         } finally {
-          await tab.close();
+          await tab.context().close();
         }
       }
     }
@@ -195,7 +194,7 @@ describe("sign-in pages in a browser", () => {
           const list = await problems(tab);
           if (list.length > 0) found[`${locale} ${width}`] = list;
         } finally {
-          await tab.close();
+          await tab.context().close();
         }
       }
     }
