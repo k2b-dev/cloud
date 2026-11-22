@@ -307,17 +307,16 @@
   --k2b-type-13: 0.8125rem;
   --k2b-type-14: 0.875rem;
   --k2b-type-18: 1.125rem;
-  /* PROVISIONAL, replace with the type lane's token list (fix/flat-type-roles, scripts/checks/type-scale.ts) once
-     it lands. The type roles of a flat area (K11, audit round 2): meta 12, rows and controls 13, reading text and the
-     head title 14, the key statement 18, each in 400, 500, or 600. A role is one size, the line heights it takes as
-     measured in the approved mockup (Cloud flach v10; 20 px for the key statement in a phone title), and after the
-     slash its weights. The layout check (`type-role`) reads this list. Reading text in Markdown or an editor keeps
-     its own scale. */
+  /* The type roles of a flat area (K11), as measured in the approved mockup (Cloud flach v10): a role is one size, the
+     line heights it takes, and after the slash its weights. Meta 12, rows and controls 13, the head title and
+     reading text 14, the lead statement 18 (20 px high in a phone title). The one list of them: the layout check
+     (`type-role`) reads it, and the sizes are the steps above. Reading text in Markdown or an editor keeps its own
+     scale. */
   --k2b-type-roles:
     meta var(--k2b-type-12) 16px 20px / 400 500 600,
     row var(--k2b-type-13) 20px / 400 500 600,
-    text var(--k2b-type-14) 20px 22px / 400 500 600,
-    lead var(--k2b-type-18) 20px 24px / 400 500 600;
+    title var(--k2b-type-14) 20px 22px / 400 600,
+    lead var(--k2b-type-18) 20px 24px / 600;
   /* Shadows only for what floats (K3, K16). A shadow means "lies above the
      page": small for a menu, popover, toast, floating pill, a phone's main
      action, and a drag preview; large for a dialog; directed for a drawer
