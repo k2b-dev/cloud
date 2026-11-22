@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { searchParams, onChange } from "./search-params";
+import { describe, expect, it } from "bun:test";
+import { onChange, searchParams } from "./search-params";
 
 // ==========================
 // deserialize
@@ -52,9 +52,7 @@ describe("searchParams.deserialize", () => {
 
   // Regression: __proto__ and friends must NOT pollute the prototype.
   it("ignores __proto__, constructor, prototype keys (no prototype pollution)", () => {
-    const result = searchParams.deserialize(
-      new URLSearchParams('__proto__={"isAdmin":true}&constructor=evil&prototype=x'),
-    );
+    const result = searchParams.deserialize(new URLSearchParams('__proto__={"isAdmin":true}&constructor=evil&prototype=x'));
     // Forbidden keys never set on the result.
     expect((result as any).__proto__).not.toEqual({ isAdmin: true });
     expect((result as any).constructor).not.toBe("evil");
@@ -77,10 +75,7 @@ describe("searchParams.serialize", () => {
 
   it("removes undefined/null/false/empty string values", () => {
     const base = new URLSearchParams("page=1&name=John&active=true&q=hello");
-    const result = searchParams.serialize(
-      { page: undefined, name: null, active: false, q: "" } as any,
-      base,
-    );
+    const result = searchParams.serialize({ page: undefined, name: null, active: false, q: "" } as any, base);
     expect(result).not.toContain("page=");
     expect(result).not.toContain("name=");
     expect(result).not.toContain("active=");
@@ -88,10 +83,7 @@ describe("searchParams.serialize", () => {
   });
 
   it("serializes objects as JSON", () => {
-    const result = searchParams.serialize(
-      { filter: { status: "open" } },
-      new URLSearchParams(),
-    );
+    const result = searchParams.serialize({ filter: { status: "open" } }, new URLSearchParams());
     // URLSearchParams encodes the JSON
     const parsed = new URLSearchParams(result);
     expect(JSON.parse(parsed.get("filter")!)).toEqual({ status: "open" });

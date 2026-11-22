@@ -3,10 +3,7 @@
     "number": "12115118",
     "typeCode": "380",
     "currency": "EUR",
-    "paymentCodes": [
-      "30",
-      "30"
-    ],
+    "paymentCodes": ["30", "30"],
     "totals": {
       "net": "229.6",
       "basis": "229.6",
@@ -242,10 +239,7 @@
     "number": "TOSL108",
     "typeCode": "380",
     "currency": "NOK",
-    "paymentCodes": [
-      "30",
-      "30"
-    ],
+    "paymentCodes": ["30", "30"],
     "totals": {
       "net": "1436.5",
       "basis": "1436.5",
@@ -339,10 +333,7 @@
     "number": "INVOICE_test_7",
     "typeCode": "380",
     "currency": "SEK",
-    "paymentCodes": [
-      "30",
-      "30"
-    ],
+    "paymentCodes": ["30", "30"],
     "totals": {
       "net": "3200",
       "basis": "3200",
@@ -390,9 +381,7 @@
     "number": "inv-4711",
     "typeCode": "380",
     "currency": "EUR",
-    "paymentCodes": [
-      "30"
-    ],
+    "paymentCodes": ["30"],
     "totals": {
       "net": "12.44",
       "basis": "12.44",
@@ -430,9 +419,7 @@
     "number": "9876/54/321",
     "typeCode": "380",
     "currency": "EUR",
-    "paymentCodes": [
-      "57"
-    ],
+    "paymentCodes": ["57"],
     "totals": {
       "net": "150",
       "basis": "150",
@@ -470,9 +457,7 @@
     "number": "47110818",
     "typeCode": "389",
     "currency": "EUR",
-    "paymentCodes": [
-      "58"
-    ],
+    "paymentCodes": ["58"],
     "totals": {
       "net": "2000.00",
       "basis": "2000.00",
@@ -520,9 +505,7 @@
     "number": "123",
     "typeCode": "380",
     "currency": "EUR",
-    "paymentCodes": [
-      "58"
-    ],
+    "paymentCodes": ["58"],
     "totals": {
       "net": "1.00",
       "basis": "1.00",
@@ -608,9 +591,7 @@
     "number": "21/001003559/996",
     "typeCode": "380",
     "currency": "HUF",
-    "paymentCodes": [
-      "70"
-    ],
+    "paymentCodes": ["70"],
     "totals": {
       "net": "69180.00",
       "basis": "69180.00",
@@ -744,9 +725,7 @@
     "number": "123456XX",
     "typeCode": "380",
     "currency": "EUR",
-    "paymentCodes": [
-      "58"
-    ],
+    "paymentCodes": ["58"],
     "totals": {
       "net": "314.86",
       "basis": "314.86",

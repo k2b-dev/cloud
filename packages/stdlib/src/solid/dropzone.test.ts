@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { testRoot } from "../_test-helpers";
 import { dropzone } from "./dropzone";
 
@@ -54,8 +54,7 @@ describe("dropzone.create", () => {
   it("handles nested drag enter/leave correctly (drag counter pattern)", () => {
     const { result, dispose } = testRoot(() => dropzone.create({}));
 
-    const enterEvent = () =>
-      fakeDragEvent({ dataTransfer: { types: ["Files"], items: [] } });
+    const enterEvent = () => fakeDragEvent({ dataTransfer: { types: ["Files"], items: [] } });
     const leaveEvent = () => fakeDragEvent();
 
     // Enter parent element
@@ -140,9 +139,7 @@ describe("dropzone.create", () => {
 
   it("filters files by accept option", () => {
     const onDrop = mock(() => {});
-    const { result, dispose } = testRoot(() =>
-      dropzone.create({ accept: "image/*", onDrop }),
-    );
+    const { result, dispose } = testRoot(() => dropzone.create({ accept: "image/*", onDrop }));
 
     const imgFile = new File([""], "photo.png", { type: "image/png" });
     const txtFile = new File([""], "doc.txt", { type: "text/plain" });
@@ -161,9 +158,7 @@ describe("dropzone.create", () => {
 
   it("does not call onDrop when all files are filtered out by accept", () => {
     const onDrop = mock(() => {});
-    const { result, dispose } = testRoot(() =>
-      dropzone.create({ accept: "image/*", onDrop }),
-    );
+    const { result, dispose } = testRoot(() => dropzone.create({ accept: "image/*", onDrop }));
 
     const txtFile = new File([""], "doc.txt", { type: "text/plain" });
     const event = fakeDragEvent({
@@ -176,9 +171,7 @@ describe("dropzone.create", () => {
   });
 
   it("onDragOver sets dropEffect based on invalidDrag", () => {
-    const { result, dispose } = testRoot(() =>
-      dropzone.create({ accept: "image/*" }),
-    );
+    const { result, dispose } = testRoot(() => dropzone.create({ accept: "image/*" }));
 
     // When no invalid drag, dropEffect should be "copy"
     const dataTransfer1 = { dropEffect: "" };
@@ -190,9 +183,7 @@ describe("dropzone.create", () => {
   });
 
   it("onDragEnter detects invalid file types and sets invalidDrag", () => {
-    const { result, dispose } = testRoot(() =>
-      dropzone.create({ accept: "image/*" }),
-    );
+    const { result, dispose } = testRoot(() => dropzone.create({ accept: "image/*" }));
 
     // Simulate drag with an invalid file type
     const event = fakeDragEvent({

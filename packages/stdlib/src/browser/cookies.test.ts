@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { readJsonCookie, writeJsonCookie, readCookie, writeCookie, deleteCookie } from "./cookies";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { deleteCookie, readCookie, readJsonCookie, writeCookie, writeJsonCookie } from "./cookies";
 
 // Mock document.cookie
 let cookieStore = "";
 Object.defineProperty(globalThis, "document", {
   value: {
-    get cookie() { return cookieStore; },
+    get cookie() {
+      return cookieStore;
+    },
     set cookie(v: string) {
       // Simulate browser: parse name=value, store it
       const [nameValue] = v.split(";");
@@ -15,19 +17,19 @@ Object.defineProperty(globalThis, "document", {
 
       // Check for max-age=0 (delete)
       if (v.includes("max-age=0")) {
-        const pairs = cookieStore.split("; ").filter(c => !c.startsWith(name + "="));
+        const pairs = cookieStore.split("; ").filter((c) => !c.startsWith(name + "="));
         cookieStore = pairs.join("; ");
         return;
       }
 
       // Update or add
       const pairs = cookieStore ? cookieStore.split("; ") : [];
-      const idx = pairs.findIndex(c => c.startsWith(name + "="));
+      const idx = pairs.findIndex((c) => c.startsWith(name + "="));
       const entry = `${name}=${value}`;
       if (idx >= 0) pairs[idx] = entry;
       else pairs.push(entry);
       cookieStore = pairs.join("; ");
-    }
+    },
   },
   writable: true,
   configurable: true,
@@ -40,7 +42,9 @@ Object.defineProperty(globalThis, "location", {
   configurable: true,
 });
 
-beforeEach(() => { cookieStore = ""; });
+beforeEach(() => {
+  cookieStore = "";
+});
 
 describe("writeCookie + readCookie", () => {
   it("roundtrips a simple string value", () => {

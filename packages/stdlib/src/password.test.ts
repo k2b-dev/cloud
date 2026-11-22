@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { PASSWORD_WORDS } from "./_password-words";
 import { password } from "./password";
 
@@ -184,18 +184,18 @@ describe("password.strength", () => {
 
   it("detects missing character classes", () => {
     const s = password.strength("abcdefghij");
-    expect(s.feedback.some(f => f.includes("uppercase"))).toBe(true);
-    expect(s.feedback.some(f => f.includes("number"))).toBe(true);
+    expect(s.feedback.some((f) => f.includes("uppercase"))).toBe(true);
+    expect(s.feedback.some((f) => f.includes("number"))).toBe(true);
   });
 
   it("detects sequential patterns", () => {
     const s = password.strength("abcdef123456");
-    expect(s.feedback.some(f => f.includes("sequential"))).toBe(true);
+    expect(s.feedback.some((f) => f.includes("sequential"))).toBe(true);
   });
 
   it("detects repeated characters", () => {
     const s = password.strength("aaaaaaBBBBBB");
-    expect(s.feedback.some(f => f.includes("repeated"))).toBe(true);
+    expect(s.feedback.some((f) => f.includes("repeated"))).toBe(true);
   });
 
   it("returns human-readable crack time", () => {

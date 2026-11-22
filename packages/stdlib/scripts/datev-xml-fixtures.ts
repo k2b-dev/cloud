@@ -6,21 +6,38 @@
  * hash still matches; CI starts empty, so a vanished URL fails the build.
  * Usage: bun scripts/datev-xml-fixtures.ts
  */
-import { inflateRawSync } from "node:zlib";
+
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { datevXmlSchemaSha256, datevXmlSchemaSource } from "../src/finance/datev-xml-schema-files";
 
 const cache = new URL("../.cache/datev-xml/", import.meta.url).pathname;
 const samples: { url: string; sha256: string; files: Record<string, Record<string, string>> }[] = [
-  { url: "https://developer.datev.de/assets/accounts_Payable_Ledger_Eingangsrechnungen_7_8ce161174e.zip", sha256: "ad195de9ef7be9ce4a53db042533e98d66db0259e482560ee87702302c601c4a",
-    files: { "ER_ledger_V6_2023.zip": { "document.xml": "ER_document.xml", "Rechnungsdaten_RE_R2023x204.xml": "ER_Rechnungsdaten_RE_R2023x204.xml" },
-      "ERK_ledger_V6_2023.zip": { "Rechnungskorrekturdaten_REK_RK2023x101.xml": "ERK_Rechnungskorrekturdaten_REK_RK2023x101.xml" } } },
-  { url: "https://developer.datev.de/assets/accounts_Receivable_Ledger_Ausgangsrechnungen_2_2061bc8391.zip", sha256: "bf6aa0d9af1ba1bafe2419551a4a73dd04e2e3eb8e78d14a784793750aff0b21",
-    files: { "AR_ledger_V6_2023.zip": { "Rechnungsdaten_RA_R-2023-204.xml": "AR_Rechnungsdaten_RA_R-2023-204.xml" } } },
-  { url: "https://developer.datev.de/assets/cash_Ledger_067be9d707.zip", sha256: "841c3a588dcce6fe7f8d5eb459514842b728f9f9707d9d0099ca63e75875ff1d",
-    files: { "Kasse_ledger_V6_2023_einzelDateien.zip": { "document.xml": "Kasse_einzelDateien_document.xml" },
-      "Kasse_ledger_V6_2023_GesamtDatei.zip": { "Kasse_12Januar2023.xml": "Kasse_12Januar2023.xml" } } },
+  {
+    url: "https://developer.datev.de/assets/accounts_Payable_Ledger_Eingangsrechnungen_7_8ce161174e.zip",
+    sha256: "ad195de9ef7be9ce4a53db042533e98d66db0259e482560ee87702302c601c4a",
+    files: {
+      "ER_ledger_V6_2023.zip": {
+        "document.xml": "ER_document.xml",
+        "Rechnungsdaten_RE_R2023x204.xml": "ER_Rechnungsdaten_RE_R2023x204.xml",
+      },
+      "ERK_ledger_V6_2023.zip": { "Rechnungskorrekturdaten_REK_RK2023x101.xml": "ERK_Rechnungskorrekturdaten_REK_RK2023x101.xml" },
+    },
+  },
+  {
+    url: "https://developer.datev.de/assets/accounts_Receivable_Ledger_Ausgangsrechnungen_2_2061bc8391.zip",
+    sha256: "bf6aa0d9af1ba1bafe2419551a4a73dd04e2e3eb8e78d14a784793750aff0b21",
+    files: { "AR_ledger_V6_2023.zip": { "Rechnungsdaten_RA_R-2023-204.xml": "AR_Rechnungsdaten_RA_R-2023-204.xml" } },
+  },
+  {
+    url: "https://developer.datev.de/assets/cash_Ledger_067be9d707.zip",
+    sha256: "841c3a588dcce6fe7f8d5eb459514842b728f9f9707d9d0099ca63e75875ff1d",
+    files: {
+      "Kasse_ledger_V6_2023_einzelDateien.zip": { "document.xml": "Kasse_einzelDateien_document.xml" },
+      "Kasse_ledger_V6_2023_GesamtDatei.zip": { "Kasse_12Januar2023.xml": "Kasse_12Januar2023.xml" },
+    },
+  },
 ];
 
 const sha256 = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");

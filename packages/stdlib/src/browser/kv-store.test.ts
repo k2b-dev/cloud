@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // ─── OPFS in-memory mock ────────────────────────────────────────────────────────
 
@@ -364,7 +364,9 @@ describe("kvStore", () => {
     });
 
     it("ignores errors in watcher callbacks", async () => {
-      const unwatch = kvStore.watch(() => { throw new Error("boom"); });
+      const unwatch = kvStore.watch(() => {
+        throw new Error("boom");
+      });
       await kvStore.set("key", "val"); // Should not throw
       unwatch();
     });

@@ -1,9 +1,10 @@
-import { datevXml, type DatevXmlPackage } from "../src/finance";
+import { type DatevXmlPackage, datevXml } from "../src/finance";
 
 /** A tiny placeholder PDF; real applications pass the stored document image. */
-export const samplePdf = (label: string) => new TextEncoder().encode(
-  `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n% ${label}\ntrailer<</Root 1 0 R>>\n%%EOF\n`,
-);
+export const samplePdf = (label: string) =>
+  new TextEncoder().encode(
+    `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n% ${label}\ntrailer<</Root 1 0 R>>\n%%EOF\n`,
+  );
 
 /** Sample identifiers, accounts and IBANs illustrate syntax only; do not upload this package. */
 export const datevXmlExample: DatevXmlPackage = {
@@ -48,9 +49,7 @@ export const datevXmlExample: DatevXmlPackage = {
       period: "2026-10",
       cashRegister: { name: "Kasse" },
       documentDate: "2026-10-21",
-      lines: [
-        { amount: "-23.80", taxRate: "19.00", text: "Porto", documentNumber: "KB-0042", information: "Kassenbon Deutsche Post" },
-      ],
+      lines: [{ amount: "-23.80", taxRate: "19.00", text: "Porto", documentNumber: "KB-0042", information: "Kassenbon Deutsche Post" }],
       files: [{ name: "KB-0042.pdf", bytes: samplePdf("cash receipt") }],
     },
   ],
@@ -59,5 +58,5 @@ export const datevXmlExample: DatevXmlPackage = {
 export function datevXmlPackageExample() {
   const file = datevXml.serialize(datevXmlExample);
   if (!file.ok) throw new Error(JSON.stringify(file.error));
-  return { zipBytes: file.data.bytes.byteLength, documents: file.data.documents.map(document => [document.dataFile, document.amount]) };
+  return { zipBytes: file.data.bytes.byteLength, documents: file.data.documents.map((document) => [document.dataFile, document.amount]) };
 }

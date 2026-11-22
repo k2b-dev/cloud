@@ -5,7 +5,28 @@ export type GermanState = "BW" | "BY" | "BE" | "BB" | "HB" | "HH" | "HE" | "MV" 
 export type HolidayRegion = "DE" | `DE-${GermanState}`;
 
 /** Stable holiday keys for application message catalogs. */
-export type HolidayKey = "new-year" | "epiphany" | "womens-day" | "good-friday" | "easter-sunday" | "easter-monday" | "labour-day" | "liberation-day" | "ascension-day" | "whit-sunday" | "whit-monday" | "corpus-christi" | "uprising-1953" | "assumption-day" | "childrens-day" | "german-unity-day" | "reformation-day" | "all-saints-day" | "repentance-day" | "christmas-day" | "boxing-day";
+export type HolidayKey =
+  | "new-year"
+  | "epiphany"
+  | "womens-day"
+  | "good-friday"
+  | "easter-sunday"
+  | "easter-monday"
+  | "labour-day"
+  | "liberation-day"
+  | "ascension-day"
+  | "whit-sunday"
+  | "whit-monday"
+  | "corpus-christi"
+  | "uprising-1953"
+  | "assumption-day"
+  | "childrens-day"
+  | "german-unity-day"
+  | "reformation-day"
+  | "all-saints-day"
+  | "repentance-day"
+  | "christmas-day"
+  | "boxing-day";
 
 /** A statutory public holiday for the requested region. */
 export type Holiday = {
@@ -18,8 +39,23 @@ export type Holiday = {
 };
 
 const regions: ReadonlySet<string> = new Set<HolidayRegion>([
-  "DE", "DE-BW", "DE-BY", "DE-BE", "DE-BB", "DE-HB", "DE-HH", "DE-HE", "DE-MV",
-  "DE-NI", "DE-NW", "DE-RP", "DE-SL", "DE-SN", "DE-ST", "DE-SH", "DE-TH",
+  "DE",
+  "DE-BW",
+  "DE-BY",
+  "DE-BE",
+  "DE-BB",
+  "DE-HB",
+  "DE-HH",
+  "DE-HE",
+  "DE-MV",
+  "DE-NI",
+  "DE-NW",
+  "DE-RP",
+  "DE-SL",
+  "DE-SN",
+  "DE-ST",
+  "DE-SH",
+  "DE-TH",
 ]);
 
 // Anonymous Gregorian algorithm (Meeus/Jones/Butcher).
@@ -37,11 +73,14 @@ const easterSunday = (year: number): number => {
   const l = (32 + 2 * e + 2 * i - h - k) % 7;
   const m = Math.floor((a + 11 * h + 22 * l) / 451);
   const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = (h + l - 7 * m + 114) % 31 + 1;
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
   return Date.UTC(year, month - 1, day);
 };
 
-const fromEaster = (days: number) => (_year: number, easter: number): number => easter + days * 86_400_000;
+const fromEaster =
+  (days: number) =>
+  (_year: number, easter: number): number =>
+    easter + days * 86_400_000;
 
 const repentanceDay = (year: number): number => {
   const november23 = new Date(Date.UTC(year, 10, 23));
@@ -108,10 +147,8 @@ export const publicHolidays = (year: number, region: HolidayRegion): Holiday[] =
     if (!nationwide && (region === "DE" || !rule.states.some((state) => region === `DE-${state}`))) continue;
     // The nationwide 2017 rule precedes overlapping state Reformation Day rules.
     if (holidays.some((holiday) => holiday.key === rule.key)) continue;
-    const timestamp = typeof rule.date === "function"
-      ? rule.date(year, easter)
-      : Date.UTC(year, rule.date[0] - 1, rule.date[1]);
+    const timestamp = typeof rule.date === "function" ? rule.date(year, easter) : Date.UTC(year, rule.date[0] - 1, rule.date[1]);
     holidays.push({ date: new Date(timestamp).toISOString().slice(0, 10), key: rule.key, nationwide });
   }
-  return holidays.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return holidays.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 };

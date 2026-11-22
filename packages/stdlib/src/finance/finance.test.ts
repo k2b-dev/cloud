@@ -1,18 +1,24 @@
-import { validateSepaXml } from "./validate";
 import { expect, test } from "bun:test";
-import { datev, sepa } from "./index";
+import { datevExample, financeExample, sepaExample } from "../../examples/finance";
 import { unwrap } from "../result";
-import { datevExample, sepaExample, financeExample } from "../../examples/finance";
+import { datev, sepa } from "./index";
+import { validateSepaXml } from "./validate";
 
 test("examples contain multiple postings and transfers", async () => {
-  expect(await financeExample()).toEqual({ datevRows: 2, debitTotal: "123.45", creditTotal: "3.00",
-    sepaRows: 2, total: "12.31" });
+  expect(await financeExample()).toEqual({ datevRows: 2, debitTotal: "123.45", creditTotal: "3.00", sepaRows: 2, total: "12.31" });
 });
 
 test("explicit formats, currencies and canonical caller timestamps", async () => {
-  for (const patch of [{ format: undefined }, { format: "next" }, { currency: "USD" }, { currency: undefined },
-    { createdAt: undefined }, { createdAt: "invalid" }, { createdAt: "2026-09-11T12:34:56.1234Z" },
-    { createdAt: "2026-09-11T12:34:56.000+02:00" }]) {
+  for (const patch of [
+    { format: undefined },
+    { format: "next" },
+    { currency: "USD" },
+    { currency: undefined },
+    { createdAt: undefined },
+    { createdAt: "invalid" },
+    { createdAt: "2026-09-11T12:34:56.1234Z" },
+    { createdAt: "2026-09-11T12:34:56.000+02:00" },
+  ]) {
     expect(datev.validate({ ...datevExample, ...patch }).ok).toBe(false);
     expect(sepa.validate({ ...sepaExample, ...patch }).ok).toBe(false);
   }
@@ -29,10 +35,12 @@ test("stable structured errors identify exact input fields and rows", () => {
   expect(result.ok).toBe(false);
   if (result.ok) throw new Error("Expected invalid input");
   expect(result.error.code).toBe("BAD_INPUT");
-  expect(result.error.issues).toEqual(expect.arrayContaining([
-    expect.objectContaining({ code: "invalid_input", path: ["rows", 1, "amount"] }),
-    expect.objectContaining({ code: "invalid_input", path: ["rows", 1, "currency"] }),
-  ]));
+  expect(result.error.issues).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "invalid_input", path: ["rows", 1, "amount"] }),
+      expect.objectContaining({ code: "invalid_input", path: ["rows", 1, "currency"] }),
+    ]),
+  );
   expect(JSON.parse(JSON.stringify(result))).toEqual(result);
 });
 
@@ -43,7 +51,7 @@ test("trailing line breaks in numeric and identifier fields are rejected before 
     expect(datev.validate(csv).ok).toBe(false);
     expect(datev.serialize(csv).ok).toBe(false);
     expect(sepa.validate(xml).ok).toBe(false);
-    expect((sepa.serialize(xml)).ok).toBe(false);
+    expect(sepa.serialize(xml).ok).toBe(false);
   }
 });
 
@@ -74,7 +82,15 @@ test("local XSD gives XML locations and never loads external entities or schemas
   const { xmlRegisterInputProvider, xmlCleanupInputProvider } = await import("libxml2-wasm");
   const requested: string[] = [];
   // Observe even attempted resolution without providing any file or network access.
-  const provider = { match: (url: string) => { requested.push(url); return false; }, open: () => undefined, read: () => 0, close: () => false };
+  const provider = {
+    match: (url: string) => {
+      requested.push(url);
+      return false;
+    },
+    open: () => undefined,
+    read: () => 0,
+    close: () => false,
+  };
   xmlRegisterInputProvider(provider);
   try {
     const xml = new TextDecoder().decode(unwrap(sepa.serialize(sepaExample)).bytes);
@@ -84,16 +100,21 @@ test("local XSD gives XML locations and never loads external entities or schemas
     for (const text of [
       '<!DOCTYPE Document SYSTEM "https://example.invalid/evil.dtd"><Document/>',
       '<!DOCTYPE Document [<!ENTITY x SYSTEM "file:///etc/passwd">]><Document>&x;</Document>',
-      '<!-- comment --><Document/>',
-      '<![CDATA[<Document/>]]>',
+      "<!-- comment --><Document/>",
+      "<![CDATA[<Document/>]]>",
       xml.replace("<GrpHdr>", '<xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="https://example.invalid/x"/><GrpHdr>'),
-    ]) expect((await validateSepaXml(text)).ok).toBe(false);
-    const hinted = xml.replace('<Document xmlns=', '<Document xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09 https://example.invalid/x.xsd" xmlns=');
+    ])
+      expect((await validateSepaXml(text)).ok).toBe(false);
+    const hinted = xml.replace(
+      "<Document xmlns=",
+      '<Document xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09 https://example.invalid/x.xsd" xmlns=',
+    );
     expect((await validateSepaXml(hinted)).ok).toBe(true);
     expect(requested).toEqual([]);
-  } finally { xmlCleanupInputProvider(); }
+  } finally {
+    xmlCleanupInputProvider();
+  }
 });
-
 
 test("serialization is synchronous and has no schema-validation claim", () => {
   const result = sepa.serialize(JSON.parse(JSON.stringify(sepaExample)));
@@ -106,11 +127,21 @@ test("serialization is synchronous and has no schema-validation claim", () => {
 test("serializer boundary values and optional agents conform to the pinned XSD", async () => {
   for (const amount of ["0.01", "999999999.99"]) {
     for (const bic of [undefined, "ABNANL2A"]) {
-      const batch = { ...sepaExample, debtorBic: bic, rows: [
-        { ...sepaExample.rows[0]!, endToEndId: "A".repeat(35), amount,
-          creditorName: "A".repeat(70), creditorBic: bic, remittance: "R".repeat(140) },
-        { ...sepaExample.rows[1]!, amount },
-      ] };
+      const batch = {
+        ...sepaExample,
+        debtorBic: bic,
+        rows: [
+          {
+            ...sepaExample.rows[0]!,
+            endToEndId: "A".repeat(35),
+            amount,
+            creditorName: "A".repeat(70),
+            creditorBic: bic,
+            remittance: "R".repeat(140),
+          },
+          { ...sepaExample.rows[1]!, amount },
+        ],
+      };
       const file = unwrap(sepa.serialize(batch));
       expect((await validateSepaXml(new TextDecoder().decode(file.bytes))).ok).toBe(true);
     }
@@ -121,9 +152,8 @@ test("schema-invalid and malformed XML are Results, including concurrent checks"
   const xml = new TextDecoder().decode(unwrap(sepa.serialize(sepaExample)).bytes);
   const inputs = [xml, xml.slice(0, -4), xml.replace("<PmtMtd>TRF</PmtMtd>", "<PmtMtd>CHK</PmtMtd>"), xml];
   const results = await Promise.all(inputs.map(validateSepaXml));
-  expect(results.map(result => result.ok)).toEqual([true, false, false, true]);
+  expect(results.map((result) => result.ok)).toEqual([true, false, false, true]);
 });
-
 
 test("XML Schema year zero is rejected by the serializer without XSD validation", () => {
   for (const patch of [{ executionDate: "0000-01-01" }, { createdAt: "0000-01-01T00:00:00.000Z" }]) {

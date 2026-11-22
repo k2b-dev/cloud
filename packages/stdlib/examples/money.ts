@@ -13,7 +13,7 @@ export function moneyExample() {
     tax: money.toDecimal(invoice.tax),
     gross: money.toDecimal(invoice.gross),
     reconciled: money.compare(difference, money.fromMinor(0, "EUR")) === 0,
-    credit: credit.map(value => value.amount),
+    credit: credit.map((value) => value.amount),
     creditSum: money.sum(credit).amount,
     maximum: money.format(money.fromMinor(Number.MAX_SAFE_INTEGER, "EUR"), { locale: "de-DE" }),
     yen: money.toDecimal(money.parse("1,234", { locale: "en-US", currency: "JPY" })),

@@ -1,20 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll, jest } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, jest } from "bun:test";
 import {
   dates,
   formatDate,
+  formatDateRelative,
   formatDateTime,
   formatDateTimeRelative,
-  formatDateRelative,
-  formatTimeSpan,
   formatDuration,
   formatRecurrence,
   formatRecurrenceParts,
+  formatTimeSpan,
 } from "./dates";
-import {
-  dates as rootDates,
-  isValidTimeZone as rootIsValidTimeZone,
-  normalizeTimeZone as rootNormalizeTimeZone,
-} from "./index";
+import { dates as rootDates, isValidTimeZone as rootIsValidTimeZone, normalizeTimeZone as rootNormalizeTimeZone } from "./index";
 
 const {
   isValidTimeZone,
@@ -95,9 +91,7 @@ describe("timezone helpers", () => {
 
   it("converts timezone-local datetime-local values to UTC instants", () => {
     expect(zonedDateTimeToInstant("2026-06-01T09:00", "Europe/Berlin")).toBe("2026-06-01T07:00:00.000Z");
-    expect(zonedDateTimeToInstant("2026-06-01T09:00:12.345", "Europe/Berlin")).toBe(
-      "2026-06-01T07:00:12.345Z",
-    );
+    expect(zonedDateTimeToInstant("2026-06-01T09:00:12.345", "Europe/Berlin")).toBe("2026-06-01T07:00:12.345Z");
   });
 
   it("rejects nonexistent DST wall-clock values by default", () => {
@@ -113,12 +107,8 @@ describe("timezone helpers", () => {
   });
 
   it("preserves all disambiguation modes for nonexistent DST wall-clock values", () => {
-    expect(() =>
-      zonedDateTimeToInstant("2026-03-29T02:30", "Europe/Berlin", { disambiguation: "earlier" }),
-    ).toThrow(RangeError);
-    expect(zonedDateTimeToInstant("2026-03-29T02:30", "Europe/Berlin", { disambiguation: "later" })).toBe(
-      "2026-03-29T01:30:00.000Z",
-    );
+    expect(() => zonedDateTimeToInstant("2026-03-29T02:30", "Europe/Berlin", { disambiguation: "earlier" })).toThrow(RangeError);
+    expect(zonedDateTimeToInstant("2026-03-29T02:30", "Europe/Berlin", { disambiguation: "later" })).toBe("2026-03-29T01:30:00.000Z");
   });
 
   it("rejects ambiguous DST wall-clock values by default", () => {
@@ -126,28 +116,20 @@ describe("timezone helpers", () => {
   });
 
   it("can disambiguate repeated DST wall-clock values", () => {
-    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "earlier" })).toBe(
-      "2026-10-25T00:30:00.000Z",
-    );
-    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "later" })).toBe(
-      "2026-10-25T01:30:00.000Z",
-    );
-    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "compatible" })).toBe(
-      "2026-10-25T00:30:00.000Z",
-    );
+    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "earlier" })).toBe("2026-10-25T00:30:00.000Z");
+    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "later" })).toBe("2026-10-25T01:30:00.000Z");
+    expect(zonedDateTimeToInstant("2026-10-25T02:30", "Europe/Berlin", { disambiguation: "compatible" })).toBe("2026-10-25T00:30:00.000Z");
   });
 
   it("handles half-hour DST transitions in Australia/Lord_Howe", () => {
-    expect(
-      zonedDateTimeToInstant("2026-04-05T01:45", "Australia/Lord_Howe", { disambiguation: "earlier" }),
-    ).toBe("2026-04-04T14:45:00.000Z");
-    expect(
-      zonedDateTimeToInstant("2026-04-05T01:45", "Australia/Lord_Howe", { disambiguation: "later" }),
-    ).toBe("2026-04-04T15:15:00.000Z");
+    expect(zonedDateTimeToInstant("2026-04-05T01:45", "Australia/Lord_Howe", { disambiguation: "earlier" })).toBe(
+      "2026-04-04T14:45:00.000Z",
+    );
+    expect(zonedDateTimeToInstant("2026-04-05T01:45", "Australia/Lord_Howe", { disambiguation: "later" })).toBe("2026-04-04T15:15:00.000Z");
     expect(() => zonedDateTimeToInstant("2026-10-04T02:15", "Australia/Lord_Howe")).toThrow(RangeError);
-    expect(
-      zonedDateTimeToInstant("2026-10-04T02:15", "Australia/Lord_Howe", { disambiguation: "compatible" }),
-    ).toBe("2026-10-03T15:45:00.000Z");
+    expect(zonedDateTimeToInstant("2026-10-04T02:15", "Australia/Lord_Howe", { disambiguation: "compatible" })).toBe(
+      "2026-10-03T15:45:00.000Z",
+    );
   });
 
   it("handles quarter-hour IANA offsets", () => {
@@ -156,22 +138,14 @@ describe("timezone helpers", () => {
   });
 
   it("handles historical sub-minute IANA offsets", () => {
-    expect(zonedDateTimeToInstant("1969-12-31T23:15:30", "Africa/Monrovia")).toBe(
-      "1970-01-01T00:00:00.000Z",
-    );
+    expect(zonedDateTimeToInstant("1969-12-31T23:15:30", "Africa/Monrovia")).toBe("1970-01-01T00:00:00.000Z");
   });
 
   it("handles IANA transitions that skip an entire local date", () => {
     expect(() => zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia")).toThrow(RangeError);
-    expect(() =>
-      zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "earlier" }),
-    ).toThrow(RangeError);
-    expect(zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "compatible" })).toBe(
-      "2011-12-30T22:00:00.000Z",
-    );
-    expect(zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "later" })).toBe(
-      "2011-12-30T22:00:00.000Z",
-    );
+    expect(() => zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "earlier" })).toThrow(RangeError);
+    expect(zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "compatible" })).toBe("2011-12-30T22:00:00.000Z");
+    expect(zonedDateTimeToInstant("2011-12-30T12:00", "Pacific/Apia", { disambiguation: "later" })).toBe("2011-12-30T22:00:00.000Z");
   });
 
   it("converts UTC instants to datetime-local values in a timezone", () => {
@@ -243,7 +217,10 @@ describe("formatDateTime", () => {
     const native = Intl.DateTimeFormat;
     let constructed = 0;
     Intl.DateTimeFormat = new Proxy(native, {
-      construct(target, args) { constructed++; return Reflect.construct(target, args); },
+      construct(target, args) {
+        constructed++;
+        return Reflect.construct(target, args);
+      },
     });
     try {
       expect(formatDate(date, context)).toBe(expected);
@@ -256,7 +233,9 @@ describe("formatDateTime", () => {
 
   it("keeps locale-specific dates and an ASCII 24-hour clock without reparsing localized strings", () => {
     const native = Date.prototype.toLocaleString;
-    Date.prototype.toLocaleString = () => { throw new Error("Localized strings must not be parsed for display"); };
+    Date.prototype.toLocaleString = () => {
+      throw new Error("Localized strings must not be parsed for display");
+    };
     try {
       expect(formatDateTime("2026-01-01T23:00:00Z", { locale: "de", timeZone: "Europe/Berlin" })).toBe("2. Jan. 2026, 00:00");
       const date = "2026-01-01T23:00:00Z";
@@ -273,17 +252,31 @@ describe("formatDateTime", () => {
     let datesConstructed = 0;
     let relativeConstructed = 0;
     Intl.DateTimeFormat = new Proxy(NativeDateTimeFormat, {
-      construct(target, args) { datesConstructed++; return Reflect.construct(target, args); },
+      construct(target, args) {
+        datesConstructed++;
+        return Reflect.construct(target, args);
+      },
     });
     const relativeDescriptor = Object.getOwnPropertyDescriptor(Intl, "RelativeTimeFormat");
-    Object.defineProperty(Intl, "RelativeTimeFormat", { ...relativeDescriptor, value: new Proxy(NativeRelativeTimeFormat, {
-      construct(target, args) { relativeConstructed++; return Reflect.construct(target, args); },
-    }) });
+    Object.defineProperty(Intl, "RelativeTimeFormat", {
+      ...relativeDescriptor,
+      value: new Proxy(NativeRelativeTimeFormat, {
+        construct(target, args) {
+          relativeConstructed++;
+          return Reflect.construct(target, args);
+        },
+      }),
+    });
     try {
       for (let row = 0; row < 100; row++) {
         const date = new Date(Date.UTC(2026, 0, 1, 12, row));
         const context = { locale: "en-x-mailrow", timeZone: "Pacific/Chatham" };
-        const expectedDate = new NativeDateTimeFormat(context.locale, { day: "numeric", month: "short", year: "numeric", timeZone: context.timeZone }).format(date);
+        const expectedDate = new NativeDateTimeFormat(context.locale, {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone: context.timeZone,
+        }).format(date);
         expect(formatDateTime(date, context).split(", ").slice(0, -1).join(", ")).toBe(expectedDate);
         expect(formatDateTimeRelative(date, { ...context, base: new Date(+date + 60_000) })).toBe("1 minute ago");
       }
@@ -509,18 +502,13 @@ describe("formatRecurrence", () => {
   });
 
   it("localizes weekday and unit names via the context locale", () => {
-    expect(formatRecurrence({ freq: "weekly", interval: 2, byWeekday: [1] }, { locale: "de" })).toBe(
-      "Every 2 Wochen on Mo",
-    );
+    expect(formatRecurrence({ freq: "weekly", interval: 2, byWeekday: [1] }, { locale: "de" })).toBe("Every 2 Wochen on Mo");
   });
 });
 
 describe("formatRecurrenceParts", () => {
   it("returns localized building blocks", () => {
-    const parts = formatRecurrenceParts(
-      { freq: "weekly", byWeekday: [2, 3], until: new Date("2024-12-23") },
-      { locale: "de" },
-    );
+    const parts = formatRecurrenceParts({ freq: "weekly", byWeekday: [2, 3], until: new Date("2024-12-23") }, { locale: "de" });
     expect(parts.every).toBe("Woche");
     expect(parts.weekdays).toBe("Di und Mi");
     expect(parts.until).toBe("23. Dez. 2024");
@@ -861,37 +849,23 @@ describe("navigation", () => {
   });
 
   it("adds zoned instant recurrence intervals while preserving wall-clock time", () => {
-    expect(addZonedInstant("2026-03-23T08:00:00.000Z", { timeZone: "Europe/Berlin", weeks: 1 })).toBe(
-      "2026-03-30T07:00:00.000Z",
-    );
+    expect(addZonedInstant("2026-03-23T08:00:00.000Z", { timeZone: "Europe/Berlin", weeks: 1 })).toBe("2026-03-30T07:00:00.000Z");
   });
 
   it("applies disambiguation when zoned recurrence addition reaches a DST overlap", () => {
     const input = "2026-10-24T00:30:00.000Z";
     expect(() => addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1 })).toThrow(RangeError);
-    expect(
-      addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "compatible" }),
-    ).toBe("2026-10-25T00:30:00.000Z");
-    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "earlier" })).toBe(
-      "2026-10-25T00:30:00.000Z",
-    );
-    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "later" })).toBe(
-      "2026-10-25T01:30:00.000Z",
-    );
+    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "compatible" })).toBe("2026-10-25T00:30:00.000Z");
+    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "earlier" })).toBe("2026-10-25T00:30:00.000Z");
+    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "later" })).toBe("2026-10-25T01:30:00.000Z");
   });
 
   it("applies disambiguation when zoned recurrence addition reaches a DST gap", () => {
     const input = "2026-03-28T01:30:00.000Z";
     expect(() => addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1 })).toThrow(RangeError);
-    expect(() =>
-      addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "earlier" }),
-    ).toThrow(RangeError);
-    expect(
-      addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "compatible" }),
-    ).toBe("2026-03-29T01:30:00.000Z");
-    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "later" })).toBe(
-      "2026-03-29T01:30:00.000Z",
-    );
+    expect(() => addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "earlier" })).toThrow(RangeError);
+    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "compatible" })).toBe("2026-03-29T01:30:00.000Z");
+    expect(addZonedInstant(input, { timeZone: "Europe/Berlin", days: 1, disambiguation: "later" })).toBe("2026-03-29T01:30:00.000Z");
   });
 });
 
@@ -956,11 +930,7 @@ describe("URL helpers", () => {
   });
 
   it("buildCalendarUrl writes date keys in the requested timezone", () => {
-    const url = buildCalendarUrl(
-      "/page",
-      { view: "week", date: new Date("2025-03-05T02:30:00Z") },
-      { timeZone: "America/New_York" },
-    );
+    const url = buildCalendarUrl("/page", { view: "week", date: new Date("2025-03-05T02:30:00Z") }, { timeZone: "America/New_York" });
     expect(url).toContain("cd=2025-03-04");
   });
 });
@@ -1000,23 +970,28 @@ describe("timezone-aware calendar views", () => {
 
 for (const locale of ["de", "de-DE", "en", "en-GB"]) {
   describe(`locale date formatting: ${locale}`, () => {
-    for (const day of ["02", "27"]) for (const timeZone of [undefined, "UTC", "Asia/Tokyo"]) {
-      it(`${day}, ${timeZone ?? "default UTC"}: punctuation, order, clock and relative fallback`, () => {
-        const input = `2026-05-${day}T13:05:00Z`;
-        const context = { locale, timeZone };
-        const expected = locale.startsWith("de") ? `${Number(day)}. Mai 2026` : locale === "en" ? `May ${Number(day)}, 2026` : `${Number(day)} May 2026`;
-        expect(formatDate(input, context)).toBe(expected);
-        expect(formatDate(new Date(input), context)).toBe(expected);
-        expect(formatDateTime(input, context)).toBe(`${expected}, ${timeZone === "Asia/Tokyo" ? "22" : "13"}:05`);
-        const numeric = locale.startsWith("de") ? `${day}.05.2026` : locale === "en" ? `05/${day}/2026` : `${day}/05/2026`;
-        expect(formatDate(input, { ...context, style: "numeric" })).toBe(numeric);
-        for (const base of ["2026-04-01T12:00:00Z", "2026-06-15T12:00:00Z"]) {
-          expect(formatDateRelative(input, { ...context, base })).toBe(expected);
-          expect(formatDateTimeRelative(input, { ...context, base })).toBe(expected);
-        }
-        expect(formatRecurrenceParts({ freq: "daily", until: input }, context).until).toBe(expected);
-      });
-    }
+    for (const day of ["02", "27"])
+      for (const timeZone of [undefined, "UTC", "Asia/Tokyo"]) {
+        it(`${day}, ${timeZone ?? "default UTC"}: punctuation, order, clock and relative fallback`, () => {
+          const input = `2026-05-${day}T13:05:00Z`;
+          const context = { locale, timeZone };
+          const expected = locale.startsWith("de")
+            ? `${Number(day)}. Mai 2026`
+            : locale === "en"
+              ? `May ${Number(day)}, 2026`
+              : `${Number(day)} May 2026`;
+          expect(formatDate(input, context)).toBe(expected);
+          expect(formatDate(new Date(input), context)).toBe(expected);
+          expect(formatDateTime(input, context)).toBe(`${expected}, ${timeZone === "Asia/Tokyo" ? "22" : "13"}:05`);
+          const numeric = locale.startsWith("de") ? `${day}.05.2026` : locale === "en" ? `05/${day}/2026` : `${day}/05/2026`;
+          expect(formatDate(input, { ...context, style: "numeric" })).toBe(numeric);
+          for (const base of ["2026-04-01T12:00:00Z", "2026-06-15T12:00:00Z"]) {
+            expect(formatDateRelative(input, { ...context, base })).toBe(expected);
+            expect(formatDateTimeRelative(input, { ...context, base })).toBe(expected);
+          }
+          expect(formatRecurrenceParts({ freq: "daily", until: input }, context).until).toBe(expected);
+        });
+      }
   });
 }
 

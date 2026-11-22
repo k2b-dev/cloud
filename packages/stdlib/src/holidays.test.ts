@@ -7,21 +7,52 @@
 // "Feiertagsgesetz", and de.wikipedia.org "Gesetzliche Feiertage in Deutschland"
 // for introduction years.
 import { describe, expect, it } from "bun:test";
-import { publicHolidays } from "./holidays";
-import type { Holiday, HolidayKey, HolidayRegion } from "./holidays";
 import { publicHolidays as namedPublicHolidays } from "./dates";
+import type { Holiday, HolidayKey, HolidayRegion } from "./holidays";
+import { publicHolidays } from "./holidays";
 import { dates, publicHolidays as rootPublicHolidays } from "./index";
 
 const stateRegions: readonly HolidayRegion[] = [
-  "DE-BW", "DE-BY", "DE-BE", "DE-BB", "DE-HB", "DE-HH", "DE-HE", "DE-MV",
-  "DE-NI", "DE-NW", "DE-RP", "DE-SL", "DE-SN", "DE-ST", "DE-SH", "DE-TH",
+  "DE-BW",
+  "DE-BY",
+  "DE-BE",
+  "DE-BB",
+  "DE-HB",
+  "DE-HH",
+  "DE-HE",
+  "DE-MV",
+  "DE-NI",
+  "DE-NW",
+  "DE-RP",
+  "DE-SL",
+  "DE-SN",
+  "DE-ST",
+  "DE-SH",
+  "DE-TH",
 ];
 
 const holidayKeys: ReadonlySet<string> = new Set<HolidayKey>([
-  "new-year", "epiphany", "womens-day", "good-friday", "easter-sunday", "easter-monday",
-  "labour-day", "liberation-day", "ascension-day", "whit-sunday", "whit-monday",
-  "corpus-christi", "uprising-1953", "assumption-day", "childrens-day", "german-unity-day",
-  "reformation-day", "all-saints-day", "repentance-day", "christmas-day", "boxing-day",
+  "new-year",
+  "epiphany",
+  "womens-day",
+  "good-friday",
+  "easter-sunday",
+  "easter-monday",
+  "labour-day",
+  "liberation-day",
+  "ascension-day",
+  "whit-sunday",
+  "whit-monday",
+  "corpus-christi",
+  "uprising-1953",
+  "assumption-day",
+  "childrens-day",
+  "german-unity-day",
+  "reformation-day",
+  "all-saints-day",
+  "repentance-day",
+  "christmas-day",
+  "boxing-day",
 ]);
 
 const holiday = (year: number, region: HolidayRegion, key: HolidayKey): Holiday | undefined =>
@@ -221,13 +252,83 @@ describe("publicHolidays reference tables", () => {
 });
 
 const movableDates = [
-  { year: 2024, easter: "2024-03-31", goodFriday: "2024-03-29", easterMonday: "2024-04-01", ascension: "2024-05-09", whitSunday: "2024-05-19", whitMonday: "2024-05-20", corpusChristi: "2024-05-30", repentance: "2024-11-20" },
-  { year: 2025, easter: "2025-04-20", goodFriday: "2025-04-18", easterMonday: "2025-04-21", ascension: "2025-05-29", whitSunday: "2025-06-08", whitMonday: "2025-06-09", corpusChristi: "2025-06-19", repentance: "2025-11-19" },
-  { year: 2026, easter: "2026-04-05", goodFriday: "2026-04-03", easterMonday: "2026-04-06", ascension: "2026-05-14", whitSunday: "2026-05-24", whitMonday: "2026-05-25", corpusChristi: "2026-06-04", repentance: "2026-11-18" },
-  { year: 2027, easter: "2027-03-28", goodFriday: "2027-03-26", easterMonday: "2027-03-29", ascension: "2027-05-06", whitSunday: "2027-05-16", whitMonday: "2027-05-17", corpusChristi: "2027-05-27", repentance: "2027-11-17" },
-  { year: 2028, easter: "2028-04-16", goodFriday: "2028-04-14", easterMonday: "2028-04-17", ascension: "2028-05-25", whitSunday: "2028-06-04", whitMonday: "2028-06-05", corpusChristi: "2028-06-15", repentance: "2028-11-22" },
-  { year: 2029, easter: "2029-04-01", goodFriday: "2029-03-30", easterMonday: "2029-04-02", ascension: "2029-05-10", whitSunday: "2029-05-20", whitMonday: "2029-05-21", corpusChristi: "2029-05-31", repentance: "2029-11-21" },
-  { year: 2030, easter: "2030-04-21", goodFriday: "2030-04-19", easterMonday: "2030-04-22", ascension: "2030-05-30", whitSunday: "2030-06-09", whitMonday: "2030-06-10", corpusChristi: "2030-06-20", repentance: "2030-11-20" },
+  {
+    year: 2024,
+    easter: "2024-03-31",
+    goodFriday: "2024-03-29",
+    easterMonday: "2024-04-01",
+    ascension: "2024-05-09",
+    whitSunday: "2024-05-19",
+    whitMonday: "2024-05-20",
+    corpusChristi: "2024-05-30",
+    repentance: "2024-11-20",
+  },
+  {
+    year: 2025,
+    easter: "2025-04-20",
+    goodFriday: "2025-04-18",
+    easterMonday: "2025-04-21",
+    ascension: "2025-05-29",
+    whitSunday: "2025-06-08",
+    whitMonday: "2025-06-09",
+    corpusChristi: "2025-06-19",
+    repentance: "2025-11-19",
+  },
+  {
+    year: 2026,
+    easter: "2026-04-05",
+    goodFriday: "2026-04-03",
+    easterMonday: "2026-04-06",
+    ascension: "2026-05-14",
+    whitSunday: "2026-05-24",
+    whitMonday: "2026-05-25",
+    corpusChristi: "2026-06-04",
+    repentance: "2026-11-18",
+  },
+  {
+    year: 2027,
+    easter: "2027-03-28",
+    goodFriday: "2027-03-26",
+    easterMonday: "2027-03-29",
+    ascension: "2027-05-06",
+    whitSunday: "2027-05-16",
+    whitMonday: "2027-05-17",
+    corpusChristi: "2027-05-27",
+    repentance: "2027-11-17",
+  },
+  {
+    year: 2028,
+    easter: "2028-04-16",
+    goodFriday: "2028-04-14",
+    easterMonday: "2028-04-17",
+    ascension: "2028-05-25",
+    whitSunday: "2028-06-04",
+    whitMonday: "2028-06-05",
+    corpusChristi: "2028-06-15",
+    repentance: "2028-11-22",
+  },
+  {
+    year: 2029,
+    easter: "2029-04-01",
+    goodFriday: "2029-03-30",
+    easterMonday: "2029-04-02",
+    ascension: "2029-05-10",
+    whitSunday: "2029-05-20",
+    whitMonday: "2029-05-21",
+    corpusChristi: "2029-05-31",
+    repentance: "2029-11-21",
+  },
+  {
+    year: 2030,
+    easter: "2030-04-21",
+    goodFriday: "2030-04-19",
+    easterMonday: "2030-04-22",
+    ascension: "2030-05-30",
+    whitSunday: "2030-06-09",
+    whitMonday: "2030-06-10",
+    corpusChristi: "2030-06-20",
+    repentance: "2030-11-20",
+  },
 ];
 
 describe("movable holidays", () => {
@@ -274,7 +375,8 @@ describe("holiday introduction years and regional scope", () => {
     { region: "DE-MV", key: "womens-day", before: 2022, since: 2023, date: "2023-03-08" },
     { region: "DE-TH", key: "childrens-day", before: 2018, since: 2019, date: "2019-09-20" },
   ] satisfies { region: HolidayRegion; key: HolidayKey; before: number; since: number; date: string }[])(
-    "$region introduces $key in $since", ({ region, key, before, since, date }) => {
+    "$region introduces $key in $since",
+    ({ region, key, before, since, date }) => {
       expect(holiday(before, region, key)).toBeUndefined();
       expect(holiday(since, region, key)).toEqual({ date, key, nationwide: false });
     },
@@ -286,18 +388,19 @@ describe("holiday introduction years and regional scope", () => {
   });
 
   it.each(["DE", "DE-NI", "DE-HB", "DE-HH", "DE-SH", "DE-BW"] satisfies HolidayRegion[])(
-    "has no Reformation Day in 2016 for %s", (region) => {
+    "has no Reformation Day in 2016 for %s",
+    (region) => {
       expect(holiday(2016, region, "reformation-day")).toBeUndefined();
     },
   );
 
-  it.each(["DE-HB", "DE-HH", "DE-NI", "DE-SH"] satisfies HolidayRegion[])(
-    "introduces state Reformation Day in 2018 for %s", (region) => {
-      expect(holiday(2018, region, "reformation-day")).toEqual({
-        date: "2018-10-31", key: "reformation-day", nationwide: false,
-      });
-    },
-  );
+  it.each(["DE-HB", "DE-HH", "DE-NI", "DE-SH"] satisfies HolidayRegion[])("introduces state Reformation Day in 2018 for %s", (region) => {
+    expect(holiday(2018, region, "reformation-day")).toEqual({
+      date: "2018-10-31",
+      key: "reformation-day",
+      nationwide: false,
+    });
+  });
 
   it("does not add Reformation Day for Bavaria or nationwide after 2017", () => {
     expect(holiday(2018, "DE-BY", "reformation-day")).toBeUndefined();
@@ -306,10 +409,14 @@ describe("holiday introduction years and regional scope", () => {
 
   it("has Berlin Liberation Day only in 2020 and 2025", () => {
     expect(holiday(2020, "DE-BE", "liberation-day")).toEqual({
-      date: "2020-05-08", key: "liberation-day", nationwide: false,
+      date: "2020-05-08",
+      key: "liberation-day",
+      nationwide: false,
     });
     expect(holiday(2025, "DE-BE", "liberation-day")).toEqual({
-      date: "2025-05-08", key: "liberation-day", nationwide: false,
+      date: "2025-05-08",
+      key: "liberation-day",
+      nationwide: false,
     });
     for (const year of [2019, 2021, 2024, 2026]) {
       expect(holiday(year, "DE-BE", "liberation-day")).toBeUndefined();
@@ -329,9 +436,7 @@ describe("holiday introduction years and regional scope", () => {
     expect(holiday(2025, "DE-TH", "corpus-christi")).toBeUndefined();
     expect(holiday(2025, "DE-HE", "easter-sunday")).toBeUndefined();
     expect(holiday(2025, "DE-HE", "whit-sunday")).toBeUndefined();
-    expect(publicHolidays(2025, "DE-BY").some((entry) =>
-      ["2025-08-08", "2025-12-24", "2025-12-31"].includes(entry.date),
-    )).toBe(false);
+    expect(publicHolidays(2025, "DE-BY").some((entry) => ["2025-08-08", "2025-12-24", "2025-12-31"].includes(entry.date))).toBe(false);
   });
 });
 

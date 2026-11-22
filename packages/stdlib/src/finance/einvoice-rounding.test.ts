@@ -1,39 +1,62 @@
 import { expect, test } from "bun:test";
 import { invoice as sample } from "../../examples/einvoice";
+import { money } from "../money";
+import { unwrap } from "../result";
 import { einvoice, type Invoice } from "./index";
 import { validateInvoiceXml } from "./validate";
-import { unwrap } from "../result";
-import { money } from "../money";
 
 const format = "zugferd-2.5-en16931";
 const line = (unitPrice: string, taxRate = "19", id = "1") => ({ ...sample.lines[0]!, id, quantity: "1", unitPrice, taxRate });
 const cases = [
   { name: "19% three cents", lines: [line("0.03")], net: "0.03", tax: "0.01", gross: "0.04", rounding: "-0.01", due: "0.03" },
   { name: "19% 99.99", lines: [line("84.03")], net: "84.03", tax: "15.97", gross: "100.00", rounding: "-0.01", due: "99.99" },
-  { name: "19% two lines", lines: [line("44.03"), line("49.04", "19", "2")], net: "93.07", tax: "17.68", gross: "110.75", rounding: "0.00", due: "110.75" },
+  {
+    name: "19% two lines",
+    lines: [line("44.03"), line("49.04", "19", "2")],
+    net: "93.07",
+    tax: "17.68",
+    gross: "110.75",
+    rounding: "0.00",
+    due: "110.75",
+  },
   { name: "7% eight cents", lines: [line("0.07", "7")], net: "0.07", tax: "0.00", gross: "0.07", rounding: "0.01", due: "0.08" },
   { name: "20% tax-first net basis", lines: [line("0.02", "20")], net: "0.02", tax: "0.00", gross: "0.02", rounding: "0.01", due: "0.03" },
   { name: "20% net-first net basis", lines: [line("0.03", "20")], net: "0.03", tax: "0.01", gross: "0.04", rounding: "-0.01", due: "0.03" },
-  { name: "mixed 7/19/20", lines: [line("84.03"), line("93.45", "7", "2"), line("0.02", "20", "3")], net: "177.50", tax: "22.51", gross: "200.01", rounding: "0.00", due: "200.01" },
+  {
+    name: "mixed 7/19/20",
+    lines: [line("84.03"), line("93.45", "7", "2"), line("0.02", "20", "3")],
+    net: "177.50",
+    tax: "22.51",
+    gross: "200.01",
+    rounding: "0.00",
+    due: "200.01",
+  },
 ];
 
 for (const kind of ["invoice", "creditNote", "selfBilling", "selfBillingCreditNote"] as const) {
-  for (const c of cases) test(`${kind}: explicit rounding ${c.name}`, async () => {
-    const plain = unwrap(einvoice.calculate(c.lines));
-    const { lines, ...totals } = unwrap(einvoice.calculate(c.lines, { roundingAmount: c.rounding }));
-    expect(totals).toMatchObject({ netAmount: c.net, taxAmount: c.tax, grossAmount: c.gross, roundingAmount: c.rounding, dueAmount: c.due });
-    expect(totals.taxGroups).toEqual(plain.taxGroups);
-    const invoice: Invoice = { ...sample, kind, lines, totals, precedingInvoice: { number: "ORIGINAL", invoiceDate: "2026-08-01" } };
-    expect(einvoice.validate(invoice).ok).toBe(true);
-    const xml = unwrap(einvoice.serialize(invoice, { format })).xml;
-    expect(await validateInvoiceXml(xml, { format })).toEqual({ ok: true, data: undefined });
-    const parsed = unwrap(einvoice.parseXml(xml)).invoice;
-    expect(parsed).toMatchObject(invoice);
-    expect(einvoice.validate(parsed).ok).toBe(true);
-    expect(unwrap(einvoice.serialize(parsed, { format })).xml).toBe(xml);
-    // Credit kinds use positive document amounts, reversing their economic effect.
-    expect(parsed.precedingInvoice).toEqual(invoice.precedingInvoice);
-  });
+  for (const c of cases)
+    test(`${kind}: explicit rounding ${c.name}`, async () => {
+      const plain = unwrap(einvoice.calculate(c.lines));
+      const { lines, ...totals } = unwrap(einvoice.calculate(c.lines, { roundingAmount: c.rounding }));
+      expect(totals).toMatchObject({
+        netAmount: c.net,
+        taxAmount: c.tax,
+        grossAmount: c.gross,
+        roundingAmount: c.rounding,
+        dueAmount: c.due,
+      });
+      expect(totals.taxGroups).toEqual(plain.taxGroups);
+      const invoice: Invoice = { ...sample, kind, lines, totals, precedingInvoice: { number: "ORIGINAL", invoiceDate: "2026-08-01" } };
+      expect(einvoice.validate(invoice).ok).toBe(true);
+      const xml = unwrap(einvoice.serialize(invoice, { format })).xml;
+      expect(await validateInvoiceXml(xml, { format })).toEqual({ ok: true, data: undefined });
+      const parsed = unwrap(einvoice.parseXml(xml)).invoice;
+      expect(parsed).toMatchObject(invoice);
+      expect(einvoice.validate(parsed).ok).toBe(true);
+      expect(unwrap(einvoice.serialize(parsed, { format })).xml).toBe(xml);
+      // Credit kinds use positive document amounts, reversing their economic effect.
+      expect(parsed.precedingInvoice).toEqual(invoice.precedingInvoice);
+    });
 }
 
 test("omitted rounding preserves the old object shape and XML; explicit zero survives", () => {
@@ -66,8 +89,10 @@ test("rounding cannot hide inconsistent due, tax, group or gross amounts", () =>
   const { lines, ...totals } = unwrap(einvoice.calculate([line("84.03")], { roundingAmount: "-0.01" }));
   const valid = { ...sample, lines, totals };
   for (const bad of [
-    { ...totals, dueAmount: "100.00" }, { ...totals, grossAmount: "99.99" },
-    { ...totals, taxAmount: "15.96" }, { ...totals, taxGroups: totals.taxGroups.map(g => ({ ...g, taxAmount: "15.96" })) },
+    { ...totals, dueAmount: "100.00" },
+    { ...totals, grossAmount: "99.99" },
+    { ...totals, taxAmount: "15.96" },
+    { ...totals, taxGroups: totals.taxGroups.map((g) => ({ ...g, taxAmount: "15.96" })) },
     { ...totals, roundingAmount: undefined },
   ]) {
     expect(einvoice.validate({ ...valid, totals: bad }).ok).toBe(false);
@@ -81,8 +106,12 @@ test("rounding cannot hide inconsistent due, tax, group or gross amounts", () =>
   expect(einvoice.serialize(parsed, { format }).ok).toBe(false);
   for (const mutated of [
     source.replace("<ram:RoundingAmount>", '<ram:RoundingAmount currencyID="USD">'),
-    source.replace("<ram:RoundingAmount>-0.01</ram:RoundingAmount>", "<ram:RoundingAmount>-0.01</ram:RoundingAmount><ram:RoundingAmount>0.00</ram:RoundingAmount>"),
-  ]) expect(einvoice.parseXml(mutated).ok).toBe(false);
+    source.replace(
+      "<ram:RoundingAmount>-0.01</ram:RoundingAmount>",
+      "<ram:RoundingAmount>-0.01</ram:RoundingAmount><ram:RoundingAmount>0.00</ram:RoundingAmount>",
+    ),
+  ])
+    expect(einvoice.parseXml(mutated).ok).toBe(false);
 });
 
 test("negative due and excessive generated due are rejected, zero due is supported", () => {
@@ -98,7 +127,6 @@ test("negative due and excessive generated due are rejected, zero due is support
   // Signed invoice lines remain outside the strict writer, also for corrections.
   expect(einvoice.calculate([line("-0.02", "20")]).ok).toBe(false);
 });
-
 
 test("the existing money gross split stays net-first for positive and negative half cents", () => {
   for (const amount of [3, -3]) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterEach } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 
 // Mock window and navigator BEFORE importing hotkeys so isBrowser is true
 if (typeof window === "undefined") {
@@ -150,9 +150,7 @@ describe("hotkeys.create", () => {
     await Promise.resolve();
 
     expect(warn).toHaveBeenCalled();
-    const warnMsg = (warn.mock.calls as unknown as unknown[][]).find((call) =>
-      String(call[0]).includes("duplicate"),
-    );
+    const warnMsg = (warn.mock.calls as unknown as unknown[][]).find((call) => String(call[0]).includes("duplicate"));
     expect(warnMsg).toBeDefined();
 
     d2();

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { match, filter, segments, distance, closest, fuzzy } from "./fuzzy";
+import { describe, expect, it } from "bun:test";
+import { closest, distance, filter, fuzzy, match, segments } from "./fuzzy";
 
 // =====================================================================
 // match — basic correctness
@@ -87,9 +87,7 @@ describe("fuzzy.match — case sensitivity", () => {
   });
 
   it("matches identical-case input under caseSensitive", () => {
-    expect(
-      match("user", "userDashboard", { caseSensitive: true }),
-    ).not.toBeNull();
+    expect(match("user", "userDashboard", { caseSensitive: true })).not.toBeNull();
   });
 
   it("rewards case-matching characters with a higher score", () => {
@@ -110,9 +108,7 @@ describe("fuzzy.match — DP optimality", () => {
     //   optimal DP → a@0, b@6, c@7 (one big gap, then contiguous bc)
     // The contiguous bonus + smaller second gap wins.
     const r = match("abc", "axxbxxbcxxc")!;
-    const positions = r.ranges.flatMap(([s, e]) =>
-      Array.from({ length: e - s }, (_, i) => s + i),
-    );
+    const positions = r.ranges.flatMap(([s, e]) => Array.from({ length: e - s }, (_, i) => s + i));
     expect(positions[0]).toBe(0); // a@0 (FIRST_CHAR bonus is too valuable to skip)
     // The last two query chars (b, c) must be adjacent in the target.
     expect(positions[2]! - positions[1]!).toBe(1);
@@ -490,9 +486,7 @@ describe("fuzzy.closest", () => {
   });
 
   it("returns null when nothing falls within maxDistance", () => {
-    expect(
-      closest("zzz", ["hello", "help", "world"], { maxDistance: 1 }),
-    ).toBeNull();
+    expect(closest("zzz", ["hello", "help", "world"], { maxDistance: 1 })).toBeNull();
   });
 
   it("includes the boundary case (distance == maxDistance)", () => {
@@ -580,10 +574,7 @@ describe("fuzzy — performance", () => {
   });
 
   it("filter: 10k items × ~30 chars finish under 250ms", () => {
-    const items = Array.from(
-      { length: 10_000 },
-      (_, i) => `module-${i}-foo-bar-baz-quux-frob`,
-    );
+    const items = Array.from({ length: 10_000 }, (_, i) => `module-${i}-foo-bar-baz-quux-frob`);
     const start = performance.now();
     const hits = filter("mfbq", items, { limit: 50 });
     const elapsed = performance.now() - start;
@@ -605,10 +596,7 @@ describe("fuzzy — performance", () => {
   });
 
   it("distance: 10k pairs of ~20-char strings under 200ms", () => {
-    const pairs = Array.from({ length: 10_000 }, (_, i) => [
-      `kitten-${i}-foo`,
-      `sitting-${i}-bar`,
-    ]);
+    const pairs = Array.from({ length: 10_000 }, (_, i) => [`kitten-${i}-foo`, `sitting-${i}-bar`]);
     const start = performance.now();
     for (const [a, b] of pairs) distance(a!, b!);
     const elapsed = performance.now() - start;
@@ -630,9 +618,7 @@ describe("fuzzy — performance", () => {
 
 describe("filter — non-string items without key", () => {
   it("throws a clear TypeError when items aren't strings and no key is given", () => {
-    expect(() =>
-      filter("a", [1, 2, 3] as unknown as string[], {}),
-    ).toThrow(TypeError);
+    expect(() => filter("a", [1, 2, 3] as unknown as string[], {})).toThrow(TypeError);
   });
 
   it("works correctly with explicit key accessor", () => {

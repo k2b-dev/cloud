@@ -1,6 +1,6 @@
-import { describe, it, expect, spyOn } from "bun:test";
-import { parseSSE, parseNDJSON } from "./streaming";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { SSEEvent } from "./streaming";
+import { parseNDJSON, parseSSE } from "./streaming";
 
 // ==========================
 // Helpers
@@ -70,15 +70,10 @@ describe("parseSSE", () => {
   });
 
   it("parses multiple events in one stream", async () => {
-    const stream = toStream([
-      "data: first\n\nevent: update\ndata: second\n\n",
-    ]);
+    const stream = toStream(["data: first\n\nevent: update\ndata: second\n\n"]);
     const events = await collect(parseSSE(stream));
 
-    expect(events).toEqual([
-      { data: "first" },
-      { event: "update", data: "second" },
-    ]);
+    expect(events).toEqual([{ data: "first" }, { event: "update", data: "second" }]);
   });
 
   it("handles empty data field", async () => {
@@ -168,9 +163,7 @@ describe("parseNDJSON", () => {
   });
 
   it("handles different JSON types (objects, arrays, strings, numbers)", async () => {
-    const stream = toStream([
-      '{"obj":true}\n[1,2,3]\n"hello"\n42\n',
-    ]);
+    const stream = toStream(['{"obj":true}\n[1,2,3]\n"hello"\n42\n']);
     const results = await collect(parseNDJSON(stream));
 
     expect(results).toEqual([{ obj: true }, [1, 2, 3], "hello", 42]);

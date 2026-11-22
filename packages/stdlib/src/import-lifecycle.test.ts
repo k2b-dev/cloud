@@ -10,10 +10,7 @@ type ProbeResult = {
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
-const runProbe = async (
-  script: string,
-  timeoutMs = 2_000,
-): Promise<ProbeResult> => {
+const runProbe = async (script: string, timeoutMs = 2_000): Promise<ProbeResult> => {
   const child = Bun.spawn([process.execPath, "-e", script], {
     cwd: repoRoot,
     stdout: "pipe",
@@ -24,10 +21,7 @@ const runProbe = async (
   const outcome = await Promise.race([
     child.exited.then((exitCode) => ({ exitCode, timedOut: false })),
     new Promise<{ exitCode: null; timedOut: true }>((resolve) => {
-      timeout = setTimeout(
-        () => resolve({ exitCode: null, timedOut: true }),
-        timeoutMs,
-      );
+      timeout = setTimeout(() => resolve({ exitCode: null, timedOut: true }), timeoutMs);
     }),
   ]);
 
@@ -37,30 +31,19 @@ const runProbe = async (
     await child.exited;
   }
 
-  const [stdout, stderr] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
+  const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
 
   return { ...outcome, stdout, stderr };
 };
 
 const assertProbeSucceeded = (result: ProbeResult): void => {
   if (result.timedOut || result.exitCode !== 0) {
-    throw new Error(
-      `Probe failed: ${JSON.stringify(result, null, 2)}`,
-    );
+    throw new Error(`Probe failed: ${JSON.stringify(result, null, 2)}`);
   }
 };
 
 describe("public entry point lifecycle", () => {
-  for (const entryPoint of [
-    "@k2b/stdlib",
-    "@k2b/stdlib/qr",
-    "@k2b/stdlib/browser",
-    "@k2b/stdlib/solid",
-    "@k2b/stdlib/bun",
-  ]) {
+  for (const entryPoint of ["@k2b/stdlib", "@k2b/stdlib/qr", "@k2b/stdlib/browser", "@k2b/stdlib/solid", "@k2b/stdlib/bun"]) {
     it(`${entryPoint} exits after import`, async () => {
       const result = await runProbe(`await import(${JSON.stringify(entryPoint)});`);
       assertProbeSucceeded(result);

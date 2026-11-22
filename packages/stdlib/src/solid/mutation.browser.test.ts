@@ -165,12 +165,14 @@ const defineBrowserMutationTests = async () => {
     it("ends loading synchronously, runs both abort hooks once, and discards late work", async () => {
       const work = deferred<string>();
       const hooks: string[] = [];
-      const { result: m, dispose } = testRoot(() => mutation.create({
-        now: () => 30,
-        mutation: (value: string) => value === "first" ? work.promise : Promise.resolve(value),
-        onAbort: () => hooks.push("abort"),
-        onFinally: () => hooks.push("finally"),
-      }));
+      const { result: m, dispose } = testRoot(() =>
+        mutation.create({
+          now: () => 30,
+          mutation: (value: string) => (value === "first" ? work.promise : Promise.resolve(value)),
+          onAbort: () => hooks.push("abort"),
+          onFinally: () => hooks.push("finally"),
+        }),
+      );
       const first = m.mutate("first");
       m.abort();
       expect(m.status()).toBe("aborted");
@@ -189,15 +191,17 @@ const defineBrowserMutationTests = async () => {
     it("exposes the pending signal before an awaited optimistic change", async () => {
       const answer = deferred<boolean>();
       const changes: string[] = [];
-      const { result: m, dispose } = testRoot(() => mutation.create({
-        now: () => 40,
-        onBefore: async (value: string, { cancel, signal }) => {
-          const confirmed = await answer.promise;
-          if (signal.aborted || !confirmed) return cancel();
-          changes.push(value);
-        },
-        mutation: async (value: string) => value,
-      }));
+      const { result: m, dispose } = testRoot(() =>
+        mutation.create({
+          now: () => 40,
+          onBefore: async (value: string, { cancel, signal }) => {
+            const confirmed = await answer.promise;
+            if (signal.aborted || !confirmed) return cancel();
+            changes.push(value);
+          },
+          mutation: async (value: string) => value,
+        }),
+      );
       const call = m.mutate("first");
       m.abort();
       expect(m.status()).toBe("aborted");
@@ -211,11 +215,13 @@ const defineBrowserMutationTests = async () => {
 
     it("resolves replaced work superseded and never commits its result", async () => {
       const work = deferred<string>();
-      const { result: m, dispose } = testRoot(() => mutation.create({
-        concurrency: "replace",
-        now: () => 50,
-        mutation: (value: string) => value === "first" ? work.promise : Promise.resolve(value),
-      }));
+      const { result: m, dispose } = testRoot(() =>
+        mutation.create({
+          concurrency: "replace",
+          now: () => 50,
+          mutation: (value: string) => (value === "first" ? work.promise : Promise.resolve(value)),
+        }),
+      );
       const first = m.mutate("first");
       expect(await m.mutate("next")).toBe("success");
       work.resolve("stale");
@@ -228,16 +234,21 @@ const defineBrowserMutationTests = async () => {
     for (const ending of ["cancel", "error"] as const) {
       it(`does not retry older variables after onBefore ${ending}`, async () => {
         const calls: string[] = [];
-        const { result: m, dispose } = testRoot(() => mutation.create({
-          now: () => 60,
-          onBefore: (value: string, { cancel }) => {
-            if (value === "next") {
-              if (ending === "cancel") return cancel();
-              throw new Error("before");
-            }
-          },
-          mutation: async (value: string) => { calls.push(value); return value; },
-        }));
+        const { result: m, dispose } = testRoot(() =>
+          mutation.create({
+            now: () => 60,
+            onBefore: (value: string, { cancel }) => {
+              if (value === "next") {
+                if (ending === "cancel") return cancel();
+                throw new Error("before");
+              }
+            },
+            mutation: async (value: string) => {
+              calls.push(value);
+              return value;
+            },
+          }),
+        );
         expect(await m.mutate("first")).toBe("success");
         expect(await m.mutate("next")).toBe(ending === "cancel" ? "aborted" : "error");
         expect(await m.retry()).toBe("dropped");

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { a11y } from "./a11y";
 
 describe("a11y.clickOrEnter", () => {
@@ -69,4 +69,3 @@ describe("a11y.clickOrEnter", () => {
     }
   });
 });
-

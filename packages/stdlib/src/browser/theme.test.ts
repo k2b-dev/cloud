@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { theme, type ThemeMode } from "./theme";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { type ThemeMode, theme } from "./theme";
 
 // Mock document.documentElement.classList
 let classList: Set<string>;

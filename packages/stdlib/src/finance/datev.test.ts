@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { datev, type DatevBatch } from "./index";
 import { unwrap } from "../result";
-const renderDatevBatch = (input: DatevBatch) => unwrap(datev.serialize(input));
+import { type DatevBatch, datev } from "./index";
 
+const renderDatevBatch = (input: DatevBatch) => unwrap(datev.serialize(input));
 
 const input = () => ({
   format: "datev-700-13" as const,
@@ -19,7 +19,6 @@ const input = () => ({
   finalize: false,
   rows: [
     {
-
       amount: "123.45",
       direction: "S" as const,
       account: "00440",
@@ -69,7 +68,11 @@ describe("DATEV 700/13 EUR batch", () => {
     const batch = input();
     const row = { ...batch.rows[0]!, text: "Rent" };
     const original = new TextDecoder().decode(renderDatevBatch({ ...batch, rows: [row] }).bytes).split("\r\n");
-    for (const documentGuid of ["E0A08953-FBAA-4054-AF36-993D5D68F040", "e0a08953-fbaa-4054-af36-993d5d68f040", "E0a08953-fBaA-4054-Af36-993d5D68f040"]) {
+    for (const documentGuid of [
+      "E0A08953-FBAA-4054-AF36-993D5D68F040",
+      "e0a08953-fbaa-4054-af36-993d5d68f040",
+      "E0a08953-fBaA-4054-Af36-993d5D68f040",
+    ]) {
       const linked = { ...batch, rows: [{ ...row, documentGuid }] };
       expect(unwrap(datev.validate(linked)).rows[0]!.documentGuid).toBe(documentGuid);
       const csv = new TextDecoder().decode(renderDatevBatch(linked).bytes).split("\r\n");
@@ -84,7 +87,16 @@ describe("DATEV 700/13 EUR batch", () => {
 
   test("rejects malformed, wrapped and preformatted document GUIDs at the row path", () => {
     const batch = input();
-    for (const documentGuid of ["", "not-a-guid", "e0a08953fbaa4054af36993d5d68f040", "{E0A08953-FBAA-4054-AF36-993D5D68F040}", 'BEDI "E0A08953-FBAA-4054-AF36-993D5D68F040"', "G0A08953-FBAA-4054-AF36-993D5D68F040", "E0A08953-FBAA-4054-AF36-993D5D68F040 ", "E0A08953-FBAA-4054-AF36-993D5D68F040\n"]) {
+    for (const documentGuid of [
+      "",
+      "not-a-guid",
+      "e0a08953fbaa4054af36993d5d68f040",
+      "{E0A08953-FBAA-4054-AF36-993D5D68F040}",
+      'BEDI "E0A08953-FBAA-4054-AF36-993D5D68F040"',
+      "G0A08953-FBAA-4054-AF36-993D5D68F040",
+      "E0A08953-FBAA-4054-AF36-993D5D68F040 ",
+      "E0A08953-FBAA-4054-AF36-993D5D68F040\n",
+    ]) {
       const linked = { ...batch, rows: [{ ...batch.rows[0]!, documentGuid }] };
       for (const checked of [datev.validate(linked), datev.serialize(linked)]) {
         expect(checked.ok).toBe(false);
@@ -96,16 +108,14 @@ describe("DATEV 700/13 EUR batch", () => {
   test("keeps totals exact across multiple postings", () => {
     const batch = input();
     const row = batch.rows[0]!;
-    const result = renderDatevBatch(
-      {
-        ...batch,
-        rows: [
-          { ...row, amount: "9999999999.99" },
-          { ...row, amount: "0.01" },
-          { ...row, amount: "3.00", direction: "H" },
-        ],
-      },
-    );
+    const result = renderDatevBatch({
+      ...batch,
+      rows: [
+        { ...row, amount: "9999999999.99" },
+        { ...row, amount: "0.01" },
+        { ...row, amount: "3.00", direction: "H" },
+      ],
+    });
     expect(result).toMatchObject({ rowCount: 3, debitTotal: "10000000000.00", creditTotal: "3.00" });
     expect(datev.validate({ ...batch, rows: [row, row] }).ok).toBe(true); // Business dedupe belongs to the caller.
   });
@@ -156,7 +166,12 @@ test("header validation works before postings and shares batch rules and paths",
   expect(unwrap(datev.validateHeader(header))).toEqual(header);
   expect(datev.validate(header).ok).toBe(false);
   expect(datev.validateHeader({ ...header, rows: [] }).ok).toBe(false);
-  for (const patch of [{ periodEnd: "2027-01-01" }, { consultantNumber: "1000" }, { fiscalYearStart: "not-a-date" }, { accountLength: 9 }]) {
+  for (const patch of [
+    { periodEnd: "2027-01-01" },
+    { consultantNumber: "1000" },
+    { fiscalYearStart: "not-a-date" },
+    { accountLength: 9 },
+  ]) {
     const early = datev.validateHeader({ ...header, ...patch });
     const batch = datev.validate({ ...header, ...patch, rows, createdAt });
     expect(early.ok).toBe(false);

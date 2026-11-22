@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { getFileCategory, getFileIcon, type FileInfoLike } from "./fileicons";
+import { describe, expect, it } from "bun:test";
+import { type FileInfoLike, getFileCategory, getFileIcon } from "./fileicons";
 
 const file = (name: string, mimeType?: string): FileInfoLike => ({
   name,

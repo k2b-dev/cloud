@@ -15,7 +15,9 @@ const render = (read: () => unknown, bad: unknown, error: Error) => {
 
 const captureUnhandled = async (run: () => Promise<void>) => {
   const errors: unknown[] = [];
-  const listener = (error: unknown) => { errors.push(error); };
+  const listener = (error: unknown) => {
+    errors.push(error);
+  };
   process.on("unhandledRejection", listener);
   try {
     await run();
@@ -58,61 +60,66 @@ const defineBrowserConsumerTests = async () => {
   // freezes hotkeys' browser detection before that suite installs its DOM mocks.
   const { clipboard, mutation, query } = await import("./index");
   describe("consumer errors", () => {
-    it("query commits a snapshot without treating a consumer error as a load error", () => inBrowserProcess(async () => {
-      const error = new Error("consumer render failed");
-      let version = 1;
-      const { result: { q, view }, dispose } = testRoot(() => {
-        const q = query.create({ source: () => "/items", load: async () => `v${version}` });
-        return { q, view: render(q.data, "v2", error) };
-      });
-      try {
-        await q.refresh();
-        expect(view.text).toBe("v1");
-        version = 2;
-        expect(await captureUnhandled(() => q.refresh())).toEqual([error]);
-        expect(q.data()).toBe("v2");
-        expect(q.error()).toBeNull();
-        expect(q.stale()).toBe(false);
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(false);
-        version = 3;
-        const refresh = q.refresh();
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(true);
-        await refresh;
-        expect(q.data()).toBe("v3");
-        expect(q.refreshing()).toBe(false);
-      } finally {
-        dispose();
-      }
-    }));
+    it("query commits a snapshot without treating a consumer error as a load error", () =>
+      inBrowserProcess(async () => {
+        const error = new Error("consumer render failed");
+        let version = 1;
+        const {
+          result: { q, view },
+          dispose,
+        } = testRoot(() => {
+          const q = query.create({ source: () => "/items", load: async () => `v${version}` });
+          return { q, view: render(q.data, "v2", error) };
+        });
+        try {
+          await q.refresh();
+          expect(view.text).toBe("v1");
+          version = 2;
+          expect(await captureUnhandled(() => q.refresh())).toEqual([error]);
+          expect(q.data()).toBe("v2");
+          expect(q.error()).toBeNull();
+          expect(q.stale()).toBe(false);
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(false);
+          version = 3;
+          const refresh = q.refresh();
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(true);
+          await refresh;
+          expect(q.data()).toBe("v3");
+          expect(q.refreshing()).toBe(false);
+        } finally {
+          dispose();
+        }
+      }));
 
-    it("a first-load consumer error still leaves the next request refreshing", () => inBrowserProcess(async () => {
-      const error = new Error("first render failed");
-      let value = 1;
-      const { result: q, dispose } = testRoot(() => {
-        const q = query.create({ source: () => "/items", load: async () => value });
-        render(q.data, 1, error);
-        return q;
-      });
-      try {
-        expect(await captureUnhandled(() => q.refresh())).toEqual([error]);
-        expect(q.data()).toBe(1);
-        expect(q.error()).toBeNull();
-        expect(q.stale()).toBe(false);
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(false);
-        value = 2;
-        const refresh = q.refresh();
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(true);
-        await refresh;
-        expect(q.data()).toBe(2);
-        expect(q.refreshing()).toBe(false);
-      } finally {
-        dispose();
-      }
-    }));
+    it("a first-load consumer error still leaves the next request refreshing", () =>
+      inBrowserProcess(async () => {
+        const error = new Error("first render failed");
+        let value = 1;
+        const { result: q, dispose } = testRoot(() => {
+          const q = query.create({ source: () => "/items", load: async () => value });
+          render(q.data, 1, error);
+          return q;
+        });
+        try {
+          expect(await captureUnhandled(() => q.refresh())).toEqual([error]);
+          expect(q.data()).toBe(1);
+          expect(q.error()).toBeNull();
+          expect(q.stale()).toBe(false);
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(false);
+          value = 2;
+          const refresh = q.refresh();
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(true);
+          await refresh;
+          expect(q.data()).toBe(2);
+          expect(q.refreshing()).toBe(false);
+        } finally {
+          dispose();
+        }
+      }));
 
     it("Solid catchError receives a consumer error without affecting the query", async () => {
       const error = new Error("consumer render failed");
@@ -140,36 +147,41 @@ const defineBrowserConsumerTests = async () => {
       }
     });
 
-    it("invalidate resolves when its snapshot commits despite a consumer error", () => inBrowserProcess(async () => {
-      const error = new Error("consumer render failed");
-      const { result: q, dispose } = testRoot(() => {
-        const q = query.create({
-          source: () => "/items",
-          initial: { source: "/items", data: 1 },
-          load: async () => 2,
+    it("invalidate resolves when its snapshot commits despite a consumer error", () =>
+      inBrowserProcess(async () => {
+        const error = new Error("consumer render failed");
+        const { result: q, dispose } = testRoot(() => {
+          const q = query.create({
+            source: () => "/items",
+            initial: { source: "/items", data: 1 },
+            load: async () => 2,
+          });
+          render(q.data, 2, error);
+          return q;
         });
-        render(q.data, 2, error);
-        return q;
-      });
-      try {
-        expect(await captureUnhandled(() => q.invalidate())).toEqual([error]);
-        expect(q.data()).toBe(2);
-        expect(q.error()).toBeNull();
-        expect(q.stale()).toBe(false);
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(false);
-      } finally {
-        dispose();
-      }
-    }));
+        try {
+          expect(await captureUnhandled(() => q.invalidate())).toEqual([error]);
+          expect(q.data()).toBe(2);
+          expect(q.error()).toBeNull();
+          expect(q.stale()).toBe(false);
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(false);
+        } finally {
+          dispose();
+        }
+      }));
 
     it("load errors still set error and reject invalidate", async () => {
       const error = new Error("load failed");
-      const { result: q, dispose } = testRoot(() => query.create({
-        source: () => "/items",
-        initial: { source: "/items", data: 1 },
-        load: async () => { throw error; },
-      }));
+      const { result: q, dispose } = testRoot(() =>
+        query.create({
+          source: () => "/items",
+          initial: { source: "/items", data: 1 },
+          load: async () => {
+            throw error;
+          },
+        }),
+      );
       try {
         await expect(q.invalidate()).rejects.toBe(error);
         expect(q.error()).toBe(error);
@@ -182,34 +194,39 @@ const defineBrowserConsumerTests = async () => {
       }
     });
 
-    it("a consumer error while showing a load error keeps the load error state", () => inBrowserProcess(async () => {
-      const consumerError = new Error("error render failed");
-      const loadError = new Error("load failed");
-      const { result: q, dispose } = testRoot(() => {
-        const q = query.create({
-          source: () => "/items",
-          initial: { source: "/items", data: 1 },
-          load: async () => { throw loadError; },
+    it("a consumer error while showing a load error keeps the load error state", () =>
+      inBrowserProcess(async () => {
+        const consumerError = new Error("error render failed");
+        const loadError = new Error("load failed");
+        const { result: q, dispose } = testRoot(() => {
+          const q = query.create({
+            source: () => "/items",
+            initial: { source: "/items", data: 1 },
+            load: async () => {
+              throw loadError;
+            },
+          });
+          render(() => q.error(), loadError, consumerError);
+          return q;
         });
-        render(() => q.error(), loadError, consumerError);
-        return q;
-      });
-      try {
-        let rejection: unknown;
-        const unhandled = await captureUnhandled(async () => {
-          await q.invalidate().catch((caught) => { rejection = caught; });
-        });
-        expect(unhandled).toEqual([consumerError]);
-        expect(rejection).toBe(loadError);
-        expect(q.error()).toBe(loadError);
-        expect(q.data()).toBe(1);
-        expect(q.stale()).toBe(true);
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(false);
-      } finally {
-        dispose();
-      }
-    }));
+        try {
+          let rejection: unknown;
+          const unhandled = await captureUnhandled(async () => {
+            await q.invalidate().catch((caught) => {
+              rejection = caught;
+            });
+          });
+          expect(unhandled).toEqual([consumerError]);
+          expect(rejection).toBe(loadError);
+          expect(q.error()).toBe(loadError);
+          expect(q.data()).toBe(1);
+          expect(q.stale()).toBe(true);
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(false);
+        } finally {
+          dispose();
+        }
+      }));
 
     it("a consumer error on refreshing does not prevent the load from starting", async () => {
       const error = new Error("refresh render failed");
@@ -284,7 +301,7 @@ const defineBrowserConsumerTests = async () => {
           source: () => "/items",
           initial: { source: "/items", pages: [1] },
           loadPage: async (_source, { cursor }) => cursor ?? 1,
-          getNextCursor: (page) => page < 3 ? page + 1 : null,
+          getNextCursor: (page) => (page < 3 ? page + 1 : null),
         });
         createRenderEffect(() => {
           if (q.loadingMore() && throwOnLoadingMore) throw error;
@@ -305,48 +322,51 @@ const defineBrowserConsumerTests = async () => {
       }
     });
 
-    it("loadMore commits pages and settles before a consumer error surfaces", () => inBrowserProcess(async () => {
-      const error = new Error("pages render failed");
-      const { result: q, dispose } = testRoot(() => {
-        const q = query.createInfinite<string, number, number>({
-          source: () => "/items",
-          loadPage: async (_source, { cursor }) => cursor ?? 1,
-          getNextCursor: (page) => page < 3 ? page + 1 : null,
+    it("loadMore commits pages and settles before a consumer error surfaces", () =>
+      inBrowserProcess(async () => {
+        const error = new Error("pages render failed");
+        const { result: q, dispose } = testRoot(() => {
+          const q = query.createInfinite<string, number, number>({
+            source: () => "/items",
+            loadPage: async (_source, { cursor }) => cursor ?? 1,
+            getNextCursor: (page) => (page < 3 ? page + 1 : null),
+          });
+          render(() => q.pages().length, 2, error);
+          return q;
         });
-        render(() => q.pages().length, 2, error);
-        return q;
-      });
-      try {
-        await q.refresh();
-        expect(q.hasMore()).toBe(true);
-        expect(await captureUnhandled(() => q.loadMore())).toEqual([error]);
-        expect(q.pages()).toEqual([1, 2]);
-        expect(q.error()).toBeNull();
-        expect(q.loadingMore()).toBe(false);
-        expect(q.stale()).toBe(false);
-        expect(q.loading()).toBe(false);
-        expect(q.refreshing()).toBe(false);
-        expect(q.hasMore()).toBe(true);
-        await q.loadMore();
-        expect(q.pages()).toEqual([1, 2, 3]);
-        expect(q.loadingMore()).toBe(false);
-        expect(q.hasMore()).toBe(false);
-      } finally {
-        dispose();
-      }
-    }));
+        try {
+          await q.refresh();
+          expect(q.hasMore()).toBe(true);
+          expect(await captureUnhandled(() => q.loadMore())).toEqual([error]);
+          expect(q.pages()).toEqual([1, 2]);
+          expect(q.error()).toBeNull();
+          expect(q.loadingMore()).toBe(false);
+          expect(q.stale()).toBe(false);
+          expect(q.loading()).toBe(false);
+          expect(q.refreshing()).toBe(false);
+          expect(q.hasMore()).toBe(true);
+          await q.loadMore();
+          expect(q.pages()).toEqual([1, 2, 3]);
+          expect(q.loadingMore()).toBe(false);
+          expect(q.hasMore()).toBe(false);
+        } finally {
+          dispose();
+        }
+      }));
 
     it("getNextCursor errors during loadMore remain load errors", async () => {
       const error = new Error("cursor failed");
-      const { result: q, dispose } = testRoot(() => query.createInfinite<string, number, number>({
-        source: () => "/items",
-        initial: { source: "/items", pages: [1] },
-        loadPage: async (_source, { cursor }) => cursor ?? 1,
-        getNextCursor: (page) => {
-          if (page === 2) throw error;
-          return page + 1;
-        },
-      }));
+      const { result: q, dispose } = testRoot(() =>
+        query.createInfinite<string, number, number>({
+          source: () => "/items",
+          initial: { source: "/items", pages: [1] },
+          loadPage: async (_source, { cursor }) => cursor ?? 1,
+          getNextCursor: (page) => {
+            if (page === 2) throw error;
+            return page + 1;
+          },
+        }),
+      );
       try {
         await q.loadMore();
         expect(q.error()).toBe(error);
@@ -362,7 +382,9 @@ const defineBrowserConsumerTests = async () => {
       const error = new Error("mutation render failed");
       const onError = mock((_error: Error) => {});
       const onSuccess = mock(() => {});
-      const onFinally = mock(() => { expect(m.loading()).toBe(false); });
+      const onFinally = mock(() => {
+        expect(m.loading()).toBe(false);
+      });
       const { result: m, dispose } = testRoot(() => {
         const m = mutation.create({
           mutation: async (value: string) => value,
@@ -436,10 +458,14 @@ const defineBrowserConsumerTests = async () => {
     it("mutate and retry reject onSuccess errors without calling onError", async () => {
       const error = new Error("onSuccess failed");
       const onError = mock((_error: Error) => {});
-      const onFinally = mock(() => { expect(m.loading()).toBe(false); });
+      const onFinally = mock(() => {
+        expect(m.loading()).toBe(false);
+      });
       const m = mutation.create({
         mutation: async (value: string) => value,
-        onSuccess: () => { throw error; },
+        onSuccess: () => {
+          throw error;
+        },
         onError,
         onFinally,
       });
@@ -459,9 +485,13 @@ const defineBrowserConsumerTests = async () => {
     it("mutation function errors still set error and call onError without rejecting", async () => {
       const error = new Error("mutation failed");
       const onError = mock((_error: Error) => {});
-      const onFinally = mock(() => { expect(m.loading()).toBe(false); });
+      const onFinally = mock(() => {
+        expect(m.loading()).toBe(false);
+      });
       const m = mutation.create({
-        mutation: async () => { throw error; },
+        mutation: async () => {
+          throw error;
+        },
         onError,
         onFinally,
       });
@@ -476,11 +506,18 @@ const defineBrowserConsumerTests = async () => {
     it("onAbort errors for returned aborted results reject without calling onAbort twice", async () => {
       const error = new Error("onAbort failed");
       let resolve!: (value: string) => void;
-      const onAbort = mock(() => { throw error; });
+      const onAbort = mock(() => {
+        throw error;
+      });
       const onError = mock((_error: Error) => {});
-      const onFinally = mock(() => { expect(m.loading()).toBe(false); });
+      const onFinally = mock(() => {
+        expect(m.loading()).toBe(false);
+      });
       const m = mutation.create({
-        mutation: () => new Promise<string>((nextResolve) => { resolve = nextResolve; }),
+        mutation: () =>
+          new Promise<string>((nextResolve) => {
+            resolve = nextResolve;
+          }),
         onAbort,
         onError,
         onFinally,
@@ -559,23 +596,15 @@ if (process.env.STDLIB_SOLID_BROWSER_TESTS === "1") {
 } else {
   describe("consumer errors browser suite", () => {
     it("passes with SolidJS browser conditions", async () => {
-      const child = Bun.spawn(
-        [
-          process.execPath,
-          "test",
-          "--conditions=browser",
-          import.meta.path,
-        ],
-        {
-          cwd: process.cwd(),
-          env: {
-            ...process.env,
-            STDLIB_SOLID_BROWSER_TESTS: "1",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
+      const child = Bun.spawn([process.execPath, "test", "--conditions=browser", import.meta.path], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          STDLIB_SOLID_BROWSER_TESTS: "1",
         },
-      );
+        stdout: "pipe",
+        stderr: "pipe",
+      });
       const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).text(),

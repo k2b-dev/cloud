@@ -18,17 +18,13 @@ describe("root barrel", () => {
 
   it("does not re-export ./qr (would force lean-qr resolution)", () => {
     // Allow mentions in comments; only flag actual export statements.
-    const exportLines = indexSrc
-      .split("\n")
-      .filter((l) => /^\s*export\b/.test(l));
+    const exportLines = indexSrc.split("\n").filter((l) => /^\s*export\b/.test(l));
     const offending = exportLines.filter((l) => /["']\.\/qr["']/.test(l));
     expect(offending).toEqual([]);
   });
 
   it("does not statically import lean-qr", () => {
-    const importLines = indexSrc
-      .split("\n")
-      .filter((l) => /^\s*(import|export).*\bfrom\b/.test(l));
+    const importLines = indexSrc.split("\n").filter((l) => /^\s*(import|export).*\bfrom\b/.test(l));
     const offending = importLines.filter((l) => /["']lean-qr/.test(l));
     expect(offending).toEqual([]);
   });

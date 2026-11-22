@@ -1,4 +1,4 @@
-import { datev, type DatevBatch, type DatevXmlPackage } from "../src/finance";
+import { type DatevBatch, type DatevXmlPackage, datev } from "../src/finance";
 import { createDatevXmlPackage, type DatevXmlSchemas } from "../src/finance/validate";
 import { datevExample } from "./finance";
 
@@ -6,7 +6,9 @@ import { datevExample } from "./finance";
 export async function datevBeleglinkExample(receiptBytes: Uint8Array, schemas: DatevXmlSchemas) {
   const guid = "E0A08953-FBAA-4054-AF36-993D5D68F040";
   const images: DatevXmlPackage = {
-    format: "datev-xml-online-6.0", currency: "EUR", createdAt: "2026-10-01T09:15:00",
+    format: "datev-xml-online-6.0",
+    currency: "EUR",
+    createdAt: "2026-10-01T09:15:00",
     generatorInfo: "Example company",
     documents: [{ kind: "documentImage", guid, files: [{ name: "RE-2026-1.pdf", bytes: receiptBytes }] }],
   };

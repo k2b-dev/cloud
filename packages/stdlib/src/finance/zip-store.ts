@@ -34,8 +34,14 @@ export function zipStore(entries: readonly ZipStoreEntry[], modified: string): U
   const out = new Uint8Array(size);
   const view = new DataView(out.buffer);
   let offset = 0;
-  const u16 = (value: number) => { view.setUint16(offset, value, true); offset += 2; };
-  const u32 = (value: number) => { view.setUint32(offset, value, true); offset += 4; };
+  const u16 = (value: number) => {
+    view.setUint16(offset, value, true);
+    offset += 2;
+  };
+  const u32 = (value: number) => {
+    view.setUint32(offset, value, true);
+    offset += 4;
+  };
   const name = (value: string) => {
     for (let i = 0; i < value.length; i++) {
       const code = value.charCodeAt(i);
@@ -43,22 +49,53 @@ export function zipStore(entries: readonly ZipStoreEntry[], modified: string): U
       out[offset++] = code;
     }
   };
-  const records = entries.map(entry => ({ ...entry, crc: crc32(entry.bytes), offset: 0 }));
+  const records = entries.map((entry) => ({ ...entry, crc: crc32(entry.bytes), offset: 0 }));
   for (const record of records) {
     record.offset = offset;
-    u32(0x04034b50); u16(10); u16(0); u16(0); u16(dosTime); u16(dosDate);
-    u32(record.crc); u32(record.bytes.byteLength); u32(record.bytes.byteLength);
-    u16(record.name.length); u16(0); name(record.name);
-    out.set(record.bytes, offset); offset += record.bytes.byteLength;
+    u32(0x04034b50);
+    u16(10);
+    u16(0);
+    u16(0);
+    u16(dosTime);
+    u16(dosDate);
+    u32(record.crc);
+    u32(record.bytes.byteLength);
+    u32(record.bytes.byteLength);
+    u16(record.name.length);
+    u16(0);
+    name(record.name);
+    out.set(record.bytes, offset);
+    offset += record.bytes.byteLength;
   }
   const directory = offset;
   for (const record of records) {
-    u32(0x02014b50); u16(10); u16(10); u16(0); u16(0); u16(dosTime); u16(dosDate);
-    u32(record.crc); u32(record.bytes.byteLength); u32(record.bytes.byteLength);
-    u16(record.name.length); u16(0); u16(0); u16(0); u16(0); u32(0); u32(record.offset);
+    u32(0x02014b50);
+    u16(10);
+    u16(10);
+    u16(0);
+    u16(0);
+    u16(dosTime);
+    u16(dosDate);
+    u32(record.crc);
+    u32(record.bytes.byteLength);
+    u32(record.bytes.byteLength);
+    u16(record.name.length);
+    u16(0);
+    u16(0);
+    u16(0);
+    u16(0);
+    u32(0);
+    u32(record.offset);
     name(record.name);
   }
   const directorySize = offset - directory;
-  u32(0x06054b50); u16(0); u16(0); u16(records.length); u16(records.length); u32(directorySize); u32(directory); u16(0);
+  u32(0x06054b50);
+  u16(0);
+  u16(0);
+  u16(records.length);
+  u16(records.length);
+  u32(directorySize);
+  u32(directory);
+  u16(0);
   return out;
 }

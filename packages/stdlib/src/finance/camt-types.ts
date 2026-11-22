@@ -33,11 +33,20 @@ export type CamtTransaction = {
   amount?: CamtAmount;
   direction?: CamtDirection;
   references: {
-    messageId?: string; accountServicerReference?: string; paymentInformationId?: string;
-    instructionId?: string; endToEndId?: string; uetr?: string; transactionId?: string;
-    mandateId?: string; chequeNumber?: string; clearingSystemReference?: string;
-    accountOwnerTransactionId?: string; accountServicerTransactionId?: string;
-    marketInfrastructureTransactionId?: string; processingId?: string;
+    messageId?: string;
+    accountServicerReference?: string;
+    paymentInformationId?: string;
+    instructionId?: string;
+    endToEndId?: string;
+    uetr?: string;
+    transactionId?: string;
+    mandateId?: string;
+    chequeNumber?: string;
+    clearingSystemReference?: string;
+    accountOwnerTransactionId?: string;
+    accountServicerTransactionId?: string;
+    marketInfrastructureTransactionId?: string;
+    processingId?: string;
     proprietary: { type: string; reference: string }[];
   };
   instructedAmount?: CamtAmount;
@@ -59,8 +68,11 @@ export type CamtTransaction = {
 };
 export type CamtEntryDetails = {
   batch?: {
-    messageId?: string; paymentInformationId?: string; transactionCount?: string;
-    total?: CamtAmount; direction?: CamtDirection;
+    messageId?: string;
+    paymentInformationId?: string;
+    transactionCount?: string;
+    total?: CamtAmount;
+    direction?: CamtDirection;
   };
   transactions: CamtTransaction[];
 };

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { testRoot } from "../_test-helpers";
 import { localStore } from "./localstorage";
 
@@ -43,9 +43,7 @@ globalThis.BroadcastChannel = class {
 
 describe("localStore.create", () => {
   it("returns store with default value when storage is empty", () => {
-    const { result, dispose } = testRoot(() =>
-      localStore.create("test-create-default", { name: "default", count: 0 }),
-    );
+    const { result, dispose } = testRoot(() => localStore.create("test-create-default", { name: "default", count: 0 }));
     const [s] = result;
     expect(s.name).toBe("default");
     expect(s.count).toBe(0);
@@ -59,9 +57,7 @@ describe("localStore.create", () => {
       count: 42,
       _key: "test-existing",
     });
-    const { result, dispose } = testRoot(() =>
-      localStore.create("test-existing", { name: "default", count: 0 }),
-    );
+    const { result, dispose } = testRoot(() => localStore.create("test-existing", { name: "default", count: 0 }));
     const [s] = result;
     expect(s.name).toBe("stored");
     expect(s.count).toBe(42);
@@ -70,9 +66,7 @@ describe("localStore.create", () => {
   });
 
   it("setStore persists to localStorage", () => {
-    const { result, dispose } = testRoot(() =>
-      localStore.create("test-persist", { value: "initial" }),
-    );
+    const { result, dispose } = testRoot(() => localStore.create("test-persist", { value: "initial" }));
     const [, setStore] = result;
     setStore("value", "updated");
     const raw = JSON.parse(store["test-persist"]!);

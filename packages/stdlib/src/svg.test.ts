@@ -1,6 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import { generateSvgAvatar, parseWebpDataUrl } from "./svg";
+import { describe, expect, it } from "bun:test";
 import { toBase64 } from "./encoding";
+import { generateSvgAvatar, parseWebpDataUrl } from "./svg";
 
 // ==========================
 // generateSvgAvatar

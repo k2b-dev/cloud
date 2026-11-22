@@ -1,6 +1,6 @@
-import { describe, it, expect, expectTypeOf } from "bun:test";
-import { ok, okMany, fail, err, paginate, unwrap, isServiceError, tryCatch } from "./result";
+import { describe, expect, expectTypeOf, it } from "bun:test";
 import type { Result, ServiceError, ServiceErrorCode } from "./index";
+import { err, fail, isServiceError, ok, okMany, paginate, tryCatch, unwrap } from "./result";
 
 // ==========================
 // ok()
@@ -121,17 +121,24 @@ describe("err helpers", () => {
   });
 
   it("preserves the public status union and factory literals", () => {
-    expectTypeOf<ServiceError["status"]>().toEqualTypeOf<400 | 401 | 403 | 404 | 405 | 406 | 408 | 409 | 410 | 412 | 413 | 415 | 416 | 421 | 422 | 429 | 500 | 501 | 502 | 503 | 504>();
+    expectTypeOf<ServiceError["status"]>().toEqualTypeOf<
+      400 | 401 | 403 | 404 | 405 | 406 | 408 | 409 | 410 | 412 | 413 | 415 | 416 | 421 | 422 | 429 | 500 | 501 | 502 | 503 | 504
+    >();
     expectTypeOf(err.unavailable()).toEqualTypeOf<{ code: "UNAVAILABLE"; message: string; status: 503 }>();
     expectTypeOf(err.tooManyRequests()).toEqualTypeOf<{ code: "TOO_MANY_REQUESTS"; message: string; status: 429 }>();
     expectTypeOf<"UNAVAILABLE" | "TOO_MANY_REQUESTS">().toExtend<ServiceErrorCode>();
 
     const unavailable = { code: "READ_UNAVAILABLE", message: "Read failed", status: 503 } satisfies ServiceError;
     const limited = { code: "READ_LIMITED", message: "Try later", status: 429 } satisfies ServiceError;
-    const consumerErrors = ([413, 422, 502, 504] as const).map(status => ({ code: "DOMAIN_ERROR", message: "Failed", status } satisfies ServiceError));
-    expect(consumerErrors.map(error => fail(error).ok)).toEqual([false, false, false, false]);
+    const consumerErrors = ([413, 422, 502, 504] as const).map(
+      (status) => ({ code: "DOMAIN_ERROR", message: "Failed", status }) satisfies ServiceError,
+    );
+    expect(consumerErrors.map((error) => fail(error).ok)).toEqual([false, false, false, false]);
     const results: Result[] = [fail(unavailable), fail(limited)];
-    expect(results).toEqual([{ ok: false, error: unavailable }, { ok: false, error: limited }]);
+    expect(results).toEqual([
+      { ok: false, error: unavailable },
+      { ok: false, error: limited },
+    ]);
   });
 
   it("each helper has correct status code", () => {
@@ -257,20 +264,29 @@ describe("tryCatch", () => {
   });
 
   it("preserves transient service errors through fail, unwrap and tryCatch", async () => {
-    for (const error of [err.unavailable(), err.tooManyRequests(), { code: "READ_UNAVAILABLE", message: "Retry", status: 503 } satisfies ServiceError]) {
+    for (const error of [
+      err.unavailable(),
+      err.tooManyRequests(),
+      { code: "READ_UNAVAILABLE", message: "Retry", status: 503 } satisfies ServiceError,
+    ]) {
       const result = await tryCatch(async () => unwrap(fail(error)));
       expect(result).toMatchObject({ ok: false, error });
     }
   });
 
   it("preserves existing consumer error statuses without invoking the mapper", async () => {
-    const errors = [413, 422, 429, 499, 502, 503, 504, 529].map(status => ({ code: "DOMAIN_ERROR", message: "Retry", status }));
+    const errors = [413, 422, 429, 499, 502, 503, 504, 529].map((status) => ({ code: "DOMAIN_ERROR", message: "Retry", status }));
     for (const error of errors) {
       let mapped = false;
-      const result = await tryCatch(async () => { throw error; }, () => {
-        mapped = true;
-        return err.internal();
-      });
+      const result = await tryCatch(
+        async () => {
+          throw error;
+        },
+        () => {
+          mapped = true;
+          return err.internal();
+        },
+      );
       expect(mapped).toBe(false);
       if (result.ok) throw new Error("Expected failure");
       expect(result.error === error).toBe(true);
@@ -290,14 +306,18 @@ describe("tryCatch", () => {
 
   it("uses custom onError mapper when provided", async () => {
     const result = await tryCatch(
-      () => { throw "x"; },
+      () => {
+        throw "x";
+      },
       () => err.badInput("custom"),
     );
     if (!result.ok) expect(result.error.code).toBe("BAD_INPUT");
   });
 
   it("wraps non-Error throw via String()", async () => {
-    const result = await tryCatch(() => { throw 42; });
+    const result = await tryCatch(() => {
+      throw 42;
+    });
     if (!result.ok) expect(result.error.message).toContain("42");
   });
 

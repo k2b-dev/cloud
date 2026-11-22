@@ -36,12 +36,14 @@ export const camtExampleXml = `<?xml version="1.0" encoding="UTF-8"?>
 export function camtExample() {
   const result = camt.parse(camtExampleXml);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
-  return result.data.reports.map(report => ({
+  return result.data.reports.map((report) => ({
     account: report.account.id,
-    entries: report.entries.map(entry => ({
-      amount: entry.amount, direction: entry.direction, status: entry.status,
+    entries: report.entries.map((entry) => ({
+      amount: entry.amount,
+      direction: entry.direction,
+      status: entry.status,
       // Details are a breakdown of the entry, not additional account movements.
-      transactions: entry.details.flatMap(group => group.transactions),
+      transactions: entry.details.flatMap((group) => group.transactions),
     })),
   }));
 }

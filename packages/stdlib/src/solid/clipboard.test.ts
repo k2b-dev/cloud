@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, spyOn } from "bun:test";
+import { describe, expect, it, mock, spyOn } from "bun:test";
 import { testRoot } from "../_test-helpers";
 import { clipboard } from "./clipboard";
 
@@ -96,9 +96,7 @@ describe("clipboard.createWriter", () => {
   });
 
   it("restarts the feedback timer after another successful copy", async () => {
-    const { result, dispose } = testRoot(() =>
-      clipboard.createWriter({ write: async () => {}, copiedFor: 60 }),
-    );
+    const { result, dispose } = testRoot(() => clipboard.createWriter({ write: async () => {}, copiedFor: 60 }));
 
     await result.copy("first");
     await Bun.sleep(35);
@@ -113,9 +111,7 @@ describe("clipboard.createWriter", () => {
 
   it("reports a failed write without setting wasCopied", async () => {
     const failure = new Error("denied");
-    const { result, dispose } = testRoot(() =>
-      clipboard.createWriter({ write: async () => Promise.reject(failure) }),
-    );
+    const { result, dispose } = testRoot(() => clipboard.createWriter({ write: async () => Promise.reject(failure) }));
 
     expect(await result.copy("value")).toBe(false);
     expect(result.wasCopied()).toBe(false);
@@ -150,8 +146,7 @@ describe("clipboard.createWriter", () => {
     const newerFailure = new Error("newer failed");
     const { result, dispose } = testRoot(() =>
       clipboard.createWriter({
-        write: (value: string) =>
-          value === "older" ? older.promise : Promise.reject(newerFailure),
+        write: (value: string) => (value === "older" ? older.promise : Promise.reject(newerFailure)),
       }),
     );
 
@@ -186,9 +181,7 @@ describe("clipboard.createWriter", () => {
 
   it("clears a pending feedback timer when its owner is disposed", async () => {
     const clearTimeoutSpy = spyOn(globalThis, "clearTimeout");
-    const { result, dispose } = testRoot(() =>
-      clipboard.createWriter({ write: async () => {}, copiedFor: 30 }),
-    );
+    const { result, dispose } = testRoot(() => clipboard.createWriter({ write: async () => {}, copiedFor: 30 }));
 
     await result.copy("value");
     expect(result.wasCopied()).toBe(true);

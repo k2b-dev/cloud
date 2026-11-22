@@ -1,8 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { highlight } from "./highlight";
 
-const count = (text: string, needle: string): number =>
-  text.split(needle).length - 1;
+const count = (text: string, needle: string): number => text.split(needle).length - 1;
 
 // =====================================================================
 // highlight.escape
@@ -10,9 +9,7 @@ const count = (text: string, needle: string): number =>
 
 describe("highlight.escape", () => {
   it("escapes HTML-special characters", () => {
-    expect(highlight.escape(`<script a="b">'x' & y</script>`)).toBe(
-      "&lt;script a=&quot;b&quot;&gt;&#39;x&#39; &amp; y&lt;/script&gt;",
-    );
+    expect(highlight.escape(`<script a="b">'x' & y</script>`)).toBe("&lt;script a=&quot;b&quot;&gt;&#39;x&#39; &amp; y&lt;/script&gt;");
   });
 });
 
@@ -40,15 +37,11 @@ describe("highlight.compile", () => {
   });
 
   it("uses rule order as priority", () => {
-    expect(renderFormula("# IF $price")).toBe(
-      `<span class="dsl-comment"># IF $price</span>`,
-    );
+    expect(renderFormula("# IF $price")).toBe(`<span class="dsl-comment"># IF $price</span>`);
   });
 
   it("escapes unmatched text and token text", () => {
-    expect(renderFormula(`IF "<x>"`)).toBe(
-      `<span class="dsl-keyword">IF</span> <span class="dsl-string">&quot;&lt;x&gt;&quot;</span>`,
-    );
+    expect(renderFormula(`IF "<x>"`)).toBe(`<span class="dsl-keyword">IF</span> <span class="dsl-string">&quot;&lt;x&gt;&quot;</span>`);
   });
 
   it("sanitises token class names", () => {
@@ -60,9 +53,7 @@ describe("highlight.compile", () => {
     const kind = "a" + "-".repeat(75_000) + "b";
     const render = highlight.compile([{ kind: `--${kind}--`, match: /x/ }]);
     expect(render("x")).toBe(`<span class="hl-${kind}">x</span>`);
-    expect(highlight.compile([{ kind: "---", match: /x/ }])("x")).toBe(
-      `<span class="hl-token">x</span>`,
-    );
+    expect(highlight.compile([{ kind: "---", match: /x/ }])("x")).toBe(`<span class="hl-token">x</span>`);
   });
 
   it("ignores zero-length rule matches", () => {
@@ -123,9 +114,7 @@ describe("highlight.overlay", () => {
 
 describe("highlight.markdown", () => {
   it("escapes raw HTML before markdown processing", () => {
-    expect(highlight.markdown(`<b>"x"</b>`)).toBe(
-      "&lt;b&gt;&quot;x&quot;&lt;/b&gt;",
-    );
+    expect(highlight.markdown(`<b>"x"</b>`)).toBe("&lt;b&gt;&quot;x&quot;&lt;/b&gt;");
   });
 
   it("renders inline code as a protected zone", () => {
@@ -212,8 +201,7 @@ describe("highlight.presets", () => {
       let calls = 0;
       const exec = spyOn(RegExp.prototype, "exec").mockImplementation(function (this: RegExp, text: string) {
         if (this.sticky && text.startsWith(start, this.lastIndex)) {
-          const prefix = kind === "comment" ? "\\/\\*" : kind === "variable" ? "\\$" :
-            preset === "sql" && kind === "string" ? "'" : '"';
+          const prefix = kind === "comment" ? "\\/\\*" : kind === "variable" ? "\\$" : preset === "sql" && kind === "string" ? "'" : '"';
           if (this.source.startsWith(prefix)) calls++;
         }
         return originalExec.call(this, text);
@@ -245,9 +233,7 @@ describe("highlight.presets", () => {
     expect(highlight.presets.sql("[open\nSELECT [ok]")).toBe(
       `[open\n<span class="hl-keyword">SELECT</span> <span class="hl-identifier">[ok]</span>`,
     );
-    expect(highlight.presets.shell("${open\n${ok}")).toBe(
-      `\${open\n<span class="hl-variable">\${ok}</span>`,
-    );
+    expect(highlight.presets.shell("${open\n${ok}")).toBe(`\${open\n<span class="hl-variable">\${ok}</span>`);
   });
 
   for (const [preset, render] of Object.entries(highlight.presets)) {
@@ -289,9 +275,7 @@ describe("highlight.presets", () => {
   });
 
   it("provides a shallow SQL highlighter", () => {
-    const html = highlight.presets.sql(
-      `SELECT count(*) FROM "users" WHERE email = $1 AND status = 'active' -- only active`,
-    );
+    const html = highlight.presets.sql(`SELECT count(*) FROM "users" WHERE email = $1 AND status = 'active' -- only active`);
     expect(html).toContain(`<span class="hl-keyword">SELECT</span>`);
     expect(html).toContain(`<span class="hl-function">count</span>`);
     expect(html).toContain(`<span class="hl-identifier">&quot;users&quot;</span>`);
@@ -314,13 +298,7 @@ describe("highlight.presets", () => {
 
 describe("highlight namespace", () => {
   it("exposes the KISS API surface", () => {
-    expect(Object.keys(highlight).sort()).toEqual([
-      "compile",
-      "escape",
-      "markdown",
-      "overlay",
-      "presets",
-    ]);
+    expect(Object.keys(highlight).sort()).toEqual(["compile", "escape", "markdown", "overlay", "presets"]);
     expect(Object.keys(highlight.presets).sort()).toEqual(["code", "shell", "sql"]);
   });
 });

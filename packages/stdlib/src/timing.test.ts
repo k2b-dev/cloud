@@ -1,5 +1,5 @@
-import { describe, it, expect, mock } from "bun:test";
-import { withMinLoadTime, buffer, jitter, sleep, random, shuffle, debounce, throttle, timing } from "./timing";
+import { describe, expect, it, mock } from "bun:test";
+import { buffer, debounce, jitter, random, shuffle, sleep, throttle, timing, withMinLoadTime } from "./timing";
 
 // ==========================
 // withMinLoadTime
@@ -20,10 +20,7 @@ describe("withMinLoadTime", () => {
 
   it("does not add extra delay if function is slower than minimum", async () => {
     const start = Date.now();
-    await withMinLoadTime(
-      () => new Promise((r) => setTimeout(() => r(1), 100)),
-      50,
-    );
+    await withMinLoadTime(() => new Promise((r) => setTimeout(() => r(1), 100)), 50);
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(180);
   });
@@ -227,7 +224,9 @@ describe("debounce", () => {
   it("delays execution", async () => {
     let count = 0;
     const d = timing.debounce(() => count++, 50);
-    d.call(); d.call(); d.call();
+    d.call();
+    d.call();
+    d.call();
     expect(count).toBe(0);
     await Bun.sleep(80);
     expect(count).toBe(1);
@@ -254,8 +253,12 @@ describe("debounce", () => {
 
   it("uses latest args", async () => {
     let last = "";
-    const d = timing.debounce((v: string) => { last = v; }, 50);
-    d.call("a"); d.call("b"); d.call("c");
+    const d = timing.debounce((v: string) => {
+      last = v;
+    }, 50);
+    d.call("a");
+    d.call("b");
+    d.call("c");
     await Bun.sleep(80);
     expect(last).toBe("c");
   });
@@ -276,7 +279,9 @@ describe("throttle", () => {
   it("drops calls within interval", () => {
     let count = 0;
     const t = timing.throttle(() => count++, 100);
-    t.call(); t.call(); t.call();
+    t.call();
+    t.call();
+    t.call();
     expect(count).toBe(1);
   });
 

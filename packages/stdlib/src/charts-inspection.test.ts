@@ -1,12 +1,38 @@
 import { describe, expect, test } from "bun:test";
-import { charts, type ChartDatum, autoBin, computeBoxStats } from "./charts";
+import { autoBin, type ChartDatum, charts, computeBoxStats } from "./charts";
 
-const decode = (svg: string): ChartDatum[] => [...svg.matchAll(/data-chart-datum="([^"]+)"/g)].map((match) => JSON.parse(match[1]!.replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")));
+const decode = (svg: string): ChartDatum[] =>
+  [...svg.matchAll(/data-chart-datum="([^"]+)"/g)].map((match) =>
+    JSON.parse(
+      match[1]!
+        .replaceAll("&quot;", '"')
+        .replaceAll("&apos;", "'")
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&"),
+    ),
+  );
 const samples = {
-  line: { series: [{ data: [{ x: 1, y: 2 }, { x: 10, y: 3 }, { x: 100, y: 4 }] }], xAxis: { scale: "log" } },
+  line: {
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 10, y: 3 },
+          { x: 100, y: 4 },
+        ],
+      },
+    ],
+    xAxis: { scale: "log" },
+  },
   scatter: { series: [{ data: [{ x: 1, y: 2, size: 3, errY: 1 }] }] },
   bar: { data: [{ label: "A", value: 3 }] },
-  pie: { data: [{ label: "A", value: 3 }, { label: "B", value: 1 }] },
+  pie: {
+    data: [
+      { label: "A", value: 3 },
+      { label: "B", value: 1 },
+    ],
+  },
   donut: { data: [{ label: "A", value: 3 }] },
   histogram: { data: [0, 1, 2, 3, 4], bins: [0, 2, 4] },
   boxplot: { groups: [{ label: "A", values: [1, 2, 3, 4, 5, 100] }] },
@@ -29,8 +55,8 @@ describe("renderer-owned chart inspection", () => {
       const data = decode(svg);
       expect(data.length).toBeGreaterThan(0);
       expect(data.every((datum) => datum.anchor.every(Number.isFinite))).toBe(true);
-      expect(svg).not.toContain('tabindex=');
-      expect(svg).not.toContain('<script');
+      expect(svg).not.toContain("tabindex=");
+      expect(svg).not.toContain("<script");
     });
   }
   test("logarithmic line anchors follow the rendered scale", () => {
@@ -56,7 +82,7 @@ describe("renderer-owned chart inspection", () => {
     const data = decode(svg);
     expect(data.map((datum) => datum.index)).toEqual([1, 2]);
     expect(data[0]!.label).toBe(item.label);
-    expect(svg).not.toContain('<script>');
+    expect(svg).not.toContain("<script>");
   });
   test("pie shares use only the rendered positive values and gauges retain unclamped values", () => {
     const datum = decode(charts.pie({ data: [...samples.pie.data, { label: "bad", value: -100 }], inspect: true }))[0]!;

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { defineCatalog, parseAcceptLanguage, plural, formatList, compare, i18n } from "./i18n";
+import { describe, expect, it } from "bun:test";
+import { compare, defineCatalog, formatList, i18n, parseAcceptLanguage, plural } from "./i18n";
 
 // ==========================
 // defineCatalog / resolve
@@ -11,8 +11,7 @@ const catalog = defineCatalog({
     en: {
       title: "Inbox",
       greeting: ({ name }: { name: string }) => `Hello ${name}`,
-      items: ({ count }: { count: number }) =>
-        plural(count, "en", { one: `${count} item`, other: `${count} items` }),
+      items: ({ count }: { count: number }) => plural(count, "en", { one: `${count} item`, other: `${count} items` }),
     },
     de: {
       title: "Eingang",

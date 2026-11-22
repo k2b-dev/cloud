@@ -1,15 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import {
-  toBase64,
-  fromBase64,
-  fromBase64Strict,
-  toHex,
-  fromHex,
-  toBase32,
-  fromBase32,
-  toBase62,
-  fromBase62,
-} from "./encoding";
+import { describe, expect, it } from "bun:test";
+import { fromBase32, fromBase62, fromBase64, fromBase64Strict, fromHex, toBase32, toBase62, toBase64, toHex } from "./encoding";
 
 // ==========================
 // Base64

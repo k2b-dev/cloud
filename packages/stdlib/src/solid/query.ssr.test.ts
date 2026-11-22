@@ -2,10 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 
 const defineSsrTests = () => {
   it("does not load or subscribe during server rendering", async () => {
-    const [{ renderToString }, { query }] = await Promise.all([
-      import("solid-js/web"),
-      import("./query"),
-    ]);
+    const [{ renderToString }, { query }] = await Promise.all([import("solid-js/web"), import("./query")]);
     const load = mock(async () => "loaded");
     const subscribe = mock(() => mock(() => {}));
 

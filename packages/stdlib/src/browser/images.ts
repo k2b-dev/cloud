@@ -58,9 +58,7 @@ type Progress = { current: number; total: number; percent: number };
  *  in DOM exceptions, or browser-specific failures. */
 const assertDims = (w: number, h: number, fn: string): void => {
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-    throw new RangeError(
-      `images.${fn}: width and height must be positive finite numbers (got ${w}×${h})`,
-    );
+    throw new RangeError(`images.${fn}: width and height must be positive finite numbers (got ${w}×${h})`);
   }
 };
 
@@ -75,9 +73,7 @@ const mkCanvas = (w: number, h: number): [HTMLCanvasElement, CanvasRenderingCont
   if (!ctx) {
     // getContext returns null when too many live canvas contexts exist
     // (Chrome ~300 cap), or when the page lost hardware acceleration.
-    throw new Error(
-      "images: could not acquire 2D context (too many canvases or accelerated context lost)",
-    );
+    throw new Error("images: could not acquire 2D context (too many canvases or accelerated context lost)");
   }
   return [c, ctx];
 };
@@ -120,16 +116,10 @@ const create = async (source: Source): Promise<ImgData> => {
     if (!source.complete || source.naturalWidth === 0) {
       await new Promise<void>((res, rej) => {
         source.addEventListener("load", () => res(), { once: true });
-        source.addEventListener(
-          "error",
-          () => rej(new Error("Failed to load HTMLImageElement")),
-          { once: true },
-        );
+        source.addEventListener("error", () => rej(new Error("Failed to load HTMLImageElement")), { once: true });
       });
     }
-    return draw(source.naturalWidth || source.width, source.naturalHeight || source.height, (ctx) =>
-      ctx.drawImage(source, 0, 0),
-    );
+    return draw(source.naturalWidth || source.width, source.naturalHeight || source.height, (ctx) => ctx.drawImage(source, 0, 0));
   }
 
   // Load from File/Blob/URL. Attach handlers BEFORE setting src so we never
@@ -147,9 +137,7 @@ const create = async (source: Source): Promise<ImgData> => {
     if (source instanceof Blob) URL.revokeObjectURL(url);
   }
 
-  return draw(i.naturalWidth || i.width, i.naturalHeight || i.height, (ctx) =>
-    ctx.drawImage(i, 0, 0),
-  );
+  return draw(i.naturalWidth || i.width, i.naturalHeight || i.height, (ctx) => ctx.drawImage(i, 0, 0));
 };
 
 // ==========================
@@ -257,9 +245,7 @@ const crop =
   (x: number, y: number, w: number, h: number): Transform =>
   async (data) => {
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-      throw new RangeError(
-        `images.crop: w/h must be positive finite numbers (got ${w}×${h})`,
-      );
+      throw new RangeError(`images.crop: w/h must be positive finite numbers (got ${w}×${h})`);
     }
     const d = await resolve(data);
     return draw(w, h, (ctx) => ctx.drawImage(d.canvas, x, y, w, h, 0, 0, w, h));

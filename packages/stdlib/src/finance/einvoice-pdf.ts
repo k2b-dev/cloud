@@ -1,12 +1,16 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString } from "pdf-lib";
 import { ok } from "../result";
-import { invalid, type FinanceResult } from "./common";
+import { type FinanceResult, invalid } from "./common";
 import type { InvoiceParseOptions } from "./einvoice-contracts";
 
 /** Read document attachments, including recursive name trees and associated files. */
-export async function extractInvoiceXml(bytes: Uint8Array, options: InvoiceParseOptions): Promise<FinanceResult<{ xml: string; filename: string }>> {
+export async function extractInvoiceXml(
+  bytes: Uint8Array,
+  options: InvoiceParseOptions,
+): Promise<FinanceResult<{ xml: string; filename: string }>> {
   const maxCharacters = options.maxCharacters ?? 10 * 1024 * 1024;
-  if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 1 || maxCharacters > Math.floor(Number.MAX_SAFE_INTEGER / 4)) return invalid([{ code: "invalid_input", path: ["options", "maxCharacters"], message: "Invalid character limit." }]);
+  if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 1 || maxCharacters > Math.floor(Number.MAX_SAFE_INTEGER / 4))
+    return invalid([{ code: "invalid_input", path: ["options", "maxCharacters"], message: "Invalid character limit." }]);
   try {
     const pdf = await PDFDocument.load(bytes, { updateMetadata: false, throwOnInvalidObject: true });
     const files = new Set<PDFDict>();
@@ -41,15 +45,24 @@ export async function extractInvoiceXml(bytes: Uint8Array, options: InvoiceParse
       if (!(stream instanceof PDFRawStream)) throw new Error("Missing attachment stream.");
       candidates.push({ filename, stream });
     }
-    if (candidates.length !== 1) return invalid([{ code: "unsupported_format", path: ["pdf"], message: "Expected exactly one recognised invoice XML attachment." }]);
+    if (candidates.length !== 1)
+      return invalid([{ code: "unsupported_format", path: ["pdf"], message: "Expected exactly one recognised invoice XML attachment." }]);
     const candidate = candidates[0]!;
     // Read only enough decoded bytes for the XML budget (UTF-8 uses at most four per character).
     const data = decodePDFRawStream(candidate.stream).getBytes(maxCharacters * 4 + 1);
-    if (data.length > maxCharacters * 4) return invalid([{ code: "input_limit", path: ["pdf"], message: "Embedded XML exceeds byte limit." }]);
+    if (data.length > maxCharacters * 4)
+      return invalid([{ code: "input_limit", path: ["pdf"], message: "Embedded XML exceeds byte limit." }]);
     const xml = new TextDecoder("utf-8", { fatal: true }).decode(data);
-    if (xml.length > maxCharacters) return invalid([{ code: "input_limit", path: ["xml"], message: "Embedded XML exceeds maxCharacters." }]);
+    if (xml.length > maxCharacters)
+      return invalid([{ code: "input_limit", path: ["xml"], message: "Embedded XML exceeds maxCharacters." }]);
     return ok({ xml, filename: candidate.filename });
   } catch {
-    return invalid([{ code: "invalid_input", path: ["pdf"], message: "Cannot read invoice attachment from PDF. Encrypted, malformed or unsupported PDFs are rejected." }]);
+    return invalid([
+      {
+        code: "invalid_input",
+        path: ["pdf"],
+        message: "Cannot read invoice attachment from PDF. Encrypted, malformed or unsupported PDFs are rejected.",
+      },
+    ]);
   }
 }

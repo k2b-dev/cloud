@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 // images.ts requires document, HTMLCanvasElement, HTMLImageElement, etc.
 // In bun's test runner without happy-dom these globals are undefined, so we
@@ -97,7 +97,9 @@ describe("images.create", () => {
       };
       let _src = "";
       Object.defineProperty(this, "src", {
-        get() { return _src; },
+        get() {
+          return _src;
+        },
         set(v: string) {
           _src = v;
           this.naturalWidth = 10;

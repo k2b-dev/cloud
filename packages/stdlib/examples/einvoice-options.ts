@@ -3,8 +3,11 @@ import { invoice } from "./einvoice";
 
 /** Additional amounts only; this invoice references, rather than replaces, the original. */
 export const additionalInvoice: Invoice = {
-  ...invoice, number: "RE-2026-000002", payment: { typeCode: "68", information: "PayPal" },
-  serviceDate: undefined, period: { startDate: "2026-08-01", endDate: "2026-08-15" },
+  ...invoice,
+  number: "RE-2026-000002",
+  payment: { typeCode: "68", information: "PayPal" },
+  serviceDate: undefined,
+  period: { startDate: "2026-08-01", endDate: "2026-08-15" },
   precedingInvoice: { number: "RE-2026-000000", invoiceDate: "2026-08-01" },
   lines: [{ ...invoice.lines[0]!, quantity: "1", unitPrice: "25.00" }],
 };

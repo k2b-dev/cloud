@@ -42,10 +42,7 @@ const runBundle = async (name: string, code: string) => {
     stdout: "pipe",
     stderr: "inherit",
   });
-  const [exitCode, stdout] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-  ]);
+  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
   return { exitCode, stdout };
 };
 
@@ -59,12 +56,15 @@ describe("consumer bundles", () => {
   });
 
   it("a root date helper still registers the dayjs timezone plugins in a bundle", async () => {
-    const code = await bundle("dates", `
+    const code = await bundle(
+      "dates",
+      `
       import { startOfDay } from "@k2b/stdlib";
       console.log(startOfDay("2026-03-29T12:00:00Z", {
         timeZone: "Europe/Berlin",
       }).toISOString());
-    `);
+    `,
+    );
     expect(code).toContain("$isDayjsObject");
     const result = await runBundle("dates", code);
     expect(result.exitCode).toBe(0);
@@ -72,10 +72,13 @@ describe("consumer bundles", () => {
   });
 
   it("a root money helper still bundles and runs", async () => {
-    const code = await bundle("money", `
+    const code = await bundle(
+      "money",
+      `
       import { moneyFromDecimal } from "@k2b/stdlib";
       console.log(moneyFromDecimal("1234.567", { currency: "KWD" }).amount);
-    `);
+    `,
+    );
     const result = await runBundle("money", code);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("1234567\n");

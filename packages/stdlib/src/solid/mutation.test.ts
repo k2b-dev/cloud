@@ -1,6 +1,6 @@
-import { describe, it, expect, mock } from "bun:test";
-import { mutation, type MutationRun, type MutationOutcome } from "./mutation";
+import { describe, expect, it, mock } from "bun:test";
 import { testRoot } from "../_test-helpers";
+import { type MutationOutcome, type MutationRun, mutation } from "./mutation";
 
 // ==========================
 // Initial state
@@ -8,9 +8,7 @@ import { testRoot } from "../_test-helpers";
 
 describe("mutation.create", () => {
   it("initial state: data=null, error=null, loading=false", () => {
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: async () => 42 }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: async () => 42 }));
     expect(m.data()).toBeNull();
     expect(m.error()).toBeNull();
     expect(m.loading()).toBe(false);
@@ -18,9 +16,7 @@ describe("mutation.create", () => {
   });
 
   it("initial state with initialData", () => {
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: async () => 42, initialData: 10 }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: async () => 42, initialData: 10 }));
     expect(m.data()).toBe(10);
     dispose();
   });
@@ -30,9 +26,7 @@ describe("mutation.create", () => {
   // ==========================
 
   it("mutate resolves to data", async () => {
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: async () => 42 }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: async () => 42 }));
     await m.mutate(undefined as any);
     expect(m.data()).toBe(42);
     expect(m.loading()).toBe(false);
@@ -126,9 +120,7 @@ describe("mutation.create", () => {
     const onFinally = mock(() => {});
 
     // Success case
-    const { result: m1, dispose: d1 } = testRoot(() =>
-      mutation.create({ mutation: async () => 1, onFinally }),
-    );
+    const { result: m1, dispose: d1 } = testRoot(() => mutation.create({ mutation: async () => 1, onFinally }));
     await m1.mutate(undefined as any);
     expect(onFinally).toHaveBeenCalledTimes(1);
     d1();
@@ -244,8 +236,7 @@ describe("mutation.create", () => {
     const contexts: Array<string | undefined> = [];
     const { result: m, dispose } = testRoot(() =>
       mutation.create({
-        onBefore: (withContext: boolean) =>
-          withContext ? { label: "first" } : undefined,
+        onBefore: (withContext: boolean) => (withContext ? { label: "first" } : undefined),
         mutation: async (_vars, ctx) => {
           contexts.push(ctx.label);
           return contexts.length;
@@ -398,9 +389,7 @@ const frozenClock = (start = 1_000) => {
 
 describe("mutation status", () => {
   it("is idle with settledAt null before the first end", () => {
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: async () => 1 }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: async () => 1 }));
     expect(m.status()).toBe("idle");
     expect(m.settledAt()).toBeNull();
     dispose();
@@ -439,9 +428,7 @@ describe("mutation status", () => {
 
   it("goes straight to loading without onBefore", () => {
     const work = deferred<number>();
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: () => work.promise }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: () => work.promise }));
     void m.mutate(undefined);
     expect(m.status()).toBe("loading");
     work.resolve(1);
@@ -548,9 +535,7 @@ describe("mutation status", () => {
 
   it("ends aborted when the mutation resolves after abort", async () => {
     const work = deferred<number>();
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: () => work.promise }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: () => work.promise }));
     const call = m.mutate(undefined);
     m.abort();
     work.resolve(9);
@@ -581,12 +566,7 @@ describe("mutation status", () => {
     const call = m.mutate(undefined);
     m.abort();
     await call;
-    expect(seen).toEqual([
-      "error:error:false",
-      "finally:error:false",
-      "abort:aborted:false",
-      "finally:aborted:false",
-    ]);
+    expect(seen).toEqual(["error:error:false", "finally:error:false", "abort:aborted:false", "finally:aborted:false"]);
     dispose();
   });
 
@@ -623,9 +603,7 @@ describe("mutation settledAt", () => {
 
   it("follows the clock when it moves", async () => {
     const clock = frozenClock(1_000);
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ now: clock.now, mutation: async () => "same" }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ now: clock.now, mutation: async () => "same" }));
     await m.mutate(undefined);
     clock.set(4_000);
     await m.mutate(undefined);
@@ -647,9 +625,7 @@ describe("mutation concurrency", () => {
     const work = deferred<string>();
     const mutationFn = mock((_value: string) => work.promise);
     const onFinally = mock(() => {});
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: mutationFn, onFinally }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: mutationFn, onFinally }));
     const first = m.mutate("first");
     const second = m.mutate("second");
     await second;
@@ -667,9 +643,7 @@ describe("mutation concurrency", () => {
   it("drops a second call while the first is pending in onBefore", async () => {
     const before = deferred<void>();
     const onBefore = mock(() => before.promise);
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ onBefore, mutation: async (value: string) => value }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ onBefore, mutation: async (value: string) => value }));
     const first = m.mutate("first");
     await m.mutate("second");
     expect(onBefore).toHaveBeenCalledTimes(1);
@@ -703,9 +677,7 @@ describe("mutation concurrency", () => {
   });
 
   it("accepts a new call once the previous one ended", async () => {
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: async (value: string) => value }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: async (value: string) => value }));
     await m.mutate("a");
     await m.mutate("b");
     expect(m.data()).toBe("b");
@@ -718,8 +690,7 @@ describe("mutation concurrency", () => {
     const { result: m, dispose } = testRoot(() =>
       mutation.create({
         concurrency: "replace",
-        mutation: (value: string) =>
-          new Promise<string>((resolve) => resolvers.set(value, resolve)),
+        mutation: (value: string) => new Promise<string>((resolve) => resolvers.set(value, resolve)),
         onFinally,
       }),
     );
@@ -746,7 +717,11 @@ describe("mutation concurrency", () => {
     const { result: m, dispose } = testRoot(() =>
       mutation.create({
         concurrency: "replace",
-        onBefore: () => (first ? ((first = false), undefined) : before.promise),
+        onBefore: () => {
+          if (!first) return before.promise;
+          first = false;
+          return undefined;
+        },
         mutation: (value: string) => (value === "older" ? work.promise : Promise.resolve(value)),
       }),
     );
@@ -1028,9 +1003,7 @@ describe("mutation outcome", () => {
 
   it("resolves dropped for a dropped call, so the caller does not mistake it for a success", async () => {
     const work = deferred<string>();
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: (_value: string) => work.promise }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: (_value: string) => work.promise }));
     const first = m.mutate("first");
     expect(await m.mutate("second")).toBe("dropped");
     expect(await m.retry()).toBe("dropped");
@@ -1146,9 +1119,7 @@ describe("mutation abort as a way out", () => {
           // Ends only through its signal, so every moment of abort() lands before the end.
           mutation: (_vars: undefined, { abortSignal }) =>
             new Promise<number>((_resolve, reject) =>
-              abortSignal.addEventListener("abort", () =>
-                reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-              ),
+              abortSignal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))),
             ),
         }),
       );
@@ -1312,9 +1283,7 @@ describe("mutation abort as a way out", () => {
 
   it("still drops a second call while the run is loading and not aborted", async () => {
     const work = deferred<string>();
-    const { result: m, dispose } = testRoot(() =>
-      mutation.create({ mutation: (_value: string) => work.promise }),
-    );
+    const { result: m, dispose } = testRoot(() => mutation.create({ mutation: (_value: string) => work.promise }));
     const first = m.mutate("first");
     expect(await m.mutate("second")).toBe("dropped");
     work.resolve("first");
@@ -1354,9 +1323,7 @@ describe("mutation hooks start the next call under drop", () => {
           new Promise<string>((resolve, reject) => {
             seen.push(value);
             if (value === "again") return resolve(value);
-            abortSignal.addEventListener("abort", () =>
-              reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-            );
+            abortSignal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
           }),
         onAbort: () => {
           next = m.mutate("again");
@@ -1431,7 +1398,6 @@ describe("mutation replace keeps a running run's end", () => {
   });
 });
 
-
 describe("mutation abort reentrancy and hook failures", () => {
   it("runs onFinally synchronously when abort ends a running function", async () => {
     const finallyHook = mock(() => {});
@@ -1448,7 +1414,9 @@ describe("mutation abort reentrancy and hook failures", () => {
     const m = mutation.create({
       onBefore: () => new Promise<void>(() => {}),
       mutation: async () => 1,
-      onAbort: () => { throw new Error("abort hook"); },
+      onAbort: () => {
+        throw new Error("abort hook");
+      },
       onFinally: finallyHook,
     });
     const call = m.mutate(undefined);
@@ -1463,7 +1431,9 @@ describe("mutation abort reentrancy and hook failures", () => {
     const m = mutation.create({
       mutation: (value: string, { abortSignal }) => {
         if (value === "next") return nextWork.promise;
-        abortSignal.addEventListener("abort", () => { next = m.mutate("next"); });
+        abortSignal.addEventListener("abort", () => {
+          next = m.mutate("next");
+        });
         return new Promise<string>(() => {});
       },
     });
@@ -1480,9 +1450,11 @@ describe("mutation abort reentrancy and hook failures", () => {
     const nextWork = deferred<string>();
     let next: Promise<unknown> | undefined;
     const m = mutation.create({
-      onBefore: (value: string) => value === "first" ? new Promise<void>(() => {}) : undefined,
+      onBefore: (value: string) => (value === "first" ? new Promise<void>(() => {}) : undefined),
       mutation: (_value: string) => nextWork.promise,
-      onAbort: () => { next = m.mutate("next"); },
+      onAbort: () => {
+        next = m.mutate("next");
+      },
     });
     const first = m.mutate("first");
     m.abort();
@@ -1492,15 +1464,17 @@ describe("mutation abort reentrancy and hook failures", () => {
   });
 });
 
-
 describe("mutation retry ownership", () => {
   it("a failed older onBefore does not erase a newer runnable invocation", async () => {
     const before = deferred<void>();
     const seen: string[] = [];
     const m = mutation.create({
       concurrency: "replace",
-      onBefore: (value: string) => value === "older" ? before.promise : undefined,
-      mutation: async (value: string) => { seen.push(value); return value; },
+      onBefore: (value: string) => (value === "older" ? before.promise : undefined),
+      mutation: async (value: string) => {
+        seen.push(value);
+        return value;
+      },
     });
     const older = m.mutate("older");
     expect(await m.mutate("newer")).toBe("success");
@@ -1513,14 +1487,15 @@ describe("mutation retry ownership", () => {
   it("an abort hook error rejects mutate even when the function already resolved", async () => {
     const m = mutation.create({
       mutation: async () => 1,
-      onAbort: () => { throw new Error("abort hook"); },
+      onAbort: () => {
+        throw new Error("abort hook");
+      },
     });
     const call = m.mutate(undefined);
     expect(() => m.abort()).not.toThrow();
     await expect(call).rejects.toThrow("abort hook");
   });
 });
-
 
 it("abort also ends its original running call when a pending abort hook starts a retry", async () => {
   const replacement = deferred<string>();
@@ -1530,7 +1505,7 @@ it("abort also ends its original running call when a pending abort hook starts a
   const aborted: string[] = [];
   const m = mutation.create({
     concurrency: "replace",
-    onBefore: (value: string) => value === "pending" ? new Promise<{ value: string }>(() => {}) : { value },
+    onBefore: (value: string) => (value === "pending" ? new Promise<{ value: string }>(() => {}) : { value }),
     mutation: (value: string) => {
       if (value === "failed") {
         if (++attempts === 1) return Promise.reject(new Error("first failure"));
@@ -1538,7 +1513,9 @@ it("abort also ends its original running call when a pending abort hook starts a
       }
       return new Promise<string>(() => {});
     },
-    onError: (_error, _ctx, run) => { failed = run; },
+    onError: (_error, _ctx, run) => {
+      failed = run;
+    },
     onAbort: (ctx) => {
       if (!ctx) next = failed?.retry();
       else aborted.push(ctx.value);
@@ -1558,14 +1535,17 @@ it("abort also ends its original running call when a pending abort hook starts a
   expect(m.data()).toBe("replacement");
 });
 
-
 it("always finalizes a failed onBefore even when its onError hook throws", async () => {
   const onFinally = mock(() => {});
   const m = mutation.create({
     now: () => 100,
-    onBefore: () => { throw new Error("before"); },
+    onBefore: () => {
+      throw new Error("before");
+    },
     mutation: async () => 1,
-    onError: () => { throw new Error("error hook"); },
+    onError: () => {
+      throw new Error("error hook");
+    },
     onFinally,
   });
   await expect(m.mutate(undefined)).rejects.toThrow("error hook");

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { createCache } from "./cache";
 
 // ==========================
@@ -118,7 +118,10 @@ describe("createCache", () => {
     it("caches the onMiss result", async () => {
       let calls = 0;
       const c = createCache<string>({
-        onMiss: async () => { calls++; return "loaded"; },
+        onMiss: async () => {
+          calls++;
+          return "loaded";
+        },
       });
 
       await c.get("key"); // Triggers onMiss
@@ -129,7 +132,10 @@ describe("createCache", () => {
     it("does not cache null return from onMiss", async () => {
       let calls = 0;
       const c = createCache<string>({
-        onMiss: async () => { calls++; return null; },
+        onMiss: async () => {
+          calls++;
+          return null;
+        },
       });
 
       expect(await c.get("key")).toBeNull();

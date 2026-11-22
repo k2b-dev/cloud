@@ -1,11 +1,5 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import {
-  isSupported,
-  getPermission,
-  requestPermission,
-  show,
-  notifications,
-} from "./notifications";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { getPermission, isSupported, notifications, requestPermission, show } from "./notifications";
 
 // ─── Mock helpers ───────────────────────────────────────────────────────────────
 

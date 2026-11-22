@@ -1,6 +1,6 @@
-import { describe, it, expect, mock } from "bun:test";
-import { timed } from "./timed";
+import { describe, expect, it, mock } from "bun:test";
 import { testRoot } from "../_test-helpers";
+import { timed } from "./timed";
 
 const DELAY = 50; // short delay for real-timer tests
 
@@ -135,9 +135,7 @@ describe("timed.interval", () => {
 
   it("autoStart=false does not start automatically", () => {
     const callback = mock(() => {});
-    const { result: ctrl, dispose } = testRoot(() =>
-      timed.interval(callback, DELAY, { autoStart: false, executeImmediately: true }),
-    );
+    const { result: ctrl, dispose } = testRoot(() => timed.interval(callback, DELAY, { autoStart: false, executeImmediately: true }));
 
     expect(callback).toHaveBeenCalledTimes(0);
     expect(ctrl.isRunning()).toBe(false);
@@ -146,9 +144,7 @@ describe("timed.interval", () => {
 
   it("executeImmediately=false skips initial execution", async () => {
     const callback = mock(() => {});
-    const { dispose } = testRoot(() =>
-      timed.interval(callback, DELAY, { autoStart: true, executeImmediately: false }),
-    );
+    const { dispose } = testRoot(() => timed.interval(callback, DELAY, { autoStart: true, executeImmediately: false }));
 
     expect(callback).toHaveBeenCalledTimes(0);
     await Bun.sleep(DELAY + 20);
@@ -158,9 +154,7 @@ describe("timed.interval", () => {
 
   it("execute runs callback once without affecting interval", () => {
     const callback = mock(() => {});
-    const { result: ctrl, dispose } = testRoot(() =>
-      timed.interval(callback, 1000, { autoStart: false }),
-    );
+    const { result: ctrl, dispose } = testRoot(() => timed.interval(callback, 1000, { autoStart: false }));
 
     ctrl.execute();
     expect(callback).toHaveBeenCalledTimes(1);

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import zlib from "node:zlib";
 
 // ─── Polyfill CompressionStream / DecompressionStream for Bun ──────────────────
@@ -87,17 +87,7 @@ if (typeof globalThis.DecompressionStream === "undefined") {
 
 // ─── Now import the module under test ──────────────────────────────────────────
 
-import {
-  mimeTypesToAccept,
-  checkMimeType,
-  compress,
-  decompress,
-  createZip,
-  extractZip,
-  path,
-  getMimeType,
-  getExtension,
-} from "./files";
+import { checkMimeType, compress, createZip, decompress, extractZip, getExtension, getMimeType, mimeTypesToAccept, path } from "./files";
 
 // ==========================
 // mimeTypesToAccept
@@ -259,11 +249,7 @@ describe("createZip / extractZip", () => {
     const extracted = await extractZip(zip);
 
     expect(extracted.length).toBe(3);
-    expect(extracted.map((e) => e.filename).sort()).toEqual([
-      "a.txt",
-      "b.txt",
-      "data/c.json",
-    ]);
+    expect(extracted.map((e) => e.filename).sort()).toEqual(["a.txt", "b.txt", "data/c.json"]);
   });
 
   it("roundtrips binary data", async () => {
@@ -337,15 +323,9 @@ describe("createZip / extractZip", () => {
 
   // Regression: Zip Slip protection at archive-creation time.
   it("rejects unsafe filenames during createZip", async () => {
-    await expect(
-      createZip([{ filename: "../escape.txt", source: "x" }]),
-    ).rejects.toThrow(/refusing to add unsafe filename/);
-    await expect(
-      createZip([{ filename: "/abs.txt", source: "x" }]),
-    ).rejects.toThrow();
-    await expect(
-      createZip([{ filename: "back\\slash.txt", source: "x" }]),
-    ).rejects.toThrow();
+    await expect(createZip([{ filename: "../escape.txt", source: "x" }])).rejects.toThrow(/refusing to add unsafe filename/);
+    await expect(createZip([{ filename: "/abs.txt", source: "x" }])).rejects.toThrow();
+    await expect(createZip([{ filename: "back\\slash.txt", source: "x" }])).rejects.toThrow();
   });
 
   // Regression: extractZip uses LOCAL header filename length (different

@@ -1,4 +1,4 @@
-import { createSignal, getOwner, onCleanup, onMount, type Accessor } from "solid-js";
+import { type Accessor, createSignal, getOwner, onCleanup, onMount } from "solid-js";
 
 const MODIFIER_PRIORITY = new Map<string, number>([
   ["mod", 0],
@@ -9,11 +9,11 @@ const MODIFIER_PRIORITY = new Map<string, number>([
 ]);
 
 const isBrowser = typeof window !== "undefined" && typeof navigator !== "undefined";
-const isMacPlatform = isBrowser && (
-  (navigator as any).userAgentData?.platform?.toLowerCase().includes("mac") ||
-  navigator.userAgent?.toLowerCase().includes("mac") ||
-  false
-);
+const isMacPlatform =
+  isBrowser &&
+  ((navigator as any).userAgentData?.platform?.toLowerCase().includes("mac") ||
+    navigator.userAgent?.toLowerCase().includes("mac") ||
+    false);
 
 export type PrettyKeyPart = {
   key: string;
@@ -61,9 +61,11 @@ let listenerAttached = false;
  * canonical priority order (mod/meta/ctrl, alt, shift).
  */
 const getModifiers = (parts: string[]) =>
-  parts.filter((part) => MODIFIER_PRIORITY.has(part)).sort((a, b) => {
-    return (MODIFIER_PRIORITY.get(a) ?? 99) - (MODIFIER_PRIORITY.get(b) ?? 99);
-  });
+  parts
+    .filter((part) => MODIFIER_PRIORITY.has(part))
+    .sort((a, b) => {
+      return (MODIFIER_PRIORITY.get(a) ?? 99) - (MODIFIER_PRIORITY.get(b) ?? 99);
+    });
 
 /**
  * Normalizes a key combo string to a canonical form by lowercasing, sorting
@@ -129,8 +131,7 @@ const toPrettyPart = (part: string): PrettyKeyPart => {
 /**
  * Converts a full logical key combo string into an array of display-friendly parts.
  */
-const toPrettyParts = (logicalKey: string): PrettyKeyPart[] =>
-  logicalKey.split("+").map((part) => toPrettyPart(part));
+const toPrettyParts = (logicalKey: string): PrettyKeyPart[] => logicalKey.split("+").map((part) => toPrettyPart(part));
 
 /**
  * Maps a `KeyboardEvent.key` value to a normalized internal key name
@@ -252,9 +253,7 @@ const registerHotkey = (keys: string, definition: HotkeyDefinition): (() => void
   const duplicate = byRuntimeKey.get(runtimeKey);
   if (duplicate) {
     const existing = byId.get(duplicate);
-    console.warn(
-      `[hotkeys] duplicate combo "${logicalKey}" ignored (already registered by "${existing?.label ?? duplicate}").`,
-    );
+    console.warn(`[hotkeys] duplicate combo "${logicalKey}" ignored (already registered by "${existing?.label ?? duplicate}").`);
     return () => {};
   }
 

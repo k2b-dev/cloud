@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 // Track document listeners so we can invoke them manually
 const docListeners = new Map<string, Set<Function>>();
@@ -7,9 +7,7 @@ const cleanupFns: Function[] = [];
 // Ensure document exists with working event listener tracking. Some Bun
 // runtimes expose a partial `document` global (typeof !== "undefined") that
 // lacks `addEventListener` — detect that and install the mock anyway.
-const docHasListeners =
-  typeof document !== "undefined" &&
-  typeof (document as any).addEventListener === "function";
+const docHasListeners = typeof document !== "undefined" && typeof (document as any).addEventListener === "function";
 
 if (!docHasListeners) {
   (globalThis as any).document = {

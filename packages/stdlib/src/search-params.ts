@@ -22,10 +22,7 @@ type MakeOptionalUndefined<T> = {
  * @param value - Value to test
  * @returns `true` if the value is a string, number, or boolean
  */
-const isPrimitive = (value: any): boolean =>
-  typeof value === "string" ||
-  typeof value === "number" ||
-  typeof value === "boolean";
+const isPrimitive = (value: any): boolean => typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 
 /**
  * Determines whether a value should be removed from URL search parameters.
@@ -40,8 +37,7 @@ const isPrimitive = (value: any): boolean =>
  * @param value - Value to test
  * @returns `true` if the parameter should be removed
  */
-const shouldRemoveParam = (value: any): boolean =>
-  value === undefined || value === null || value === false || value === "";
+const shouldRemoveParam = (value: any): boolean => value === undefined || value === null || value === false || value === "";
 
 /**
  * Deserializes URL search parameters into a typed object.
@@ -73,11 +69,8 @@ const shouldRemoveParam = (value: any): boolean =>
  */
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
-export const deserialize = <T extends Record<string, any>>(
-  params?: URLSearchParams,
-): MakeOptionalUndefined<T> => {
-  const searchParams =
-    params || new URLSearchParams(globalThis?.location?.search || "");
+export const deserialize = <T extends Record<string, any>>(params?: URLSearchParams): MakeOptionalUndefined<T> => {
+  const searchParams = params || new URLSearchParams(globalThis?.location?.search || "");
   // `Object.create(null)` keeps assignment from triggering prototype setters
   // even if a future caller forgets the FORBIDDEN_KEYS check.
   const result: any = Object.create(null);
@@ -121,13 +114,8 @@ export const deserialize = <T extends Record<string, any>>(
  * @example
  * searchParams.serialize({ page: 2, active: true }) // "page=2&active=true"
  */
-export const serialize = <T extends Record<string, any>>(
-  newParams: MakeOptionalUndefined<T>,
-  params?: URLSearchParams,
-): string => {
-  const current = new URLSearchParams(
-    params || globalThis?.location?.search || "",
-  );
+export const serialize = <T extends Record<string, any>>(newParams: MakeOptionalUndefined<T>, params?: URLSearchParams): string => {
+  const current = new URLSearchParams(params || globalThis?.location?.search || "");
 
   for (const [key, value] of Object.entries(newParams)) {
     if (shouldRemoveParam(value)) {
@@ -160,9 +148,7 @@ export const serialize = <T extends Record<string, any>>(
  * );
  * // Later: cleanup();
  */
-export const onChange = <T extends Record<string, any>>(
-  callback: (params: MakeOptionalUndefined<T>) => void,
-): (() => void) => {
+export const onChange = <T extends Record<string, any>>(callback: (params: MakeOptionalUndefined<T>) => void): (() => void) => {
   if (typeof window === "undefined") {
     return () => {};
   }

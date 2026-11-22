@@ -431,9 +431,7 @@ const cases: Case[] = [
         },
         {
           label: "Down",
-          data: [
-            { latitude: 25.2048, longitude: 55.2708, label: "Dubai" },
-          ],
+          data: [{ latitude: 25.2048, longitude: 55.2708, label: "Dubai" }],
         },
       ],
       legend: true,
@@ -546,11 +544,7 @@ const cases: Case[] = [
         label,
         values: Array.from({ length: 50 }, () => {
           const base = 50 + i * 5;
-          return (
-            base +
-            (Math.random() - 0.5) * 20 +
-            (Math.random() < 0.05 ? (Math.random() - 0.5) * 80 : 0)
-          );
+          return base + (Math.random() - 0.5) * 20 + (Math.random() < 0.05 ? (Math.random() - 0.5) * 80 : 0);
         }),
       })),
       colorByBox: true,
@@ -565,14 +559,27 @@ for (const c of cases) {
 
 // HTML --------------------------------------------------------------------
 
-const card = (c: Case, idPrefix = ""): string => `
+const card = (c: Case, idPrefix = ""): string =>
+  `
   <figure id="${idPrefix}${c.name}">
     <figcaption>${c.title}</figcaption>
     <div class="svg-wrap">${c.svg}</div>
   </figure>`.trim();
 
 const themedSubset: Case[] = cases.filter((c) =>
-  ["line", "bar-multicolor", "donut", "scatter", "gauge", "bar-gauge", "stat", "heatmap", "map-status", "map-volume", "state-timeline"].includes(c.name),
+  [
+    "line",
+    "bar-multicolor",
+    "donut",
+    "scatter",
+    "gauge",
+    "bar-gauge",
+    "stat",
+    "heatmap",
+    "map-status",
+    "map-volume",
+    "state-timeline",
+  ].includes(c.name),
 );
 
 const html = `<!DOCTYPE html>

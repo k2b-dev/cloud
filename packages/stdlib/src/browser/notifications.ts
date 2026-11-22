@@ -33,8 +33,7 @@ export type NotificationHandle = {
 
 // ─── Internals ──────────────────────────────────────────────────────────────────
 
-const hasNotificationAPI = (): boolean =>
-  typeof window !== "undefined" && typeof Notification !== "undefined";
+const hasNotificationAPI = (): boolean => typeof window !== "undefined" && typeof Notification !== "undefined";
 
 // ─── Public API ─────────────────────────────────────────────────────────────────
 

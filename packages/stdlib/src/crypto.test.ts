@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test";
-import { common, randomIndex, symmetric, asymmetric, totp } from "./crypto";
+import { describe, expect, it } from "bun:test";
+import { asymmetric, common, randomIndex, symmetric, totp } from "./crypto";
 
 // ==========================
 // common.hash
@@ -431,7 +431,7 @@ describe("totp", () => {
     const wrong1 = await totp.verify({ token: "000000", secret });
     const wrong2 = await totp.verify({ token: "999999", secret });
     const wrong3 = await totp.verify({ token: "123456", secret });
-    const falseCount = [wrong1, wrong2, wrong3].filter(v => v === false).length;
+    const falseCount = [wrong1, wrong2, wrong3].filter((v) => v === false).length;
     expect(falseCount).toBeGreaterThanOrEqual(2);
   });
 
@@ -447,7 +447,7 @@ describe("totp", () => {
 // Audit fixes — explicit non-breaking proofs + new security guarantees
 // ============================================================================
 
-import { toBase64, fromBase64, fromBase32, fromHex, toHex } from "./encoding";
+import { fromBase32, fromBase64, fromHex, toBase64, toHex } from "./encoding";
 
 describe("crypto audit — backward compat (non-breaking)", () => {
   it("verify() accepts legacy v1 signatures (no v field)", async () => {
@@ -455,9 +455,7 @@ describe("crypto audit — backward compat (non-breaking)", () => {
     // payload directly with raw subtle.sign — simulates a signature emitted
     // by the pre-audit version of this library.
     const keys = await asymmetric.generate();
-    const [ecdsaKey] = keys.privateKey
-      .replace(/^S01:/, "")
-      .split(":");
+    const [ecdsaKey] = keys.privateKey.replace(/^S01:/, "").split(":");
     const cryptoKey = await globalThis.crypto.subtle.importKey(
       "pkcs8",
       fromBase64(ecdsaKey!) as BufferSource,
@@ -470,11 +468,7 @@ describe("crypto audit — backward compat (non-breaking)", () => {
     const timestamp = Date.now();
     const legacyBytes = new TextEncoder().encode(`${nonce}:${message}:${timestamp}`);
     const sigRaw = new Uint8Array(
-      await globalThis.crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        cryptoKey,
-        legacyBytes as BufferSource,
-      ),
+      await globalThis.crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, cryptoKey, legacyBytes as BufferSource),
     );
 
     // verify() WITHOUT `v` falls back to v1 path → should accept.
@@ -503,11 +497,7 @@ describe("crypto audit — backward compat (non-breaking)", () => {
     const timestamp = Date.now();
     const legacyBytes = new TextEncoder().encode(`${nonce}:${message}:${timestamp}`);
     const sig = new Uint8Array(
-      await globalThis.crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        cryptoKey,
-        legacyBytes as BufferSource,
-      ),
+      await globalThis.crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, cryptoKey, legacyBytes as BufferSource),
     );
     const valid = await asymmetric.verify({
       publicKey: keys.publicKey,
@@ -579,11 +569,7 @@ describe("crypto audit — security guarantees", () => {
     const timestamp = Date.now();
     const legacyBytes = new TextEncoder().encode(`${nonce}:${message}:${timestamp}`);
     const sig = new Uint8Array(
-      await globalThis.crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        cryptoKey,
-        legacyBytes as BufferSource,
-      ),
+      await globalThis.crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, cryptoKey, legacyBytes as BufferSource),
     );
     const valid = await asymmetric.verify({
       publicKey: keys.publicKey,
@@ -599,9 +585,7 @@ describe("crypto audit — security guarantees", () => {
   it("sign() always produces low-S signatures (malleability mitigation)", async () => {
     // Run several signs and confirm each s is in the low half.
     const keys = await asymmetric.generate();
-    const P256_N = BigInt(
-      "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
-    );
+    const P256_N = BigInt("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
     const HALF_N = P256_N >> 1n;
     const bytesToBI = (b: Uint8Array): bigint => {
       let n = 0n;
@@ -623,9 +607,7 @@ describe("crypto audit — security guarantees", () => {
     // Flip s → n - s (high-S form). The flipped signature still verifies
     // mathematically (it's the malleability bug), but `strict: true` must
     // reject it as non-canonical.
-    const P256_N = BigInt(
-      "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
-    );
+    const P256_N = BigInt("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
     const bytesToBI = (b: Uint8Array): bigint => {
       let n = 0n;
       for (const x of b) n = (n << 8n) | BigInt(x);
@@ -659,15 +641,9 @@ describe("crypto audit — validation", () => {
   it("verify throws on non-finite maxAge", async () => {
     const keys = await asymmetric.generate();
     const sig = await asymmetric.sign({ privateKey: keys.privateKey, message: "x" });
-    await expect(
-      asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: NaN }),
-    ).rejects.toThrow(/maxAge/);
-    await expect(
-      asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: Infinity }),
-    ).rejects.toThrow(/maxAge/);
-    await expect(
-      asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: -1 }),
-    ).rejects.toThrow(/maxAge/);
+    await expect(asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: NaN })).rejects.toThrow(/maxAge/);
+    await expect(asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: Infinity })).rejects.toThrow(/maxAge/);
+    await expect(asymmetric.verify({ ...sig, publicKey: keys.publicKey, message: "x", maxAge: -1 })).rejects.toThrow(/maxAge/);
   });
 
   it("symmetric.decrypt throws on too-short blob", async () => {
@@ -684,9 +660,7 @@ describe("crypto audit — validation", () => {
   });
 
   it("symmetric.encrypt with stretched:false rejects too-short HKDF key", async () => {
-    await expect(
-      symmetric.encrypt({ payload: "x", key: "ab", stretched: false }),
-    ).rejects.toThrow(/HKDF/);
+    await expect(symmetric.encrypt({ payload: "x", key: "ab", stretched: false })).rejects.toThrow(/HKDF/);
   });
 
   it("symmetric.encrypt with stretched:true accepts short keys (PBKDF2)", async () => {
@@ -699,9 +673,7 @@ describe("crypto audit — validation", () => {
   it("totp.verify throws on malformed Base32 secret (not silent false)", async () => {
     // Programmer errors should surface; the previous behavior silently
     // returned false and made debugging painful.
-    await expect(
-      totp.verify({ token: "123456", secret: "not-base32-at-all!@#$%" }),
-    ).rejects.toThrow();
+    await expect(totp.verify({ token: "123456", secret: "not-base32-at-all!@#$%" })).rejects.toThrow();
   });
 
   it("totp.verify throws on negative window", async () => {
@@ -733,22 +705,13 @@ describe("crypto audit — TOTP RFC-style ground-truth", () => {
     const counterBytes = new Uint8Array(8);
     const view = new DataView(counterBytes.buffer);
     view.setBigUint64(0, counter, false);
-    const key = await globalThis.crypto.subtle.importKey(
-      "raw",
-      secretBytes as BufferSource,
-      { name: "HMAC", hash: "SHA-1" },
-      false,
-      ["sign"],
-    );
-    const hmac = new Uint8Array(
-      await globalThis.crypto.subtle.sign("HMAC", key, counterBytes as BufferSource),
-    );
+    const key = await globalThis.crypto.subtle.importKey("raw", secretBytes as BufferSource, { name: "HMAC", hash: "SHA-1" }, false, [
+      "sign",
+    ]);
+    const hmac = new Uint8Array(await globalThis.crypto.subtle.sign("HMAC", key, counterBytes as BufferSource));
     const offset = hmac[hmac.length - 1]! & 0x0f;
     const binCode =
-      ((hmac[offset]! & 0x7f) << 24) |
-      ((hmac[offset + 1]! & 0xff) << 16) |
-      ((hmac[offset + 2]! & 0xff) << 8) |
-      (hmac[offset + 3]! & 0xff);
+      ((hmac[offset]! & 0x7f) << 24) | ((hmac[offset + 1]! & 0xff) << 16) | ((hmac[offset + 2]! & 0xff) << 8) | (hmac[offset + 3]! & 0xff);
     const token = String(binCode % 1_000_000).padStart(6, "0");
 
     const valid = await totp.verify({ token, secret });

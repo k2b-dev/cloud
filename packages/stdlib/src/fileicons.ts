@@ -52,8 +52,36 @@ export function getFileCategory(item: FileInfoLike): FileCategory {
 
   if (
     [
-      "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx", "py", "pyw", "rs", "go", "c", "h", "cpp", "hpp", "cc",
-      "java", "kt", "cs", "rb", "php", "swift", "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql",
+      "js",
+      "mjs",
+      "cjs",
+      "jsx",
+      "ts",
+      "mts",
+      "cts",
+      "tsx",
+      "py",
+      "pyw",
+      "rs",
+      "go",
+      "c",
+      "h",
+      "cpp",
+      "hpp",
+      "cc",
+      "java",
+      "kt",
+      "cs",
+      "rb",
+      "php",
+      "swift",
+      "sh",
+      "bash",
+      "zsh",
+      "ps1",
+      "bat",
+      "cmd",
+      "sql",
     ].includes(ext)
   ) {
     return "code";
@@ -62,8 +90,23 @@ export function getFileCategory(item: FileInfoLike): FileCategory {
   if (
     mime.startsWith("text/") ||
     [
-      "txt", "md", "mdx", "markdown", "rst", "log", "json", "jsonc", "yaml", "yml", "toml", "xml", "ini", "env",
-      "gitignore", "dockerfile", "makefile",
+      "txt",
+      "md",
+      "mdx",
+      "markdown",
+      "rst",
+      "log",
+      "json",
+      "jsonc",
+      "yaml",
+      "yml",
+      "toml",
+      "xml",
+      "ini",
+      "env",
+      "gitignore",
+      "dockerfile",
+      "makefile",
     ].includes(ext)
   ) {
     return "text";

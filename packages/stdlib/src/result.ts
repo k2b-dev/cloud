@@ -15,7 +15,15 @@
  * - `"INTERNAL"` -- 500
  * - `"UNAVAILABLE"` -- 503
  */
-export type ServiceErrorCode = "BAD_INPUT" | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "TOO_MANY_REQUESTS" | "INTERNAL" | "UNAVAILABLE";
+export type ServiceErrorCode =
+  | "BAD_INPUT"
+  | "UNAUTHENTICATED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "CONFLICT"
+  | "TOO_MANY_REQUESTS"
+  | "INTERNAL"
+  | "UNAVAILABLE";
 
 /**
  * Structured service error with a machine-readable code, human-readable

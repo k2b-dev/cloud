@@ -1,21 +1,21 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import {
-  slugify,
+  camelCase,
   humanize,
-  titleify,
-  pprintNumber,
-  pprintPercent,
-  pprintDurationMs,
+  kebabCase,
+  pascalCase,
   pprintBytes,
   pprintBytesParts,
   pprintCurrency,
-  truncate,
-  summarize,
-  camelCase,
+  pprintDurationMs,
+  pprintNumber,
+  pprintPercent,
+  slugify,
   snakeCase,
-  kebabCase,
-  pascalCase,
+  summarize,
   text,
+  titleify,
+  truncate,
 } from "./text";
 
 // ==========================
@@ -362,9 +362,7 @@ describe("summarize", () => {
   });
 
   it("works with middle mode", () => {
-    expect(summarize("Hello World", 6, "middle")).toBe(
-      "He…rld [6 chars omitted]",
-    );
+    expect(summarize("Hello World", 6, "middle")).toBe("He…rld [6 chars omitted]");
   });
 
   it("omitted count is correct", () => {

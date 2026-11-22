@@ -105,16 +105,20 @@ export function moneyParse(value: string, options: MoneyParseOptions): Money {
   const formatter = numberFormat(options.locale, { maximumFractionDigits: 20 });
   if (typeof value !== "string") throw new TypeError("Expected a localized money string");
   const digits = localeDigits(options.locale);
-  const toAscii = (text: string) => Array.from(text, char => {
-    const index = digits.indexOf(char);
-    return index < 0 ? char : String(index);
-  }).join("");
+  const toAscii = (text: string) =>
+    Array.from(text, (char) => {
+      const index = digits.indexOf(char);
+      return index < 0 ? char : String(index);
+    }).join("");
   let input = value.trim();
   let sign = "";
   // Include locale literals such as the Arabic letter mark before the minus sign.
   const negative = formatter.formatToParts(-1);
-  const firstInteger = negative.findIndex(part => part.type === "integer");
-  const negativePrefix = negative.slice(0, firstInteger).map(part => part.value).join("");
+  const firstInteger = negative.findIndex((part) => part.type === "integer");
+  const negativePrefix = negative
+    .slice(0, firstInteger)
+    .map((part) => part.value)
+    .join("");
   if (input.startsWith(negativePrefix)) {
     sign = "-";
     input = input.slice(negativePrefix.length);
@@ -123,8 +127,8 @@ export function moneyParse(value: string, options: MoneyParseOptions): Money {
     input = input.slice(1);
   }
   const parts = formatter.formatToParts(1234567.8);
-  const separator = parts.find(part => part.type === "decimal")?.value;
-  const group = parts.find(part => part.type === "group")?.value;
+  const separator = parts.find((part) => part.type === "decimal")?.value;
+  const group = parts.find((part) => part.type === "group")?.value;
   const pieces = separator ? input.split(separator) : [input];
   if (pieces.length > 2) throw new TypeError("Invalid money decimal separators");
   const integer = pieces[0]!;
@@ -135,13 +139,16 @@ export function moneyParse(value: string, options: MoneyParseOptions): Money {
     throw new TypeError("Invalid localized money number");
   }
   // Reject ASCII digits in locales using other digits, including mixed scripts.
-  const localize = (text: string) => text.replace(/\d/g, digit => digits[Number(digit)]!);
+  const localize = (text: string) => text.replace(/\d/g, (digit) => digits[Number(digit)]!);
   if (localize(asciiInteger) !== ungrouped || (fraction !== undefined && localize(fraction) !== pieces[1])) {
     throw new TypeError("Money digits do not match the locale");
   }
   if (group && integer.includes(group)) {
-    const canonical = formatter.formatToParts(BigInt(asciiInteger))
-      .filter(part => part.type === "integer" || part.type === "group").map(part => part.value).join("");
+    const canonical = formatter
+      .formatToParts(BigInt(asciiInteger))
+      .filter((part) => part.type === "integer" || part.type === "group")
+      .map((part) => part.value)
+      .join("");
     if (canonical !== integer) throw new TypeError("Invalid money grouping");
   }
   return moneyFromDecimal(`${sign}${asciiInteger}${fraction === undefined ? "" : `.${fraction}`}`, options);
@@ -154,14 +161,19 @@ export function moneyFormat(value: Money, options: MoneyFormatOptions): string {
   const fixed = moneyToDecimal(value).replace(/^-/, "");
   const [integer, fraction = ""] = fixed.split(".");
   const formatter = numberFormat(options.locale, {
-    style: "currency", currency: value.currency,
-    minimumFractionDigits: digits, maximumFractionDigits: digits,
+    style: "currency",
+    currency: value.currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
   const localizedDigits = localeDigits(options.locale);
-  const localizedFraction = fraction.replace(/\d/g, digit => localizedDigits[Number(digit)]!);
+  const localizedFraction = fraction.replace(/\d/g, (digit) => localizedDigits[Number(digit)]!);
   const major = BigInt(integer!);
   const signed = value.amount < 0 ? (major === 0n ? -0 : -major) : major;
-  return formatter.formatToParts(signed).map(part => part.type === "fraction" ? localizedFraction : part.value).join("");
+  return formatter
+    .formatToParts(signed)
+    .map((part) => (part.type === "fraction" ? localizedFraction : part.value))
+    .join("");
 }
 
 function sameCurrency(a: Money, b: Money): void {
@@ -233,7 +245,7 @@ export function moneyTaxFromGross(gross: Money, options: MoneyTaxOptions): Money
 export function moneyAllocate(total: Money, weights: readonly (number | string)[]): Money[] {
   validate(total);
   if (weights.length === 0) throw new RangeError("Money allocation needs weights");
-  const parsed = Array.from(weights, weight => {
+  const parsed = Array.from(weights, (weight) => {
     if (typeof weight === "number" && (!Number.isSafeInteger(weight) || weight < 0)) {
       throw new RangeError("Numeric weights must be nonnegative safe integers; use strings for decimals");
     }
@@ -252,7 +264,7 @@ export function moneyAllocate(total: Money, weights: readonly (number | string)[
   const remaining = Number(magnitude.minus(shares.reduce((sum, share) => sum.plus(share.base), new Decimal(0))).toFixed(0));
   const ranked = [...shares].sort((a, b) => b.remainder.cmp(a.remainder) || a.index - b.index);
   for (let index = 0; index < remaining; index++) ranked[index]!.base = ranked[index]!.base.plus(1);
-  return shares.map(share => finish(total.amount < 0 ? share.base.neg() : share.base, total.currency));
+  return shares.map((share) => finish(total.amount < 0 ? share.base.neg() : share.base, total.currency));
 }
 
 export const money = {

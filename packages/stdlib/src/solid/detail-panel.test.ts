@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { detailPanel } from "./detail-panel";
 
 // Mock window.location
@@ -12,7 +12,8 @@ Object.defineProperty(globalThis, "window", {
     addEventListener: mock(() => {}),
     removeEventListener: mock(() => {}),
     dispatchEvent: mock(() => true),
-    CustomEvent: globalThis.CustomEvent ??
+    CustomEvent:
+      globalThis.CustomEvent ??
       class CustomEvent extends Event {
         detail: any;
         constructor(type: string, opts?: any) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createRoot } from "solid-js";
 import { dnd } from "./dnd";
 
@@ -90,9 +90,7 @@ describe("dnd option validation", () => {
 
   it("accepts 0 (zero) for activationDistance and touchActivationDelayMs", () => {
     expect(() => {
-      createRoot(() =>
-        dnd.create({ activationDistance: 0, touchActivationDelayMs: 0 }),
-      );
+      createRoot(() => dnd.create({ activationDistance: 0, touchActivationDelayMs: 0 }));
     }).not.toThrow();
   });
 });

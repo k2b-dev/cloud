@@ -1,10 +1,10 @@
-import { validateSepaXml as checkSepaXml } from "./validate";
 import { describe, expect, test } from "bun:test";
-import { sepa, type SepaBatch } from "./index";
 import { unwrap } from "../result";
+import { type SepaBatch, sepa } from "./index";
+import { validateSepaXml as checkSepaXml } from "./validate";
+
 const renderSepaBatch = (input: SepaBatch) => unwrap(sepa.serialize(input));
 const validateSepaXml = async (xml: string) => unwrap(await checkSepaXml(xml));
-
 
 const input = () => ({
   format: "sepa-sct-pain.001.001.09-gbic-5" as const,
@@ -37,20 +37,18 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
 
   test("produces locally schema-valid SCT with exact totals and escaped values", async () => {
     const batch = input();
-    const result = await renderSepaBatch(
-      {
-        ...batch,
-        rows: [
-          ...batch.rows,
-          {
-            ...batch.rows[0]!,
-            endToEndId: "expense-2-payment",
-            amount: "0.01",
-            creditorBic: "ABNANL2A",
-          },
-        ],
-      },
-    );
+    const result = await renderSepaBatch({
+      ...batch,
+      rows: [
+        ...batch.rows,
+        {
+          ...batch.rows[0]!,
+          endToEndId: "expense-2-payment",
+          amount: "0.01",
+          creditorBic: "ABNANL2A",
+        },
+      ],
+    });
     expect(result).toMatchObject({ rowCount: 2, total: "12.31" });
     const xml = new TextDecoder().decode(result.bytes);
     expect(xml).toContain("<CtrlSum>12.31</CtrlSum>");
@@ -87,9 +85,7 @@ describe("SEPA pain.001.001.09 DK GBIC 5", () => {
       expect(sepa.validate({ ...batch, rows: [{ ...batch.rows[0]!, ...patch }] }).ok).toBe(false);
     expect(sepa.validate({ ...batch, executionDate: "2026-02-30" }).ok).toBe(false);
     expect(sepa.validate({ ...batch, rows: [...batch.rows, ...batch.rows] }).ok).toBe(false);
-    expect(sepa.validate({ ...batch, rows: [batch.rows[0]!, { ...batch.rows[0]!, businessId: "another" }] }).ok).toBe(
-      false,
-    );
+    expect(sepa.validate({ ...batch, rows: [batch.rows[0]!, { ...batch.rows[0]!, businessId: "another" }] }).ok).toBe(false);
   });
 
   test("schema verification rejects wrong namespaces, malformed XML, unsafe entities and non-EUR amounts", async () => {
