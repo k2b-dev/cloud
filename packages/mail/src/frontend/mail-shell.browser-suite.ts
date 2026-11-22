@@ -4290,13 +4290,34 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           if (new URL(request.url()).pathname.startsWith("/api/")) requests.push(`${request.method()} ${request.url()}`);
         });
         await page.evaluate(() => {
-          const record = window as unknown as { __shift: number };
+          const record = window as unknown as { __shift: number; __shiftSources: string[] };
           record.__shift = 0;
+          record.__shiftSources = [];
+          // Each shift names what moved, so a failure points at the element and its boxes before and after.
+          const box = (rect: DOMRectReadOnly) => `${rect.x},${rect.y} ${rect.width}×${rect.height}`;
           new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) record.__shift += (entry as unknown as { value: number }).value;
+            for (const entry of list.getEntries()) {
+              const shift = entry as unknown as {
+                value: number;
+                sources?: { node?: Node | null; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[];
+              };
+              record.__shift += shift.value;
+              for (const source of shift.sources ?? []) {
+                const node = source.node instanceof Element ? source.node : source.node?.parentElement;
+                const name = node ? `${node.tagName.toLowerCase()}.${Array.from(node.classList).join(".")}` : "(gone)";
+                record.__shiftSources.push(`${name}: ${box(source.previousRect)} → ${box(source.currentRect)}`);
+              }
+            }
           }).observe({ type: "layout-shift" });
         });
-        return { requests, shift: () => page.evaluate(() => (window as unknown as { __shift: number }).__shift) };
+        return {
+          requests,
+          shift: () =>
+            page.evaluate(() => {
+              const record = window as unknown as { __shift: number; __shiftSources: string[] };
+              return record.__shift === 0 ? 0 : { value: record.__shift, sources: record.__shiftSources };
+            }),
+        };
       };
 
       test("S7: resting on Assign to someone else, then a person, assigns on the drop; no request or shift before it", async () => {
