@@ -87,8 +87,7 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   requests[0]!.resolve(Response.json({ base: initial.base, entry: initial.items[0] }));
   await flush();
-  // The heading's name is the whole file name in one piece; the shortened name beside it is only seen.
-  expect(dom.root.querySelector("h2 .sr-only")?.textContent).toBe("B.txt");
+  expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
   expect(dom.window.location.search).toContain("file=B.txt");
   // The details panel labels the personal base and keeps the technical location as tooltip.
   expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal / B.txt");
@@ -100,7 +99,7 @@ test("view changes preserve selection; superseded details cannot replace current
   setDirectory({ ...initial, path: "A", items: [] });
   setSource("/app/filesv2?base=home&path=A");
   await flush();
-  expect(dom.root.querySelector("h2 .sr-only")?.textContent).not.toBe("B.txt");
+  expect(dom.root.querySelector("h2")?.textContent).not.toBe("B.txt");
   expect(dom.root.textContent).toContain("This folder is empty");
 });
 
