@@ -33,7 +33,7 @@ heights, lines, and radii follow from the tokens below.
 | | Criterion | Kind | Check or question |
 | --- | --- | --- | --- |
 | K1 | Fixed heights and one spacing scale: head 56, status row 52, column head 36, rows 40/52/72, dense 32; phone title 52, tabs 44, row 60; gaps 4, 8, 12, 16, 20, 24, 32 px | measure | the `--k2b-h-*` and `--k2b-space-*` tokens; height tests of each building block as it moves (planned) |
-| K2 | Hairlines divide: 1 px, one colour, edge to edge of their column; the head line carries the 2 px tab mark | measure | `border-ownership`, `layoutProblems` (double line), `shadow-tokens`; a workspace hairline browser test with the workspace building block (planned) |
+| K2 | Hairlines divide: 1 px, one colour, edge to edge of their column; the head line carries the 2 px tab mark | measure | `border-ownership`, `layoutProblems` (double line; with `flat`: `short-edge`, `near-double`), `shadow-tokens`; a workspace hairline browser test with the workspace building block (planned) |
 | K3 | Shadows only for what floats | measure | `shadow-tokens` |
 | K4 | Round is what you press, square is what orders: 0, 4, 8, 14 px, or round | measure | `radius-scale` |
 | K5 | Alignment: text edge 20 px (phone 16 px), fields of three fixed lines on one grid, numbers right-aligned in tabular figures | measure | `field-subgrid.browser.test.ts` |
@@ -42,9 +42,9 @@ heights, lines, and radii follow from the tokens below.
 | K8 | Colour only with meaning: grey carries, app colour is "you are here", blue is "you press this" and, as a tint, "your turn", green, yellow, and red are states with a word, plum is AI; one filled main action per view | judgement | Does every colour on the page map to one of these meanings? |
 | K9 | The detail column: docked, 380 px, head 56 px, sections divided by hairlines, icons on one axis | measure | `workspace-surfaces`, detail browser tests |
 | K10 | Notice and fault: a page-wide fault rests in the status row; what needs a person is a notice cell where the thing is; empty is a sign, a sentence, and a way out, without a box | measure, judgement | `notice-cards`; Does it concern the page or one thing? Must someone act? |
-| K11 | Four sizes in the controls: 12, 13, 14, 18 px; three weights | measure | `type-scale.browser.test.ts` |
+| K11 | Four sizes in the controls: 12, 13, 14, 18 px; three weights | measure | `type-scale.browser.test.ts`; `layoutProblems` with `flat` (`type-role`, the roles of `--k2b-type-roles`) |
 | K12 | Phone below 768 px, tablet to 1023 px, wide from 1920 px | judgement | Does every width look intended? (`host-breakpoints` and `layoutProblems` at 390 and 768 px measure the rest) |
-| K13 | A draggable edge carries a grip, and no other edge does | measure | `resize-grips` |
+| K13 | A draggable edge carries a grip, and no other edge does | measure | `resize-grips`; `layoutProblems` with `flat` (`grip-off-center`) |
 | K14 | No needless nesting: a square area with one framed child loses the inner frame | measure | `workspace-surfaces`, `notice-cards` |
 | K15 | Overflow and wrapping: one behaviour per kind of content; nothing overlaps, spills, is cut without a sign, draws a double line, or breaks a line by a scrollbar | measure | `layoutProblems` at 390, 768, 1100, 1280, 1440, and 1920 px, with the detail open and with a narrow reader |
 | K16 | Overlays: menus, toasts, and pills small shadow; dialog large shadow over a 28 % scrim; no blur | measure | `glass-surfaces`, `shadow-tokens` |

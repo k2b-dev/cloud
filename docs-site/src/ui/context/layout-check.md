@@ -27,10 +27,58 @@ check ignores overflow that only such hit areas cause, in `@k2b/ui` and in
 your own controls, so a page with touch needs no `data-layout-check="skip"`. A
 pseudo-element that draws something and reaches past its box still counts.
 
+## The checks of the flat look
+
+Four more kinds measure the flat look against the mockup values. They are off
+by default, so a page that passes today keeps passing. Turn them on with
+`flat: true`, or name the ones you want, such as `flat: ["short-edge"]`. Their
+lines then join `problems`. `ignore` and `data-layout-check="skip"` do not
+apply to them.
+
+- `short-edge`: a line or a fill of a row, cell, selection, or notice in a flat
+  area stops short of the area's inner edge, or runs past it, by more than
+  0.5 px. A line is a border of at most 1 px or a 1 px box-shadow line; a fill
+  is a background colour with square corners that differs from what lies
+  behind it. Lines and fills of one area at the same height count as one run,
+  and a run that spans at least half the area must reach both edges. A
+  reserved scrollbar gutter is no excuse: lines and fills run under it. Text
+  keeps its own inset. Framed elements (round corners, or a border on three
+  sides or more), fields, and boxes that float are no rows.
+- `near-double`: two parallel lines 0 to 8 px apart that run side by side over
+  at least half of the shorter one. A pair that `double` already reports is not
+  repeated. The edge of a frame (round corners, or a border on three sides or
+  more), such as a field, button, or card, is no line.
+- `grip-off-center`: the grip of a `role="separator"` is not centred on its
+  edge within 1 px, across or along it, or something lies over it. The edge is
+  the start or end of the column named by `aria-controls`, else the line
+  between the separator's neighbours.
+- `type-role`: text in a flat area whose font size, line height, and weight
+  are no type role. The roles come from the `--k2b-type-roles` token of
+  `@k2b/ui`, which derives from the four role tokens
+  ([Type roles](./surfaces/utilities#type-roles)). Reading text (Markdown, an editor) and initials in an avatar are
+  left out.
+
+A flat area is a column of an `AppWorkspace` (sidebar, main and its panes,
+detail, drawer) or any box with `data-layout-area`. Pass `areas` to use other
+boxes. The innermost area owns an element.
+
+### Type roles
+
+| Role | Size | Line heights | Weights |
+| --- | --- | --- | --- |
+| meta | 12 px | 16, 20 px | 400, 500, 600 |
+| row | 13 px | 20 px | 400, 500, 600 |
+| title | 14 px | 20, 22 px | 400, 600 |
+| lead | 18 px | 20, 24 px | 600 |
+
+The values are the computed styles of the approved mockup (Cloud flach,
+version 10). The head title and reading text use 14 px, the lead statement
+18 px; a phone title sets the lead in a 20 px line.
+
 ## Import
 
 ```ts
-import { layoutProblems, type LayoutProblemOptions, type LayoutProblems } from "@k2b/ui/layout-check";
+import { type FlatProblemKind, layoutProblems, type LayoutProblemOptions, type LayoutProblems } from "@k2b/ui/layout-check";
 ```
 
 The subpath is separate from the main entry of `@k2b/ui`. It has no
@@ -46,8 +94,11 @@ uses nothing from outside the function.
 | `root` | `string` | A selector for the element to check. The default is the whole document. |
 | `ignore` | `string` | A selector for boxes whose children overlap or clip on purpose, such as an avatar stack. |
 | `slack` | `number` | How far content may reach past its box before it counts, in px. The default is 7. |
+| `flat` | `boolean \| FlatProblemKind[]` | Turns on the checks of the flat look: `true` for all four, or a list of `"short-edge"`, `"near-double"`, `"grip-off-center"`, and `"type-role"`. Off by default. |
+| `areas` | `string` | A selector for the flat areas. The default is the columns of every `AppWorkspace` and `[data-layout-area]`. |
 
 It returns `overlap`, `spill`, `cut`, `double`, and `scrollbar` as lists of readable lines,
+`shortEdge`, `nearDouble`, `gripOffCenter`, and `typeRole` (empty unless `flat` turns them on),
 `sideways` as a boolean, and `problems` as every problem in one list. If the
 page is clean, `problems` is empty. To skip a box, give it
 `data-layout-check="skip"`. A visually hidden box, 1 px and clipped like

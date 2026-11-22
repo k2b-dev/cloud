@@ -275,6 +275,16 @@
   --k2b-font-size-lead: 1.125rem;
   --k2b-line-height-lead: 1.5rem;
   --k2b-font-weight-lead: 600;
+  /* The same roles as one list for the layout check (`type-role`): a role is
+     its size, the line heights it takes, and after the slash its weights. It
+     derives from the tokens above; besides each role's own line height it
+     allows meta set inline in a 20 px row, 22 px reading text, and the 20 px
+     phone title line, as measured in the mockup. */
+  --k2b-type-roles:
+    meta var(--k2b-font-size-meta) var(--k2b-line-height-meta) var(--k2b-line-height-row) / 400 500 600,
+    row var(--k2b-font-size-row) var(--k2b-line-height-row) / 400 500 600,
+    body var(--k2b-font-size-body) var(--k2b-line-height-body) 1.375rem / 400 600,
+    lead var(--k2b-font-size-lead) var(--k2b-line-height-lead) 1.25rem / 600;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
