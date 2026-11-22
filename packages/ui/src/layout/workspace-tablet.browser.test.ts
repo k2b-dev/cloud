@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
-import { layoutProblems } from "../layout-check";
+import { launchWithScrollbars, settled } from "../../test/browser";
+import { layoutProblems, scrollbarWidth } from "../layout-check";
 
 // Error class (flat QA for 0.84, B6 class): on a tablet a list and its detail stood side by side, the list squeezed
 // ("Proble…") and Main scrolled sideways, as on the admin app list at 768 px. K12: a tablet (an app area of 48 to
@@ -46,7 +46,7 @@ const script = await build.outputs[0]!.text();
 setDefaultTimeout(30_000);
 let browser: Browser;
 beforeAll(async () => {
-  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  browser = await launchWithScrollbars();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -75,6 +75,7 @@ for (const kind of ["levels", "detail"] as const)
             detailToggle: shown("[data-app-workspace-detail-toggle]").length,
           };
         });
+        expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
         const tablet = width < 1024;
         expect(shape.mainSideways).toBeLessThanOrEqual(0);
         if (kind === "levels") expect({ levels: shape.levels, back: shape.back }).toEqual({ levels: tablet ? 1 : 2, back: tablet });

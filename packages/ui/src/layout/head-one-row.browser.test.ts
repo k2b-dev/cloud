@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
-import { layoutProblems } from "../layout-check";
+import { launchWithScrollbars, settled } from "../../test/browser";
+import { layoutProblems, scrollbarWidth } from "../layout-check";
 
 // Error class (flat QA for 0.84, B3, B6, B7, B8, B9): a head that wraps into two or three rows, a path that scrolls or
 // runs under the actions, or a view strip that scrolls sideways, each at one width only. K1, K15: from 768 px the head
@@ -64,7 +64,7 @@ const script = await build.outputs[0]!.text();
 setDefaultTimeout(30_000);
 let browser: Browser;
 beforeAll(async () => {
-  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  browser = await launchWithScrollbars();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -110,6 +110,8 @@ for (const kind of ["mail", "files", "spaces"] as const)
               .map((node) => `${node.tagName.toLowerCase()}.${node.className.split(" ")[0]} ${node.scrollWidth}/${node.clientWidth}`),
           };
         });
+        // A desktop window draws classic scrollbars that take room; a phone draws overlay ones.
+        if (!phone) expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
         expect(head.line).toBe(phone ? 44 : 56);
         expect(head.sideways).toEqual([]);
         if (phone) {

@@ -5,10 +5,10 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchWithScrollbars, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { workspaceCss } from "../../test/workspace-host-fixture";
-import { layoutProblems } from "../layout-check";
+import { layoutProblems, scrollbarWidth } from "../layout-check";
 
 // K6, K10, K15: the status row keeps its lead statement at the same place and size in every state; a selection, a
 // disturbance, or an announcement takes the place of the key figures. The head row is 56 px and its views end on
@@ -27,7 +27,7 @@ const css = workspaceCss();
 let browser: Browser;
 setDefaultTimeout(30_000);
 beforeAll(async () => {
-  browser = await launchBrowser();
+  browser = await launchWithScrollbars();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -293,6 +293,7 @@ for (const [viewport, width, time, words] of [
         sign: true,
         hint: "Abgleich pausiert, der Server antwortet nicht · nächster Versuch 14:05",
       });
+      expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
       // Nothing spills or is cut without an ellipsis: only what is wrong and the words before the time shorten.
       expect((await page.evaluate(layoutProblems, { root: ".k2b-status-row" })).problems).toEqual([]);
     } finally {
