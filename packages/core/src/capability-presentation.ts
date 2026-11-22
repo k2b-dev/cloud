@@ -61,6 +61,7 @@ const codeVersionSubmissionInput = {
   "manifest.entrypoints[].route.page":
     "Ob der Checker einen erreichbaren ctx.page-Aufruf für diese Route gefunden hat; bei älteren Versionen fehlt die Angabe.",
   "manifest.entrypoints[].route.layout": "Seiten dieser Route erscheinen ohne das Cloud-Layout; ohne Angabe erscheinen sie darin.",
+  "manifest.entrypoints[].route.audience": "Überspringt die Leseprüfung für Besucher.",
   "manifest.entrypoints[].event": "Geprüfte Ereignisregistrierung für den Ort, dem dieser Code gehört.",
   "manifest.entrypoints[].event.type": "Vollständige Ereignis-ID aus dem Capability-Katalog.",
   "manifest.entrypoints[].event.version": "Deklarierte Formatversion des Ereignisses.",

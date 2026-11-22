@@ -211,7 +211,9 @@ try {
           jsx: "preserve",
           jsxImportSource: "solid-js",
         },
-        include: ["src/**/*.ts", "src/**/*.tsx"],
+        // Apps include Cloud's shared ambient declarations; they must not replace a
+        // sibling's dependency types (a Babel 8 `@babel/core` stub broke @k2b/ssr, #3912).
+        include: ["src/**/*.ts", "src/**/*.tsx", "node_modules/@k2b/cloud/src/types/ambient.d.ts"],
       },
       null,
       2,
@@ -241,7 +243,6 @@ import counting from "./skills/inventory-counting/references/counting.md" with {
 export const SKILLS = [skill({ markdown, references: { "references/counting.md": counting } })];
 `,
   );
-  await Bun.write(join(consumer, "src/markdown.d.ts"), 'declare module "*.md" { const text: string; export default text; }\n');
   // A third-party part of the mobile app: declared with pwa, served with PwaLayout behind ssr.pwaAccess.
   await Bun.write(
     join(consumer, "src/config.ts"),

@@ -87,7 +87,7 @@ export function GroupCoverageToggle(props: { coverage: GroupCoverage; groupName:
     >
       <span class="text-xs">{t().groupMembers}</span>
       <i
-        class="ti ti-chevron-down shrink-0 text-[10px] transition-transform motion-reduce:transition-none"
+        class="ti ti-chevron-down shrink-0 text-[10px] motion-safe:transition-transform"
         classList={{ "rotate-180": props.coverage.open() }}
         aria-hidden="true"
       />

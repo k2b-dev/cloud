@@ -207,6 +207,17 @@ export const installReceiptCheckpoints = async (sql: TransactionSQL): Promise<vo
     ADD COLUMN IF NOT EXISTS pending_checkpoint_id UUID`.simple();
 };
 
+/** Ingest refusals per source and minute, flushed from Valkey; the flush job keeps seven days. */
+export const installSourceRejections = async (sql: TransactionSQL): Promise<void> => {
+  await sql`CREATE TABLE IF NOT EXISTS pulse.source_rejections (
+    source_id UUID NOT NULL REFERENCES pulse.sources(id) ON DELETE CASCADE,
+    minute TIMESTAMPTZ NOT NULL, count INTEGER NOT NULL CHECK (count > 0),
+    last_reason TEXT NOT NULL, last_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY(source_id,minute)
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_pulse_source_rejections_minute ON pulse.source_rejections(minute)`.simple();
+};
+
 /** SQL console control data. migrate() holds the installation transaction lock. */
 export const installSqlConsole = async (sql: TransactionSQL, timezone: string): Promise<void> => {
   await sql`ALTER TABLE pulse.bases ADD COLUMN icon TEXT NOT NULL DEFAULT 'ti ti-chart-line',

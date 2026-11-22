@@ -12,12 +12,21 @@ import {
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { BaseSchemaReadSchema, SchemaReadInputSchema } from "../../schema-contracts";
 import { pulseService } from "../../service";
 import { retryBase } from "../../service/base-admin";
+import { readBaseSchema } from "../../service/base-schema-read";
 import { projectBases } from "../../service/public-resources";
 import { RetentionStoreUnavailable } from "../../store/retention";
 import { BaseSchema, CreateBaseSchema, GrantBaseAccessSchema, MessageSchema, UpdateBaseAccessSchema, UpdateBaseSchema } from "../schemas";
 import { projectResult, requestAccessScope, requirePublicIdParam, requireUuidParam } from "../shared";
+
+const SchemaErrorBody = z.object({
+  code: z.string(),
+  message: z.string(),
+  retryAfter: z.number().optional(),
+  resetAt: z.string().optional(),
+});
 
 const routes = new Hono<AuthContext>()
   .onError((error, c) => {
@@ -145,6 +154,46 @@ const routes = new Hono<AuthContext>()
       "Pulse data clear started",
     );
   })
+  .get(
+    "/bases/:baseId/schema",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read the data kinds and event fields of a Pulse base",
+      description:
+        "Metric names, event kinds with attribute fields inferred from the newest events, and state keys. Pass kind for the newest entries of one kind. Confidential event data is never read. Cached for 5 minutes.",
+      responses: {
+        200: jsonResponse(BaseSchemaReadSchema, "Pulse data catalog"),
+        400: jsonResponse(SchemaErrorBody, "Invalid kind"),
+        403: jsonResponse(SchemaErrorBody, "Read access required"),
+        422: jsonResponse(SchemaErrorBody, "Query time, memory or result limit reached"),
+        429: jsonResponse(SchemaErrorBody, "Hourly quota reached; Retry-After indicates reset"),
+        503: jsonResponse(SchemaErrorBody, "Pulse busy or store unavailable"),
+      },
+    }),
+    v("query", SchemaReadInputSchema),
+    async (c) => {
+      // 5 s admission wait, then one 40 s lease shared by every statement.
+      setRequestTimeout(c, 50);
+      try {
+        const result = await readBaseSchema({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          baseId: c.req.param("baseId") ?? "",
+          kind: c.req.valid("query").kind,
+          signal: c.req.raw.signal,
+        });
+        if (result.ok) return c.json(result.data);
+        const { code, message, retryAfter, resetAt } = result.error;
+        if (retryAfter !== undefined) c.header("Retry-After", String(retryAfter));
+        return c.json(
+          { code, message, ...(retryAfter === undefined ? {} : { retryAfter }), ...(resetAt === undefined ? {} : { resetAt }) },
+          result.error.status,
+        );
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
   .get(
     "/bases/:baseId/access",
     describeRoute({

@@ -1,0 +1,6 @@
+### The packed Button and DatePicker build had 42 bytes left in its budget
+
+- **What happened:** `check-packed-consumer.ts` measured 103,958 of 104,000 bytes up front for a page with `Button` and `DatePicker` from the packed package. The next change to either component would have broken the gate, and the check named only the total.
+- **Root cause:** The month panel (header, weekdays, day grid, month view, keyboard moves) sat in `DatePicker.js` and loaded with every date field, although a person sees it only after opening a calendar. A plain picker also rendered the whole closed calendar into the server HTML.
+- **Error class:** Code a person needs only after an interaction loads up front with the component, until a size budget breaks without saying which module grew.
+- **Guard:** The month panel is `date-picker-panel.tsx` and loads with `import()` as the first date field mounts in the browser; a calendar opened before it arrives places itself and moves focus once its days exist. The server renders no month panel (`field-markup.expected.json`: a plain picker 10,345 → 982 bytes). The packed build now loads 87,083 bytes up front, and when it passes the budget, the check lists the twelve largest modules so the next fix starts from the measurement.

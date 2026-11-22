@@ -136,8 +136,8 @@ describe("a field's label row", () => {
           }
         }
         expect(misaligned).toEqual([]);
-        // Accept is as high as the label's line; on touch its hit area still reaches 44 px.
-        expect(hit).toEqual({ box: 18, area: touch ? 44 : 0 });
+        // Accept is as high as the 20 px label row (K5); on touch its hit area still reaches 44 px.
+        expect(hit).toEqual({ box: 20, area: touch ? 44 : 0 });
       } finally {
         await page.close();
       }

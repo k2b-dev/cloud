@@ -5,13 +5,17 @@ import type { SqlResult } from "./service/sql-service";
 const BUDGET = CAPABILITY_MAX_RESULT_BYTES - 16 * 1024;
 const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 
-/** Numeric cells are chart points. Rows remain whole, including their labels and timestamps. */
-export const boundSqlCapabilityResult = (result: SqlResult, locale: string) => {
+/**
+ * Numeric cells are chart points. Rows remain whole, including their labels and timestamps. `offset` starts the page
+ * at a later row of the same result; `sqlCapabilityNextOffset` says where the next page starts.
+ */
+export const boundSqlCapabilityResult = (result: SqlResult, locale: string, offset = 0) => {
   const rows: unknown[][] = [];
   let points = 0;
-  const note = locale.toLowerCase().startsWith("de") ? "Ergebnis gekürzt." : "Result truncated.";
+  const de = locale.toLowerCase().startsWith("de");
+  const note = de ? "Ergebnis gekürzt." : "Result truncated.";
   const data: SqlResult & { note?: string } = { ...result, rows, rowCount: 0, truncated: result.truncated };
-  for (const row of result.rows) {
+  for (const row of result.rows.slice(offset)) {
     // ClickHouse JSON encodes Int64/UInt64/Decimal values as strings. Their
     // numeric column type still makes each value a chart point.
     const rowPoints = row.filter(
@@ -30,7 +34,7 @@ export const boundSqlCapabilityResult = (result: SqlResult, locale: string) => {
     }
     points += rowPoints;
   }
-  data.truncated ||= rows.length < result.rows.length;
+  data.truncated ||= offset + rows.length < result.rows.length;
   if (data.truncated) data.note = note;
   // Metadata alone may exceed the transport budget (for example, huge aliases).
   // Omitting columns is only coherent with an empty table.
@@ -42,4 +46,13 @@ export const boundSqlCapabilityResult = (result: SqlResult, locale: string) => {
     data.note = note;
   }
   return data;
+};
+
+/**
+ * Where the next page of this result starts, or null when the page reached its last row. A single row too large for a
+ * page is skipped (the page says the result is truncated), so the rows after it stay reachable.
+ */
+export const sqlCapabilityNextOffset = (result: SqlResult, offset: number, page: { rowCount: number }): number | null => {
+  const next = offset + Math.max(page.rowCount, 1);
+  return next < result.rows.length ? next : null;
 };

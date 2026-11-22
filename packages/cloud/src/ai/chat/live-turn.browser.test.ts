@@ -933,7 +933,7 @@ for (const view of [
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
-        // The approval frame: the old message is the question, Cloud says why, on the AI ground with 12 px corners.
+        // The approval frame: the old message is the question, Cloud says why, on the AI ground as a square cell (K4, K10).
         expect(await page.locator(`${card} .k2b-notice-card__title`).innerText()).toBe("Send the offer to Jana Berger.");
         expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain(
           de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",

@@ -22,12 +22,12 @@ describe("drag and drop on the server", () => {
           locale,
           get children() {
             const messages = useDragAndDropMessages()();
-            return messages.pickedUpKeyboard({ label: "Draft", count: 2 });
+            return messages.statusLead({ label: "Draft", count: 2 });
           },
         }),
       );
-    expect(render("en")).toContain("Draft picked up. 2 places take it.");
-    expect(render("de")).toContain("Draft angehoben. 2 Orte nehmen es an.");
+    expect(render("en")).toContain("2 items are being moved");
+    expect(render("de")).toContain("2 Einträge werden verschoben");
   });
   test("renders stable wrappers without browser state or payload attributes", () => {
     const source = renderToString(() =>

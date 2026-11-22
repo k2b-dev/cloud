@@ -971,7 +971,9 @@ for (const theme of ["light", "dark"] as const)
       expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(view.frame.shadow);
       expect(markdown.frame.border.startsWith("1px")).toBe(true);
       expect(markdown.frame.shadow).not.toBe("none");
-      expect(view.band.fill).not.toBe("rgba(0, 0, 0, 0)");
+      // K7: the column head has no fill, only grey 12 px words over one hairline.
+      expect(view.band.fill).toBe("rgba(0, 0, 0, 0)");
+      expect(view.band.size).toBe("12px");
       expect(markdown.band).toEqual(view.band);
       expect(markdown.cells).toEqual(view.cells);
     } finally {

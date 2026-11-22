@@ -407,6 +407,48 @@
 }
 
 /* A customer file: the page's own grid of section cards. */
+/* Cloud flat building blocks: a stack of examples, a 380 px detail column, and a 320 px narrow column. */
+.ui-flat-demo-stack {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.ui-flat-demo-column {
+  width: min(100%, 23.75rem);
+  border: 1px solid var(--k2b-border);
+}
+
+.ui-flat-demo-fields {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.ui-flat-demo-narrow {
+  width: min(100%, 20rem);
+  border: 1px solid var(--k2b-border);
+}
+
+.ui-flat-demo-cells {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ui-flat-demo-row {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.ui-flat-demo-row > span {
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+}
+
 .ui-section-demo-page {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
@@ -1844,6 +1886,32 @@
   gap: 0.75rem;
 }
 
+/* Drop overlay demo: the overlay covers the positioned main area, never the
+   side; the line between them belongs to the main area's edge. */
+.ui-drop-overlay-demo {
+  display: grid;
+  min-height: 26rem;
+  grid-template-columns: 10rem minmax(0, 1fr);
+}
+
+.ui-drop-overlay-demo__side {
+  padding: 0.75rem;
+}
+
+.ui-drop-overlay-demo__main {
+  position: relative;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--k2b-border);
+}
+
+.ui-drop-overlay-demo__row {
+  display: flex;
+  height: 3rem;
+  align-items: center;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+
 .ui-sortable-demo__row {
   display: flex;
   min-height: 2.75rem;
@@ -1851,6 +1919,144 @@
   gap: 0.5rem;
   font-size: 0.875rem;
   font-weight: 500;
+}
+
+/* Board demo (K7): columns are narrow tables, cards are rows between
+   hairlines. One line, one owner: the board draws the lines between columns
+   (k2b-divided-inline), each list the lines between its cards
+   (k2b-divided). The status line keeps one height, so nothing moves while a
+   card is dragged. */
+.ui-sortable-board__status {
+  display: flex;
+  height: 1.25rem;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.ui-sortable-board__lead {
+  flex: none;
+  color: var(--k2b-text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ui-sortable-board__state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-sortable-board__state b {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.ui-sortable-board__state > i {
+  margin-inline-end: 0.375rem;
+}
+
+.ui-sortable-board {
+  --k2b-sortable-gap: 0px;
+  --k2b-sortable-line-inset: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(13rem, 1fr));
+  overflow-x: auto;
+  border-top: 1px solid var(--k2b-border);
+}
+
+.ui-sortable-board__column {
+  min-width: 0;
+  min-height: 16rem;
+}
+
+.ui-sortable-board__head {
+  display: grid;
+  grid-template-columns: 1rem auto auto;
+  justify-content: start;
+  height: 2.25rem;
+  align-items: center;
+  column-gap: 0.5rem;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--k2b-border);
+  font-size: 0.75rem;
+}
+
+.ui-sortable-board__dot {
+  justify-self: center;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.ui-sortable-board__count {
+  color: var(--k2b-text-muted);
+}
+
+/* The card's glyph sits on the axis of the head's dot and its title on the
+   head's text edge (K5). The grip is for the keyboard only, as the whole
+   card drags: it stays out of the text edge and shows on keyboard focus. */
+.ui-sortable-board__card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  min-height: 3.5rem;
+  padding: 0.25rem 0.25rem 0.5rem 0.75rem;
+  background: var(--k2b-surface);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  box-sizing: border-box;
+}
+
+.ui-sortable-board__card .k2b-sortable-list__handle {
+  position: absolute;
+  top: 0.375rem;
+  left: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: var(--k2b-surface);
+  color: var(--k2b-text-muted);
+  opacity: 0;
+}
+
+.ui-sortable-board__card .k2b-sortable-list__handle:focus-visible {
+  opacity: 1;
+}
+
+.ui-sortable-board__priority[data-priority="high"] {
+  color: var(--k2b-danger-text);
+}
+
+.ui-sortable-board__priority[data-priority="normal"] {
+  color: var(--k2b-warning-text);
+}
+
+.ui-sortable-board__priority[data-priority="low"] {
+  color: var(--k2b-action);
+}
+
+.ui-sortable-board__title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 500;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ui-sortable-board__meta {
+  grid-column: 2 / -1;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.ui-sortable-board__tag {
+  color: var(--k2b-text-secondary);
 }
 
 .ui-dnd-demo__targets {

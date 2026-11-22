@@ -138,7 +138,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
   border: 1px solid var(--k2b-border);
 }
@@ -147,7 +147,7 @@
   flex-direction: column;
   gap: 0.875rem;
   padding: 1rem;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
 .ai-quota-source {
@@ -155,8 +155,36 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
+}
+
+/* Admin › Apps key figures (K15): one line; figures never break or get cut.
+   A figure that does not fit wraps whole onto a hidden second line, so the
+   figures leave from the end in their fixed order. Every figure but the last
+   carries "· +n" (the figures after it) just past its end; the next figure
+   covers it with the head's fill while it stands on the same line, so only
+   the last shown figure's "+n" is seen, in the room kept free at the line's
+   end. No script, so the server's first frame is final. All figures stay in
+   the accessible name; the "+n" is decoration. */
+.k2b-ui .apps-figures {
+  display: block;
+  height: 1lh;
+  overflow: hidden;
+  padding-inline-end: 3.25em;
+  white-space: normal;
+}
+.k2b-ui .apps-figures__figure {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  background: var(--k2b-surface);
+}
+.k2b-ui .apps-figures__figure[data-more]::after {
+  content: " · +" attr(data-more) / "";
+  position: absolute;
+  inset-inline-start: 100%;
+  white-space: pre;
 }
 
 /* Account pages space their flat sections with the page's gap. A section that
@@ -168,10 +196,27 @@
 }
 
 /* Account sections are view tabs, and the notification views are a segment on
-   a grey track: the current tab takes the selected fill in the app ink like
-   `ViewTabs`, the current segment also its 1 px edge like `SegmentedControl`.
-   No shadow, and the box stays. */
-.k2b-ui .account-tabs [aria-current="page"] {
+   a grey track. From 768 px the current tab is the 2 px mark in the app ink on
+   the frame's line and the text colour, no fill and no corners, like `ViewTabs`
+   (K2, K4, K6). Below, the tabs wrap into rows, so the current tab keeps the
+   selected fill in the app ink. The current segment takes the selected fill and
+   its 1 px edge like `SegmentedControl`. No shadow, and the box stays. */
+@media (min-width: 48rem) {
+  .k2b-ui .account-tabs:not(.account-tabs--segment) a {
+    box-shadow: inset 0 -2px 0 var(--account-tab-mark, transparent);
+  }
+  .k2b-ui .account-tabs:not(.account-tabs--segment) [aria-current="page"] {
+    --account-tab-mark: var(--k2b-app-workspace-active);
+    color: var(--k2b-text);
+  }
+}
+@media not all and (min-width: 48rem) {
+  .k2b-ui .account-tabs:not(.account-tabs--segment) [aria-current="page"] {
+    color: var(--k2b-app-workspace-active);
+    background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+  }
+}
+.k2b-ui .account-tabs--segment [aria-current="page"] {
   color: var(--k2b-app-workspace-active);
   background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
 }
@@ -185,7 +230,7 @@
   background: var(--k2b-tray);
 }
 
-/* Forced colours replace the fill that marks the current account tab, so the
+/* Forced colours drop the box-shadow mark of the current account tab, so the
    tab keeps an outline that does not move its neighbours. */
 @media (forced-colors: active) {
   .account-tabs [aria-current="page"] {
@@ -628,7 +673,7 @@ main > .code-page-host {
     display: inline;
   }
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.code-page-report-frame {
-    border-radius: 1rem 1rem 0 0;
+    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
   }
   .code-page-report {
     padding: 1.25rem 1.375rem;

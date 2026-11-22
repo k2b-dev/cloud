@@ -15,12 +15,12 @@ export async function migrate(db: SQL = sql): Promise<void> {
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       group_id UUID REFERENCES auth.groups(id) ON DELETE CASCADE,
       row TEXT NOT NULL CHECK(row = ANY(ARRAY['read','silent_you','silent_draft','silent_shared','ask_sends','ask_deletes',
-        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes'])),
+        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes','owner_data'])),
       value TEXT NOT NULL CHECK(value IN ('automatic','admin','never'))
     )`.simple();
     await tx`ALTER TABLE code.policy_rules DROP CONSTRAINT IF EXISTS policy_rules_row_check,
       ADD CONSTRAINT policy_rules_row_check CHECK(row = ANY(ARRAY['read','silent_you','silent_draft','silent_shared','ask_sends','ask_deletes',
-        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes']))`.simple();
+        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes','owner_data']))`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS policy_default_row ON code.policy_rules(row) WHERE group_id IS NULL`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS policy_group_row ON code.policy_rules(group_id,row) WHERE group_id IS NOT NULL`.simple();
     const inserted =
@@ -35,6 +35,13 @@ export async function migrate(db: SQL = sql): Promise<void> {
       if (added.length)
         await tx`UPDATE code.policy SET preset='custom',revision=revision+1,updated_by=NULL,updated_at=clock_timestamp() WHERE singleton`;
     }
+    // Owner-data routes show data read with the owner's rights to every visitor. Their row takes the
+    // value of the stored preset, so a named preset stays exact; customized tables need an admin's approval.
+    const ownerDataRow = await tx`INSERT INTO code.policy_rules(group_id,row,value)
+      SELECT NULL,'owner_data',CASE preset WHEN 'off' THEN 'never' WHEN 'open' THEN 'automatic' ELSE 'admin' END FROM code.policy WHERE singleton
+      ON CONFLICT DO NOTHING RETURNING id`;
+    if (ownerDataRow.length)
+      await tx`UPDATE code.policy SET revision=revision+1,updated_by=NULL,updated_at=clock_timestamp() WHERE singleton`;
     // Bounded personal chat turns have their own operator-visible row. Preserve the
     // existing AI requirement, including group approval requirements.
     const chatRow = await tx`INSERT INTO code.policy_rules(group_id,row,value)
@@ -55,11 +62,11 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE TABLE IF NOT EXISTS code.policy_coverage (
       version_id UUID NOT NULL REFERENCES code.versions(id) ON DELETE CASCADE,
       row TEXT NOT NULL CHECK(row = ANY(ARRAY['read','silent_you','silent_draft','silent_shared','ask_sends','ask_deletes',
-        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes'])), PRIMARY KEY(version_id,row)
+        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes','owner_data'])), PRIMARY KEY(version_id,row)
     )`.simple();
     await tx`ALTER TABLE code.policy_coverage DROP CONSTRAINT IF EXISTS policy_coverage_row_check,
       ADD CONSTRAINT policy_coverage_row_check CHECK(row = ANY(ARRAY['read','silent_you','silent_draft','silent_shared','ask_sends','ask_deletes',
-        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes']))`.simple();
+        'ask_cannot_undo','ask_involves_people','ask_changes_access','ask_keeps_working','ask_sensitive','ask_app_asks','ai','ai_chat_you','internet','public_routes','owner_data']))`.simple();
     await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS pause_reason TEXT,
       ADD COLUMN IF NOT EXISTS pause_rows TEXT[] NOT NULL DEFAULT '{}',
       ADD COLUMN IF NOT EXISTS pause_policy_revision INTEGER`.simple();

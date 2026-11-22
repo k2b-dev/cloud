@@ -2,13 +2,14 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CODE_REQUEST_LIMITS, type CodeContext, CodeRouteResponseSchema, generateCodeSdk } from "@k2b/cloud/code";
+import { CODE_REQUEST_LIMITS, type CodeContext, type CodeRouteResponse, CodeRouteResponseSchema, generateCodeSdk } from "@k2b/cloud/code";
 import { type CodeCheckedVersionManifest, type User, UserSchema } from "@k2b/cloud/contracts";
 import type { AuthContext, RequestActor } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
-import type { requestCodeRoute } from "./requests";
+import { CodeRouteReadsUnavailable, type checkCodeRouteReads } from "./page-reads";
+import type { CodeRouteAnswer, requestCodeRoute } from "./requests";
 import { checkCodeCsrf, codeCsrf } from "./route-security";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-hosting-"));
@@ -43,7 +44,7 @@ afterEach(() => {
 function hosting(
   isPublic = false,
   signed = false,
-  response: Awaited<ReturnType<typeof requestCodeRoute>> | typeof requestCodeRoute = {
+  response: CodeRouteResponse | ((input: Parameters<typeof requestCodeRoute>[0]) => Promise<CodeRouteResponse>) = {
     kind: "json",
     status: 200,
     body: '{"returned":true}',
@@ -51,6 +52,8 @@ function hosting(
   personalOwner: string | null = null,
   visitor: User = person,
   workload?: Extract<RequestActor, { kind: "service_account" }>,
+  reads: CodeRouteAnswer["reads"] = [],
+  checkReads?: typeof checkCodeRouteReads,
 ) {
   const rate = spyOn(server, "ratelimit").mockImplementation(({ id }) => ({
     id,
@@ -98,8 +101,9 @@ function hosting(
       }),
       request: async (input) => {
         calls.push(input);
-        return typeof response === "function" ? response(input) : response;
+        return { reads, ...(typeof response === "function" ? await response(input) : response) };
       },
+      ...(checkReads ? { checkReads } : {}),
     }),
   );
   return { router, calls, rate, groups, manifest };
@@ -457,7 +461,7 @@ test("a cancelled request stops waiting on a dependency before dispatch", async 
       },
       request: async () => {
         dispatched = true;
-        return { kind: "text", status: 200, body: "x" };
+        return { kind: "text", status: 200, body: "x", reads: [] };
       },
     }),
   );
@@ -521,4 +525,47 @@ test("a submit from the island still needs the CSRF field of this session and Co
   expect(accepted.status).toBe(200);
   expect(accepted.headers.get("X-Code-Page")).toBe("tree");
   expect(page.calls[0]?.request.body).toBe("value=one");
+});
+
+// The no-access page itself is rendered in page.render.test.ts, which supplies the SSR runtime.
+test("G1: hosting asks the read check with the visitor and route before anything leaves", async () => {
+  const reads: CodeRouteAnswer["reads"] = [{ kind: "target", ref: { type: "pulse.base", id: "Base01" } }];
+  const asked: Parameters<typeof checkCodeRouteReads>[0][] = [];
+  const allowed = hosting(false, true, undefined, null, person, undefined, reads, async (input) => {
+    asked.push(input);
+    return "deliver";
+  });
+  expect((await allowed.router.request(`/code/${codeId}/`)).status).toBe(200);
+  expect(asked[0]?.reads).toEqual(reads);
+  expect(asked[0]?.route.public).toBe(false);
+  expect(asked[0]?.visitor?.accessSubject).toEqual({ type: "user", userId: id });
+
+  const refused = hosting(
+    false,
+    true,
+    { kind: "json", status: 200, body: '{"secret":42}' },
+    null,
+    person,
+    undefined,
+    reads,
+    async () => "forbidden",
+  );
+  const json = await refused.router.request(`/code/${codeId}/`);
+  expect(json.status).toBe(403);
+  expect(await json.json()).toEqual({ code: "code_page_access_denied" });
+
+  const publicPage = hosting(true, false, undefined, null, person, undefined, reads, async (input) => {
+    asked.push(input);
+    return "forbidden";
+  });
+  expect((await publicPage.router.request(`/code/${codeId}/`)).status).toBe(403);
+  expect(asked.at(-1)?.visitor).toBeNull();
+  expect(asked.at(-1)?.route.public).toBe(true);
+
+  const unavailable = hosting(false, true, undefined, null, person, undefined, reads, async () => {
+    throw new CodeRouteReadsUnavailable("reader down");
+  });
+  const failed = await unavailable.router.request(`/code/${codeId}/`);
+  expect(failed.status).toBe(503);
+  expect(await failed.json()).toEqual({ code: "code_page_access_unavailable" });
 });

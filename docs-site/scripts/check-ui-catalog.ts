@@ -75,6 +75,7 @@ const portableDemoFiles = [
   ...portableSectionIds.map((section) => `../src/ui/demo-sections/${section}.tsx`),
   "../src/ui/demo-sections/charts.tsx",
   "../src/ui/demo-sections/file-grid.tsx",
+  "../src/ui/demo-sections/flat-blocks.tsx",
   "../src/ui/demo-sections/detail-outline.tsx",
   "../src/ui/demo-sections/detail-sections.tsx",
   "../src/ui/demo-sections/dictation.tsx",

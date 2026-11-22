@@ -771,8 +771,9 @@ describe("Approval scenes", () => {
           })),
         );
         for (const look of looks) {
-          // Gustav flat (F2): the card's 8 px and its thin edge as a 1 px ring inside, never a drop shadow.
-          expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "8px", sentence: "14px", boxes: 0 });
+          // K1/K4/K11: a two-line row of 52 px (phone reserve 2×20 + 2×16 + 2 gap + 40 actions + 12 + 2×8 inset = 142 px),
+          // Gustav flat (F2): a card of 8 px with its thin edge as a 1 px ring inside; the sentence in the 13 px row size.
+          expect(look).toMatchObject({ height: width === 390 ? 142 : 52, radius: "8px", sentence: "13px", boxes: 0 });
           expect(look.shadow).toMatch(/^(?:rgba?|color)\(.*\) 0px 0px 0px 1px inset$/);
           expect(look.actions).toBeLessThanOrEqual(2);
         }

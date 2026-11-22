@@ -104,11 +104,12 @@ for (const width of [1440, 390]) {
         expect(frame.bottom - footer.bottom).toBe(17);
         const style = await page.locator(card).evaluate((node) => ({
           radius: getComputedStyle(node).borderRadius,
-          shadow: getComputedStyle(node).boxShadow !== "none",
+          shadow: !/^(none|rgba\(0, 0, 0, 0\) 0px 0px 0px 0px)$/.test(getComputedStyle(node).boxShadow),
           links: node.querySelectorAll("a, button").length,
           chevron: node.querySelector(".k2b-link-card__chevron") !== null,
         }));
-        expect(style).toEqual({ radius: "10px", shadow: true, links: 0, chevron: false });
+        // K17: a card is flat with a 1 px border and 8 px corners.
+        expect(style).toEqual({ radius: "8px", shadow: false, links: 0, chevron: false });
         // Footer start and end never overlap, also on a phone.
         const start = await box(page, `${card} .k2b-link-card__footer-start`);
         const end = await box(page, `${card} .k2b-link-card__footer-end`);
@@ -204,7 +205,7 @@ for (const width of [1440, 390]) {
   });
 }
 
-test("a classic card keeps its row, chevron, 12 px radius, and 16 px inset", async () => {
+test("a classic card keeps its row, chevron, 8 px radius (K17), and 16 px inset", async () => {
   const page = await open(1440);
   try {
     const classic = await page.locator('.k2b-link-card[href="#team"]').evaluate((node) => ({
@@ -214,7 +215,7 @@ test("a classic card keeps its row, chevron, 12 px radius, and 16 px inset", asy
       padding: getComputedStyle(node).padding,
       chevron: node.querySelector(".k2b-link-card__chevron") !== null,
     }));
-    expect(classic).toEqual({ layout: null, direction: "row", radius: "12px", padding: "16px", chevron: true });
+    expect(classic).toEqual({ layout: null, direction: "row", radius: "8px", padding: "16px", chevron: true });
   } finally {
     await page.close();
   }
