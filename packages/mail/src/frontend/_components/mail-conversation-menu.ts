@@ -46,6 +46,11 @@ export type MailConversationMenu = {
     run: (actionId: MailActionId) => void;
     manageTags: () => void;
   };
+  /**
+   * A list row's selection: the way into the selection on a touch screen (long press opens this menu), where the row
+   * shows no checkbox until a selection runs (mockup: the start column holds the unread dot).
+   */
+  select?: { selected: boolean; run: () => void };
   conversation?: readonly DropdownAction[];
   /** Link the conversation with an item of another app, or remove a link. */
   link?: readonly DropdownAction[];
@@ -143,9 +148,19 @@ export const mailConversationMenuItems = (menu: MailConversationMenu): DropdownI
   if (organize) {
     const read = organize.unread ? "mark_read" : "mark_unread";
     const flag = organize.flagged ? "unflag" : "flag";
+    const select = menu.select;
     sections.push({
       sectionLabel: t.mark,
       items: [
+        ...(select
+          ? [
+              {
+                label: select.selected ? t.deselectConversation : t.selectConversation,
+                icon: select.selected ? "ti ti-square-check" : "ti ti-square",
+                action: select.run,
+              },
+            ]
+          : []),
         { label: mailActionLabel(t, read), icon: getMailAction(read).icon, disabled: organize.disabled, action: () => organize.run(read) },
         { label: mailActionLabel(t, flag), icon: getMailAction(flag).icon, disabled: organize.disabled, action: () => organize.run(flag) },
         { label: t.manageTags, icon: "ti ti-tags", disabled: organize.tagsDisabled, action: organize.manageTags },

@@ -118,6 +118,51 @@
     }
   }
 
+  /* The start column (mockup column "u"): the unread dot, on the first line. The checkbox stands in the same place
+     and takes over while a selection runs and in keyboard focus, so nothing moves when it appears. A click on the
+     start column checks it; on a touch screen the row's menu (long press) starts the selection. */
+  .mail-row-check {
+    position: relative;
+  }
+
+  .mail-row-check > .mail-row-dot {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+
+  /* Hover does not toggle it, so a pointer that moves across the rows, as in a drag, changes nothing (S7). The checkbox
+     hides by drawing nothing, not by opacity: a transparent checkbox made a drop count as a layout shift. Hidden, it
+     keeps its box and still takes a click on the dot, so a click there starts a selection. */
+  .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:focus-within) .mail-list-checkbox {
+    appearance: none;
+    margin: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .mail-list-rows[data-selecting] .mail-row-check > .mail-row-dot,
+  .mail-list-entry:focus-within .mail-row-check:has(> .mail-list-checkbox) > .mail-row-dot {
+    visibility: hidden;
+  }
+
+  /* Touch has no hover: outside a selection the checkbox does not take the row's taps either. */
+  @media not all and (hover: hover) {
+    .mail-list-rows:not([data-selecting]) .mail-list-checkbox {
+      appearance: none;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      pointer-events: none;
+    }
+
+    .mail-list-rows:not([data-selecting]) .mail-row-check > .mail-row-dot {
+      visibility: visible;
+    }
+  }
+
   /* The checkbox column: always there, so the first check starts a selection and nothing moves when it does. It
      stands on the text edge of the column. */
   /* In a stacked row the box stands on the first line (8 px down, 20 px high). */
@@ -131,8 +176,10 @@
     grid-row: 1;
   }
 
+  /* No margin of its own: hidden or shown, the checkbox fills the 16 px start column exactly. */
   .mail-list-checkbox {
     flex: 0 0 auto;
+    margin: 0;
   }
 
   /* Three lines with fixed heights (20, 20, 16 px between 8 px), so every row is 72 px. */
@@ -2295,20 +2342,94 @@
     }
   }
 }
-/* Phones: the search field and "…" fill the head's first row; the tabs follow in a row of their own (44 px). On a
-   phone the head's lead dissolves into the row, so the views take their place themselves. */
+/* Phones (mockup, K12): the head's first row is the app's title row: the open mailbox's name as a switch
+   ("Kontakt ▾"), the search as its sign, and "…"; the tabs follow in a row of their own (44 px). On a phone the head's
+   lead dissolves into the row, so the views take their place themselves. Focus or a query opens the search field over
+   the row, so nothing moves. */
+.k2b-ui .mail-phone-mailbox { display: none; }
 @media not all and (min-width: 48rem) {
   .k2b-ui .mail-workspace > .k2b-app-workspace__head[data-row]:has([data-mail-head-search]) > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
     order: 2;
     flex: 1 1 100%;
     margin-inline-start: 0;
   }
-  .k2b-ui .mail-workspace > .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-actions:has(> [data-mail-head-search]) { flex: 1 1 0; }
-  .k2b-ui .mail-head-search-input { width: auto; min-width: 0; flex: 1 1 0; }
+  .k2b-ui .mail-workspace > .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-actions:has([data-mail-phone-mailbox]) {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  /* The switch's menu root takes the row's room, so the mailbox name starts on the head's edge and the signs end it. */
+  .k2b-ui .k2b-app-workspace__head-actions > :has(> [data-mail-phone-mailbox]) {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-inline-end: auto;
+  }
+  .k2b-ui .mail-phone-mailbox {
+    display: inline-flex;
+    min-width: 0;
+    height: 2.25rem;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.5rem;
+    margin-inline-end: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--k2b-text);
+  }
+  .k2b-ui .mail-phone-mailbox__tile {
+    display: grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: none;
+    place-items: center;
+    border-radius: var(--k2b-radius-mark, 0.25rem);
+    background: var(--k2b-app-workspace-active);
+    color: #fff;
+    /* type-scale: allow sign: the app's symbol in its 24 px tile */
+    font-size: 0.875rem;
+  }
+  .k2b-ui .mail-phone-mailbox__name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--k2b-font-size-lead);
+    font-weight: 600;
+    line-height: 1.5rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .k2b-ui .mail-phone-mailbox__chevron { flex: none; color: var(--k2b-text-muted); }
+  /* Closed, the search is its sign and the filter button beside it (F9: the filters keep their place). */
+  .k2b-ui .mail-head-search-input { width: auto; min-width: 0; flex: none; }
+  .k2b-ui .mail-head-search-input > .k2b-field { width: 2.25rem; }
+  .k2b-ui .mail-head-search-input input:placeholder-shown:not(:focus) { color: transparent; caret-color: transparent; }
+  .k2b-ui .mail-head-search-input input:not(:focus)::placeholder { color: transparent; }
+  /* Closed, the search is a plain sign like the head's other signs (mockup), without the field's frame. */
+  .k2b-ui .mail-head-search-input:not(:has(input:focus), :has(input:not(:placeholder-shown))) .k2b-input-shell {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+  /* The list's key figure gives way on a phone, as in the mockup: the lead statement stands alone. */
+  .k2b-ui .mail-list-bar .k2b-status-row__middle { display: none; }
+  /* Only the field itself opens it: the filter button beside it keeps its place while its menu opens. */
+  .k2b-ui .mail-head-search-input:is(:has(input:focus), :has(input:not(:placeholder-shown))) {
+    position: absolute;
+    z-index: 5;
+    inset: 0;
+    width: auto;
+    background: var(--k2b-surface);
+  }
+  .k2b-ui .mail-head-search-input:is(:has(input:focus), :has(input:not(:placeholder-shown))) > .k2b-field { width: auto; flex: 1 1 0; }
 }
 .k2b-ui .mail-workspace[data-sidebar-collapsed="true"] [data-mail-head-title] {
   position: static; width: auto; height: auto; margin: 0; overflow: hidden; clip-path: none;
 }
+
+/* The list's status row is the mockup's Mail band: 16 px between the lead and its key figure, so "Heute 12 erledigt
+   · 5 davon automatisch" stays beside "7 ungelesen" in a 432 px list. */
+.k2b-ui .mail-list-bar .k2b-status-row { column-gap: 1rem; }
 
 /* The filter button carries how many filters narrow the list; the count keeps its room, so nothing moves. */
 .mail-search-filter { position: relative; display: inline-flex; flex: none; }

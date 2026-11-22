@@ -23,8 +23,7 @@ export const mailReaderMessages = i18n.define({
       laterField: "Show again on",
       reminderTitle: "Reminder for you",
       reminderField: "Remind me on",
-      senderAndCount: ({ sender, count }: { sender: string; count: number }) =>
-        `${sender} · ${count === 1 ? "1 message" : `${count} messages`}`,
+      messageCount: ({ count }: { count: number }) => (count === 1 ? "1 message" : `${count} messages`),
       waiting: "Waiting for reply",
       laterUntil: ({ date }: { date: string }) => `Later until ${date}`,
       reminderAt: ({ date }: { date: string }) => `Reminder ${date}`,
@@ -105,7 +104,7 @@ export const mailReaderMessages = i18n.define({
       laterField: "Wieder anzeigen am",
       reminderTitle: "Erinnerung für dich",
       reminderField: "Erinnere mich am",
-      senderAndCount: ({ sender, count }) => `${sender} · ${count === 1 ? "1 Nachricht" : `${count} Nachrichten`}`,
+      messageCount: ({ count }) => (count === 1 ? "1 Nachricht" : `${count} Nachrichten`),
       waiting: "Wartet auf Antwort",
       laterUntil: ({ date }) => `Später bis ${date}`,
       reminderAt: ({ date }) => `Erinnerung ${date}`,

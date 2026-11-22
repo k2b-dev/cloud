@@ -163,6 +163,7 @@ export default function MailConversationRow(props: {
               run: (actionId: MailActionId) => props.actions.itemAction(item, actionId),
               manageTags: () => props.actions.manageTags(item),
             },
+            ...(item.conversationId ? { select: { selected: bulkSelected(), run: () => props.actions.toggleSelection(item, false) } } : {}),
             ...(canMerge()
               ? { conversation: [{ label: t().mergeWithConversation, icon: "ti ti-git-merge", action: () => props.actions.merge?.(item) }] }
               : {}),
@@ -173,13 +174,13 @@ export default function MailConversationRow(props: {
   };
   const time = () => (
     <span class="mail-row-time-cell">
-      <span class="mail-row-dot" aria-hidden="true" />
       <time
         class="mail-list-time mail-row-time"
         dateTime={props.item.latestMessageAt}
         title={dates.formatDateTime(props.item.latestMessageAt, state().dateConfig)}
       >
-        {dates.formatDateTimeRelative(props.item.latestMessageAt, state().dateConfig)}
+        {/* As the mockup: today the time (09:42), then "yesterday", the weekday of this week, else the date. */}
+        {dates.formatDateRelative(props.item.latestMessageAt, state().dateConfig)}
       </time>
     </span>
   );
@@ -389,8 +390,11 @@ export default function MailConversationRow(props: {
       data-conversation-id={props.item.conversationId ?? undefined}
       data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
     >
-      {/* The checkbox always shows, so the first check starts a selection; its column stays for readers too. */}
+      {/* The start column (mockup column "u") holds the unread dot. The checkbox takes its place while a selection
+          runs and in focus, and a click on the column checks it; on a touch screen the row's menu (long press) starts
+          the selection. The column stays for readers too. */}
       <span class="mail-row-check">
+        <span class="mail-row-dot" aria-hidden="true" />
         <Show when={state().canWrite && props.item.conversationId}>
           <input
             type="checkbox"

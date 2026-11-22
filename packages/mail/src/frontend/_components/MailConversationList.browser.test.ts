@@ -1377,12 +1377,12 @@ describe("Mail rows by the list's own width (F2)", () => {
     expect((await page.locator(`${row("Cv0003")} .mail-row-waiting`).textContent())?.trim()).toBe("Waiting");
     expect((await page.locator(`${row("Cv0004")} .mail-row-snooze`).textContent())?.trim()).toBe("until Sat");
     expect(await page.locator(`${row("Cv0004")} [data-mail-kept-indicator]`).count()).toBe(1);
-    // The unread dot sits before the date.
+    // The unread dot stands in the start column, where the checkbox appears for a selection (mockup column "u").
     // settled: the harness pauses the page clock after mounting, so the rows render once and hold still.
     const dot = (await page.locator(`${row("Cv0001")} .mail-row-dot`).boundingBox())!;
     // settled: as above.
-    const time = (await page.locator(`${row("Cv0001")} .mail-row-time`).boundingBox())!;
-    expect(dot.x + dot.width).toBeLessThanOrEqual(time.x);
+    const check = (await page.locator(`${row("Cv0001")} .mail-row-check`).boundingBox())!;
+    expect(Math.abs(dot.x + dot.width / 2 - (check.x + check.width / 2))).toBeLessThanOrEqual(0.5);
     expect(page.errors).toEqual([]);
     await close(page);
   }, 30_000);
@@ -1556,10 +1556,12 @@ describe("Mail search returns to the view it started from", () => {
         const origin = "/app/mail/Box001?view=needs_action";
         const page = await load({ context, requestUrl: origin });
         try {
-          // The field's frame: the input inside it makes room for the clear button, the frame must not move. The field
-          // always stands in the head.
+          // The field's frame: the input inside it makes room for the clear button, the frame must not move. On a desktop
+          // the field always stands in the head; on a phone the search is its sign until it is used, and the open
+          // field stands over the head's first row (mockup), where it holds still while the person types and clears.
           const selector = 'form[role="search"] .k2b-input-shell';
           const field = page.locator('input[name="q"]');
+          if (device === "phone") await field.click();
           await field.waitFor({ state: "visible" });
           const before = await box(page, selector);
           expect(
@@ -1582,7 +1584,14 @@ describe("Mail search returns to the view it started from", () => {
           await page.clock.runFor(350);
           expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
           expect(await field.inputValue()).toBe("");
-          expect(await box(page, selector)).toEqual(before);
+          // A phone closes the field back to its sign once the input lost focus (Escape may hand focus back).
+          // settled: the page clock ran past the search's debounce above, and focus is the subject here.
+          const focused = await field.evaluate((element) => element === document.activeElement);
+          // settled: as above.
+          const closed = (await page.locator(selector).boundingBox())!;
+          if (device === "phone" && !focused) expect(closed.width).toBeLessThanOrEqual(40);
+          // settled: as above.
+          else expect(await box(page, selector)).toEqual(before);
           expect(page.errors).toEqual([]);
         } finally {
           await close(page);

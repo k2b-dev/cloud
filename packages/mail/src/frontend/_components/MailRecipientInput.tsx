@@ -371,7 +371,7 @@ export default function MailRecipientInput(props: {
             <Show
               when={editingIndex() === index()}
               fallback={
-                <span class="mail-recipient-pill-shell mr-1 inline-flex h-7 min-w-0 max-w-56 shrink items-center gap-1.5 text-xs">
+                <span class="mail-recipient-pill-shell mr-1 inline-flex h-7 min-w-28 max-w-56 shrink items-center gap-1.5 text-xs">
                   <button
                     ref={(element) => {
                       pillButtons[index()] = element;
@@ -390,7 +390,7 @@ export default function MailRecipientInput(props: {
                     type="button"
                     variant="text"
                     size="xs"
-                    class="mail-recipient-remove !h-6 !w-6 !p-0 enabled:hover:!text-[var(--k2b-danger-text)] focus-visible:!text-[var(--k2b-danger-text)]"
+                    class="mail-recipient-remove !h-6 !w-6 !p-0 overflow-hidden enabled:hover:!text-[var(--k2b-danger-text)] focus-visible:!text-[var(--k2b-danger-text)]"
                     label={t().removeRecipient({ recipient })}
                     disabled={props.disabled || props.readOnly}
                     onClick={() => remove(index(), true)}

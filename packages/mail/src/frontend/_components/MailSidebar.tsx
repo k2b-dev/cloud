@@ -770,6 +770,7 @@ export default function MailSidebar(
       <Show when={openMailbox()}>{(open) => <WorkspaceNavigationProvider navigation={navigation} label={open().mailboxName} />}</Show>
       <AppWorkspace.Sidebar label={overviewText().mailboxes} mobile={props.mobile ?? "hidden"} class="mail-sidebar">
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarTitle title={messages().appName} icon="ti ti-mail" />
           <AppWorkspace.SidebarBody scrollPreserveKey={openMailboxId() ? `mail-sidebar-${openMailboxId()}` : false}>
             <MailFocusNotice open={props.focusNoticeOpen ?? false} />
             <AppWorkspace.SidebarSection

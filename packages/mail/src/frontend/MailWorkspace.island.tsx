@@ -51,6 +51,7 @@ import MailConversationReader from "./_components/MailConversationReader";
 import MailDraftsView from "./_components/MailDraftsView";
 import { createMailEventsFeed, MailEventsFeed } from "./_components/MailEventsFeed";
 import { MAIL_LIST_MIN, MAIL_READER_MIN, MailListHandle, MailListShareStyle, mailListPercent } from "./_components/MailListHandle";
+import { MailPhoneMailboxSwitch } from "./_components/MailPhoneMailboxSwitch";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
@@ -217,6 +218,8 @@ type MailboxSessionControls = {
 
 type MailboxControllerProps = MailWorkspaceProps & {
   switching: Accessor<boolean>;
+  /** Opens another mailbox in place, as the sidebar does; the phone head's mailbox switch uses it. */
+  onSwitchMailbox: (href: string) => void;
   onReady: (controls: MailboxSessionControls) => void;
   onNavigationStart: () => void;
   onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
@@ -3478,7 +3481,16 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         : null;
     if (folder) return text.statusUnread({ count: folder.unread });
     const view = !data.query && data.activeView ? controller().listCounts().viewCounts[data.activeView] : undefined;
-    return view === undefined ? data.listTitle : text.statusConversations({ count: view });
+    if (view !== undefined) return text.statusConversations({ count: view });
+    // The mailbox's default list (the "All" tab) leads with what is new: the inbox's unread mail, as the mockup shows.
+    const inboxId =
+      !data.query && !data.folderId && !data.savedViewId ? data.folders.find((entry) => entry.role === "inbox")?.id : undefined;
+    const inbox = inboxId
+      ? controller()
+          .listCounts()
+          .folders.find((entry) => entry.id === inboxId)
+      : undefined;
+    return inbox ? text.statusUnread({ count: inbox.unread }) : data.listTitle;
   };
 
   /**
@@ -3572,18 +3584,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
             !controller().data.scheduledMode &&
             controller().data.doneTodayCounts.doneToday > 0
               ? [
+                  // One figure, as the mockup reads it: "Heute 12 erledigt · 5 davon automatisch".
                   {
+                    prefix: controller().listText().statusDonePrefix,
                     value: controller().data.doneTodayCounts.doneToday,
-                    label: controller().listText().statusDoneToday,
+                    label: controller().listText().statusDone({ automated: controller().data.doneTodayCounts.doneByAutomation }),
                   },
-                  ...(controller().data.doneTodayCounts.doneByAutomation > 0
-                    ? [
-                        {
-                          value: controller().data.doneTodayCounts.doneByAutomation,
-                          label: controller().listText().statusDoneAutomated,
-                        },
-                      ]
-                    : []),
                 ]
               : []
           }
@@ -3631,6 +3637,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
         views={headViews()}
         actions={
           <>
+            <MailPhoneMailboxSwitch
+              current={controller().data.mailbox}
+              mailboxes={props.sidebar.mailboxes.filter((mailbox) => !props.sidebar.hiddenMailboxIds.includes(mailbox.id))}
+              label={controller().sidebarText().switchMailbox}
+              onOpen={props.onSwitchMailbox}
+            />
             <Show when={searching()}>
               <MailSearchInput search={controller().searchControls} mailboxName={controller().data.mailbox.name}>
                 <MailSearchFilter
@@ -4016,6 +4028,7 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
                 onOpenMailboxHistory={(url, completeScrollRestore) => {
                   void switchMailbox(url, undefined, completeScrollRestore);
                 }}
+                onSwitchMailbox={(href) => void switchMailbox(new URL(href, window.location.origin))}
               />
             );
             return (

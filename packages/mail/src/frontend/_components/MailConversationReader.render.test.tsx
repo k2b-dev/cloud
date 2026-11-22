@@ -386,7 +386,8 @@ describe("Mail conversation reader", () => {
     const older = { ...message, id: "MsgOld", internalDate: "2026-08-16T11:00:00.000Z", sentAt: "2026-08-16T11:00:00.000Z" };
     const html = renderReader([], { messages: [older, message] });
     expect(html).toMatch(/<h1[^>]*class="mail-reader-title"[^>]*title="Quarterly review"/);
-    expect(html).toContain("Ada Lovelace · 2 messages");
+    expect(html).toContain("2 messages");
+    expect(html).not.toContain("Ada Lovelace · 2 messages");
   });
   test("reads oldest first: older messages are one line, the newest is open at the bottom", () => {
     const older = { ...message, id: "MsgOld", internalDate: "2026-08-16T11:00:00.000Z", sentAt: "2026-08-16T11:00:00.000Z" };
@@ -636,7 +637,7 @@ describe("Mail conversation reader keep state", () => {
       joinedAt: now,
     });
     const html = renderReader([], { presence: [person("Usr001", "Valentin Kolb"), person("Usr002", "Tom Behrens")] });
-    expect(html).toContain("Tom is reading");
+    expect(html).toContain("Tom Behrens is reading");
     expect(html).not.toContain("Valentin is reading");
   });
   test("marks a message the server deleted while Cloud keeps it", () => {

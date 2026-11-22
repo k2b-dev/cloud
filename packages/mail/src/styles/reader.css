@@ -210,6 +210,7 @@
   margin-inline-start: auto;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
+  line-height: 1rem;
   white-space: nowrap;
 }
 
@@ -223,22 +224,101 @@
   }
 }
 
-/* Summary: one row above the timeline; open, it pushes only what follows. */
+/* Summary ("Kurz gesagt"): its own area above the timeline, as the mockup's thread row: 8 px above and below, a 32 px
+   head (symbol, label, "Edit" at the end), and 4 px below it the text on two lines, from the column's text edge. The
+   text always takes two lines, so every state of the summary has the same height and nothing below moves when text
+   arrives. Open, it pushes only what follows. */
 .k2b-ui .mail-summary-row {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  padding: 0.5rem var(--k2b-gutter, 1.25rem);
   border-radius: var(--k2b-radius-flat, 0);
 }
 
-.k2b-ui .mail-summary-row__toggle {
-  display: flex;
+.k2b-ui .mail-summary-row__head {
+  display: grid;
   min-width: 0;
-  height: var(--k2b-h-row, 2.5rem);
+  height: 2rem;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0 var(--k2b-gutter, 1.25rem);
-  border-radius: var(--k2b-radius-flat, 0);
+  column-gap: 0.75rem;
+}
+
+.k2b-ui .mail-summary-row__icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  /* type-scale: allow sign: the symbol sizes with its 32 px circle */
+  font-size: 1rem;
+}
+
+.k2b-ui .mail-summary-row[data-mail-summary-ai] .mail-summary-row__icon {
+  background: var(--k2b-ai-surface);
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .mail-summary-row__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-row);
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-summary-row[data-mail-summary-ai] .mail-summary-row__label {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .mail-summary-row__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-end: -0.375rem;
+}
+
+/* "Edit" is a text link: nothing else in the head looks like a control (K8). */
+.k2b-ui .mail-summary-row__edit {
+  padding: 0 0.375rem;
+  border: 0;
+  border-radius: var(--ui-radius-control);
+  background: transparent;
+  color: var(--k2b-action-text, var(--k2b-action));
+  font-size: var(--k2b-font-size-meta);
+  font-weight: 500;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-summary-row__edit:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .mail-summary-row__edit:disabled {
+  color: var(--k2b-text-muted);
+  cursor: default;
+}
+
+.k2b-ui :is(.mail-summary-row__edit, .mail-summary-row__toggle):focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+.k2b-ui .mail-summary-row__toggle {
+  display: block;
+  min-width: 0;
+  margin-top: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
@@ -246,45 +326,29 @@
   cursor: pointer;
 }
 
-.k2b-ui .mail-summary-row__toggle:hover {
-  background: var(--ui-hover);
-}
-
-.k2b-ui .mail-summary-row__toggle:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: -2px;
-}
-
-.k2b-ui .mail-summary-row__label {
-  flex: none;
-  color: var(--k2b-text);
-  font-weight: 600;
-}
-
-.k2b-ui .mail-summary-row[data-mail-summary-ai] .mail-summary-row__label {
-  color: var(--k2b-ai-accent);
-}
-
 .k2b-ui .mail-summary-row__line {
-  min-width: 0;
-  flex: 1 1 auto;
+  display: -webkit-box;
+  height: 2.5rem;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Open, the text stands whole; the rest (next step, source, the states' actions) follows below. */
+.k2b-ui .mail-summary-row[data-expanded] .mail-summary-row__line {
+  display: block;
+  height: auto;
+  -webkit-line-clamp: unset;
 }
 
 .k2b-ui .mail-summary-row__body {
   display: flex;
   flex-direction: column;
-  padding: 0.25rem var(--k2b-gutter, 1.25rem) 0.75rem;
+  padding-top: 0.25rem;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-body);
-}
-
-.k2b-ui .mail-summary-row__tools {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.125rem;
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
 }
 
 /* Timeline: oldest first with the newest message at the bottom, or newest first under the reply box on top. */

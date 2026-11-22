@@ -1,4 +1,4 @@
-import { Button, IconButton, MarkdownView, ProgressRing, Tooltip, useLocale } from "@k2b/ui";
+import { Button, IconButton, ProgressRing, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import { mailSummaryMessages } from "./mail-summary-messages";
@@ -123,8 +123,9 @@ export default function MailConversationSummaryCard(props: {
     }
   };
 
-  // One row above the timeline (Mail v5): the label, the text on one line, and a chevron that opens the rest in place.
-  // Opening pushes only what follows; plum and ✦ only for what the AI wrote or writes.
+  // Its own area above the timeline, as in the mockup (Cloud flach v10): a 32 px head with the symbol, "Kurz gesagt" and
+  // "Edit" at the end, and below it the text on two lines. The text opens the rest in place (sources, next step, the
+  // states' actions); opening pushes only what follows. Plum and the sparkles only for what the AI wrote or writes.
   return (
     <section
       class="mail-summary-row"
@@ -132,6 +133,40 @@ export default function MailConversationSummaryCard(props: {
       data-mail-summary-ai={ai() ? "" : undefined}
       data-expanded={expanded() ? "" : undefined}
     >
+      <div class="mail-summary-row__head">
+        <span class="mail-summary-row__icon" aria-hidden="true">
+          <i class={`ti ${ai() ? "ti-sparkles" : "ti-notes"}`} />
+        </span>
+        <span class="mail-summary-row__label">
+          {t().title}
+          <Show when={ai()}>
+            <span class="sr-only"> ({t().aiLabel})</span>
+          </Show>
+        </span>
+        <span class="mail-summary-row__tools">
+          <Show when={view() === "text" && props.canEdit}>
+            <button
+              type="button"
+              class="mail-summary-row__edit"
+              aria-label={t().edit}
+              disabled={props.editDisabled}
+              onClick={() => props.onEdit()}
+            >
+              {t().editShort}
+            </button>
+          </Show>
+          <Show when={view() === "text" && props.state.canGenerate}>
+            {tool(t().rewrite, "ti-refresh", () => props.onGenerate("replace"))}
+          </Show>
+          <Show when={view() === "text"}>
+            <Tooltip.Anchor content={why()}>
+              <IconButton type="button" size="sm" variant="ghost" label={t().why}>
+                <i class="ti ti-info-circle" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+        </span>
+      </div>
       <button
         type="button"
         class="mail-summary-row__toggle"
@@ -139,33 +174,12 @@ export default function MailConversationSummaryCard(props: {
         aria-controls={bodyId}
         onClick={() => setExpanded(!expanded())}
       >
-        <span class="mail-summary-row__label">
-          <Show when={ai()}>
-            <span aria-hidden="true">✦ </span>
-          </Show>
-          {t().title}
-          <Show when={ai()}>
-            <span class="sr-only"> ({t().aiLabel})</span>
-          </Show>
-        </span>
         <span class="mail-summary-row__line" aria-live={view() === "writing" ? "polite" : undefined}>
           {line()}
         </span>
-        <i class={`ti ${expanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
       </button>
       <Show when={expanded()}>
         <div class="mail-summary-row__body" id={bodyId}>
-          <Show when={view() === "text"}>
-            <div class="mail-summary-row__tools">
-              <Show when={props.state.canGenerate}>{tool(t().rewrite, "ti-refresh", () => props.onGenerate("replace"))}</Show>
-              <Show when={props.canEdit}>{tool(t().edit, "ti-pencil", props.onEdit, props.editDisabled)}</Show>
-              <Tooltip.Anchor content={why()}>
-                <IconButton type="button" size="sm" variant="ghost" label={t().why}>
-                  <i class="ti ti-info-circle" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </div>
-          </Show>
           <Switch>
             <Match when={view() === "failed"}>
               <p class="my-2.5 max-w-[62ch]" role="alert">
@@ -231,9 +245,6 @@ export default function MailConversationSummaryCard(props: {
                   {props.state.status === "failed" ? t().updateFailed : limitText()}
                 </p>
               </Show>
-              <div class="my-2" data-mail-conversation-summary-body>
-                <MarkdownView markdown={props.state.summary ?? ""} headingScale="compact" class="text-sm text-inherit" />
-              </div>
               <Show when={props.state.nextStep}>
                 {(next) => (
                   <div class="flex flex-wrap items-center gap-2.5">

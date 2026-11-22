@@ -260,9 +260,10 @@ export default function MailReaderHead(props: {
     const people = others();
     if (people.length === 0) return null;
     const writer = people.find((person) => person.mode === "composing");
+    // One person reads along with their full name ("Ada Renz liest mit"); two or more by first names.
     const first = (name: string) => name.split(/\s+/)[0] || name;
     if (writer && people.length === 1) return t().writing({ name: first(writer.displayName) });
-    if (people.length === 1) return t().reading({ name: first(people[0]!.displayName) });
+    if (people.length === 1) return t().reading({ name: people[0]!.displayName });
     if (people.length === 2) return t().readingTwo({ first: first(people[0]!.displayName), second: first(people[1]!.displayName) });
     return t().readingMany({ count: people.length });
   };
@@ -366,8 +367,9 @@ export default function MailReaderHead(props: {
         </div>
       </div>
       <div class="mail-reader-chips" ref={setChipRow} data-mail-reader-chips>
+        {/* The row names how many mails the conversation holds; the sender stands at each message (mockup). */}
         <span class="mail-reader-meta" title={props.senderLabel}>
-          {t().senderAndCount({ sender: props.senderLabel, count: props.messageCount })}
+          {t().messageCount({ count: props.messageCount })}
         </span>
         <div class="mail-reader-chip-list" ref={chipList}>
           <For each={chips()}>

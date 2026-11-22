@@ -485,6 +485,7 @@ export default function MailConversationList(props: {
               </div>
               <div
                 class="mail-list-rows k2b-divided"
+                data-selecting={props.selectionMode ? "" : undefined}
                 role="list"
                 aria-label={
                   props.listMode === "conversations"

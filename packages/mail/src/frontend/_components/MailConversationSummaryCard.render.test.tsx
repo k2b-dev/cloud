@@ -50,16 +50,17 @@ const render = (state: ConversationContentSummary, locale: "de" | "en" = "de", c
   );
 
 describe("MailConversationSummaryCard", () => {
-  test("collapsed, the summary is one row: plum ✦ label, the text on one line, and a chevron that opens it", () => {
+  test("closed, the summary is its own area: the sparkles symbol, the plum label, Edit at the end, the text below", () => {
     const html = render(aiSummary(), "de", true, false);
     expect(html).toContain('class="mail-summary-row"');
     expect(html).toContain("data-mail-summary-ai");
-    expect(html).toMatch(/class="mail-summary-row__label"><span aria-hidden="true">✦ <\/span>Kurz gesagt/);
+    expect(html).toContain('class="ti ti-sparkles"');
+    expect(html).toMatch(/class="mail-summary-row__label">Kurz gesagt/);
+    expect(html).toMatch(/class="mail-summary-row__edit" aria-label="Zusammenfassung bearbeiten">Bearbeiten</);
     expect(html).toContain('aria-expanded="false"');
-    // The line shows the text without Markdown marks; the tools and the next step wait until the row opens.
+    // The text stands without Markdown marks on two lines; the next step waits until the text opens.
     expect(html).toContain("Neues Angebot: 500 Visitenkarten auf 350 g Naturpapier für 214 € netto. Lieferung am 6.11.");
     expect(html).not.toContain("<li>");
-    expect(html).not.toContain('aria-label="Neu schreiben"');
     expect(html).not.toContain("Nächster Schritt");
   });
 
@@ -72,7 +73,7 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain('aria-label="Neu schreiben"');
     expect(html).toContain('aria-label="Zusammenfassung bearbeiten"');
     expect(html).toContain('aria-label="Wie diese Zusammenfassung entstand"');
-    expect(html).toContain("<li>Neues Angebot: 500 Visitenkarten");
+    expect(html).toContain("Neues Angebot: 500 Visitenkarten");
     expect(html).toContain("Nächster Schritt");
     expect(html).toContain("Freigabe bis Mi., 29.10.");
     expect(html).toContain("Aus 5 Nachrichten · Regel „Lange Mails zusammenfassen“ · vor 3 Min.");
@@ -88,7 +89,7 @@ describe("MailConversationSummaryCard", () => {
       }),
     );
     expect(html).not.toContain("data-mail-summary-ai");
-    expect(html).not.toContain("✦");
+    expect(html).not.toContain("ti-sparkles");
     expect(html).toContain("Von Lisa Brandt geschrieben · vor 2 Std.");
     expect(html).not.toContain('aria-label="Neu schreiben"');
   });

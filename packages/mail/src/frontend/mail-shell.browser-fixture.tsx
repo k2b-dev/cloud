@@ -810,26 +810,104 @@ const demoRows: [from: string, subject: string, preview: string][] = [
 ];
 const demoBody =
   "Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern, wenn die Bestellung bis Freitag bei uns ist. Der Preis aus dem Angebot bleibt bis dahin gültig. Die Lieferung kommt auf zwei Paletten, bitte halten Sie die Einfahrt frei.\n\nFreundliche Grüße\nHenrik Brandt";
+/** The demo's people, tags and folders, in German like the mockup. */
+const demoTags: Record<string, { name: string; color: string }> = {
+  Tag001: { name: "Angebot", color: "#0f766e" },
+  Tag002: { name: "Rechnung", color: "#c2410c" },
+};
+const demoFolders: Record<string, string> = { Filed1: "Lieferanten", Long01: "Reklamationen" };
+const demoMailboxNames: Record<string, string> = {
+  Box001: "Kontakt",
+  Box002: "Rechnungen",
+  Box003: "Personal",
+  Box004: "Mira Solberg",
+  Box005: "Archiv 2024",
+};
+/** When each demo row's latest mail came, in minutes before the fixture's now (Wed 14.10., 10:00): today, yesterday, this week. */
+const demoAges = [18, 45, 70, 18 * 60, 20 * 60, 2 * 1440, 2 * 1440 + 120, 3 * 1440, 5 * 1440, 5 * 1440 + 60, 6 * 1440, 6 * 1440 + 30];
+const demoMessage = (
+  base: MailboxPageData["detailMessages"][number],
+  id: string,
+  minutes: number,
+  from: [string, string],
+  text: string,
+) => {
+  const at = new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString();
+  return {
+    ...base,
+    id,
+    messageId: `<${id.toLowerCase()}@example.test>`,
+    internalDate: at,
+    sentAt: at,
+    subject: demoRows[0]![1],
+    from: [{ name: from[0], address: from[1] }],
+    to: [{ name: "Kontakt", address: "kontakt@solberg-kramer.example" }],
+    preview: text.slice(0, 80),
+    plainText: text,
+    forwardText: text,
+  };
+};
+export const demoMailboxName = (id: string, name: string) => demoMailboxNames[id] ?? name;
 function demoMailboxData(data: MailboxPageData): MailboxPageData {
+  const tag = <T extends { id: string; name: string; color: string }>(entry: T): T => ({ ...entry, ...(demoTags[entry.id] ?? {}) });
+  const latest = data.detailMessages.at(-1);
   return {
     ...data,
+    mailbox: { ...data.mailbox, name: demoMailboxName(data.mailbox.id, data.mailbox.name) },
+    folders: data.folders
+      .filter((folder) => folder.id !== "Child1")
+      .map((folder) => ({
+        ...folder,
+        name: demoFolders[folder.id] ?? folder.name,
+        ...(folder.id === "Inbox1" ? { unread: 7 } : folder.id in demoFolders ? { unread: 0 } : {}),
+      })),
+    scheduledCount: 1,
+    doneTodayCounts: { doneToday: 12, doneByAutomation: 5 },
+    localTags: data.localTags.map(tag),
+    conversationLocalTags: data.conversationLocalTags && { ...data.conversationLocalTags, tags: data.conversationLocalTags.tags.map(tag) },
     listItems: data.listItems.map((row, index) => {
       const [from, subject, preview] = demoRows[index % demoRows.length]!;
       const { participants: _participants, participantCount: _count, ...rest } = row;
-      return { ...rest, subject, preview, participantSummary: from, participantLabels: [from] };
+      const minutes = demoAges[index % demoAges.length]!;
+      return {
+        ...rest,
+        subject,
+        preview,
+        participantSummary: from,
+        participantLabels: [from],
+        flagged: false,
+        // Seven unread, as in the mockup: the open first row is read.
+        unread: [1, 2, 4, 6, 8, 9, 11].includes(index),
+        unreadFolderIds: [1, 2, 4, 6, 8, 9, 11].includes(index) ? ["Inbox1"] : [],
+        latestMessageAt: new Date(Date.parse(MAIL_SHELL_NOW) - minutes * 60_000).toISOString(),
+        localTags: index === 0 ? [tag(data.localTags[0]!)] : index === 1 ? [tag(data.localTags[1]!)] : [],
+      };
     }),
-    detailMessages: data.detailMessages.map((message) => ({
-      ...message,
-      subject: demoRows[0]![1],
-      from: [{ name: "Holzwerk Brandt", address: "einkauf@holzwerk-brandt.example" }],
-      to: [{ name: "Kontakt", address: "kontakt@solberg-kramer.example" }],
-      preview: demoBody.slice(0, 80),
-      plainText: demoBody,
-      forwardText: demoBody,
+    // Three mails: Mira's question, an earlier answer, and Brandt's answer today; the reader opens the newest.
+    detailMessages: latest
+      ? [
+          demoMessage(latest, "Demo01", 6 * 1440 + 120, ["Mira Solberg", "mira@solberg-kramer.example"], demoQuestion),
+          demoMessage(latest, "Demo02", 2 * 1440, ["Holzwerk Brandt", "einkauf@holzwerk-brandt.example"], demoFirstAnswer),
+          { ...demoMessage(latest, latest.id, 18, ["Holzwerk Brandt", "einkauf@holzwerk-brandt.example"], demoBody), id: latest.id },
+        ]
+      : [],
+    conversationSummary: data.conversationSummary && {
+      ...data.conversationSummary,
+      summary: "Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.",
+      nextStep: null,
+    },
+    comments: data.comments.map((note) => ({
+      ...note,
+      author: { ...note.author, displayName: "Ada Renz" },
+      body: note.body === null ? null : "Kunde möchte geölte Kanten. Bitte vor der Bestellung nachfragen, ob Brandt das im Werk macht.",
     })),
     selectedSubject: data.selectedSubject ? demoRows[0]![1] : "",
   };
 }
+const demoQuestion =
+  "Guten Tag Herr Brandt,\n\nwir brauchen 14 Platten in Eiche, 40 mm, für eine Küche. Können Sie uns ein Angebot mit Liefertermin schicken?\n\nViele Grüße\nMira Solberg";
+const demoFirstAnswer =
+  "Guten Tag Frau Solberg,\n\ndas Angebot 4471 hängt an. Den Liefertermin bestätigen wir bis morgen.\n\nFreundliche Grüße\nHenrik Brandt";
 export function mailboxList(url: URL, largeMailbox = false): MailboxListView {
   const {
     mailbox,
@@ -923,7 +1001,17 @@ export default function MailShellFixture(props: {
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme={props.theme}
         calendarIntegrationAvailable={false}
-        sidebar={{ ...sidebar, focusNoticeOpen: props.focusNoticeOpen ?? false }}
+        sidebar={{
+          ...sidebar,
+          // ?demo=1: the mailboxes of the mockup.
+          ...(url.searchParams.get("demo") === "1"
+            ? {
+                mailboxes: sidebar.mailboxes.map((box) => ({ ...box, name: demoMailboxName(box.id, box.name) })),
+                pinnedMailboxIds: ["Box001", "Box002"],
+              }
+            : {}),
+          focusNoticeOpen: props.focusNoticeOpen ?? false,
+        }}
       />
     </LocaleProvider>
   );

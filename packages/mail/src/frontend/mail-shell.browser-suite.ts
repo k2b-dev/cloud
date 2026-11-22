@@ -289,6 +289,34 @@ beforeAll(async () => {
         await Bun.sleep(300);
         return new Response(Buffer.from(photoPng, "base64"), { headers: { "content-type": "image/png" } });
       }
+      // ?demo=1 (the page's own URL): Ada Renz reads along, and the conversation is linked with one task, as in the mockup.
+      const demo = new URL(request.headers.get("referer") ?? "http://x/").searchParams.get("demo") === "1";
+      if (demo && url.pathname.endsWith("/presence") && request.method === "PUT")
+        return Response.json({
+          participants: [
+            { userId: "user-ada", displayName: "Ada Renz", avatarHash: null, mode: "viewing", peerCount: 1, joinedAt: MAIL_SHELL_NOW },
+          ],
+        });
+      if (demo && url.pathname.endsWith("/context") && request.method === "GET") {
+        const conversationId = url.pathname.split("/").at(-2);
+        return Response.json({
+          conversationId,
+          spaces: {
+            status: "ready",
+            truncated: false,
+            items: [
+              {
+                ref: { id: "Task01" },
+                title: "Task 4471",
+                icon: "ti ti-checkbox",
+                links: [{ rel: "open", href: "https://cloud.example/app/spaces/task/Task01" }],
+                metadata: [{ value: "Aufgabe" }],
+              },
+            ],
+          },
+          contacts: { status: "ready", items: [] },
+        });
+      }
       // A reply box asks for its seed when it opens; the fixture answers with an empty reply to the open message.
       if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
         const body: {
@@ -597,7 +625,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       const summaryHeights = new Map<number, Record<string, number>>();
       for (const width of [1440, 390]) {
         for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const)
-          test(`automation: AI summary ${state} at ${width}: one row, plum only for AI`, async () => {
+          test(`automation: AI summary ${state} at ${width}: one area, plum only for AI`, async () => {
             const heights = summaryHeights.get(width) ?? {};
             summaryHeights.set(width, heights);
             const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
@@ -635,19 +663,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
         // Reads the heights that the six state cases above measured, so it runs after them in the same file.
-        test(`automation: AI summary at ${width}: every state keeps one row's height`, () => {
+        test(`automation: AI summary at ${width}: every state keeps the area's height`, () => {
           const heights = summaryHeights.get(width) ?? {};
           expect(Object.keys(heights).length, "the six state cases above ran first").toBe(6);
-          // Every state is the same one row, so the messages below stay where they are.
+          // Every state is the same area, so the messages below stay where they are.
           expect(new Set(Object.values(heights).map((height) => Math.round(height))).size).toBe(1);
-          // One flat row (K7, --k2b-h-row).
-          expect(Math.round(heights.writing!)).toBe(40);
+          // The mockup's thread row: 8 + 32 px head + 4 + two 20 px lines + 8 (the hairline above it belongs to the column).
+          expect(Math.round(heights.writing!)).toBe(92);
         });
       }
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
-          test(`reader head ${theme} ${width}: ×, the subject on one line, sender and count below, fixed while the timeline scrolls`, async () => {
+          test(`reader head ${theme} ${width}: ×, the subject on one line, the message count below, fixed while the timeline scrolls`, async () => {
             const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
             try {
               const toolbar = page.locator("[data-mail-reader-toolbar]");
@@ -668,7 +696,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(metrics.font).toBe("18px");
               expect(metrics.height).toBeLessThanOrEqual(metrics.line + 0.5);
               expect(metrics).toMatchObject({ ellipsis: "ellipsis", clipped: true });
-              expect(await toolbar.locator(".mail-reader-meta").textContent()).toContain("· 6 messages");
+              expect(await toolbar.locator(".mail-reader-meta").textContent()).toBe("6 messages");
               const closeLink = toolbar.locator("[data-mail-reader-close]");
               const [titleBox, closeBox] = [await heading.boundingBox(), await closeLink.boundingBox()];
               expect(Math.abs(titleBox!.y + titleBox!.height / 2 - (closeBox!.y + closeBox!.height / 2))).toBeLessThanOrEqual(1);
@@ -952,7 +980,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const bar = page.locator(".mail-list-bar");
               const firstRow = page.locator(".mail-list-entry").first();
               const before = { bar: (await bar.boundingBox())!, row: (await firstRow.boundingBox())! };
-              await page.getByRole("checkbox", { name: "Select Example request 2", exact: true }).check();
+              // A phone row shows no checkbox until a selection runs (mockup); its menu (long press) starts it.
+              if (width === 390) {
+                await page.locator('.mail-list-entry[data-conversation-id="Conv02"] a.mail-list-row').click({ button: "right" });
+                await page.locator(".k2b-context-menu").getByRole("menuitem", { name: "Select", exact: true }).click();
+              } else await page.getByRole("checkbox", { name: "Select Example request 2", exact: true }).check();
               const toolbar = page.getByRole("toolbar", { name: "Selected conversation actions", exact: true });
               await toolbar.waitFor({ state: "visible" });
               await settled(page);
@@ -1478,8 +1510,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await rows.count()).toBe(2);
               // A draft is a conversation row: the list's width decides its lines, at the conversations' heights, so
               // nothing moves between the lists. The full-width folder is one line wide; a phone shows three.
+              // A phone's stacked row is 80 px (mockup: 12 px above and below the three lines).
               for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
-                expect(Math.abs(box!.height - (width < 768 ? 72 : 32))).toBeLessThanOrEqual(1);
+                expect(Math.abs(box!.height - (width < 768 ? 80 : 32))).toBeLessThanOrEqual(1);
               const draft = rows.first().locator("a.mail-list-row");
               const mark = draft.locator(".mail-row-draft");
               const recipients = await draft.locator(".mail-row-sender").boundingBox();
@@ -1683,14 +1716,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         // Sidebar 248 px and list 432 px, the mockup's geometry, so built and mockup compare column by column.
         [
           "split",
-          `${boxPath}?conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1&summary=ai&notes=1`,
+          `${boxPath}?conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1&summary=ai&notes=1&work=waiting`,
           1440,
           900,
         ],
         // The same split with five rows: the list does not scroll, so its lines run to the edge with no scroll room.
         ["few", `${boxPath}?view=mine&conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1`, 1440, 900],
         ["list", `${boxPath}?locale=de&demo=1`, 390, 844],
-        ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1`, 390, 844],
+        ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1&work=waiting`, 390, 844],
       ] as const;
       for (const [state, path, width, height] of states)
         test(`flat ${state} at ${width}: edge-to-edge lines and fills, no doubled line, four type sizes`, async () => {
@@ -2068,7 +2101,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           const row = page.locator(".mail-list-bar .k2b-status-row");
           await row.waitFor();
-          expect(await row.locator(".k2b-status-row__fact").allTextContents()).toEqual(["19 done today", "14 of them automatically"]);
+          expect(await row.locator(".k2b-status-row__fact").allTextContents()).toEqual(["Today 19 done · 14 of them automatically"]);
           // K6: the status row is 52 px with its hairline, above the list only.
           expect((await page.locator(".mail-list-bar").boundingBox())!.height).toBe(52);
           if (screenshots) await page.screenshot({ path: join(screenshots, "views-done-line-light-1440.png") });
@@ -4296,7 +4329,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const menu = reader.locator(".k2b-dropdown__menu:popover-open");
           await menu.waitFor({ state: "visible" });
           const readerEntries = (await menu.getByRole("menuitem").allTextContents()).map((text) => text.trim());
-          expect(rowEntries.filter((label) => !readerEntries.includes(label))).toEqual([]);
+          // "Select" is the row's own entry: it starts a selection of the list, which the open conversation has no use for.
+          expect(rowEntries.filter((label) => !readerEntries.includes(label) && label !== "Auswählen" && label !== "Select")).toEqual([]);
         } finally {
           await close(reader);
         }
