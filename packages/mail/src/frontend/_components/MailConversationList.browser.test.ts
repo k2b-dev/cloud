@@ -1946,8 +1946,8 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
   }
 });
 
-// Flat rows (K7) fill the list from its start edge; their hairlines stop at the scroll track the list reserves at its end.
-test("rows fill the list from its start edge to its scroll track", async () => {
+// Flat rows (K2, K7) fill the list from edge to edge: the list reserves no scroll track, its thumb lies over the rows.
+test("rows fill the list from edge to edge; the scroll thumb lies over them (K2)", async () => {
   const page = await load({ selectedConversationId: "Cv0001" });
   try {
     await page.locator(row("Cv0003")).waitFor();
@@ -1963,7 +1963,7 @@ test("rows fill the list from its start edge to its scroll track", async () => {
         };
       });
     });
-    for (const inset of insets) expect(inset).toEqual({ overflows: true, start: 0, end: 8 });
+    for (const inset of insets) expect(inset).toEqual({ overflows: true, start: 0, end: 0 });
     expect(page.errors).toEqual([]);
   } finally {
     await close(page);

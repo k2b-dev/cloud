@@ -292,8 +292,9 @@ beforeAll(async () => {
       }
       // A reply box asks for its seed when it opens; the fixture answers with an empty reply to the open message.
       if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
-        const body: { origin: { kind: "compose"; input: { senderIdentityId: string; conversationId?: string; sourceMessageId?: string } } } =
-          await request.json();
+        const body: {
+          origin: { kind: "compose"; input: { senderIdentityId: string; conversationId?: string; sourceMessageId?: string } };
+        } = await request.json();
         const input = body.origin.input;
         return Response.json({
           id: "20000000-0000-4000-8000-000000000003",
@@ -568,17 +569,7 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart =
-  | "head"
-  | "mailboxes"
-  | "layout"
-  | "wide"
-  | "reader"
-  | "events"
-  | "drafts"
-  | "drag"
-  | "performance"
-  | "flat";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "drag" | "performance" | "flat";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
@@ -1691,7 +1682,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       // only the four sizes of the mockup: 12 meta, 13 rows and controls, 14 reading text and head titles, 18 lead.
       const states = [
         // Sidebar 248 px and list 432 px, the mockup's geometry, so built and mockup compare column by column.
-        ["split", `${boxPath}?conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1&summary=ai&notes=1`, 1440, 900],
+        [
+          "split",
+          `${boxPath}?conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1&summary=ai&notes=1`,
+          1440,
+          900,
+        ],
         ["list", `${boxPath}?locale=de&demo=1`, 390, 844],
         ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1`, 390, 844],
       ] as const;
@@ -1712,11 +1708,20 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // The parity numbers of the review: boxes, paddings and type of the parts the mockup measures.
               const parts = await page.evaluate(() => {
                 const pick = (selector: string) => {
-                  const element = Array.from(document.querySelectorAll<HTMLElement>(selector)).find((node) => node.getClientRects().length > 0);
+                  const element = Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
+                    (node) => node.getClientRects().length > 0,
+                  );
                   if (!element) return null;
                   const rect = element.getBoundingClientRect();
                   const style = getComputedStyle(element);
-                  return { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height), pad: style.padding, font: `${style.fontSize}/${style.lineHeight}/${style.fontWeight}` };
+                  return {
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height),
+                    pad: style.padding,
+                    font: `${style.fontSize}/${style.lineHeight}/${style.fontWeight}`,
+                  };
                 };
                 const selectors = {
                   head: ".mail-workspace > .k2b-app-workspace__head",
@@ -1749,12 +1754,21 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const line = getComputedStyle(handle, "::before");
               return { x: handle.getBoundingClientRect().x + Number.parseFloat(line.left), width: line.width, transform: line.transform };
             });
-            if (handleLine) expect({ ...handleLine, whole: Number.isInteger(handleLine.x) }).toEqual({ ...handleLine, whole: true, width: "1px", transform: "none" });
+            if (handleLine)
+              expect({ ...handleLine, whole: Number.isInteger(handleLine.x) }).toEqual({
+                ...handleLine,
+                whole: true,
+                width: "1px",
+                transform: "none",
+              });
             for (const area of probe.areas) {
               expect(area.short, `${state} ${area.name}: lines and fills reach both edges`).toEqual([]);
               expect(area.double, `${state} ${area.name}: no doubled line`).toEqual([]);
               const sizes = new Set(Object.keys(area.sizes).map((key) => key.split("/")[0]));
-              expect([...sizes].filter((size) => !["12px", "13px", "14px", "18px"].includes(size!)), `${state} ${area.name}: type sizes`).toEqual([]);
+              expect(
+                [...sizes].filter((size) => !["12px", "13px", "14px", "18px"].includes(size!)),
+                `${state} ${area.name}: type sizes`,
+              ).toEqual([]);
             }
           } finally {
             await close(page);

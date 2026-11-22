@@ -3935,7 +3935,7 @@ html {
 
   @media (prefers-reduced-motion: no-preference) {
     .k2b-ui .k2b-scroll-area__thumb {
-      transition: opacity 160ms ease;
+      transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
     }
   }
 }

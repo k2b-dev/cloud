@@ -92,8 +92,10 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       !visuallyHidden(element)
     );
   };
-  // A box that sticks or floats lies above the flow on purpose.
-  const inFlow = (element: Element) => !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position);
+  // A box that sticks or floats lies above the flow on purpose. So does the hit area of a resize separator: it takes
+  // only its 1 px line in the flow and reaches 6 px over each neighbour, with its grip on the line (K13).
+  const inFlow = (element: Element) =>
+    !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position) && !element.matches(".k2b-resize-separator");
   // `display: contents` boxes draw nothing; their children take part in the layout.
   const drawn = (element: Element): Element[] =>
     getComputedStyle(element).display === "contents" ? Array.from(element.children).flatMap(drawn) : [element];

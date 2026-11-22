@@ -99,33 +99,6 @@
     background: var(--k2b-row-selected);
   }
 
-  /* With a mouse the start column shows the unread dot; the checkbox takes its place under the pointer, in focus,
-     when checked, and while any row is checked, so a selection is always visible. Touch keeps the checkbox. */
-  @media (hover: hover) and (pointer: fine) {
-    .mail-row-dot {
-      position: absolute;
-      top: calc(0.5rem + (var(--mail-row-line, 1.25rem) - 0.5rem) / 2);
-      inset-inline-start: calc(var(--mail-row-gutter) + 0.25rem);
-      width: 0.5rem;
-      height: 0.5rem;
-    }
-
-    .mail-list-rows:not(:has(.mail-list-entry-selected)) .mail-list-entry:not(:hover, :focus-within) .mail-list-checkbox {
-      opacity: 0;
-    }
-
-    .mail-list-rows:has(.mail-list-entry-selected) .mail-row-dot,
-    .mail-list-entry:is(:hover, :focus-within) .mail-row-dot {
-      opacity: 0;
-    }
-  }
-
-  @container mail-list (width >= 40rem) {
-    .mail-row-dot {
-      top: calc(50% - 0.25rem);
-    }
-  }
-
   /* A row an action takes out of the list closes its gap from its measured height, so the rows below slide up
      instead of jumping; the list drops the row when the collapse ends. It keeps no hover or focus meanwhile. */
   .mail-list-entry[data-leaving] {
@@ -529,9 +502,7 @@
     min-width: 3.5rem;
   }
 
-  /* The unread dot stands before the date. With a mouse it stands in the 16 px start column on the first line
-     (mockup column "u"), and the checkbox takes that place only under the pointer, in focus, or while a selection
-     runs. */
+  /* The date stands in every row, right aligned; the unread dot sits before it. */
   .mail-row-dot {
     flex: none;
     width: 0.4375rem;

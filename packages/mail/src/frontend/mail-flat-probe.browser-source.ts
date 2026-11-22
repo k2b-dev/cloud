@@ -56,14 +56,21 @@ export const probeFlat = (areas: [name: string, selector: string][]): FlatProbe 
           }
         }
         const fill = style.backgroundColor;
-        if (fill !== "rgba(0, 0, 0, 0)" && fill !== "transparent" && rect.height <= 120 && element.closest("[aria-selected='true'], [aria-current], .mail-list-entry-active"))
+        if (
+          fill !== "rgba(0, 0, 0, 0)" &&
+          fill !== "transparent" &&
+          rect.height <= 120 &&
+          element.closest("[aria-selected='true'], [aria-current], .mail-list-entry-active")
+        )
           if (Math.abs(rect.left - left) > 0.5 || Math.abs(rect.right - right) > 0.5)
             short.push({ what: `${label(element)} fill`, left: rect.left - left, right: right - rect.right });
       }
       const own = Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
       if (own && rect.top < box.bottom && rect.bottom > box.top) {
         const key = `${style.fontSize}/${style.lineHeight}/${style.fontWeight}`;
-        (sizes[key] ??= []).length < 3 && sizes[key]!.push(`${label(element)} "${element.textContent!.trim().slice(0, 24)}"`);
+        const examples = sizes[key] ?? [];
+        sizes[key] = examples;
+        if (examples.length < 3) examples.push(`${label(element)} "${element.textContent!.trim().slice(0, 24)}"`);
       }
     }
     lines.sort((a, b) => a.y - b.y);
