@@ -310,11 +310,17 @@ export default function NotebooksOverview(props: Props) {
         views={<h2 class="notebooks-overview-title">{t().recentlyEdited}</h2>}
         actions={
           <>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void openSearch()}>
-              <i class="ti ti-search" aria-hidden="true" /> {t().search}
+            <Button type="button" variant="ghost" size="sm" class="notebooks-overview-head-action" onClick={() => void openSearch()}>
+              <i class="ti ti-search" aria-hidden="true" /> <span class="notebooks-overview-head-label">{t().search}</span>
             </Button>
-            <Button type="button" variant="ghost" size="sm" class="notebooks-overview-mobile-activity" onClick={openMobileActivity}>
-              <i class="ti ti-history" aria-hidden="true" /> {t().activity}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="notebooks-overview-head-action notebooks-overview-mobile-activity"
+              onClick={openMobileActivity}
+            >
+              <i class="ti ti-history" aria-hidden="true" /> <span class="notebooks-overview-head-label">{t().activity}</span>
             </Button>
           </>
         }

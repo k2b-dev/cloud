@@ -261,6 +261,13 @@ describe("the overview is one head and one flat list", () => {
             .locator(".notebooks-overview-note")
             .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
           expect(new Set(heights)).toEqual(new Set([width < 768 ? 60 : 52]));
+          // K6, K15: the head keeps one row; its actions give way before the one filled action leaves it.
+          const head = await page.evaluate(() => {
+            const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+            return { head: box(".k2b-app-workspace__head"), primary: box("[data-workspace-primary]") };
+          });
+          expect(head.primary.bottom).toBeLessThanOrEqual(head.head.bottom + 0.5);
+          expect(head.primary.top).toBeGreaterThanOrEqual(head.head.top - 0.5);
         } finally {
           await page.close();
         }
