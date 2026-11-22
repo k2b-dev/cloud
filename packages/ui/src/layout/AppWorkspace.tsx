@@ -163,17 +163,7 @@ export type AppWorkspaceHeadProps = {
    * says it opens a menu, such as one a `Dropdown` with `attach` shows: server HTML then carries `aria-haspopup`, and a
    * chevron follows the label.
    */
-  primary?: {
-    label: string;
-    icon: string;
-    href?: string;
-    onClick?: (event: MouseEvent) => void;
-    popup?: "menu" | "dialog";
-    /** With `popup`: whether its menu or dialog is open now, for `aria-expanded`. Defaults to closed. */
-    expanded?: boolean;
-    /** Unavailable right now; a link variant stays in place and announces it with `aria-disabled`. */
-    disabled?: boolean;
-  };
+  primary?: { label: string; icon: string; href?: string; onClick?: (event: MouseEvent) => void; popup?: "menu" | "dialog" };
 };
 
 /** Head row slot. Must be a direct child of AppWorkspace; its parts may be islands. */
@@ -295,12 +285,8 @@ export type AppWorkspaceContentProps = { children: JSX.Element; class?: string }
 export type AppWorkspaceMainProps = {
   children: JSX.Element;
   class?: string;
-  /**
-   * `"content"` centers the children as one reading column with the shared page width on large screens.
-   * `"reading"` is a column of running text such as a note (K6, K11): no head and no status row above it, the text
-   * gets the whole height at a 720 px measure, centered; views and actions float in a `FloatingPill`.
-   */
-  width?: "full" | "content" | "reading";
+  /** `"content"` centers the children as one reading column with the shared page width on large screens. */
+  width?: "full" | "content";
   /**
    * The width in px or a workspace width share that Main keeps beside the sidebar and an open Detail,
    * from 48rem (768 px); at least the default 320. A Detail that does not fit
@@ -908,7 +894,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
         data-workspace-levels={levelsMode() ? "" : undefined}
         data-workspace-level-count={levelsMode() ? levels().length : undefined}
         data-mobile-pane={levelsMode() ? undefined : props.mobilePane}
-        data-width={props.width === "content" || props.width === "reading" ? props.width : undefined}
+        data-width={props.width === "content" ? "content" : undefined}
         data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
         data-scroll={props.scroll === false ? "false" : undefined}
         aria-busy={props["aria-busy"]}
@@ -1067,16 +1053,14 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
   const domId = () => appWorkspaceDetailElementId(props.id);
   const variable = () => appWorkspacePanelVariable("detail", panelId());
-  // Start widths of 20, 23.75 (K9), 30, and 34 rem. They feed `aria-valuenow` and the
+  // Start widths of 20, 26, 30, and 34 rem. They feed `aria-valuenow` and the
   // `var(…, Npx)` first-paint fallback, so they are behaviour, not taste.
-  const widths = { sm: 320, md: 380, lg: 480, xl: 544 };
+  const widths = { sm: 320, md: 416, lg: 480, xl: 544 };
   const defaultWidth = () => widths[props.width ?? "md"] ?? APP_WORKSPACE_DETAIL_DEFAULT;
   const minWidth = () => props.minWidth ?? APP_WORKSPACE_DETAIL_MIN;
   const maxWidth = () => Math.max(minWidth(), props.maxWidth ?? APP_WORKSPACE_DETAIL_MAX);
   const resizable = () => props.resizable ?? rootResizable;
-  // K12: from 1920 px of host width the start width grows by `--k2b-workspace-detail-wide` (CSS).
-  const start = () => `calc(${defaultWidth()}px + var(--k2b-workspace-detail-wide, 0px))`;
-  const size = () => (resizable() ? `var(${variable()}, ${start()})` : start());
+  const size = () => (resizable() ? `var(${variable()}, ${defaultWidth()}px)` : `${defaultWidth()}px`);
   const sizeStyle = () => ({
     "--k2b-workspace-panel-size": size(),
     "--k2b-workspace-panel-min": `${minWidth()}px`,
@@ -2602,8 +2586,7 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? (primary().expanded ? "true" : "false") : undefined}
-                    disabled={primary().disabled}
+                    aria-expanded={primary().popup ? "false" : undefined}
                     onClick={primary().onClick}
                   >
                     {primaryContent()}
@@ -2617,10 +2600,9 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
                     class="k2b-app-workspace__head-primary"
                     data-workspace-primary=""
                     aria-haspopup={primary().popup}
-                    aria-expanded={primary().popup ? (primary().expanded ? "true" : "false") : undefined}
-                    aria-disabled={primary().disabled ? "true" : undefined}
-                    href={primary().disabled ? undefined : href()}
-                    onClick={primary().disabled ? undefined : primary().onClick}
+                    aria-expanded={primary().popup ? "false" : undefined}
+                    href={href()}
+                    onClick={primary().onClick}
                   >
                     {primaryContent()}
                   </ButtonLink>

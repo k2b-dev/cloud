@@ -14,8 +14,8 @@ export const APP_WORKSPACE_SIDEBAR_MIN = 176;
 export const APP_WORKSPACE_SIDEBAR_MAX = 360;
 /** Absolute persistence envelope for sidebars with an app-defined wider max. */
 const APP_WORKSPACE_SIDEBAR_STATE_MAX = 960;
-/** The detail column starts at 23.75 rem (380 px, K9) and keeps between 20 and 40 rem. */
-export const APP_WORKSPACE_DETAIL_DEFAULT = 380;
+/** The floating detail panel starts at 26 rem and keeps between 20 and 40 rem. */
+export const APP_WORKSPACE_DETAIL_DEFAULT = 416;
 export const APP_WORKSPACE_DETAIL_MIN = 320;
 export const APP_WORKSPACE_DETAIL_MAX = 640;
 export const APP_WORKSPACE_DRAWER_DEFAULT = 240;

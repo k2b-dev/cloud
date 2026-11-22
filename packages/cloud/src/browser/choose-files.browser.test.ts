@@ -949,17 +949,7 @@ describe("choosing files in a browser", () => {
       await row(page, "scan.pdf").waitFor();
       expect(await sourceNames(page)).toEqual(["This device", "Drive", "Scanner"]);
       expect(await page.locator('dialog .cloud-file-dialog__source[aria-current="true"] i').getAttribute("class")).toBe("ti ti-scan");
-      // K15: beside the open preview the path is narrow, so the levels above wait behind "…" and the current one stays
-      // whole. Chevrons part the levels; they are icons without text.
-      await page.waitForFunction(() => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more:not([hidden])") !== null);
-      expect(await page.locator(".cloud-file-chooser__crumbs li:not([data-fit-hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual(
-        [longNames.ablage],
-      );
-      expect(await page.locator(".cloud-file-chooser__crumbs li:not(.k2b-breadcrumbs__more)").allTextContents()).toEqual([
-        "Scanner",
-        "Büro",
-        longNames.ablage,
-      ]);
+      expect(await page.locator(".cloud-file-chooser__crumbs li").allTextContents()).toEqual(["Scanner", "/Büro", `/${longNames.ablage}`]);
       // The restored folder takes focus from This device, so the keyboard continues in the list.
       expect(await focusedRow(page)).toContain("Intern");
       // Nothing is read before the person uses the list.
@@ -1027,8 +1017,7 @@ describe("choosing files in a browser", () => {
     }
   }, 60_000);
 
-  // K15: a path stays on one line; its front levels wait behind "…" and the current level stays.
-  test("a deep path stays on one line with its front levels behind “…”; the search finds files in subfolders with their place", async () => {
+  test("a deep path stays on one line and scrolls to its end under a fade; the search finds files in subfolders with their place", async () => {
     catalogApps = [scans];
     for (const view of [desktop, phone]) {
       serverPlace = scanPlace("buero", "ablage", "intern", "info", "schilder");
@@ -1038,35 +1027,31 @@ describe("choosing files in a browser", () => {
         await attach(page, false, true);
         await row(page, "Hinweis Eingang.pdf").waitFor();
         await settled(page);
-        // The collapse measures after a frame.
-        await page.waitForFunction(
-          () => document.querySelector(".cloud-file-chooser__crumbs .k2b-breadcrumbs__more:not([hidden])") !== null,
-        );
         const path = await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
           const last = list.lastElementChild!.getBoundingClientRect();
           const box = list.getBoundingClientRect();
           return {
-            overflows: list.scrollWidth > list.clientWidth + 0.5,
-            more: list.firstElementChild?.classList.contains("k2b-breadcrumbs__more") ?? false,
+            overflows: list.scrollWidth > list.clientWidth,
+            atEnd: Math.abs(list.scrollWidth - list.clientWidth - list.scrollLeft) <= 1,
+            fade: list.getAttribute("data-scroll-fade"),
             lastInside: last.right <= box.right + 0.5,
             fitsRow: box.height <= 36,
           };
         });
-        expect(path).toEqual({ overflows: false, more: true, lastInside: true, fitsRow: true });
-        // The levels above are text links; the current level is plain text. No Up arrow.
+        expect(path).toEqual({ overflows: true, atEnd: true, fade: "top", lastInside: true, fitsRow: true });
+        // The levels above are blue text links; the current level is plain text. No Up arrow.
         expect(await page.locator('.cloud-file-chooser__crumbs [aria-current="location"]').textContent()).toBe(longNames.schilder);
-        expect(
-          await page
-            // A level waiting behind "…" keeps its link in the DOM.
-            .locator(".cloud-file-chooser__crumbs li:not(.k2b-breadcrumbs__more) .k2b-button")
-            .first()
-            .getAttribute("data-variant"),
-        ).toBe("link");
+        expect(await page.locator(".cloud-file-chooser__crumbs .k2b-button").first().getAttribute("data-variant")).toBe("link");
         expect(await page.locator('.cloud-file-chooser__toolbar [aria-label="Up"]').count()).toBe(0);
+        // Scrolled back to the start, the fade moves to the end.
+        await page.locator(".cloud-file-chooser__crumbs ol").evaluate((list) => {
+          list.scrollLeft = 0;
+        });
+        await page.waitForFunction(
+          () => document.querySelector(".cloud-file-chooser__crumbs ol")?.getAttribute("data-scroll-fade") === "bottom",
+        );
 
-        // A level behind "…" opens from its menu.
-        await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Levels above" }).click();
-        await page.getByRole("menuitem", { name: longNames.ablage }).click();
+        await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: longNames.ablage }).click();
         await row(page, "scan.pdf").waitFor();
         if (view === phone) {
           // A phone shows no preview column and reads nothing for it.
@@ -1103,10 +1088,7 @@ describe("choosing files in a browser", () => {
       await page.locator('.cloud-file-preview__frame[data-state="pdf"] .k2b-pdf-viewer').waitFor();
       await page.keyboard.press("ArrowDown");
       await page.locator('.cloud-file-preview__frame[data-state="image"]').waitFor();
-      // K15: beside the open preview the path is narrow, so "Büro" waits behind "…"; the keyboard reaches it there.
-      await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Levels above" }).focus();
-      await page.keyboard.press("Enter");
-      await page.getByRole("menuitem", { name: "Büro" }).focus();
+      await page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name: "Büro" }).focus();
       await page.keyboard.press("Enter");
       await row(page, longNames.ablage).waitFor();
       await page.keyboard.press("Escape");
@@ -1116,9 +1098,7 @@ describe("choosing files in a browser", () => {
       // The same page opens there next time without asking the server again.
       await attach(page, false, true);
       await row(page, longNames.ablage).waitFor();
-      expect(await page.locator(".cloud-file-chooser__crumbs li:not([data-fit-hidden], .k2b-breadcrumbs__more)").allTextContents()).toEqual(
-        ["Scanner", "Büro"],
-      );
+      expect(await page.locator(".cloud-file-chooser__crumbs li").allTextContents()).toEqual(["Scanner", "/Büro"]);
     } finally {
       serverPlace = null;
       await close();

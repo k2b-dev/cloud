@@ -3,13 +3,11 @@
 Use `ResizeSeparator` between two regions when the application owns their size.
 It renders a focusable separator with a label, orientation, current value,
 limits, and optional `controls` id. A vertical separator changes column width;
-a horizontal separator changes row height. Its 13 px hit area draws the
-hairline between the two regions and a 5 × 32 px round grey grip on it,
-visible at rest (K13): people see what they can resize without hovering. A
-hover darkens the grip; keyboard focus and dragging turn grip and line blue.
-It casts no shadow. These cues move no content; their transitions stop under
-reduced motion. Where the separator lies in a gap between two framed surfaces
-(Cloud's side panel), its host hides the line and keeps the grip.
+a horizontal separator changes row height. The transparent 12 px hit area
+shows a short grip and a soft shadow on the region it resizes during hover,
+keyboard focus, and drag. It draws no line. The grip takes the focus color only
+on keyboard focus. These cues move no content; their transitions stop under
+reduced motion.
 
 ## Import
 
@@ -48,7 +46,7 @@ double-click does nothing.
 ArrowLeft/ArrowRight resize a vertical separator; ArrowUp/ArrowDown resize a
 horizontal separator. `grow="start"` increases the region toward the logical
 start; `grow="end"` increases it toward the end. Vertical separators respect RTL
-for both resizing and the side they grow to.
+for both resizing and the shadow's position.
 `step` defaults to 1, Shift uses `largeStep` (default four steps), Home selects
 the minimum, and End selects the maximum. Keys never collapse a region.
 
@@ -66,8 +64,8 @@ Persistence and collapse effects belong to the application.
 - The separator has `role="separator"`, `aria-orientation`, `aria-valuemin`,
   `aria-valuemax`, `aria-valuenow`, and the `label` as its accessible name.
 - Connect `controls` to the resized region's id.
-- It is a keyboard tab stop. Keyboard focus and dragging give grip and line the
-  focus color; hover only darkens the grip.
+- It is a keyboard tab stop. Keyboard focus shows the grip and shadow and gives
+  the grip the focus color; hover and drag show the cue without that color.
 
 ## Runtime
 
@@ -77,8 +75,8 @@ server markup, call `attachResizeSeparator(element, options)` and dispose its
 returned function. The installer reads orientation from `aria-orientation` and
 gets the current value through `value: () => number`. Both the component and
 `attachResizeSeparator` set `data-resize-edge` from `grow` (`start` or `end`),
-so the keys grow the resized region. The component renders it on the server
-for the first frame.
+so the shadow falls on the resized region. The component renders it on the
+server for the first frame.
 
 ## Example
 

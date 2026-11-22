@@ -292,8 +292,7 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
       kind === "sidebar" && reserveMainMinimum
         ? mainExtra
         : kind === "detail"
-          ? // The stylesheet owns the column's inset (none in the flat shell), so the limit matches its first frame.
-            (Number.parseFloat(cssState(root, "--k2b-workspace-detail-inset")) || 0) + (reserveMainMinimum ? mainExtra : 0)
+          ? 8 + (reserveMainMinimum ? mainExtra : 0)
           : kind === "pane"
             ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) +
               separatorSize +
@@ -1731,14 +1730,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (typeof spec === "number") {
         // Sidebar and drawer have no CSS fit. Keep their configured default
         // in the map, but render within today's bounds and recover it later.
-        // From 1920 px the sidebar and Detail start wider (K12); a reset returns to that start, not the narrow one.
-        const wide = kind === "sidebar" ? "--k2b-workspace-sidebar-wide" : kind === "detail" ? "--k2b-workspace-detail-wide" : undefined;
-        const start = (px: number) => (wide ? `calc(${px}px + var(${wide}, 0px))` : `${px}px`);
         if (kind === "sidebar" || kind === "drawer") {
           const { min, max } = sizeLimits(root, region.configuration, kind);
-          const bounded = clamp(spec, min, max);
-          root.style.setProperty(variable, bounded === spec ? start(spec) : `${bounded}px`);
-        } else root.style.setProperty(variable, start(spec));
+          root.style.setProperty(variable, `${clamp(spec, min, max)}px`);
+        } else root.style.setProperty(variable, `${spec}px`);
       } else {
         root.style.removeProperty(variable);
         if (getComputedStyle(root).getPropertyValue(variable).trim()) root.style.setProperty(variable, "initial");
@@ -1922,8 +1917,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     const current = currentSize(root, handle, kind);
     const { min, max } = sizeLimits(root, handle, kind);
-    // K13: 16 px a step, 64 px with Shift.
-    const step = event.shiftKey ? 64 : 16;
+    const step = event.shiftKey ? 32 : 8;
     let requested: number | null = null;
     const direction = resizeDirection(handle, kind);
     const collapsibleSidebar = kind === "sidebar" && sidebarCollapsible(root);
@@ -1934,7 +1928,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     else if (kind === "drawer" && event.key === "ArrowUp") requested = current - step * direction;
     else if (kind === "drawer" && event.key === "ArrowDown") requested = current + step * direction;
     // A collapsible sidebar is already at its minimum when the rail is the
-    // next step: without these two branches a keyboard step of 16 (or 64) is
+    // next step: without these two branches a keyboard step of 8 (or 32) is
     // clamped straight back to the minimum, so the handle is simply stuck and
     // collapse/expand is unreachable without a pointer.
     else if (kind !== "drawer" && event.key === "ArrowLeft")

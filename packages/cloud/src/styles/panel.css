@@ -252,17 +252,12 @@
   display: none;
 }
 
-/* The separator sits in the gap at the panel's start edge. It lies between
-   two cards on the canvas, so it shows its grip without a line. */
+/* The separator sits in the gap at the panel's start edge. */
 .cloud-panel__resize {
   position: absolute !important;
   inset-block: 0;
   inset-inline-start: calc(-6px - var(--cloud-card-inset, 0.5rem) / 2);
   z-index: 4;
-}
-
-.k2b-ui .cloud-panel__resize::before {
-  display: none;
 }
 
 /* Column: the app area is the AppWorkspace host, so the app lays out by its narrowed width. */

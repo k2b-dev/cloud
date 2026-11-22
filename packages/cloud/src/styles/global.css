@@ -405,9 +405,9 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     overflow: auto;
     border-top: 1px solid transparent;
-    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+    border-radius: 1.75rem 1.75rem 0 0;
     background: var(--k2b-surface);
-    box-shadow: none;
+    box-shadow: var(--k2b-shadow-frame);
   }
   /* Dark: a faint top edge keeps the card apart from the dark gradient. */
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
@@ -453,20 +453,20 @@ solid-island {
         min-height: 0;
         pointer-events: none;
         border-top: 1px solid transparent;
-        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+        border-radius: 1.75rem 1.75rem 0 0;
         background: var(--k2b-surface);
-        box-shadow: none;
+        box-shadow: var(--k2b-shadow-frame);
       }
 
       & > .k2b-app-workspace__head {
-        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+        border-radius: 1.75rem 1.75rem 0 0;
         background: transparent;
       }
 
       /* Cloud's page title hides the automatic head on phones. With no
          explicit head, Content itself owns the card's rounded clip. */
       &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
-        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+        border-radius: 1.75rem 1.75rem 0 0;
       }
     }
 
@@ -549,14 +549,11 @@ solid-island {
     }
   }
   .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
-    /* K2, K3, K4: the app card has its hairline edge (the frame ring), no shadow, and the card radius. */
     --k2b-workspace-radius: var(--k2b-radius-card);
     box-shadow: var(--k2b-shadow-frame);
   }
   .dark .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
-    /* One edge: the border in dark, no ring beside it. */
     border-color: var(--k2b-border);
-    box-shadow: none;
   }
 }
 
@@ -610,15 +607,15 @@ solid-island {
       gap: 0.5rem;
     }
     .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
-      --k2b-workspace-radius: var(--k2b-radius-card);
+      --k2b-workspace-radius: 1.25rem;
     }
   }
 }
 
 /* Signed-in card: from 1024 px the app area is a card on the app canvas beside
-   the rail, as on laptops. Its spacing grows with the window, from 4 to 8 px
-   at 1440 px, in whole pixels, so the card and its columns keep whole widths;
-   its radius is the card radius, 14 px, and it casts no shadow (K3, K4). The
+   the rail, as on laptops. Its spacing and radius grow with the window, from
+   4 to 8 px and from 10 to 14 px at 1440 px, the wide card from there on, in
+   whole pixels, so the card and its columns keep whole widths. The
    rail starts at the window's left edge and moves down with the card. In the
    installed app the card and the rail stay below the status bar; the card keeps
    its spacing at the bottom, and its surfaces keep their content above the
@@ -626,8 +623,7 @@ solid-island {
 @media (min-width: 1024px) {
   .cloud-app-canvas[data-layout-authenticated] {
     --cloud-card-inset: round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px);
-    /* K4: the app card keeps the one card radius at every width. */
-    --cloud-card-radius: var(--k2b-radius-card);
+    --cloud-card-radius: round(clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem), 1px);
     --cloud-card-inset-bottom: max(0px, env(safe-area-inset-bottom, 0px) - var(--cloud-card-inset));
     padding: max(var(--cloud-card-inset), env(safe-area-inset-top, 0px)) max(var(--cloud-card-inset), env(safe-area-inset-right, 0px))
       var(--cloud-card-inset) 0;

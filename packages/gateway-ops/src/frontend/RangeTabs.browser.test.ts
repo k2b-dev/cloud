@@ -59,8 +59,7 @@ const open = async (current: string) => {
 };
 
 describe("Gateway Ops range selection", () => {
-  // K2, K6: the current range is a view tab, marked by a 2 px line in the app ink, without a fill.
-  test("marks the current range with the app ink's line instead of a solid action fill", async () => {
+  test("uses the app ink's selected edge and fill instead of a solid action fill", async () => {
     const page = await open("24h");
     try {
       const colors = await page.locator('nav a[aria-current="page"]').evaluate((tab) => {
@@ -72,19 +71,20 @@ describe("Gateway Ops range selection", () => {
           return getComputedStyle(probe).backgroundColor;
         };
         const actual = getComputedStyle(tab);
-        const mark = actual.boxShadow.split(/,(?![^(]*\))/).find((layer) => layer.includes("-2px")) ?? "";
         const result = {
           background: actual.backgroundColor,
-          mark: mark.match(/(?:rgba?|color)\([^)]*\)/)?.[0] ?? "",
+          color: actual.color,
+          selected: resolve("color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))"),
           solid: resolve("--k2b-action-solid"),
           active: resolve("--k2b-app-workspace-active"),
         };
         probe.remove();
         return result;
       });
-      expect(colors.background).toBe("rgba(0, 0, 0, 0)");
+      expect(colors.selected).not.toBe("rgba(0, 0, 0, 0)");
+      expect(colors.background).toBe(colors.selected);
       expect(colors.background).not.toBe(colors.solid);
-      expect(colors.mark).toBe(colors.active);
+      expect(colors.color).toBe(colors.active);
     } finally {
       await page.close();
     }

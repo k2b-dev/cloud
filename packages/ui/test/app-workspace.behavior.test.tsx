@@ -51,11 +51,8 @@ describe("@k2b/ui AppWorkspace behavior", () => {
           toJSON: () => ({}),
         });
         Object.defineProperty(root, "getBoundingClientRect", { value: () => rect(1800, 900) });
-        // A reset writes `calc(<default>px + var(--k2b-workspace-sidebar-wide, 0px))`;
-        // the wide addend is unset (0px) in this harness, as below 1920 px.
         Object.defineProperty(sidebar, "getBoundingClientRect", {
-          value: () =>
-            rect(Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-sidebar-width").replace(/^calc\(/, "")) || 208, 900),
+          value: () => rect(Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-sidebar-width")) || 208, 900),
         });
         Object.defineProperty(drawer, "getBoundingClientRect", {
           value: () => rect(1800, Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")) || 192),
@@ -82,9 +79,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
         try {
           handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
           if (kind === "sidebar") {
-            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(
-              `calc(${defaultSize}px + var(--k2b-workspace-sidebar-wide, 0px))`,
-            );
+            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(`${defaultSize}px`);
             expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
             expect(handle.getAttribute("aria-valuenow")).toBe(String(defaultSize));
             expect(written.at(-1)).not.toHaveProperty("sidebarWidth");
@@ -97,9 +92,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
             root
               .querySelector<HTMLElement>('[data-app-workspace-resize="drawer"]')!
               .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(
-              `calc(${defaultSize}px + var(--k2b-workspace-sidebar-wide, 0px))`,
-            );
+            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(`${defaultSize}px`);
             setSidebarHidden(false);
             const replacement = root.querySelector<HTMLElement>('[data-app-workspace-resize="sidebar"]')!;
             expect(replacement).not.toBe(handle);

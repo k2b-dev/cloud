@@ -208,15 +208,13 @@ describe("compact workspace sidebar", () => {
     const page = await load(820);
     try {
       const closed = await read(page);
-      // The workspace's own 1 px frame surrounds the head; the head adds no line. K12: on a tablet the Detail is a
-      // drawer that waits behind its Details button, so the head spans the workspace.
-      expect(closed.bar).toMatchObject({ display: "flex", left: 1, top: 1, width: 818, borders: "0px 0px 0px 0px" });
+      // The workspace's own 1 px frame surrounds the head; the head adds no line.
+      expect(closed.bar).toMatchObject({ display: "flex", left: 1, top: 1, width: 490, borders: "0px 0px 0px 0px" });
       expect(closed.title).toBe("Reports");
       expect(closed.sidebar.visibility).toBe("hidden");
       expect(closed.pane.left).toBe(1);
       expect(closed.pane.top).toBe(47);
-      expect(closed.detail.display).toBe("none");
-      expect(await page.locator(".k2b-app-workspace__detail-toggle").isVisible()).toBe(true);
+      expect(closed.detail.top).toBe(9);
       expect(closed).toMatchObject({ label: "Show navigation", expanded: "false" });
 
       await page.locator("[data-app-workspace-sidebar-toggle]").click();
@@ -327,15 +325,15 @@ describe("compact workspace sidebar", () => {
           document.querySelector(".k2b-app-workspace")!.getBoundingClientRect().right -
             document.querySelector<HTMLElement>(".k2b-app-workspace")!.clientLeft -
             document.querySelector(".k2b-app-workspace__content")!.getBoundingClientRect().left -
-            320,
+            320 -
+            8,
         ),
         main: Math.round(width(".k2b-app-workspace__main")),
       };
     });
 
-  // K12: from 64 rem the Detail is a column; on a tablet (820) it is a drawer that waits, so these widths apply from 1100.
-  test("a persisted detail width stays as the stylesheet drew it, beside a sidebar column", async () => {
-    for (const width of [1100]) {
+  test("a persisted detail width stays as the stylesheet drew it, beside an overlay sidebar or a sidebar column", async () => {
+    for (const width of [820, 1100]) {
       const page = await load(width, "detail=400");
       try {
         await settle(page);
@@ -349,7 +347,7 @@ describe("compact workspace sidebar", () => {
   });
 
   test("a detail saved wider than the window allows arrives at the width it keeps, so nothing moves when the controller attaches", async () => {
-    for (const width of [1100]) {
+    for (const width of [820, 1100]) {
       const page = await load(width, "detail=600");
       try {
         await settle(page);
@@ -367,18 +365,17 @@ describe("compact workspace sidebar", () => {
     }
   });
 
-  test("at 820 px a stacked sidebar stays above the content; the detail waits as a drawer behind the head's Details", async () => {
+  test("at 820 px a stacked sidebar stays above the content beside the full-height detail, with no bar", async () => {
     const page = await load(820, "stacked=1&detail=400");
     try {
       await settle(page);
       const shape = await read(page);
-      // K12: the Detail is a drawer on a tablet, so the head stays for its Details button.
-      expect(shape.bar.display).toBe("flex");
-      expect(shape.detail.display).toBe("none");
-      expect(await page.locator(".k2b-app-workspace__detail-toggle").isVisible()).toBe(true);
-      expect(shape.sidebar).toMatchObject({ display: "flex", visibility: "visible", left: 1 });
+      expect(shape.bar.display).toBe("none");
+      expect(shape.sidebar).toMatchObject({ display: "flex", visibility: "visible", left: 1, top: 1, width: 410 });
       expect(shape.pane.top).toBeGreaterThan(shape.sidebar.top);
       expect(await page.getByText("Projects").isVisible()).toBe(true);
+      const detail = await detailSizes(page);
+      expect(detail).toMatchObject({ atRender: 400, attached: 400, max: Math.min(640, detail.room) });
     } finally {
       await page.close();
     }
@@ -423,9 +420,8 @@ describe("compact workspace sidebar", () => {
     }
   });
 
-  // The inner workspace lives in the outer Detail column, which is a column from 64 rem (K12).
   test("a nested workspace's button opens its own overlay every time", async () => {
-    const page = await load(1100, "nested=1");
+    const page = await load(820, "nested=1");
     try {
       const toggle = page.locator("[data-app-workspace-sidebar-toggle][aria-controls='inner-navigation']");
       for (let round = 0; round < 2; round++) {

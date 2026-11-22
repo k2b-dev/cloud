@@ -86,6 +86,12 @@ packages/cloud/src/styles/file-chooser.css | css | 1rem
 packages/cloud/src/styles/file-chooser.css | css | var(--k2b-radius-surface, 0.75rem)
 packages/cloud/src/styles/global.css | css | 1.1rem
 packages/cloud/src/styles/global.css | css | 1.25rem
+packages/cloud/src/styles/global.css | css | 1.25rem
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | round(clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem), 1px)
 packages/cloud/src/styles/panel.css | css | 0.375rem
 packages/cloud/src/styles/panel.css | css | 1.125rem 1.125rem 0 0
 packages/cloud/src/styles/profile-picture.css | css | 0.75rem

@@ -1360,8 +1360,6 @@ describe("Chat member input mode", () => {
         );
         try {
           const panel = page.locator("#k2b-workspace-detail-chat-info");
-          // K12: on a tablet the info waits as a drawer; its Details button opens it.
-          if (width === 820) await page.locator("[data-app-workspace-detail-toggle]").click();
           await panel.waitFor({ state: "visible" });
           await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
           const row = panel.locator(".chat-member-row").filter({ hasText: nora.name });

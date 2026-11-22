@@ -149,12 +149,11 @@ test("an open bottom drawer owns the inset instead of Main", async () => {
   }
 });
 
-// K2, K5a: the Detail column has no inset of its own; it ends on the host's bottom inset.
-test("the Detail column ends on the host's bottom inset", async () => {
+test("floating detail keeps its own inset above the host's bottom inset", async () => {
   const page = await load("detail");
   try {
     const shape = await geometry(page);
-    expect(shape.detail.bottom).toBeCloseTo(shape.root.bottom - 20, 1);
+    expect(shape.detail.bottom).toBeCloseTo(shape.root.bottom - 8 - 20, 1);
   } finally {
     await page.close();
   }
@@ -256,7 +255,7 @@ for (const params of ["", "drawer", "detail"]) {
       expect(shape.sidebar.bottom).toBeCloseTo(shape.root.bottom, 1);
       if (params === "drawer") expect(shape.drawer.bottom).toBeCloseTo(shape.root.bottom, 1);
       else expect(shape.main.bottom).toBeCloseTo(shape.root.bottom, 1);
-      if (params === "detail") expect(shape.detail.bottom).toBeCloseTo(shape.root.bottom, 1);
+      if (params === "detail") expect(shape.detail.bottom).toBeCloseTo(shape.root.bottom - 8, 1);
     } finally {
       await page.close();
     }

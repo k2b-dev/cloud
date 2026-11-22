@@ -723,11 +723,8 @@ const until = async (condition: () => boolean, ms = 1_000) => {
   expect(condition()).toBe(true);
 };
 const skeleton = (dom: ReturnType<typeof createDomTestHarness>) => dom.document.querySelector(".cloud-file-dialog__skeleton-row") !== null;
-// The shown levels: the path's "…" waits hidden until front levels must move behind it, and a level behind it is no crumb.
 const crumbs = (dom: ReturnType<typeof createDomTestHarness>) =>
-  [...dom.document.querySelectorAll(".cloud-file-chooser__crumbs li:not([hidden], [data-fit-hidden])")].map((item) =>
-    item.textContent?.replace("/", "").trim(),
-  );
+  [...dom.document.querySelectorAll(".cloud-file-chooser__crumbs li")].map((item) => item.textContent?.replace("/", "").trim());
 
 domTest("opens at the remembered folder, and remembers only a place that changed as it closes", async () => {
   const place = { appId: "drive", folders: [{ id: "scans", name: "Scanner-Ablage" }] };
@@ -743,7 +740,7 @@ domTest("opens at the remembered folder, and remembers only a place that changed
     expect(crumbs(view.dom)).toEqual(["Drive", "Scanner-Ablage"]);
     expect(view.dom.document.querySelector('.cloud-file-dialog__source[aria-current="true"]')?.textContent).toContain("Drive");
     // The levels above are links; the current level is text, and there is no Up arrow.
-    expect(view.dom.document.querySelector(".cloud-file-chooser__crumbs li:not([hidden]) button")?.textContent?.trim()).toBe("Drive");
+    expect(view.dom.document.querySelector(".cloud-file-chooser__crumbs button")?.textContent?.trim()).toBe("Drive");
     expect(view.dom.document.querySelector('.cloud-file-chooser__crumbs [aria-current="location"]')?.textContent).toBe("Scanner-Ablage");
     expect(view.dom.document.querySelector('.cloud-file-chooser__toolbar [aria-label="Up"]')).toBeNull();
   } finally {
@@ -761,7 +758,7 @@ domTest("opens at the remembered folder, and remembers only a place that changed
   );
   try {
     await until(() => Boolean(moved.row("scan-1.txt")));
-    moved.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs li:not([hidden]) button")!.click();
+    moved.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs button")!.click();
     await until(() => Boolean(moved.row("Scanner-Ablage")));
   } finally {
     moved.cleanup();
@@ -909,7 +906,7 @@ domTest("placeholder rows wait 200 ms before they show and then stay at least 30
     view.row("Fast")!.click();
     await until(() => !view.row("Slow") && view.dom.root.textContent!.includes("This folder is empty"));
     clearInterval(watch);
-    view.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs li:not([hidden]) button")!.click();
+    view.dom.document.querySelector<HTMLButtonElement>(".cloud-file-chooser__crumbs button")!.click();
     await until(() => Boolean(view.row("Slow")));
 
     gate = new Promise((resolve) => {

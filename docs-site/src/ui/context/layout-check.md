@@ -50,9 +50,7 @@ uses nothing from outside the function.
 It returns `overlap`, `spill`, `cut`, `double`, and `scrollbar` as lists of readable lines,
 `sideways` as a boolean, and `problems` as every problem in one list. If the
 page is clean, `problems` is empty. To skip a box, give it
-`data-layout-check="skip"`. A visually hidden box, 1 px and clipped like
-`k2b-sr-only`, keeps its content for screen readers on purpose; the check skips
-it and everything inside it.
+`data-layout-check="skip"`.
 
 ## Example: a page test at four widths
 

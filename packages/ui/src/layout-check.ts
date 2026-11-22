@@ -31,7 +31,7 @@
 export type LayoutProblemOptions = {
   /** The element to check; the whole document by default. */
   root?: string;
-  /** Boxes whose children overlap or clip on purpose, or that lie over a sibling on purpose; they and everything inside them are skipped. */
+  /** Boxes whose children overlap or clip on purpose; they and everything inside them are skipped. */
   ignore?: string;
   /**
    * How far content may reach past its box before it counts, in px. 7 as in the mockups: an icon button at a column
@@ -66,28 +66,9 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
-  // A visually hidden box (1 px, clipped, such as `.k2b-sr-only` or a head the sidebar makes redundant) keeps its
-  // content for screen readers on purpose; nothing inside it is laid out for the eye.
-  const hidden = new Map<Element, boolean>();
-  const visuallyHidden = (element: Element | null): boolean => {
-    if (!element || element === document.documentElement) return false;
-    const known = hidden.get(element);
-    if (known !== undefined) return known;
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    const clipped = (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)") && (rect.width <= 1 || rect.height <= 1);
-    const result = clipped || visuallyHidden(element.parentElement);
-    hidden.set(element, result);
-    return result;
-  };
   const seen = (element: Element) => {
     const rect = element.getBoundingClientRect();
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      element.checkVisibility({ visibilityProperty: true, opacityProperty: true }) &&
-      !visuallyHidden(element)
-    );
+    return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
   };
   // A box that sticks or floats lies above the flow on purpose.
   const inFlow = (element: Element) => !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position);
@@ -136,8 +117,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     if (/flex|grid/.test(style.display)) {
       const children = Array.from(box.children)
         .flatMap(drawn)
-        // An ignored box also takes no part as a sibling, such as a grip that lies over its column on purpose (K13).
-        .filter((child) => seen(child) && inFlow(child) && !child.matches(ignore));
+        .filter((child) => seen(child) && inFlow(child));
       for (const [index, a] of children.entries())
         for (const b of children.slice(index + 1)) {
           const x = a.getBoundingClientRect();

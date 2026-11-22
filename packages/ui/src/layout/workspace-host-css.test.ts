@@ -5,16 +5,16 @@ import { resolve } from "node:path";
 const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
 const source = readFileSync(resolve(import.meta.dir, "AppWorkspace.tsx"), "utf8");
 
-test("waiting-detail fit thresholds keep Main's 20rem and each width token; the flat column has no inset", () => {
+test("waiting-detail fit thresholds keep Main's 20rem, each width token, and the 0.5rem inset", () => {
   const tokens = source.match(/const widths = \{ sm: (\d+), md: (\d+), lg: (\d+), xl: (\d+) \}/);
   expect(tokens).not.toBeNull();
   for (const [index, token] of ["sm", "md", "lg", "xl"].entries()) {
-    const threshold = 20 + Number(tokens![index + 1]) / 16;
+    const threshold = 20 + Number(tokens![index + 1]) / 16 + 0.5;
     expect(css).toContain(`@container k2b-workspace (width < ${threshold}rem)`);
     const rule = css.match(new RegExp(`\\.k2b-app-workspace:has\\([^{}]*\\[data-width="${token}"\\][^{}]*\\)\\s*\\{([^}]*)\\}`))?.[1];
     expect(rule).toContain(`--k2b-workspace-detail-fit: ${threshold}rem;`);
   }
-  expect(css).toContain("--k2b-workspace-detail-inset: 0px");
+  expect(css).toContain("--k2b-workspace-detail-inset: 0.5rem");
 });
 
 test("the sidebar shares the workspace surface and coarse pointers do not select a detail drawer", () => {
@@ -32,19 +32,4 @@ test("the sidebar shares the workspace surface and coarse pointers do not select
     }
     expect(css.slice(start, end)).not.toContain("--k2b-workspace-detail-track: 0px");
   }
-});
-
-test("K15: in a narrowing head the actions give way before the views", () => {
-  const query = (selector: string) => {
-    const index = css.indexOf(selector);
-    const before = css.slice(0, index);
-    const container = [...before.matchAll(/@container (k2b-head(?:-lead)?) \(width < ([\d.]+)rem\)/g)].at(-1);
-    return container ? { name: container[1], rem: Number(container[2]) } : undefined;
-  };
-  // The primary turns into its icon while the head is still 48 rem wide; the views compact only below 32 rem of lead.
-  expect(query(".k2b-ui .k2b-app-workspace__head-primary-label {\n    position: absolute;")).toEqual({ name: "k2b-head", rem: 48 });
-  expect(query(".k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden]")).toEqual({
-    name: "k2b-head-lead",
-    rem: 32,
-  });
 });

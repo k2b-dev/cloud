@@ -431,31 +431,31 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
     await page.waitForFunction(
       () => {
         const handle = document.querySelector(".cloud-panel__resize")!;
-        return handle.getAttribute("data-active") === "true";
+        return handle.getAttribute("data-active") === "true" && getComputedStyle(handle, "::after").opacity === "1";
       },
       undefined,
       { timeout: 3000 },
     );
-    // K13: while dragging, the grip turns blue; the separator casts no shadow, and between the two cards it draws no line.
     const cue = await page.locator(separator).evaluate((handle) => {
       const shadow = getComputedStyle(handle, "::after");
       const line = getComputedStyle(handle, "::before");
-      const grip = handle.querySelector("span")!;
-      const swatch = document.createElement("i");
-      swatch.style.color = "var(--k2b-focus-ring)";
-      handle.append(swatch);
-      const focus = getComputedStyle(swatch).color;
-      swatch.remove();
-      const box = grip.getBoundingClientRect();
       return {
         edge: handle.getAttribute("data-resize-edge"),
-        shadow: shadow.content !== "none" && shadow.content !== "normal",
-        grip: `${Math.round(box.width)}x${Math.round(box.height)}`,
-        blue: getComputedStyle(grip).backgroundColor === focus,
+        content: shadow.content,
+        opacity: shadow.opacity,
+        left: Number.parseFloat(shadow.left),
+        width: Number.parseFloat(shadow.width),
+        handleWidth: handle.getBoundingClientRect().width,
         line: line.content !== "none" && line.content !== "normal" && line.display !== "none",
       };
     });
-    expect(cue).toEqual({ edge: "start", shadow: false, grip: "5x32", blue: true, line: false });
+    expect(cue.edge).toBe("start");
+    expect(cue.content).not.toBe("none");
+    expect(cue.content).not.toBe("normal");
+    expect(cue.opacity).toBe("1");
+    expect(cue.left).toBeCloseTo(cue.handleWidth / 2, 1);
+    expect(cue.width).toBeGreaterThan(0);
+    expect(cue.line).toBe(false);
     await page.mouse.up();
     await page.waitForFunction(() => document.querySelector(".cloud-panel__resize")?.getAttribute("aria-valuenow") === "28", undefined, {
       timeout: 3000,
@@ -941,13 +941,11 @@ test("opening the panel parks an open workspace detail drawer", async () => {
   }
 });
 
-// 12: The real workspace follows the host from the first paint. Beside the default 26 rem panel at 1440 px the app area
-// is narrower than 64 rem, a tablet's, so Detail waits as a drawer there too (K12).
+// 12: The real workspace follows the host at its 808px threshold from the first paint.
 for (const [width, stored, waiting] of [
   [1194, "", true],
-  [1440, "", true],
+  [1440, "", false],
   [1440, "36", true],
-  [1920, "", false],
 ] as const)
   test(`${width}px with ${stored || "default"} rem panel: lg Detail waiting=${waiting}`, async () => {
     const { context, page } = await fixture(width, `1:fixture:${stored}`);
@@ -1346,83 +1344,6 @@ test("early links keep multiple guards through disposal and late runtime without
     await frame.locator("#leave-panel").click();
     await page.waitForURL(`${origin}/app/fixture/next`);
     expect(fullRequests).toBe(1);
-  } finally {
-    await context.close();
-  }
-});
-
-// K12 beside the panel (flat QA): at 1440 px an open panel makes the app area a tablet's, so Detail waits. Opening the
-// panel never shows a squeezed Detail column in between and never narrows the list; closing it brings the column back at
-// the width the person dragged, not the default. The drawer has no grip (K13), and Escape closes only the drawer.
-test("1440px: the panel parks Detail without a squeezed frame, closing restores its dragged width, the drawer has no grip", async () => {
-  const { context, page } = await fixture(1440);
-  try {
-    await settled(page);
-    const handle = page.locator('[data-app-workspace-resize="detail"]');
-    const column = async () => (await page.locator(workspaceDetail).boundingBox())!.width;
-    const start = await column();
-    await handle.focus();
-    await page.keyboard.press("ArrowLeft");
-    await page.keyboard.press("ArrowLeft");
-    await settled(page);
-    const dragged = await column();
-    expect(dragged).not.toBe(start);
-    const list = (await page.locator(mainArea).boundingBox())!;
-    // The person scrolled the Detail; parking keeps the place (decided 21.11., option A).
-    await page.locator(workspaceDetail).evaluate((detail) => {
-      detail.scrollTop = 300;
-    });
-    await page.waitForFunction((selector) => document.querySelector(selector)!.scrollTop === 300, workspaceDetail);
-    // Every frame while the panel opens shows the Detail at its column width or not at all.
-    await page.evaluate((selector) => {
-      const detail = document.querySelector(selector)!;
-      const frames: number[] = [];
-      (window as unknown as { detailFrames: number[] }).detailFrames = frames;
-      const tick = () => {
-        frames.push(Math.round(detail.getBoundingClientRect().width));
-        if (frames.length < 90) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }, workspaceDetail);
-    await open(page);
-    await page.waitForFunction(() => (window as unknown as { detailFrames: number[] }).detailFrames.length >= 90);
-    const frames = await page.evaluate(() => (window as unknown as { detailFrames: number[] }).detailFrames);
-    expect(frames.filter((width) => width !== 0 && width !== Math.round(dragged))).toEqual([]);
-    expect(await page.locator(workspaceDetail).isVisible()).toBe(false);
-    // The parked Detail is not lost: the list keeps its selection, and Details shows it in the platform blue with a mark.
-    expect(await page.locator("[data-fixture-selected]").getAttribute("aria-current")).toBe("true");
-    const parked = await page.locator("[data-app-workspace-detail-toggle]").evaluate((button) => ({
-      color: getComputedStyle(button).color,
-      action: getComputedStyle(document.body).getPropertyValue("--k2b-action").trim(),
-      mark: getComputedStyle(button, "::after").content,
-      expanded: button.getAttribute("aria-expanded"),
-    }));
-    expect({ mark: parked.mark, expanded: parked.expanded }).toEqual({ mark: '""', expanded: "false" });
-    expect(parked.color).not.toBe(await page.locator("#open-panel").evaluate((button) => getComputedStyle(button).color));
-    // The list never narrows: the sidebar waits behind its button beside the panel, so the list moves to the start and
-    // grows by the Detail's and the sidebar's width.
-    expect((await page.locator(mainArea).boundingBox())!.width).toBeGreaterThanOrEqual(list.width);
-    // The drawer: no grip, and Escape closes it while the panel stays.
-    await page.locator("[data-app-workspace-detail-toggle]").click();
-    await page.waitForFunction(
-      (selector) => document.querySelector<HTMLElement>(selector)?.dataset.workspaceDetailDrawer === "open",
-      workspaceDetail,
-    );
-    expect(await handle.isVisible()).toBe(false);
-    expect(await page.locator(workspaceDetail).evaluate((detail) => detail.scrollTop)).toBe(300);
-    await page.locator(workspaceDetail).locator("button").first().focus();
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(
-      (selector) => document.querySelector<HTMLElement>(selector)?.dataset.workspaceDetailDrawer === undefined,
-      workspaceDetail,
-    );
-    expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
-    // Closing the panel brings the column back at its dragged width.
-    await page.locator("[data-cloud-panel-close]").click();
-    await closed(page);
-    await settled(page);
-    expect(await column()).toBeCloseTo(dragged, 0);
-    expect(await page.locator(workspaceDetail).evaluate((detail) => detail.scrollTop)).toBe(300);
   } finally {
     await context.close();
   }

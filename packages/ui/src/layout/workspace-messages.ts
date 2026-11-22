@@ -23,9 +23,6 @@ const workspaceMessages = i18n.define({
       moreLevels: "More levels",
       sidebarAll: "All",
       sidebarAllLabel: ({ label }: { label: string }) => `All ${label}`,
-      pathLevelsAbove: "Levels above",
-      statusNextAttempt: "next attempt",
-      statusSelected: ({ count }: { count: number }) => `${count} selected`,
     },
     de: {
       rowAction: "Zeilenaktion",
@@ -46,9 +43,6 @@ const workspaceMessages = i18n.define({
       moreLevels: "Weitere Ebenen",
       sidebarAll: "Alle",
       sidebarAllLabel: ({ label }) => `Alle ${label}`,
-      pathLevelsAbove: "Ebenen darüber",
-      statusNextAttempt: "nächster Versuch",
-      statusSelected: ({ count }) => `${count} ausgewählt`,
     },
   },
 });

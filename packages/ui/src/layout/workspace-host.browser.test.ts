@@ -36,13 +36,6 @@ const resizeHost = async (page: Page, width: number) => {
   }, width);
   await workspaceFrames(page);
 };
-/** A workspace narrower than its desktop app area, as beside a panel: the column fit decides, not the tablet rule. */
-const resizeApp = async (page: Page, width: number) => {
-  await page.locator("#app").evaluate((app, width) => {
-    app.style.width = width + "px";
-  }, width);
-  await workspaceFrames(page);
-};
 
 test("1024px hosts reproduce default 1024px tracks and two visible levels", async () => {
   for (const scenario of ["open", "levels"]) {
@@ -169,18 +162,17 @@ test("the host can park a drawer through the public helper", async () => {
   }
 });
 
-// K12: on a tablet (an app area of 48 to 64 rem) Detail is a drawer whatever its token; a desktop host keeps the column.
-test("at an 860px tablet host even the sm token waits as a drawer; the default desktop host retains columns", async () => {
+test("the sm token at 860px and the default desktop host retain columns", async () => {
   for (const [host, detailWidth] of [
     [860, "sm"],
     [null, "md"],
   ] as const) {
     const page = await load(host, { detailWidth });
     try {
-      expect(await aside(page).isVisible()).toBe(host === null);
-      expect(await toggle(page).isVisible()).toBe(host === 860);
+      expect(await aside(page).isVisible()).toBe(true);
+      expect(await toggle(page).isVisible()).toBe(false);
       if (host === 860) expect(await page.locator("[data-app-workspace-sidebar-toggle]").isVisible()).toBe(true);
-      else expect((await main(page).boundingBox())!.width).toBeLessThan((await root(page).boundingBox())!.width - 320);
+      expect((await main(page).boundingBox())!.width).toBeLessThan((await root(page).boundingBox())!.width - 320);
     } finally {
       await page.close();
     }
@@ -189,19 +181,18 @@ test("at an 860px tablet host even the sm token waits as a drawer; the default d
 
 test("a full-width workspace switches its track exactly at each token's content-width threshold", async () => {
   for (const [detailWidth, threshold] of [
-    ["sm", 640],
-    ["md", 700],
-    ["lg", 800],
-    ["xl", 864],
+    ["sm", 648],
+    ["md", 744],
+    ["lg", 808],
+    ["xl", 872],
   ] as const) {
-    // The workspace has a 1px border on each side; queries measure the content box. The app area stays a desktop's.
-    const page = await load(1440, { detailWidth, sidebar: false }, 1440, 0);
+    // The workspace has a 1px border on each side; queries measure the content box.
+    const page = await load(threshold + 2, { detailWidth }, 1440, 0);
     try {
-      await resizeApp(page, threshold + 2);
       expect(await aside(page).isVisible()).toBe(true);
       expect(await toggle(page).isVisible()).toBe(false);
       const columnMain = (await main(page).boundingBox())!.width;
-      await resizeApp(page, threshold + 2 - 1 / 64);
+      await resizeHost(page, threshold + 2 - 1 / 64);
       expect(await aside(page).isVisible()).toBe(false);
       expect(await toggle(page).isVisible()).toBe(true);
       expect((await main(page).boundingBox())!.width).toBeGreaterThan(columnMain);
@@ -257,10 +248,8 @@ test("focus in a column that starts waiting moves to its Details button", async 
 });
 
 test("a width token that fits again clears the drawer without any resize", async () => {
-  // A desktop app area with a workspace where md (700 px) waits and sm (640 px) fits.
-  const page = await load(1440, { sidebar: false }, 1440, 0);
+  const page = await load();
   try {
-    await resizeApp(page, 672);
     await toggle(page).click();
     expect(await aside(page).getAttribute("data-workspace-detail-drawer")).toBe("open");
     await aside(page).evaluate((element) => element.setAttribute("data-width", "sm"));

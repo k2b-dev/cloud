@@ -147,9 +147,7 @@ const resizeHost = async (page: Page, width: number) => {
   await settled(page);
 };
 
-// K1, K15: the head never wraps from 48 rem; a narrow workspace keeps the views, the filters, and the actions in the one
-// 56 px row, and the filters scroll sideways there.
-test("a narrow workspace keeps tabs, filters, and actions in the one 56 px head row", async () => {
+test("workspace width wraps filters while tabs and actions keep the first row", async () => {
   const page = await load();
   try {
     const tabs = await rect(page, ".k2b-view-tabs");
@@ -159,16 +157,15 @@ test("a narrow workspace keeps tabs, filters, and actions in the one 56 px head 
     expect(Math.abs(center(tabs) - center(action))).toBeLessThanOrEqual(2);
     await resizeHost(page, 640);
     const narrowTabs = await rect(page, ".k2b-view-tabs");
-    expect(Math.abs(center(narrowTabs) - center(await rect(page, ".k2b-app-workspace__head-filters")))).toBeLessThanOrEqual(2);
+    expect((await rect(page, ".k2b-app-workspace__head-filters")).y).toBeGreaterThanOrEqual(narrowTabs.y + narrowTabs.height);
     expect(Math.abs(center(narrowTabs) - center(await rect(page, "[data-workspace-primary]")))).toBeLessThanOrEqual(2);
-    expect(Math.round((await rect(page, ".k2b-app-workspace__head")).height)).toBe(56);
     expect(page.viewportSize()?.width).toBe(1440);
   } finally {
     await page.close();
   }
 });
 
-test("a waiting detail's Details button stays in the one head row beside the actions", async () => {
+test("a waiting detail's Details button stays in the first row when the filters wrap to row 2", async () => {
   const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620);
   try {
     const toggle = await rect(page, "[data-app-workspace-detail-toggle]");
@@ -176,9 +173,9 @@ test("a waiting detail's Details button stays in the one head row beside the act
     const tabs = await rect(page, ".k2b-view-tabs");
     const filters = await rect(page, ".k2b-app-workspace__head-filters");
     const head = await rect(page, ".k2b-app-workspace__head");
-    // K1: the row never wraps; the filters stay beside the views and the head keeps its 56 px.
-    expect(Math.abs(center(filters) - center(tabs))).toBeLessThanOrEqual(2);
-    expect(Math.round(head.height)).toBe(56);
+    // The row wraps: the filters stand below the views, the head grows.
+    expect(filters.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);
+    expect(head.height).toBeGreaterThan(80);
     // The button shares the first line with the actions, at the head's end.
     expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
     expect(toggle.x).toBeGreaterThanOrEqual(primary.x + primary.width);
@@ -258,9 +255,7 @@ test("the Plex Details glyph aligns with its label and keeps keyboard focus", as
           for (let x = Math.floor(box.x - clip.x); x < Math.ceil(box.x + box.width - clip.x); x++) {
             for (let y = Math.floor(box.y - clip.y); y < Math.ceil(box.y + box.height - clip.y); y++) {
               const [r, g, b] = context.getImageData(x, y, 1, 1).data;
-              // Ink is any colour well off the white surface: the label's text and the glyph, also in the platform blue
-              // the Details button takes while its Detail is parked.
-              if (Math.min(r!, g!, b!) < 180) {
+              if (Math.max(r!, g!, b!) < 180) {
                 top = Math.min(top, y);
                 bottom = Math.max(bottom, y);
               }
@@ -308,8 +303,7 @@ test("More lists exactly the CSS-hidden views at each level and always keeps the
     ]);
     expect(await menu.locator("a").last().locator(".k2b-view-tabs__count").textContent()).toBe("3");
     await page.keyboard.press("Escape");
-    // K15: views give way only when they do not fit, so the compact strip starts below a 32 rem head lead.
-    await resizeHost(page, 600);
+    await resizeHost(page, 760);
     expect(await current.isVisible()).toBe(true);
     expect(
       await page.locator("[data-compact-hidden]").evaluateAll((items) => items.every((item) => item.getClientRects().length === 0)),
@@ -329,11 +323,9 @@ test("More lists exactly the CSS-hidden views at each level and always keeps the
   }
 });
 
-// The compact level starts below a 32 rem head lead. In the flat head a 640 px host leaves a 514 px lead, just above
-// it, so all four views stay; 560 px is the narrow host.
 test("a narrow head opens More for views that fit the wide strip, at a narrow host and on a phone", async () => {
   for (const [viewport, host] of [
-    [1440, 560],
+    [1440, 640],
     [390, 390],
   ] as const) {
     const page = await load({ head: { items: 4, current: "1" } }, viewport, host, true);
@@ -425,7 +417,7 @@ test("view, classic tab, and segment selection and hover never move neighbouring
   }
 });
 
-test("the quiet filtered count disappears before the chips give way", async () => {
+test("the quiet filtered count disappears before the chips wrap", async () => {
   const page = await load({ head: { items: 3 } });
   const unfiltered = await load({ head: { filtered: false } });
   try {
@@ -435,13 +427,12 @@ test("the quiet filtered count disappears before the chips give way", async () =
     for (let width = 1420; width >= 600; width -= 20) {
       await resizeHost(page, width);
       const count = await countVisible(page);
-      // The chips give way by scrolling inside their strip; the row itself never wraps.
-      const scrolled = await page
-        .locator(".k2b-app-workspace__head-filters")
-        .evaluate((element) => element.scrollWidth > element.clientWidth + 1);
-      if (!count || scrolled) {
+      const tabs = await rect(page, ".k2b-view-tabs");
+      const filters = await rect(page, ".k2b-app-workspace__head-filters");
+      const wrapped = filters.y >= tabs.y + tabs.height;
+      if (!count || wrapped) {
         expect(count, `first change at ${width}px`).toBe(false);
-        expect(scrolled, `chips still whole at ${width}px`).toBe(false);
+        expect(wrapped, `chips still in row one at ${width}px`).toBe(false);
         firstChange = true;
         break;
       }
@@ -559,8 +550,7 @@ test("keyboard order follows views, chips, Reset, secondary, primary with unclip
         const element = document.activeElement as HTMLElement;
         const style = getComputedStyle(element);
         const box = element.getBoundingClientRect();
-        // Only a drawn outline reaches past the box; an inset edge stays inside it.
-        const inset = style.outlineStyle === "none" ? 0 : parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth);
+        const inset = parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth);
         const clips: string[] = [];
         for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
           const clip = getComputedStyle(ancestor);
@@ -662,24 +652,12 @@ for (const theme of ["light", "dark"])
           separators: read(".k2b-segmented-control__option", "::after"),
         };
       });
-      // K2: a line tab strip stands on one hairline, drawn inside; view tabs use the head's own line. No list has a fill or a border.
-      const hairline = await page.evaluate(() => {
-        const probe = document.createElement("i");
-        probe.style.color = "var(--k2b-border)";
-        document.body.append(probe);
-        const color = getComputedStyle(probe).color;
-        probe.remove();
-        return `${color} 0px -1px 0px 0px inset`;
-      });
-      // The Tabs strip renders last, after the head's view strip.
-      expect(styles.lists.map((list) => list.shadow)).toEqual(
-        styles.lists.map((_, index) => (index === styles.lists.length - 1 ? hairline : "none")),
-      );
       for (const list of styles.lists) {
         expect(list.background).toBe("rgba(0, 0, 0, 0)");
+        expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
-      // Edges and the selected mark are drawn inside: inset shadows, never a drop shadow. The only outer layer is the flat
+      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline. The only outer layer is the flat
       // focus ring (spread only, no offset or blur), transparent at rest.
       const insetOnly = (shadow: string) =>
         shadow === "none" ||

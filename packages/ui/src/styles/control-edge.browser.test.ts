@@ -533,6 +533,7 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
           // Tabs and views sit in a clipping strip: their soft focus band lies inside, so no outer ring.
           const strip = (expected: Expect): Expect => ({ ...expected, ring: false });
           const selected: Expect = { ...filter(tokens.selected, tokens.selectedFill, tokens.selectedHover), ring: false, outline: true };
+          const fillOnly = filter(tokens.none, tokens.selectedFill, tokens.selectedHover);
           const controls: Record<string, [string, Expect, string?]> = {
             chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover, tokens.edgeHover)],
             "chip-active": [".k2b-filter-chip", selected],
@@ -542,12 +543,10 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
             card: [".k2b-paper", bordered(tokens.cardBorder)],
             segment: ['.k2b-segmented-control__option:not([aria-checked="true"])', member(tokens.trayHover)],
             "segment-selected": ['.k2b-segmented-control__option[aria-checked="true"]', selected, "segment"],
-            // K2, K6: line tabs and views have no fill in any state; hover darkens the text, the selected one carries
-            // a 2 px mark on the line (selection-contract and status-row tests).
-            tab: ['[role="tab"]:not([aria-selected="true"])', strip(member(tokens.none)), "tabs"],
-            "tab-selected": ['[role="tab"][aria-selected="true"]', strip(member(tokens.none)), "tabs"],
-            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', strip(member(tokens.none)), "views"],
-            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', strip(member(tokens.none)), "views"],
+            tab: ['[role="tab"]:not([aria-selected="true"])', strip(member(tokens.tabHover)), "tabs"],
+            "tab-selected": ['[role="tab"][aria-selected="true"]', strip(fillOnly), "tabs"],
+            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', strip(member(tokens.tabHover)), "views"],
+            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', strip(fillOnly), "views"],
           };
 
           // Segment options sit on the grey track.
