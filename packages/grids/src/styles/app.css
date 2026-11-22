@@ -852,6 +852,21 @@
   }
 }
 
+/* K15: the status row's query chips never cut. When the lead and the chips do not fit one line (Detail open, a narrow
+   window, a long query), the chips move as one group to a line of their own, at the end, and wrap there; nothing is
+   hidden behind an unseen edge. With room it stays the one 52 px line. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-status-row.grids-records-status {
+    flex-wrap: wrap;
+    padding-block: 0.5rem;
+  }
+
+  .k2b-ui .grids-records-status > .k2b-status-row__end {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}
+
 /* Open filter and sort panels are bands under the status row: a hairline above and below the group, one between
    panels (k2b-divided), the column's gutter as inset. */
 .k2b-ui .grids-toolbar-panels {

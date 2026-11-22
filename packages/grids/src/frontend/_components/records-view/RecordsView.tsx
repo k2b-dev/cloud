@@ -909,7 +909,9 @@ export default function RecordsView(props: Props) {
             end, and a bulk selection takes their place. The head above holds the views, the search, and "Add record". */}
             <Show
               when={!props.viewMode && !props.trashMode}
-              fallback={<StatusRow lead={statusLead()} filters={statusExtras()} selection={statusSelection()} />}
+              fallback={
+                <StatusRow class="grids-records-status" lead={statusLead()} filters={statusExtras()} selection={statusSelection()} />
+              }
             >
               <GridToolbar
                 tableId={props.tableId}
@@ -935,6 +937,7 @@ export default function RecordsView(props: Props) {
                 frame={(chips, panels) => (
                   <>
                     <StatusRow
+                      class="grids-records-status"
                       lead={statusLead()}
                       filters={
                         <>
