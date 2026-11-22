@@ -94,7 +94,9 @@ release-please runs on every push to `main`:
    (one per application from `scripts/workspace.ts` plus `cloud-website`,
    `cloud-pwa-auth`, and `cloud-notes`; `bun scripts/workspace.ts images` lists them) for
    `linux/amd64` only, attests its build provenance, and tags its image index
-   `sha-<12>`, plus `vX.Y.Z` for a Cloud release. `main.yml` then calls
+   `sha-<12>`, plus `vX.Y.Z` for a Cloud release. A failed attestation is
+   tried again after 60 and 180 seconds, so a short transparency-log outage
+   does not fail the run; after the third failure the run fails. `main.yml` then calls
    `release.yml`. For a Cloud release, it reuses these images instead of
    building them again, builds the CLI binaries, and attaches the binaries
    and `release.json` to the `cloud-vX.Y.Z` GitHub release.
