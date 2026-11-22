@@ -171,7 +171,11 @@ describe(`layout self-check with touch in ${browserName}`, () => {
     const result = await checkTouch(
       headActions('<span style="position:absolute;white-space:nowrap">Write a new message to someone</span>'),
     );
-    expect(result.spill.map((line) => line.split(" spills")[0])).toEqual(['[data-probe="head-actions"]']);
+    // The head and the button whose label runs past it both spill.
+    expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
+      '[data-probe="head-actions"]',
+      'button.app-hit "+Write a new message to "',
+    ]);
   });
 
   test("390 px: a drawn pseudo-element or real content beside a hit area still spills", async () => {
