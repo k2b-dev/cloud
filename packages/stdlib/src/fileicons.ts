@@ -380,7 +380,8 @@ const FOLDER_ICONS: Record<string, string> = {
   templates: "ti-template text-zinc-400",
   vorlagen: "ti-template text-zinc-400",
   public: "ti-world text-green-500",
-  "\u00f6ffentlich": "ti-world text-green-500",
+  // A [string, value] pair: a bundler may print a quoted non-ASCII key bare, which breaks a script read as Latin-1.
+  ...Object.fromEntries([["\u00f6ffentlich", "ti-world text-green-500"]]),
   trash: "ti-trash text-zinc-400",
 };
 

@@ -18,7 +18,7 @@
     "!src/_test-helpers.ts"
   ],
   "scripts": {
-    "test": "bun test",
+    "test": "bun test --isolate",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false && tsc -p tsconfig.scripts.json --noEmit --pretty false",
     "test:finance-conformance": "bun scripts/finance-conformance.ts",
     "datev:fixtures": "bun scripts/datev-xml-fixtures.ts",
