@@ -1233,8 +1233,7 @@ describe("Mail row actions", () => {
 
       // One page per environment: WebKit takes about a second per step on this page.
       beforeAll(async () => {
-        // A table row (K7): a stacked row on touch keeps its time and has no "…" (K15), which the shell suite checks.
-        page = await load({ items: rowItems, css: pointerCss(environment), listSize: 700 });
+        page = await load({ items: rowItems, css: pointerCss(environment) });
         await away(page);
         rest = await state(page);
       }, 30_000);
@@ -1304,15 +1303,11 @@ describe("Mail rows by the list's own width (F2)", () => {
     page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => {
         const tops = new Set(
-          // A table row below 55 rem shows no preview column; a part that is not shown has no line.
-          [".mail-row-from", ".mail-row-subject-line", ".mail-list-preview", ".mail-row-time-cell"]
-            .map((part) => entry.querySelector(part)!)
-            .filter((element) => element.getClientRects().length > 0)
-            .map((element) => Math.round(element.getBoundingClientRect().top)),
+          [".mail-row-from", ".mail-row-subject-line", ".mail-list-preview", ".mail-row-time-cell"].map((part) =>
+            Math.round(entry.querySelector(part)!.getBoundingClientRect().top),
+          ),
         );
-        // A row stands in its drag source, which holds its height with the hairline above it (K7).
-        const height = Math.round((entry.closest(".mail-list-drag") ?? entry).getBoundingClientRect().height);
-        return { id: entry.dataset.conversationId, height, lines: tops.size };
+        return { id: entry.dataset.conversationId, height: Math.round(entry.getBoundingClientRect().height), lines: tops.size };
       }),
     );
   const marked = [
@@ -1331,14 +1326,13 @@ describe("Mail rows by the list's own width (F2)", () => {
   ];
 
   for (const [listSize, lines, height] of [
-    // The flat rows (K7): a stacked row 72 px, a table row 32 px; the hairline above a row is part of it.
-    [430, 3, 72],
-    [700, 1, 32],
+    [430, 3, 78],
+    [700, 1, 44],
   ] as const)
     test(`a ${listSize} px list draws every conversation on ${lines} line${lines === 1 ? "" : "s"} of one height, with the date in each`, async () => {
       const page = await load({ listSize, items: marked, shared: true });
       const shown = await rows(page);
-      expect(shown.map((entry) => ({ height: entry.height, lines: entry.lines }))).toEqual(shown.map(() => ({ height, lines })));
+      expect(shown.every((entry) => entry.height === height && entry.lines === lines)).toBe(true);
       // The checkbox always shows, so the first check starts a selection.
       expect(await page.locator(".mail-list-entry .mail-list-checkbox:visible").count()).toBe(marked.length);
       expect(page.errors).toEqual([]);
@@ -1419,8 +1413,7 @@ describe("Mail rows that an action takes out of the list", () => {
   /** Holds the collapse at a fraction of its run, so the test reads its frames instead of racing them. */
   const collapseAt = (page: Page, fraction: number) =>
     page.evaluate((fraction) => {
-      // The row collapses in its drag source (S7), which holds the row's height.
-      const animations = document.querySelector(".mail-list-drag:has(> .mail-list-entry[data-leaving])")?.getAnimations() ?? [];
+      const animations = document.querySelector(".mail-list-entry[data-leaving]")?.getAnimations() ?? [];
       for (const animation of animations) {
         animation.pause();
         animation.currentTime = Number(animation.effect?.getComputedTiming().duration ?? 0) * fraction;
@@ -1946,8 +1939,9 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
   }
 });
 
-// Flat rows (K7) fill the list from its start edge; their hairlines stop at the scroll track the list reserves at its end.
-test("rows fill the list from its start edge to its scroll track", async () => {
+// The column shadow marks both edges of the list, so a row keeps the same space
+// from each, whether a classic scrollbar takes room at the end or not.
+test("rows keep the same space from both side edges of the list", async () => {
   const page = await load({ selectedConversationId: "Cv0001" });
   try {
     await page.locator(row("Cv0003")).waitFor();
@@ -1963,7 +1957,7 @@ test("rows fill the list from its start edge to its scroll track", async () => {
         };
       });
     });
-    for (const inset of insets) expect(inset).toEqual({ overflows: true, start: 0, end: 8 });
+    for (const inset of insets) expect(inset).toEqual({ overflows: true, start: 8, end: 8 });
     expect(page.errors).toEqual([]);
   } finally {
     await close(page);

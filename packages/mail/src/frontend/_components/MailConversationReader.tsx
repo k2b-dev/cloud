@@ -1339,11 +1339,11 @@ export default function MailConversationReader(props: {
           <div class="relative min-h-0 flex-1 overflow-hidden">
             <ScrollArea
               ref={historyScroller}
-              class="mail-reader-scroll absolute inset-0"
+              class="mail-reader-scroll absolute inset-0 px-3 py-2 sm:px-5"
               scrollPreserveKey={`mail-reader-${props.selectionKey}`}
               onScroll={handleReaderScroll}
             >
-              <div class="mail-reading-column k2b-divided" data-mail-reading-column data-reply-position={props.replyPosition}>
+              <div class="mail-reading-column" data-mail-reading-column data-reply-position={props.replyPosition}>
                 <Show when={showsConversationSummary(props.conversationSummary) && props.conversationSummary}>
                   {(state) => (
                     <MailConversationSummaryCard
@@ -1369,7 +1369,7 @@ export default function MailConversationReader(props: {
                   )}
                 </Show>
                 <Show when={newestFirst()}>{replyBoxSlot()}</Show>
-                <div class="mail-timeline k2b-divided" data-mail-conversation-messages>
+                <div class="mail-timeline" data-mail-conversation-messages>
                   <Show when={!newestFirst()}>
                     {olderRow()}
                     {earlierNotesRow()}

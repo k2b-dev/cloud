@@ -163,7 +163,7 @@ export default function MailDraftsView(props: {
             fallback={<Placeholder icon="ti ti-file-pencil" variant="panel" title={t().noDrafts} description={t().noDraftsDescription} />}
           >
             <div
-              class="mail-list-rows k2b-divided"
+              class="flex flex-col gap-0.5"
               ref={list}
               role="list"
               aria-label={t().draftListLabel({ title: props.title })}

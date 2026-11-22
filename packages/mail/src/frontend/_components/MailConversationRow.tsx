@@ -1,7 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { AvatarFaces, ContextMenu, Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import MailStar from "./MailStar";
 import type { MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { type MailRespondIntent, mailConversationMenuItems } from "./mail-conversation-menu";
@@ -197,6 +196,7 @@ export default function MailConversationRow(props: {
         class="mail-list-row focus-ui"
         // The open card already names sender and subject; a native tooltip would cover the row.
         title={peeking() || menuShown() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
+        draggable={state().canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         on:keydown={(event) => {
           // Runs on the link before the shared row anchor handles Space. Reopening
           // explicitly may retry a syncing/error answer even while the mouse stays here.
@@ -222,6 +222,13 @@ export default function MailConversationRow(props: {
           event.preventDefault();
           if (select) props.actions.toggleSelection(props.item, event.shiftKey);
           else void props.actions.navigate(event.currentTarget.href, props.item, activation);
+        }}
+        onDragStart={(event) => {
+          const transfer = event.dataTransfer;
+          if (!props.item.conversationId || props.item.activeFolderIds.length === 0 || !transfer) return event.preventDefault();
+          transfer.effectAllowed = "move";
+          // The drop resolves this row's source folders the same way the Move action does.
+          transfer.setData("application/x-cloud-mail-conversation", JSON.stringify({ itemId: props.item.id }));
         }}
       >
         <span class="sr-only">
@@ -255,6 +262,13 @@ export default function MailConversationRow(props: {
           </Show>
         </span>
         <span class="mail-row-subject-line">
+          <For each={props.item.localTags.slice(0, 1)}>
+            {(tag) => (
+              <span class="mail-row-tag" style={{ "--mail-tag": tag.color }} title={t().tagNames({ names: tagLabel() })}>
+                {tag.name}
+              </span>
+            )}
+          </For>
           <Show when={props.item.primaryReference}>
             <span class="mail-row-reference">{props.item.primaryReference}</span>
           </Show>
@@ -274,13 +288,6 @@ export default function MailConversationRow(props: {
           )}
         </Show>
         <span class="mail-row-marks" data-clear-download={attachmentDownloadHref() ? "" : undefined}>
-          <For each={props.item.localTags.slice(0, 1)}>
-            {(tag) => (
-              <span class="mail-row-tag" style={{ "--mail-tag": tag.color }} title={t().tagNames({ names: tagLabel() })}>
-                {tag.name}
-              </span>
-            )}
-          </For>
           <Show when={props.item.workStatus === "waiting"}>
             <span class="mail-row-waiting">{t().waitingShort}</span>
           </Show>
@@ -417,12 +424,12 @@ export default function MailConversationRow(props: {
             when={props.item.flagged}
             fallback={
               <span class="mail-row-star" aria-hidden="true">
-                <MailStar />
+                <i class="ti ti-star" />
               </span>
             }
           >
             <span class="mail-row-star" role="img" aria-label={t().flagged}>
-              <MailStar filled />
+              <i class="ti ti-star" aria-hidden="true" />
             </span>
           </Show>
         }
@@ -438,7 +445,7 @@ export default function MailConversationRow(props: {
             void props.actions.itemAction(props.item, props.item.flagged ? "unflag" : "flag");
           }}
         >
-          <MailStar filled={props.item.flagged} />
+          <i class="ti ti-star" aria-hidden="true" />
         </button>
       </Show>
       {/* A right-click on the row, or the context-menu key and Shift+F10 on it, opens its "…" menu. The host draws no

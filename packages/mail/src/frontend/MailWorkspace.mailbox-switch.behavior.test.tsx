@@ -619,9 +619,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const release = hold("Box002");
     link("Box002").click();
     await settle();
-    const currentTab = dom.root.querySelector<HTMLAnchorElement>(
-      `.mail-workspace .k2b-app-workspace__head .k2b-view-tabs a[href="${path}"]`,
-    )!;
+    const currentTab = dom.root.querySelector<HTMLAnchorElement>(`.mail-list-bar a[href="${path}"]`)!;
     expect(currentTab).not.toBeNull();
     currentTab.click();
     await settle();
