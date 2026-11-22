@@ -70,6 +70,34 @@ try {
     await page.close();
   }
 
+  // Hydration: islands adopt their server nodes. A client render would empty each wrapper and insert new nodes.
+  {
+    const probe = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
+    probe.on("pageerror", (error) => errors.push(`hydration probe: ${error.message}`));
+    probe.on("console", (message) => message.type() === "error" && errors.push(`hydration probe: ${message.text()}`));
+    await probe.addInitScript(() => {
+      const state = { removed: 0 };
+      Object.assign(window, { __hydration: state });
+      new MutationObserver((records) => {
+        for (const record of records) {
+          const target = record.target instanceof Element ? record.target : record.target.parentElement;
+          if (target?.closest("solid-island")) state.removed += [...record.removedNodes].filter((node) => node.nodeType === 1).length;
+        }
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await probe.goto(`${base}/mail?id=m1`);
+    await settle(probe);
+    const result = await probe.evaluate(() => ({
+      islands: document.querySelectorAll("solid-island").length,
+      hydrated: document.querySelectorAll("solid-island[data-hydrated]").length,
+      removed: (window as unknown as { __hydration: { removed: number } }).__hydration.removed,
+      triggerId: document.querySelector('[data-slot="dialog-trigger"]')?.id,
+    }));
+    check("Islands hydrate their server markup (no node replaced)", result.islands > 0 && result.hydrated === result.islands && result.removed === 0, result);
+    check("ui-sdk ids from createUniqueId match the server", result.triggerId?.startsWith("ui-sdk-i") === true, result.triggerId);
+    await probe.close();
+  }
+
   // Islands: dialog with combobox, validation notice, menu.
   const page = await open("/mail?id=m1", 1440);
   await page.getByRole("button", { name: "Neue Nachricht" }).click();

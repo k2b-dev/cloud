@@ -7,7 +7,8 @@
 
 import type { BunPlugin } from "bun";
 import { dirname, join, resolve } from "path";
-import { type JSX, renderToString } from "@solidjs/web";
+import { createComponent, NoHydration } from "solid-js";
+import { generateHydrationScript, type JSX, renderToString } from "@solidjs/web";
 // @ts-ignore - Bun text import
 import devClientCode from "./adapter/client.js" with { type: "text" };
 import { getReloadId, normalizeBasePath, readAssetManifest, toSsrPath } from "./adapter/utils";
@@ -181,7 +182,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
       throw new Error("[ssr] html() expects a synchronous render function: html(() => <Page />)");
     }
 
-    const body = renderToString(render);
+    // Spike: the page is static; each island re-enters hydration under its own id (island-server.ts).
+    const body = renderToString(() => createComponent(NoHydration, { get children() { return render(); } }));
 
     // Production reads the manifest on first render; build scripts create configs before islands exist.
     const assets = dev ? undefined : readAssetManifest(config);
@@ -214,7 +216,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}${loader}</script>`;
 
     // Framework-injected assets
-    let scripts = `${islandDisplayStyle}\n${hydrationScript}`;
+    let scripts = `${islandDisplayStyle}\n${generateHydrationScript()}\n${hydrationScript}`;
 
     // Add dev tools script in dev mode (inlined)
     if (dev) {

@@ -1,6 +1,6 @@
 import { fromJSON } from "seroval";
 import { type Component, createComponent, Errored, getOwner, type Owner } from "solid-js";
-import { render } from "@solidjs/web";
+import { hydrate, render } from "@solidjs/web";
 import { captureTypedFields, composingIn, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
@@ -69,6 +69,48 @@ const mountElement = <Props extends object>(
     document.addEventListener("compositionend", () => mountElement(element, Component, Fallback), { once: true });
     return;
   }
+  const root = (): ReturnType<typeof createComponent> => {
+    const owner = getOwner();
+    if (owner) {
+      const islands = registry();
+      islands.roots ??= new WeakMap();
+      islands.roots.set(owner, element);
+    }
+    return createComponent(Errored, {
+      // Solid 2 passes the error as an accessor.
+      fallback: (errorOf: () => unknown, reset: () => void) => {
+        const error = errorOf();
+        report(element, error, reset);
+        if (!Fallback) return defaultFallback(reset);
+        return createComponent(Errored, {
+          fallback: (fallbackError: () => unknown) => {
+            globalThis.reportError(fallbackError());
+            return defaultFallback(reset);
+          },
+          get children() {
+            return createComponent(Fallback, { error, reset });
+          },
+        });
+      },
+      get children() {
+        // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
+        return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
+      },
+    });
+  };
+  // Spike: a server-rendered island hydrates its markup in place (same nodes, focus and typed text stay).
+  const renderId = element.dataset.rid;
+  if (renderId !== undefined && !element.dataset.hydrated) {
+    element.dataset.hydrated = "";
+    try {
+      mounted.set(element, hydrate(root, element, { renderId }));
+      for (const listener of [...(registry().listeners ?? [])]) listener();
+      return;
+    } catch (error) {
+      // A hydration mismatch falls back to the client render below.
+      console.error("[ssr] island hydration failed, rendering on the client", element.dataset.id, error);
+    }
+  }
   const start = (): void => {
     try {
       // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
@@ -78,35 +120,7 @@ const mountElement = <Props extends object>(
       const focused = [...all].indexOf(document.activeElement!);
       const typed = captureTypedFields(element);
       element.innerHTML = "";
-      const dispose = render(() => {
-        const owner = getOwner();
-        if (owner) {
-          const islands = registry();
-          islands.roots ??= new WeakMap();
-          islands.roots.set(owner, element);
-        }
-        return createComponent(Errored, {
-          // Solid 2 passes the error as an accessor.
-          fallback: (errorOf: () => unknown, reset: () => void) => {
-            const error = errorOf();
-            report(element, error, reset);
-            if (!Fallback) return defaultFallback(reset);
-            return createComponent(Errored, {
-              fallback: (fallbackError: () => unknown) => {
-                globalThis.reportError(fallbackError());
-                return defaultFallback(reset);
-              },
-              get children() {
-                return createComponent(Fallback, { error, reset });
-              },
-            });
-          },
-          get children() {
-            // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
-            return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
-          },
-        });
-      }, element);
+      const dispose = render(root, element);
       mounted.set(element, dispose);
       // Taken before any event: the live collection moves when a handler changes the markup.
       const node = all[focused];

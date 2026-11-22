@@ -7,11 +7,13 @@ import { types as t, transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
 // @ts-ignore - no types are available for this package
 import solidPlugin from "@solidjs/babel-plugin";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import { islandIdFromFile } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
 
 export { hash } from "./island-id";
+
+const ISLAND_SERVER = join(import.meta.dir, "island-server.ts");
 
 // ============================================================================
 // Helpers
@@ -44,6 +46,7 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
       Program(programPath: any) {
         const componentImports = new Map<string, { path: string; type: ComponentType; id: string }>();
         let usesMergeProps = false;
+        let usesIslandRoot = false;
 
         // Import Seroval toJSON under an alias so application imports do not collide
         programPath.node.body.unshift(
@@ -71,7 +74,6 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
             const component = componentImports.get(name);
             if (!component) return;
 
-            const wrapperTag = component.type === "island" ? "solid-island" : "solid-client";
 
             const attributes: any[] = path.node.openingElement.attributes;
             const named = (a: any) =>
@@ -102,33 +104,37 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
               props = t.objectExpression(attributes.map(named));
             }
 
-            // For islands: wrap the component, for client: empty wrapper (no SSR)
-            const children = component.type === "island" ? [path.node] : [];
-
             // Extract filename from path (e.g., "Counter.island.tsx")
             const file = component.path.split("/").pop() || "";
+            const serialized = t.callExpression(t.memberExpression(t.identifier("JSON"), t.identifier("stringify")), [
+              t.callExpression(t.identifier("__seroval_toJSON"), [props]),
+            ]);
 
-            const attrs = [
-              attr("data-id", component.id),
-              attr(
-                "data-props",
-                t.callExpression(t.memberExpression(t.identifier("JSON"), t.identifier("stringify")), [
-                  t.callExpression(t.identifier("__seroval_toJSON"), [props]),
-                ]),
-              ),
-            ];
-
-            // Add file attribute in dev mode
-            if (dev) {
-              attrs.push(attr("data-file", file));
-            }
-
-            const wrapper = jsx(wrapperTag, attrs, children);
+            // Islands: island-server.ts renders the wrapper and its own hydration root around the component.
+            // Client components: an empty wrapper (no SSR).
+            const wrapper =
+              component.type === "island"
+                ? jsx(
+                    "__ssr_IslandRoot",
+                    [attr("id", component.id), attr("props", serialized), ...(dev ? [attr("file", file)] : [])],
+                    [path.node],
+                  )
+                : jsx("solid-client", [attr("data-id", component.id), attr("data-props", serialized), ...(dev ? [attr("data-file", file)] : [])]);
+            if (component.type === "island") usesIslandRoot = true;
 
             path.replaceWith(wrapper);
             path.skip();
           },
         });
+
+        if (usesIslandRoot) {
+          programPath.node.body.unshift(
+            t.importDeclaration(
+              [t.importSpecifier(t.identifier("__ssr_IslandRoot"), t.identifier("IslandRoot"))],
+              t.stringLiteral(ISLAND_SERVER),
+            ),
+          );
+        }
 
         if (usesMergeProps) {
           programPath.node.body.unshift(
@@ -165,7 +171,8 @@ export const transform = async (
     // so the island wrapper sees the JSX before Solid lowers it.
     plugins: [
       ...(mode === "ssr" ? [() => componentWrapperPlugin(filename, rootDir, dev)] : []),
-      [solidPlugin, { generate: mode, hydratable: false }],
+      // Spike: islands hydrate their server markup (Hydration ids per island, see island-server.ts).
+      [solidPlugin, { generate: mode, hydratable: true }],
     ],
     presets: [[tsPreset, {}]],
   });
