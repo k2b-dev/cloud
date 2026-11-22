@@ -212,14 +212,11 @@ export default function FilterBar(props: FilterBarProps) {
       showValue
       icon="ti ti-flag"
       options={priorityOptions}
-      iconOnly={props.filter.priority.length === 0}
       value={props.filter.priority}
       onValueChange={(v) => navigate({ priority: v.map((value) => PrioritySchema.parse(value)) })}
     />
   );
 
-  // A chip at its default shows its sign alone, with its name as hint and label; a chip in use names its filter and
-  // value. So the filters fit the status row from 768 px on (K15), and what is filtered stays readable.
   return (
     <div class="spaces-head-filters flex items-center gap-1.5" data-spaces-head-filters>
       <SearchInput
@@ -237,7 +234,6 @@ export default function FilterBar(props: FilterBarProps) {
           showValue
           icon="ti ti-user"
           options={assignmentOptions}
-          iconOnly={props.filter.assignedTo === defaultFilter.assignedTo}
           value={[props.filter.assignedTo]}
           onValueChange={(v) => navigate({ assignedTo: AssignedToFilterSchema.parse(v[0] ?? defaultFilter.assignedTo) })}
           isActive={props.filter.assignedTo !== defaultFilter.assignedTo}
@@ -248,11 +244,6 @@ export default function FilterBar(props: FilterBarProps) {
           label={t.scope}
           icon="ti ti-filter"
           options={viewOptions}
-          iconOnly={
-            props.filter.type === defaultFilter.type &&
-            props.filter.status === defaultFilter.status &&
-            props.filter.assignedTo === defaultFilter.assignedTo
-          }
           value={[`type:${props.filter.type}`, `status:${props.filter.status}`, `assigned:${props.filter.assignedTo}`]}
           onValueChange={(v) => {
             const type = ItemTypeSchema.parse(v.find((x) => x.startsWith("type:"))?.slice(5) ?? defaultFilter.type);
@@ -277,7 +268,6 @@ export default function FilterBar(props: FilterBarProps) {
         showValue
         icon="ti ti-clock"
         options={deadlineOptions}
-        iconOnly={props.filter.deadlineFilter === defaultFilter.deadlineFilter}
         value={[props.filter.deadlineFilter]}
         onValueChange={(v) => navigate({ deadlineFilter: DeadlineFilterSchema.parse(v[0] ?? "all") })}
         isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
@@ -289,7 +279,6 @@ export default function FilterBar(props: FilterBarProps) {
         showValue
         icon="ti ti-activity"
         options={activityOptions}
-        iconOnly={props.filter.activity === defaultFilter.activity}
         value={[props.filter.activity]}
         onValueChange={(v) => navigate({ activity: ItemActivityFilterSchema.parse(v[0] ?? "all") })}
         isActive={props.filter.activity !== defaultFilter.activity}
@@ -305,7 +294,6 @@ export default function FilterBar(props: FilterBarProps) {
           showValue
           icon="ti ti-tag"
           options={tagOptions()}
-          iconOnly={props.filter.tagIds.length === 0}
           value={props.filter.tagIds}
           onValueChange={(v) => navigate({ tagIds: v })}
         />
@@ -320,7 +308,6 @@ export default function FilterBar(props: FilterBarProps) {
               showValue
               icon="ti ti-layout-kanban"
               options={columnOptions()}
-              iconOnly={props.filter.columnIds.length === 0}
               value={props.filter.columnIds}
               onValueChange={(v) => navigate({ columnIds: v })}
             />
@@ -332,7 +319,6 @@ export default function FilterBar(props: FilterBarProps) {
               label={t.sort}
               icon="ti ti-arrows-sort"
               options={sortOptions}
-              iconOnly={props.filter.sort === defaultFilter.sort && props.filter.sortDesc === defaultFilter.sortDesc}
               value={[`sort:${props.filter.sort}`, `dir:${props.filter.sortDesc ? "desc" : "asc"}`]}
               onValueChange={(v) => {
                 const sort = ItemSortSchema.parse(v.find((x) => x.startsWith("sort:"))?.slice(5) ?? defaultFilter.sort);
@@ -351,7 +337,6 @@ export default function FilterBar(props: FilterBarProps) {
                 label={t.groupBy}
                 icon="ti ti-layout-list"
                 options={groupByOptions}
-                iconOnly={props.filter.groupBy === defaultFilter.groupBy}
                 value={[props.filter.groupBy]}
                 onValueChange={(v) =>
                   navigate({

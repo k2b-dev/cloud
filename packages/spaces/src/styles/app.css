@@ -586,9 +586,9 @@
 .k2b-ui .spaces-kanban-card__people .k2b-avatar.k2b-avatar { width: 1.25rem; height: 1.25rem; font-size: 9px; }
 .k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar__add-button.k2b-reaction-bar__add-button { width: 1.25rem; height: 1.25rem; min-height: 0; }
 
-/* The filters stand at the end of the status row (K6) and keep their width; the key figures give way first. Chips at
-   their default show their sign alone, so the filters fit from 768 px on (K15). Only if they still do not fit, such
-   as on a phone or with many filters in use, the filter line scrolls sideways inside the row and fades at its end. */
+/* The filters stand at the end of the status row (K6) and keep their width; the key figures give way first. Only if
+   the filters still do not fit, the filter line scrolls sideways inside the row and fades at its end, so no chip is
+   cut without a sign. */
 .k2b-ui .spaces-status > .k2b-status-row__end { flex: 0 1 auto; }
 .k2b-ui .k2b-status-row__end > .spaces-head-filters {
   /* 1 px at the end: a scroll position is whole pixels, so the last control is never cut by a fraction. */
