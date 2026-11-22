@@ -1389,6 +1389,16 @@ test("1440px: the panel parks Detail without a squeezed frame, closing restores 
     const frames = await page.evaluate(() => (window as unknown as { detailFrames: number[] }).detailFrames);
     expect(frames.filter((width) => width !== 0 && width !== Math.round(dragged))).toEqual([]);
     expect(await page.locator(workspaceDetail).isVisible()).toBe(false);
+    // The parked Detail is not lost: the list keeps its selection, and Details shows it in the platform blue with a mark.
+    expect(await page.locator("[data-fixture-selected]").getAttribute("aria-current")).toBe("true");
+    const parked = await page.locator("[data-app-workspace-detail-toggle]").evaluate((button) => ({
+      color: getComputedStyle(button).color,
+      action: getComputedStyle(document.body).getPropertyValue("--k2b-action").trim(),
+      mark: getComputedStyle(button, "::after").content,
+      expanded: button.getAttribute("aria-expanded"),
+    }));
+    expect({ mark: parked.mark, expanded: parked.expanded }).toEqual({ mark: '""', expanded: "false" });
+    expect(parked.color).not.toBe(await page.locator("#open-panel").evaluate((button) => getComputedStyle(button).color));
     // The list never narrows: the sidebar waits behind its button beside the panel, so the list moves to the start and
     // grows by the Detail's and the sidebar's width.
     expect((await page.locator(mainArea).boundingBox())!.width).toBeGreaterThanOrEqual(list.width);

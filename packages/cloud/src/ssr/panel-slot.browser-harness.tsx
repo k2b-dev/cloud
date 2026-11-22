@@ -125,6 +125,12 @@ export const server = new Hono<Environment>()
                 Change place
               </button>
               <textarea aria-label="App editor" />
+              <ul aria-label="Items">
+                <li>First item</li>
+                <li aria-current="true" data-fixture-selected>
+                  Selected item
+                </li>
+              </ul>
             </AppWorkspace.Main>
             <AppWorkspace.Detail id="panel-fixture-detail" width="lg" open>
               <h2>Selected item</h2>
