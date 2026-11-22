@@ -517,6 +517,64 @@
   font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
+/* AlertCell (Cloud flach, K10, K14; mockup .alert): a band, not a box. The tint fills the cell from edge to edge, the
+   sign stands on the column's text edge and the text 12 px after it (52 px from the edge), and one button names the
+   deed. Its container draws the line below it (k2b-divided, K2: one line, one owner). A narrow cell sets the button
+   under the text. */
+.k2b-ui .k2b-alert-cell {
+  --k2b-alert-ink: var(--k2b-warning-text);
+  --k2b-alert-surface: var(--k2b-warning-surface);
+  display: grid;
+  min-width: 0;
+  min-height: var(--k2b-h-row-2);
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 0.75rem;
+  padding: 0.5rem var(--k2b-gutter);
+  background: var(--k2b-alert-surface);
+  color: var(--k2b-text);
+  container: k2b-alert-cell / inline-size;
+}
+.k2b-ui .k2b-alert-cell[data-tone="danger"] { --k2b-alert-ink: var(--k2b-danger-text); --k2b-alert-surface: var(--k2b-danger-surface); }
+.k2b-ui .k2b-alert-cell[data-tone="info"] { --k2b-alert-ink: var(--k2b-info-text); --k2b-alert-surface: var(--k2b-info-surface); }
+.k2b-ui .k2b-alert-cell[data-tone="neutral"] { --k2b-alert-ink: var(--k2b-text-secondary); --k2b-alert-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent); }
+.k2b-ui .k2b-alert-cell__sign {
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  color: var(--k2b-alert-ink);
+  /* type-scale: allow sign: the cell's sign */
+  font-size: 1rem;
+}
+.k2b-ui .k2b-alert-cell__title {
+  grid-column: 2;
+  margin: 0;
+  font-size: var(--k2b-font-size-row);
+  font-weight: 600;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .k2b-alert-cell__detail {
+  grid-column: 2;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: var(--k2b-font-size-meta);
+  line-height: 1rem;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .k2b-alert-cell__action {
+  display: flex;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-items: center;
+}
+.k2b-ui .k2b-alert-cell__action .k2b-button { background: var(--k2b-surface); }
+@container k2b-alert-cell (width < 30rem) {
+  .k2b-ui .k2b-alert-cell { grid-template-columns: 1.25rem minmax(0, 1fr); }
+  .k2b-ui .k2b-alert-cell__action { grid-column: 2; grid-row: auto; margin: 0.5rem 0 0.25rem; }
+}
 /* A notice is never a control. A page moves focus to one (tabIndex -1) only to put a result where the person and
    their screen reader are; a focus ring would mark it as something to press. Its own controls keep their rings. */
 .k2b-ui .k2b-notice-card:focus { outline: none; }

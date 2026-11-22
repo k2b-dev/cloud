@@ -1,3 +1,5 @@
+export type { AlertCellAction, AlertCellProps, AlertCellTone } from "./AlertCell";
+export { AlertCell } from "./AlertCell";
 export type { AreaProps } from "./Area";
 export { Area } from "./Area";
 export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize, AvatarTone } from "./Avatar";

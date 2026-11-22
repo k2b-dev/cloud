@@ -1,6 +1,6 @@
 # Notices and inline guidance
 
-`NoticeCard` keeps an important finding visible between an ephemeral toast and a full empty or error state. `NoticeCard.Grid` arranges several findings without nested card chrome. `NoticeRow` is the row form, with an optional quiet second line and responsive actions.
+`NoticeCard` keeps an important finding visible between an ephemeral toast and a full empty or error state. `NoticeCard.Grid` arranges several findings without nested card chrome. `NoticeRow` is the row form, with an optional quiet second line and responsive actions. `AlertCell` is the flat band of a column for something that needs a person.
 
 `InlineGuidance` explains one local prerequisite, consequence, or recovery step without adding a card surface. Use it beside the affected control when a section or field description cannot explain the current state on its own.
 
@@ -23,7 +23,7 @@ Use `InlineGuidance` for small state-specific copy such as why an action is disa
 ## Import
 
 ```tsx
-import { Button, ButtonLink, InlineGuidance, NoticeCard, NoticeRow, SplitButton } from "@k2b/ui";
+import { AlertCell, Button, ButtonLink, InlineGuidance, NoticeCard, NoticeRow, SplitButton } from "@k2b/ui";
 ```
 
 ## Composition
@@ -219,6 +219,30 @@ of its own. Use `NoticeCard` for findings with a title and more than one line.
 ```
 
 `InlineGuidance` accepts `children`, an optional `tone`, and an optional icon. It is borderless and has no default icon unless `loading` is true. Its tones use the shared `neutral`, `info`, `success`, `warning`, and `danger` vocabulary. Put a native link or `ButtonLink variant="text"` inside the guidance when a real next step exists.
+
+### Alert cell
+
+`AlertCell` is the flat form of something that needs a person (Cloud flach,
+K10, K14): a band of its column, not a box in it. Its tint fills the cell
+from edge to edge, its sign stands on the column's text edge, and the text
+follows: `title` says what is wrong in one sentence,
+`detail` what follows from it. Give it an `action` only when there is a deed,
+and let the action's `label` name that deed ("Open sender settings"), never a
+generic "Retry" for something that does not retry. A narrow cell sets the
+button under the text. Place it as a direct band of a column, a detail column
+or a dialog, never inside a padded container. Its container draws the line
+below it (`k2b-divided`), as for every band.
+
+```tsx
+import { AlertCell } from "@k2b/ui";
+
+<AlertCell
+  tone="warning"
+  title="No verified sender can send from this mailbox."
+  detail="The sender address is not verified yet."
+  action={canManage ? { label: "Open sender settings", icon: "ti ti-settings", onClick: openSettings } : undefined}
+/>
+```
 
 ### Inline loading and feedback
 
