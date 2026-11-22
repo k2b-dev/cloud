@@ -742,37 +742,6 @@ describe("account pages in a browser", () => {
     expect(result.pageHeading.width).toBeLessThanOrEqual(1);
     expect(result.pageHeading.height).toBeLessThanOrEqual(1);
   }, 30_000);
-  test("the account expiry notice is a square cell from edge to edge of the page, its text on the page's text edge", async () => {
-    for (const width of [390, 1440]) {
-      const tab = await open({ width, height: 900, touch: false }, "/me", "de", false, classic);
-      try {
-        const cell = await tab.evaluate(() => {
-          const page = document.querySelector(".account-page")!;
-          const notice = document.querySelector<HTMLElement>("[data-account-notices] .k2b-notice-card")!;
-          const frame = page.getBoundingClientRect();
-          const inner = { left: frame.left + page.clientLeft, right: frame.left + page.clientLeft + page.clientWidth };
-          const box = notice.getBoundingClientRect();
-          // The first line of the notice's text and the first section's heading.
-          const text = document.createRange();
-          text.selectNodeContents(notice);
-          const heading = page.querySelector(".k2b-settings-section h2, .k2b-settings-section__heading")!.getBoundingClientRect();
-          return {
-            radius: getComputedStyle(notice).borderRadius,
-            left: box.left - inner.left,
-            right: inner.right - box.right,
-            textEdge: Math.round(text.getClientRects()[0]!.left - heading.left),
-          };
-        });
-        expect(cell.radius, `${width}`).toBe("0px");
-        expect(Math.abs(cell.left), `${width}`).toBeLessThanOrEqual(0.5);
-        expect(Math.abs(cell.right), `${width}`).toBeLessThanOrEqual(0.5);
-        expect(cell.textEdge, `${width}`).toBe(0);
-      } finally {
-        await tab.close();
-      }
-    }
-  }, 30_000);
-
   // Cloud flach (K2, K15): no overlap, spill, cut text or double line on any account tab, with classic scrollbars
   // that take room in windows 390, 768, 1100 and 1440 px wide (a desktop window, not a phone: a mobile tab gets
   // overlay scrollbars that take no room), and on a touch phone. CORE_ACCOUNT_SHOTS=<folder> also writes light

@@ -120,7 +120,7 @@ export default function AccountHub(props: {
 export function AccountPage(props: { title: string; description: string; actions?: JSXElement; children: JSXElement }) {
   const headingId = `account-page-${createUniqueId()}`;
   return (
-    <Paper as="section" aria-labelledby={headingId} class="account-page flex flex-col gap-8 p-[var(--k2b-gutter)]">
+    <Paper as="section" aria-labelledby={headingId} class="account-page flex flex-col gap-8 p-4 sm:p-6">
       <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
           <h2 id={headingId} class="sr-only">
