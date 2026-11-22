@@ -185,12 +185,7 @@ export default function ItemRow(props: ItemRowProps) {
             if (event.target instanceof Element && event.target.matches("input") && busy()) event.preventDefault();
           }}
         >
-          {/* On touch, the box's hit area reaches past this cell on purpose; the layout self-check skips it. */}
-          <span
-            class="spaces-list-row__check"
-            data-layout-check="skip"
-            title={props.canWrite && completionBlocked() ? t.completeBlockersFirst : undefined}
-          >
+          <span class="spaces-list-row__check" title={props.canWrite && completionBlocked() ? t.completeBlockersFirst : undefined}>
             <Checkbox
               // A reader who cannot change the task hears its title and whether it is checked.
               aria-label={props.canWrite ? `${t.markComplete}: ${props.item.title}` : props.item.title}

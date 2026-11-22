@@ -24,10 +24,9 @@ const until = async <T>(read: () => T, expected: Awaited<T>, timeout = 4000) => 
 
 /**
  * Avatar stacks overlap on purpose; text for screen readers is cut on purpose. The head's primary label belongs to the
- * shell (L3), which hides it on a phone. On touch, reaction chips reach past their row with their hit area on purpose.
+ * shell (L3), which hides it on a phone. Touch hit areas are known to the self-check itself (#3923).
  */
-const ignored =
-  ".k2b-avatar-stack, [data-layout-check='skip'], .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-reaction-bar";
+const ignored = ".k2b-avatar-stack, [data-layout-check='skip'], .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label";
 
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
