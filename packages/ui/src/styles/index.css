@@ -207,60 +207,8 @@
   --k2b-reading-column: 47.5rem;
   /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
   --k2b-row-measure: 40rem;
-  /* Radius roles (K4): round is what a person presses, square is what orders.
-     flat 0 for columns, bands, rows, cells, and sections; mark 4 px for small
-     marks under 24 px (check, icon tile); control 8 px for buttons and fields;
-     overlay 8 px for menus, toasts, popovers, and dialogs; round for chips,
-     people, dots, grips, and pills; card 14 px for the app card and the top of
-     a phone sheet. No other radius exists. `--k2b-radius-dialog` is the
-     overlay role. `--k2b-radius-surface` keeps its 12 px until every surface
-     that reads it has moved to a role (square sections and notices, 8 px
-     menus); `radius-scale` lists it until then. */
-  --k2b-radius-flat: 0;
-  --k2b-radius-mark: 4px;
-  --k2b-radius-overlay: 8px;
-  --k2b-radius-round: 9999px;
-  --k2b-radius-card: 14px;
-  /* An icon tile from 24 px is pressed-looking like a control: 8 px. A tile
-     below 24 px is a mark, and its owning rule sets `--k2b-radius-mark`. */
-  --k2b-radius-tile: var(--k2b-radius-control);
   --k2b-radius-surface: 0.75rem;
-  --k2b-radius-dialog: var(--k2b-radius-overlay);
-  /* Spacing (K1): every gap is one step of 4 px or a sum of steps. */
-  --k2b-space-1: 4px;
-  --k2b-space-2: 8px;
-  --k2b-space-3: 12px;
-  --k2b-space-4: 16px;
-  --k2b-space-5: 20px;
-  --k2b-space-6: 24px;
-  --k2b-space-8: 32px;
-  /* The text edge of a column (K5a): tabs, path, status row, and row text start
-     here, or after exactly one icon. 16 px below 768 px. (`--k2b-edge` is the
-     colour of a control's edge, not this inset.) */
-  --k2b-gutter: 20px;
-  /* Fixed heights (K1): head, status row, column head, rows of one, two, and
-     three text lines, a dense row, a field label, a control, and the heads of
-     an area and a group (K17); phone title row, tabs, and row. */
-  --k2b-h-head: 56px;
-  --k2b-h-status: 52px;
-  --k2b-h-colhead: 36px;
-  --k2b-h-row: 40px;
-  --k2b-h-row-2: 52px;
-  --k2b-h-row-3: 72px;
-  --k2b-h-row-dense: 32px;
-  --k2b-h-label: 20px;
-  --k2b-h-control: 36px;
-  --k2b-h-area-head: 56px;
-  --k2b-h-group-head: 36px;
-  --k2b-h-head-phone: 52px;
-  --k2b-h-tabs-phone: 44px;
-  --k2b-h-row-phone: 60px;
-  /* Four sizes in the controls (K11): meta 12, rows and controls 13, reading
-     text and the head title 14, the lead statement 18. */
-  --k2b-font-size-meta: var(--k2b-type-12);
-  --k2b-font-size-row: var(--k2b-type-13);
-  --k2b-font-size-body: var(--k2b-type-14);
-  --k2b-font-size-lead: var(--k2b-type-18);
+  --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
@@ -306,27 +254,19 @@
   --k2b-type-13: 0.8125rem;
   --k2b-type-14: 0.875rem;
   --k2b-type-18: 1.125rem;
-  /* Shadows only for what floats (K3, K16). A shadow means "lies above the
-     page": small for a menu, popover, toast, floating pill, a phone's main
-     action, and a drag preview; large for a dialog; directed for a drawer
-     (`-side`) and a phone sheet (`-sheet`). The scrim dims the page behind a
-     dialog or sheet, without blur.
-     The layer tokens of things that never float (islands, surfaces) draw
-     nothing; the app card keeps only its hairline edge. They stay as names, as a transparent no-op layer
-     (`0 0 #0000`) so lists such as `ring, var(--k2b-shadow-raised)` stay
-     valid. */
-  --k2b-shadow-overlay-sm: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
-  --k2b-shadow-overlay-lg: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
-  --k2b-scrim: rgb(9 9 11 / 0.28);
-  --k2b-shadow-surface: 0 0 #0000;
-  /* The app card casts no shadow; its edge is a 1 px ring around it (a ring,
-     not depth: the columns inside would paint over an inner one). */
-  --k2b-shadow-frame: 0 0 0 1px rgb(9 9 11 / 0.07);
-  /* The quiet shadow at every workspace column boundary stays until the
-     workspace draws its hairline (K2); both change together, so columns are
-     never left without a divider. */
+  /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
+     a border, not a drop shadow, and an outer shadow is clipped anyway by the
+     `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
+     portaled layers (dialogs, popovers, tooltips, toasts) get `--*-shadow-float`. */
+  --k2b-shadow-surface: none;
+  --k2b-shadow-frame:
+    0 -3px 10px -8px rgb(15 23 19 / 0.16), 0 0 16px -9px rgb(15 23 19 / 0.16), 0 14px 36px -32px rgb(15 23 19 / 0.22),
+    0 1px 5px rgb(15 23 19 / 0.04);
+  /* The quiet shadow at every workspace column boundary: centre and edge of
+     its 24 px gradient. */
   --k2b-shadow-column-mid: rgb(24 24 27 / 0.0055);
   --k2b-shadow-column-edge: rgb(24 24 27 / 0.022);
+  /* The same shadow while its resize handle is hovered, focused, or dragged. */
   --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
   --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
@@ -341,12 +281,12 @@
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
-  /* Layer 1, an island in the main content: flat since Cloud flach (K3). */
-  --k2b-shadow-raised: 0 0 #0000;
+  /* Layer 1, an island in the main content: a section, a content card, a dashboard frame. */
+  --k2b-shadow-raised: 0 1px 2px rgb(15 23 19 / 0.05), 0 4px 12px -6px rgb(15 23 19 / 0.12);
   /* The surface of an island. In dark mode a lighter surface replaces the shadow. */
   --k2b-surface-raised: var(--k2b-surface);
-  /* A floating pill or toolbar over content: it floats, so it takes the small overlay shadow (K16). */
-  --k2b-shadow-toolbar: var(--k2b-shadow-overlay-sm);
+  /* A floating pill or toolbar that stays open: softer than a menu that opens for a moment. */
+  --k2b-shadow-toolbar: 0 1px 2px rgb(9 9 11 / 0.06), 0 6px 18px -8px rgb(9 9 11 / 0.16);
   /* A floating pill of small round controls (`k2b-pill`), such as an editor's formatting, a viewer's zoom, or a
      selection's actions: the control size and the space inside the pill's 1 px edge, the same on every side. The pill
      is the control plus that space, 38 px. */
@@ -369,13 +309,6 @@
   font-size: 0.9375rem;
   font-weight: 400;
   color-scheme: light;
-}
-
-/* On a phone the text edge is 16 px (K5a). */
-@media (max-width: 767px) {
-  .k2b-ui {
-    --k2b-gutter: 16px;
-  }
 }
 
 /* Reduced motion means instant: color may change, movement does not.
@@ -572,9 +505,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
   --k2b-ai-glow: 0 0 0 4px rgb(240 171 220 / 0.16), 0 6px 22px rgb(240 171 220 / 0.1);
   --k2b-ai-suggestion: #c99abb;
-  --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
-  --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
-  --k2b-shadow-frame: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --k2b-shadow-surface: none;
+  --k2b-shadow-frame:
+    0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
   --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
   --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
   --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
@@ -588,7 +521,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
+  /* No shadow, as a transparent no-op layer so lists such as `ring, var(--k2b-shadow-raised)` stay valid. */
+  --k2b-shadow-raised: 0 0 #0000;
   --k2b-surface-raised: var(--k2b-surface-elevated);
+  --k2b-shadow-toolbar: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 22px -10px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;
 }
@@ -686,19 +622,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* What a chart holds, such as its table view, stays flat. */
 .k2b-ui [data-k2b-layer="quiet"] .k2b-chart-explorer > * {
   --k2b-island-shadow: 0 0 #0000;
-}
-
-/* One line, one owner (Cloud flach K2): the container draws the divider
-   between its children, its children never draw an outer edge of their own.
-   `k2b-divided` puts a hairline above every shown child after the first;
-   `k2b-divided-inline` does the same for a row, at the start of each child.
-   A hidden child (`[hidden]`) neither draws a line nor counts as the first. */
-.k2b-ui :where(.k2b-divided) > :not([hidden]) ~ :not([hidden]) {
-  border-block-start: 1px solid var(--k2b-border);
-}
-
-.k2b-ui :where(.k2b-divided-inline) > :not([hidden]) ~ :not([hidden]) {
-  border-inline-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui::selection,
@@ -2350,7 +2273,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: var(--k2b-chart-band-width);
   height: var(--k2b-chart-band-height);
   z-index: -1;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: 3px;
   background: color-mix(in srgb, currentColor 7%, transparent);
   pointer-events: none;
 }
@@ -3371,7 +3294,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.75rem;
   margin-right: 0.1875rem;
   border: 0;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 0.375rem;
   color: var(--k2b-text-muted);
   background: transparent;
   cursor: pointer;
@@ -6405,7 +6328,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 26px;
   gap: 6px;
   padding: 0 1px 0 6px;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 7px;
   transition: none;
 }
 .k2b-ui .k2b-text-input[data-variant="compact"] > .k2b-input {
@@ -6553,7 +6476,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
+  border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text-muted);
   background: var(--k2b-surface-muted);
 }
@@ -6636,7 +6559,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: var(--k2b-signature-height, clamp(9rem, 30svh, 12rem));
   overflow: hidden;
   border: var(--k2b-edge-width) solid var(--k2b-edge-color);
-  border-radius: var(--k2b-radius-control);
+  border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text);
   background: var(--k2b-surface);
   box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
@@ -6764,7 +6687,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   padding: 0.75rem;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
+  border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface-muted);
 }
 
@@ -8779,7 +8702,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 0.375rem;
   cursor: pointer;
 }
 
@@ -9215,7 +9138,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-list__marker {
   padding: 0 0.375rem;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: 0.3125rem;
   color: var(--k2b-text-muted);
   background: var(--k2b-surface-muted);
   font-size: 0.6875rem;
@@ -9415,7 +9338,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-direction: row;
   gap: 0.625rem;
   padding: 0.375rem 0.875rem 0.375rem 0.375rem;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 0.75rem;
   text-align: start;
 }
 
@@ -10094,7 +10017,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-rich-select__placeholder-lines > span,
 .k2b-ui .k2b-rich-select__preview-placeholder > span {
   display: block;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: 0.375rem;
   background: var(--k2b-surface-muted);
   animation: k2b-parity-pulse 1.6s ease-in-out infinite;
 }
@@ -10102,7 +10025,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-rich-select__placeholder-visual {
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: 0.4375rem;
 }
 
 .k2b-ui .k2b-rich-select__placeholder-lines {
@@ -10122,7 +10045,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.125rem;
-  border-radius: var(--k2b-radius-control);
+  border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface-muted);
 }
 
@@ -10887,7 +10810,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 0.375rem;
   cursor: pointer;
 }
 
@@ -10975,7 +10898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-date-field__toggle {
   padding: 0;
   border: 0;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 0.375rem;
   background: transparent;
   cursor: pointer;
 }
@@ -12125,7 +12048,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1rem;
   flex: 0 0 auto;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-mark);
+  border-radius: calc(var(--k2b-radius-control) * 0.6);
   background: var(--k2b-surface);
 }
 
@@ -19914,7 +19837,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: var(--k2b-radius-tile);
+  border-radius: 28%;
   background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent);
 }
 
@@ -20239,7 +20162,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: fit-content;
   overflow: hidden;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-flat);
+  border-radius: 0.625rem;
   background: var(--k2b-surface);
 }
 
@@ -20249,7 +20172,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-disclosure[data-surface="plain"] { border: 0; background: transparent; }
 .k2b-ui .k2b-disclosure[data-surface="plain"] > summary,
-.k2b-ui .k2b-disclosure[data-surface="paper"] > summary { border-radius: var(--k2b-radius-control); }
+.k2b-ui .k2b-disclosure[data-surface="paper"] > summary { border-radius: 0.375rem; }
 .k2b-ui .k2b-disclosure:not([open]):not([data-disabled="true"]) > summary:hover {
   background: var(--k2b-hover);
 }
@@ -21031,7 +20954,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart { flex: 1 1 0; min-height: 60%; }
 .k2b-ui .k2b-chart-legend { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-content: flex-start; gap: .25rem .875rem; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
 .k2b-ui .k2b-chart-legend li { display: inline-flex; align-items: center; gap: .375rem; min-width: 0; overflow-wrap: anywhere; }
-.k2b-ui .k2b-chart-legend__swatch { flex: none; width: .625rem; height: .625rem; border-radius: var(--k2b-radius-mark); background: var(--k2b-chart-legend-color); }
+.k2b-ui .k2b-chart-legend__swatch { flex: none; width: .625rem; height: .625rem; border-radius: 2px; background: var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
 .k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
@@ -21053,7 +20976,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
 .k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
 .k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
-.k2b-ui .k2b-chart-explorer__skeleton > span { flex: 1 1 0; min-width: 0; border-radius: var(--k2b-radius-mark) var(--k2b-radius-mark) 0 0; background: var(--k2b-surface-muted); animation: k2b-chart-explorer-pulse 1.6s ease-in-out infinite; }
+.k2b-ui .k2b-chart-explorer__skeleton > span { flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0; background: var(--k2b-surface-muted); animation: k2b-chart-explorer-pulse 1.6s ease-in-out infinite; }
 @keyframes k2b-chart-explorer-pulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-chart-explorer__skeleton > span { animation: none; } }
 /* Inside a frame the table reaches its left, right and bottom edges; the viewport grows by the inset it covers. */
@@ -21090,9 +21013,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
 .k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
-.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: var(--k2b-radius-overlay); background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: .625rem; }
+.k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: var(--k2b-shadow-toolbar); visibility: hidden; pointer-events: none; font-size: .625rem; }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
-.k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: var(--k2b-radius-mark); font-weight: 500; }
+.k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }
 .k2b-ui .k2b-chart-explorer__dimension:is([data-keyboard="true"], :has(input:active)) .k2b-chart-explorer__steps { visibility: visible; }
 /* Include the label-to-track gap: hovering the label also hovers its associated input. */
 @media (hover: hover) {
@@ -21137,7 +21060,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before { content: ""; position: absolute; left: var(--k2b-chart-plot-left, 0); right: var(--k2b-chart-plot-right, 0); top: var(--k2b-chart-inspection-y); border-top: 1px dashed currentColor; opacity: .3; pointer-events: none; }
 .k2b-ui .k2b-chart__tooltip-title { display: block; margin-bottom: .375rem; font-weight: 600; }
 .k2b-ui .k2b-chart__tooltip-row { display: flex; align-items: center; gap: .5rem; line-height: 1.6; }
-.k2b-ui .k2b-chart__tooltip-row > i { width: .625rem; height: .625rem; border-radius: var(--k2b-radius-mark); flex: none; }
+.k2b-ui .k2b-chart__tooltip-row > i { width: .625rem; height: .625rem; border-radius: .125rem; flex: none; }
 .k2b-ui .k2b-chart__tooltip-row > span { flex: 1; opacity: .75; }
 .k2b-ui .k2b-chart__tooltip-row > b { margin-left: .75rem; font-variant-numeric: tabular-nums; font-weight: 500; }
 
@@ -22569,7 +22492,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-balance-flow__nav button,
 .k2b-ui .k2b-balance-flow__status button {
   font: inherit; font-size: 13px; line-height: 20px; min-height: 44px; color: inherit; background: transparent;
-  border: var(--k2b-edge-width) solid transparent; border-radius: var(--k2b-radius-control); padding: calc(7px - var(--k2b-edge-width)) calc(11px - var(--k2b-edge-width)); cursor: pointer; box-shadow: none;
+  border: var(--k2b-edge-width) solid transparent; border-radius: 7px; padding: calc(7px - var(--k2b-edge-width)) calc(11px - var(--k2b-edge-width)); cursor: pointer; box-shadow: none;
 }
 .k2b-ui .k2b-balance-flow__views button[aria-pressed="true"] { background: var(--k2b-surface-muted, #f4f4f5); border-color: var(--k2b-border, #e4e4e7); }
 .k2b-ui .k2b-balance-flow__views button:hover,

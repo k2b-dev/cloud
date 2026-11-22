@@ -261,7 +261,7 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
           };
         });
         if (options.viewport.width < 768) expect(frame).toEqual({ edgeToEdge: true, radius: "0px", border: "none" });
-        else expect(frame).toEqual({ edgeToEdge: false, radius: "8px", border: "solid" });
+        else expect(frame).toEqual({ edgeToEdge: false, radius: "14px", border: "solid" });
       } finally {
         await page.close();
       }

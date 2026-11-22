@@ -28,7 +28,7 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: var(--cloud-card-radius, var(--k2b-radius-card));
+  border-radius: var(--cloud-card-radius, var(--k2b-radius-dialog));
   background: var(--k2b-surface);
   box-shadow: var(--k2b-shadow-frame);
 }

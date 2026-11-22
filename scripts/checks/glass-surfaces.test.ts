@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { rule } from "./glass-surfaces";
 
-test("allows blur only on the privacy veil (K16); known blurs live in the baseline", async () => {
+test("allows blur only on the overlay surface, dialog backdrops, and the privacy veil", async () => {
   const root = await mkdtemp(join(tmpdir(), "cloud-glass-surfaces-rule-"));
   try {
     const files = {
@@ -27,9 +27,6 @@ test("allows blur only on the privacy veil (K16); known blurs live in the baseli
         "<div style={{ backdropFilter: 'blur(4px)' }} />",
       ].join("\n"),
       "packages/demo/src/page.test.tsx": '<div class="backdrop-blur" />',
-      // K16: glass and a blurred dialog backdrop are findings now; a known one stays in the baseline until it goes.
-      "scripts/checks/glass-surfaces.baseline":
-        "# header\npackages/demo/src/app.css | .k2b-ui .k2b-overlay-surface sets backdrop-filter: blur(22px) saturate(1.6)\n",
     };
     for (const [path, content] of Object.entries(files)) {
       await mkdir(dirname(join(root, path)), { recursive: true });
@@ -37,7 +34,6 @@ test("allows blur only on the privacy veil (K16); known blurs live in the baseli
     }
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
-      "packages/demo/src/app.css:2",
       "packages/demo/src/app.css:4",
       "packages/demo/src/app.css:7",
       "packages/demo/src/app.css:8",

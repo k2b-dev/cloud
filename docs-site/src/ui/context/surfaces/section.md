@@ -1,7 +1,5 @@
 # Section and Field
 
-> **Being replaced.** Under the [flat criteria](/en/ui/surfaces/flat-criteria), a framed `Section` casts no shadow any more (K3). The section header, group, and area building blocks (K9, K17) replace this contract; this page is rewritten with them.
-
 `Section` is one topic of an object: an icon, a title with its count or state,
 at most one control, and its content. On a full page, such as a customer file,
 every section is a card with the light 1 px frame of `Paper` and, like `Paper`,
