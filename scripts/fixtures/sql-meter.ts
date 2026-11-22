@@ -18,6 +18,11 @@
  * `sql` handle through itself and back on `close()`; pools created earlier
  * keep their direct connection and are not counted.
  *
+ * Rebinding closes the earlier pool: background work in flight at that moment
+ * loses its connection between two statements. Stop such work around
+ * `meterSql()` and `close()`, such as a live outbox, whose cut pass keeps its
+ * rows claimed and holds every later row of the same key behind them (#3941).
+ *
  * `during()` counts every statement of the process while `run` is pending,
  * including background work such as timers that fire in that window. That is
  * the real cost of the path; keep the window to the event under test.

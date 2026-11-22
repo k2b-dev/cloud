@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { batch, createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { batch, createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { prefersMenuSheet } from "../actions/phone-sheet";
 import { readDialogCall } from "../feedback/dialog-call";
@@ -7,7 +7,7 @@ import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import { DatePickerPanel } from "./DatePicker";
+import { DatePickerPanel, preloadDatePickerPanel } from "./DatePicker";
 import { dateInputPattern, formatDateInput, parseDateInput } from "./date-input";
 import { resolveDateInputMessages } from "./date-input-messages";
 import { errorText, limitErrorText } from "./date-input-status";
@@ -263,6 +263,10 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
   const [open, setOpen] = createSignal(false);
   const [view, setView] = createSignal<View>("list");
   const [sheetOpen, setSheetOpen] = createSignal(false);
+  // The custom range shows two month panels; they load as the field shows, so the first open needs no wait.
+  onMount(() => {
+    void preloadDatePickerPanel();
+  });
   let trigger: HTMLButtonElement | undefined;
   let popover: HTMLDivElement | undefined;
   let openedByKeyboard = false;
@@ -300,7 +304,8 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
   createEffect(() => {
     if (!open()) return;
     view();
-    queueMicrotask(place);
+    // After the month panels exist: the custom range grows the popover by two months.
+    void preloadDatePickerPanel().then(place);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     onCleanup(() => {
@@ -553,7 +558,7 @@ function PeriodPanel(props: {
     setActive(props.presets.length);
     setView("custom");
     // In the sheet the list goes away with the focused option; focus continues on the calendar's day.
-    if (props.sheet) queueMicrotask(() => panel?.querySelector<HTMLElement>('[data-date-focus="true"]')?.focus());
+    if (props.sheet) void preloadDatePickerPanel().then(() => panel?.querySelector<HTMLElement>('[data-date-focus="true"]')?.focus());
   };
 
   return (

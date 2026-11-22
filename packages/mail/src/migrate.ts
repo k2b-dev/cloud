@@ -979,6 +979,15 @@ const activityFeedIndex: BackgroundIndex = {
     WHERE (action = ANY (ARRAY[${MAIL_ACTIVITY_FEED_ACTIONS.map((action) => `'${action}'::text`).join(", ")}]))`,
 };
 
+// A drag orders its people by whom the person assigned lately; without it, that read passes every update of the mailbox.
+const actorAssignmentIndex: BackgroundIndex = {
+  name: "mail.activity_events_actor_assignment_idx",
+  table: "mail.activity_events",
+  ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS activity_events_actor_assignment_idx
+    ON mail.activity_events USING btree (mailbox_id, actor_id, id DESC)
+    WHERE (action = 'conversation.collaboration_updated'::text)`,
+};
+
 // Work lists show open conversations only; without it, a folder's list reads past every done conversation.
 const openConversationIndex: BackgroundIndex = {
   name: "mail.conversations_mailbox_open_latest_idx",
@@ -1126,6 +1135,7 @@ export const buildDraftRemoteIdIndex = (pool: SqlClient = sql) =>
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);
+export const buildActorAssignmentIndex = (pool: SqlClient = sql) => buildBackgroundIndex(actorAssignmentIndex, pool);
 
 let runtimeHistoryBuild: Promise<void> | undefined;
 export const buildRuntimeHistoryIndexes = (pool: SqlClient = sql): Promise<void> => {

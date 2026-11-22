@@ -53,6 +53,7 @@ const data: MailboxPageData = {
   workspacePreference: { listShare: null, seenHints: [] },
   viewPreference: { large: "auto", phone: "compact" },
   doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
+  dropAssignees: null,
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,

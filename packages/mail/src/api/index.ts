@@ -342,6 +342,8 @@ const activityQuerySchema = cursorQuerySchema.extend({
 const workspaceRouteQuerySchema = z.object({
   href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
+  /** "keep": the browser already holds the drag's people for this mailbox; the answer then leaves them out (null). */
+  dropAssignees: z.enum(["load", "keep"]).default("load"),
 });
 const attachmentQuerySchema = z.object({
   inline: z
@@ -1158,6 +1160,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         ...request,
         listMode: query.listMode,
         locale: getLocale(c),
+        dropAssignees: query.dropAssignees,
       });
       return respondAggregate(
         c,

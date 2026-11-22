@@ -34,6 +34,7 @@ import type {
   MailActivityEvent,
   MailActivityPerson,
   MailAssignableUser,
+  MailDropAssignees,
 } from "./collaboration";
 import * as collaboration from "./collaboration";
 import { listConversationDraftSummaries } from "./conversation-draft-summaries";
@@ -246,6 +247,11 @@ export type MailboxPageData = {
   comments: ConversationComment[];
   commentsCursor: string | null;
   assignableUsers: MailAssignableUser[];
+  /**
+   * Whom a dragged conversation can go to, loaded with the page so a drag needs no request before its drop. Null for
+   * people who may not assign (they read only or see assigned conversations only) and when the lookup failed.
+   */
+  dropAssignees: MailDropAssignees | null;
   activity: MailActivityEvent[];
   reminder: ConversationReminder | null;
   keep: ConversationKeep | null;
@@ -1067,6 +1073,24 @@ export const loadMailboxCodePageData = async (context: MailRequestContext, mailb
   });
 };
 
+/**
+ * The drag's people for a page load, or null. A failed or throwing lookup leaves the page working without them: the
+ * drag then offers no people, and the assignment search still works.
+ */
+export const loadDropAssigneesOrNull = async (
+  load: () => Promise<Result<MailDropAssignees>>,
+  mailboxId: string,
+): Promise<MailDropAssignees | null> => {
+  try {
+    const result = await load();
+    if (result.ok) return result.data;
+    log.warn("Failed to load the drag's people", { mailboxId, code: result.error.code });
+  } catch (error) {
+    log.warn("Failed to load the drag's people", { mailboxId, error: error instanceof Error ? error.message : String(error) });
+  }
+  return null;
+};
+
 export const loadMailboxPageData = async (pageParams: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1075,6 +1099,11 @@ export const loadMailboxPageData = async (pageParams: {
   publicSearch: ResolvedMailSearchRoute;
   listMode?: MailListMode;
   locale?: string | null;
+  /**
+   * "keep": the browser already holds the drag's people for this mailbox, so a reload of the same mailbox skips them
+   * and answers null; the first load and a mailbox switch load them ("load", the default).
+   */
+  dropAssignees?: "load" | "keep";
 }): Promise<Result<MailboxPageData>> => {
   const params = { ...pageParams, context: withOneAccessRead(pageParams.context) };
   const permission = await requireMailboxAccess(params.context, params.mailboxId, "read");
@@ -1110,6 +1139,7 @@ export const loadMailboxPageData = async (pageParams: {
     viewPreference,
     workspacePreference,
     doneTodayCounts,
+    dropAssigneesResult,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
     folders,
@@ -1130,6 +1160,12 @@ export const loadMailboxPageData = async (pageParams: {
     getMailboxViewPreference(params.context, params.mailboxId),
     getMailboxWorkspacePreference(params.context, params.mailboxId),
     getMailboxDoneTodayCounts(params.context, params.mailboxId),
+    permission.data.scope === "mailbox" && permission.data.permission !== "read" && pageParams.dropAssignees !== "keep"
+      ? loadDropAssigneesOrNull(
+          () => collaboration.listDropAssignees({ context: params.context, mailboxId: params.mailboxId }),
+          params.mailboxId,
+        )
+      : null,
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
   if (!viewPreference.ok) return viewPreference;
@@ -1176,6 +1212,7 @@ export const loadMailboxPageData = async (pageParams: {
     identities: identityResult.ok ? identityResult.data : [],
     scheduledCount: listView.scheduledPage ? listView.scheduledPage.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     localTags: localTagResult.ok ? localTagResult.data : [],
+    dropAssignees: dropAssigneesResult ?? null,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     selectedConversationId,
