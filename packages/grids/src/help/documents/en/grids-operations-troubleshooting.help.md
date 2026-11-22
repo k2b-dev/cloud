@@ -29,7 +29,7 @@ Read the active search, filters, source view, deleted-record mode, and `limit`. 
 
 Use exact filters for calculated values, lookups, rollups, files, dates, and empty values. Add a meaningful sort before you rely on page order or `offset`. Each page is a live read, so changes between page requests can move matching records.
 
-Record results refresh in place, also after a reconnect. If the table has a search field, its magnifier turns into a small spinner while records load or refresh. Grids recalculates filters, sorting, and totals, so records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If an automatic refresh fails, choose **Updates available** next to the record count to try again. If live updates stop, reload the page.
+Record results refresh in place, also after a reconnect. If the table has a search field, its magnifier turns into a small spinner while records load or refresh. Grids recalculates filters, sorting, and totals, so records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If an automatic refresh fails, choose **Updates available** in the head of the table to try again. If live updates stop, reload the page.
 
 ## Save a rejected record edit {icon="table"}
 

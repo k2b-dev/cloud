@@ -29,7 +29,7 @@ Lies die aktive Suche, die Filter, die Quellansicht, den Modus für gelöschte D
 
 Nutze exakte Filter für berechnete Werte, Lookups, Rollups, Dateien, Datumswerte und leere Werte. Ergänze eine aussagekräftige Sortierung, bevor du dich auf die Seitenreihenfolge oder `offset` verlässt. Jede Seite ist eine Live-Abfrage. Änderungen zwischen zwei Seitenaufrufen können passende Datensätze verschieben.
 
-Datensatzergebnisse aktualisieren sich an Ort und Stelle, auch nach einer neuen Verbindung. Hat die Tabelle ein Suchfeld, wird dessen Lupe zu einem kleinen Ladesymbol, während Datensätze laden oder sich aktualisieren. Grids berechnet Filter, Sortierung und Summen neu, deshalb können Datensätze das Ergebnis verlassen. Offene Bearbeitungsdialoge behalten ihre Entwürfe und melden konkurrierende Änderungen. Schlägt eine automatische Aktualisierung fehl, wähle **Aktualisierungen verfügbar** neben der Datensatzanzahl, um es erneut zu versuchen. Stoppen die Live-Aktualisierungen, lade die Seite neu.
+Datensatzergebnisse aktualisieren sich an Ort und Stelle, auch nach einer neuen Verbindung. Hat die Tabelle ein Suchfeld, wird dessen Lupe zu einem kleinen Ladesymbol, während Datensätze laden oder sich aktualisieren. Grids berechnet Filter, Sortierung und Summen neu, deshalb können Datensätze das Ergebnis verlassen. Offene Bearbeitungsdialoge behalten ihre Entwürfe und melden konkurrierende Änderungen. Schlägt eine automatische Aktualisierung fehl, wähle **Aktualisierungen verfügbar** im Kopf der Tabelle, um es erneut zu versuchen. Stoppen die Live-Aktualisierungen, lade die Seite neu.
 
 ## Eine abgelehnte Bearbeitung speichern {icon="table"}
 
