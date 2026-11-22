@@ -68,7 +68,10 @@ export const sortable = definePrimitive({
     return { roving, reorder };
   },
   slots: (slot) => ({
-    root: slot({
+    // The order to render: the draft during a move, the committed value otherwise. Slot state is what Solid tracks;
+    // handle.state is a plain snapshot.
+    root: slot<{}, { order: string[] }>({
+      state: (state, part) => ({ order: part.api.reorder.order(state) }),
       role: "listbox",
       keys: { none: "Each item handles its own keys." },
       attrs: () => ({ "aria-roledescription": "sortierbare Liste" }),
@@ -118,13 +121,11 @@ export function SortableList(props: {
     {
       "aria-label": props.label,
       class: "k2-sortable",
-      get children() {
-        return (
-          <For each={handle.api.reorder.order(handle.state)}>
-            {(key) => usePart(sortable, "item", () => ({ value: key }), { class: "k2-sortable__item", children: props.children(key) }, "li")}
-          </For>
-        );
-      },
+      children: (state: { order: string[] }) => (
+        <For each={state.order}>
+          {(key) => usePart(sortable, "item", () => ({ value: key }), { class: "k2-sortable__item", children: props.children(key) }, "li")}
+        </For>
+      ),
     },
     "ul",
   );

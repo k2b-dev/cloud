@@ -25,9 +25,17 @@ const server = Bun.spawn(["bun", "--conditions=solid", "--preload=./scripts/prel
 const folderOrder = (page: Page) => page.$$eval(".k2-sortable__item", (items) => items.map((item) => item.textContent?.replace(/\d+$/, "").trim()));
 const mailIds = (page: Page) => page.$$eval("[data-mail]", (rows) => rows.map((row) => (row as HTMLElement).dataset.mail));
 const spoken = (page: Page) => page.$$eval("[aria-live]", (regions) => regions.map((region) => region.textContent ?? "").join(" | "));
+// ui-sdk writes announcements a moment later (it batches one turn), so a check waits up to a second.
+const heard = (page: Page, text: string) =>
+  page.waitForFunction((t) => [...document.querySelectorAll("[aria-live]")].some((r) => r.textContent?.includes(t)), text, { timeout: 1000 }).then(() => true, () => false);
 const center = async (page: Page, selector: string) => {
   const box = (await page.locator(selector).first().boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+// Past the middle of an item: a sortable list places the moving item after an item once the pointer passes its middle.
+const below = async (page: Page, selector: string) => {
+  const point = await center(page, selector);
+  return { x: point.x, y: point.y + 10 };
 };
 const mouseDrag = async (page: Page, from: { x: number; y: number }, to: { x: number; y: number }, beforeDrop?: () => Promise<void>) => {
   await page.mouse.move(from.x, from.y);
@@ -71,7 +79,7 @@ try {
   const before = await folderOrder(page);
 
   // 1. Sort by mouse: the first folder goes below the third.
-  await mouseDrag(page, await center(page, ".k2-sortable__item >> nth=0"), await center(page, ".k2-sortable__item >> nth=2"), async () => {
+  await mouseDrag(page, await center(page, ".k2-sortable__item >> nth=0"), await below(page, ".k2-sortable__item >> nth=2"), async () => {
     check("Mouse sort: a dragged copy follows the pointer", (await page.locator("[data-drag-preview]").count()) === 1);
     if (shots) await page.screenshot({ path: `${root}/shots/${engineName}-dnd-sort-mouse-1440.png` });
   });
@@ -83,14 +91,14 @@ try {
   await page.locator(".k2-sortable__item").first().focus();
   const lifted = (await folderOrder(page))[0];
   await page.keyboard.press("Space");
-  check("Keyboard sort: pickup is announced in German", (await spoken(page)).includes("aufgenommen"), await spoken(page));
+  check("Keyboard sort: pickup is announced in German", await heard(page, "aufgenommen"), await spoken(page));
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Space");
   await page.waitForTimeout(100);
   const afterKeys = await folderOrder(page);
   check("Keyboard sort moves the folder two places", afterKeys[2] === lifted, afterKeys);
-  check("Keyboard sort: drop is announced", (await spoken(page)).includes("abgelegt"), await spoken(page));
+  check("Keyboard sort: drop is announced", await heard(page, "abgelegt"), await spoken(page));
   check("Keyboard sort: focus stays on the moved item", await page.evaluate((name) => document.activeElement?.textContent?.includes(name ?? "") ?? false, lifted));
 
   // 3. Escape cancels a keyboard sort.
@@ -110,7 +118,7 @@ try {
   });
   check("Mail drag moves the mail out of the inbox", !(await mailIds(page)).includes(mails[0]), await mailIds(page));
   check("Mail drag: the folder counts it", ((await page.locator('[data-drop-target="archive"]').textContent()) ?? "").includes("1"));
-  check("Mail drag: the move is announced", (await spoken(page)).includes("verschoben nach Archiv"), await spoken(page));
+  check("Mail drag: the move is announced", await heard(page, "verschoben nach Archiv"), await spoken(page));
 
   // 5. Letting go outside every folder changes nothing.
   const beforeMiss = await mailIds(page);
@@ -123,7 +131,9 @@ try {
   await page.locator("[data-mail] .k2-grip").first().focus();
   await page.keyboard.press("Space");
   await page.keyboard.press("ArrowDown");
-  check("Keyboard drop: the chosen folder is marked", (await page.locator(`[data-drop-target="${second}"][data-over]`).count()) === 1);
+  await page.waitForTimeout(50);
+  const marked = await page.$$eval("[data-drop-target][data-over]", (targets) => targets.map((target) => (target as HTMLElement).dataset.dropTarget));
+  check("Keyboard drop: the chosen folder is marked", marked.length === 1 && marked[0] === second, { marked, second });
   if (shots) await page.screenshot({ path: `${root}/shots/${engineName}-dnd-keyboard-1440.png` });
   await page.keyboard.press("Enter");
   await page.waitForTimeout(80);
@@ -135,7 +145,7 @@ try {
     await page.keyboard.press("Space");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(80);
-    return JSON.stringify(await mailIds(page)) === JSON.stringify(ids) && (await spoken(page)).includes("Abgebrochen");
+    return JSON.stringify(await mailIds(page)) === JSON.stringify(ids) && (await heard(page, "Abgebrochen"));
   })());
   await page.close();
 
@@ -167,7 +177,7 @@ try {
     // Sorting by touch: ui-sdk starts after 3 px, without a hold (touch-action: none on the items).
     const order = await folderOrder(touchPage);
     const a = await center(touchPage, ".k2-sortable__item >> nth=0");
-    const b = await center(touchPage, ".k2-sortable__item >> nth=2");
+    const b = await below(touchPage, ".k2-sortable__item >> nth=2");
     await touch("touchStart", a.x, a.y);
     for (let step = 1; step <= 12; step++) await touch("touchMove", a.x, a.y + ((b.y - a.y) * step) / 12);
     await touch("touchEnd", b.x, b.y);
