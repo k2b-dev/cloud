@@ -31,9 +31,13 @@ dimmed card, the target line and the drop overlay.
 - the options `primary` and `list` of a `DataTable` column,
   `collapsibleGroups` and `defaultCollapsedGroups` of `DataTable`, `submenu`
   of a `Dropdown` item, `error` of `PanelDialog`, `tone` of `Placeholder`,
-  `iconColor` of `Section`, `current` of a `ProgressPath` step, `width` of
-  `AppWorkspace`, and `href` and `onSelect` of a `Breadcrumbs` item;
+  `iconColor` of `Section`, `current` of a `ProgressPath` step, and `href` of
+  a `Breadcrumbs` item;
+- the value `"reading"` of `AppWorkspace.Main`'s `width`;
 - the tone `yours` of `NoticeCard` and `StatusBadge`.
+
+`Breadcrumbs` needs its `onSelect` again, because its items no longer carry
+links.
 
 An application that adopted these in `@k2b/ui` 0.64 uses the building blocks
 of 0.63 again: `Section` and `DetailPanel` for grouped facts and fields,
