@@ -274,3 +274,23 @@ textarea.k2-input { height: auto; min-height: 120px; padding: 8px 12px; resize: 
   .k2-row { min-height: 60px; }
   .k2-row[data-size="3"] { min-height: var(--k2-h-row3); }
 }
+
+/* ── Drag and drop (behaviour from ui-sdk, see dnd.tsx) ── */
+/* An island wrapper (display: contents) sits between the card and its columns; the column rules must see through it. */
+@media (max-width: 1023px) { .k2-card > solid-island > .k2-side { display: none; } }
+.k2-sortable { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.k2-sortable__item { border-radius: var(--k2-r-ctl); outline: 0; touch-action: none; user-select: none; }
+.k2-sortable__item:focus-visible { box-shadow: inset 0 0 0 2px var(--k2-blue); }
+.k2-sortable__item:hover .k2-nav { background: var(--k2-n100); }
+/* The picked-up item stays in the proposed place, dimmed; the copy under the pointer is ui-sdk's [data-drag-preview]. */
+.k2-sortable__item:is([data-grabbed], [data-moving]) .k2-nav > * { opacity: 0.45; }
+.k2-sortable__item[data-grabbed]:focus-visible { box-shadow: inset 0 0 0 2px var(--k2-blue); background: var(--k2-app-tint); }
+[data-drag-preview] { background: var(--k2-surface); border-radius: var(--k2-r-ctl); box-shadow: 0 0 0 1px rgb(9 9 11 / 0.08), var(--k2-float); cursor: grabbing; }
+[data-drag-preview].k2-drag-row { border-bottom: 0; width: min(420px, 80vw); }
+/* A target only draws while the pointer or the keyboard is over it: the selected fill with a 2 px ring inside. */
+[data-drop-target][data-over] { background: var(--k2-app-tint); box-shadow: inset 0 0 0 2px var(--k2-blue); color: var(--k2-app-ink); }
+.k2-drag-row { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; padding-left: 8px; }
+.k2-drag-row[data-moving] > * { opacity: 0.45; }
+.k2-grip { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--k2-r-sm); background: transparent; color: var(--k2-grip); }
+.k2-grip:focus-visible { outline: 2px solid var(--k2-blue); outline-offset: -2px; }
+.k2-grip:hover { background: var(--k2-n100); }
