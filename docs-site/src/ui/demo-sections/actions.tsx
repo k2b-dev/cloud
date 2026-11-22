@@ -977,7 +977,7 @@ const SortableBoardDemo = () => {
       description="Columns of one group exchange cards. Drag a card; it stays dimmed in place while the line and the tinted column head show where it lands. Space on a grip lifts, arrows choose, Enter drops. On a phone the card menu moves it."
       code={sortableBoardExample}
     >
-      {/* The count keeps its place; the drag status takes the place of the key figures beside it (K6, K7). */}
+      {/* The count keeps its place; the drag status takes the place of the key figures beside it. */}
       <p class="ui-sortable-board__status" aria-hidden="true">
         <b class="ui-sortable-board__lead">{Object.values(board()).flat().length} cards</b>
         {dragStatus() ? (

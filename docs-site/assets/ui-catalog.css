@@ -1867,7 +1867,7 @@
   font-weight: 500;
 }
 
-/* Board demo (K7): columns are narrow tables, cards are rows between
+/* Board demo: columns are narrow tables, cards are rows between
    hairlines. One line, one owner: the board draws the lines between columns
    (k2b-divided-inline), each list the lines between its cards
    (k2b-divided). The status line keeps one height, so nothing moves while a
@@ -1944,7 +1944,7 @@
 }
 
 /* The card's glyph sits on the axis of the head's dot and its title on the
-   head's text edge (K5). The grip is for the keyboard only, as the whole
+   head's text edge. The grip is for the keyboard only, as the whole
    card drags: it stays out of the text edge and shows on keyboard focus. */
 .ui-sortable-board__card {
   position: relative;

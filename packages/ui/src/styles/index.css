@@ -19239,8 +19239,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Targets change colour only, never size. "over" is the target under the
-   pointer: the platform fill with a 2 px ring inside, "this is where it goes" (K7,
-   K8). Other targets that would take the drag stay calm; the announcement
+   pointer: the platform fill with a 2 px ring inside, "this is where it goes".
+   Other targets that would take the drag stay calm; the announcement
    and the status line say where it can go. */
 .k2b-ui .k2b-drop-target {
   border-radius: var(--k2b-radius-control);
@@ -19251,7 +19251,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: inset 0 0 0 2px var(--k2b-action-solid);
 }
 
-/* SortableList (K7): the moved row stays dimmed in its place until it is
+/* SortableList: the moved row stays dimmed in its place until it is
    dropped; a 2 px blue line in the gap shows where it lands. The line lies
    over the gap and takes no space, so no row moves before the drop.
    --k2b-sortable-gap, set on the list or any ancestor, is the space between
@@ -19274,7 +19274,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The moved row dims, but not its grip and not the boxes around the grip,
    which the list marks with data-sortable-path: the focus ring of a row
    lifted by keyboard keeps its contrast, and the row's hairline keeps its
-   colour (K2). */
+   colour. */
 .k2b-ui .k2b-sortable-list__item[data-sortable-dragging] > :not([data-sortable-path], .k2b-sortable-list__handle),
 .k2b-ui .k2b-sortable-list__item[data-sortable-dragging] [data-sortable-path] > :not([data-sortable-path], .k2b-sortable-list__handle) {
   opacity: 0.4;
@@ -19285,7 +19285,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 1;
 }
 
-/* On a phone, rows of a group do not drag; their menu moves them (K7). */
+/* On a phone, rows of a group do not drag; their menu moves them. */
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-sortable-list[data-sortable-grouped] .k2b-sortable-list__handle {
     visibility: hidden;
@@ -19419,7 +19419,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Over a drop overlay, which names the item, the preview shrinks to a
    24 px badge with its icon and count, close to the pointer's tip like a
-   cursor badge, so it never covers a tile's words (K7, S7). */
+   cursor badge, so it never covers a tile's words. */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-compact]:not([data-preview="row"]) {
   width: 1.5rem;
   height: 1.5rem;
