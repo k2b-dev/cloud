@@ -279,11 +279,12 @@
      its size, the line heights it takes, and after the slash its weights. It
      derives from the tokens above; besides each role's own line height it
      allows meta set inline in a 20 px row, 22 px reading text, and the 20 px
-     phone title line, as measured in the mockup. */
+     phone title line, as measured in the mockup. The body role is listed as
+     `title`: the `css` rule reads a bare `body` after a comma as a selector. */
   --k2b-type-roles:
     meta var(--k2b-font-size-meta) var(--k2b-line-height-meta) var(--k2b-line-height-row) / 400 500 600,
     row var(--k2b-font-size-row) var(--k2b-line-height-row) / 400 500 600,
-    body var(--k2b-font-size-body) var(--k2b-line-height-body) 1.375rem / 400 600,
+    title var(--k2b-font-size-body) var(--k2b-line-height-body) 1.375rem / 400 600,
     lead var(--k2b-font-size-lead) var(--k2b-line-height-lead) 1.25rem / 600;
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
