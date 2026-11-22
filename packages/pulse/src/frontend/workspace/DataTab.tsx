@@ -228,7 +228,15 @@ export default function DataTab(props: {
                 <Skeleton class="pulse-skeleton-line" />
               </div>
               <div class="pulse-kind">
-                <DataTable rows={[]} columns={fieldColumns()} loading loadingRows={5} getRowId={(row) => row.key} ariaLabel={t().tabData} />
+                <DataTable
+                  surface="plain"
+                  rows={[]}
+                  columns={fieldColumns()}
+                  loading
+                  loadingRows={5}
+                  getRowId={(row) => row.key}
+                  ariaLabel={t().tabData}
+                />
               </div>
               <span class="sr-only" role="status">
                 {t().overviewLoading}
@@ -278,6 +286,7 @@ export default function DataTab(props: {
                           {(value) => (
                             <>
                               <DataTable
+                                surface="plain"
                                 renderCell={({ row, col, render }) =>
                                   col.id === "key" || col.id === "example" ? (
                                     <span class="pulse-mono">{row[col.id as "key" | "example"]}</span>
@@ -307,6 +316,7 @@ export default function DataTab(props: {
                                 }
                               >
                                 <DataTable
+                                  surface="plain"
                                   rows={value().samples ?? []}
                                   loading={value().samples === null && detail.loading()}
                                   loadingRows={5}

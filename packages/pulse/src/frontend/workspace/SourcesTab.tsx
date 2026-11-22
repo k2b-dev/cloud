@@ -224,7 +224,15 @@ export default function SourcesTab(props: SourcesTabProps) {
         fallback={
           <>
             <StatusRow lead={<Skeleton class="pulse-lead-skeleton" />} />
-            <DataTable rows={[]} columns={columns()} loading loadingRows={4} getRowId={(source) => source.id} ariaLabel={t().sources} />
+            <DataTable
+              surface="plain"
+              rows={[]}
+              columns={columns()}
+              loading
+              loadingRows={4}
+              getRowId={(source) => source.id}
+              ariaLabel={t().sources}
+            />
             <span class="sr-only" role="status">
               {t().baseLoading}
             </span>
@@ -250,6 +258,7 @@ export default function SourcesTab(props: SourcesTabProps) {
               {/* The ways create a source, so only people who may write see them. */}
               <Show when={props.canWrite}>
                 <DataTable
+                  surface="plain"
                   class="pulse-ways"
                   rows={ways()}
                   columns={[
@@ -292,6 +301,7 @@ export default function SourcesTab(props: SourcesTabProps) {
           </Show>
           <Show when={!storeDown() && props.attention.length}>
             <DataTable
+              surface="plain"
               class="pulse-attention"
               rows={props.attention}
               columns={[
@@ -332,6 +342,7 @@ export default function SourcesTab(props: SourcesTabProps) {
             />
           </Show>
           <DataTable
+            surface="plain"
             class={storeDown() ? "pulse-sources pulse-sources--frozen" : "pulse-sources"}
             rows={props.sources}
             columns={columns()}

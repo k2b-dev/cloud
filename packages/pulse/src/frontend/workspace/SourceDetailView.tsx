@@ -357,6 +357,7 @@ export default function SourceDetailView(props: Props) {
               }
             >
               <DataTable
+                surface="plain"
                 rows={props.scrapes}
                 columns={props.scrapeColumns}
                 getRowId={(scrape) => scrape.id}

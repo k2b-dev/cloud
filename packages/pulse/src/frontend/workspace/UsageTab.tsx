@@ -152,6 +152,7 @@ export default function UsageTab(props: {
         >
           <Show when={pages.data() !== null} fallback={<p class="pulse-line pulse-line--quiet">{t().usagePagesForbidden}</p>}>
             <DataTable
+              surface="plain"
               rows={pages.data()?.items ?? []}
               loading={pages.data() === undefined}
               loadingRows={2}
@@ -193,6 +194,7 @@ export default function UsageTab(props: {
             }
           >
             <DataTable
+              surface="plain"
               rows={usage.data() ?? []}
               loading={!usage.data()}
               loadingRows={2}
