@@ -470,6 +470,73 @@ export const listAssignableUsers = async (params: {
   );
 };
 
+/** The people a drag can offer without a request: the assignment search takes over beyond them. */
+export const MAIL_DROP_ASSIGNEE_LIMIT = 200;
+/**
+ * The person's own latest collaboration changes in the mailbox (assignment, status, snooze) that order the drag's
+ * people: whom they added there comes first. A fixed window keeps the read bounded; status-only changes count toward
+ * it and add no one.
+ */
+export const MAIL_DROP_ASSIGNMENT_HISTORY = 100;
+
+export type MailDropAssignees = {
+  /** Who the person assigned most often lately comes first, then everyone else A–Z; at most MAIL_DROP_ASSIGNEE_LIMIT. */
+  people: MailCollaborator[];
+  /** More people can be assigned than `people` holds; a drop on "someone else" then opens the search. */
+  more: boolean;
+};
+
+/**
+ * Whom the actor added as assignee in their latest MAIL_DROP_ASSIGNMENT_HISTORY collaboration changes of the mailbox,
+ * most often first. `activity_events_actor_assignment_idx` reads exactly those rows, however long the mailbox's history is.
+ */
+export const dropAssigneeOrderQuery = (db: SqlClient, params: { mailboxId: string; actor: { kind: string; id: string | null } }) =>
+  db<{ user_id: string }[]>`
+    SELECT added.user_id
+    FROM (
+      SELECT activity.id, activity.metadata
+      FROM mail.activity_events activity
+      WHERE activity.mailbox_id = ${params.mailboxId}::uuid
+        AND activity.action = 'conversation.collaboration_updated'
+        AND activity.actor_id = ${params.actor.id}::uuid
+        AND activity.actor_kind = ${params.actor.kind}
+      ORDER BY activity.id DESC
+      LIMIT ${MAIL_DROP_ASSIGNMENT_HISTORY}
+    ) recent
+    CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(recent.metadata #> '{after,assigneeUserIds}', '[]'::jsonb)) AS added(user_id)
+    WHERE NOT COALESCE(recent.metadata #> '{before,assigneeUserIds}', '[]'::jsonb) ? added.user_id
+    GROUP BY added.user_id
+    ORDER BY count(*) DESC, max(recent.id) DESC
+  `;
+
+/**
+ * The people a dragged conversation can be assigned to, for the workspace's first load. Only people who may assign
+ * get them: mailbox-wide writers. Whoever sees assigned conversations only, or reads only, gets a refusal.
+ */
+export const listDropAssignees = async (params: { context: MailRequestContext; mailboxId: string }): Promise<Result<MailDropAssignees>> => {
+  // A mailbox-wide grant only: people who see assigned conversations only have none, as for listAssignableUsers.
+  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write");
+  if (!allowed.ok) return allowed;
+  const actor = activityActorIdentity(params.context);
+  const [eligible, frequent] = await Promise.all([
+    listEligibleAssignees({ mailboxId: params.mailboxId, limit: MAIL_DROP_ASSIGNEE_LIMIT + 1 }),
+    dropAssigneeOrderQuery(sql, { mailboxId: params.mailboxId, actor }),
+  ]);
+  // Beyond the limit, the A–Z page can miss someone assigned often: they are looked up by ID and still come first.
+  const shown = new Set(eligible.map((user) => user.id));
+  const missing = eligible.length > MAIL_DROP_ASSIGNEE_LIMIT ? frequent.map((row) => row.user_id).filter((id) => !shown.has(id)) : [];
+  const candidates = missing.length
+    ? [...eligible, ...(await listEligibleAssignees({ mailboxId: params.mailboxId, userIds: missing, limit: missing.length }))]
+    : eligible;
+  const rank = new Map(frequent.map((row, index) => [row.user_id, index]));
+  const people = candidates
+    .map((user, index) => ({ user, order: rank.get(user.id) ?? frequent.length + index }))
+    .sort((a, b) => a.order - b.order)
+    .slice(0, MAIL_DROP_ASSIGNEE_LIMIT)
+    .map(({ user }) => collaboratorFromAccessUser(user));
+  return ok({ people, more: eligible.length > MAIL_DROP_ASSIGNEE_LIMIT });
+};
+
 export const getConversationCollaboration = async (params: {
   context: MailRequestContext;
   mailboxId: string;

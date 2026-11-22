@@ -13,6 +13,8 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Calendar, DatePicker, DateRangePicker, DateTimePicker, LocaleProvider } = await import("../index");
+// The month panel loads apart from the field and the server never asks for it; these tests read its weekdays.
+await (await import("../inputs/DatePicker")).preloadDatePickerPanel();
 
 const provided = (locale: string, child: () => JSX.Element): JSX.Element =>
   createComponent(LocaleProvider, {
