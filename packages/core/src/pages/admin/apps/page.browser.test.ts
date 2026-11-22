@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
+import { layoutProblems } from "../../../../../ui/test/layout-check";
 import { adminAppsBrowserFixture } from "./AdminApps.browser-fixture";
 import { FIXTURE_NOW } from "./AdminApps.fixture-data";
 
