@@ -1015,7 +1015,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               if (width === 390) {
                 await page.locator('.mail-list-entry[data-conversation-id="Conv02"] a.mail-list-row').click({ button: "right" });
                 await page.locator(".k2b-context-menu").getByRole("menuitem", { name: "Select", exact: true }).click();
-              } else await page.getByRole("checkbox", { name: "Select Example request 2", exact: true }).check();
+              } else {
+                // With a mouse the checkbox shows under the pointer, in the dot's place.
+                await hoverInPlace(page.locator('.mail-list-entry[data-conversation-id="Conv02"]'));
+                await page.getByRole("checkbox", { name: "Select Example request 2", exact: true }).check();
+              }
               const toolbar = page.getByRole("toolbar", { name: "Selected conversation actions", exact: true });
               await toolbar.waitFor({ state: "visible" });
               await settled(page);
@@ -1884,6 +1888,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               return { grips, chain: body ? chain : null, sidebarType };
             });
             expect(structure.grips, `${state}: grips on half pixels`).toEqual([]);
+            // The composer writes in reading text, 14/22, as the mockup does.
+            const composerText = await page.evaluate(() => {
+              const line = document.querySelector(".mail-inline-draft .cm-line");
+              if (!line) return null;
+              const style = getComputedStyle(line);
+              return `${style.fontSize}/${style.lineHeight}`;
+            });
+            if (composerText) expect(composerText, `${state}: composer text`).toBe("14px/22px");
             expect(structure.sidebarType, `${state}: sidebar type`).toEqual([]);
             if (structure.chain)
               expect(structure.chain, `${state}: reader nesting`).toEqual([
@@ -2155,6 +2167,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const page = await open(`${boxPath}?conversation=Conv09`, 1440, 360);
           try {
             const row = page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox');
+            await hoverInPlace(page.locator('.mail-list-entry[data-conversation-id="Conv02"]'));
             await row.check();
             const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
             await scroller.evaluate((element) => {
@@ -4370,6 +4383,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       test("S7: a selection drags as one; a personal mailbox has no assignment targets", async () => {
         const page = await open(`${boxPath}?locale=de`);
         try {
+          await hoverInPlace(page.locator('.mail-list-entry[data-conversation-id="Conv02"]'));
           await page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox').check();
           await page.locator('[data-conversation-id="Conv03"] .mail-list-checkbox').check();
           await lift(page, "Conv02");

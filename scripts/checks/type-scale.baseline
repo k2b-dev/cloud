@@ -784,34 +784,11 @@ packages/ipa-hosts/src/frontend/HostgroupCard.tsx | size | text-[10px]
 packages/ipa-hosts/src/frontend/HostgroupCard.tsx | size | text-lg
 packages/ipa-hosts/src/frontend/page.tsx | size | text-base
 packages/ipa-hosts/src/frontend/page.tsx | size | text-lg
-packages/mail/src/frontend/PublicAttachmentUnlockPage.tsx | size | text-xl
-packages/mail/src/frontend/[mailboxId]/automations/log/page.tsx | size | text-lg
-packages/mail/src/frontend/[mailboxId]/automations/log/page.tsx | size | text-xl
-packages/mail/src/frontend/_components/MailAdminKeptDetail.tsx | size | text-[11px]
-packages/mail/src/frontend/_components/MailAdminKeptDetail.tsx | size | text-lg
-packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | size | text-[10px]
-packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | size | text-[10px]
-packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | size | text-[11px]
-packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | size | text-[11px]
-packages/mail/src/frontend/_components/MailComposeIntentPage.island.tsx | size | text-lg
-packages/mail/src/frontend/_components/MailConversationSummaryCard.tsx | size | text-[0.78125rem]
-packages/mail/src/frontend/_components/MailOperationalSettings.tsx | size | text-[11px]
-packages/mail/src/frontend/_components/MailOperationalSettings.tsx | size | text-base
-packages/mail/src/frontend/_components/MailOperationalSettings.tsx | size | text-lg
-packages/mail/src/frontend/_components/MailRecipientInput.tsx | size | text-[10px]
-packages/mail/src/frontend/_components/MailRemoteImagesNotice.tsx | size | max-md:text-base
-packages/mail/src/frontend/_components/MailRemoteImagesNotice.tsx | size | text-lg
-packages/mail/src/frontend/_components/MailTemplateHelpDisclosure.tsx | size | text-[11px]
-packages/mail/src/frontend/admin-kept.tsx | size | text-base
-packages/mail/src/frontend/admin-security.tsx | size | text-[10px]
-packages/mail/src/frontend/admin-security.tsx | size | text-[10px]
-packages/mail/src/frontend/admin-security.tsx | size | text-[10px]
-packages/mail/src/frontend/admin-security.tsx | size | text-[10px]
-packages/mail/src/frontend/admin-security.tsx | size | text-base
-packages/mail/src/frontend/admin.tsx | size | text-[10px]
-packages/mail/src/frontend/admin.tsx | size | text-[10px]
-packages/mail/src/frontend/admin.tsx | size | text-base
-packages/mail/src/styles/app.css | line | 0.875rem
+packages/mail/src/frontend/_components/MailOperationalSettings.tsx | allow | sign: the server symbol beside a connection
+packages/mail/src/frontend/_components/MailRemoteImagesNotice.tsx | allow | sign: the notice's symbol sizes with its 32 px tile, as NoticeRow's tile does
+packages/mail/src/styles/app.css | allow | sign: initials in a peer's 16 px dot
+packages/mail/src/styles/app.css | allow | sign: the app's symbol in its 24 px tile
+packages/mail/src/styles/app.css | allow | sign: the star mark sizes with its 20 px box
 packages/mail/src/styles/app.css | line | 1.125rem
 packages/mail/src/styles/app.css | line | 1.125rem
 packages/mail/src/styles/app.css | line | 1.125rem
@@ -821,20 +798,10 @@ packages/mail/src/styles/app.css | line | 1.5
 packages/mail/src/styles/app.css | line | var(--mail-row-line)
 packages/mail/src/styles/app.css | line | var(--mail-row-line)
 packages/mail/src/styles/app.css | line | var(--mail-row-line)
-packages/mail/src/styles/app.css | size | 0.5625rem
-packages/mail/src/styles/app.css | size | 0.625rem
-packages/mail/src/styles/app.css | size | 0.6875rem
-packages/mail/src/styles/app.css | size | 0.6875rem
-packages/mail/src/styles/app.css | size | 0.6875rem
-packages/mail/src/styles/app.css | size | 0.6875rem
-packages/mail/src/styles/app.css | size | 0.78125rem
 packages/mail/src/styles/app.css | size | 0.9375rem
-packages/mail/src/styles/app.css | size | 0.9375rem
-packages/mail/src/styles/app.css | size | 1.375rem
 packages/mail/src/styles/app.css | size | 2.25rem
+packages/mail/src/styles/reader.css | allow | sign: the symbol sizes with its 32 px circle
 packages/mail/src/styles/reader.css | line | 1
-packages/mail/src/styles/reader.css | line | normal
-packages/mail/src/styles/reader.css | size | 0.6875rem
 packages/mail/src/styles/reader.css | size | 1.25rem
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | line | leading-tight
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | size | text-2xl
@@ -1148,6 +1115,7 @@ packages/ui/src/styles/index.css | allow | a sign: the row action icons
 packages/ui/src/styles/index.css | allow | a sign: the row action icons
 packages/ui/src/styles/index.css | allow | a sign: the streaming dots
 packages/ui/src/styles/index.css | allow | a sign: the tile visual
+packages/ui/src/styles/index.css | allow | sign: the app's symbol
 packages/ui/src/styles/index.css | allow | the count centres in its chip
 packages/ui/src/styles/layout-parity.css | allow | 16 px keeps iOS from zooming into a focused field in the mobile shell
 packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-app-overview__icon
@@ -1195,6 +1163,7 @@ packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget_
 packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the icon in a notice tile
 packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the icon in a notice tile
 packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the section icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | sign: the cell's sign
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-2xl
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-3xl
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-base

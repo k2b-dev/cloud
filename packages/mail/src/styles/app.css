@@ -118,9 +118,13 @@
     }
   }
 
-  /* The start column (mockup column "u"): the unread dot, on the first line. The checkbox stands in the same place
-     and takes over while a selection runs and in keyboard focus, so nothing moves when it appears. A click on the
-     start column checks it; on a touch screen the row's menu (long press) starts the selection. */
+  /* The start column (mockup column "u"): the unread dot, on the first line. The checkbox shows only while a
+     selection runs, under the pointer, and in keyboard focus. Otherwise it is out of the flow and clipped to nothing in
+     its own place: it draws nothing, takes no room and keeps its box, so its showing moves no box; a screen reader
+     still finds it and Tab still reaches it (then it shows).
+     Not opacity: a transparent checkbox made a drop count as a layout shift (S7). The column keeps its 16 px, so
+     nothing moves when the checkbox takes the dot's place. On a touch screen only a selection shows it; the row's
+     menu (long press) starts one. */
   .mail-row-check {
     position: relative;
   }
@@ -133,38 +137,37 @@
     height: 0.5rem;
   }
 
-  /* Hover does not toggle it, so a pointer that moves across the rows, as in a drag, changes nothing (S7). The checkbox
-     hides by drawing nothing, not by opacity: a transparent checkbox made a drop count as a layout shift. Hidden, it
-     keeps its box and still takes a click on the dot, so a click there starts a selection. */
-  .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:focus-within) .mail-list-checkbox {
-    appearance: none;
-    margin: 0;
-    border: 0;
-    background: transparent;
+  .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:hover, :has(:focus-visible)) .mail-list-checkbox {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    margin-block: auto;
+    clip-path: inset(50%);
   }
 
-  .mail-list-rows[data-selecting] .mail-row-check > .mail-row-dot,
-  .mail-list-entry:focus-within .mail-row-check:has(> .mail-list-checkbox) > .mail-row-dot {
+  .mail-row-check:has(> .mail-list-checkbox) > .mail-row-dot {
     visibility: hidden;
   }
 
-  /* Touch has no hover: outside a selection the checkbox does not take the row's taps either. */
+  .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:hover, :has(:focus-visible)) .mail-row-check > .mail-row-dot {
+    visibility: visible;
+  }
+
   @media not all and (hover: hover) {
-    .mail-list-rows:not([data-selecting]) .mail-list-checkbox {
-      appearance: none;
-      margin: 0;
-      border: 0;
-      background: transparent;
-      pointer-events: none;
+    .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:has(:focus-visible)) .mail-list-checkbox {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-start: 0;
+      margin-block: auto;
+      clip-path: inset(50%);
     }
 
-    .mail-list-rows:not([data-selecting]) .mail-row-check > .mail-row-dot {
+    .mail-list-rows:not([data-selecting]) .mail-list-entry:not(:has(:focus-visible)) .mail-row-check > .mail-row-dot {
       visibility: visible;
     }
   }
 
-  /* The checkbox column: always there, so the first check starts a selection and nothing moves when it does. It
-     stands on the text edge of the column. */
+  /* The start column stands on the text edge of the column. */
   /* In a stacked row the box stands on the first line (8 px down, 20 px high). */
   .mail-row-check {
     display: flex;
@@ -574,7 +577,7 @@
 
   .mail-row-subject-line {
     font-size: var(--k2b-font-size-row);
-    line-height: var(--mail-row-line);
+    line-height: var(--k2b-line-height-row);
     color: var(--k2b-text);
   }
 
@@ -3251,8 +3254,8 @@
 }
 
 /* Cloud flach (K11): the text of a reply is reading text, 14 px on 22 px like the messages below it (mockup Composer A),
-   not the shared editor's 15 px. */
-.k2b-ui :is(.mail-inline-draft, .mail-reply-box) .k2b-ste-host .cm-editor {
+   not the shared editor's 15 px. The scroller sets its own line height, so the rule names it too. */
+.k2b-ui :is(.mail-inline-draft, .mail-reply-box) .k2b-ste-host :is(.cm-editor, .cm-scroller) {
   font-size: var(--k2b-font-size-body);
   line-height: 1.375rem;
 }

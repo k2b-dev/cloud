@@ -47,10 +47,10 @@ export function MailListHandle(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
-  let slot: HTMLSpanElement | undefined;
   const [width, setWidth] = createSignal(0);
   onMount(() => {
-    const split = slot?.closest<HTMLElement>(".mail-split-panes");
+    // The handle stands right in the reader's column, with no wrapper of its own; the list it resizes names the split.
+    const split = document.getElementById("mail-conversation-list")?.closest<HTMLElement>(".mail-split-panes");
     if (!split || typeof ResizeObserver === "undefined") return;
     setWidth(split.getBoundingClientRect().width);
     const observer = new ResizeObserver(() => setWidth(split.getBoundingClientRect().width));
@@ -58,9 +58,9 @@ export function MailListHandle(props: {
     onCleanup(() => observer.disconnect());
   });
   const range = createMemo(() => mailListPercentRange(width()));
-  const target = () => slot?.querySelector<HTMLElement>(".mail-list-handle") ?? undefined;
+  const target = () => document.querySelector<HTMLElement>(".mail-split-reader > .mail-list-handle") ?? undefined;
   return (
-    <span ref={slot} class="contents">
+    <>
       <ResizeSeparator
         class="mail-list-handle"
         label={t().resizeList}
@@ -86,6 +86,6 @@ export function MailListHandle(props: {
       >
         {t().densityHint}
       </MovedHint>
-    </span>
+    </>
   );
 }

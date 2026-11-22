@@ -1339,8 +1339,32 @@ describe("Mail rows by the list's own width (F2)", () => {
       const page = await load({ listSize, items: marked, shared: true });
       const shown = await rows(page);
       expect(shown.map((entry) => ({ height: entry.height, lines: entry.lines }))).toEqual(shown.map(() => ({ height, lines })));
-      // The checkbox always shows, so the first check starts a selection.
-      expect(await page.locator(".mail-list-entry .mail-list-checkbox:visible").count()).toBe(marked.length);
+      // The start column shows the unread dot; the checkbox draws nothing and takes no room until the pointer is over
+      // its row, then it stands in the dot's 16 px (mockup column "u"). A selection shows every checkbox.
+      const checkboxShown = () =>
+        page
+          .locator(".mail-list-entry .mail-list-checkbox")
+          .evaluateAll((boxes) =>
+            boxes.map((box) => getComputedStyle(box).clipPath === "none" && getComputedStyle(box).position !== "absolute"),
+          );
+      // settled: the rows above were read after the list settled; nothing has moved since.
+      expect(await checkboxShown()).toEqual(marked.map(() => false));
+      // hover: the pointer moves to the second row's start column; nothing is read before against the scroll position.
+      // settled: the same settled list as above.
+      const second = await page
+        .locator(".mail-list-entry .mail-row-check")
+        .nth(1)
+        .evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        });
+      await page.mouse.move(second.x, second.y);
+      // The hovered row starts its quick look, which keeps animating here, so the test waits for its own condition.
+      await page.waitForFunction(() => {
+        const box = document.querySelectorAll(".mail-list-entry .mail-list-checkbox")[1];
+        return box !== undefined && getComputedStyle(box).clipPath === "none";
+      });
+      expect(await checkboxShown()).toEqual(marked.map((_, index) => index === 1));
       expect(page.errors).toEqual([]);
       await close(page);
     }, 30_000);
