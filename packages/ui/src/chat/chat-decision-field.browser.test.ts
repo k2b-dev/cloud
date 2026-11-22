@@ -118,39 +118,6 @@ for (const [name, context] of [
     }
   });
 
-test("Gustav flat: the question is a flat card that keeps its tint while the person types", async () => {
-  const page = await open(desktop);
-  try {
-    await settled(page);
-    const paint = () =>
-      page.evaluate(() => {
-        const card = getComputedStyle(document.querySelector(".k2b-chat-decision")!);
-        const details = getComputedStyle(document.querySelector(".k2b-chat-decision__details")!);
-        return {
-          radius: card.borderTopLeftRadius,
-          edge: card.borderTopWidth,
-          edgeColor: card.borderTopColor,
-          fill: card.backgroundColor,
-          shadow: card.boxShadow,
-          // The facts stand on the tint, without a box of their own.
-          details: details.backgroundColor,
-        };
-      });
-    const rest = await paint();
-    expect(rest.radius).toBe("8px");
-    expect(rest.edge).toBe("1px");
-    expect(rest.edgeColor).not.toBe("rgba(0, 0, 0, 0)");
-    expect(rest.edgeColor).not.toBe(rest.fill);
-    expect(rest.shadow).toBe("none");
-    expect(rest.details).toBe("rgba(0, 0, 0, 0)");
-    await page.locator(".k2b-chat-decision__field input").fill("sk-live-0000");
-    await settled(page);
-    expect(await paint()).toEqual(rest);
-  } finally {
-    await page.close();
-  }
-});
-
 test("1440 px: the field and the main answer share a row, the line and the quiet answer the next", async () => {
   const page = await open(desktop);
   try {

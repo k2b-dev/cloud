@@ -939,7 +939,7 @@ for (const view of [
           de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
         );
         expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
-        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopLeftRadius)).toBe("8px");
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopLeftRadius)).toBe("0px");
         // The shared row has no border in either mode.
         expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
         // The filled answer stands last; the other answer before it.

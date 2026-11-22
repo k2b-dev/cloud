@@ -665,9 +665,9 @@
 }
 
 /*
- * A searchable table in a chat answer (Feinschliff v3 §5, Gustav flat F3: head and table without a frame). Its foot
- * names what the search finds and keeps its line in every state. The search is a sign at every width; opened, it lies
- * over the title, which keeps its room, so the head keeps its height.
+ * A searchable table in a chat answer (Feinschliff v3 §5). Its foot names what the search finds and keeps its line in
+ * every state. On a narrow island the search is a sign; opened, it lies over the title, which keeps its room, so the
+ * head keeps its height.
  */
 .k2b-ui .cloud-table-frame {
   container: cloud-table / inline-size;
@@ -682,32 +682,38 @@
 }
 
 .k2b-ui .cloud-table-frame .cloud-table-search-toggle {
-  display: inline-flex;
-}
-
-.k2b-ui .cloud-table-frame:not(.cloud-table-frame--searching) :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
   display: none;
 }
 
-/* Opened, the sign keeps its place unseen and the title its width, so the head keeps its height. */
-.k2b-ui .cloud-table-frame--searching .cloud-table-search-toggle {
-  visibility: hidden;
-}
+@container cloud-table (max-width: 30rem) {
+  .k2b-ui .cloud-table-frame .cloud-table-search-toggle {
+    display: inline-flex;
+  }
 
-.k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) {
-  position: relative;
-}
+  .k2b-ui .cloud-table-frame:not(.cloud-table-frame--searching) :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    display: none;
+  }
 
-/* Out of sight, but still the heading for a screen reader. */
-.k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) > div:first-child {
-  opacity: 0;
-}
+  /* Opened, the sign keeps its place unseen and the title its width, so the head keeps its height. */
+  .k2b-ui .cloud-table-frame--searching .cloud-table-search-toggle {
+    visibility: hidden;
+  }
 
-.k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
-  position: absolute;
-  z-index: 1;
-  inset-block-start: 0;
-  inset-inline: 0 var(--cloud-search-end, 0);
-  width: auto;
-  max-width: none;
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) {
+    position: relative;
+  }
+
+  /* Out of sight, but still the island's heading for a screen reader. */
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) > div:first-child {
+    opacity: 0;
+  }
+
+  .k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 0;
+    inset-inline: 0 var(--cloud-search-end, 0);
+    width: auto;
+    max-width: none;
+  }
 }
