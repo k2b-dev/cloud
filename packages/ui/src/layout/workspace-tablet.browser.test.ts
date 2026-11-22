@@ -21,7 +21,13 @@ const rows = (prefix, count) => Array.from({ length: count }, (_, index) => {
   row.textContent = prefix + " " + (index + 1) + ": Problems with the delivery of scheduled events";
   return row;
 });
-const main = () => kind === "levels"
+const main = () => kind === "min"
+  // Shaped like Mail or Warenfluss: Main declares a minimum above 20 rem, a list pane beside the reader.
+  ? createComponent(AppWorkspace.Main, { minWidth: 820, get children() { return [
+      createComponent(AppWorkspace.MainPane, { id: "list", label: "List", defaultSize: 430, get children() { return rows("Mail", 20); } }),
+      rows("Reader", 20),
+    ]; } })
+  : kind === "levels"
   // Shaped like the admin app list: a wide list level beside the open app's level.
   ? createComponent(AppWorkspace.Main, { level: "app", get children() { return [
       createComponent(AppWorkspace.MainPane, { id: "apps", label: "Apps", heading: "page", href: "#apps", defaultSize: 560, minSize: 360, get children() { return rows("App", 20); } }),
@@ -36,10 +42,13 @@ render(() => createComponent(AppWorkspace, { get children() { return [
   } }),
   createComponent(AppWorkspace.Content, { get children() { return [
     main(),
-    kind === "detail" ? createComponent(AppWorkspace.Detail, { id: "record", open: true, get children() { return rows("Fact", 6); } }) : null,
+    kind === "detail" || kind === "min" ? createComponent(AppWorkspace.Detail, { id: "record", open: true, get children() { return rows("Fact", 6); } }) : null,
   ]; } }),
 ]; } }), document.getElementById("app"));
 `;
+// Error class (Mail #3966, Warenfluss, flat QA for 0.84): below 64 rem Main's declared minimum lies in the
+// workspace's end padding, and the workspace, a scroll box with hidden overflow, counted that padding as hidden width
+// ("cut by 449 px") although nothing was hidden. The workspace clips without being a scroll box.
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the tablet workspace fixture.");
 const script = await build.outputs[0]!.text();
@@ -51,6 +60,33 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
+
+for (const width of [768, 834])
+  test(`${width} px with Main's minimum of 820 px: the workspace holds no hidden width, and nothing is cut`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      await page.setContent(
+        `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-kind="min" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
+      );
+      await page.addScriptTag({ content: script });
+      await page.locator(".k2b-app-workspace__main").waitFor();
+      await settled(page);
+      const root = await page.evaluate(() => {
+        const element = document.querySelector<HTMLElement>(".k2b-app-workspace")!;
+        return {
+          hidden: element.scrollWidth - element.clientWidth,
+          main: element.querySelector(".k2b-app-workspace__main")!.getBoundingClientRect().width,
+        };
+      });
+      expect(root.hidden).toBeLessThanOrEqual(0);
+      // Main still fills the workspace inside its 1 px card edges.
+      expect(Math.round(root.main)).toBe(width - 2);
+      const found = await page.evaluate(layoutProblems, { root: ".k2b-app-workspace", ignore: ".k2b-app-workspace__resize" });
+      expect(found.problems).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
 
 for (const kind of ["levels", "detail"] as const)
   for (const width of [768, 1100])

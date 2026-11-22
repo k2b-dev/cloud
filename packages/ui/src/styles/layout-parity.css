@@ -1058,7 +1058,11 @@ html {
     "drawer";
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  /* Clipped, not a scroll box: below 64 rem Main's minimum lies in the end
+     padding (the tracks reach into it), and a scroll box would count that
+     padding as width it hides. Nothing can scroll it sideways either, not
+     even a focused part beyond its edge. */
+  overflow: clip;
   border: 1px solid transparent;
   border-radius: var(--k2b-workspace-radius);
   background: var(--k2b-surface);
