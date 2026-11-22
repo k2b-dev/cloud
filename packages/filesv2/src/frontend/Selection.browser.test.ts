@@ -222,7 +222,8 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en", ite
 const row = (tab: Page, name: string) => tab.locator(".filesv2-list__row", { hasText: name }).first();
 // While choosing several entries, the status row under the head holds the count and the selection's actions (K6).
 const bar = (tab: Page) => tab.locator('.k2b-status-row[data-mode="selection"]');
-const barText = async (tab: Page) => ((await bar(tab).locator(".k2b-status-row__middle").textContent()) ?? "").trim();
+// The count is the row's lead statement while choosing (K6), where the mockup shows it.
+const barText = async (tab: Page) => ((await bar(tab).locator(".k2b-status-row__lead").textContent()) ?? "").trim();
 const actionNames = (tab: Page) =>
   bar(tab)
     .locator(".filesv2-selection-actions button")
@@ -284,7 +285,7 @@ describe("Files selection in the status row", () => {
       await tab.getByRole("button", { name: "Select", exact: true }).click();
       const hint = tab.locator(".k2b-moved-hint").first();
       await hint.waitFor();
-      expect(await hint.textContent()).toContain("The actions for the selection are now here, beside the count.");
+      expect(await hint.textContent()).toContain("The actions for the selection are now up here, with the count.");
       // The pill at the bottom is gone.
       expect(await tab.locator(".k2b-toolbar").count()).toBe(0);
       await hint.locator("button", { hasText: "Got it" }).first().click();
@@ -628,7 +629,11 @@ describe("Files folder states", () => {
       await settled(tab);
       expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
       if (shots) await tab.screenshot({ path: `${shots}/detail-many-light-768.png` });
-      expect((await problems(tab)).problems).toEqual([]);
+      // The self-check does not see what a floating layer covers (K15), so it checks the drawer itself; the list under it
+      // has its own check at 768 px above.
+      expect(
+        (await tab.evaluate(layoutProblems, { root: ".k2b-app-workspace__detail", ignore: "[data-layout-check='skip']" })).problems,
+      ).toEqual([]);
       await tab.keyboard.press("Escape");
       await settled(tab);
       expect(await detail.getAttribute("data-workspace-detail-drawer")).not.toBe("open");

@@ -2175,7 +2175,7 @@ export default function Browser(props: {
                           </Button>
                           <MovedHint
                             open={selectionHint()}
-                            target={() => surface.querySelector<HTMLElement>(".k2b-status-row__middle") ?? undefined}
+                            target={() => surface.querySelector<HTMLElement>(".k2b-status-row__lead") ?? undefined}
                             placement="bottom"
                             onDismiss={() => {
                               setSelectionHint(false);
