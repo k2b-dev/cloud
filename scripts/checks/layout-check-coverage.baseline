@@ -1,7 +1,7 @@
 # Browser tests that call layoutProblems without classic scrollbars or without 1100 px, one per gap:
 # <file> | <scrollbars|1100>. Lanes remove lines as they move a test to launchWithScrollbars and layoutWidths.
 # `bun scripts/check.ts layout-check-coverage --fix` removes lines whose finding is gone.
-packages/core/src/pages/me/account-pages.browser.test.ts | 1100
+packages/core/src/pages/admin/apps/page.browser.test.ts | scrollbars
 packages/core/src/pages/me/account-pages.browser.test.ts | scrollbars
 packages/faq/src/frontend/faq-flat.browser.test.ts | 1100
 packages/faq/src/frontend/faq-flat.browser.test.ts | scrollbars
