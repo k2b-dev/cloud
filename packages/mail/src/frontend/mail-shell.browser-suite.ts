@@ -1276,8 +1276,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         // distinct scroll keys on the retained list element; restoration waits for the destination content.
         const source = `${boxPath}?history=1`;
         const destination = "/app/mail/Box002";
-        // One-line rows at full width: a short window keeps the list scrollable.
-        const page = await open(source, 1440, 420);
+        // One-line rows at full width: a short window keeps the list scrollable. The flat table's 32 px rows are short,
+        // so 380 px keep enough scroll room in both mailboxes.
+        const page = await open(source, 1440, 380);
         const releaseBack = Promise.withResolvers<void>();
         const list = (id: string) => page.locator(`[data-scroll-preserve="mail-list-${id}"]`);
         const position = (id: string) => list(id).evaluate((element) => element.scrollTop);
@@ -1432,7 +1433,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // A draft is a conversation row: the list's width decides its lines, at the conversations' heights, so
               // nothing moves between the lists. The full-width folder is one line wide; a phone shows three.
               for (const box of [await rows.first().boundingBox(), await rows.nth(1).boundingBox()])
-                expect(Math.abs(box!.height - (width < 768 ? 78 : 44))).toBeLessThanOrEqual(1);
+                expect(Math.abs(box!.height - (width < 768 ? 72 : 32))).toBeLessThanOrEqual(1);
               const draft = rows.first().locator("a.mail-list-row");
               const mark = draft.locator(".mail-row-draft");
               const recipients = await draft.locator(".mail-row-sender").boundingBox();
@@ -1844,8 +1845,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
       for (const via of ["handle", "window"] as const)
         test(`F2 by ${via}: the switch between three lines and one keeps the selection, the open row's place, and the reader`, async () => {
-          // A short window, so the list scrolls and can keep the open row in place.
-          const page = await open(`${boxPath}?conversation=Conv09`, 1440, 480);
+          // A short window, so the list scrolls and can keep the open row in place: with 32 px table rows under the 36 px
+          // column head, 360 px leave the table enough scroll room to hold Conv09 where the stacked list showed it.
+          const page = await open(`${boxPath}?conversation=Conv09`, 1440, 360);
           try {
             const row = page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox');
             await row.check();
@@ -1863,7 +1865,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             if (via === "handle") {
               await page.locator(".mail-list-handle").focus();
               for (let step = 0; step < 4; step++) await page.keyboard.press("Shift+ArrowRight");
-            } else await page.setViewportSize({ width: 2200, height: 480 });
+            } else await page.setViewportSize({ width: 2200, height: 360 });
             await settled(page);
             const after = await split(page);
             expect(after.list!.width).toBeGreaterThanOrEqual(640);
@@ -2135,9 +2137,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const head = (await page.locator(".mail-workspace > .k2b-app-workspace__head").boundingBox())!;
             const search = (await page.locator("[data-mail-head-search]").boundingBox())!;
             const rows = (await page.locator(".mail-list-entry").first().boundingBox())!;
-            // One head row: the search, its filter button and "…" share it.
-            expect(search.y + search.height).toBeLessThanOrEqual(head.y + head.height + 0.5);
-            expect(Math.abs(views.y - (head.y + head.height))).toBeLessThanOrEqual(1);
+            // The phone head has two rows (K12): the search with its filter button and "…" first, the tabs right below it.
+            expect(search.y + search.height).toBeLessThanOrEqual(views.y + 0.5);
+            expect(views.y + views.height).toBeLessThanOrEqual(head.y + head.height + 0.5);
             expect(views.y + views.height).toBeLessThanOrEqual(rows.y);
           } finally {
             await close(page);
@@ -2446,9 +2448,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         for (const [width, height, reading, least, most] of [
           [1680, 1050, false, 8, 99],
           [1680, 1050, true, 6, 99],
-          [1280, 800, false, 4, 99],
+          // The head's end holds the search field, its filters, "…" and New message (K6), so 1280 px keep three views.
+          [1280, 800, false, 3, 99],
           // The tab row spans list and reader, so an open conversation leaves the tabs their room.
-          [1280, 800, true, 4, 99],
+          [1280, 800, true, 3, 99],
           [1024, 768, true, 2, 99],
         ] as const)
           test(`S3 head at ${width}${reading ? " while reading" : ""}: the tabs fill the head's room, More counts the rest, Events stays whole`, async () => {
@@ -2841,7 +2844,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               }));
               expect(title).toEqual({ lines: 1, clipped: true });
               const chips = page.locator("[data-mail-reader-chips]");
-              expect(Math.round((await chips.boundingBox())!.height)).toBe(28);
+              // The flat reader's chip row is one 40 px row (K7, --k2b-h-row).
+              expect(Math.round((await chips.boundingBox())!.height)).toBe(40);
               expect(await chips.getByText("Waiting for reply").isVisible()).toBe(true);
               expect(
                 await page.locator("[data-mail-details-trigger], [data-app-workspace-detail-toggle], .k2b-app-workspace__detail").count(),
@@ -3207,7 +3211,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   .map((element) => element.getBoundingClientRect().height),
               );
             expect(rows.length).toBeGreaterThan(4);
-            for (const height of rows) expect(Math.abs(height - 78)).toBeLessThanOrEqual(0.5);
+            // The flat stacked row: 72 px (K7).
+            for (const height of rows) expect(Math.abs(height - 72)).toBeLessThanOrEqual(0.5);
           } finally {
             await close(page);
           }

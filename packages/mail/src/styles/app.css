@@ -62,6 +62,12 @@
     min-width: 0;
   }
 
+  /* Drafts stand in the same rows without a drag source, at the same heights. */
+  .mail-list-rows > .mail-list-entry {
+    box-sizing: border-box;
+    block-size: var(--mail-row-size);
+  }
+
   .mail-list-entry:hover {
     background: var(--ui-hover);
   }
@@ -858,24 +864,25 @@
   :where(html[data-k2b-input="touch"]) :is(.mail-row-time-cell, .mail-list-time) { opacity: 0; }
   .mail-list-entry:is(:hover, :has(.k2b-progressive-action [aria-expanded="true"])) :is(.mail-row-time-cell, .mail-list-time) { opacity: 0; }
 
-  /* K15: a stacked row on a touch screen keeps its time. It has no "…": a long press opens the row's menu (S7), and the
-     open conversation's "…" holds the same actions. Table rows keep the rule above. */
+  /* K15: a stacked conversation row on a touch screen keeps its time. It has no "…": a long press opens the row's menu
+     (S7), and the open conversation's "…" holds the same actions. Conversation rows stand in a drag source; a draft row
+     has no open conversation, so it keeps its "…". Table rows keep the rule above. */
   @container mail-list (width < 40rem) {
     @media (any-hover: none) {
-      :where(html:not([data-k2b-input="trackpad"])) .mail-list-column .mail-row-menu {
+      :where(html:not([data-k2b-input="trackpad"])) .mail-list-column .mail-list-drag .mail-row-menu {
         display: none;
       }
 
-      :where(html:not([data-k2b-input="trackpad"])) .mail-list-column .mail-list-entry.mail-list-entry :is(.mail-row-time-cell, .mail-list-time) {
+      :where(html:not([data-k2b-input="trackpad"])) .mail-list-column .mail-list-drag .mail-list-entry.mail-list-entry :is(.mail-row-time-cell, .mail-list-time) {
         opacity: 1;
       }
     }
 
-    :where(html[data-k2b-input="touch"]) .mail-list-column .mail-row-menu {
+    :where(html[data-k2b-input="touch"]) .mail-list-column .mail-list-drag .mail-row-menu {
       display: none;
     }
 
-    :where(html[data-k2b-input="touch"]) .mail-list-column .mail-list-entry.mail-list-entry :is(.mail-row-time-cell, .mail-list-time) {
+    :where(html[data-k2b-input="touch"]) .mail-list-column .mail-list-drag .mail-list-entry.mail-list-entry :is(.mail-row-time-cell, .mail-list-time) {
       opacity: 1;
     }
   }
