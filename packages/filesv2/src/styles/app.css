@@ -118,7 +118,8 @@
   min-height: 0;
   overflow: hidden;
 }
-/* "Scrollbar moves nothing": the ScrollArea reserves its scrollbar's room, so head and rows keep their lines. */
+/* The column is a flex column, so the selection pill's strip, its last child, stands at the column's end for any
+   number of rows and sticks there while a long list scrolls beneath. The rows keep their own height. */
 .filesv2-browser__scroll {
   display: flex;
   flex-direction: column;
@@ -126,8 +127,20 @@
 .filesv2-browser__scroll > * {
   flex-shrink: 0;
 }
+/* Without a selection the pill keeps its place but is not seen, read, or reached, also without scripting, where the
+   toolbar's own pending state turns visible. */
+.k2b-ui .k2b-toolbar.filesv2-selection-pill.filesv2-selection-pill--idle {
+  visibility: hidden;
+}
 .filesv2-browser__collection .k2b-file-grid {
-  padding: var(--k2b-space-3) var(--k2b-gutter);
+  padding: var(--ui-space-shell);
+}
+.filesv2-selection-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 1.75rem;
 }
 .filesv2-browser__pagination {
   display: flex;
@@ -240,46 +253,55 @@
 
 
 
+.filesv2-search {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
 
-/* File list (K7): a flat table. The column head is 36 px, 12 px and grey, without a fill; every row is 40 px and draws
-   the hairline under itself, the head the one under the head. A row starts on the column's text edge (K5). */
+/* File list: a flat striped list, not a data table. */
 .filesv2-list {
   display: flex;
   flex-direction: column;
-  font-size: var(--k2b-font-size-row);
+  padding: 0 0.5rem 0.5rem;
+  font-size: 0.8125rem;
 }
 .filesv2-list__head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
-  min-height: var(--k2b-h-colhead);
-  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.375rem);
-  border-block-end: 1px solid var(--k2b-border);
-  background: var(--k2b-surface);
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  font-weight: 500;
+  padding: 0.25rem 0;
+  min-height: 1.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--k2b-text-muted);
 }
 .filesv2-list__row {
   /* Tree depth; rows override the default inline. */
   --depth: 0;
   display: flex;
   align-items: center;
-  min-height: var(--k2b-h-row);
-  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.375rem);
-  border-block-end: 1px solid var(--k2b-border);
+  /* Leaves 0.25rem above and below the 2rem file-type tile. */
+  min-height: 2.5rem;
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   cursor: pointer;
 }
-.filesv2-list__row:hover {
-  background: var(--k2b-hover);
+/* Row fills share one specificity, so source order decides: zebra, hover, checked, then drop target. The tree relies on indentation instead of zebra. */
+:where(.filesv2-list:not([data-tree])) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
+  background: color-mix(in srgb, var(--k2b-surface-muted) 55%, transparent);
 }
-/* K7: the chosen row is a fill in the app colour, without a bar: the entry whose details are open, or a checked row. */
-.filesv2-list__row--active,
+.filesv2-list__row:hover {
+  background: color-mix(in srgb, var(--k2b-hover) 60%, transparent);
+}
+/* Only checked rows are filled; outside select mode the highlighted entry is the active row below. */
 :where(.filesv2-list[data-selecting]) .filesv2-list__row[aria-selected="true"] {
   background: var(--k2b-row-selected);
+}
+/* The active row in list and tree alike: no fill of its own, so it never looks hovered. */
+.filesv2-list__row--active .filesv2-list__name {
+  font-weight: 600;
+  color: var(--ui-app-accent-text);
 }
 .filesv2-list__row:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
@@ -289,64 +311,43 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 0;
+  padding: 0 0.5rem;
 }
-/* The details button keeps its place at the end of the row; spare width lies before it (K7). */
 .filesv2-list__cell--info {
   flex: 0 0 2.25rem;
   justify-content: center;
-  margin-inline-start: auto;
+  padding: 0;
 }
-/* A 20 px slot for the file-type sign or a small preview, then the name (K5: text after exactly one sign). */
+/* The 2rem file-type tile with room before the name, as in the mockup's file rows. */
 .filesv2-list__cell--icon {
-  flex: 0 0 1.75rem;
-  justify-content: flex-start;
-  margin-inline-start: calc(var(--depth, 0) * 1.25rem);
-}
-.filesv2-list .filesv2-thumbnail {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-basis: 1.25rem;
-  font-size: 1rem;
-}
-.filesv2-list .filesv2-thumbnail__text {
-  font-size: 1.5px;
+  flex: 0 0 2.75rem;
+  justify-content: center;
+  padding: 0 0.5rem 0 0.25rem;
 }
 .filesv2-list__row--up {
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
 }
 .filesv2-list__info {
-  color: var(--k2b-text-muted);
+  opacity: 0;
 }
-.filesv2-list__info i {
-  font-size: 1rem;
+.filesv2-list__row:hover .filesv2-list__info,
+.filesv2-list__row:focus-within .filesv2-list__info,
+.filesv2-list__row[aria-selected="true"] .filesv2-list__info,
+.filesv2-list[data-touch="true"] .filesv2-list__info {
+  opacity: 1;
 }
-/* The column head is one grey; its cells do not take the body's column colours (K7). */
-.filesv2-list__head .filesv2-list__cell {
-  color: inherit;
-}
-/* A placeholder that does not fit ends with an ellipsis instead of being cut (K15). */
-.k2b-ui .filesv2-search input {
-  text-overflow: ellipsis;
-}
-/* K7: the name column ends at 560 px, so a size or date stays beside its name. */
 .filesv2-list__cell--name {
   flex: 1 1 auto;
-  max-width: 35rem;
   gap: 0.5rem;
+  padding-left: 0;
+}
+.filesv2-list__cell--icon {
+  margin-left: calc(var(--depth, 0) * 1.25rem);
 }
 .filesv2-list__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.filesv2-list__name--file {
-  display: flex;
-  min-width: 0;
-}
-.filesv2-list__row[aria-expanded] .filesv2-list__name,
-.filesv2-list__row:has(.filesv2-list__kind) .filesv2-list__name {
-  font-weight: 600;
 }
 /* Where a row that leads somewhere goes, such as the parent folder's name: quiet, and it alone gives way to the label. */
 .filesv2-list__detail {
@@ -370,14 +371,8 @@
 }
 /* A new file in the making: its name, and below it the progress or the
    reason it failed, in the row's usual height; its commands at the end. */
-/* K1, K10: a file in the making has two lines (52 px); a failure needs a person, so its row is the tinted cell with
-   framed buttons that name the deed. */
 .filesv2-list__row--operation {
-  min-height: var(--k2b-h-row-2);
   cursor: default;
-}
-.filesv2-list__row--operation[data-state="failed"] {
-  background: var(--k2b-danger-surface);
 }
 .filesv2-list__row--operation .filesv2-list__cell--name {
   flex-direction: column;
@@ -393,7 +388,7 @@
   max-width: 100%;
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-font-size-meta);
+  font-size: 0.75rem;
   line-height: 1rem;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
@@ -443,190 +438,46 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  flex: 0 0 1.25rem;
-  border-radius: var(--k2b-radius-mark);
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: 1.5rem;
   color: var(--k2b-text-secondary);
 }
 .filesv2-list__disclosure:hover {
   color: var(--k2b-action);
 }
-/* K5c: numbers right-aligned with equal-width digits. */
 .filesv2-list__cell--size {
-  flex: 0 0 7rem;
+  flex: 0 0 6rem;
   justify-content: flex-end;
-  padding-inline-end: 1.5rem;
   font-variant-numeric: tabular-nums;
   color: var(--k2b-text-secondary);
 }
 .filesv2-list__cell--modified {
   flex: 0 0 11rem;
-  font-variant-numeric: tabular-nums;
   color: var(--k2b-text-secondary);
 }
-.filesv2-list__none {
-  color: var(--k2b-text-subtle);
-}
-.filesv2-list__kind {
-  display: none;
-}
-/* K7, K15: when the column narrows, the date column goes first; a column never gets narrower. */
-@container files-browser (max-width: 45rem) {
+/* Narrow browsers keep the name readable: dates go first, sizes next. */
+@container files-browser (max-width: 40rem) {
   .filesv2-list__cell--modified {
     display: none;
   }
 }
-/* K12: on a phone every entry has two lines: the name, then size or kind and date (60 px). */
-@container files-browser (max-width: 30rem) {
-  .filesv2-list__head {
-    display: none;
-  }
-  .filesv2-list__row {
-    display: grid;
-    /* The sign's column grows with a tree level, so a nested folder keeps its indent. */
-    grid-template-columns: auto calc(1.75rem + var(--depth, 0) * 1.25rem) auto minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-    align-content: center;
-    min-height: var(--k2b-h-row-phone);
-    padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.375rem);
-  }
-  .filesv2-list__cell--check {
-    grid-area: 1 / 1 / 3 / 2;
-  }
-  .filesv2-list__cell--icon {
-    grid-area: 1 / 2 / 2 / 3;
-  }
-  .filesv2-list__cell--name {
-    grid-area: 1 / 3 / 2 / 5;
-    max-width: none;
-  }
-  .filesv2-list__cell--size,
-  .filesv2-list__cell--modified {
-    display: flex;
-    padding: 0;
-    color: var(--k2b-text-muted);
-    font-size: var(--k2b-font-size-meta);
-    line-height: 1rem;
-  }
+@container files-browser (max-width: 26rem) {
   .filesv2-list__cell--size {
-    grid-area: 2 / 3 / 3 / 4;
-    justify-content: flex-start;
-  }
-  .filesv2-list__cell--modified {
-    grid-area: 2 / 4 / 3 / 5;
-    min-width: 0;
-    white-space: nowrap;
-  }
-  .filesv2-list__cell--modified::before {
-    content: "·";
-    padding-inline: 0.25rem;
-  }
-  .filesv2-list__cell--size:empty + .filesv2-list__cell--modified::before,
-  .filesv2-list__row--virtual .filesv2-list__cell--modified::before {
-    content: none;
-  }
-  .filesv2-list__cell--info {
-    grid-area: 1 / 5 / 3 / 6;
-    align-self: center;
-    justify-content: flex-end;
-    margin: 0;
-  }
-  .filesv2-list__none {
     display: none;
-  }
-  .filesv2-list__kind {
-    display: inline;
-  }
-  .filesv2-list__row--virtual,
-  .filesv2-list__row--more,
-  .filesv2-list__row--operation {
-    display: flex;
-  }
-  .filesv2-list__row--virtual :is(.filesv2-list__cell--size, .filesv2-list__cell--modified) {
-    display: none;
-  }
-}
-/* A touch target is 44 px; the details button's cell makes room for it. */
-@media (any-pointer: coarse) {
-  .filesv2-list__cell--info {
-    flex-basis: 2.75rem;
   }
 }
 .filesv2-list__row--more:hover {
   background: transparent;
 }
-/* The status row's lead: the count, or while a search loads "Searching…" in the same place, so nothing moves. */
-.filesv2-status-lead {
-  display: inline-grid;
-}
-.filesv2-status-lead > * {
-  grid-area: 1 / 1;
-}
-.filesv2-status-lead[data-pending] .filesv2-status-lead__count,
-.filesv2-status-lead:not([data-pending]) .filesv2-status-lead__pending {
-  visibility: hidden;
-}
-.filesv2-selection-actions {
+.filesv2-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--k2b-space-2);
-}
-/* K15: the order chip gives way before the key figure and the lead statement. */
-.filesv2-sort-summary {
-  display: contents;
-}
-@container files-browser (max-width: 47.5rem) {
-  .filesv2-sort-summary {
-    display: none;
-  }
-}
-/* Head (K6): the path, then search, sort and filter, the view segment and New. */
-.filesv2-view-switch-place {
-  display: inline-flex;
-}
-/* K15: on a phone the segment waits in "Sort and filter" (its View section), and the path keeps its room. */
-@container k2b-head (width < 32rem) {
-  .filesv2-view-switch-place {
-    display: none;
-  }
-}
-.k2b-ui .filesv2-search {
-  flex: 0 0 14.5rem;
-  width: 14.5rem;
-  min-width: 7.5rem;
-}
-@container k2b-app-area (min-width: 120rem) {
-  .k2b-ui .filesv2-search {
-    flex-basis: 20rem;
-    width: 20rem;
-  }
-}
-/* K6, K15: the head stays one 56 px row; the search field narrows before the path gives way (path keeps 18 rem). */
-@container k2b-head (width < 54rem) {
-  .k2b-ui .filesv2-search {
-    flex-basis: 10rem;
-    width: 10rem;
-  }
-}
-@container k2b-head (width < 50rem) {
-  .k2b-ui .filesv2-search {
-    flex-basis: 7.5rem;
-    width: 7.5rem;
-    min-width: 0;
-  }
-}
-/* The view segment shows its signs only (its names are for screen readers), so each option is a square. */
-.k2b-ui .filesv2-view-switch .k2b-segmented-control__option {
-  gap: 0;
-  min-width: 2rem;
-  padding-inline: 0.5rem;
-}
-.filesv2-browser__notes {
-  display: flex;
-  flex-direction: column;
-  gap: var(--k2b-space-2);
-  padding: var(--k2b-space-2) var(--k2b-gutter);
+  gap: 0.5rem;
+  min-height: 2rem;
 }
 /* Search filters stay on one line; a value that no longer fits scrolls the strip instead of moving the rows below. */
 .filesv2-search-filters {
@@ -646,28 +497,20 @@
 .filesv2-search-loading {
   display: flex;
   flex-direction: column;
-  padding: var(--k2b-h-colhead) var(--k2b-gutter) var(--k2b-space-2);
+  padding: 1.75rem 0.5rem 0.5rem;
 }
 .filesv2-search-loading__row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  height: var(--k2b-h-row);
-}
-/* On a phone the list has no column head and its rows have two lines (K12). */
-@container files-browser (max-width: 30rem) {
-  .filesv2-search-loading {
-    padding-block-start: 0;
-  }
-  .filesv2-search-loading__row {
-    height: var(--k2b-h-row-phone);
-  }
+  gap: 0.75rem;
+  height: 2.5rem;
+  padding-left: 0.25rem;
 }
 .filesv2-search-loading__icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 2rem;
+  height: 2rem;
   flex: none;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: var(--k2b-radius-control);
 }
 .filesv2-search-loading__text {
   width: min(22rem, 60%);
@@ -751,7 +594,7 @@
 /* Files' widths before anyone resizes. The saved layout is the workspace's inline style and wins over them. */
 .k2b-app-workspace.filesv2-workspace {
   --k2b-workspace-sidebar-width: 248px;
-  --k2b-workspace-detail-filesv2-inspector-width: 380px;
+  --k2b-workspace-detail-filesv2-inspector-width: 400px;
 }
 
 /* Sidebar tree: the label carries a marker; the row's own icon slot turns into a spinner so nothing shifts. */
@@ -791,7 +634,6 @@
 /* Selection mode: a checkbox column in lists, a floating checkbox on tiles. */
 .filesv2-list__cell--check {
   flex: 0 0 2rem;
-  width: 2rem;
   justify-content: center;
   padding: 0;
 }
@@ -913,7 +755,7 @@
   position: relative;
   flex: 0 0 auto;
   min-height: 0;
-  padding: var(--k2b-space-1) var(--k2b-gutter) var(--k2b-space-3);
+  padding: 0.25rem 0.75rem 0.75rem;
 }
 /* The viewport clips; it reaches into the section's inset by a Markdown table's 0.5rem past the text, so the table
    keeps its line ends while the text stays in place. */
@@ -931,7 +773,7 @@
 }
 .filesv2-folder-readme__expand {
   position: absolute;
-  inset-inline: var(--k2b-gutter);
+  inset-inline: 0.75rem;
   bottom: 0.75rem;
   display: flex;
   justify-content: flex-start;

@@ -48,7 +48,6 @@ render(() => {
             size: t.size,
             modified: t.modified,
             details: b.detailsFor,
-            folder: b.folderKind,
             toggle: b.toggleFolder,
             select: b.selectEntry,
             more: b.more,
