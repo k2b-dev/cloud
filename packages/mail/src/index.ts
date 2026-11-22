@@ -8,6 +8,7 @@ import { app } from "./config";
 import { mailHelp } from "./help";
 import {
   buildActivityFeedIndex,
+  buildActorAssignmentIndex,
   buildBackfillActivityIndex,
   buildCommandTargetIndex,
   buildDraftRemoteIdIndex,
@@ -70,6 +71,7 @@ const result = await app.start({
         if ((await buildDraftRemoteIdIndex()) === "busy") return;
         if ((await buildOpenConversationIndex()) === "busy") return;
         if ((await buildActivityFeedIndex()) === "busy") return;
+        if ((await buildActorAssignmentIndex()) === "busy") return;
         await buildOptionalSearchIndex();
         // Last: its final rule change gives up after a short lock wait and must not defer the builds above.
         await buildFolderIdentityIndexes();
