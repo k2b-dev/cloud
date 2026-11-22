@@ -93,17 +93,18 @@ export default function AppsTable(props: {
     document.addEventListener("keydown", onKey);
     onCleanup(() => document.removeEventListener("keydown", onKey));
   });
-  // Beside an open app only name, state and problem stay; on a phone, name and state.
+  // Beside an open app only name, state and problem stay. A narrow list (below 560 px) keeps name and state; version,
+  // address and problem move into the row's details (priority 3), so the list never scrolls sideways (K15).
   const columns = (): DataTableColumn<AppsTableRow>[] => {
-    const wide = props.selected ? "" : "hidden md:table-cell";
+    const side = props.selected ? undefined : (3 as const);
     const all: DataTableColumn<AppsTableRow>[] = [
       { id: "app", header: t().columnApp, value: "name" },
-      { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: "w-36 min-w-36" },
-      { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: `w-24 ${wide}` },
+      { id: "status", header: t().columnStatus, value: "status", nowrap: true },
+      { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: "w-24", priority: 3 },
       // At least as wide as a whole date ("29. Okt. 2026"), which never breaks or gets cut (K15); the problem gives way.
-      { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] min-w-32 ${wide}` },
+      { id: "address", header: t().columnAddress, value: "routes", class: "w-[24%] min-w-32", priority: 3 },
       // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail.
-      { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}` },
+      { id: "problem", header: t().columnProblem, value: "problem", class: "w-full", priority: side },
     ];
     return props.selected ? all.filter((column) => column.id !== "version" && column.id !== "address") : all;
   };
@@ -174,23 +175,32 @@ export default function AppsTable(props: {
                 >
                   <i class={row.icon || "ti ti-apps"} />
                 </span>
-                <span class="flex min-w-0 flex-col">
-                  <span class="truncate font-medium">{row.name}</span>
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="truncate font-medium" title={row.name}>
+                    {row.name}
+                  </span>
                   {/* On a phone the table keeps name and state; the problem, or else the address, moves under the name. */}
-                  <span class={`truncate text-xs md:hidden ${row.problem ? PROBLEM_TONE[row.problemTone ?? "neutral"] : "text-dimmed"}`}>
+                  {/* Width 0 with a full minimum: a long problem never widens the column, it truncates under the name. */}
+                  <span
+                    class={`block w-0 min-w-full truncate text-xs md:hidden ${row.problem ? PROBLEM_TONE[row.problemTone ?? "neutral"] : "text-dimmed"}`}
+                  >
                     {row.problem ?? row.routes}
                   </span>
                 </span>
               </a>
             );
+          // The state is never cut (K15): the badge keeps its own width, which already reserves the longest word, so the
+          // column is as wide as its content and no fixed minimum holds the list wider than a phone.
           if (col.id === "status")
             return (
-              <StatusBadge
-                variant="dot"
-                tone={STATUS_TONE[row.status]}
-                label={statusLabel(t(), row.status)}
-                labels={STATUSES.map((status) => statusLabel(t(), status))}
-              />
+              <span class="inline-flex w-max">
+                <StatusBadge
+                  variant="dot"
+                  tone={STATUS_TONE[row.status]}
+                  label={statusLabel(t(), row.status)}
+                  labels={STATUSES.map((status) => statusLabel(t(), status))}
+                />
+              </span>
             );
           if (col.id === "version") return <span class="tabular-nums">{row.release ?? "–"}</span>;
           // Width 0 with a full minimum: long text never widens its column, it truncates in whatever room is left.
