@@ -439,14 +439,7 @@ export default function MailMessageCard(props: {
           <div class="mail-message-head">
             <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
             <div class="mail-message-head-who">
-              <Show
-                when={!outgoing() && sender()}
-                fallback={
-                  <span class="mail-message-sender" title={senderLabel()}>
-                    <span class="mail-message-sender-name">{senderLabel()}</span>
-                  </span>
-                }
-              >
+              <Show when={!outgoing() && sender()} fallback={<span class="mail-message-sender">{senderLabel()}</span>}>
                 <button
                   type="button"
                   class="mail-message-sender"
@@ -456,7 +449,7 @@ export default function MailMessageCard(props: {
                   title={props.message.from.map(formatMailAddress).join(", ")}
                   onClick={(event) => setSenderAnchor(senderAnchor() ? null : event.currentTarget)}
                 >
-                  <span class="mail-message-sender-name">{senderLabel()}</span>
+                  {senderLabel()}
                   <i class="ti ti-chevron-down" aria-hidden="true" />
                 </button>
               </Show>

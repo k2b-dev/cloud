@@ -89,8 +89,7 @@ const skeleton = (html: string) =>
   [...html.matchAll(/class="([^"]*)"/g)]
     .flatMap((match) => match[1]!.split(/\s+/))
     .filter((name) =>
-      // Row parts only: the list around the rows (`mail-list-rows`) is no part of a row.
-      /^mail-(list-entry|list-row|list-preview|row-(check|dot|from|sender|time-cell|time|subject-line|subject|marks|mark))$/.test(name),
+      /^mail-(list-entry|list-row|list-preview|row-(check|dot|from|sender|time-cell|time|subject-line|subject|marks|mark)$)/.test(name),
     );
 
 describe("MailDraftsView", () => {

@@ -1,0 +1,38 @@
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">
+	<BkToCstmrAcctRpt>
+		<GrpHdr>
+			<MsgId>OR9910121035</MsgId>
+			<CreDtTm>2023-10-29T11:30:11-02:00</CreDtTm>
+			<OrgnlBizQry>
+				<MsgId>OR9910121016</MsgId>
+			</OrgnlBizQry>
+		</GrpHdr>
+		<Rpt>
+			<Id>OR9910121035</Id>
+			<RptPgntn>
+				<PgNb>1</PgNb>
+				<LastPgInd>true</LastPgInd>
+			</RptPgntn>
+			<Acct>
+				<Id>
+					<Othr>
+						<Id>OTPVHUHBXXX</Id>
+					</Othr>
+				</Id>
+			</Acct>
+			<Bal>
+				<Tp>
+					<CdOrPrtry>
+						<Cd>ITBD</Cd>
+					</CdOrPrtry>
+				</Tp>
+				<Amt Ccy="HUF">3000000</Amt>
+				<CdtDbtInd>DBIT</CdtDbtInd>
+				<Dt>
+					<DtTm>2023-10-29T11:35:00-02:00</DtTm>
+				</Dt>
+			</Bal>
+			<AddtlRptInf>1//L01 CAS/NOTSUSP//L13 OVERDRAFT/HUF1000000.00//L01 QUEUE/BLOCKED-ACCTSUSP//L02 D231029009009OTPVHUHBXXXBT9910121003//32B HUF500000.00</AddtlRptInf>
+		</Rpt>
+	</BkToCstmrAcctRpt>
+</Document>

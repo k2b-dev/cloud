@@ -87,8 +87,7 @@ export default ssr<AuthContext>(async (c) => {
       >
         <AccountPage title={t.profile} description={t.profilePageDescription}>
           {(action === "extend" || user.accountExpires || pendingRequest || (user.provider === "ipa" && user.profile === "guest")) && (
-            // Notices are cells from edge to edge of the page frame; their text stays on the page's text edge (K5, K10).
-            <div class="mx-[calc(-1*var(--k2b-gutter))] flex flex-col gap-2" data-account-notices>
+            <div class="flex flex-col gap-2">
               {action === "extend" && <NoticeCard tone="info">{t.extendHint}</NoticeCard>}
 
               {expiryNotice && user.accountExpires && (
@@ -186,7 +185,7 @@ export default ssr<AuthContext>(async (c) => {
 
           <ScreenSettings timerSeconds={screen.privacyTimerSeconds} platform={platform} sharedWorkstation={sharedWorkstation} />
 
-          <ul class="grid gap-x-8 gap-y-2 sm:grid-cols-2">
+          <ul class="-mx-3 grid gap-1 sm:grid-cols-2">
             {(
               [
                 {
@@ -218,13 +217,16 @@ export default ssr<AuthContext>(async (c) => {
               ] satisfies { href: string; icon: string; title: string; summary: string }[]
             ).map((link) => (
               <li>
-                <a href={link.href} class="group flex items-start gap-3 py-3 no-underline">
+                <a
+                  href={link.href}
+                  class="flex items-start gap-3 rounded-[var(--ui-radius-surface)] p-3 no-underline transition-colors hover:bg-[var(--ui-hover)]"
+                >
                   <i class={`${link.icon} mt-0.5 text-dimmed`} aria-hidden="true" />
                   <span class="min-w-0 flex-1">
                     <span class="block text-sm font-semibold text-primary">{link.title}</span>
                     <span class="mt-1 block text-xs text-dimmed">{link.summary}</span>
                   </span>
-                  <i class="ti ti-chevron-right mt-0.5 text-dimmed transition-colors group-hover:text-primary" aria-hidden="true" />
+                  <i class="ti ti-chevron-right mt-0.5 text-dimmed" aria-hidden="true" />
                 </a>
               </li>
             ))}

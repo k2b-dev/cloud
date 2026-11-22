@@ -6,70 +6,36 @@ export const dismissAssistantPanesHint = () => {
   document.cookie = `${ASSISTANT_PANES_HINT_COOKIE}=seen; Max-Age=31536000; Path=/; SameSite=Lax`;
 };
 
-/**
- * How "In this chat" shows (Gustav flat): a column docked beside the chat, a drawer over the chat when the column has no
- * room or tabs are open, or a phone sheet.
- */
-export type ChatContextMode = "column" | "drawer" | "sheet";
+/** How the box "In this chat" shows: an island beside the chat, a popover under the chat's button, or a phone sheet. */
+export type ChatContextMode = "column" | "popover" | "sheet";
 
 /** The presentation the layout's container and media queries chose, read from `--assistant-context-mode`. */
 export const chatContextMode = (layout: Element): ChatContextMode => {
   const mode = getComputedStyle(layout).getPropertyValue("--assistant-context-mode").trim();
-  return mode === "column" || mode === "sheet" ? mode : "drawer";
+  return mode === "column" || mode === "sheet" ? mode : "popover";
 };
 
 /**
- * The button of "In this chat" and the state of its column. CSS decides whether there is room for the column; the
- * person may close it (the button in the chat's head brings it back). Without room the button opens the same column
- * as a drawer over the chat, and on phones a sheet.
+ * The button of the box "In this chat". CSS decides whether the box is an island beside the chat or this button; the
+ * button opens the box as a popover below it, or as a sheet on phones.
  */
 export const createChatContextHost = (options: { onSheet: () => void }) => {
-  const [closed, setClosed] = createSignal(false);
-  const [drawer, setDrawer] = createSignal(false);
+  const [anchor, setAnchor] = createSignal<HTMLElement>();
   let button: HTMLElement | undefined;
-  let heading: HTMLElement | undefined;
-  /** After the column or drawer appears, the focus goes to its heading; after it closes, back to the button. */
-  const focusLater = (target: () => HTMLElement | undefined) => requestAnimationFrame(() => target()?.focus());
   return {
-    /** The person closed the docked column. */
-    closed,
-    /** The drawer is open. */
-    drawer,
+    /** The anchor while the popover is open. */
+    anchor,
     buttonRef: (element: HTMLElement) => {
       button = element;
     },
-    headingRef: (element: HTMLElement) => {
-      heading = element;
-    },
     toggle: () => {
+      if (anchor()) return setAnchor(undefined);
       const layout = button?.closest(".assistant-chat-layout");
-      if (!layout) return;
-      const mode = chatContextMode(layout);
-      if (mode === "sheet") return options.onSheet();
-      if (mode === "column") {
-        setDrawer(false);
-        setClosed(false);
-      } else if (drawer()) return setDrawer(false);
-      else setDrawer(true);
-      focusLater(() => heading);
+      if (!layout || !button) return;
+      if (chatContextMode(layout) === "sheet") return options.onSheet();
+      setAnchor(button);
     },
-    /** Closes the column where it is docked, the drawer elsewhere. */
-    close: () => {
-      const layout = button?.closest(".assistant-chat-layout");
-      if (layout && chatContextMode(layout) === "column") setClosed(true);
-      setDrawer(false);
-      focusLater(() => button);
-    },
-    /** Closes the drawer; with `returnFocus`, a focus left behind in it (or nowhere) goes back to the button. */
-    closeDrawer: (returnFocus = false) => {
-      setDrawer(false);
-      if (!returnFocus) return;
-      const column = heading?.closest(".assistant-context-boxcol");
-      requestAnimationFrame(() => {
-        const focus = document.activeElement;
-        if (!focus || focus === document.body || column?.contains(focus)) button?.focus();
-      });
-    },
+    close: () => setAnchor(undefined),
   };
 };
 

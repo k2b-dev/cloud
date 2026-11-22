@@ -6,6 +6,7 @@ COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/ssr/src packages/ssr/src
+COPY packages/stdlib/src packages/stdlib/src
 COPY packages/ui packages/ui
 COPY packages/speedtest packages/speedtest
 RUN bun run --cwd packages/ui build && bun packages/speedtest/scripts/build.ts

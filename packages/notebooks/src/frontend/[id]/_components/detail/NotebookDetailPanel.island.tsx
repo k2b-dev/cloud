@@ -997,8 +997,8 @@ export default function NotebookDetailPanel(props: Props) {
   return (
     <AppWorkspace.Detail
       id={NOTEBOOK_DETAIL_ID}
-      // The note's page pill holds the Details button, in Write and in Read.
-      toggle={false}
+      // In Write the editor toolbar holds the Details button; Read keeps the workspace's own.
+      toggle={props.mode === "edit" ? false : undefined}
       open={open()}
       onOpen={() => {
         setOpen(true);

@@ -85,19 +85,20 @@ render(() => {
   });
   return (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
-      {/* Browser brings its head and columns, as in the workspace. */}
       <AppWorkspace mobileSurface="flush">
-        <Browser
-          directory={shown()}
-          bases={[base]}
-          source={`/app/filesv2?${current().filters}`}
-          pending={current().state === "loading"}
-          pendingSearch={current().state === "loading"}
-          uploads={uploads}
-          onSearch={(next) => host.setAttribute("data-search", JSON.stringify(next))}
-          onRetry={() => host.setAttribute("data-retried", "true")}
-          onNavigate={async (event) => host.setAttribute("data-navigated", `${event.url.pathname}${event.url.search}`)}
-        />
+        <AppWorkspace.Content>
+          <Browser
+            directory={shown()}
+            bases={[base]}
+            source={`/app/filesv2?${current().filters}`}
+            pending={current().state === "loading"}
+            pendingSearch={current().state === "loading"}
+            uploads={uploads}
+            onSearch={(next) => host.setAttribute("data-search", JSON.stringify(next))}
+            onRetry={() => host.setAttribute("data-retried", "true")}
+            onNavigate={async (event) => host.setAttribute("data-navigated", `${event.url.pathname}${event.url.search}`)}
+          />
+        </AppWorkspace.Content>
       </AppWorkspace>
     </LocaleProvider>
   );

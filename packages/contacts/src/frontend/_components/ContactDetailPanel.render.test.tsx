@@ -263,7 +263,7 @@ describe("Contact birthday calendar dates (#1232)", () => {
 });
 
 describe("Contacts reader page", () => {
-  test("who has access closes the topics for members of the book, and is absent for public-only readers", () => {
+  test("who has access stands first under More about for members of the book, and is absent for public-only readers", () => {
     const render = (memberBookIds: string[]) =>
       renderToString(() =>
         createComponent(ContactDetailPanel, {
@@ -283,14 +283,14 @@ describe("Contacts reader page", () => {
         }),
       );
     const member = render([contact.bookId]);
-    // K17: a folded section is a row at the end of the topics. The list loads after the first paint and keeps its
-    // place meanwhile.
-    const access = member.slice(member.indexOf("contacts-record__topics"));
-    expect(access).toMatch(/>Notes<[\s\S]*>Access<\/span>[\s\S]*Loading who has access/);
-    expect(member).not.toContain("Manage access");
+    const more = member.slice(member.indexOf("More about Ada Lovelace"));
+    // The list loads after the first paint and keeps its place meanwhile.
+    expect(more).toMatch(/>Access<\/span>[\s\S]*Loading who has access/);
+    expect(more.indexOf(">Access<")).toBeLessThan(more.indexOf(">Properties<"));
+    expect(more).not.toContain("Manage access");
     expect(render([])).not.toContain(">Access<");
   });
-  test("composes a record of facts beside flat topics in order (K17)", () => {
+  test("composes a reader page with framed topics in order and flat secondary details", () => {
     const html = renderToString(() =>
       createComponent(ContactDetailPanel, {
         initialContact: contact,
@@ -313,30 +313,22 @@ describe("Contacts reader page", () => {
     expect(html).not.toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Ada Lovelace</h2>");
     expect(html).toContain('class="k2b-detail-panel__header-leading"');
-    // K9: the avatar fits the 56 px bar.
-    expect(html).toMatch(/class="k2b-avatar [^"]*" data-size="sm"/);
+    expect(html).toMatch(/class="k2b-avatar [^"]*" data-size="lg"/);
     for (const icon of ["ti-list-details", "ti-address-book", "ti-map-pin", "ti-message-circle", "ti-sitemap", "ti-user", "ti-briefcase"])
       expect(html).toContain(`ti ${icon}`);
-    // The topics first, then the facts (they stand in the quiet column beside the topics from 50rem).
     expect(html).toMatch(
-      />Addresses<\/h2>[\s\S]*>Relationships<\/h2>[\s\S]*>Notes<\/h2>[\s\S]*>Details<\/h2>[\s\S]*>Reach<\/h3>[\s\S]*>Properties<\/h3>[\s\S]*>Personal<\/h3>[\s\S]*>Work<\/h3>/,
+      />Reach<\/h2>[\s\S]*>Addresses<\/h2>[\s\S]*>Relationships<\/h2>[\s\S]*>Notes<\/h2>[\s\S]*>More about Ada Lovelace<\/h2>/,
     );
-    // K17: every fact group has its one pencil for someone who may edit.
-    expect(html.match(/class="[^"]*k2b-fact-group__edit/g)).toHaveLength(4);
-    expect(html).not.toContain("More about Ada Lovelace");
-    expect(html.match(/data-size="md" data-frame="line" data-icon="true"/g)).toHaveLength(3);
-    expect(html.match(/class="k2b-fact-group[ "]/g)).toHaveLength(4);
+    expect(html.match(/data-size="md" data-frame="line" data-icon="true"/g)).toHaveLength(5);
     expect(html).toContain("data-print-region");
-    // K9: two framed actions in a row, the third waits beside them as an icon button; none is tinted or filled.
-    expect(html).toMatch(/<a href="mailto:ada@example.com" class="k2b-button[^"]*"[^>]*data-variant="secondary"/);
-    expect(html).not.toContain("contacts-details-main");
+    expect(html).toMatch(/<a href="mailto:ada@example.com" class="k2b-button contacts-details-main[^"]*"[^>]*data-variant="subtle"/);
     expect(html).toContain('aria-label="More contact actions"');
+    expect(html).toContain(">Properties</h3>");
     expect(html).not.toContain('class="k2b-detail-panel__group"');
     expect(html.match(/<section class="k2b-section[^"]*"[^>]*data-open="true"/g)).toBeNull();
-    // Nothing is folded away: every former summary term is a fact now.
-    for (const term of ["Birthday", "Pronouns", "Language", "Company", "Department", "Job title", "VAT ID"])
-      expect(html).toContain(`<dt>${term}</dt>`);
+    for (const summary of ["Birthday, Pronouns, Language", "Company, Department, Job title, VAT ID"]) expect(html).toContain(summary);
     expect(html).toContain('data-scroll-preserve="contacts-detail"');
+    expect(html).toContain('data-layout="rows"');
     expect(html).toContain('href="mailto:ada@example.com"');
     expect(html).toContain('href="tel:+44 20 7946 0958"');
     expect(html).toContain("Relationships");

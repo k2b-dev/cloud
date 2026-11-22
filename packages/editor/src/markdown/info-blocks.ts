@@ -86,11 +86,11 @@ class InfoBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
-    // At 14px / 22px, count each title and unwrapped body line, plus the cell's 14px padding and 2px transparent
-    // border (the theme below); the title and the body share one text flow without a gap. The icon sits beside the
-    // text and adds no height. A wrapped line measures taller; CodeMirror corrects the height once the notice renders.
+    // At 16px / 26px, count each title and unwrapped body line, plus the flat alert cell's 14px padding and 2px border
+    // (Cloud flat K10: no gap under the title). The icon sits beside the text and adds no height. A wrapped line
+    // measures taller; CodeMirror corrects the height once the notice renders.
     const lines = this.blockData.content.split("\n").length + (this.blockData.title ? 1 : 0);
-    return lines * 22 + 16;
+    return lines * 26 + 16;
   }
 }
 
@@ -148,15 +148,10 @@ export const infoBlocksExtension = (locale: string): Extension => {
       margin: "0 !important",
       lineHeight: "1",
     },
-    // Notices read at the note's text size and line, as in the Book. The cell keeps the flat notice geometry (7 px
-    // inside a 1 px edge, the title on the text's first line) here, so `estimatedHeight` holds for every host.
+    // Notices read at the note's text size, as in the Book.
     ".cm-notice-card-widget .k2b-notice-card": {
       fontSize: "inherit",
-      lineHeight: "22px",
-      paddingBlock: "7px",
-    },
-    ".cm-notice-card-widget .k2b-notice-card__title + .k2b-notice-card__body": {
-      marginTop: "0",
+      lineHeight: "1.625",
     },
   });
 

@@ -81,7 +81,7 @@ export default function AssistantEmptyChat(props: {
           <div class="absolute inset-x-0 bottom-0 flex flex-col justify-end">
             <h1
               id="assistant-empty-title"
-              class="text-start text-[length:var(--k2b-font-size-lead)] leading-6 font-semibold text-[var(--k2b-text)]"
+              class="text-start text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
               classList={{ "sr-only": Boolean(props.modelNote) }}
             >
               {props.place ? placeT().emptyTitle({ title: props.place.title }) : t().workOn}

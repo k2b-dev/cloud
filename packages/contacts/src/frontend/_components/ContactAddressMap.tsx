@@ -175,7 +175,7 @@ export default function ContactAddressMap(props: Props) {
         </MapTile>
       </Show>
       <Show when={view().kind !== "off" && !point()}>
-        <div class="relative mt-2 overflow-hidden">
+        <div class="relative mt-2 overflow-hidden rounded-xl">
           <CloudMap height={MAP_HEIGHT} availability={props.availability} markers={markers()} />
           <Show when={message()}>
             {(content) => (

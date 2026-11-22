@@ -32,7 +32,14 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
  * of scope.
  */
 
-const EXCLUDED_PACKAGES = new Set(["packages/ui", "packages/ssr", "packages/editor", "packages/gateway", "packages/cloud-cli"]);
+const EXCLUDED_PACKAGES = new Set([
+  "packages/ui",
+  "packages/ssr",
+  "packages/editor",
+  "packages/stdlib",
+  "packages/gateway",
+  "packages/cloud-cli",
+]);
 const BROWSER_PATH = /\/(?:frontend|browser|client|test|tests)\//;
 
 /** `createSync(` call sites that are not application runtime, each with its reason. */

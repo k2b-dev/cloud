@@ -33,7 +33,7 @@ Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du zwischen drei Ansicht
 
 In der Ansicht **Bearbeiten** öffnet das Buchsymbol in der unteren Werkzeugleiste die Buchansicht. Der Detailbereich bietet auch Aktionen für Buch und **Schreibgeschützt**. Wähle in **Schreibgeschützt** im Detailbereich **Notiz bearbeiten**, um zurück zur Ansicht **Bearbeiten** zu wechseln.
 
-In **Schreibgeschützt** steht der Stift in der Leiste unter der Notiz, neben Kommentaren und Details. In Buch erscheint unten rechts ein runder Stift, wenn du mit dem Mauszeiger über das Dokument fährst. Auch der Tastaturfokus zeigt ihn. Auf Touchgeräten bleibt er sichtbar. Gesperrte Notizen zeigen keine Bearbeitungsaktion.
+In Buch und **Schreibgeschützt** erscheint unten rechts ein runder Stift, wenn du mit dem Mauszeiger über das Dokument fährst. Auch der Tastaturfokus zeigt ihn. Auf Touchgeräten bleibt er sichtbar. Gesperrte Notizen zeigen keine Bearbeitungsaktion.
 
 Ist keine Notiz ausgewählt oder die Notiz gesperrt, zeigt Buch Personen mit Zugriff **Bearbeiten** oder **Verwalten** in der Seitenleiste **Arbeitsbereich öffnen**. Damit öffnest du die Einstellungen oder erstellst eine Notiz. Hast du die Navigation ausgeblendet, blende sie zuerst mit der Schaltfläche unten links ein.
 

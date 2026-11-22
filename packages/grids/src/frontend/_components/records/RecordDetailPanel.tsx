@@ -662,9 +662,10 @@ export default function RecordDetailPanel(props: Props) {
                       ]}
                     >
                       <Dropdown.Trigger
-                        variant="secondary"
+                        variant="subtle"
                         size="sm"
                         type="button"
+                        class="grids-details-main"
                         disabled={createCorrectionMut.loading()}
                         loading={createCorrectionMut.loading()}
                         loadingLabel={
@@ -692,9 +693,10 @@ export default function RecordDetailPanel(props: Props) {
                       when={canResolveReview()}
                       fallback={
                         <Button
-                          variant="secondary"
+                          variant="subtle"
                           size="sm"
                           type="button"
+                          class="grids-details-main"
                           aria-label={t().editRecordLabel}
                           onClick={() => handleEdit(rec)}
                           disabled={updating()}
@@ -704,9 +706,10 @@ export default function RecordDetailPanel(props: Props) {
                       }
                     >
                       <Button
-                        variant="secondary"
+                        variant="subtle"
                         size="sm"
                         type="button"
+                        class="grids-details-main"
                         onClick={() => void resolveFinalizationRequest(rec, "approve")}
                         loading={approveFinalizationMut.loading()}
                         disabled={resolutionLoading()}
@@ -717,7 +720,14 @@ export default function RecordDetailPanel(props: Props) {
                     </Show>
                   </Show>
                   <Show when={props.canWrite && mode() === "trash"}>
-                    <Button variant="secondary" size="sm" type="button" onClick={() => handleRestore(rec)} disabled={restoreMut.loading()}>
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      type="button"
+                      class="grids-details-main"
+                      onClick={() => handleRestore(rec)}
+                      disabled={restoreMut.loading()}
+                    >
                       <i class="ti ti-arrow-back-up" aria-hidden="true" /> {t().restore}
                     </Button>
                   </Show>
@@ -725,6 +735,16 @@ export default function RecordDetailPanel(props: Props) {
               }
               notices={
                 <>
+                  <Show
+                    when={
+                      finalizationQueryEnabled() &&
+                      (finalizationQuery.loading() || finalizationQuery.stale()) &&
+                      !finalization() &&
+                      !finalizationQuery.error()
+                    }
+                  >
+                    <NoticeCard tone="neutral" title={t().loadingFinalization} detail={t().checkingFinalization} />
+                  </Show>
                   <Show when={finalizationQueryEnabled() && finalizationQuery.error()}>
                     {(error) => (
                       <Placeholder

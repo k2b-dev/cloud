@@ -43,12 +43,6 @@ export const browserMessages = i18n.define({
       knownBytes: "Selected file sizes",
       unknownFolders: "Folder contents are not included in this total.",
       pageItems: (n: number) => `${n} ${n === 1 ? "item" : "items"} loaded`,
-      entries: (n: number) => `${n} ${n === 1 ? "item" : "items"}`,
-      folderFact: (n: number): string => (n === 1 ? "folder" : "folders"),
-      folderKind: "Folder",
-      path: "Path",
-      newItem: "New",
-      foldersFirst: "Folders first",
       folderHint: "Select an item for details. Double-click or press Enter to open it.",
       touchHint: "Tap an item to open it. Use Select items to choose entries or show details.",
       emptyTitle: "This folder is empty",
@@ -159,8 +153,22 @@ export const browserMessages = i18n.define({
       actions: "Actions",
       selectedActions: (n: number) => `${n} selected`,
       selectionActions: "Actions for the selection",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 image"
+              : `${n} images`
+            : kind === "document"
+              ? n === 1
+                ? "1 document"
+                : `${n} documents`
+              : `${n} selected`,
       pillMovedTitle: "Actions moved",
-      pillMovedText: "The actions for the selection are now up here, with the count.",
+      pillMovedText: "The actions for the selection are now in the bar at the bottom.",
       gotIt: "Got it",
       pdfMerge: "Merge",
       pdfExtract: "Take out pages",
@@ -475,12 +483,6 @@ export const browserMessages = i18n.define({
       knownBytes: "Größe der ausgewählten Dateien",
       unknownFolders: "Ordnerinhalte sind in dieser Summe nicht enthalten.",
       pageItems: (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"} geladen`,
-      entries: (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"}`,
-      folderFact: (_n: number) => "Ordner",
-      folderKind: "Ordner",
-      path: "Pfad",
-      newItem: "Neu",
-      foldersFirst: "Ordner zuerst",
       folderHint: "Auswählen zeigt Details. Doppelklick oder Enter öffnet den Eintrag.",
       touchHint: "Tippen öffnet den Eintrag. Mit „Einträge auswählen“ wählst du Einträge aus oder zeigst Details.",
       emptyTitle: "Dieser Ordner ist leer",
@@ -591,8 +593,22 @@ export const browserMessages = i18n.define({
       actions: "Aktionen",
       selectedActions: (n: number) => `${n} ausgewählt`,
       selectionActions: "Aktionen für die Auswahl",
+      pillCount: ({ n, kind }: { n: number; kind: "pdf" | "image" | "document" | "any" }) =>
+        kind === "pdf"
+          ? n === 1
+            ? "1 PDF"
+            : `${n} PDFs`
+          : kind === "image"
+            ? n === 1
+              ? "1 Bild"
+              : `${n} Bilder`
+            : kind === "document"
+              ? n === 1
+                ? "1 Dokument"
+                : `${n} Dokumente`
+              : `${n} ausgewählt`,
       pillMovedTitle: "Aktionen umgezogen",
-      pillMovedText: "Die Aktionen für die Auswahl stehen jetzt hier oben, bei der Anzahl.",
+      pillMovedText: "Die Aktionen für die Auswahl stehen jetzt in der Leiste unten.",
       gotIt: "Verstanden",
       pdfMerge: "Zusammenfügen",
       pdfExtract: "Seiten herausnehmen",

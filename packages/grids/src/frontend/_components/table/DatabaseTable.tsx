@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Checkbox, DataTable, type DataTableColumn, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, For, type JSX, Show } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { AggregationSpec, ColumnSpec } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
@@ -56,10 +56,7 @@ type Props = {
    * pick up the view's saved style.
    */
   viewColumns?: ColumnSpec[];
-  /**
-   * Shows the field type as a second line under each column name. Off by default: a column head is one 36 px line
-   * (K7) and its icon names the type. Edit mode always shows it.
-   */
+  /** Hide the field-type subtitle in compact embedded surfaces. */
   showColumnSubtitles?: boolean;
   /**
    * Pre-resolved aggregate values keyed `<fieldId>__<agg>`. Drives a
@@ -73,8 +70,6 @@ type Props = {
    * under the leftmost visible field, Airtable-style).
    */
   aggregationSpecs?: AggregationSpec[];
-  /** The last read failed: the empty grid says nothing about the records, the page's alert says what went wrong. */
-  readFailed?: boolean;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -101,10 +96,6 @@ const columnId = (column: ColumnSpec): string => (isComputedColumn(column) ? col
 
 // Single-value types and number/date formats stay on one line; everything else falls back to DataTable's value-based default.
 const NOWRAP_FIELD_TYPES = new Set(["number", "percent", "duration", "date", "id", "created_at", "updated_at"]);
-// Numbers stand right-aligned with equal-width digits (K5c). Stored decimals arrive as text, so DataTable cannot tell.
-const NUMERIC_FIELD_TYPES = new Set(["number", "percent", "duration"]);
-// The name column: the first visible field of these types when no field is marked presentable.
-const NAME_FIELD_TYPES = new Set(["text", "email", "url", "phone", "id"]);
 
 const BULK_SELECTION_COLUMN_ID = "__bulk_selection";
 
@@ -179,36 +170,6 @@ export default function DatabaseTable(props: Props) {
     return undefined;
   };
 
-  const columnNumeric = (field: Field): boolean => {
-    if (NUMERIC_FIELD_TYPES.has(effectiveDisplayField(field, props.fieldsByTable).type)) return true;
-    const format = displayFormat(field);
-    if (format?.kind === "decimal" || format?.kind === "percent") return true;
-    return field.type === "rollup" && (field.config.agg === "count" || field.config.agg === "sum" || field.config.agg === "avg");
-  };
-
-  /**
-   * K7: the name column is at most 560 px wide, so a value stays beside its name; on a phone each record is one entry
-   * of two lines, the name, a quiet second value, and its state at the end.
-   */
-  const listRoles = createMemo(() => {
-    const entries = visibleColumns().filter((entry) => !isComputedColumn(entry.column));
-    const shown = entries.map((entry) => ({ entry, display: effectiveDisplayField(entry.field, props.fieldsByTable) }));
-    const title =
-      shown.find(({ entry }) => entry.field.presentable) ?? shown.find(({ display }) => NAME_FIELD_TYPES.has(display.type)) ?? shown[0];
-    // The state usually follows the fields that sort a record (category, place), so the last single choice ends the entry.
-    const end = shown.findLast(
-      ({ entry, display }) => entry !== title?.entry && display.type === "select" && display.config.multiple !== true,
-    );
-    const meta = shown.find(
-      ({ entry, display }) => entry !== title?.entry && entry !== end?.entry && display.type !== "longtext" && display.type !== "richtext",
-    );
-    const roles = new Map<string, "title" | "meta" | "end">();
-    if (title) roles.set(title.entry.field.id, "title");
-    if (meta) roles.set(meta.entry.field.id, "meta");
-    if (end) roles.set(end.entry.field.id, "end");
-    return roles;
-  });
-
   const columnLabel = (fieldId: string, fallback: string) => {
     if (!props.viewColumns) return fallback;
     const column = props.viewColumns.find((c) => columnId(c) === fieldId);
@@ -232,22 +193,12 @@ export default function DatabaseTable(props: Props) {
     />
   );
 
-  // K5: the field name stands on the text edge of its column and its type icon follows it; in a right-aligned column
-  // the icon leads, so the name ends on the column's right edge.
-  const headerLabel = (field: Field, computed: boolean) => {
-    const icon = (
-      <i class={`${fieldTypeIcon(field.type, field.icon)} shrink-0 text-[13px] ${computed ? "" : "text-dimmed"}`} aria-hidden="true" />
-    );
-    const numeric = columnNumeric(field);
-    return (
-      <span
-        class={`inline-flex min-w-0 max-w-full items-center gap-1 ${numeric ? "flex-row-reverse" : ""} ${computed ? "app-accent-text" : ""}`}
-      >
-        <span class="truncate">{columnLabel(field.id, field.name)}</span>
-        {icon}
-      </span>
-    );
-  };
+  const headerLabel = (field: Field, computed: boolean) => (
+    <span class={`inline-flex min-w-0 items-center gap-1.5 ${computed ? "app-accent-text" : ""}`}>
+      <i class={`${fieldTypeIcon(field.type, field.icon)} shrink-0 text-[13px] ${computed ? "" : "text-dimmed"}`} />
+      <span class="truncate">{columnLabel(field.id, field.name)}</span>
+    </span>
+  );
 
   const visibleRecordIds = () => props.result.items.map((record) => record.id);
   const selectedVisibleCount = () => visibleRecordIds().filter((id) => props.bulkSelection?.selectedIds.has(id)).length;
@@ -277,21 +228,14 @@ export default function DatabaseTable(props: Props) {
   const dataColumns = (): DataTableColumn<GridRecord>[] =>
     visibleColumns().map(({ column, field }) => {
       const computed = isComputedColumn(column);
-      const role = computed ? undefined : listRoles().get(field.id);
       return {
         id: field.id,
         header: headerLabel(field, computed),
         subtitle:
-          props.showColumnSubtitles === true || props.adminMode
-            ? computed
-              ? t().computed
-              : fieldTypeLabel(field.type, locale()).toLowerCase()
-            : undefined,
+          props.showColumnSubtitles === false ? undefined : computed ? t().computed : fieldTypeLabel(field.type, locale()).toLowerCase(),
         value: (record) => record.data[field.id],
         nowrap: columnNowrap(field),
-        align: columnNumeric(field) ? "right" : undefined,
-        primary: role === "title" ? true : undefined,
-        list: role,
+        headerClass: computed ? "bg-[var(--ui-surface-muted)]" : undefined,
       };
     });
 
@@ -376,10 +320,11 @@ export default function DatabaseTable(props: Props) {
             ? "font-medium outline outline-1 -outline-offset-1 outline-[var(--ui-border-strong)]"
             : undefined
         }
-        empty={props.readFailed ? "" : t().noRecords}
+        empty={t().noRecords}
         hasMore={props.hasMore}
         loadingMore={props.loadingMore}
         onLoadMore={props.onLoadMore}
+        cellContentClass="max-h-28 max-w-full overflow-auto pr-1"
         fillHeight
         renderCell={({ row, col }) => {
           if (col.id === BULK_SELECTION_COLUMN_ID && props.bulkSelection) {

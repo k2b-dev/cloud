@@ -9,6 +9,7 @@ import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
 import BookGraphSurface from "./_components/book/BookGraphSurface";
 import BookSurface from "./_components/book/BookSurface";
+import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotePreview from "./_components/editor/NotePreview";
@@ -131,7 +132,6 @@ export default ssr<AuthContext>(async (c) => {
     dateConfig,
   } = data;
   const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
-  const showsNotePills = !!selectedNote && !isVersionsMode && !isGraphMode;
   // The microphone shows only where dictation can start: a live model is set up and this person may use it.
   const liveDictation = showsEditorToolbar && (await getLiveDictationStatus(c.get("accessSubject"))).available;
   return () => (
@@ -150,12 +150,12 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      {/* A note and Links draw no workspace head (K6): the note's pills and the graph's toolbar hold the navigation and
-          Details buttons, and the note's title is in the navigation. Version history keeps the head's buttons. */}
+      {/* Write and Links draw no workspace head: their toolbar holds the navigation and Details buttons, and the note's
+          title is in the navigation. Read and version history have no toolbar and keep the head's buttons. */}
       <AppWorkspace
         mobileSurface="flush"
         class="notebooks-workspace flex-1 min-h-0"
-        head={showsNotePills || isGraphMode ? false : undefined}
+        head={showsEditorToolbar || isGraphMode ? false : undefined}
       >
         <NotebookCommands
           notebookId={notebook.id}
@@ -171,10 +171,10 @@ export default ssr<AuthContext>(async (c) => {
           initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
         />
 
-        {/* A note's pills hold the navigation toggle, in Write and in Read. */}
+        {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar
           ctx={ctx}
-          editorToolbar={showsNotePills}
+          editorToolbar={showsEditorToolbar}
           current={isGraphMode ? "graph" : undefined}
           // Version history loads as a whole page, so its address is where Links returns to.
           graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
@@ -212,6 +212,9 @@ export default ssr<AuthContext>(async (c) => {
                 data-comments=""
                 data-detail-open={showDetailPanel && (readonlyMode || detailPanelOpen) ? "" : undefined}
               >
+                {readonlyMode && (
+                  <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
+                )}
                 <NoteEditor
                   noteId={selectedNote.id}
                   noteTitle={selectedNote.title}

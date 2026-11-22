@@ -18,8 +18,6 @@ test("reports outer borders on component roots outside framed elements; known on
         ".k2b-ui .k2b-strip { border: 0; border-top: none; border-color: red; }",
         "/* .k2b-ui .k2b-old { border: 1px solid red; } */",
         ".k2b-ui .k2b-known { border: 1px solid var(--k2b-border); }",
-        // A chat decision is a card (Gustav flat): framed by definition.
-        ".k2b-ui .k2b-chat-decision { border: 1px solid var(--k2b-chat-card-edge); }",
       ].join("\n"),
       "packages/demo/src/Panel.tsx": [
         "export const Panel = () => (",

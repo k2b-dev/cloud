@@ -49,7 +49,7 @@ import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
 
 type Props = {
   ctx: NotebookContext;
-  /** The note's pills show the navigation toggle, so the sidebar adds no control of its own. */
+  /** The page's editor toolbar shows the navigation toggle, so the sidebar adds no control of its own. */
   editorToolbar?: boolean;
   /** The notebook page this sidebar stands beside, when it is one of the footer's items. */
   current?: "attachments" | "graph";

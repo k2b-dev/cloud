@@ -87,7 +87,8 @@ release-please runs on every push to `main`:
    `.release-please-manifest.json`.
 2. Merging the release PR creates the tag. The Cloud component tags
    `cloud-vX.Y.Z`; the npm packages tag `npm-cloud-vX.Y.Z`, `npm-ui-vX.Y.Z`,
-   and `npm-ssr-vX.Y.Z` as separate components with their own version lines.
+   `npm-ssr-vX.Y.Z`, `npm-editor-vX.Y.Z`, and `npm-stdlib-vX.Y.Z` as separate
+   components with their own version lines.
 3. No workflow starts from these tags. The `main.yml` run that created them
    continues: its `images` job builds every image of the release set once
    (one per application from `scripts/workspace.ts` plus `cloud-website`,
@@ -97,16 +98,17 @@ release-please runs on every push to `main`:
    `release.yml`. For a Cloud release, it reuses these images instead of
    building them again, builds the CLI binaries, and attaches the binaries
    and `release.json` to the `cloud-vX.Y.Z` GitHub release.
-4. For each new `npm-cloud-v*`, `npm-ui-v*`, `npm-ssr-v*`, or `npm-editor-v*`
-   tag, `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, or
-   `@k2b/editor` with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
+4. For each new `npm-cloud-v*`, `npm-ui-v*`, `npm-ssr-v*`, `npm-editor-v*`,
+   or `npm-stdlib-v*` tag, `release.yml` publishes `@k2b/cloud`, `@k2b/ui`,
+   `@k2b/ssr`, `@k2b/editor`, or `@k2b/stdlib` with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
    `next` dist-tag; a stable version publishes under `latest`. `@k2b/cloud`
-   pins exact `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` versions, so it publishes only after
-   all three are installable from npm. When the same release publishes any of
+   pins exact `@k2b/ui`, `@k2b/ssr`, `@k2b/editor`, and `@k2b/stdlib` versions, so it publishes only after
+   all four are installable from npm. When the same release publishes any of
    them, the workflow waits up to 20 minutes in total; otherwise the pinned
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
-   release fails. `@k2b/editor` pins an exact `@k2b/ui` version and waits for
-   it the same way.
+   release fails. `@k2b/ui` pins an exact `@k2b/stdlib` version, and
+   `@k2b/editor` pins exact `@k2b/ui` and `@k2b/stdlib` versions; both wait
+   for their pins the same way.
 
 The release PR runs the `packed` check with `--release`, including in the
 merge queue, to test already published sibling pins from npm and versions
@@ -147,7 +149,8 @@ UI version did not have.
 
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
 with the workflow file `main.yml`. Configure it for a new package, such as
-`@k2b/editor`, before its first release. `release.yml` runs the publish, but it is a
+`@k2b/editor`, or for a package that moves into this repository, such as
+`@k2b/stdlib`, before its first release from here. `release.yml` runs the publish, but it is a
 reusable workflow, and npm checks the workflow that calls it.
 
 release-please updates exact pins between workspace packages but leaves peer
@@ -155,7 +158,9 @@ ranges alone. `@k2b/ui` pins `@k2b/ssr` as a development dependency, so every
 `@k2b/ssr` release also cuts a `@k2b/ui` patch release. `@k2b/ui` also
 declares `@k2b/ssr` as a peer range, so a release PR that moves `@k2b/ssr`
 outside it fails the `dependencies` check. Widen the range in a normal pull
-request on `main` first; the release PR then picks it up.
+request on `main` first; the release PR then picks it up. `@k2b/ui`,
+`@k2b/editor`, and `@k2b/cloud` pin `@k2b/stdlib` as a dependency, so every
+`@k2b/stdlib` release also cuts patch releases of all three.
 
 The image builds take their base images, the Dockerfile frontend, BuildKit, and
 the SBOM generator from the public mirror `ghcr.io/k2b-dev/mirror` at the

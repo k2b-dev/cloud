@@ -638,6 +638,21 @@ describe("Mail list actions", () => {
     hold.resolve(Response.json({ commands: [{ id: commandId(1), state: "queued" }] }));
     await settle();
   });
+  test("sidebar drag uses the same projection and queue without a folder picker", async () => {
+    const hold = deferred<Response>();
+    actionResponse = () => hold.promise;
+    mount({ folders: [...snapshot.folders, mailTestFolder("Filed1", { role: "folder", providerRole: "folder", name: "Filed" })] });
+    const destination = dom.root.querySelector<HTMLElement>(`a[href="/app/mail/${MAILBOX_ID}?folder=Filed1"]`)!;
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { getData: () => JSON.stringify({ itemId: "two" }) } });
+    destination.dispatchEvent(event);
+    expect(row("two")?.dataset.leaving).toBe("true");
+    expect(toastAction("Undo")).toBeDefined();
+    await settle();
+    expect(requests[0]?.body.kind).toBe("move_to_folder");
+    hold.resolve(Response.json({ commands: [{ id: commandId(1), state: "queued" }] }));
+    await settle();
+  });
   test("reader Delete closes immediately and focuses the list, and Undo does not reopen the reader", async () => {
     const hold = deferred<Response>();
     actionResponse = () => hold.promise;

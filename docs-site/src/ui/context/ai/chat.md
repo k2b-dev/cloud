@@ -96,7 +96,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 ## Controlled behavior
 
-The assistant prompt is one card around the field and its footer. It is a large writing surface with its own 2 px frame (`--k2b-frame-width`) in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with the ring of every field outside (`--k2b-ai-glow`: a 3 px plum ring without blur) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the ring, never the card's size or the text position. The prompt keeps its 14 px radius and its 2 px frame as a named exception of Cloud flat; its focus ring has no blur, so no control casts a shadow (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
+The assistant prompt is one card around the field and its footer. It is a large writing surface with its own 2 px frame (`--k2b-frame-width`) in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with a soft glow outside (`--k2b-ai-glow`) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the glow, never the card's size or the text position. The glow is the one approved exception to "no control casts a shadow" (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
@@ -141,13 +141,6 @@ runtime-locale text, which keeps the server HTML and the browser render identica
 
 ## Questions and outcomes
 
-In a `Chat.Timeline` a notice (`NoticeCard`, `NoticeRow`), a question, and an
-approval are cards as wide as the reading column: the tint of their tone, a
-thin edge in the hue of that tint (`--k2b-chat-card-edge`), the 8 px radius of
-a control, and no shadow. They stand in line with the person's messages and the
-composer, set apart by space. This is a named exception of Cloud flat, where a
-notice elsewhere is a cell from edge to edge of its column.
-
 Use `Chat.Decision` for one question in a conversation. The host owns the answer,
 execution, expiry, and any policy change. Use verb-and-target answers such as
 "Send to Lea" and "Keep draft"; never offer "Approve all". Answers are the
@@ -156,10 +149,8 @@ label wraps inside its button. In Cloud, the
 approval components draw this component; see
 [Cloud approvals](/en/ui/cloud/approvals).
 
-A decision has one look in every place: a card with a tinted ground in the AI
-colour (`--k2b-ai-surface`), a thin edge in the hue of that tint
-(`--k2b-chat-card-edge`), the 8 px radius of a control, no rules, no shadow,
-and its own AI primary
+A decision has one look in every place: a tinted ground in the AI colour
+(`--k2b-ai-surface`), 12 px corners, no rules, no shadow, and its own AI primary
 scope (`data-k2b-primary="ai"`). The head names the `kind` ("Approval") and the
 `source` with its icon tile; once answered, it ends with the `status` word and
 icon. The sentence (18 px, weight 400) and the reason follow. `details` lie on
@@ -175,9 +166,10 @@ take the full row first and the facts sit under them, as in a side panel or on
 a phone.
 
 `mode="edit"` is the same card while the person still changes its details: a
-ghost decline ("Discard") and a secondary `confirm` that moves on ("Send …").
-The card keeps its tint and its size in both modes, so switching moves and
-repaints nothing.
+raised island instead of the tint, a ghost decline ("Discard"), and a secondary
+`confirm` that moves on ("Send …"). Both modes have the same size; switching
+changes only ground, edge, and shadow in 200 ms, without a transition under
+`prefers-reduced-motion`.
 
 `source` and `reason` are optional: without `source` the head names only the
 `kind`.
@@ -219,9 +211,9 @@ while another window holds the question. The question's
 turns `confirm` off. Use `inputRef` to move the focus into the field, such as
 after a jump to the question.
 
-Typing, or the focus in the field, turns the question into `edit` for good; the
-card keeps its tint, and the facts stand on it without a box of their own, in
-server HTML as in the browser.
+Typing, or the focus in the field, turns the question into the raised island of
+`edit` for good, with the facts on the canvas colour; in server HTML the
+question keeps its tinted ground, as on the first frame in the browser.
 `confirm` stays the filled answer. A promise that `confirm` or `decline` returns
 holds the question like any other answer: until it settles the field and the
 eye are disabled, as `disabled` draws them, both answers have `aria-disabled`,
