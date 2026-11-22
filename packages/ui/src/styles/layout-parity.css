@@ -1357,6 +1357,14 @@ html {
   height: 5px;
 }
 
+/* A workspace handle is centred on its boundary, and the boundary's line is the pixel before it. The grip covers that
+   pixel and two on each side, so it starts on a whole pixel like the line and stays sharp. A standalone separator
+   centres its own line, so the shared centring fits it. */
+.k2b-ui .k2b-app-workspace__resize:not([data-app-workspace-resize="drawer"]) > span {
+  left: calc(50% - 3px);
+  transform: translateY(-50%);
+}
+
 .k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible),
 .k2b-ui .k2b-app-workspace__resize[data-workspace-resize-active="true"],
 .k2b-ui .k2b-resize-separator:focus-visible {
