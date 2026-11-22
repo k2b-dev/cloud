@@ -354,6 +354,70 @@ describe("Pulse base page after the cut", () => {
     }
   }, 60_000);
 
+  test("a 5-second refresh keeps the sources tab, its scroll position and the focused row", async () => {
+    // Enough sources that Main scrolls at 1440 px; the refresh brings new values for the same rows.
+    const template = workspaceFixture.initialSources[0]!;
+    const many = [
+      ...workspaceFixture.initialSources,
+      ...Array.from({ length: 32 }, (_, index) => ({
+        ...template,
+        id: `Src${String(index + 100)}`,
+        name: `Kasse ${String(index + 1).padStart(2, "0")}`,
+      })),
+    ];
+    const newer = many.map((source, index) => ({
+      ...source,
+      todayCount: 1000 + index,
+      lastSeenAt: "2026-10-19T12:39:58.000Z",
+      status: { ...source.status, newestDataAt: "2026-10-19T12:39:58.000Z" },
+    }));
+    const { tab, calls } = await open(views[1]!, { ...workspaceFixture, initialSources: many }, "de", (url) =>
+      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: newer } : { status: 500, json: {} },
+    );
+    try {
+      await tab.getByText("Kasse 32", { exact: true }).waitFor({ state: "attached" });
+      const before = await tab.evaluate(() => {
+        const main = document.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
+        main.scrollTop = 300;
+        const rows = [...document.querySelectorAll<HTMLElement>(".pulse-sources tbody tr.k2b-data-table__row")];
+        const top = main.getBoundingClientRect().top;
+        // A row in view after the scroll, so focusing it does not move Main.
+        const row = rows.find((element) => element.getBoundingClientRect().top > top + 100)!;
+        row.focus({ preventScroll: true });
+        const marks = window as unknown as { pulseTab?: Element | null; pulseRow?: Element };
+        marks.pulseTab = document.querySelector("section.pulse-tab");
+        marks.pulseRow = row;
+        return {
+          rows: rows.length,
+          overflow: main.scrollHeight - main.clientHeight,
+          scrollTop: main.scrollTop,
+          focused: document.activeElement === row,
+        };
+      });
+      expect(before.rows).toBe(many.length);
+      expect(before.overflow).toBeGreaterThan(300);
+      expect(before.scrollTop).toBe(300);
+      expect(before.focused).toBe(true);
+      await tab.clock.runFor(5_100);
+      await tab.getByText("1.035", { exact: true }).waitFor({ state: "attached" });
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
+      const after = await tab.evaluate(() => {
+        const main = document.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
+        const marks = window as unknown as { pulseTab?: Element | null; pulseRow?: Element };
+        return {
+          scrollTop: main.scrollTop,
+          sameRow: document.activeElement === marks.pulseRow,
+          rowConnected: marks.pulseRow?.isConnected ?? false,
+          sameTab: document.querySelector("section.pulse-tab") === marks.pulseTab,
+        };
+      });
+      expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(1);
+      expect(after).toMatchObject({ sameRow: true, rowConnected: true, sameTab: true });
+    } finally {
+      await tab.close();
+    }
+  }, 60_000);
+
   test("open settings follow a running clear to its failure and offer Retry in place", async () => {
     const base = workspaceFixture.initialBases[0]!;
     const clearing = { ...base, store: { ...base.store, state: "clearing" as const, operation: "clear" as const } };

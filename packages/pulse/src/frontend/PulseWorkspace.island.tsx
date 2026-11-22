@@ -11,7 +11,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import type { AlertRule } from "../alert-contracts";
 import type { PulseBaseRead } from "../contracts";
 import { jsonFetch } from "./http";
@@ -349,11 +349,15 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       </AppWorkspace>
     </>
   );
-  const sourcesTab = () => {
+  // A memo, read inside the props: the tab is created once per view, and a refresh only updates it.
+  const sourcesState = createMemo(() => {
     const state = pageState();
+    return state === "noAccess" ? "ready" : state;
+  });
+  const sourcesTab = () => {
     return (
       <SourcesTab
-        state={state === "noAccess" ? "ready" : state}
+        state={sourcesState()}
         baseName={baseName()}
         created={{ at: selectedBase()?.createdAt ?? props.initialNow, by: props.initialCreator ?? null }}
         sources={sources()}
