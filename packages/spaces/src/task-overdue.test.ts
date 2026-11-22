@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
 import type { SpaceItem } from "./contracts";
 import { isTaskOverdue } from "./task-overdue";
@@ -60,3 +60,19 @@ for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati", "Europe/Ber
     expect(isTaskOverdue({ ...task, deadline: dates.zonedDateTimeToInstant("2026-10-24T09:00", timeZone) }, context)).toBeTrue();
   });
 }
+
+test("a board of many cards works out today once a minute, not once per card", () => {
+  // A minute no other test uses, so no earlier result counts.
+  setSystemTime(new Date(now.getTime() + 7 * 60_000));
+  const today = spyOn(dates, "today");
+  try {
+    for (let card = 0; card < 200; card++) isTaskOverdue(task, berlin);
+    expect(today).toHaveBeenCalledTimes(1);
+    setSystemTime(new Date(now.getTime() + 8 * 60_000));
+    isTaskOverdue(task, berlin);
+    isTaskOverdue(task, { timeZone: "UTC" });
+    expect(today).toHaveBeenCalledTimes(3);
+  } finally {
+    today.mockRestore();
+  }
+});

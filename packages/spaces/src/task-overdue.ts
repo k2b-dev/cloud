@@ -1,5 +1,5 @@
-import { type DateContext, dates } from "@k2b/stdlib";
-import { deadlineDayKey } from "@/presentation/deadline";
+import type { DateContext } from "@k2b/stdlib";
+import { deadlineDayKey, todayKey } from "@/presentation/deadline";
 import type { SpaceItem } from "./contracts";
 
 export const isTaskOverdue = (
@@ -9,4 +9,4 @@ export const isTaskOverdue = (
   !(item.startsAt && item.endsAt) &&
   item.completedAt === null &&
   item.deadline !== null &&
-  deadlineDayKey(item.deadline, dateConfig) < dates.formatDateKey(dates.today(dateConfig), dateConfig);
+  deadlineDayKey(item.deadline, dateConfig) < todayKey(dateConfig);
