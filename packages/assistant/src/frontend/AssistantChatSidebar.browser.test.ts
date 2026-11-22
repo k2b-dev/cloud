@@ -180,7 +180,8 @@ const layout = (page: Page) =>
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     return {
-      island: box(document.querySelector(".assistant-context-boxcol > .assistant-context-box")),
+      // The column itself: its start edge draws the line to the chat.
+      island: box(document.querySelector(".assistant-context-boxcol")),
       button: box(document.querySelector(".assistant-context-button")),
       drawer: box(document.querySelector('.assistant-context-boxcol[data-drawer="open"]')),
       timeline: box(document.querySelector(".harness-timeline")),
@@ -618,7 +619,8 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       });
       expect(paint.radius).toBe("0px");
       expect(paint.shadow).toBe("none");
-      expect(paint.border).toBe("0px");
+      // One line, one owner: the column's start edge is the line to the chat, a border on a whole pixel; the grip sits on it.
+      expect(paint.border).toBe("1px");
       expect(paint.head).toBe(56);
       expect(paint.headLine).toBe("1px");
       // One line, one owner: the body draws a hairline above every section after the first.

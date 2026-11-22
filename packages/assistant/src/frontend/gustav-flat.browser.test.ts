@@ -146,7 +146,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (id: string, width: number) => {
+const open = async (id: string, width: number, theme: "light" | "dark" = "light") => {
   const context = await browser.newContext({
     viewport: { width, height: width < 768 ? 780 : 900 },
     reducedMotion: "reduce",
@@ -233,7 +233,7 @@ const open = async (id: string, width: number) => {
           approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
         };
         return new Response(
-          `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="${entryUrl}"></script></body></html>`,
+          `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="${entryUrl}"></script></body></html>`,
           { headers: { "content-type": "text/html", "cache-control": "no-store" } },
         );
       }
@@ -321,6 +321,16 @@ test.skipIf(!shots)(
         const view = await open(id, width);
         try {
           await view.page.screenshot({ path: resolve(shots!, `${id}-${width}.png`) });
+        } finally {
+          await view.close();
+        }
+      }
+    // Dark stays readable: the cards' tints and edges, the column, and the composer.
+    for (const width of [390, 1440])
+      for (const [id] of SCENES) {
+        const view = await open(id, width, "dark");
+        try {
+          await view.page.screenshot({ path: resolve(shots!, `${id}-${width}-dark.png`) });
         } finally {
           await view.close();
         }

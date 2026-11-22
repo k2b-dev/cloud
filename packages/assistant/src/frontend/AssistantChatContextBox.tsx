@@ -341,14 +341,14 @@ export function AssistantChatContextBox(props: {
             <Show
               when={!box().empty}
               fallback={
-                // K10: no box, one round sign and one sentence; the chat itself is the way on.
+                // K10: no box, one round sign and one quiet sentence; the chat itself is the way on.
                 <Placeholder
                   class="assistant-context-box__empty"
                   state="empty"
                   variant="inline"
                   align="left"
                   icon="ti ti-layout-list"
-                  title={copy().boxEmpty}
+                  description={copy().boxEmpty}
                 />
               }
             >

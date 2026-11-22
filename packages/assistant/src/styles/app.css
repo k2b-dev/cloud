@@ -87,7 +87,7 @@
   gap: 0.75rem;
   min-width: 0;
   height: var(--k2b-h-head);
-  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.25rem);
+  padding-inline: var(--k2b-gutter);
   border-block-end: 1px solid var(--k2b-border);
 }
 .k2b-ui .assistant-context-head__project { flex: 0 1 auto; min-width: 0; max-width: 12rem; overflow: hidden; }
@@ -131,6 +131,7 @@
   min-height: 0;
   flex-direction: column;
   width: var(--assistant-context-column, var(--assistant-context-column-default));
+  border-inline-start: 1px solid var(--k2b-border);
   background: var(--k2b-surface);
 }
 /* K12: from 1920 px of host width the column starts wider, as the workspace's own columns do. */
@@ -141,9 +142,12 @@
 .k2b-ui .assistant-context-grip {
   position: absolute !important;
   inset-block: 0;
-  inset-inline-start: -7px;
+  inset-inline-start: -6px;
   z-index: 1;
 }
+/* The line between the chat and the column is the column's start edge, a border, so it lands on a whole pixel at any
+   width of the chat list beside it; the grip sits on it and draws no second line (K2). */
+.k2b-ui .assistant-context-grip::before { display: none; }
 
 /* Docked: the second column, from the head row to the bottom, while the chat pane is at least 56 rem wide and no tabs
    are open. The person may close it; the button in the chat's head brings it back. */
@@ -193,7 +197,7 @@
   .k2b-ui .assistant-chat-layout > .assistant-context-boxcol { display: none !important; }
   .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
   /* On a phone the head is the phone head's height and names the chat, as the app's head names only the app. */
-  .k2b-ui .assistant-context-head { height: var(--k2b-h-head-phone); padding-inline: 1rem 0.5rem; }
+  .k2b-ui .assistant-context-head { height: var(--k2b-h-head-phone); padding-inline: var(--k2b-gutter); }
   .k2b-ui .assistant-context-head__project { display: none; }
 }
 
@@ -223,7 +227,7 @@
   padding-inline: 1rem 0.5rem;
   border-block-end: 1px solid var(--k2b-border);
 }
-.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__body > * { padding: 0.5rem 0.5rem 0.625rem; }
+.k2b-ui .assistant-context-box[data-variant="sheet"] > .assistant-context-box__body > * { padding: 0.5rem 0 0.625rem; }
 .k2b-ui .assistant-context-box__head {
   display: flex;
   height: 2rem;
@@ -256,7 +260,15 @@
   scrollbar-gutter: stable;
 }
 .k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__body > * {
-  padding: 0.5rem calc(var(--k2b-gutter) - 0.5rem) 0.625rem;
+  padding: 0.5rem 0 0.625rem;
+}
+/* K2, K4: a row is square and reaches from edge to edge of its section, so its hover fill meets the hairlines; its text
+   keeps the gutter. */
+.k2b-ui .assistant-context-box[data-variant] .assistant-context-box__main { padding-inline: var(--k2b-gutter); }
+.k2b-ui .assistant-context-box[data-variant] .assistant-context-box__label { padding-inline: var(--k2b-gutter); }
+.k2b-ui .assistant-context-box[data-variant] .assistant-context-box__act { inset-inline-end: calc(var(--k2b-gutter) - 0.25rem); }
+.k2b-ui .assistant-context-box[data-variant] .assistant-context-box__unfold {
+  margin-inline-start: calc(var(--k2b-gutter) + 1.125rem + 0.5rem);
 }
 /* Names in the column and the sheet carry weight 500, as in the concept. An automation is a row of two lines: its name,
    then its state as a dot in the state's colour and the word in the quiet grey (K7: a state is a sign and a word). */
