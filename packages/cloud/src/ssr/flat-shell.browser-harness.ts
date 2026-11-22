@@ -140,6 +140,8 @@ const spacesPage = (detail: boolean, c: Query) =>
                           : undefined,
                     }),
                     h(DataTable<Task>, {
+                      // A table in a flat column has no frame: the column's lines are its edges (K2).
+                      surface: "plain",
                       ariaLabel: "Aufgaben",
                       rows: tasks,
                       getRowId: (row) => row.id,
@@ -223,6 +225,7 @@ const filesPage = () =>
             return h(AppWorkspace.Main, {
               get children() {
                 return h(DataTable<{ id: string; name: string; size: string; changed: string }>, {
+                  surface: "plain",
                   ariaLabel: "Dateien",
                   rows: [
                     { id: "f1", name: "Standplan_final.pdf", size: "2,4 MB", changed: "Heute" },

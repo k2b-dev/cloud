@@ -46,12 +46,19 @@ for (const name of ["spaces", "files", "notebooks", "mail"])
         expect(found.problems).toEqual([]);
         const doubled = await page.evaluate(() => {
           const shown = (element: Element) => element.getClientRects().length > 0 && getComputedStyle(element).display !== "none";
-          // Every column line: after the sidebar, between panes and levels, and before Detail.
-          const lines = [
-            ...document.querySelectorAll(".k2b-app-workspace__content, [data-workspace-main-region], .k2b-app-workspace__detail"),
-          ]
-            .filter(shown)
-            .map((element) => element.getBoundingClientRect().left);
+          // Every drawn column line: after a sidebar column, between panes and levels, and before a Detail column. A
+          // phone draws none, an overlay sidebar or a waiting Detail neither.
+          const lines: number[] = [];
+          if (window.innerWidth >= 768) {
+            const left = (element: Element) => element.getBoundingClientRect().left;
+            const sidebar = document.querySelector(".k2b-app-workspace__sidebar");
+            const content = document.querySelector(".k2b-app-workspace__content");
+            if (sidebar && content && shown(sidebar) && Math.abs(sidebar.getBoundingClientRect().right - left(content)) <= 1.5)
+              lines.push(left(content));
+            lines.push(...[...document.querySelectorAll("[data-workspace-main-region]")].filter(shown).slice(1).map(left));
+            const detail = document.querySelector(".k2b-app-workspace__detail:not([data-workspace-detail-drawer])");
+            if (detail && shown(detail)) lines.push(left(detail));
+          }
           const found: string[] = [];
           for (const element of document.querySelectorAll<HTMLElement>(".layout-content-main .k2b-app-workspace *")) {
             const box = element.getBoundingClientRect();
