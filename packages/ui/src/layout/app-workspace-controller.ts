@@ -26,6 +26,7 @@ import {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 import { readAppWorkspaceWidth, resolveAppWorkspaceWidth } from "./app-workspace-width";
+import { installHeadSearch } from "./head-search-controller";
 import { installScrollFades, scrollFadeEdges } from "./scroll-fade";
 import { followSidebarScroll } from "./sidebar-scroll-memory";
 
@@ -2261,6 +2262,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
+  const stopHeadSearch = installHeadSearch(eventRoot);
   eventRoot.addEventListener("focusout", syncPreviewFocus as EventListener);
   window.addEventListener("resize", onResize);
   syncPhonePages();
@@ -2285,6 +2287,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   });
   scheduleReconcile();
   return () => {
+    stopHeadSearch();
     phonePageInerted.forEach((region) => region.removeAttribute("inert"));
     phonePageInerted.clear();
     phone?.removeEventListener("change", syncPhonePages);

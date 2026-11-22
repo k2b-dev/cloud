@@ -194,7 +194,7 @@ import { AppWorkspace, FloatingPill, IconButton } from "@k2b/ui";
 ```
 
 ```tsx
-import { AppWorkspace, ViewTabs } from "@k2b/ui";
+import { AppWorkspace, TextInput, ViewTabs } from "@k2b/ui";
 
 <AppWorkspace>
   <AppWorkspace.Head
@@ -206,7 +206,9 @@ import { AppWorkspace, ViewTabs } from "@k2b/ui";
     filtered={filtered}
     resetHref="?view=list"
     count="12 results"
-    actions={searchAction}
+    search={<TextInput type="search" aria-label="Search tasks" placeholder="Search tasks …" icon="ti ti-search" value={query} onValueChange={setQuery} />}
+    searchLabel="Search tasks"
+    actions={moreMenu}
     primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
   />
   <AppWorkspace.Content>
@@ -244,6 +246,8 @@ type AppWorkspaceHeadProps = {
   onReset?: () => void;
   count?: JSX.Element;
   actions?: JSX.Element;
+  search?: JSX.Element;
+  searchLabel?: string;
   primary?: {
     label: string;
     icon: string;
@@ -261,11 +265,33 @@ The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
 
 When the head row runs short of room, the actions give way before the views
-(K15). Below 48 rem of head width the primary shows only its icon. A search
-field in `actions` turns into its icon by the same query,
-`@container k2b-head (width < 48rem)`, in the application's stylesheet. The
-views move into **More +n** only when the lead is still narrower than 32 rem
-after that.
+(K15). Below 48 rem of head width the primary shows only its icon. The views
+move into **More +n** only when the lead is still narrower than 32 rem after
+that.
+
+### Search in the head
+
+Put the page's search in `search`, not in `actions`; usually a search
+`TextInput` with a placeholder, which may sit in an island. `searchLabel`
+names its icon ("Search tasks"); it defaults to "Search".
+
+- **Wide head (60 rem and more):** the search stands in the head line before
+  the actions, about a third of the head wide.
+- **Narrow head (under 60 rem):** a phone, a tablet, or Main beside an open
+  Detail. The search waits behind its icon at the start of the actions. The
+  icon opens it in a row of its own under the head line, the whole width,
+  and focuses the field. Escape in the search or the icon close it and
+  return focus to the icon.
+- **A field with a value stays in sight**, also on the first paint before any
+  script runs, so what narrows the page never hides. The head tells an empty
+  field from a filled one by the placeholder; a search without one counts as
+  empty.
+- Opening and closing move only what lies below the head; the head line and
+  its views, actions, and primary keep their place.
+
+The shared workspace controller runs the icon, so a head rendered on the
+server needs no island of its own for it. A field that does not fit ends its
+placeholder or value in an ellipsis.
 
 ### Sidebar button in the page's toolbar
 

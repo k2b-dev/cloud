@@ -2675,6 +2675,59 @@ html {
   gap: 0.25rem;
 }
 
+/* The head's search (K6, K15). Wide, it stands before the actions and pushes
+   them to the end. Narrow (a head under 60 rem: a phone, a tablet, Main beside
+   an open Detail), it waits behind its icon in the actions; the icon opens it
+   in a row of its own under the head line, the whole width. A field with a
+   value keeps it in sight, so what narrows the page never hides. Opening and
+   closing move only what lies below the head; the head line stays put. */
+.k2b-ui .k2b-app-workspace__head-search {
+  display: flex;
+  width: clamp(14rem, 32cqi, 26rem);
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-app-workspace__head-search > *,
+.k2b-ui .k2b-app-workspace__head-search > :is(solid-island, solid-client) > * {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .k2b-app-workspace__head-search + .k2b-app-workspace__head-actions {
+  margin-inline-start: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__head-search-toggle {
+  display: none;
+}
+
+@container k2b-head (width < 60rem) {
+  .k2b-ui .k2b-app-workspace__head-search-toggle {
+    display: inline-flex;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__head:not([data-search-open])
+    > .k2b-app-workspace__head-search:not(:has(input[placeholder]:not(:placeholder-shown))) {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__head > .k2b-app-workspace__head-search {
+    order: 5;
+    width: 100%;
+    flex: 1 1 100%;
+    margin-inline-start: 0;
+    padding-block-end: 0.5rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__head-search + .k2b-app-workspace__head-actions {
+    margin-inline-start: auto;
+  }
+}
+
 /* Narrow, the strip keeps fewer views and counts the rest in "More". */
 @container k2b-head-lead (width < 32rem) {
   .k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden] {

@@ -159,6 +159,16 @@ export type AppWorkspaceHeadProps = {
   /** Secondary actions at the end of the row. Never a filled button. */
   actions?: JSX.Element;
   /**
+   * The page's search, usually a search `TextInput` (it may sit in an island). A wide head shows it before the
+   * actions. A narrow head (under 60 rem: a phone, a tablet, Main beside an open Detail) keeps it behind its icon
+   * (K15): the icon opens it in a row of its own under the head line, and Escape or the icon close it again and return
+   * focus to the icon. A search whose field holds a value stays in sight; give the field a placeholder, which is how
+   * the head tells an empty field from a filled one before any script runs.
+   */
+  search?: JSX.Element;
+  /** The search icon's name, such as "Search records"; defaults to "Search". */
+  searchLabel?: string;
+  /**
    * The one filled primary action. Below 48rem it becomes a round icon button beside the host's bottom bar. `popup`
    * says it opens a menu, such as one a `Dropdown` with `attach` shows: server HTML then carries `aria-haspopup`, and a
    * chevron follows the label.
@@ -2483,6 +2493,8 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
   const resolvedFilters = children(() => props.head?.filters);
   const resolvedActions = children(() => props.head?.actions);
   const resolvedCount = children(() => props.head?.count);
+  const resolvedSearch = children(() => props.head?.search);
+  const searchId = createUniqueId();
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
   // Main already publishes the active region in SSR and on each selection.
@@ -2588,8 +2600,24 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
           </span>
         </Show>
       </div>
-      <Show when={resolvedActions.toArray().some(Boolean) || props.head?.primary}>
+      <Show when={resolvedSearch.toArray().some(Boolean)}>
+        <div class="k2b-app-workspace__head-search" id={`k2b-head-search-${searchId}`} role="search">
+          {resolvedSearch()}
+        </div>
+      </Show>
+      <Show when={resolvedActions.toArray().some(Boolean) || props.head?.primary || resolvedSearch.toArray().some(Boolean)}>
         <div class="k2b-app-workspace__head-actions">
+          <Show when={resolvedSearch.toArray().some(Boolean)}>
+            <IconButton
+              class="k2b-app-workspace__head-search-toggle"
+              label={props.head?.searchLabel ?? messages().search}
+              aria-controls={`k2b-head-search-${searchId}`}
+              aria-expanded="false"
+              data-app-workspace-head-search-toggle=""
+            >
+              <i class="ti ti-search" aria-hidden="true" />
+            </IconButton>
+          </Show>
           {resolvedActions()}
           <Show when={props.head?.primary}>
             {(primary) => (

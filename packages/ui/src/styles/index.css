@@ -3260,6 +3260,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply min-w-0 flex-1;
   width: 100%;
   min-height: 2rem;
+  /* K15: a placeholder or value that does not fit ends in an ellipsis, never cut mid-letter. */
+  text-overflow: ellipsis;
   padding: 0.375rem 0.5rem;
   border: 0;
   outline: 0;

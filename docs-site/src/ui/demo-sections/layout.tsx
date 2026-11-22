@@ -84,6 +84,7 @@ const WorkspaceHeadRowDemo = () => {
     href: `?view=${label.toLowerCase()}`,
     count: label === "List" ? 12 : undefined,
   }));
+  const [query, setQuery] = createSignal("");
   const filtered = () => tags().length > 0 || statuses().length > 0;
   return (
     <DemoCard
@@ -92,14 +93,15 @@ const WorkspaceHeadRowDemo = () => {
         { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
         { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
       ]}
-      description="Objects stay on the left; views, filters, Reset, and actions share the head. Narrow the host to wrap filters and reveal the compact More count."
+      description="Objects stay on the left; views, filters, Reset, the search, and actions share the head. Narrow the host: the search waits behind its icon, filters wrap, and More shows its count."
       code={`<AppWorkspace.Head
   views={<ViewTabs label="Views" current="list" items={views} />}
   filters={<>{tagFilter}{statusFilter}</>}
   filtered={filtered()}
   onReset={() => { setTags([]); setStatuses([]); }}
   count="12 results"
-  actions={<IconButton label="Search" variant="ghost"><i class="ti ti-search" aria-hidden="true" /></IconButton>}
+  search={<TextInput type="search" aria-label="Search tasks" placeholder="Search tasks …" icon="ti ti-search" value={query} onValueChange={setQuery} clearable />}
+  searchLabel="Search tasks"
   primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
 />`}
     >
@@ -150,11 +152,18 @@ const WorkspaceHeadRowDemo = () => {
                 setStatuses([]);
               }}
               count="12 results"
-              actions={
-                <IconButton label="Search" variant="ghost" size="sm">
-                  <i class="ti ti-search" aria-hidden="true" />
-                </IconButton>
+              search={
+                <TextInput
+                  type="search"
+                  aria-label="Search tasks"
+                  placeholder="Search tasks …"
+                  icon="ti ti-search"
+                  value={query}
+                  onValueChange={setQuery}
+                  clearable
+                />
               }
+              searchLabel="Search tasks"
               primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
             />
             <AppWorkspace.Sidebar label="Spaces" collapsible>
