@@ -314,22 +314,6 @@ export default function KanbanBoard(props: Props) {
   const getBucketByKey = (bucketKey: string) => buckets().find((bucket) => bucket.key === bucketKey) ?? null;
   /** Writers see the Wormholes section after the last column, one board gap further right. */
   const showWormholes = () => props.canWrite && props.wormholes.length > 0;
-  const withViewTransition = (update: () => void) => {
-    if (typeof document === "undefined") {
-      update();
-      return;
-    }
-    const doc = document as Document & {
-      startViewTransition?: (callback: () => void) => unknown;
-    };
-    if (!doc.startViewTransition) {
-      update();
-      return;
-    }
-    doc.startViewTransition(() => {
-      update();
-    });
-  };
   const boardScrollKey = () => `spaces-kanban-board-${props.spaceId}`;
   const rememberBoardScroll = () => {
     if (!boardScrollContainer) return;
@@ -670,22 +654,20 @@ export default function KanbanBoard(props: Props) {
             : gatheredIndex(landing, targetColumnId);
 
       withBoardScrollPreserved(() => {
-        withViewTransition(() => {
-          setBuckets((current) =>
-            current.map((bucket) => {
-              const hadItem = bucket.items.some((item) => item.id === itemId);
-              const nextItems = bucket.items.filter((item) => item.id !== itemId);
-              let delta = hadItem ? -1 : 0;
+        setBuckets((current) =>
+          current.map((bucket) => {
+            const hadItem = bucket.items.some((item) => item.id === itemId);
+            const nextItems = bucket.items.filter((item) => item.id !== itemId);
+            let delta = hadItem ? -1 : 0;
 
-              if (bucket.key === landing.key) {
-                nextItems.splice(landingIndex, 0, optimisticUpdated);
-                delta += 1;
-              }
+            if (bucket.key === landing.key) {
+              nextItems.splice(landingIndex, 0, optimisticUpdated);
+              delta += 1;
+            }
 
-              return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
-            }),
-          );
-        });
+            return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
+          }),
+        );
       });
 
       setMovingItemId(itemId);
@@ -716,24 +698,22 @@ export default function KanbanBoard(props: Props) {
     },
     onSuccess: (updated, ctx) => {
       withBoardScrollPreserved(() => {
-        withViewTransition(() => {
-          setBuckets((current) => {
-            // A write omits reactions; keep the last summary if the card leaves the loaded pages.
-            const previous = current.flatMap((bucket) => bucket.items).find((item) => item.id === updated.id);
-            const item = { ...updated, reactions: updated.reactions ?? (previous ? cardReactions(previous) : undefined) };
-            return current.map((bucket) => {
-              const hadItem = bucket.items.some((item) => item.id === updated.id);
-              const nextItems = bucket.items.filter((item) => item.id !== updated.id);
-              let delta = hadItem ? -1 : 0;
+        setBuckets((current) => {
+          // A write omits reactions; keep the last summary if the card leaves the loaded pages.
+          const previous = current.flatMap((bucket) => bucket.items).find((item) => item.id === updated.id);
+          const item = { ...updated, reactions: updated.reactions ?? (previous ? cardReactions(previous) : undefined) };
+          return current.map((bucket) => {
+            const hadItem = bucket.items.some((item) => item.id === updated.id);
+            const nextItems = bucket.items.filter((item) => item.id !== updated.id);
+            let delta = hadItem ? -1 : 0;
 
-              if (bucket.key === ctx?.targetBucketKey) {
-                const insertIndex = clamp(ctx.targetIndex, 0, nextItems.length);
-                nextItems.splice(insertIndex, 0, item);
-                delta += 1;
-              }
+            if (bucket.key === ctx?.targetBucketKey) {
+              const insertIndex = clamp(ctx.targetIndex, 0, nextItems.length);
+              nextItems.splice(insertIndex, 0, item);
+              delta += 1;
+            }
 
-              return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
-            });
+            return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
           });
         });
       });
@@ -756,9 +736,7 @@ export default function KanbanBoard(props: Props) {
         // still show a neighbor someone else moved or deleted, and every retry would name it again.
         // The refresh is best effort; the failed move is the error to report.
         withBoardScrollPreserved(() => {
-          withViewTransition(() => {
-            setOptimisticBuckets(null);
-          });
+          setOptimisticBuckets(null);
         });
         void invalidateSpacesData(["view"]).catch(() => undefined);
       }
@@ -818,14 +796,12 @@ export default function KanbanBoard(props: Props) {
       const previousBuckets = buckets();
 
       withBoardScrollPreserved(() => {
-        withViewTransition(() => {
-          setBuckets((current) =>
-            current.map((bucket) => {
-              const hadItem = bucket.items.some((item) => item.id === itemId);
-              return hadItem ? { ...bucket, items: bucket.items.filter((item) => item.id !== itemId), ...shiftTotals(bucket, -1) } : bucket;
-            }),
-          );
-        });
+        setBuckets((current) =>
+          current.map((bucket) => {
+            const hadItem = bucket.items.some((item) => item.id === itemId);
+            return hadItem ? { ...bucket, items: bucket.items.filter((item) => item.id !== itemId), ...shiftTotals(bucket, -1) } : bucket;
+          }),
+        );
       });
       setMovingItemId(itemId);
       return { previousBuckets };
@@ -849,7 +825,7 @@ export default function KanbanBoard(props: Props) {
     onError: (error, context) => {
       if (context?.previousBuckets) {
         withBoardScrollPreserved(() => {
-          withViewTransition(() => setBuckets(context.previousBuckets));
+          setBuckets(context.previousBuckets);
         });
       }
       if (error.name !== "AbortError") toast.error(error.message);

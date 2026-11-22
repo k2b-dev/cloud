@@ -100,10 +100,30 @@ test("1440 px kanban: a dragged card stays in place, nothing moves before the dr
   }
 }, 30_000);
 
-test("1440 px kanban: a dropped card lands where the line showed, saves once, and Undo puts it back", async () => {
+test("1440 px kanban: a dropped card lands where the line showed at once, saves once, and Undo puts it back", async () => {
   const page = await harness.open(desktop, { view: "kanban" });
   try {
     const before = harness.moves.length;
+    // The save answers only once the card stands in its new place: the board must not wait for it.
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/move", async (route) => {
+      await answered;
+      await route.continue();
+    });
+    // A page-wide view transition would hold the old picture and fade the whole page on every drop.
+    await page.evaluate(() => {
+      const counted = window as Window & { transitions?: number };
+      counted.transitions = 0;
+      const start = document.startViewTransition?.bind(document);
+      if (start)
+        document.startViewTransition = (update) => {
+          counted.transitions = (counted.transitions ?? 0) + 1;
+          return start(update);
+        };
+    });
     const neighbour = (await boxOf(page, "Produktseiten umziehen"))!;
     const from = (await boxOf(page, "Startseite: Texte gegenlesen"))!;
     await page.mouse.move(from.x + 60, from.y + 20);
@@ -111,10 +131,13 @@ test("1440 px kanban: a dropped card lands where the line showed, saves once, an
     await page.mouse.move(from.x + 70, from.y + 24, { steps: 3 });
     await page.mouse.move(neighbour.x + 80, neighbour.y + 6, { steps: 12 });
     await page.mouse.up();
-    await until(() => harness.moves.length, before + 1);
-    expect(harness.moves.at(-1)).toEqual({ itemId: "Item02", body: { columnId: "Col002", afterItemId: "Item06" } });
     const lane = page.locator('[data-spaces-kanban-column="column:Col002"] li');
     await until(async () => (await lane.nth(1).innerText()).includes("Startseite: Texte gegenlesen"), true);
+    expect(harness.moves.length).toBe(before);
+    answer();
+    await until(() => harness.moves.length, before + 1);
+    expect(await page.evaluate(() => (window as Window & { transitions?: number }).transitions)).toBe(0);
+    expect(harness.moves.at(-1)).toEqual({ itemId: "Item02", body: { columnId: "Col002", afterItemId: "Item06" } });
     await page.getByRole("button", { name: "Rückgängig" }).click();
     await until(() => harness.moves.length, before + 2);
     expect(harness.moves.at(-1)).toEqual({ itemId: "Item02", body: { columnId: "Col001", afterItemId: "Item01" } });
