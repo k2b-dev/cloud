@@ -141,7 +141,9 @@ beforeAll(async () => {
       );
     },
   });
-  browser = await launchBrowser();
+  // Classic scrollbars that take room in the layout, so a column that scrolls sideways or a head that wraps shows
+  // (Cloud flach QA, 21.11.).
+  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
@@ -175,9 +177,12 @@ const open = async ({ width, mode = "write", content = "few", detail = false, ov
   return page;
 };
 
+/** The phone, the tablet with its drawer, a narrow and a wide desktop (Cloud flach QA). */
+const WIDTHS = [390, 768, 1100, 1440];
+
 // Each page loads the note page's bundle (CodeMirror and the Detail's MapLibre), as the Detail panel's test does.
 describe("a note is a reading column without head", () => {
-  for (const width of [1440, 390])
+  for (const width of WIDTHS)
     for (const content of ["few", "many"] as const)
       test(`${width} px, ${content} lines: nothing overlaps, spills, is cut, or draws a second line`, async () => {
         const page = await open({ width, content });
@@ -213,15 +218,16 @@ describe("a note is a reading column without head", () => {
     }
   }, 30_000);
 
-  test("1440 px with the Detail open: the columns meet on one line and nothing overlaps", async () => {
-    const page = await open({ width: 1440, content: "many", detail: true });
-    try {
-      await page.locator(".notebook-detail-panel").waitFor();
-      expect(await problems(page)).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  }, 30_000);
+  for (const width of [1100, 1440])
+    test(`${width} px with the Detail open: the columns meet on one line and nothing overlaps`, async () => {
+      const page = await open({ width, content: "many", detail: true });
+      try {
+        await page.locator(".notebook-detail-panel").waitFor();
+        expect(await problems(page)).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
 
   test("the text stands at a 720 px measure, 14 px on 22 px, with 18 and 16 px headings (K11)", async () => {
     const page = await open({ width: 1440 });
@@ -250,7 +256,7 @@ describe("a note is a reading column without head", () => {
 });
 
 describe("the overview is one head and one flat list", () => {
-  for (const width of [1440, 390])
+  for (const width of WIDTHS)
     for (const content of ["few", "many"] as const)
       test(`${width} px, ${content} notes: nothing overlaps, spills, is cut, or draws a second line`, async () => {
         const page = await open({ width, content, overview: true });
