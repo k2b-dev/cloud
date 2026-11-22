@@ -178,6 +178,19 @@ describe(`layout self-check with touch in ${browserName}`, () => {
     ]);
   });
 
+  // Counter-checks: only text in a 1 px clipped box is left out. A visible element that reaches 8 px past the box is
+  // reported, with or without hit areas beside it; 8 px is just past the 7 px slack.
+  test("390 px: a visible button 8 px past the head is reported, also beside hit areas", async () => {
+    const result = await checkTouch(`${hitAreaStyle}
+      <div data-probe="plain" style="display:flex;width:200px"><span style="flex:none;width:200px;height:20px"></span><button type="button" data-probe="plain-over" style="flex:none;width:8px;height:20px;padding:0;border:0;background:#2563eb"></button></div>
+      <div data-probe="with-hit" style="display:flex;width:200px"><span style="flex:none;width:200px;height:20px"></span><button type="button" class="app-hit" aria-label="Filter" style="flex:none;width:8px;height:20px;padding:0;border:0;background:#2563eb"></button><span class="k2b-sr-only">Write a new message to someone</span></div>`);
+    // The visible 8 px are reported; beside a hit area the finding also counts the hit area, but it is reported.
+    expect(result.spill).toEqual([
+      '[data-probe="plain"] spills 8 px out of its box',
+      expect.stringMatching(/^\[data-probe="with-hit"\] spills \d+ px out of its box$/),
+    ]);
+  });
+
   test("390 px: a drawn pseudo-element or real content beside a hit area still spills", async () => {
     const result = await checkTouch(touchDefects);
     expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
