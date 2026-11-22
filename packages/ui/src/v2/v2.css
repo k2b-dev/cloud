@@ -50,17 +50,22 @@
   :root:not([data-theme="light"]) {
     --k2-surface: #18181b; --k2-ground: #0f0f11; --k2-text: #fafafa; --k2-text-2: #e4e4e7; --k2-muted: #b4b4bc; --k2-subtle: #9c9ca6;
     --k2-line: #2e2e33; --k2-line-ctl: #3f3f46; --k2-grip: #71717a; --k2-n100: #27272a;
+    /* n50 (row and button hover, quiet notice) lies between the surface and n100, as in light */
+    --k2-n50: color-mix(in srgb, var(--k2-n100) 50%, var(--k2-surface));
     --k2-app-tint: #1e2a44; --k2-app-ink: #93b4ff; --k2-blue-ink: #93b4ff;
     --k2-ok-s: #0f2a22; --k2-ok: #6ee7b7; --k2-warn-s: #2e2410; --k2-warn: #fcd34d; --k2-bad-s: #34161a; --k2-bad: #fca5a5;
     --k2-scroll-thumb: rgb(255 255 255 / 0.28); --k2-scroll-thumb-hover: rgb(255 255 255 / 0.44);
     color-scheme: dark;
   }
 }
+/* the same tokens as the block above (test/reload.ts compares them) */
 :root[data-theme="dark"] {
   --k2-surface: #18181b; --k2-ground: #0f0f11; --k2-text: #fafafa; --k2-text-2: #e4e4e7; --k2-muted: #b4b4bc; --k2-subtle: #9c9ca6;
   --k2-line: #2e2e33; --k2-line-ctl: #3f3f46; --k2-grip: #71717a; --k2-n100: #27272a;
+  --k2-n50: color-mix(in srgb, var(--k2-n100) 50%, var(--k2-surface));
   --k2-app-tint: #1e2a44; --k2-app-ink: #93b4ff; --k2-blue-ink: #93b4ff;
   --k2-ok-s: #0f2a22; --k2-ok: #6ee7b7; --k2-warn-s: #2e2410; --k2-warn: #fcd34d; --k2-bad-s: #34161a; --k2-bad: #fca5a5;
+  --k2-scroll-thumb: rgb(255 255 255 / 0.28); --k2-scroll-thumb-hover: rgb(255 255 255 / 0.44);
   color-scheme: dark;
 }
 @media (max-width: 767px) { :root { --k2-gut: 16px; --k2-h-dense: 44px; } }
@@ -129,6 +134,9 @@ a { color: inherit; text-decoration: none; }
 /* ── Column head: 56 px, line below, views or path left, actions right ───── */
 .k2-head { height: var(--k2-h-head); display: flex; align-items: center; gap: 12px; padding: 0 var(--k2-gut); border-bottom: 1px solid var(--k2-line); min-width: 0; }
 .k2-head__title { font-size: 18px; line-height: 24px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2-head__main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; }
+.k2-head__main > .k2-head__title { flex: 0 1 auto; }
+.k2-head__status { flex: 1; min-width: 0; color: var(--k2-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .k2-head__acts { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
 .k2-head[data-edge="end"] { padding-right: 12px; }
 .k2-tabs { display: flex; gap: 24px; align-self: stretch; min-width: 0; overflow: hidden; }

@@ -73,12 +73,26 @@ export function NavItem(props: ParentProps<{ href: string; icon: IconName; curre
   );
 }
 
-/** The 56 px head of a column: views or a title left, actions right, its line below. */
-export function Head(props: ParentProps<{ title?: string; actions?: JSX.Element; edge?: "end" }>) {
+/**
+ * The 56 px head of a column: views or a title left, actions right, its line below. `status` (a count, or what is
+ * happening now) stands in the same band after the title, so a short status needs no status row of its own.
+ */
+export function Head(props: ParentProps<{ title?: string; status?: JSX.Element; actions?: JSX.Element; edge?: "end" }>) {
   return (
     <header class="k2-head" data-edge={props.edge}>
-      <Show when={props.title}>
-        <h2 class="k2-head__title">{props.title}</h2>
+      <Show
+        when={props.status !== undefined}
+        fallback={
+          <Show when={props.title}>
+            <h2 class="k2-head__title">{props.title}</h2>
+          </Show>
+        }
+      >
+        {/* title and status share one baseline; the pair is centred in the band */}
+        <div class="k2-head__main">
+          <h2 class="k2-head__title">{props.title}</h2>
+          <span class="k2-head__status">{props.status}</span>
+        </div>
       </Show>
       {props.children}
       <Show when={props.actions}>

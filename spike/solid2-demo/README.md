@@ -11,6 +11,7 @@ bun install                      # own node_modules: solid-js 2.0.3, @solidjs/we
 ln -sfn spike/solid2-demo/node_modules ../../node_modules   # local only: packages/ssr and packages/ui/src/v2 resolve Solid 2 from here
 NODE_ENV=development bun --conditions=solid --preload=./scripts/preload.ts src/server.tsx   # http://localhost:4391/mail and /dnd
 bun test/e2e.ts chromium --shots # SSR, hydration, ui-sdk overlays, layoutProblems({ flat: true }), screenshots in shots/
+bun test/reload.ts chromium      # reload: CLS 0, fonts from the cache, first frame = final frame, hydration changes nothing visible
 bun test/dnd.ts chromium --shots # sorting and drag onto a folder: mouse, keyboard, touch (Chromium only, via CDP)
 ```
 

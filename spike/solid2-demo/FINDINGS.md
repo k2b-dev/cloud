@@ -36,6 +36,29 @@ Conditions:
 - Costs: 12 ssr unit tests assert the old wrapper markup and need new expectations. The browser and engine tests of the
   ssr package were not run against hydration.
 
+## Flicker on reload (found on the live demo, fixed)
+
+The flicker was the font, not SSR or hydration. The demo declared Plex with `font-display: block` and served the faces
+with `Cache-Control: no-cache` and no validator, so every reload fetched them again, and the browser showed the page
+without any text until they arrived (CDP screencast at 60 ms latency: the first frame has boxes, lines and icons but no
+text, the text appears 170 ms later; CLS 0.0004 on `/mail` and 0.0042 on `/mail?id=m1` from the re-wrapped text).
+Hydration itself changed nothing visible: islands keep their nodes, only empty marker text nodes and `data-hydrated`
+are added.
+
+Fix: the page head preloads the three faces, the server sends them with `max-age=31536000, immutable`, and the faces
+use `font-display: optional`, so a face that misses the first frame is not swapped in later. `test/reload.ts` checks
+each reload (Chromium, light and dark): CLS 0, all three faces come from the cache, no visible DOM change from
+hydration, and the first frame with content equals the final frame. For v2: font preload plus cacheable faces belongs
+to the platform page head (Cloud already does it in `font-preloads.ts`), and every page needs this reload check.
+
+Seen once and not reproduced afterwards: on `/mail?id=m1`, the MailMenu island replaced its trigger button after
+hydration (server id `ui-sdk-i004400-0000-trigger`, client id `ui-sdk-cl-0-trigger`, same look). ui-sdk's
+`MenuTrigger` renders through a keyed `Show` on its controller target; this needs a look before v2 relies on it.
+
+Dark mode: `--k2-n50` had no dark value, so row and button hover drew a light fill under light text. The dark theme now
+derives it between surface and `--k2-n100`; `test/reload.ts` checks both dark blocks set the same tokens and that a
+hovered row keeps 4.5:1 contrast.
+
 ## Drag and drop on ui-sdk (demo: `/dnd`)
 
 | | ui-sdk spike | Our DnD (#3904, #3931) |

@@ -65,12 +65,7 @@ export default function MailBoard(props: { inbox: string; mails: BoardMail[]; fo
         </SortableList>
       </Sidebar>
       <Column region="main" label={props.inbox}>
-        <Head title={props.inbox} />
-        <div class="k2-status">
-          <span class="k2-status__lead" data-testid="board-status">
-            {status()}
-          </span>
-        </div>
+        <Head title={props.inbox} status={<span data-testid="board-status">{status()}</span>} />
         <Scroll label="Nachrichten">
           <p id="board-help" class="k2-sr">
             Leertaste nimmt die Nachricht auf. Pfeiltasten wählen den Ordner, Enter legt ab, Escape bricht ab.
