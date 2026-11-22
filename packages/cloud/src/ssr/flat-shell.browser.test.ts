@@ -81,6 +81,20 @@ for (const name of ["spaces", "files", "notebooks", "mail"])
           return found;
         });
         expect(doubled).toEqual([]);
+        // K15 (B8, B9): this page is rendered on the server and never hydrated, as the QA measures it. No strip in the
+        // head scrolls sideways: a path waits behind "…" and shortens its last level, views move into More. Only the
+        // filters scroll, with a fade.
+        const sideways = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2b-app-workspace__head *")]
+            .filter((element) => !element.closest(".k2b-app-workspace__head-filters"))
+            .filter((element) => getComputedStyle(element).overflowX !== "visible" && element.clientWidth > 1)
+            .filter((element) => element.scrollWidth > element.clientWidth + 1)
+            .map(
+              (element) =>
+                `${element.tagName.toLowerCase()}.${element.className.toString().split(" ")[0]} ${element.scrollWidth}/${element.clientWidth}`,
+            ),
+        );
+        expect(sideways).toEqual([]);
       } finally {
         await page.context().close();
       }
