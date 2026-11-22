@@ -130,9 +130,10 @@ export default function DashboardView(props: DashboardViewProps) {
         as="h1"
         size="lg"
         title={props.name}
-        class={props.actions ? "sr-only" : props.private ? "pulse-dashboard__heading" : undefined}
+        // The base page's head names no dashboard: the heading and, on a phone, Share and Gustav stand here.
+        class={props.private ? "pulse-dashboard__heading" : undefined}
         actions={
-          actions && !props.actions ? (
+          actions ? (
             <div class="pulse-dashboard__compact-actions">
               <actions.Buttons compact />
             </div>

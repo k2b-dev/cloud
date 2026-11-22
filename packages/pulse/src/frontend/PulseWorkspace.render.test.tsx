@@ -72,7 +72,9 @@ const render = (view: "sources" | "dashboards", locale = "en") =>
 test("sources render from their server snapshot without measurement counts or removed readers", () => {
   const html = render("sources");
   expect(html).toContain("Warehouse importer");
-  expect(html).toContain('class="ti ti-plus"');
+  // The head carries the four tabs; Sources counts its sources.
+  for (const tab of ["Sources", "Data", "Usage", "SQL"]) expect(html).toContain(tab);
+  expect(html).toContain("Analyze with Gustav");
   expect(html).not.toContain("Query explorer");
   expect(html).not.toContain("Resources");
   expect(html).not.toContain("Signals");
