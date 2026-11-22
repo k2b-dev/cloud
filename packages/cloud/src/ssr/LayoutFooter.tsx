@@ -13,7 +13,7 @@ export default function LayoutFooter(props: LayoutFooterProps) {
         </a>
       ))}
       {props.appName && (
-        <span class="text-zinc-400 dark:text-zinc-600">
+        <span class="not-dark:text-zinc-400 dark:text-zinc-600">
           Copyright &copy; {new Date().getFullYear()} {props.appName}
         </span>
       )}

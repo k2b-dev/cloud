@@ -62,7 +62,7 @@ function ThinkingBlockView(props: { text: string; streaming?: boolean }) {
       }
     >
       <Chat.Activity label={t().showReasoning} icon="ti ti-sparkles" tone="ai" bodyInset={false}>
-        <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md not-dark:bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {props.text}
         </pre>
       </Chat.Activity>
@@ -90,15 +90,15 @@ export function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind:
         tone={status() === "failed" ? "danger" : "ai"}
         bodyInset={false}
       >
-        <div class="w-full min-w-0 rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <div class="w-full min-w-0 rounded-md not-dark:bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <Show when={props.block.result} fallback={<p>{t().compactionSummary}</p>}>
             {(compactResult) => (
               <dl class="grid grid-cols-2 gap-2">
-                <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
+                <div class="rounded-md not-dark:bg-white/65 px-2 py-1 dark:bg-white/5">
                   <dt class="uppercase tracking-wide text-dimmed">{t().before}</dt>
                   <dd class="font-medium text-primary">{compactResult().entriesBefore.toLocaleString(locale())}</dd>
                 </div>
-                <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
+                <div class="rounded-md not-dark:bg-white/65 px-2 py-1 dark:bg-white/5">
                   <dt class="uppercase tracking-wide text-dimmed">{t().after}</dt>
                   <dd class="font-medium text-primary">{compactResult().entriesAfter.toLocaleString(locale())}</dd>
                 </div>
@@ -113,7 +113,7 @@ export function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind:
 
 function ToolTextDetail(props: { children: JSX.Element }) {
   return (
-    <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+    <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md not-dark:bg-zinc-100 p-2 text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
       {props.children}
     </pre>
   );
@@ -673,7 +673,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
         renderBody={() => {
           const inputOutput = () => (
             <div
-              class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
+              class="max-h-72 overflow-auto overscroll-contain rounded-md not-dark:bg-zinc-100 p-3 dark:bg-zinc-950"
               tabIndex={0}
               role="region"
               aria-label={t().toolInputOutput}

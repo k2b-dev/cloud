@@ -99,7 +99,7 @@ const renderInlineMarkdown = (raw: string, options: PrettyTableOptions, locale?:
   const withTags = formatted.replace(TAG_RE, (_match, prefix: string, tag: string) => {
     const href = options.resolveUrl?.("tag", tag.toLowerCase()) ?? "#";
     const title = prettyTableMessages.resolve(locale ? [locale] : []).t.showNotesWithTag({ tag: tag.toLowerCase() });
-    return `${prefix}<a href="${escapeHtml(href)}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="${escapeHtml(title)}">#${escapeHtml(tag)}</a>`;
+    return `${prefix}<a href="${escapeHtml(href)}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded not-dark:bg-emerald-50 dark:bg-emerald-950/40 not-dark:text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="${escapeHtml(title)}">#${escapeHtml(tag)}</a>`;
   });
 
   return restoreHtml(withTags, placeholders);

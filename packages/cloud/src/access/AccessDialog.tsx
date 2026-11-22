@@ -837,7 +837,7 @@ export function AccessDialog(
                           <li class="flex items-center gap-3 py-2" aria-hidden="true">
                             <Skeleton class="h-8 w-8 shrink-0 rounded-full" />
                             <Skeleton class={`h-3 min-w-0 flex-1 ${width}`} />
-                            <Skeleton class="ml-auto h-8 w-28 shrink-0 sm:w-40" />
+                            <Skeleton class="ml-auto h-8 max-sm:w-28 shrink-0 sm:w-40" />
                           </li>
                         )}
                       </For>
@@ -959,7 +959,7 @@ export function AccessDialog(
           }
         >
           <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <span class="mr-auto flex basis-full items-center gap-2 text-sm text-secondary sm:basis-auto" role="status">
+            <span class="mr-auto flex max-sm:basis-full items-center gap-2 text-sm text-secondary sm:basis-auto" role="status">
               <Show when={changes().length > 0} fallback={t().noChanges}>
                 <b>{t().changeCount({ count: changes().length })}</b>
                 <Button variant="text" size="sm" onClick={() => setSummaryOpen((open) => !open)} aria-expanded={summaryOpen()}>

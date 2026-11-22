@@ -12,7 +12,7 @@
 
 import type { MarkedExtension, Tokens } from "marked";
 
-const MARK_CLASSES = "bg-yellow-300 dark:bg-yellow-400/40 text-zinc-900 dark:text-yellow-50 px-0.5 rounded";
+const MARK_CLASSES = "not-dark:bg-yellow-300 dark:bg-yellow-400/40 not-dark:text-zinc-900 dark:text-yellow-50 px-0.5 rounded";
 
 export function markExtension(): MarkedExtension {
   return {
