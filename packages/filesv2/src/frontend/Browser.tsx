@@ -1896,6 +1896,7 @@ export default function Browser(props: {
     props.onUploadReady?.(() => filePicker?.click());
     onCleanup(() => props.onUploadReady?.(null));
   });
+  const [addOpen, setAddOpen] = createSignal(false);
   let openAdd: ((anchor: HTMLElement, returnFocus?: HTMLElement) => void) | undefined;
   const openAddMenu = (event: MouseEvent) => {
     if (busy() || !(event.currentTarget instanceof HTMLElement)) return;
@@ -1958,7 +1959,12 @@ export default function Browser(props: {
             </span>
           </>
         }
-        primary={canCreate() ? { label: b().newItem, icon: "ti ti-plus", popup: "menu", onClick: openAddMenu } : undefined}
+        primary={
+          canCreate()
+            ? // Its menu's state is New's `aria-expanded`; while a change runs, New waits like the old "+" did.
+              { label: b().newItem, icon: "ti ti-plus", popup: "menu", expanded: addOpen(), disabled: busy(), onClick: openAddMenu }
+            : undefined
+        }
       />
       <AppWorkspace.Content>
         <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
@@ -1996,7 +2002,14 @@ export default function Browser(props: {
               }}
             />
             {/* The head's "New" opens this menu beside itself; on a phone it is a sheet. */}
-            <Dropdown items={addItems()} label={b().newItem} align="end" phone="sheet" openAt={(open) => (openAdd = open)} />
+            <Dropdown
+              items={addItems()}
+              label={b().newItem}
+              align="end"
+              phone="sheet"
+              openAt={(open) => (openAdd = open)}
+              onOpenChange={setAddOpen}
+            />
             {/* K6: the status row says what is here; a selection shows its count and its actions in the same place. */}
             <StatusRow
               class="filesv2-toolbar"

@@ -663,6 +663,23 @@ describe("Files folder states", () => {
     }
   });
 
+  test("New says whether its menu is open", async () => {
+    const { tab, errors } = await open(desktop);
+    try {
+      const create = tab.locator("[data-workspace-primary]").first();
+      expect(await create.getAttribute("aria-expanded")).toBe("false");
+      await create.click();
+      await tab.getByRole("menu").waitFor();
+      expect(await create.getAttribute("aria-expanded")).toBe("true");
+      await tab.keyboard.press("Escape");
+      await settled(tab);
+      expect(await create.getAttribute("aria-expanded")).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
   test("an empty folder, a failed refresh and keyboard focus keep the column's lines and places", async () => {
     const { tab, errors } = await open(desktop, "?error", "en", []);
     try {
