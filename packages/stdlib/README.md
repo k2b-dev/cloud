@@ -226,6 +226,7 @@ const trend = charts.sparkline({
 
 // Dashboard panels for monitoring-style UIs
 const cpu = charts.gauge({ value: 72, min: 0, max: 100, label: "CPU", unit: "%" });
+const signup = charts.funnel({ stages: [{ label: "Visitors", value: 100 }, { label: "Signed up", value: 40 }] });
 const health = charts.stateTimeline({
   rows: [{ label: "API", intervals: [{ from: 0, to: 8, state: "ok" }] }],
   states: [{ state: "ok", label: "OK" }],

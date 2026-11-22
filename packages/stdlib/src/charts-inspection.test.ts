@@ -43,6 +43,7 @@ const samples = {
   map: { series: [{ data: [{ latitude: 0, longitude: 0, label: "Office" }] }] },
   stateTimeline: { rows: [{ label: "A", intervals: [{ from: 0, to: 10, state: "ok" }] }] },
   sparkline: { data: [1, 3, 2] },
+  funnel: { stages: [{ label: "Visitors", value: 100 }, { label: "Signed up", value: 40 }] },
 } satisfies { [K in keyof typeof charts]: Parameters<(typeof charts)[K]>[0] };
 
 describe("renderer-owned chart inspection", () => {

@@ -299,6 +299,20 @@ const DEFAULT_STYLES = `
 .stdlib-chart-map-empty { font-size: 11px; fill: currentColor; opacity: 0.55; }
 .stdlib-chart-state-region { stroke: white; stroke-width: 1; }
 .stdlib-chart-state-label { font-size: 11px; fill: currentColor; opacity: 0.75; }
+.stdlib-chart-funnel-track { fill-opacity: 0.14; stroke: none; }
+.stdlib-chart-funnel-bar { stroke: none; }
+.stdlib-chart-funnel-compare { fill: currentColor; fill-opacity: 0.3; stroke: none; }
+.stdlib-chart-funnel-tick { fill: currentColor; stroke: none; }
+.stdlib-chart-funnel-hit { stroke: none; }
+.stdlib-chart-funnel-label { font-size: 13px; fill: currentColor; }
+.stdlib-chart-funnel-value { font-size: 13px; font-weight: 600; fill: currentColor; }
+.stdlib-chart-funnel-compare-value { font-size: 13px; fill: currentColor; fill-opacity: 0.62; }
+.stdlib-chart-funnel-muted { font-size: 11px; font-weight: 400; fill: currentColor; fill-opacity: 0.62; }
+.stdlib-chart-funnel-compact { font-size: 11px; }
+.stdlib-chart-funnel-legend { font-size: 11px; fill: currentColor; fill-opacity: 0.62; }
+.stdlib-chart-funnel-deviation { font-weight: 600; fill-opacity: 1; }
+.stdlib-chart-funnel-deviation-up { fill: #10b981; }
+.stdlib-chart-funnel-deviation-down { fill: #ef4444; }
 `.trim();
 
 // ==========================
@@ -2962,6 +2976,402 @@ export const sparkline = (opts: SparklineOptions): string => {
 };
 
 // ==========================
+// FUNNEL
+// ==========================
+
+export type FunnelStage = { label: string; value: number };
+
+/** One comparison series. `values[i]` belongs to `stages[i]`; missing,
+ *  negative, or non-finite positions get no mark and no deviation. */
+export type FunnelCompare = { label: string; values: readonly number[] };
+
+/** Human text of a funnel. Every template is plain text; the renderer
+ *  escapes the result. Defaults are English. */
+export type FunnelLabels = {
+  /** Step conversion text. `{share}` is the formatted conversion.
+   *  Default `"↓ {share} continue"`, or `"↓ {share} of start"` with
+   *  `conversion: "first"`. */
+  step?: string;
+  /** Comparison number text. `{share}` is the formatted comparison share
+   *  or step. Default `"avg {share}"`. */
+  compare?: string;
+  /** Deviation text. `{delta}` is the signed, rounded difference in
+   *  percentage points. Default `"{delta} pp"`. */
+  deviation?: string;
+  /** Marker for the first stage of `shape: "funnel"`. Default `"Start"`. */
+  start?: string;
+};
+
+export type FunnelOptions = Omit<ChartOptions, "padding"> & {
+  /** Stages in order. Values do not have to fall. */
+  stages: FunnelStage[];
+  /** Name of the main series, shown in the legend when `compare` is set. */
+  label?: string;
+  /** One comparison series. With it, both series show shares of their own
+   *  first stage instead of absolute numbers. */
+  compare?: FunnelCompare;
+  /** Step conversion between stages. Default `"previous"`. */
+  conversion?: "previous" | "first" | "none";
+  /** `"bars"` (default) or a classic centered `"funnel"`. */
+  shape?: "bars" | "funnel";
+  /** BCP 47 locale for numbers and percents. Default `"en"`. */
+  locale?: string;
+  /** Overrides for the human text. */
+  labels?: FunnelLabels;
+};
+
+type FunnelRow = {
+  label: string;
+  value?: number;
+  share?: number;
+  step?: number;
+  compareValue?: number;
+  compareShare?: number;
+  compareStep?: number;
+  deviation?: number;
+  /** Bar length in 0..1 of the drawable width. */
+  length: number;
+  compareLength?: number;
+};
+
+const FUNNEL_DEFAULT_WIDTH = 480;
+const FUNNEL_NARROW_WIDTH = 420;
+// SVG strings cannot measure text. Estimate each glyph's advance in em,
+// generous for wide glyphs so labels and values never touch.
+const glyphWidth = (char: string): number =>
+  // Full-width CJK, Hangul, and emoji glyphs take about 1em.
+  /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|\p{Extended_Pictographic}/u.test(char) ? 1
+  : /[il.,:;'|!\s]/.test(char) ? 0.3
+    : /[fjtr()\[\]\-]/.test(char) ? 0.4
+      : /[mwMW@%]/.test(char) ? 0.9
+        : /[A-Z0-9#&]/.test(char) ? 0.7
+          : 0.58;
+
+const funnelUsable = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+
+// Finite inputs can still overflow (1e200 / 1e-200); such ratios are not computable.
+const funnelRatio = (a: number | undefined, b: number | undefined): number | undefined => {
+  const ratio = a !== undefined && b !== undefined && b > 0 ? a / b : undefined;
+  return ratio !== undefined && Number.isFinite(ratio) ? ratio : undefined;
+};
+
+/** Difference in percentage points, rounded to two decimals; undefined when it overflows. */
+const funnelDeviation = (step: number, compareStep: number): number | undefined => {
+  const points = (step - compareStep) * 100;
+  const rounded = Math.round(points * 100) / 100;
+  return Number.isFinite(rounded) ? rounded : Number.isFinite(points) ? points : undefined;
+};
+
+const textWidth = (text: string, fontSize: number): number =>
+  [...text].reduce((sum, char) => sum + glyphWidth(char), 0) * fontSize;
+
+/** Shorten `text` with an ellipsis so its estimated width fits `maxWidth`. */
+const fitText = (text: string, maxWidth: number, fontSize: number): string => {
+  if (textWidth(text, fontSize) <= maxWidth) return text;
+  const chars = [...text];
+  let used = textWidth("…", fontSize);
+  let count = 0;
+  while (count < chars.length && used + glyphWidth(chars[count]!) * fontSize <= maxWidth) used += glyphWidth(chars[count++]!) * fontSize;
+  return `${chars.slice(0, count).join("").trimEnd()}…`;
+};
+
+/** Text element with an escaped, possibly shortened label. A shortened
+ *  label keeps the full text in a `<title>`. */
+const funnelLabelText = (
+  cls: string,
+  x: number,
+  y: number,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  anchor?: "end",
+  affix: { before?: string; after?: string } = {},
+): string => {
+  const before = affix.before ?? "";
+  const after = affix.after ?? "";
+  const shown = fitText(text, maxWidth - textWidth(before + after, fontSize), fontSize);
+  const title = shown === text ? "" : `<title>${escapeXml(text)}</title>`;
+  return `<text class="${cls}" x="${fmt(x)}" y="${fmt(y)}"${anchor ? ` text-anchor="${anchor}"` : ""}>${title}${escapeXml(before + shown + after)}</text>`;
+};
+
+/** Transparent row-wide target so narrow or empty trapezoids stay inspectable. */
+const funnelHitArea = (inspect: boolean | undefined, width: number, y: number, height: number): string =>
+  inspect ? `<rect class="stdlib-chart-funnel-hit" x="0" y="${fmt(y)}" width="${fmt(width)}" height="${fmt(height)}" fill="transparent"/>` : "";
+
+const fillTemplate = (template: string, key: string, value: string): string =>
+  template.split(`{${key}}`).join(value);
+
+/**
+ * Render a conversion funnel. Each stage shows its value, its share of the
+ * first stage, and the step conversion to the previous (or first) stage.
+ *
+ * Without `compare`, bar length is `value / max(values)`, so a rising stage
+ * is drawn longer and is never treated as an error. With `compare`, both
+ * series are normalized to their own first stage (share of start) and scaled
+ * to the largest share of both. Absolute numbers stay in the inspection datum.
+ *
+ * `shape: "bars"` draws left-aligned bars with a light drop-off remainder;
+ * a comparison series becomes a `currentColor` tick on each bar.
+ * `shape: "funnel"` draws centered trapezoids; with `compare`, the main
+ * series takes the left half and the comparison the right half of one
+ * shared center axis.
+ *
+ * Height follows the content; a larger `height` leaves space below. Empty
+ * `stages` render the empty state. Negative or non-finite values and a zero
+ * start render `–` instead of a number.
+ *
+ * @example
+ * charts.funnel({
+ *   stages: [{ label: "Visitors", value: 12400 }, { label: "Signed up", value: 4960 }],
+ *   locale: "en",
+ * });
+ */
+export const funnel = (opts: FunnelOptions): string => {
+  const width = opts.width ?? FUNNEL_DEFAULT_WIDTH;
+  if (opts.stages.length === 0) return emptyChart(width, opts.height ?? DEFAULT_HEIGHT, opts.className);
+
+  const conversion = opts.conversion ?? "previous";
+  const compare = opts.compare;
+  const locale = opts.locale ?? "en";
+  const numberFormat = new Intl.NumberFormat(locale);
+  const integerFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const percentFormat = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
+  const smallPercentFormat = new Intl.NumberFormat(locale, { style: "percent", maximumSignificantDigits: 1 });
+  // Extreme magnitudes switch to compact notation, and past the largest compact
+  // suffix to scientific notation, so value columns stay bounded.
+  const compactFormat = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 });
+  const compactPercentFormat = new Intl.NumberFormat(locale, { style: "percent", notation: "compact", maximumFractionDigits: 1 });
+  const scientificFormat = new Intl.NumberFormat(locale, { notation: "scientific", maximumFractionDigits: 1 });
+  const scientificPercentFormat = new Intl.NumberFormat(locale, { style: "percent", notation: "scientific", maximumFractionDigits: 1 });
+  const stepTemplate = opts.labels?.step ?? (conversion === "first" ? "↓ {share} of start" : "↓ {share} continue");
+  const compareTemplate = opts.labels?.compare ?? "avg {share}";
+  const deviationTemplate = opts.labels?.deviation ?? "{delta} pp";
+  const startLabel = opts.labels?.start ?? "Start";
+
+  const formatNumber = (value: number | undefined): string =>
+    value === undefined ? "–" : (value >= 1e15 ? scientificFormat : value >= 1e9 ? compactFormat : numberFormat).format(value);
+  const formatPercent = (value: number | undefined): string => {
+    if (value === undefined) return "–";
+    if (value > 0 && value < 0.0001) return `<${smallPercentFormat.format(0.0001)}`;
+    if (value >= 1e13) return scientificPercentFormat.format(value);
+    if (value >= 100) return compactPercentFormat.format(value);
+    return (value !== 0 && value < 0.01 ? smallPercentFormat : percentFormat).format(value);
+  };
+  const deviationParts = (deviation: number) => {
+    const rounded = Math.round(deviation);
+    const sign = rounded > 0 ? "+" : rounded < 0 ? "−" : "±";
+    return {
+      text: fillTemplate(deviationTemplate, "delta", `${sign}${(Math.abs(rounded) >= 1e9 ? scientificFormat : integerFormat).format(Math.abs(rounded))}`),
+      tone: rounded > 0 ? " stdlib-chart-funnel-deviation-up" : rounded < 0 ? " stdlib-chart-funnel-deviation-down" : "",
+    };
+  };
+
+  const values = opts.stages.map((stage) => funnelUsable(stage.value));
+  const compareValues = opts.stages.map((_, i) => compare ? funnelUsable(compare.values[i]) : undefined);
+  const stepOf = (series: (number | undefined)[], i: number): number | undefined =>
+    i === 0 || conversion === "none"
+      ? undefined
+      : funnelRatio(series[i], conversion === "first" ? series[0] : series[i - 1]);
+
+  const rows: FunnelRow[] = opts.stages.map((stage, i) => {
+    const step = stepOf(values, i);
+    const compareStep = compare ? stepOf(compareValues, i) : undefined;
+    return {
+      label: stage.label,
+      value: values[i],
+      share: funnelRatio(values[i], values[0]),
+      step,
+      compareValue: compareValues[i],
+      compareShare: compare ? funnelRatio(compareValues[i], compareValues[0]) : undefined,
+      compareStep,
+      deviation: step !== undefined && compareStep !== undefined ? funnelDeviation(step, compareStep) : undefined,
+      length: 0,
+    };
+  });
+
+  if (compare) {
+    const maxShare = Math.max(0, ...rows.flatMap((row) => [row.share ?? 0, row.compareShare ?? 0]));
+    for (const row of rows) {
+      row.length = maxShare > 0 && row.share !== undefined ? row.share / maxShare : 0;
+      row.compareLength = maxShare > 0 && row.compareShare !== undefined ? row.compareShare / maxShare : undefined;
+    }
+  } else {
+    const maxValue = Math.max(0, ...values.map((value) => value ?? 0));
+    for (const row of rows) row.length = maxValue > 0 && row.value !== undefined ? row.value / maxValue : 0;
+  }
+
+  const datum = (row: FunnelRow, index: number, anchor: [number, number]): ChartDatum => {
+    const fields: ChartDatum["values"] = [];
+    const add = (key: string, value: number | undefined, formatted: string) => {
+      if (value !== undefined) fields.push({ key, value, formatted });
+    };
+    add("value", row.value, formatNumber(row.value));
+    add("share", row.share, formatPercent(row.share));
+    add("step", row.step, formatPercent(row.step));
+    if (compare) {
+      add("compareValue", row.compareValue, formatNumber(row.compareValue));
+      add("compareShare", row.compareShare, formatPercent(row.compareShare));
+      add("compareStep", row.compareStep, formatPercent(row.compareStep));
+      if (row.deviation !== undefined) add("deviation", row.deviation, deviationParts(row.deviation).text);
+    }
+    return { index, role: "item", label: row.label, anchor, values: fields };
+  };
+
+  const header = renderHeader(width, opts.title, opts.subtitle);
+  const top = header.height > 0 ? header.height + 8 : 0;
+  const body: string[] = [];
+  const fade = (i: number) => (rows.length > 1 ? fmt(1 - (i * 0.5) / (rows.length - 1)) : "1");
+  let contentHeight: number;
+
+  if ((opts.shape ?? "bars") === "bars") {
+    const narrow = width < FUNNEL_NARROW_WIDTH;
+    const gap = compare ? 26 : 22;
+    const rowHeight = narrow ? (compare ? 20 : 22) : 30;
+    const labelHeight = narrow ? 20 : 0;
+    const primary = rows.map((row) => compare ? formatPercent(row.share) : formatNumber(row.value));
+    const secondary = rows.map((row) => compare ? fillTemplate(compareTemplate, "share", formatPercent(row.compareShare)) : formatPercent(row.share));
+    const labelWidth = narrow ? 0 : Math.min(150, width * 0.28);
+    const valueWidth = narrow
+      ? 0
+      : clamp(Math.max(...rows.map((_, i) => Math.max(textWidth(primary[i]!, 13), textWidth(secondary[i]!, 11)))) + 12, 72, width * 0.35);
+    const barWidth = Math.max(0, width - labelWidth - valueWidth);
+    let y = top;
+
+    if (compare) {
+      // Both legend entries share the width right of the label column; the
+      // main entry takes at most half when the comparison needs the space.
+      let x = labelWidth;
+      if (opts.label) {
+        const room = width - x - 15 - 14 - 11 - Math.min(textWidth(compare.label, 11), (width - x) / 2);
+        const shown = fitText(opts.label, room, 11);
+        body.push(`<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="10" height="10" rx="2"/>`);
+        body.push(funnelLabelText("stdlib-chart-funnel-legend", x + 15, y + 9, opts.label, room, 11));
+        x += 15 + textWidth(shown, 11) + 14;
+      }
+      body.push(`<rect class="stdlib-chart-funnel-tick" x="${fmt(x + 4)}" y="${fmt(y - 1)}" width="2.5" height="12" rx="1"/>`);
+      body.push(funnelLabelText("stdlib-chart-funnel-legend", x + 11, y + 9, compare.label, width - x - 11, 11));
+      y += 22;
+    }
+
+    rows.forEach((row, i) => {
+      const barY = y + labelHeight;
+      const mid = barY + rowHeight / 2;
+      if (narrow) {
+        const valueLine = `${primary[i]} · ${secondary[i]}`;
+        body.push(funnelLabelText("stdlib-chart-funnel-label", 0, y + 14, row.label, width - textWidth(valueLine, 13) - 12, 13));
+        body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(y + 14)}" text-anchor="end">${escapeXml(primary[i]!)}<tspan class="stdlib-chart-funnel-muted"> · ${escapeXml(secondary[i]!)}</tspan></text>`);
+      } else {
+        body.push(funnelLabelText("stdlib-chart-funnel-label", 0, mid + 4, row.label, labelWidth - 10, 13));
+        body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(mid - 1)}" text-anchor="end">${escapeXml(primary[i]!)}</text>`);
+        body.push(`<text class="stdlib-chart-funnel-muted" x="${fmt(width)}" y="${fmt(mid + 13)}" text-anchor="end">${escapeXml(secondary[i]!)}</text>`);
+      }
+
+      const marks = [
+        `<rect class="stdlib-chart-funnel-track stdlib-chart-series-0" x="${fmt(labelWidth)}" y="${fmt(barY)}" width="${fmt(barWidth)}" height="${fmt(rowHeight)}" rx="5"/>`,
+      ];
+      if (row.length > 0) {
+        marks.push(`<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(labelWidth)}" y="${fmt(barY)}" width="${fmt(Math.max(barWidth * row.length, 2))}" height="${fmt(rowHeight)}" rx="5"/>`);
+      }
+      if (row.compareLength !== undefined) {
+        // Keep the whole tick inside the bar's horizontal extent (and the viewport).
+        const tickX = clamp(labelWidth + barWidth * row.compareLength - 1.25, labelWidth, labelWidth + barWidth - 2.5);
+        marks.push(`<rect class="stdlib-chart-funnel-tick" x="${fmt(tickX)}" y="${fmt(barY - 4)}" width="2.5" height="${fmt(rowHeight + 8)}" rx="1"/>`);
+      }
+      const end = labelWidth + barWidth * Math.max(row.length, row.compareLength ?? 0);
+      body.push(chartDatumSvg(marks.join(""), datum(row, i, [end, mid]), opts.inspect));
+
+      const next = rows[i + 1];
+      if (next && conversion !== "none") {
+        let line = escapeXml(fillTemplate(stepTemplate, "share", formatPercent(next.step)));
+        if (compare) {
+          line += ` · ${escapeXml(fillTemplate(compareTemplate, "share", formatPercent(next.compareStep)))}`;
+          if (next.deviation !== undefined) {
+            const deviation = deviationParts(next.deviation);
+            line += ` <tspan class="stdlib-chart-funnel-deviation${deviation.tone}">${escapeXml(deviation.text)}</tspan>`;
+          }
+        }
+        body.push(`<text class="stdlib-chart-funnel-muted" x="${fmt(labelWidth + 4)}" y="${fmt(barY + rowHeight + 15)}">${line}</text>`);
+      }
+      y = barY + rowHeight + gap;
+    });
+    // Comparison ticks reach 4 units below the last bar.
+    contentHeight = y - gap + (compare ? 4 : 0);
+  } else if (!compare) {
+    const small = width < 520;
+    const labelWidth = Math.min(150, width * 0.3);
+    const valueWidth = clamp(Math.max(...rows.map((row) => textWidth(formatNumber(row.value), 13))) + 8, Math.min(150, width * 0.3), width * 0.4);
+    const centerWidth = Math.max(0, width - labelWidth - valueWidth - 28);
+    const cx = labelWidth + 14 + centerWidth / 2;
+    const rowHeight = 40;
+    const labelSize = small ? 11 : 13;
+    rows.forEach((row, i) => {
+      const y = top + i * rowHeight;
+      const bottomY = y + rowHeight - 3;
+      const topWidth = centerWidth * row.length;
+      const bottomWidth = centerWidth * (rows[i + 1]?.length ?? row.length * 0.8);
+      const path = `<path class="stdlib-chart-funnel-bar stdlib-chart-series-0" d="M${fmt(cx - topWidth / 2)},${fmt(y)} L${fmt(cx + topWidth / 2)},${fmt(y)} L${fmt(cx + bottomWidth / 2)},${fmt(bottomY)} L${fmt(cx - bottomWidth / 2)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`;
+      body.push(chartDatumSvg(path + funnelHitArea(opts.inspect, width, y, rowHeight), datum(row, i, [cx, y + rowHeight / 2]), opts.inspect));
+      body.push(funnelLabelText(`stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`, labelWidth, y + rowHeight / 2 + 4, row.label, labelWidth - 6, labelSize, "end"));
+      body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width - valueWidth)}" y="${fmt(y + rowHeight / 2)}">${escapeXml(formatNumber(row.value))}</text>`);
+      const secondary = conversion === "none"
+        ? formatPercent(row.share)
+        : i === 0 ? startLabel : fillTemplate(stepTemplate, "share", formatPercent(row.step));
+      body.push(funnelLabelText("stdlib-chart-funnel-muted", width - valueWidth, y + rowHeight / 2 + 14, secondary, valueWidth - 4, 11));
+    });
+    contentHeight = top + rows.length * rowHeight;
+  } else {
+    const small = width < 520;
+    const labelWidth = small ? 96 : 150;
+    // Rising stages can show shares above 100 %; the columns grow to fit them.
+    const valueWidth = clamp(Math.max(...rows.map((row) => Math.max(textWidth(formatPercent(row.share), 13), textWidth(formatPercent(row.compareShare), 13)))) + 16, small ? 50 : 84, width * 0.25);
+    const centerWidth = Math.max(0, width - labelWidth - 2 * valueWidth);
+    const cx = labelWidth + valueWidth + centerWidth / 2;
+    const half = Math.max(0, centerWidth / 2 - 1);
+    const rowHeight = small ? 48 : 52;
+    const labelSize = small ? 11 : 13;
+    if (opts.label) body.push(funnelLabelText("stdlib-chart-funnel-legend", cx - 6, top + 9, opts.label, cx - 6, 11, "end", { before: "← " }));
+    body.push(funnelLabelText("stdlib-chart-funnel-legend", cx + 6, top + 9, compare.label, width - cx - 6, 11, undefined, { after: " →" }));
+    const rowsTop = top + 22;
+    rows.forEach((row, i) => {
+      const y = rowsTop + i * rowHeight;
+      const bottomY = y + rowHeight - 3;
+      const mid = y + rowHeight / 2;
+      const next = rows[i + 1];
+      const left = row.length;
+      const leftNext = next ? next.length : left * 0.8;
+      const marks = [
+        `<path class="stdlib-chart-funnel-bar stdlib-chart-series-0" d="M${fmt(cx - 1)},${fmt(y)} L${fmt(cx - 1 - half * left)},${fmt(y)} L${fmt(cx - 1 - half * leftNext)},${fmt(bottomY)} L${fmt(cx - 1)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`,
+      ];
+      if (row.compareLength !== undefined) {
+        const right = row.compareLength;
+        const rightNext = next?.compareLength ?? right * 0.8;
+        marks.push(`<path class="stdlib-chart-funnel-compare" d="M${fmt(cx + 1)},${fmt(y)} L${fmt(cx + 1 + half * right)},${fmt(y)} L${fmt(cx + 1 + half * rightNext)},${fmt(bottomY)} L${fmt(cx + 1)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`);
+      }
+      body.push(chartDatumSvg(marks.join("") + funnelHitArea(opts.inspect, width, y, rowHeight), datum(row, i, [cx, mid]), opts.inspect));
+
+      // Label and both shares share one baseline; the step line gets its own row below.
+      const hasStep = i > 0 && conversion !== "none";
+      const baseline = hasStep ? mid - 2 : mid + 4;
+      const share = formatPercent(row.share);
+      body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(labelWidth + valueWidth - 8)}" y="${fmt(baseline)}" text-anchor="end">${escapeXml(share)}</text>`);
+      body.push(`<text class="stdlib-chart-funnel-compare-value" x="${fmt(labelWidth + valueWidth + centerWidth + 8)}" y="${fmt(baseline)}">${escapeXml(formatPercent(row.compareShare))}</text>`);
+      body.push(funnelLabelText(`stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`, 0, baseline, row.label, labelWidth + valueWidth - 14 - textWidth(share, 13), labelSize));
+      if (hasStep) {
+        const deviation = row.deviation === undefined ? undefined : deviationParts(row.deviation);
+        const room = labelWidth + valueWidth - 6 - (deviation ? textWidth(` ${deviation.text}`, 11) : 0);
+        const step = fitText(fillTemplate(stepTemplate, "share", formatPercent(row.step)), room, 11);
+        body.push(`<text class="stdlib-chart-funnel-muted" x="0" y="${fmt(mid + 13)}">${escapeXml(step)}${deviation ? ` <tspan class="stdlib-chart-funnel-deviation${deviation.tone}">${escapeXml(deviation.text)}</tspan>` : ""}</text>`);
+      }
+    });
+    contentHeight = rowsTop + rows.length * rowHeight;
+  }
+
+  const height = Math.ceil(Math.max(opts.height ?? 0, contentHeight));
+  return svgRoot({ width, height, className: opts.className }, header.svg + body.join(""));
+};
+
+// ==========================
 // NAMESPACE
 // ==========================
 
@@ -2980,4 +3390,5 @@ export const charts = {
   heatmap,
   map,
   stateTimeline,
+  funnel,
 } as const;

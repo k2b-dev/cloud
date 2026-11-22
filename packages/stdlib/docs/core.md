@@ -744,7 +744,7 @@ is not bounded by the compiler.
 SVG chart generators covering the basic shapes, dashboard panels, and the
 features most useful for scientific publication: `scatter`, `line`, `bar`,
 `pie`, `donut`, `sparkline`, `histogram`, `boxplot`, `gauge`, `barGauge`,
-`stat`, `heatmap`, `map`, `stateTimeline`. Returns SVG strings —
+`stat`, `heatmap`, `map`, `stateTimeline`, `funnel`. Returns SVG strings —
 inject into the DOM, write to disk, or send over the wire. Pure native, no
 peer dependencies.
 
@@ -789,6 +789,7 @@ charts.gauge({ value: 72, min: 0, max: 100, label: "CPU", unit: "%" });
 charts.barGauge({ data: [{ label: "Disk", value: 91, unit: "%" }] });
 charts.stat({ label: "Requests / min", value: 12482, delta: 8.4, sparkline: [...] });
 charts.heatmap({ data: [{ x: "12:00", y: "p95", value: 89 }] });
+charts.funnel({ stages: [{ label: "Visitors", value: 100 }, { label: "Signed up", value: 40 }] });
 charts.map({
   series: [{ data: [{ latitude: 52.52, longitude: 13.405 }] }],
   viewport: { latitude: 52.52, longitude: 13.405, zoom: 2 },
@@ -915,6 +916,70 @@ charts.stateTimeline({
   xAxis: { format: v => `${v}:00` },
 });
 ```
+
+### Funnel: stages, drop-off, and comparison
+
+```ts
+charts.funnel({
+  stages: [{ label: "Visitors", value: 12400 }, { label: "Signed up", value: 4960 }],
+  label: "Current",
+  compare: { label: "Average", values: [31000, 10850] }, // optional; matched by index
+  conversion: "previous", // "previous" | "first" | "none"
+  shape: "bars",          // "bars" | "funnel"
+  locale: "en",
+  inspect: true,
+});
+```
+
+`stages` contains ordered `{ label, value }` items. Defaults are width `480`,
+`conversion: "previous"`, `shape: "bars"`, and `locale: "en"`. `height` is a
+minimum; content can make the SVG taller. `title`, `subtitle`, and `className`
+are supported; `padding` is not. Both `charts.funnel` and the named `funnel`
+export are available from `@k2b/stdlib`.
+
+Without `compare`, bar length is `value / max(values)`: rising stages remain
+honest and draw longer. Values show absolute counts and shares of the first
+stage. With `compare`, both series show shares of their own first stage and
+scale to the largest share across both series. Bars use comparison ticks;
+`shape: "funnel"` uses centered trapezoids, or a split comparison with the main
+series left and comparison right of one center axis. Absolute counts remain
+in the inspection datum and its SVG tooltip.
+
+Step conversion uses the previous stage by default, the first stage with
+`"first"`, or is hidden with `"none"`. Comparison deviation is main conversion
+minus comparison conversion in percentage points. The datum rounds it to two
+decimals; visible text rounds to whole points with `+`, `−`, or `±`.
+
+Override plain-text templates with `labels`: `step` defaults to
+`"↓ {share} continue"` (`"↓ {share} of start"` with `"first"`), `compare` to
+`"avg {share}"`, `deviation` to `"{delta} pp"`, and `start` to `"Start"`.
+`{share}` receives the locale-formatted share or conversion; `{delta}` receives
+the signed deviation. `start` is used only by the funnel shape without a
+comparison. For German text, for example, pass `locale: "de"` and
+`labels: { step: "↓ {share} weiter", compare: "Ø {share}" }`.
+
+Below width `420`, bars place labels above the bar and counts beside shares
+(e.g. `2.730 · 22 %`). Long labels and legend names are shortened with `…` and
+keep their full text in a `<title>`. Counts from one billion and shares from
+10,000 % use compact notation (`1.2B`, `1B%`), and scientific notation once
+compact suffixes run out (`1E305`); shares below 0.01 % read `<0.01%`.
+
+With `inspect: true`, each stage emits one datum with role `"item"`, its stage
+`index`, original `label`, and value keys `value`, `share`, and `step` (after
+the first stage, when conversion is enabled and computable). Comparison adds
+`compareValue`, `compareShare`, `compareStep`, and `deviation` when computable.
+In the funnel shape, each datum group also holds a transparent, row-wide
+`.stdlib-chart-funnel-hit` rectangle, so stages with tiny or zero width stay
+inspectable. Empty stages show the `no data` state. Negative or non-finite values and
+ratios with a zero start/denominator show `–`; non-computable fields are omitted
+from the datum. Missing or invalid comparison positions have no mark or
+deviation; extra comparison values are ignored.
+
+Style `.stdlib-chart-funnel-*` classes: `bar`, `track`, `tick`, `compare`,
+`hit`, `label`, `value`, `compare-value`, `muted`, `compact`, `legend`, and
+`deviation`/`deviation-up`/`deviation-down`. Main marks use `--stdlib-chart-c1`;
+comparison marks and text use `currentColor`. Deviation colors match the stat
+delta colors (green up, red down).
 
 ### Histogram & box plot (statistical)
 
