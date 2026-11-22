@@ -3898,8 +3898,29 @@ html {
   }
 }
 
+/* K12: a tablet (an app area of 48 to 64 rem) shows one level at a time, as a
+   phone does, with the back step in its head; a level never squeezes beside
+   another there. */
 @media (min-width: 48rem) {
-  @container k2b-app-area (max-width: 79.999rem) {
+  @container k2b-app-area (max-width: 63.999rem) {
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
+      display: none;
+    }
+
+    .k2b-ui [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+      display: inline-flex;
+    }
+
+    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
+      width: auto;
+      min-width: 0;
+      flex: 1 1 0;
+    }
+  }
+}
+
+@media (min-width: 48rem) {
+  @container k2b-app-area (min-width: 64rem) and (max-width: 79.999rem) {
     .k2b-ui .k2b-app-workspace {
       --k2b-workspace-level-class: 2;
     }
