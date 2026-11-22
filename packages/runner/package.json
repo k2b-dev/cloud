@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
-    "workerd": "1.20261028.1",
+    "workerd": "1.20261119.1",
     "zod": "catalog:"
   },
   "devDependencies": {
