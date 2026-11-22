@@ -53,5 +53,9 @@ export function codeApprovalMessage(approval: CodeApproval, locale: string): str
       Object.entries(isRecord(approval.input) ? approval.input : {}).map(
         ([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`,
       );
-  return [`${approval.appName}: ${approval.title}`, ...reviewed].join("\n");
+  return [
+    ...(approval.changed ? [artifact.actionChanged({ app: approval.appName })] : []),
+    `${approval.appName}: ${approval.title}`,
+    ...reviewed,
+  ].join("\n");
 }

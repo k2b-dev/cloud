@@ -188,7 +188,8 @@ app.on = (...args) => {
 for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, second, third) => {
   const [handler, options] = typeof second === "function" ? [second, third] : [third, second];
   if (typeof path !== "string" || typeof handler !== "function") throw new CodeError("code_sdk_invalid_route");
-  const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
+  const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}),
+    ...(options?.audience === "owner-data" ? { audience: "owner-data" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
   if (routes.some(value => value.entrypoint === entrypoint)) throw new CodeError("code_sdk_duplicate_route");
   routes.push({ entrypoint, route, handler, middleware: [...middleware] });

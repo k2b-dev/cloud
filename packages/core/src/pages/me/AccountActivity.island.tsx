@@ -59,8 +59,10 @@ export default function AccountActivity(props: Props) {
   const columns = (): DataTableColumn<AccountActivityEntry>[] => [
     { id: "time", header: t().time, value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
     { id: "activity", header: t().activity, value: (entry) => activityLabel(entry, t()), cellClass: "min-w-[9rem]" },
-    { id: "status", header: t().status, value: (entry) => entry.outcome, cellClass: "whitespace-nowrap" },
-    { id: "context", header: t().context, value: (entry) => entry.context, cellClass: "min-w-[10rem]" },
+    // On a narrow table, context gives way first (below 560 px), then status (below 420 px); their values move into
+    // the row's details, so the table never scrolls sideways (K7, K15). Time and activity always stay.
+    { id: "status", header: t().status, value: (entry) => entry.outcome, cellClass: "whitespace-nowrap", priority: 2 },
+    { id: "context", header: t().context, value: (entry) => entry.context, cellClass: "min-w-[10rem]", priority: 3 },
   ];
   const outcomeLabel = (outcome: AccountActivityEntry["outcome"]) =>
     outcome === "allowed" ? t().outcomeAllowed : outcome === "denied" ? t().outcomeDenied : t().outcomeFailed;
@@ -90,7 +92,7 @@ export default function AccountActivity(props: Props) {
         density="compact"
         highlightColumns={false}
         class="max-h-[22rem] overflow-auto"
-        tableClass="w-full min-w-[34rem] text-xs"
+        tableClass="w-full text-xs"
         empty={
           <div class="flex flex-col items-center gap-1">
             <i class="ti ti-clipboard-list text-lg text-dimmed" />

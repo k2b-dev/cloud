@@ -247,10 +247,14 @@ Drop targets and other control states keep the platform fill.
 | --- | --- | --- |
 | File over a dropzone | `FileDropzone` | `k2b-dropzone` |
 | Item over a drop target | `DropTarget` | `k2b-drop-target` |
+| Item over a tile of a drop overlay | `DropOverlay` | `k2b-drop-overlay` |
 | Files over a page or region | `FileDropTarget` | `k2b-file-drop` |
 | Item over a folder | `FileTree` | `k2b-content-file-tree` |
 | Event over a day while it moves | `Calendar` | `k2b-calendar-month` |
-| Insertion line where a moved row lands | `SortableList` | `k2b-sortable-list` |
+
+`SortableList` uses the same platform blue without a fill on the rows: the
+line where a moved row lands is `--k2b-action-solid`, and the head of the
+column it would land in takes the platform fill.
 
 ### Links
 

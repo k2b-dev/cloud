@@ -566,21 +566,26 @@ export const defineApp = <
 
   // ── 1. SSR config ─────────────────────────────────────────────────────
   const rootDir = opts.appRoot ?? process.cwd();
+  // The one island build of the app. Its pages and its public site (`publicSsr`) both render from it, so they read
+  // the same builds the same way.
+  const islandBuild = {
+    dev: isDevelopment,
+    verbose: true,
+    rootDir,
+    componentRoots: [resolve(env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
+    // Every island instance already mounts inside its own error boundary; this
+    // only gives the fallback Cloud's look and the reader's language.
+    errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
+    // Production islands ship only the messages of the page's `lang`.
+    variants: catalogIslandVariants(),
+  } satisfies SsrOptions;
   const {
     config,
     plugin,
     html: renderHtml,
   } = createSsrConfig<ResolvedPageOptions>({
-    dev: isDevelopment,
-    verbose: true,
-    rootDir,
-    componentRoots: [resolve(env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
+    ...islandBuild,
     basePath: opts.basePath,
-    // Every island instance already mounts inside its own error boundary; this
-    // only gives the fallback Cloud's look and the reader's language.
-    errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
-    // Production islands ship only the request language's messages.
-    variants: catalogIslandVariants<ResolvedPageOptions>(),
     template: ({
       body,
       scripts,
@@ -644,7 +649,10 @@ export const defineApp = <
             };
       // The inline layer statement fixes the cascade order before any
       // stylesheet declares a layer. Tailwind's `properties` layer resets
-      // `--tw-*` in browsers without `@property` and must stay lowest.
+      // `--tw-*` in browsers without `@property` and must stay lowest. Within
+      // a layer the later stylesheet wins at equal specificity, so the app's
+      // own stylesheet follows the shared one: an app utility such as `-mt-1`
+      // beats a shared one such as `m-0` on the same element (#3921).
       return `<!DOCTYPE html>
 <html lang="${normalizeLocale(lang)}" class="${resolved ?? "light"}"${fixed ? " data-theme-fixed" : ""}${head.html}>
   <head><meta charset="UTF-8"><meta name="viewport" content="${head.viewport}">
@@ -657,8 +665,8 @@ export const defineApp = <
     ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
+    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">
+    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">
@@ -1434,7 +1442,7 @@ export const defineApp = <
     public: publicRouter,
     publicSsr: <T extends object = object>(template: NonNullable<SsrOptions<T>["template"]>) => {
       if (!opts.public) throw new Error(`App "${opts.id}" uses publicSsr without declaring public: true`);
-      const site = createSsrConfig<T>({ dev: config.dev, rootDir: config.rootDir, basePath: "", template });
+      const site = createSsrConfig<T>({ ...islandBuild, basePath: "", template });
       publicRouter.route("/_ssr", routes(site.config));
       publicRouter.all("/_ssr/*", (c) => c.notFound());
       return { html: site.html };

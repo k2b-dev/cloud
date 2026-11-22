@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, settled, touchTargetMin } from "../../test/browser";
 import { solidTestPlugin } from "../../test/solid-test-plugin";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
@@ -285,8 +285,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       expect(await page.evaluate(() => document.querySelector(".k2b-map-view__zoom")!.getBoundingClientRect().height)).toBe(64);
       expect(hitAreas).toHaveLength(5);
       for (const area of hitAreas) {
-        expect(area.width).toBeGreaterThanOrEqual(44);
-        expect(area.height).toBeGreaterThanOrEqual(44);
+        expect(area.width).toBeGreaterThanOrEqual(touchTargetMin);
+        expect(area.height).toBeGreaterThanOrEqual(touchTargetMin);
       }
     } finally {
       await page.close();
@@ -956,7 +956,7 @@ describe("@k2b/ui Calendar on a phone", () => {
         const agenda = document.querySelector(".k2b-calendar-mobile-month__agenda")!.getBoundingClientRect();
         return { shortest: Math.min(...days), tallest: Math.max(...days), grid: grid.height, gap: agenda.top - grid.bottom };
       });
-      expect(layout.shortest).toBeGreaterThanOrEqual(44);
+      expect(layout.shortest).toBeGreaterThanOrEqual(touchTargetMin);
       expect(layout.tallest).toBeLessThanOrEqual(52);
       // Six weeks and the weekday row, instead of the month view's 36rem.
       expect(layout.grid).toBeLessThan(360);

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled, touchTargetMin } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -660,9 +660,9 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
         expect(bounds!.x).toBeGreaterThanOrEqual(8);
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(382);
         expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
-        expect((await page.locator(trigger).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        expect((await page.locator(trigger).boundingBox())!.height).toBeGreaterThanOrEqual(touchTargetMin);
         for (const row of await page.locator("[data-switcher-option]").all()) {
-          expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(touchTargetMin);
         }
         expect(
           await page.locator(search).evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),

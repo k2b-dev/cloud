@@ -204,3 +204,13 @@ export const IngestWriteDataSchema = z.strictObject({
   events: z.number().int().nonnegative(),
   states: z.number().int().nonnegative(),
 });
+
+// P1: the same reads with the base as target, so Code reads a base through the target Cloud checks for its visitors (G1).
+export const SqlRunPagedInputSchema = SqlRunInputSchema.extend({
+  cursor: CursorSchema.describe("Opaque cursor from the previous page of the same SQL. Use ORDER BY so pages stay stable."),
+}).strict();
+export const BaseSqlRunInputSchema = SqlRunPagedInputSchema.omit({ baseId: true }).strict();
+export const BaseSavedQueryListInputSchema = SavedQueryListInputSchema.omit({ baseId: true }).strict();
+export const BaseAlertListInputSchema = AlertListInputSchema.omit({ baseId: true }).strict();
+export const BaseAlertReadInputSchema = AlertReadInputSchema.omit({ baseId: true }).strict();
+export const BaseSourceListInputSchema = SourceListInputSchema.omit({ baseId: true }).strict();

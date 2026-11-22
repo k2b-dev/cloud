@@ -336,6 +336,9 @@ describe("@k2b/ui Cloud content contract", () => {
 
     expect(code).toContain("code-display");
     expect(code).toContain("k2b-content-code-display__body");
+    // Both code bodies scroll their lines sideways on purpose and say so to the layout self-check.
+    expect(code).toMatch(/class="k2b-content-code-display__body"[^>]*data-layout-check="scroll-x"/);
+    expect(docs).toMatch(/class="k2b-content-doc-code__body"[^>]*data-layout-check="scroll-x"/);
     expect(code).toContain('role="region"');
     expect(code).toContain('aria-label="ts code"');
     expect(code).toContain('tabindex="0"');

@@ -49,11 +49,13 @@ export function schemaTypes(
         const type = render(target);
         // A recursive target can refer to this local alias through a pooled child declaration.
         const recursive = type.includes(alias) || declarations.slice(declarationStart).join("\n").includes(alias);
-        const shared = recursive ? type : share(type, true);
-        if (!recursive && shapes?.names.has(shared)) {
-          alias = shared;
+        // A shared `$defs` entry projects like the same schema written inline, so it pools with identical shapes
+        // elsewhere; only a recursive target needs its own alias.
+        if (recursive) declarations.push(`type ${alias} = ${type};`);
+        else {
+          alias = share(type);
           references.set(ref, alias);
-        } else declarations.push(`type ${alias} = ${type};`);
+        }
       }
       parts.push(alias);
     }
@@ -131,13 +133,8 @@ export function schemaTypes(
   // a literal can itself contain text that looks like a JSDoc comment.
   const structuralKey = (type: string) =>
     type.replace(/("(?:\\.|[^"\\])*")|\/\*\*[\s\S]*?\*\/\s*/g, (_match, literal: string | undefined) => literal ?? "");
-  const share = (type: string, referencedUnion = false): string => {
-    if (
-      !shapes ||
-      (!type.startsWith("{") && !type.startsWith("[") && !(referencedUnion && type.startsWith("("))) ||
-      /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)
-    )
-      return type;
+  const share = (type: string): string => {
+    if (!shapes || (!type.startsWith("{") && !type.startsWith("[")) || /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)) return type;
     const key = structuralKey(type);
     let alias = shapes.types.get(key);
     if (!alias) {

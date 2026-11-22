@@ -40,6 +40,8 @@ export default function CodeDisplay(props: CodeDisplayProps) {
 
       <div
         class="k2b-content-code-display__body"
+        // Code keeps its lines and scrolls them sideways; the body says so to the layout self-check.
+        data-layout-check="scroll-x"
         data-header={hasHeader() ? "true" : undefined}
         data-digits={digits()}
         role="region"

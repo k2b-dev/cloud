@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
-import { browserName, hoverInPlace, launchBrowser } from "../../../test/browser";
+import { browserName, hoverInPlace, launchBrowser, touchTargetMin } from "../../../test/browser";
 
 // Keyboard use, focus, and whether anything moves are results of a real engine. The fixture is a conversation
 // composer whose emoji button opens EmojiPicker.Popover, as an application wires it, plus an inline picker.
@@ -397,7 +397,7 @@ describe(`EmojiPicker in ${browserName}`, () => {
     const picker = await page.locator(".k2b-emoji-picker").boundingBox();
     expect(picker!.width).toBeLessThanOrEqual(390 - 16);
     const cell = await page.locator(".k2b-emoji-picker__option").first().boundingBox();
-    expect(cell!.height).toBeGreaterThanOrEqual(44);
+    expect(cell!.height).toBeGreaterThanOrEqual(touchTargetMin);
     expect(cell!.width).toBeGreaterThanOrEqual(40);
     await page.locator(".k2b-emoji-picker__option", { hasText: "😂" }).first().tap();
     expect(await page.evaluate(() => state.picked)).toEqual(["😂"]);

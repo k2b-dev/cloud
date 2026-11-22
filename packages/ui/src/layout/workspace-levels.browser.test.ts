@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled, storedCookie } from "../../test/browser";
+import { launchBrowser, settled, storedCookie, touchTargetMin } from "../../test/browser";
 import { type AppWorkspaceLayoutState, appWorkspaceLayoutStyle, parseAppWorkspaceLayoutState } from "./app-workspace-state";
 
 const ui = resolve(import.meta.dir, "../..");
@@ -230,8 +230,8 @@ for (const width of [390, 768, 1024, 1440, 1920])
             expected[0],
           );
           const box = (await back.boundingBox())!;
-          expect(box.width).toBeGreaterThanOrEqual(44);
-          expect(box.height).toBeGreaterThanOrEqual(44);
+          expect(box.width).toBeGreaterThanOrEqual(touchTargetMin);
+          expect(box.height).toBeGreaterThanOrEqual(touchTargetMin);
           expect(
             await back.evaluate((element) => element.getBoundingClientRect().top - element.closest("section")!.getBoundingClientRect().top),
           ).toBe(6); // levels start flush at the top (K2), the 44 px target centred in the 56 px head (K1)

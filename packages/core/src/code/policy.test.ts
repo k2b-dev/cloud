@@ -252,14 +252,17 @@ test("operators can recognize and recover the asking-action migration pause", as
   expect(docs).toContain("activate the replacement version");
 });
 
-test("public routes require a deliberate policy choice, including historical tables", () => {
-  for (const preset of ["admin", "open"] as const) {
-    const definition = codePolicyPreset(preset);
-    expect(effective("public_routes", { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe(
-      preset === "open" ? "automatic" : "admin",
-    );
-    definition.rules = definition.rules.filter((rule) => rule.row !== "public_routes");
-    expect(effective("public_routes", { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe("never");
+test("public and owner-data routes require a deliberate policy choice, including historical tables", () => {
+  for (const row of ["public_routes", "owner_data"] as const) {
+    for (const preset of ["admin", "open"] as const) {
+      const definition = codePolicyPreset(preset);
+      expect(effective(row, { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe(
+        preset === "open" ? "automatic" : "admin",
+      );
+      definition.rules = definition.rules.filter((rule) => rule.row !== row);
+      expect(effective(row, { kind: "app", appId: "example" }, definition, { groups: [], ancestors: [] }).value).toBe("never");
+    }
+    expect(codePolicyPreset("off").rules.find((rule) => rule.row === row)?.value).toBe("never");
   }
 });
 

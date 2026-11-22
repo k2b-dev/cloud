@@ -146,7 +146,7 @@ names; outside `@k2b/ui` a use of one, or of the column tokens
 goes when the workspace draws its hairline (K2).
 
 Checks with a baseline (`border-ownership`, `radius-scale`, `resize-grips`,
-`shadow-tokens`, `glass-surfaces`, `notice-cards`) list today's known findings in
+`shadow-tokens`, `glass-surfaces`, `notice-cards`, `layout-check-coverage`) list today's known findings in
 `scripts/checks/<rule>.baseline`, one line each. A new finding fails; a fixed one
 is removed with `bun scripts/check.ts <rule> --fix`.
 
@@ -166,12 +166,51 @@ show through fill, edge, and a word. A notice cell names its deed in the button.
 A resize grip is a `role="separator"` with its value range, a name, and arrow
 keys ([ResizeSeparator](/en/ui/layout/resize-separator)).
 
+## Test a page
+
+Every app lane tests each page it builds this way. This rule is binding:
+
+- **Widths:** 390, 768, 1100, and 1440 px (`layoutWidths`), each width in its
+  own test. 1100 px is where a docked detail column leaves the least room.
+- **Detail column at 1100 px:** the detail column is open, so the list, the
+  reader, and the detail stand side by side.
+- **Visible scrollbars:** the browser runs with classic scrollbars
+  (`launchWithScrollbars()` in this repository, `classicScrollbars` from
+  `@k2b/ui/layout-check` elsewhere). A hidden scrollbar takes no width, so a
+  column that is a few pixels too wide never scrolls sideways in a test.
+- **Desktop windows without touch for that run:** with `isMobile` or
+  `hasTouch`, Chromium draws overlay scrollbars that take no room, even with
+  classic scrollbars. The run checks `scrollbarWidth()` above 0, so it measures
+  what it claims. Touch is a separate run.
+- **Check:** `layoutProblems` finds overlap, spill, cut text, a double line, a
+  scroll container that scrolls sideways, and a page that scrolls sideways.
+  `problems` is empty at every width.
+
+The `layout-check-coverage` rule fails a browser test that calls
+`layoutProblems` without visible scrollbars, without the `scrollbarWidth`
+probe, or without 1100 px. Tests that
+existed before the rule are listed in its baseline until they move.
+
+```ts
+import { layoutWidths, scrollbarWidth } from "@k2b/ui/layout-check";
+import { launchWithScrollbars } from "../../test/browser";
+
+const browser = await launchWithScrollbars();
+// A narrow desktop window without touch; a scrollbar must take room here.
+expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
+for (const width of layoutWidths)
+  test(`${width} px: the record page has no layout problem`, async () => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(width >= 1100 ? "/records/2611?detail=open" : "/records/2611");
+    expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
+  });
+```
+
 ## Runtime
 
 The criteria are CSS tokens and building blocks; they render on the server and
 need no browser code. In a browser test, call `layoutProblems` from
-`packages/ui/test/head-overlap.ts` with `page.evaluate`, once per width in its
-own test.
+`@k2b/ui/layout-check` with `page.evaluate`, once per width in its own test.
 
 ## Example
 

@@ -7,6 +7,7 @@ import { resolveBaseFromCommand, resolveSource } from "./cli/context";
 import { createDashboardCommands } from "./cli/dashboards";
 import { baseFlag, JSON_INPUT } from "./cli/flags";
 import { createQueryCommands } from "./cli/queries";
+import { schemaCommand } from "./cli/schema";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
 import { sourceTokenCommands } from "./cli/source-tokens";
 import { createSourceCommands } from "./cli/sources";
@@ -38,6 +39,7 @@ const pulseCommands = (locale?: string) =>
     },
     commands: [
       sqlCommand,
+      schemaCommand,
       ...createQueryCommands(locale),
       ...createDashboardCommands(locale),
       ...createAlertCommands(locale),

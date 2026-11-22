@@ -5,13 +5,43 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-19
+updated: 2026-11-21
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## Code pages check what they read
+
+A Code route now delivers its answer only to a visitor who may read every
+resource the route read: the target and refs of each succeeded Query and each
+resource read through its type reader. Other visitors get **No access**
+(`403 code_page_access_denied`). Before, every signed-in member saw what the
+owner's account could read.
+
+- A page that should show the owner's data to everyone who opens it declares
+  `{ audience: "owner-data" }` on the route. The change needs a new version and
+  its approval; the administrators see the option in the review.
+- A public route that calls any app Query needs `audience: "owner-data"`. So
+  does a public route that uses the Code's own database, because the database
+  outlives versions and may hold app data copied earlier: existing public pages
+  that read their database answer **No access** until a new version declares
+  `{ public: true, audience: "owner-data" }`. Pulse keeps its data off public
+  routes entirely (`code.publicRoutes: false`).
+- A Query that failed counts like one that succeeded, because its error text
+  can carry data.
+- Pulse reads have a target form, recommended for Code:
+  `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`,
+  `.savedQuery.list` and `.schema.read`. The app-wide forms with `baseId` keep
+  working everywhere, also in Code; Cloud checks the base they name for each
+  visitor like a target. They are planned for removal from Code in a later
+  release, which this page will announce.
+- `sql.run` and `base.sql.run` return a cursor for the next page; use `ORDER BY`
+  so pages stay stable.
+
+See [Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
 
 ## One compact approval frame
 
@@ -76,9 +106,23 @@ compatibility path for writers.
 **Operators:** open approvals and stored conversations stay valid. Cloud converts
 stored reviews with `preview` or `content` and stored table presentations into
 blocks when it reads them; their digests do not change, and converted drafts are
-not editable. Upgrade every application that returns reviews or table
-presentations together with Core: an older app that still sends `preview`,
-`content`, or `presentation` gets an invalid-response error after the upgrade.
+not editable. Upgrade every application that returns reviews together with Core:
+an older app that still sends `preview` or `content` gets an invalid-response
+error after the upgrade.
+
+Until Cloud 0.86, Core still accepts `presentation` in an ordinary Query or
+Action result from an app built on an older `@k2b/cloud`. When Core shows the
+result itself (Assistant, choices, MCP) and the result has no `view`, Core
+replaces the table with the same table view it shows for stored results, titled
+with the capability's title. Otherwise Core drops it and returns the result
+without it: for callers that read results with their own SDK, when the result
+already has a `view`, when the table does not fit a result view, and when Core
+cannot read the app's registration. Stream completions still reject it. Core logs one warning
+per app and capability in each Core process: `Capability result uses the
+deprecated presentation field`, with `appId`, `kind`, `capabilityId`,
+`outcome` (`mapped` or `dropped`), and `removedIn`. The warning never contains
+result data. Use it to find the apps to upgrade. From 0.86 on, such a result is
+an invalid response again.
 
 ## Code SDK declarations are simpler
 

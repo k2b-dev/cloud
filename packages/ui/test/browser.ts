@@ -11,6 +11,7 @@ import {
   type Request,
   webkit,
 } from "playwright";
+import { classicScrollbars } from "../src/layout-check";
 import { launchBudgetMs, launchHookMs } from "./browser-budget";
 
 /**
@@ -640,6 +641,22 @@ export const launchBrowser = async ({
 };
 
 /**
+ * A browser with classic, visible scrollbars, as on most desktops, for page tests that call `layoutProblems`: only then
+ * does a scrollbar take its width, so a column that is a few pixels too wide shows up as a sideways scroller. The
+ * `layout-check-coverage` rule requires it in every browser test that calls `layoutProblems`. Use narrow desktop
+ * windows without touch for that run: with `isMobile` or `hasTouch`, Chromium draws overlay scrollbars that take no
+ * room even here. Assert `page.evaluate(scrollbarWidth)` above 0, so the run measures what it claims.
+ */
+export const launchWithScrollbars = (options: Parameters<typeof launchBrowser>[0] = {}): Promise<Browser> =>
+  launchBrowser({
+    ...options,
+    ignoreDefaultArgs: [
+      ...(Array.isArray(options.ignoreDefaultArgs) ? options.ignoreDefaultArgs : []),
+      ...classicScrollbars.ignoreDefaultArgs,
+    ],
+  });
+
+/**
  * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.
  * Use it for every list whose host can rebuild equal items: a row replaced between press and release swallows
  * the click (#2140). `rebuild` gives the page new objects with the same identity, as a host does on any change.
@@ -659,6 +676,14 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
     await page.mouse.up();
   }
 };
+
+/**
+ * The least size a touch target may measure: 44 px, less a hundredth of a pixel. Engines lay boxes out at sub-pixel
+ * precision (WebKit in 1/64 px units, and a box inside a scaled or animated layer reads back as a float), so a target
+ * that is 44 px by its CSS can measure 43.9999 px (#3917). The rule stays 44 px; the tolerance only absorbs that
+ * rounding and is far below one device pixel.
+ */
+export const touchTargetMin = 44 - 0.01;
 
 /**
  * Moves the pointer onto `position` inside `target` without scrolling, after checking that the target is the

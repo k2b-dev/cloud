@@ -75,6 +75,8 @@ export const DocCode = (props: DocCodeProps) => {
       </Show>
       <div
         class="k2b-content-doc-code__body"
+        // Code keeps its lines and scrolls them sideways; the body says so to the layout self-check.
+        data-layout-check="scroll-x"
         data-header={hasHeader() ? "true" : undefined}
         tabIndex={0}
         role="region"

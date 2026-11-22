@@ -190,7 +190,7 @@ const openNegativeFeedbackDialog = (t: ReturnType<typeof aiChatMessages>) =>
       return (
         <div class="flex min-h-0 flex-col gap-4">
           <p class="text-sm text-secondary">{t.feedbackIntro}</p>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div class="grid max-sm:grid-cols-1 gap-2 sm:grid-cols-2">
             <For each={feedbackReasons(t)}>
               {(reason) => (
                 <CheckboxCard

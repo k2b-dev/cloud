@@ -961,7 +961,7 @@ function AiSettingsPanel(props: {
             </summary>
             <div class="mt-2 flex flex-col gap-1.5">
               <p class="text-xs text-dimmed">{t().platformPromptDescription}</p>
-              <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
+              <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-[var(--k2b-radius-control)] bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
                 {AI_PLATFORM_PROMPT_TEMPLATE}
               </pre>
             </div>
@@ -985,7 +985,7 @@ function AiSettingsPanel(props: {
             </summary>
             <div class="mt-2 flex flex-col gap-1.5">
               <p class="text-xs text-dimmed">{t().localClientBuiltInDescription}</p>
-              <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
+              <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-[var(--k2b-radius-control)] bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
                 {AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS}
               </pre>
             </div>

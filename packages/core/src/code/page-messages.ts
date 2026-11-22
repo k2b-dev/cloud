@@ -36,6 +36,7 @@ export const codePageMessages = i18n.define({
       unavailable: "The Code could not answer. Try again later.",
       tooLarge: "The input is too large.",
       answerLost: "The answer was lost. Check whether the step took effect before you send it again.",
+      accessDenied: "This page now shows data you may not read. Ask the person who owns the page for access.",
     },
     de: {
       newDataTitle: "Neue Daten verfügbar",
@@ -69,6 +70,7 @@ export const codePageMessages = i18n.define({
       unavailable: "Der Code konnte nicht antworten. Versuche es später erneut.",
       tooLarge: "Die Eingabe ist zu groß.",
       answerLost: "Die Antwort ging verloren. Prüfe, ob der Schritt gewirkt hat, bevor du ihn erneut sendest.",
+      accessDenied: "Diese Seite zeigt jetzt Daten, die du nicht lesen darfst. Bitte die Person, der die Seite gehört, um Zugriff.",
     },
   },
 });
@@ -91,6 +93,8 @@ export function codePageFailure(t: CodePageMessages, code: string | undefined, f
       return t.tooLarge;
     case "code_answer_lost":
       return t.answerLost;
+    case "code_page_access_denied":
+      return t.accessDenied;
     case "code_request_failed":
     case "code_route_changed":
       return t.unavailable;

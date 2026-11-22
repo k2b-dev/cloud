@@ -25,6 +25,7 @@ import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codeOperationPolicyRow, isCodeAiOperation } from "./policy-contracts";
+import { publicRouteReadRefusals } from "./public-route-reads";
 import { readCodeReview, waitCodeReview } from "./review";
 import { cancelCodeReviewRevision } from "./review-chat";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
@@ -119,6 +120,7 @@ async function describeCheck(
   const policyRows = new Set<CodePolicyRow>();
   if (result.manifest.ai && !result.permissions.some((permission) => isCodeAiOperation(permission.operation))) policyRows.add("ai");
   if (result.manifest.entrypoints.some((entry) => entry.route?.public)) policyRows.add("public_routes");
+  if (result.manifest.entrypoints.some((entry) => entry.route?.audience === "owner-data")) policyRows.add("owner_data");
   if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
   const catalogs = new Map<string, Awaited<ReturnType<typeof getCapabilityCatalogApp>>>();
@@ -172,6 +174,14 @@ async function describeCheck(
       own,
     });
   }
+  // G1: a public route calls Queries only with owner-data, and never those of an app with `code.publicRoutes: false`.
+  const refusals = publicRouteReadRefusals(
+    result.manifest,
+    result.permissions,
+    new Map([...catalogs].map(([appId, catalog]) => [appId, catalog.ok ? catalog.data?.manifest : null])),
+    context.locale,
+  );
+  if (refusals.length) return { version: 1, result: { ok: false, diagnostics: refusals }, manifest: null, permissions: [] };
   return { version: 1, result, manifest: { ...result.manifest, entry: request.entry, policyRows: [...policyRows].sort() }, permissions };
 }
 async function check(input: CodeAuthoringInput<"check">, context: CodeContext, presentation = true) {

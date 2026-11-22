@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { boundSqlCapabilityResult } from "./capability-sql-result";
+import { boundSqlCapabilityResult, sqlCapabilityNextOffset } from "./capability-sql-result";
 import type { SqlResult } from "./service/sql-service";
 
 // Bounds exercise the real capability adapter without requiring ClickHouse.
@@ -61,4 +61,39 @@ test("numeric Int64 string values count toward the point budget", () => {
   const input = fixture(Array.from({ length: 100 }, () => Array(6).fill("1")));
   input.columns = input.columns.map((column) => ({ ...column, type: "Nullable(UInt64)" }));
   expect(boundSqlCapabilityResult(input, "en").rows).toHaveLength(83);
+});
+
+test("P1 cursor: pages walk the same result without gaps or repeats and end at its last row", () => {
+  const result = fixture(Array.from({ length: 250 }, (_, n) => [String(n)]));
+  const seen: unknown[] = [];
+  let offset: number | null = 0;
+  let pages = 0;
+  while (offset !== null) {
+    const page = boundSqlCapabilityResult(result, "en", offset);
+    seen.push(...page.rows.map((row) => row[0]));
+    offset = sqlCapabilityNextOffset(result, offset, page);
+    expect(page.truncated).toBe(offset !== null);
+    pages += 1;
+  }
+  expect(pages).toBe(3);
+  expect(seen).toEqual(result.rows.map((row) => row[0]));
+});
+
+test("P1 cursor: an offset beyond the result is an empty last page", () => {
+  const result = fixture([["a"], ["b"]]);
+  const page = boundSqlCapabilityResult(result, "en", 5);
+  expect(page.rows).toEqual([]);
+  expect(sqlCapabilityNextOffset(result, 5, page)).toBeNull();
+});
+
+test("P1 cursor: a row too large for one page is skipped, so the rows after it stay reachable", () => {
+  const result = fixture([["a"], ["x".repeat(CAPABILITY_MAX_RESULT_BYTES)], ["c"]]);
+  const first = boundSqlCapabilityResult(result, "en", 0);
+  expect(first.rows).toEqual([["a"]]);
+  const second = boundSqlCapabilityResult(result, "en", 1);
+  expect(second.rows).toEqual([]);
+  expect(second.truncated).toBe(true);
+  const next = sqlCapabilityNextOffset(result, 1, second);
+  expect(next).toBe(2);
+  expect(boundSqlCapabilityResult(result, "en", next!).rows).toEqual([["c"]]);
 });

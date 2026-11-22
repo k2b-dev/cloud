@@ -159,6 +159,38 @@ domTest("an answer collapses the question at once to its outcome line, which tak
   }
 });
 
+domTest("a question asked again because the app changed its Action shows that sentence on the card", async () => {
+  // The Assistant's chat-code card text for an Action that changed after the person was first asked (an app update).
+  const changed =
+    "Weather changed this action after you were asked, so nothing has run yet. Check the current version and approve it again.";
+  const view = await mountTurn([
+    { ...runCode, approval: { message: `${changed}\nWeather: Add location\nname: Berlin`, allowAlways: false } },
+  ]);
+  try {
+    await settle();
+    // The person sees why the code asks again on the card itself, in place of the generic reason, and approves again.
+    expect(view.question()?.textContent).toContain(`Run code?${changed}`);
+    expect(view.question()?.textContent).not.toContain("Cloud always asks for this");
+    expect(view.button("Run code")).toBeDefined();
+    await view.openDetails();
+    const details = view.dom.document.querySelector(".cloud-approval-details")?.textContent ?? "";
+    expect(details).toContain("Add location");
+    expect(details).toContain("Berlin");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a code question whose text starts with its usual line keeps the generic reason", async () => {
+  const view = await mountTurn([{ ...runCode, approval: { message: "Weather: Add location\nname: Berlin", allowAlways: false } }]);
+  try {
+    await settle();
+    expect(view.question()?.textContent).toContain("Run code?I'm asking because Cloud always asks for this.");
+  } finally {
+    view.cleanup();
+  }
+});
+
 domTest("an answer that did not arrive says so and asks again with the focus on the sentence", async () => {
   let attempts = 0;
   const view = await mountTurn([runCode], {

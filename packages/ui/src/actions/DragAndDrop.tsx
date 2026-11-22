@@ -1,14 +1,28 @@
 import { createEffect, type JSX, onCleanup, onMount } from "solid-js";
-import { bindDragSource, type DragPayload, registerDropTarget, startKeyboardDrag } from "./drag-and-drop";
+import { useLocale } from "../intl/locale";
+import { announce, bindDragSource, type DragPayload, registerDropTarget } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
+import { preloadWhenIdle } from "./preload-when-idle";
 
-export type { DragPayload } from "./drag-and-drop";
-export { activeDrag } from "./drag-and-drop";
+export type { DragPayload, DragStatus } from "./drag-and-drop";
+export { activeDrag, dragStatus } from "./drag-and-drop";
 
 export type DragSourceProps<Type extends string = string> = {
   /** Read when the drag starts, so a selection can decide what is dragged. */
   payload: DragPayload<Type>;
   disabled?: boolean;
+  /** How far the mouse or pen moves before the drag starts, in px; 10 by default, 6 for a `DropOverlay` (S7). */
+  threshold?: number;
+  /**
+   * "none": a finger never drags this source, so a long press stays with the host, such as the menu of a
+   * `GestureMenu`; the mouse and a pen still drag. "drag" (default): a held finger drags.
+   */
+  touch?: "drag" | "none";
+  /**
+   * With `touch: "none"`: a finger held 500 ms, moving at most 8 px, calls this instead of dragging, so the host opens
+   * the row's menu there (S7). The release after it never clicks the row.
+   */
+  onLongPress?: (point: { x: number; y: number }) => void;
   class?: string;
   children: JSX.Element;
 };
@@ -27,7 +41,18 @@ export type DropTargetProps<Type extends string = string> = {
 export function DragSource<Type extends string = string>(props: DragSourceProps<Type>): JSX.Element {
   const messages = useDragAndDropMessages();
   let source!: HTMLDivElement;
-  onMount(() => onCleanup(bindDragSource(source, () => ({ payload: props.payload, disabled: props.disabled, messages: messages() }))));
+  onMount(() =>
+    onCleanup(
+      bindDragSource(source, () => ({
+        payload: props.payload,
+        disabled: props.disabled,
+        messages: messages(),
+        threshold: props.threshold,
+        touch: props.touch,
+        onLongPress: props.onLongPress,
+      })),
+    ),
+  );
   return (
     <div ref={source} class={`k2b-drag-source${props.class ? ` ${props.class}` : ""}`} data-drag-disabled={props.disabled ? "" : undefined}>
       {props.children}
@@ -72,10 +97,27 @@ export function DropTarget<Type extends string = string>(props: DropTargetProps<
  */
 export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) => void {
   const messages = useDragAndDropMessages();
+  const locale = useLocale();
   let cancel: (() => void) | undefined;
-  onCleanup(() => cancel?.());
+  /** The latest request; a newer one, or cleanup, makes an older one that is still loading start nothing. */
+  let request: object | undefined;
+  onCleanup(() => {
+    request = undefined;
+    cancel?.();
+  });
+  // The pickup sequence loads while the page is idle, so the menu entry starts it at once.
+  onMount(() => onCleanup(preloadWhenIdle(window, () => void import("./drag-and-drop-keyboard").catch(() => undefined))));
   return (payload, origin) => {
     cancel?.();
-    cancel = startKeyboardDrag(payload, origin, messages());
+    cancel = undefined;
+    const own = {};
+    request = own;
+    // Loaded on first use: pages that never pick up by keyboard do not ship the sequence.
+    import("./drag-and-drop-keyboard").then(
+      ({ startKeyboardDrag }) => {
+        if (request === own && origin.isConnected) cancel = startKeyboardDrag(payload, origin, messages(), locale());
+      },
+      () => announce(origin, messages().unavailable),
+    );
   };
 }

@@ -45,6 +45,14 @@ const items = [
 
 const [error, setError] = createSignal();
 window.setDialogError = (value) => setError(value);
+// An app's own error in the body, as a form shows it, instead of the footer's error cell.
+window.addBodyError = () => {
+  const note = document.createElement("p");
+  note.setAttribute("role", "alert");
+  note.style.cssText = "margin:0;height:48px";
+  note.textContent = "The task was not created.";
+  document.querySelector("dialog[open] .k2b-panel-dialog__body").append(note);
+};
 window.openDialog = () =>
   void dialogCore.open(
     (close) =>
@@ -169,6 +177,66 @@ describe("flat overlays (K16)", () => {
       await page.locator(".k2b-panel-dialog__error").waitFor({ state: "detached" });
       await settled(page);
       expect(Math.abs((await box(page, "dialog[open] .create")).y - before.y)).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an app's own error in the body grows the dialog upwards; the footer stays", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => (window as unknown as { openDialog: () => void }).openDialog());
+      await page.locator("dialog[open] .create").waitFor();
+      await settled(page);
+      const before = await box(page, "dialog[open] .create");
+      const frameBefore = await box(page, "dialog[open]");
+      await page.evaluate(() => (window as unknown as { addBodyError: () => void }).addBodyError());
+      await page.getByRole("alert").waitFor();
+      await settled(page);
+      const after = await box(page, "dialog[open] .create");
+      const frameAfter = await box(page, "dialog[open]");
+      // Measured against the viewport: the button under the pointer does not move, the frame grows at its top.
+      expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+      expect(frameAfter.y).toBeLessThan(frameBefore.y - 40);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("on a phone a panel dialog is a sheet from the bottom edge with a grip; a tap on the grip closes it", async () => {
+    const page = await load(390, 760);
+    try {
+      await page.evaluate(() => (window as unknown as { openDialog: () => void }).openDialog());
+      await page.locator("dialog[open] .create").waitFor();
+      await settled(page);
+      const frame = await box(page, "dialog[open]");
+      const look = await page.locator("dialog[open]").evaluate((dialog) => ({
+        radius: getComputedStyle(dialog).borderTopLeftRadius,
+        bottomRadius: getComputedStyle(dialog).borderBottomLeftRadius,
+        grips: dialog.querySelectorAll(".k2b-bottom-sheet__handle").length,
+        focus: document.activeElement === dialog,
+      }));
+      expect(Math.round(frame.y + frame.height)).toBe(760);
+      expect(Math.round(frame.width)).toBe(390);
+      expect(look).toEqual({ radius: "14px", bottomRadius: "0px", grips: 1, focus: true });
+      await page.locator("dialog[open] .k2b-bottom-sheet__handle").click();
+      await page.locator("dialog[open]").waitFor({ state: "detached" });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("from 48rem a panel dialog stays a centered dialog without a grip", async () => {
+    const page = await load(1024, 768);
+    try {
+      await page.evaluate(() => (window as unknown as { openDialog: () => void }).openDialog());
+      await page.locator("dialog[open] .create").waitFor();
+      await settled(page);
+      const frame = await box(page, "dialog[open]");
+      expect(Math.abs(frame.y + frame.height / 2 - 384)).toBeLessThanOrEqual(1);
+      expect(Math.round(frame.width)).toBe(768);
+      expect(await page.locator("dialog[open] .k2b-bottom-sheet__handle").isVisible()).toBe(false);
+      expect(await page.locator("dialog[open]").evaluate((dialog) => getComputedStyle(dialog).borderTopLeftRadius)).toBe("8px");
     } finally {
       await page.close();
     }

@@ -2,15 +2,16 @@
  * The layout self-check of Cloud flach (K15), the mockups' `?check=1` as a function for browser tests. It finds
  * siblings in a flex or grid box that overlap, content that spills out of its box, text that is cut without an
  * ellipsis or a fade, a double line (two parallel visible borders that touch or lie at most 1 px apart, also across
- * components; "one line, one owner", K2), and a page that scrolls sideways.
+ * components; "one line, one owner", K2), a scroll container that scrolls sideways, and a page that scrolls sideways.
  *
  * It runs in the page: pass it to Playwright's `page.evaluate`, so it closes over nothing and needs no other module.
  * Check each width in its own test:
  *
  * ```ts
- * import { layoutProblems } from "@k2b/ui/layout-check";
+ * import { classicScrollbars, layoutProblems, layoutWidths } from "@k2b/ui/layout-check";
  *
- * for (const width of [390, 768, 1440, 1920])
+ * const browser = await chromium.launch(classicScrollbars);
+ * for (const width of layoutWidths)
  *   test(`${width} px: nothing overlaps, spills, or is cut`, async () => {
  *     await page.setViewportSize({ width, height: 900 });
  *     expect((await page.evaluate(layoutProblems, { root: "#app" })).problems).toEqual([]);
@@ -19,8 +20,44 @@
  *
  * Limits, as in the mockups: it does not see what runs out of the bottom of a scroll area, nor what a floating layer
  * covers; a review checks those. A box whose children overlap on purpose (an avatar stack) is listed in `ignore`, or
- * carries `data-layout-check="skip"`.
+ * carries `data-layout-check="skip"`. A touch hit area (an empty, invisible, positioned `::before` or `::after` that
+ * reaches past a small control) is no spill and no cut; it needs no exception. A scroller that is meant to scroll
+ * sideways says so with `data-layout-check="scroll-x"`; a code block (`pre`) keeps its lines and may scroll, and a
+ * toolbar (`role="toolbar"`) may scroll below 768 px (K15).
+ *
+ * Run page tests with classic scrollbars, as on most desktops: headless Chromium hides them unless it is launched with
+ * `ignoreDefaultArgs: ["--hide-scrollbars"]`. Only then does a scrollbar take its width, and a column that is a few
+ * pixels too wide for the space beside it shows up as a sideways scroller.
  */
+
+/**
+ * The widths every page test checks: phone, tablet, a narrow desktop where the detail column is open beside the list,
+ * and a wide desktop. 1100 px is where a docked detail column leaves the least room, so a column that is a few pixels
+ * too wide or a head that wraps shows there first.
+ */
+export const layoutWidths = [390, 768, 1100, 1440] as const;
+
+/**
+ * Launch options for classic, visible scrollbars, as on most desktops: headless Chromium hides them by default, so a
+ * scrollbar never takes its width in a test. Pass them to `chromium.launch`, and test in narrow desktop windows without
+ * touch: with `isMobile` or `hasTouch`, Chromium draws overlay scrollbars that take no room. Check `scrollbarWidth()`.
+ */
+export const classicScrollbars: { ignoreDefaultArgs: string[] } = { ignoreDefaultArgs: ["--hide-scrollbars"] };
+
+/**
+ * How much room a vertical scrollbar takes in this page, in px. Runs in the page: pass it to `page.evaluate`. A test
+ * that relies on classic scrollbars checks that this is above 0: Chromium draws overlay scrollbars that take no room
+ * when the page emulates a phone (`isMobile` or `hasTouch`), even with `classicScrollbars`, and such a run measures
+ * nothing a desktop scrollbar would change.
+ */
+export function scrollbarWidth(): number {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;top:-9999px;left:0;width:100px;height:100px;overflow:scroll";
+  document.body.append(probe);
+  const width = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  return width;
+}
 
 export type LayoutProblemOptions = {
   /** The element to check; the whole document by default. */
@@ -38,6 +75,8 @@ export type LayoutProblems = {
   overlap: string[];
   spill: string[];
   cut: string[];
+  /** Scroll containers other than the page that scroll sideways without saying they should. */
+  scroll: string[];
   double: string[];
   sideways: boolean;
   /** Every problem as one readable line; empty when the page is clean. */
@@ -46,7 +85,16 @@ export type LayoutProblems = {
 
 export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProblems {
   const root = options.root ? document.querySelector(options.root) : document.body;
-  if (!root) return { overlap: [], spill: [], cut: [], double: [], sideways: false, problems: [`no element matches ${options.root}`] };
+  if (!root)
+    return {
+      overlap: [],
+      spill: [],
+      cut: [],
+      scroll: [],
+      double: [],
+      sideways: false,
+      problems: [`no element matches ${options.root}`],
+    };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
   // A visually hidden box (1 px, clipped, such as `.k2b-sr-only` or a head the sidebar makes redundant) keeps its
@@ -84,7 +132,43 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     const text = element.textContent?.trim().replace(/\s+/g, " ").slice(0, 24);
     return `${element.tagName.toLowerCase()}${classes.map((c) => `.${c}`).join("")}${text ? ` "${text}"` : ""}`;
   };
-  const found = { overlap: [] as string[], spill: [] as string[], cut: [] as string[] };
+  // A touch hit area is an empty, invisible, positioned pseudo-element that reaches past its control on purpose, such as
+  // the 44 px tap area of a small button on a coarse pointer. Overflow that only hit areas cause is no spill and no cut.
+  // Any other positioned pseudo-element that draws (text, a fill, a border, a shadow) still counts.
+  const transparent = (color: string) => color === "transparent" || /^rgba\(.*,\s*0\)$/.test(color);
+  const drawsBeyond = (element: Element) =>
+    (["::before", "::after"] as const).some((which) => {
+      const pseudo = getComputedStyle(element, which);
+      if (pseudo.content === "none" || pseudo.content === "normal" || !["absolute", "fixed"].includes(pseudo.position)) return false;
+      const drawn =
+        pseudo.content !== '""' ||
+        !transparent(pseudo.backgroundColor) ||
+        pseudo.backgroundImage !== "none" ||
+        pseudo.boxShadow !== "none" ||
+        ["Top", "Right", "Bottom", "Left"].some(
+          (side) => Number.parseFloat(pseudo.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0,
+        );
+      return drawn;
+    });
+  const onlyHitAreas = (box: HTMLElement) => {
+    const own = box.getBoundingClientRect();
+    const left = own.left + box.clientLeft - slack;
+    const right = own.left + box.clientLeft + box.clientWidth + slack;
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    const reaches = [range.getBoundingClientRect(), ...Array.from(box.querySelectorAll("*"), (element) => element.getBoundingClientRect())];
+    if (reaches.some((rect) => rect.width > 0 && (rect.left < left || rect.right > right))) return false;
+    return ![box, ...Array.from(box.querySelectorAll("*"))].some(drawsBeyond);
+  };
+  // A sideways scroller is a finding unless it says it scrolls on purpose, or it is a toolbar on a phone (K15: only there
+  // does a toolbar scroll). A box with only `overflow-y: auto` computes `overflow-x` to auto too, so a scroll area whose
+  // content is a few pixels too wide counts here as well.
+  // A code block (`pre`) keeps its lines and scrolls them sideways on purpose.
+  const scrollsOnPurpose = (box: HTMLElement) =>
+    box.getAttribute("data-layout-check") === "scroll-x" ||
+    box.tagName === "PRE" ||
+    (box.getAttribute("role") === "toolbar" && window.innerWidth < 768);
+  const found = { overlap: [] as string[], spill: [] as string[], cut: [] as string[], scroll: [] as string[] };
   for (const box of [root, ...Array.from(root.querySelectorAll("*"))]) {
     if (!(box instanceof HTMLElement) || !seen(box) || box.closest(ignore)) continue;
     const style = getComputedStyle(box);
@@ -104,13 +188,15 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
         }
     }
     // Text for screen readers only (a 1 px clipped box, such as `.k2b-sr-only`) is hidden on purpose, not cut.
-    if (box.clientWidth > 1 && box.clientHeight > 1 && box.scrollWidth > box.clientWidth + slack) {
+    if (box.clientWidth > 1 && box.clientHeight > 1 && box.scrollWidth > box.clientWidth + slack && !onlyHitAreas(box)) {
       const masked = style.maskImage !== "none" && style.maskImage !== "";
       // Only a sideways scroller lets a person reach content that is too wide. `overflow-y: auto` alone already
       // computes `overflow-x` to auto; an explicit `overflow-x: hidden` beside it cuts the content.
       const scrolls = style.overflowX === "auto" || style.overflowX === "scroll";
       if (style.overflowX === "visible") found.spill.push(`${name(box)} spills ${box.scrollWidth - box.clientWidth} px out of its box`);
-      else if (!scrolls && style.textOverflow !== "ellipsis" && !masked)
+      else if (scrolls) {
+        if (!scrollsOnPurpose(box)) found.scroll.push(`${name(box)} scrolls sideways by ${box.scrollWidth - box.clientWidth} px`);
+      } else if (style.textOverflow !== "ellipsis" && !masked)
         found.cut.push(`${name(box)} is cut by ${box.scrollWidth - box.clientWidth} px without an ellipsis or a fade`);
     }
   }
@@ -163,6 +249,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     ...found.overlap,
     ...found.spill,
     ...found.cut,
+    ...found.scroll,
     ...double,
     ...(sideways ? [`the page scrolls sideways (${page.scrollWidth} px)`] : []),
   ];

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, settled, touchTargetMin } from "../../test/browser";
 import { type MapDialogFixture, startMapDialogFixture } from "../../test/map-dialog-fixture";
 
 setDefaultTimeout(30_000);
@@ -283,7 +283,7 @@ test("on a phone the map fills the screen and the list is a sheet with three hei
     const listTop = (await page.locator(".k2b-map-dialog__list").boundingBox())!.y;
     expect(detailTop).toBeLessThan(listTop);
     const nav = await page.locator(".k2b-map-dialog__detail").getByRole("link", { name: "In OpenStreetMap öffnen" }).boundingBox();
-    expect(nav!.height).toBeGreaterThanOrEqual(44);
+    expect(nav!.height).toBeGreaterThanOrEqual(touchTargetMin);
     // The fitted map ends above the resting sheet.
     const map = (await page.locator(".k2b-map-dialog__map").boundingBox())!;
     const sheet = (await side.boundingBox())!;
