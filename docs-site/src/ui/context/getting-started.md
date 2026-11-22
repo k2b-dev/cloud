@@ -206,14 +206,12 @@ does not universally mean disabled or read-only; use the explicit supported prop
 that software proposes and a person accepts, inside a `SuggestionGroup`; see
 [field suggestions](/en/ui/input/field-suggestion).
 
-Fields placed side by side in a grid align their controls. When a grid contains
-only fields and at least one of them has a description, every field subgrids
-its label, description, control, and error rows, so a longer description in one
-column does not push that column's control down. Keep paired fields direct
-children of the same grid; a wrapper, button, or other sibling in the grid
-returns the fields to their stacked layout, as do flex rows and fill fields.
-A parent that is not a grid, such as a form dialog body or a flex column, keeps
-every field, including a multi-line one, at its stacked height.
+Every field has three fixed rows: the label row (20 px), the control (36 px for
+a single line), then its description or error below the control. Fields side by
+side therefore keep their controls on one line without sharing rows; a longer
+description only makes its own field taller below the control. Put fields that
+belong in one row into a [`FieldGrid`](/en/ui/surfaces/section#fieldgrid), which
+gives them one grid and stacks them below 360 px of width.
 
 ### Icons, tones and navigation
 

@@ -22,7 +22,7 @@ const rule = (selector: string) => {
 };
 
 describe("Section", () => {
-  test("is a named region with a heading; a page section is one level up and draws a neutral tile", () => {
+  test("is a named region with a heading; a page section is one level up; an area colour draws a 20 px tile", () => {
     const panel = renderToString(() => createComponent(Section, { title: "Customer", icon: "ti ti-user", children: "K-10482" }));
     const page = renderToString(() => createComponent(Section, { title: "Details", icon: "ti ti-id", size: "md", children: "Born 1961" }));
 
@@ -32,9 +32,17 @@ describe("Section", () => {
     expect(panel).toMatch(/<h3[^>]*id="k2b-section-[^"]+-title"[^>]*>Customer<\/h3>/);
     expect(page).toContain('data-size="md"');
     expect(page).toMatch(/<h2[^>]*>Details<\/h2>/);
-    expect(rule('.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__icon')).toContain(
-      "background: var(--k2b-surface-muted)",
+    // K17: the symbol sits in a 20 px tile with the mark radius; only an area colour or a tone fills it.
+    expect(rule(".k2b-ui .k2b-section__icon")).toContain("width: 1.25rem");
+    expect(rule(".k2b-ui .k2b-section__icon")).toContain("border-radius: var(--k2b-radius-mark)");
+    expect(rule(".k2b-ui .k2b-section__icon")).not.toContain("background");
+    expect(rule(".k2b-ui .k2b-section__icon[data-color]")).toContain(
+      "background: color-mix(in srgb, var(--k2b-section-icon-color) 14%, var(--k2b-surface))",
     );
+    const money = renderToString(() =>
+      createComponent(Section, { title: "Money", icon: "ti ti-coins", iconColor: "#4d7c0f", size: "md", children: "…" }),
+    );
+    expect(money).toMatch(/class="k2b-section__icon" aria-hidden="true" data-color="" style="--k2b-section-icon-color:\s*#4d7c0f"/);
   });
 
   test("names tones after the status tokens and marks restricted visibility with a lock and words", () => {
@@ -64,12 +72,13 @@ describe("Section", () => {
     ]) {
       expect(rule(`.k2b-ui .k2b-section[data-tone="${tone}"]`)).toContain(`--k2b-section-tone: var(${token})`);
     }
-    // A tone colours the frame, never the fill.
-    expect(rule('.k2b-ui .k2b-section[data-tone][data-frame="line"]')).toContain("border-color");
-    expect(css).not.toMatch(/\.k2b-section\[data-tone[^{]*\{[^}]*background:/);
+    // A tone colours the symbol tile, never the section's fill, frame, or title (K8, K17, one line one owner).
+    expect(rule('.k2b-ui .k2b-section[data-tone][data-frame="line"]')).toBeUndefined();
+    expect(css).not.toMatch(/\.k2b-section\[data-tone[^\]]*\](?:\[[^\]]*\])* \{[^}]*background:/);
+    expect(css).not.toMatch(/\.k2b-section\[data-tone[^{]*\.k2b-section__title[^{]*\{[^}]*color:/);
   });
 
-  test("is a card on a page, flat in a detail panel, and never a card inside another frame", async () => {
+  test("draws no outer frame on a page or in a detail panel, and never a frame inside another frame", async () => {
     const { default: DetailPanel } = await import("../layout/DetailPanel");
     const page = renderToString(() => createComponent(Section, { title: "Details", size: "md", children: "…" }));
     const panel = renderToString(() =>
@@ -81,14 +90,13 @@ describe("Section", () => {
     );
     const feedbackCss = await Bun.file(resolve(import.meta.dir, "../styles/feedback-parity.css")).text();
     const flatten = css.match(/\.k2b-ui\s*:is\(\s*(\.k2b-section,[^)]*)\)\s*\.k2b-section\[data-frame="line"\] \{([^}]*)\}/);
-    const paperBorder = (await Bun.file(resolve(import.meta.dir, "../styles/surfaces-widgets-parity.css")).text()).match(
-      /\.k2b-ui \.k2b-paper \{[^}]*?(border: [^;]+);/,
-    )?.[1];
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // The card is Paper's light frame and an island: shadow and surface come only from the layer hooks.
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain(paperBorder!);
+    // One line, one owner: a page section draws no outer frame and declares no border, so the line a `k2b-divided`
+    // container draws between its children is not overruled by the section's own weight.
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).not.toMatch(/(^|[;\s])border(-(top|block-start|width|style|color))?:/);
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");
     for (const host of [
@@ -101,7 +109,7 @@ describe("Section", () => {
     ]) {
       expect(flatten?.[1]).toContain(host);
     }
-    expect(flatten?.[2]).toContain("border: 0;");
+    expect(flatten?.[2]).not.toMatch(/(^|[;\s])border(-(top|block-start|width|style|color))?:/);
     expect(feedbackCss).toMatch(/\.k2b-ui \.k2b-dialog \.k2b-section\[data-frame="line"\] \{[^}]*border: 0;/);
   });
 
