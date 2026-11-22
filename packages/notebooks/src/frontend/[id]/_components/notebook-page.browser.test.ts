@@ -159,11 +159,13 @@ const problems = async (page: Page, slack?: number) => [
   ...(await page.evaluate(layoutProblems, { root: ".notebook-editor-frame > .k2b-scroll-area", slack: 8 })).problems,
 ];
 
-type Open = { width: number; mode?: "write" | "read"; content?: "few" | "many"; detail?: boolean; overview?: boolean };
-const open = async ({ width, mode = "write", content = "few", detail = false, overview = false }: Open): Promise<Page> => {
+type Open = { width: number; mode?: "write" | "read"; content?: "few" | "many"; detail?: boolean; overview?: boolean; locked?: boolean };
+const open = async ({ width, mode = "write", content = "few", detail = false, overview = false, locked = false }: Open): Promise<Page> => {
   const phone = width < 768;
   const page = await browser.newPage({ viewport: { width, height: phone ? 844 : 900 }, isMobile: phone, hasTouch: phone });
-  await page.goto(`${server.url}?mode=${mode}&content=${content}${detail ? "&detail=1" : ""}${overview ? "&page=overview" : ""}`);
+  await page.goto(
+    `${server.url}?mode=${mode}&content=${content}${detail ? "&detail=1" : ""}${overview ? "&page=overview" : ""}${locked ? "&locked=1" : ""}`,
+  );
   await page.waitForFunction(() => "harness" in window);
   await page.evaluate((value) => window.harness.mount(value), ctx);
   await page.locator(overview ? ".notebooks-overview-main" : ".cm-content").waitFor();
@@ -199,12 +201,23 @@ describe("a note is a reading column without head", () => {
       }
     }, 30_000);
 
+  test("Read of a locked note offers no way into Write, and keeps navigation and Details", async () => {
+    const page = await open({ width: 1440, mode: "read", locked: true });
+    try {
+      const pill = page.getByRole("group", { name: "Aktionen für die Notiz" });
+      expect(await pill.getByRole("link", { name: "Notiz bearbeiten" }).count()).toBe(0);
+      expect(await pill.locator("[data-app-workspace-detail-toggle]").count()).toBe(1);
+      expect(await pill.locator("[data-app-workspace-sidebar-toggle]").count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("1440 px with the Detail open: the columns meet on one line and nothing overlaps", async () => {
     const page = await open({ width: 1440, content: "many", detail: true });
     try {
       await page.locator(".notebook-detail-panel").waitFor();
-      // The Detail's section toggles and outline rows reach 8 px past their box (shared Section and DetailPanel).
-      expect(await problems(page, 8)).toEqual([]);
+      expect(await problems(page)).toEqual([]);
     } finally {
       await page.close();
     }

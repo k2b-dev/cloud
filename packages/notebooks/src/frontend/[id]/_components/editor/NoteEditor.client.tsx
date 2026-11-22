@@ -1674,7 +1674,8 @@ function EditorInstance(
         <ReadingPills
           notebookId={props.notebookId}
           noteId={props.noteId}
-          canEdit={props.canWrite && !props.noteLockedAt}
+          canWrite={props.canWrite}
+          lockedAt={props.noteLockedAt}
           comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
         />
       </Show>

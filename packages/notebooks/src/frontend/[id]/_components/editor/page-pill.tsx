@@ -103,11 +103,19 @@ export function PagePill(props: PagePillProps) {
   );
 }
 
-/** Read has no formatting pill: the page pill stands alone in the row the writing pills use. */
-export function ReadingPills(props: Omit<PagePillProps, "read" | "status"> & { canEdit: boolean }) {
+/**
+ * Read has no formatting pill: the page pill stands alone in the row the writing pills use. The way into Write shows
+ * only to a writer of a note that is not locked.
+ */
+export function ReadingPills(props: Omit<PagePillProps, "read" | "status"> & { canWrite: boolean; lockedAt: string | null }) {
   return (
     <div class="notebooks-editor-toolbar text-base text-dimmed">
-      <PagePill notebookId={props.notebookId} noteId={props.noteId} comments={props.comments} read={{ canEdit: props.canEdit }} />
+      <PagePill
+        notebookId={props.notebookId}
+        noteId={props.noteId}
+        comments={props.comments}
+        read={{ canEdit: props.canWrite && !props.lockedAt }}
+      />
     </div>
   );
 }

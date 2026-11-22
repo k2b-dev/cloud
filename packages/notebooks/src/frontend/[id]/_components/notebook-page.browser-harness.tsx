@@ -19,7 +19,7 @@ import type { NotebookContext } from "./sidebar/types";
 
 /**
  * A whole note page of Cloud flach with fictional data: the real notebook sidebar, the note in the rich editor with
- * its pills, and the note's Detail. `?mode=write|read`, `?content=few|many`, `?detail=1`; `?page=overview` shows the
+ * its pills, and the note's Detail. `?mode=write|read`, `?content=few|many`, `?detail=1`, `?locked=1`; `?page=overview` shows the
  * notebooks overview instead. The page's server answers the sidebar's and the Detail's requests.
  */
 export type NotebookPageHarness = { mount: (ctx: NotebookContext) => void; settle: () => Promise<void> };
@@ -29,6 +29,7 @@ const params = new URLSearchParams(location.search);
 const mode = params.get("mode") === "read" ? "read" : "write";
 const many = params.get("content") === "many";
 const detail = params.get("detail") === "1";
+const lockedAt = params.get("locked") === "1" ? "2026-10-16T18:00:00.000Z" : null;
 const ME = "00000000-0000-4000-8000-000000000001";
 const now = "2026-10-16T19:30:00.000Z";
 const minutesAgo = (minutes: number) => new Date(Date.parse(now) - minutes * 60_000).toISOString();
@@ -130,7 +131,9 @@ function NotePage(props: { ctx: NotebookContext }) {
               </ScrollArea>
               <Show
                 when={mode === "write"}
-                fallback={<ReadingPills notebookId="Book01" noteId="Note01" canEdit comments={{ open: 3, onOpen: () => {} }} />}
+                fallback={
+                  <ReadingPills notebookId="Book01" noteId="Note01" canWrite lockedAt={lockedAt} comments={{ open: 3, onOpen: () => {} }} />
+                }
               >
                 <EditorToolbar
                   connected
@@ -169,7 +172,7 @@ function NotePage(props: { ctx: NotebookContext }) {
           contentMd={markdown}
           createdAt={minutesAgo(3 * 24 * 60)}
           updatedAt={minutesAgo(12)}
-          lockedAt={null}
+          lockedAt={lockedAt}
           historyIncomplete={false}
           isLocked={false}
           canWrite
