@@ -92,6 +92,12 @@ const measure = (page: Page) => page.evaluate(() => window.harness.measure());
 const toggle = (page: Page) => page.getByRole("menuitemcheckbox", { name: "Volle Breite" });
 const openView = async (page: Page) => {
   const trigger = page.getByRole("button", { name: "Ansicht", exact: true });
+  // K12: on a tablet the panel waits as a drawer; its Details button opens it first.
+  const details = page.locator("[data-app-workspace-detail-toggle]");
+  if (!(await trigger.isVisible()) && (await details.isVisible())) {
+    await details.click();
+    await trigger.waitFor();
+  }
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
 };
 const closeTo = (actual: number, expected: number, tolerance = 1) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
