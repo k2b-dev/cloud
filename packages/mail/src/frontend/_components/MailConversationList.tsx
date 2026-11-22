@@ -274,16 +274,55 @@ export default function MailConversationList(props: {
       }
       width = next;
       remember();
+      hold();
     });
+    // Rows added or removed above the place someone works on (a new mail on top) leave that row where it was: the
+    // focused row, else the first visible one. Browsers with CSS scroll anchoring already hold it, so `moved` is 0
+    // there; WebKit has none. At the very top nothing is held, so a new mail shows up there.
+    let held: { row: HTMLElement; top: number } | null = null;
+    const hold = () => {
+      const view = scroller.getBoundingClientRect();
+      const focused = document.activeElement?.closest<HTMLElement>(".mail-list-entry");
+      const visible = (row: HTMLElement) => {
+        const box = row.getBoundingClientRect();
+        return box.bottom > view.top && box.top < view.bottom;
+      };
+      const row =
+        scroller.scrollTop <= 0
+          ? null
+          : focused && scroller.contains(focused) && visible(focused)
+            ? focused
+            : Array.from(scroller.querySelectorAll<HTMLElement>(".mail-list-entry")).find(
+                (entry) => entry.getBoundingClientRect().top >= view.top,
+              );
+      held = row ? { row, top: row.getBoundingClientRect().top - view.top } : null;
+    };
+    const rowsChanged = (records: MutationRecord[]) => {
+      const isRow = (node: Node) =>
+        node instanceof HTMLElement && (node.classList.contains("mail-list-entry") || node.querySelector(".mail-list-entry") !== null);
+      if (!records.some((record) => [...record.addedNodes, ...record.removedNodes].some(isRow))) return;
+      if (held?.row.isConnected) {
+        const moved = held.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - held.top;
+        if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
+      }
+      hold();
+    };
+    const rows = new MutationObserver(rowsChanged);
     const scrolled = () => {
       if (column.getBoundingClientRect().width === width) remember();
+      hold();
     };
     observer.observe(column);
+    rows.observe(scroller, { childList: true, subtree: true });
     scroller.addEventListener("scroll", scrolled, { passive: true });
+    scroller.addEventListener("focusin", hold);
     remember();
+    hold();
     onCleanup(() => {
       observer.disconnect();
+      rows.disconnect();
       scroller.removeEventListener("scroll", scrolled);
+      scroller.removeEventListener("focusin", hold);
     });
   });
 
