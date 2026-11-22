@@ -8,6 +8,7 @@ import { Dynamic, renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { workspaceCss } from "../../test/workspace-host-fixture";
+import { layoutProblems } from "../layout-check";
 
 // K6, K10, K15: the status row keeps its lead statement at the same place and size in every state; a selection, a
 // disturbance, or an announcement takes the place of the key figures. The head row is 56 px and its views end on
@@ -220,25 +221,30 @@ for (const width of [1440, 768, 390])
     }
   });
 
-// B4 (flat QA): beside an open Detail the row is narrow. The filters keep their width, the time of the next attempt is
-// never shortened, and only what is wrong ends in an ellipsis; `layoutProblems` sees neither a 0 px filter group nor
-// a shortened time.
-for (const width of [420, 520])
+// B4 (flat QA): beside an open Detail the row is narrow (441 px at 1100 px; the state keeps 43 px). The filters keep their
+// width, the sign always shows, what is wrong ends in an ellipsis, and "next attempt 14:05" shows whole or not at all
+// (the hint carries it); a wide row shows it. `layoutProblems` sees neither a 0 px filter group nor a cut time.
+for (const width of [441, 520, 760])
   test(`a ${width} px row with a disturbance keeps its filters and the whole time of the next attempt`, async () => {
     const html = renderToString(() =>
       createComponent(LocaleProvider, {
         locale: "de",
-        children: el("div", {
-          style: `width:${width}px`,
-          get children() {
-            return createComponent(StatusRow, {
-              lead: "12 Aufgaben offen",
-              facts,
-              filters: filters(),
-              state: { label: "Abgleich pausiert, der Server antwortet nicht", tone: "warning", icon: "ti ti-refresh", next: "14:05" },
-            });
-          },
-        }),
+        get children() {
+          return el("div", {
+            style: `width:${width}px`,
+            get children() {
+              return createComponent(StatusRow, {
+                lead: "12 Aufgaben offen",
+                facts,
+                filters: [
+                  createComponent(Button, { size: "sm", children: "Tag" }),
+                  createComponent(Button, { size: "sm", children: "Zuständig" }),
+                ],
+                state: { label: "Abgleich pausiert, der Server antwortet nicht", tone: "warning", icon: "ti ti-refresh", next: "14:05" },
+              });
+            },
+          });
+        },
       }),
     );
     const page = await open(1440, html);
@@ -246,24 +252,37 @@ for (const width of [420, 520])
       const shape = await page.evaluate(() => {
         const end = document.querySelector<HTMLElement>(".k2b-status-row__end")!;
         const time = document.querySelector<HTMLElement>(".k2b-status-row__time")!;
-        const sign = document.querySelector<HTMLElement>(".k2b-status-row__sign")!.getBoundingClientRect();
         const middle = document.querySelector<HTMLElement>(".k2b-status-row__middle")!.getBoundingClientRect();
-        const timeBox = time.getBoundingClientRect();
+        // A box lies wholly inside the middle, where the row shows it.
+        const inside = (selector: string) => {
+          const box = document.querySelector(selector)!.getBoundingClientRect();
+          return box.width > 0 && box.left >= middle.left - 0.5 && box.right <= middle.right + 0.5;
+        };
         return {
           filters: end.clientWidth > 0 && end.scrollWidth <= end.clientWidth + 0.5,
           time: time.textContent,
-          timeWhole: time.scrollWidth <= time.clientWidth + 0.5 && timeBox.right <= middle.right + 0.5,
-          sign: sign.width > 0 && sign.right <= middle.right + 0.5,
+          // Whole on the row's line, or wholly on the clipped second line, never cut.
+          timeShown:
+            inside(".k2b-status-row__time") &&
+            time.getBoundingClientRect().top >= middle.top - 0.5 &&
+            time.getBoundingClientRect().bottom <= middle.bottom + 0.5,
+          timeAway: time.getBoundingClientRect().top >= middle.bottom - 0.5,
+          sign: inside(".k2b-status-row__sign") && inside(".k2b-status-row__state"),
           hint: document.querySelector(".k2b-status-row__state")!.getAttribute("title"),
         };
       });
-      expect(shape).toEqual({
+      const { timeShown, timeAway, ...rest } = shape;
+      // The time is whole on the row's line or wholly away, never cut; a wide row shows it.
+      expect(timeShown !== timeAway).toBe(true);
+      if (width >= 760) expect(timeShown).toBe(true);
+      expect(rest).toEqual({
         filters: true,
         time: "14:05",
-        timeWhole: true,
         sign: true,
         hint: "Abgleich pausiert, der Server antwortet nicht · nächster Versuch 14:05",
       });
+      // Nothing spills or is cut without an ellipsis: only what is wrong and the words before the time shorten.
+      expect((await page.evaluate(layoutProblems, { root: ".k2b-status-row" })).problems).toEqual([]);
     } finally {
       await page.close();
     }

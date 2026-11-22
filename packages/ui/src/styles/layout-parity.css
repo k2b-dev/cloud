@@ -6361,36 +6361,43 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   font-variant-numeric: tabular-nums;
 }
 
-/* A state or an announcement never wraps away: it stays on the lead's line and shortens its end. */
+/* A state stays on the lead's line (K6, K10, K15). The filters keep their
+   width and the state takes the rest: its sign always shows; what is wrong
+   shortens with an ellipsis; "next attempt 14:05" shows whole or, when even
+   the sign and it do not fit, waits on the clipped second line with it, so a
+   time is never cut. The state's hint carries all of it. */
 .k2b-ui .k2b-status-row__state {
+  height: 1.25rem;
   flex: 1 1 0;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  overflow: hidden;
 }
 
-/* K6, K15: the filters keep their width and the state takes the rest. What
-   is wrong shortens with an ellipsis, then the words "next attempt" do; the
-   sign and the time are never cut (the state's hint carries all of it). */
 .k2b-ui .k2b-status-row__state > b {
   min-width: 0;
+  max-width: max-content;
+  flex: 1 1 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-status-row__next {
   display: inline-flex;
-  min-width: 0;
-  flex: 0 1000 auto;
+  /* On the clipped second line it is held to the state and shortens there, unseen. */
+  max-width: 100%;
+  flex: none;
   gap: 0.25rem;
-}
-
-.k2b-ui .k2b-status-row__next-label {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The zero-width first item lets key figures wrap away whole; a state needs no room before it. */
+.k2b-ui .k2b-status-row[data-mode="state"] > .k2b-status-row__middle::before {
+  display: none;
+}
+
 .k2b-ui .k2b-status-row__time {
-  flex: none;
   font-variant-numeric: tabular-nums;
 }
 
