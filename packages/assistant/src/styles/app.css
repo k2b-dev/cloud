@@ -133,7 +133,8 @@
   width: var(--assistant-context-column, var(--assistant-context-column-default));
   background: var(--k2b-surface);
 }
-@media (min-width: 120rem) {
+/* K12: from 1920 px of host width the column starts wider, as the workspace's own columns do. */
+@container k2b-app-area (min-width: 120rem) {
   .k2b-ui .assistant-context-boxcol { --assistant-context-column-default: 23.75rem; }
 }
 /* The grip sits on the column boundary and draws its hairline; the column draws no border of its own. */
