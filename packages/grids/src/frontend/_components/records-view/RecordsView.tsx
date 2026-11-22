@@ -5,13 +5,15 @@ import {
   Button,
   ButtonLink,
   dialogCore,
+  NoticeCard,
   PanelDialog,
-  Placeholder,
   panelDialogWideOptions,
   prompts,
+  StatusRow,
+  Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { preloadBarcodes } from "#barcode-drawing";
 import type {
   PublicField as Field,
@@ -44,7 +46,8 @@ import { recordMessages } from "../records/messages";
 import { createRecordAccess } from "../records/record-access";
 import { fieldDisplayFormatForView } from "../records/record-display";
 import type { GroupBucket } from "../table/GroupedTable";
-import { GridCreateActions, offersGridCreateActions } from "../toolbar/GridCreateActions";
+import { CardSizeDropdown } from "../toolbar/CardSizeDropdown";
+import { GridCreateActions, GridCreatePrimary, offersGridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
 // Plain children share RecordsView's hydrated state; nested islands cannot
 // serialize the callback props used by these controls.
@@ -60,12 +63,12 @@ import type { CardSize, RecordsState } from "./query-url";
 import { cleanRecordMetaQuery, openRecordMetadataDialog, recordMetaActiveCount } from "./RecordMetadataDialog";
 import { RecordsAdminToolbar } from "./RecordsAdminToolbar";
 import RecordsDetailSurface from "./RecordsDetailSurface";
-import RecordsPrimaryToolbar from "./RecordsPrimaryToolbar";
 import RecordsResultSurface from "./RecordsResultSurface";
 import { recordCountText as formatRecordCount } from "./record-count";
 import { createRecordsAdminController } from "./records-admin-controller";
 import { createRecordsBulkController } from "./records-bulk-controller";
 import { createRecordsDataController } from "./records-data-controller";
+import { forgetRecordsHeadStatus, NEW_RECORD_PARAM, onRecordsHeadCommand, publishRecordsHeadStatus } from "./records-head-bus";
 import { createRecordsSelectionController } from "./records-selection-controller";
 import { createRecordsUrlController } from "./records-url-controller";
 import { createRecordsViewColumnController, isFieldColumn } from "./records-view-columns";
@@ -778,6 +781,107 @@ export default function RecordsView(props: Props) {
     }
   });
 
+  // ── Head and status row ────────────────────────────────────────────
+  // The head's search and "⋯" live in their own island (RecordsHeadActions); they reach this view through
+  // records-head-bus, and this view tells them what it shows.
+  createEffect(() =>
+    publishRecordsHeadStatus(props.tableId, {
+      busy: recordsBusy(),
+      search: { q: search().q, fieldIds: search().fieldIds },
+      searchableFields: searchableFields(),
+      selectedCount: selectedBulkCount(),
+      queueing: bulkQueueing(),
+    }),
+  );
+  onCleanup(() => forgetRecordsHeadStatus(props.tableId));
+  onMount(() =>
+    onCleanup(
+      onRecordsHeadCommand(props.tableId, (command) => {
+        if (command.kind === "search") onSearchChange({ q: command.q, fieldIds: command.fieldIds });
+        else if (command.kind === "metadata") void openRecordMetaDialog();
+        else if (command.kind === "export") openExportDialog();
+        else if (command.kind === "audit") openCombinedAudit();
+        else {
+          const launcher = props.bulkSelectionLaunchers.find((entry) => entry.id === command.launcherId);
+          if (launcher) void queueBulkWorkflow(launcher);
+        }
+      }),
+    ),
+  );
+
+  /** K6: the lead statement is what the page shows; in the trash it says the records are deleted ones. */
+  // A failed first read says nothing about how many records there are (K6, K10): the lead keeps its place and names the
+  // records without a number; the alert cell below says what went wrong.
+  const statusLead = () =>
+    queryFailure() && items().length === 0 ? t().records : props.trashMode ? `${t().deleted} ${recordCountText()}` : recordCountText();
+  /** Adding is locked here: the head has no main action, so the locked button explains why at the row's end. */
+  const createLocked = () =>
+    !props.trashMode &&
+    !props.viewMode &&
+    props.canWrite &&
+    !canDirectWrite() &&
+    !(mutationSourceAllowed("form") && forms().some((form) => form.isActive));
+  const statusExtras = () => (
+    <>
+      <Show when={needsManualRefresh()}>
+        <Tooltip.Anchor content={t().refreshRecords}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            class="app-accent-text"
+            loading={liveRefreshing()}
+            onClick={() => void applyLiveRefresh()}
+          >
+            <i class="ti ti-refresh" />
+            {t().updatesAvailable}
+          </Button>
+        </Tooltip.Anchor>
+      </Show>
+      <Show when={renderMode() === "cards" && (props.viewMode || props.trashMode)}>
+        <CardSizeDropdown value={cardSize()} onChange={onCardSizeChange} />
+      </Show>
+      <Show when={props.trashMode && props.canReadTable}>
+        <ButtonLink variant="secondary" size="sm" href={`/app/grids/${props.baseId}/table/${props.tableId}`}>
+          <i class="ti ti-arrow-back" />
+          {t().backToLive}
+        </ButtonLink>
+      </Show>
+      <Show when={!props.trashMode && activeRecordMetaCount() > 0}>
+        <Button variant="secondary" size="sm" aria-pressed="true" type="button" onClick={openRecordMetaDialog}>
+          <i class="ti ti-user-search" />
+          {t().recordInfo} · {activeRecordMetaCount()}
+        </Button>
+      </Show>
+      <Show when={createLocked()}>
+        <GridCreateActions
+          variant="secondary"
+          baseId={props.baseId}
+          tableId={props.tableId}
+          tableName={tableName()}
+          disableDirectInsert={disableDirectInsert()}
+          fields={tableFields()}
+          forms={[]}
+          canWrite={props.canWrite}
+          canDirectWrite={false}
+          canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
+        />
+      </Show>
+    </>
+  );
+  const statusSelection = () =>
+    bulkSelectionEnabled() && selectedBulkCount() > 0
+      ? {
+          count: selectedBulkCount(),
+          actions: (
+            <Button variant="secondary" size="sm" type="button" onClick={clearBulkSelection}>
+              <i class="ti ti-x" aria-hidden="true" />
+              {t().clearSelection}
+            </Button>
+          ),
+        }
+      : undefined;
+
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <>
@@ -798,110 +902,104 @@ export default function RecordsView(props: Props) {
           DataTable so the column headers stay pinned while rows scroll. */}
           <div
             class={
-              "flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col gap-2 transition-opacity duration-150 " +
-              (data.loading ? "opacity-60" : "")
+              "flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col transition-opacity duration-150 " + (data.loading ? "opacity-60" : "")
             }
           >
-            <RecordsPrimaryToolbar
-              searchableFields={searchableFields()}
-              search={search()}
-              trashMode={props.trashMode}
-              canReadTable={props.canReadTable}
-              tableKind={props.tableKind}
-              baseId={props.baseId}
-              tableId={props.tableId}
-              tableName={tableName()}
-              recordCountText={recordCountText()}
-              busy={recordsBusy()}
-              needsManualRefresh={needsManualRefresh()}
-              liveRefreshing={liveRefreshing()}
-              cardsMode={renderMode() === "cards"}
-              viewMode={props.viewMode}
-              cardSize={cardSize()}
-              recordMetaCount={activeRecordMetaCount()}
-              bulkSelectionEnabled={bulkSelectionEnabled()}
-              selectedBulkCount={selectedBulkCount()}
-              bulkQueueing={bulkQueueing()}
-              bulkLaunchers={props.bulkSelectionLaunchers}
-              queryHref={queryWorkspaceHref()}
-              onSearchChange={onSearchChange}
-              onRefresh={() => void applyLiveRefresh()}
-              onCardSizeChange={onCardSizeChange}
-              onOpenRecordMetadata={openRecordMetaDialog}
-              onClearBulkSelection={clearBulkSelection}
-              onQueueBulkWorkflow={queueBulkWorkflow}
-              onExport={openExportDialog}
-              onOpenCombinedAudit={openCombinedAudit}
-            />
+            {/* K6: the status row names how many records the page shows; filters, sorting, and the query stand at its
+            end, and a bulk selection takes their place. The head above holds the views, the search, and "Add record". */}
+            <Show
+              when={!props.viewMode && !props.trashMode}
+              fallback={<StatusRow lead={statusLead()} filters={statusExtras()} selection={statusSelection()} />}
+            >
+              <GridToolbar
+                tableId={props.tableId}
+                fields={fields()}
+                initialFilter={toolbarFilterRows()}
+                initialSort={toolbarSortRows()}
+                initialGroupBy={toolbarGroupByRows()}
+                initialAggregations={toolbarAggregationRows()}
+                recordMeta={query().recordMeta}
+                columns={effectiveViewColumns()}
+                queryHref={queryWorkspaceHref()}
+                onOpenQuery={openQueryPanel}
+                onAddComputedColumn={openAddComputedColumn}
+                onClearColumns={clearComputedColumns}
+                currentSearch={search()}
+                relationLabels={mergedRelationLabels()}
+                canWrite={props.canWrite}
+                onCommit={onToolbarCommit}
+                dateConfig={props.dateConfig}
+                showCardSize={renderMode() === "cards"}
+                cardSize={cardSize()}
+                onCardSizeChange={onCardSizeChange}
+                frame={(chips, panels) => (
+                  <>
+                    <StatusRow
+                      lead={statusLead()}
+                      filters={
+                        <>
+                          {statusExtras()}
+                          {chips}
+                        </>
+                      }
+                      selection={statusSelection()}
+                    />
+                    {panels}
+                  </>
+                )}
+              />
+            </Show>
+            <Show when={!props.trashMode}>
+              <GridCreatePrimary
+                param={NEW_RECORD_PARAM}
+                baseId={props.baseId}
+                tableId={props.tableId}
+                tableName={tableName()}
+                disableDirectInsert={disableDirectInsert()}
+                fields={tableFields()}
+                forms={forms()}
+                canWrite={props.canWrite}
+                canDirectWrite={canDirectWrite()}
+                canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
+                onRecordCreated={onRecordCreated}
+                onRecordsChanged={() => void refreshVisibleRecords({ force: true })}
+                dateConfig={props.dateConfig}
+              />
+            </Show>
 
-            {/* Saved views use their settings dialog; trash mode only exposes recovery actions. */}
-            <Show when={!props.viewMode && !props.trashMode}>
-              <div class="shrink-0">
-                <GridToolbar
-                  baseId={props.baseId}
-                  tableId={props.tableId}
-                  tableName={tableName()}
-                  disableDirectInsert={disableDirectInsert()}
-                  fields={fields()}
-                  initialFilter={toolbarFilterRows()}
-                  initialSort={toolbarSortRows()}
-                  initialGroupBy={toolbarGroupByRows()}
-                  initialAggregations={toolbarAggregationRows()}
-                  recordMeta={query().recordMeta}
-                  columns={effectiveViewColumns()}
-                  queryHref={queryWorkspaceHref()}
-                  onOpenQuery={openQueryPanel}
-                  onAddComputedColumn={openAddComputedColumn}
-                  onClearColumns={clearComputedColumns}
-                  currentSearch={search()}
-                  relationLabels={mergedRelationLabels()}
-                  forms={forms()}
-                  canWrite={props.canWrite}
-                  canDirectWrite={canDirectWrite()}
-                  canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
-                  onCommit={onToolbarCommit}
-                  onRecordCreated={onRecordCreated}
-                  onRecordsChanged={() => void refreshVisibleRecords({ force: true })}
-                  dateConfig={props.dateConfig}
-                  showCardSize={renderMode() === "cards"}
-                  cardSize={cardSize()}
-                  onCardSizeChange={onCardSizeChange}
+            <Show when={canUseEditMode() && adminMode()}>
+              <div class="px-[var(--k2b-gutter)] py-2">
+                <RecordsAdminToolbar
+                  savedView={isSavedView()}
+                  activeViewAvailable={!!props.activeView}
+                  canEditActiveView={!!props.canEditActiveView}
+                  hiddenViewColumnCount={hiddenViewColumnCount()}
+                  allowForms={props.tableKind === "stored"}
+                  formsButtonLabel={formsButtonLabel()}
+                  tableFields={tableFields()}
+                  onFieldSettings={props.canManageTable && (!props.activeView || setTableFields) ? openFieldSettings : undefined}
+                  onOpenTableSettings={openTableSettings}
+                  onAddField={() => void openAddField()}
+                  onOpenForms={openForms}
+                  onOpenTemplates={openTemplates}
+                  onOpenViewSettings={openViewSettings}
+                  onAddViewColumn={openAddViewColumnDialog}
+                  onDone={() => setAdminModeAndUrl(false)}
                 />
               </div>
             </Show>
 
-            <Show when={canUseEditMode() && adminMode()}>
-              <RecordsAdminToolbar
-                savedView={isSavedView()}
-                activeViewAvailable={!!props.activeView}
-                canEditActiveView={!!props.canEditActiveView}
-                hiddenViewColumnCount={hiddenViewColumnCount()}
-                allowForms={props.tableKind === "stored"}
-                formsButtonLabel={formsButtonLabel()}
-                tableFields={tableFields()}
-                onFieldSettings={props.canManageTable && (!props.activeView || setTableFields) ? openFieldSettings : undefined}
-                onOpenTableSettings={openTableSettings}
-                onAddField={() => void openAddField()}
-                onOpenForms={openForms}
-                onOpenTemplates={openTemplates}
-                onOpenViewSettings={openViewSettings}
-                onAddViewColumn={openAddViewColumnDialog}
-                onDone={() => setAdminModeAndUrl(false)}
-              />
-            </Show>
-
+            {/* K10: a failed read needs a person, so it is a tinted alert cell edge to edge whose button names the deed. */}
             <Show when={queryFailure()}>
               {(failure) => (
-                <Placeholder
-                  state="error"
-                  surface="paper"
-                  align="left"
+                <NoticeCard
+                  tone="danger"
+                  icon={true}
                   title={t().refreshFailed}
-                  description={failure().error.message}
-                  class="shrink-0 py-2"
-                  action={
+                  detail={failure().error.message}
+                  actions={
                     <Button variant="secondary" size="sm" type="button" onClick={retryQuery}>
-                      <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
+                      <i class="ti ti-refresh" aria-hidden="true" /> {t().loadRecordsAgain}
                     </Button>
                   }
                 />
@@ -955,11 +1053,12 @@ export default function RecordsView(props: Props) {
                 }) ? (
                   <div class="flex flex-wrap items-center justify-center gap-2">
                     <GridCreateActions
+                      variant="secondary"
                       baseId={props.baseId}
                       tableId={props.tableId}
                       tableName={tableName()}
                       disableDirectInsert={disableDirectInsert()}
-                      fields={fields()}
+                      fields={tableFields()}
                       forms={forms()}
                       canWrite={props.canWrite}
                       canDirectWrite={canDirectWrite()}
@@ -999,7 +1098,6 @@ export default function RecordsView(props: Props) {
         id="record"
         open={hasOpenDetail()}
         onClose={() => (selectedGroup() ? onCloseGroupDetail() : onCloseDetail())}
-        width="lg"
         viewTransitionName="grids-record-detail"
       >
         <Show when={selectedRecordId() || selectedGroup()}>

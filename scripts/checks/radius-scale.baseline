@@ -136,7 +136,6 @@ packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | s
 packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | style | 12px 12px 0 0
 packages/grids/src/frontend/_components/workflows/WorkflowRevisionHistory.tsx | class | rounded-md
 packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx | class | rounded-xl
-packages/grids/src/styles/app.css | css | calc(var(--ui-radius-control) - 0.125rem)
 packages/grids/src/templates/bookshop.ts | style | 6px
 packages/grids/src/templates/bookshop.ts | style | 6px
 packages/grids/src/templates/finance.ts | style | 6px

@@ -11,7 +11,6 @@ packages/cloud/src/styles/resource-search.css | --k2b-shadow-column-edge
 packages/cloud/src/styles/resource-search.css | --k2b-shadow-column-mid
 packages/cloud/src/styles/utilities-layout.css | --k2b-island-shadow
 packages/cloud/src/styles/utilities-markdown-table.css | --k2b-island-shadow
-packages/grids/src/styles/app.css | --k2b-island-shadow
 packages/notebooks/src/styles/app.css | --k2b-shadow-raised
 packages/notebooks/src/styles/app.css | --k2b-shadow-raised
 packages/spaces/src/styles/app.css | --k2b-island-shadow
