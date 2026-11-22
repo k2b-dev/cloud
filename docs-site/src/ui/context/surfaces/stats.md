@@ -100,9 +100,8 @@ on one line whether or not a tile has a change badge, an icon, a link or a
 longer support line. The support line sits at the bottom of the tile.
 
 The figure and the support texts (comparison, note) are never cut off. The
-figure shrinks with its tile's width within fixed bounds (`lg` 18–28 px, `md`
-16–20 px, `sm` 14–16 px), and support texts wrap instead of ending in an
-ellipsis. A tile narrower than 240 px gives the comparison its own line and the
+figure is the lead role (18 px) for `md` and `lg` and the body role (14 px) for
+`sm` (K11), and support texts wrap instead of ending in an ellipsis. A tile narrower than 240 px gives the comparison its own line and the
 trend the next, and keeps that room in every state, so loading, error and data
 have one height; a support text longer than two lines still makes its tile
 taller when it arrives. Below 200 px an `lg` tile drops its trend. These
