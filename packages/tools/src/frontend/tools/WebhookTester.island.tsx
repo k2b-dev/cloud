@@ -424,21 +424,23 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     }
   };
 
+  // A primary list never scrolls sideways (K7, K15): no column has a fixed minimum width. The long texts (URL, target,
+  // body) take the room that is left and end with an ellipsis; side columns wait in the row details when it is narrow.
   const endpointColumns = (): DataTableColumn<Endpoint>[] => [
-    { id: "name", header: t().colName, value: "name", class: "min-w-[160px]" },
-    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "min-w-[260px]" },
-    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24" },
-    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()), class: "min-w-[150px]" },
+    { id: "name", header: t().colName, value: "name" },
+    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "w-full max-w-0", priority: 2 },
+    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24", priority: 3 },
+    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()) },
     { id: "actions", header: "", value: (row) => row.id, class: "w-14" },
   ];
 
   const logColumns = (): DataTableColumn<WebhookLog>[] => [
     { id: "method", header: t().colMethod, value: "method", class: "w-20" },
-    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "min-w-[240px]" },
+    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "w-1/2 max-w-0" },
     { id: "status", header: t().colStatus, value: (row) => row.responseStatus ?? row.error ?? "logged", class: "w-24" },
-    { id: "contentType", header: t().colContentType, value: "requestContentType", class: "min-w-[140px]" },
-    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), class: "min-w-[260px]" },
-    { id: "created", header: t().colTime, value: (row) => formatDate(row.createdAt, locale()), class: "min-w-[160px]" },
+    { id: "contentType", header: t().colContentType, value: "requestContentType", priority: 3 },
+    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), class: "w-1/2 max-w-0", priority: 2 },
+    { id: "created", header: t().colTime, value: (row) => formatDate(row.createdAt, locale()) },
   ];
 
   const renderEndpointCell: DataTableRenderCell<Endpoint> = (ctx) => {
@@ -474,6 +476,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
       const label = ctx.row.error ? t().statusError : ctx.row.responseStatus ? String(ctx.row.responseStatus) : t().statusLogged;
       return (
         <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(ctx.row.responseStatus, ctx.row.error)}`}>{label}</span>
+      );
+    }
+    if (ctx.col.id === "target" || ctx.col.id === "body") {
+      const text = String(ctx.value ?? "");
+      return (
+        <span class="block truncate" title={text}>
+          {text}
+        </span>
       );
     }
     return ctx.render(ctx.value);
