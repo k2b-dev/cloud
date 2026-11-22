@@ -12,6 +12,7 @@ import type { MailSearchExpression, MailWorkspacePreference } from "../contracts
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
 import { renderComposeContent, renderComposeSignatureBlock } from "../service/compose-renderer";
+import type { MailListItem } from "../service/workspace";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
 import { buildMessageDocument } from "./_components/mail-message-document";
 import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
@@ -95,6 +96,29 @@ type Strip = {
   labels: { text: string | null; scroll: number; width: number }[];
 };
 let largeMailbox = false;
+/** Open live subscriptions of the fixture's pages, and how many new mails have arrived since a case began. */
+const liveSubscriptions = new Set<{ socket: { send(data: string): unknown }; id: string }>();
+let arrivedMails = 0;
+/** A new, newest mail on top of the list, as Mail's live update reports it: the workspace loads it on the event. */
+const newMailArrives = () => {
+  arrivedMails += 1;
+  for (const { socket, id } of liveSubscriptions)
+    socket.send(JSON.stringify({ t: "event", id, cursor: `s6t.mail.${4 + arrivedMails}`, data: { conversationId: null } }));
+};
+/** The newest mails that arrived during a case, above the fixture's own rows. */
+const withArrivedMails = <Data extends { listItems: MailListItem[] }>(data: Data): Data => {
+  const first = data.listItems[0];
+  if (!first || arrivedMails === 0) return data;
+  const arrived = Array.from({ length: arrivedMails }, (_, index) => ({
+    ...first,
+    id: `ConvNew${index + 1}`,
+    conversationId: `ConvNew${index + 1}`,
+    subject: `New mail ${index + 1}`,
+    unread: true,
+    latestMessageAt: new Date(Date.parse(first.latestMessageAt) + (index + 1) * 60_000).toISOString(),
+  }));
+  return { ...data, listItems: [...arrived.reverse(), ...data.listItems] };
+};
 let css = "";
 let controller = "";
 let navigation = "";
@@ -235,7 +259,9 @@ beforeAll(async () => {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
         const stored = storedWorkspace(request.headers.get("cookie"));
         return Response.json(
-          url.pathname.endsWith("/workspace-list") ? mailboxList(target, largeMailbox) : mailboxData(target, stored, largeMailbox),
+          url.pathname.endsWith("/workspace-list")
+            ? withArrivedMails(mailboxList(target, largeMailbox))
+            : withArrivedMails(mailboxData(target, stored, largeMailbox)),
         );
       }
       // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
@@ -295,7 +321,12 @@ beforeAll(async () => {
     websocket: {
       message(socket, message) {
         const frame = JSON.parse(String(message));
-        if (frame.t === "sub") socket.send(JSON.stringify({ t: "ready", id: frame.id, cursor: "s6t.mail.4" }));
+        if (frame.t !== "sub") return;
+        liveSubscriptions.add({ socket, id: frame.id });
+        socket.send(JSON.stringify({ t: "ready", id: frame.id, cursor: "s6t.mail.4" }));
+      },
+      close(socket) {
+        for (const subscription of liveSubscriptions) if (subscription.socket === socket) liveSubscriptions.delete(subscription);
       },
     },
   });
@@ -3923,6 +3954,46 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
 
     // S7: a conversation dragged with the mouse shows its targets over list and reader; the sidebar stays free.
     section("drag", () => {
+      // A new mail lands above the row someone works on: the list keeps that row, its focus and its place on screen,
+      // because each row keeps its element (keyed by conversation) and the list scrolls by what was added above.
+      for (const [width, height] of [
+        [390, 844],
+        [1440, 400],
+      ] as const)
+        test(`a new mail above the focused row at ${width} keeps that row's focus and place`, async () => {
+          const earlier = new Set(liveSubscriptions);
+          const page = await open(boxPath, width, height);
+          try {
+            await settled(page);
+            // The page's own live subscription, so the event reaches it; bounded by the case's own timeout.
+            while (![...liveSubscriptions].some((subscription) => !earlier.has(subscription))) await Bun.sleep(20);
+            const scroller = page.locator('[data-scroll-preserve="mail-list-Box001"]');
+            await scroller.evaluate((element) => {
+              element.scrollTop = 60;
+            });
+            await settled(page);
+            expect(await scroller.evaluate((element) => element.scrollTop), "the list really scrolls").toBe(60);
+            const fourth = page.locator(".mail-list-entry").nth(3);
+            const id = (await fourth.getAttribute("data-conversation-id"))!;
+            await fourth.locator("a.mail-list-row").focus();
+            await settled(page);
+            const row = page.locator(`.mail-list-entry[data-conversation-id="${id}"]`);
+            const before = (await row.boundingBox())!.y;
+            newMailArrives();
+            await page.locator('.mail-list-entry[data-conversation-id="ConvNew1"]').waitFor({ state: "attached" });
+            await settled(page);
+            // The same element keeps focus: a list that mounted its rows anew would have dropped it.
+            expect(
+              await row.evaluate((entry) => entry.contains(document.activeElement) && document.activeElement?.matches("a.mail-list-row")),
+            ).toBe(true);
+            // The row stays where the eye was; scroll anchoring may round by a pixel.
+            expect(Math.abs((await row.boundingBox())!.y - before)).toBeLessThanOrEqual(1);
+          } finally {
+            arrivedMails = 0;
+            await close(page);
+          }
+        });
+
       const overlay = ".mail-workspace .k2b-drop-overlay";
       const tile = (page: Page, name: string | RegExp) =>
         page.locator(`${overlay} .k2b-drop-overlay__tile`).filter({ hasText: name }).first();
