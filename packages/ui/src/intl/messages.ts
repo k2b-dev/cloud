@@ -124,7 +124,7 @@ const uiMessages = i18n.define({
       nothingToShow: "Nichts anzuzeigen.",
       no: "Nein",
       options: "Optionen",
-      more: "Mehr",
+      more: "Weitere",
       moreViews: "Weitere Ansichten",
       pickDate: "Datum auswählen",
       previousMonth: "Vorheriger Monat",
