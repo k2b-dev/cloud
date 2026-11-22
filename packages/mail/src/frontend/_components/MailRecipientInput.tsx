@@ -371,7 +371,7 @@ export default function MailRecipientInput(props: {
             <Show
               when={editingIndex() === index()}
               fallback={
-                <span class="mail-recipient-pill-shell mr-1 inline-flex h-7 max-w-56 shrink-0 items-center gap-1.5 text-xs">
+                <span class="mail-recipient-pill-shell mr-1 inline-flex h-7 min-w-0 max-w-56 shrink items-center gap-1.5 text-xs">
                   <button
                     ref={(element) => {
                       pillButtons[index()] = element;

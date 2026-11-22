@@ -1688,6 +1688,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           1440,
           900,
         ],
+        // The same split with five rows: the list does not scroll, so its lines run to the edge with no scroll room.
+        ["few", `${boxPath}?view=mine&conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1`, 1440, 900],
         ["list", `${boxPath}?locale=de&demo=1`, 390, 844],
         ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1`, 390, 844],
       ] as const;
@@ -1747,6 +1749,20 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify({ ...probe, parts }, null, 1));
             }
             expect(probe.areas.length).toBeGreaterThan(0);
+            // Scrolling or not, nothing breaks, overlaps, is cut, or scrolls sideways (K2, K15).
+            const flow = await page.evaluate(() =>
+              Array.from(document.querySelectorAll<HTMLElement>(".mail-list-scroll, .mail-reader-scroll"))
+                .filter((element) => element.getClientRects().length > 0)
+                .map((element) => ({
+                  area: element.classList.contains("mail-list-scroll") ? "list" : "reader",
+                  scrolls: element.scrollHeight > element.clientHeight + 1,
+                  sideways: element.scrollWidth > element.clientWidth + 1,
+                })),
+            );
+            expect(flow.filter((area) => area.sideways)).toEqual([]);
+            if (state === "split" || state === "few")
+              expect(flow.find((area) => area.area === "list")?.scrolls, `${state}: the list scrolls`).toBe(state === "split");
+            expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
             // The line between list and reader is one sharp pixel: it starts on a whole pixel and is not transformed.
             const handleLine = await page.evaluate(() => {
               const handle = document.querySelector(".mail-list-handle");
