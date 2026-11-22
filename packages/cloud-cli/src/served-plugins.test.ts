@@ -1,9 +1,15 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildEchoPlugin, packInlinePlugin } from "../test/fixtures/build-plugin";
 import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
+
+// Packing starts another Bun process that bundles the fixture; build it once
+// here, outside every test's deadline. Installing a directory reads it in place.
+const workspace = await mkdtemp(join(tmpdir(), "cld-served-plugins-build-"));
+const echoPackage = await buildEchoPlugin(join(workspace, "echo-package"));
+afterAll(() => rm(workspace, { recursive: true, force: true }));
 
 const cleanup: Array<() => Promise<unknown> | unknown> = [];
 afterEach(async () => {
@@ -443,14 +449,13 @@ test("plugin access errors, reserved names, and package plugins stay distinct", 
 
   // A package plugin installed for every profile blocks the Cloud's plugin of the same name, and vice versa.
   cloud.status = undefined;
-  const local = await buildEchoPlugin(join(cli.dir, "echo-package"));
-  expect((await cli.run(["plugins", "install", local, "--yes"])).exitCode).toBe(0);
+  expect((await cli.run(["plugins", "install", echoPackage, "--yes"])).exitCode).toBe(0);
   const clash = await cli.run(["plugins", "install", "echo"]);
   expect(clash.exitCode).toBe(1);
   expect(clash.stderr).toContain('a package plugin "echo" is installed for every profile');
   expect((await cli.run(["plugins", "remove", "echo"])).exitCode).toBe(0);
   expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
-  const reverse = await cli.run(["plugins", "install", local, "--yes"]);
+  const reverse = await cli.run(["plugins", "install", echoPackage, "--yes"]);
   expect(reverse.exitCode).toBe(1);
   expect(reverse.stderr).toContain(`profile "a" already uses the Cloud's plugin "echo"`);
 });
