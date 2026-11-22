@@ -267,10 +267,15 @@ test("a send right after Quote carries the quote while its code still loads, and
     await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
     await page.keyboard.type("Thanks!");
     await page.keyboard.press("Enter");
+    // #3999: the message shows as pending at once, while only its post waits for the quote.
+    await page.locator(".k2b-message-row[data-status='pending']", { hasText: "Thanks!" }).waitFor();
+    expect(harness.posted.some((sent) => sent.body === "Thanks!")).toBe(false);
     release();
-    await page.locator(".k2b-message-row[data-status='sent']", { hasText: "Thanks!" }).waitFor();
+    const sent = page.locator(".k2b-message-row[data-status='sent']", { hasText: "Thanks!" });
+    await sent.waitFor();
     const source = harness.props({ chat }).open!.page.items.find((item) => item.author.id === lea.id)!.id;
     expect(harness.posted.at(-1)).toMatchObject({ body: "Thanks!", quotes: [{ message: source }] });
+    expect(await sent.innerText()).toContain(passage);
     await settled(page);
     expect(await page.locator(".k2b-chat-composer__quote").count()).toBe(0);
     expect(errors).toEqual([]);

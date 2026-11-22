@@ -32,6 +32,8 @@ export type ChatSend = {
   attachments: readonly AttachmentView[];
   createdAt: string;
   status: "pending" | "sent" | "failed";
+  /** Shown as pending but not posted yet: its quotes are still on their way, so it and the later sends wait for `release`. */
+  held?: boolean;
   /** The server refused its quotes for good: it stays failed without Try again and holds back no later send. */
   refused?: boolean;
   /** The stored message once the server accepted it. */
@@ -61,7 +63,7 @@ export const createChatSends = (dependencies: {
     const head = [...entries.values()].find(
       (entry) => entry.conversationId === conversationId && entry.status !== "sent" && !entry.refused,
     );
-    if (head?.status !== "pending") return;
+    if (head?.status !== "pending" || head.held) return;
     posting.add(conversationId);
     void post(head);
   };
@@ -120,6 +122,8 @@ export const createChatSends = (dependencies: {
         refs?: readonly CloudResourceRef[];
         attachments?: readonly AttachmentView[];
         mentions?: readonly Mention[];
+        /** Show the send at once but post it only on `release`. */
+        hold?: boolean;
       } = {},
     ): ChatSend => {
       const entry: ChatSend = {
@@ -134,6 +138,7 @@ export const createChatSends = (dependencies: {
         attachments: target.attachments ?? [],
         createdAt: (dependencies.now?.() ?? new Date()).toISOString(),
         status: "pending",
+        ...(target.hold ? { held: true } : {}),
         message: null,
       };
       if (!disposed) {
@@ -142,6 +147,17 @@ export const createChatSends = (dependencies: {
         next(conversationId);
       }
       return entry;
+    },
+    /** Posts a held send with where it goes and what it quotes as known now. */
+    release: (clientId: string, target: { thread: string; replyTo: ChatSendReply | null; quotes: readonly ChatSendQuote[] }) => {
+      const entry = entries.get(clientId);
+      if (disposed || !entry?.held) return;
+      entry.held = false;
+      entry.thread = target.thread;
+      entry.replyTo = target.replyTo;
+      entry.quotes = target.quotes;
+      notify();
+      next(entry.conversationId);
     },
     retry: (clientId: string) => {
       const entry = entries.get(clientId);

@@ -2088,19 +2088,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     pendingSends++;
     try {
       if (current.hasNewer) await store?.loadLatest();
-      if (quotesOnTheWay) await quotesOnTheWay;
-      const answered = reply();
-      const quoted = quotes();
-      const thread = answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
-      const sent = outbox.send(current.id, body, {
-        thread,
-        refs,
-        attachments,
-        mentions,
-        replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
-        quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
-      });
-      if (id !== null && quoted.length) sendDrafts.set(sent.clientId, id);
+      const target = () => {
+        const answered = reply();
+        const quoted = quotes();
+        return {
+          thread: answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view)),
+          replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
+          quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
+        };
+      };
+      // The message shows as pending at once; only its post waits for quotes still on their way (#3999).
+      const waiting = quotesOnTheWay;
+      const sent = outbox.send(current.id, body, { ...target(), refs, attachments, mentions, hold: !!waiting });
+      if (waiting) {
+        // A quote that failed to load leaves the draft as it is; the message still goes out with what it has.
+        await waiting.catch(() => {});
+        outbox.release(sent.clientId, target());
+      }
+      if (id !== null && sent.quotes.length) sendDrafts.set(sent.clientId, id);
       setReply(null);
       setQuotes([]);
       feed?.scrollToEnd();
