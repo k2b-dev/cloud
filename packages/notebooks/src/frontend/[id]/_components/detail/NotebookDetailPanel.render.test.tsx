@@ -162,9 +162,8 @@ describe("Notebook note detail panel", () => {
       expect(titles).toEqual(["Gerade hier", "Kommentare", "Aufgaben", "Inhalt", "Tags", "Verknüpfungen"]);
       const more = [...document.querySelectorAll(".k2b-detail-panel__group .k2b-section__title")].map((title) => text(title));
       expect(more).toEqual(["Eigenschaften", "Aktivität"]);
-      // K9: "More actions" sits in the 56 px bar beside Close; the first section's row keeps only its actions.
-      expect(document.querySelector('.k2b-detail-panel__actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
-      expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).toBeNull();
+      // "More actions" sits in the action row beside Ansicht; the header's trailing slot keeps only Close.
+      expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
       const group = document.querySelector(".k2b-detail-panel__group-title")?.closest(".k2b-detail-panel__group");
       expect(text(group?.querySelector(".k2b-detail-panel__group-title") ?? null)).toBe("Mehr zu dieser Notiz");
       expect(group?.querySelector(".notebook-activity")).not.toBeNull();

@@ -311,9 +311,8 @@ describe("AppWorkspace levels in a MobileShell", () => {
       const shown = await page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>("#sibling [data-workspace-level]")].map((level) => level.getClientRects().length > 0),
       );
-      // Its own rule (K12) shows one level, the open one, on a tablet below 64 rem, as the shell's does. Before the flat
-      // shell its own rule showed two levels from 48 rem.
-      expect(shown).toEqual([false, true]);
+      // Its own rule shows two levels from 48rem; the app's rule would leave one below 64rem.
+      expect(shown).toEqual([true, true]);
     } finally {
       await page.context().close();
     }

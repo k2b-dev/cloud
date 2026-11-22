@@ -253,11 +253,7 @@ describe("standalone card in a browser", () => {
           const measured = await measureCard(width, card, "standalone-card", theme);
           expect(measured.surface.border, context).toBe("1px");
           expect(measured.surface.padding, context).toBe(card === "paper" ? "32px" : "24px");
-          // K4: a plain @k2b/ui Paper on a page is a square frame; the elevated standalone card sits on the canvas like the
-          // app card (14 px), and Cloud's `paper` utility keeps its own radius. The equality below covers each.
-          if (card === "plain") expect(measured.surface.radius, context).toBe("0px");
-          else if (card === "paper") expect(measured.surface.radius, context).toBe("14px");
-          else expect(measured.surface.radius, context).not.toBe("0px");
+          expect(measured.surface.radius, context).not.toBe("0px");
           expect(measured.surface.background, context).not.toBe(flat.background);
           expect(measured, context).toEqual(await measureCard(width, card, "", theme));
         }

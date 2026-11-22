@@ -322,13 +322,13 @@
   /* The app card casts no shadow; its edge is a 1 px ring around it (a ring,
      not depth: the columns inside would paint over an inner one). */
   --k2b-shadow-frame: 0 0 0 1px rgb(9 9 11 / 0.07);
-  /* Workspace column boundaries are hairlines (K2), never a shade (K3). The
-     former column-shadow colours stay as names for existing code and draw
-     nothing. */
-  --k2b-shadow-column-mid: transparent;
-  --k2b-shadow-column-edge: transparent;
-  --k2b-shadow-column-active-mid: transparent;
-  --k2b-shadow-column-active-edge: transparent;
+  /* The quiet shadow at every workspace column boundary stays until the
+     workspace draws its hairline (K2); both change together, so columns are
+     never left without a divider. */
+  --k2b-shadow-column-mid: rgb(24 24 27 / 0.0055);
+  --k2b-shadow-column-edge: rgb(24 24 27 / 0.022);
+  --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
+  --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   /* Light glass for layers that float over a picture, video, or map (`k2b-overlay-surface`). */
   --k2b-overlay-surface: rgb(255 255 255 / 0.78);
@@ -575,10 +575,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
   --k2b-shadow-frame: 0 0 0 1px rgb(255 255 255 / 0.08);
-  --k2b-shadow-column-mid: transparent;
-  --k2b-shadow-column-edge: transparent;
-  --k2b-shadow-column-active-mid: transparent;
-  --k2b-shadow-column-active-edge: transparent;
+  --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
+  --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
+  --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
+  --k2b-shadow-column-active-edge: rgb(0 0 0 / 0.14);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-overlay-surface: rgb(30 36 44 / 0.86);
   --k2b-overlay-surface-hover: rgb(44 51 61 / 0.95);
@@ -1049,34 +1049,60 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
 }
 
-/* Panes are one surface (K2): each boundary is one hairline in the middle of
-   its separator, never a shadow (K3). A boundary that moves carries the grip
-   (K13); keyboard focus and dragging turn line and grip blue. */
-.k2b-ui .k2b-panes__separator::before {
+/* Panes are one surface. Each boundary carries the quiet column shade of the
+   workspace, darkest at the edge and drawn on the leading pane: beside a
+   column boundary as between list and reader, above a row boundary as at the
+   drawer's edge. Its handle darkens it while hovered, focused, or dragged. It
+   is paint only and sits under the tab row and every drop target. */
+.k2b-ui .k2b-panes__split > .k2b-panes__split-child:first-child::after {
+  --k2b-panes-shade-edge: var(--k2b-shadow-column-edge);
+  --k2b-panes-shade-mid: var(--k2b-shadow-column-mid);
   position: absolute;
+  z-index: 1;
   content: "";
   pointer-events: none;
-  background: var(--k2b-border);
+  transition:
+    --k2b-panes-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+    --k2b-panes-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
-.k2b-ui .k2b-panes__separator[data-direction="horizontal"]::before {
+.k2b-ui .k2b-panes__split[data-direction="horizontal"] > .k2b-panes__split-child:first-child::after {
   top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-}
-
-.k2b-ui .k2b-panes__separator[data-direction="vertical"]::before {
-  top: 50%;
   right: 0;
-  left: 0;
-  height: 1px;
-  transform: translateY(-50%);
+  bottom: 0;
+  width: 1.5rem;
+  background: linear-gradient(to right, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
+  mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:focus-visible, [data-active="true"])::before {
-  background: var(--k2b-focus-ring);
+.k2b-ui .k2b-panes__split[data-direction="vertical"] > .k2b-panes__split-child:first-child::after {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1.5rem;
+  background: linear-gradient(to bottom, transparent, var(--k2b-panes-shade-mid) 45%, var(--k2b-panes-shade-edge));
+  mask-image: linear-gradient(to right, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+}
+
+.k2b-ui
+  .k2b-panes__split
+  > .k2b-panes__split-child:first-child:has(
+    + .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, :focus-visible, [data-active="true"])
+  )::after {
+  --k2b-panes-shade-edge: var(--k2b-shadow-column-active-edge);
+  --k2b-panes-shade-mid: var(--k2b-shadow-column-active-mid);
+}
+
+@property --k2b-panes-shade-edge {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --k2b-panes-shade-mid {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
 }
 
 .k2b-ui .k2b-panes__separator {
@@ -1106,46 +1132,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: default;
 }
 
-/* The grip of the workspace's resize handles (K13): 5 x 32 px, round, grey,
-   and visible at rest, so the boundary says it moves. */
+/* The grip of the workspace's resize handles: neutral, 3 px by 2 rem, and
+   visible at rest, so the boundary says it moves. No line, no colour. */
 .k2b-ui .k2b-panes__separator > span {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 5px;
+  width: 3px;
   height: 2rem;
-  border-radius: var(--k2b-radius-round);
-  background: #8a8a94;
-  box-shadow: 0 0 0 2px var(--k2b-surface);
+  border-radius: 999px;
+  background: var(--k2b-border-strong);
   transform: translate(-50%, -50%);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-panes__separator[data-direction="vertical"] > span {
   width: 2rem;
-  height: 5px;
+  height: 3px;
 }
 
-/* A fixed boundary keeps its line and has no grip. */
+/* A fixed boundary keeps its shade and has no grip. */
 .k2b-ui .k2b-panes__separator[aria-disabled="true"] > span {
   display: none;
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):hover > span {
-  background: #52525b;
-}
-
-.k2b-ui[data-theme="dark"] .k2b-panes__separator:not([aria-disabled="true"]):hover > span,
-.k2b-ui.k2b-dark .k2b-panes__separator:not([aria-disabled="true"]):hover > span,
-.dark .k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):hover > span {
-  background: #d4d4d8;
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:hover, [data-active="true"]) > span {
+  background: color-mix(in srgb, var(--k2b-border-strong) 45%, var(--k2b-text-muted));
 }
 
 .k2b-ui .k2b-panes__separator:focus-visible {
   outline: none;
 }
 
-.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):is(:focus-visible, [data-active="true"]) > span {
+.k2b-ui .k2b-panes__separator:not([aria-disabled="true"]):focus-visible > span {
   background: var(--k2b-focus-ring);
 }
 
@@ -2919,6 +2938,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset-inline-start: 0;
   }
 
+  /* On touch screens the subtitle line stops before the header actions, so a
+     meta action's tap area never reaches the close button's above it. */
+  .k2b-ui .k2b-detail-panel__heading > .k2b-detail-panel__supporting {
+    grid-column: -3 / -2;
+  }
+
   .k2b-ui
     :is(
       .k2b-detail-panel__header,
@@ -3068,12 +3093,66 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
 }
 
-/* K5: a field has three fixed rows: the label row (20 px), the control, then
-   help or error under it. Fields side by side therefore keep their controls
-   on one line without sharing rows; a longer help text only makes its own
-   field taller below the control. */
-.k2b-ui .k2b-field {
-  gap: 0.25rem;
+/* Fields that share a grid align their controls. Inside a parent that holds
+   only fields and at least one description, each field subgrids four rows
+   (label, description, control, error), so a longer description in one column
+   no longer pushes only that column's control down. Rows without content are
+   covered by spans so the field gap stays single. Parents with other children,
+   flex rows, grids without descriptions, fill fields, and browsers without
+   subgrid keep the stacked layout. */
+@supports (grid-template-rows: subgrid) {
+  .k2b-ui .k2b-field {
+    --k2b-field-control-row: initial;
+    --k2b-field-control-height: initial;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 4;
+    align-content: start;
+    align-items: start;
+    --k2b-field-control-row: 3;
+    --k2b-field-control-height: max-content;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > :is(.k2b-field__label, .k2b-field__label-row) {
+    grid-row: 1;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__description)) > :is(.k2b-field__label, .k2b-field__label-row) {
+    grid-row: 1 / 3;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__description {
+    grid-row: 2;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row)) > .k2b-field__description {
+    grid-row: 1 / 3;
+  }
+  /* The control's row travels in a custom property. A rule after :has() whose
+     last part names no class, such as this :not(), makes every :has() change
+     restyle the whole document: seconds per click in a mailbox. */
+  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error) {
+    grid-row: var(--k2b-field-control-row);
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) {
+    --k2b-field-control-row: 3 / 5;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)) {
+    --k2b-field-control-row: 1 / 5;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)):has(> .k2b-field__error) {
+    --k2b-field-control-row: 1 / 4;
+  }
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
+    grid-row: 4;
+  }
+  /* A parent that is not a grid, such as a dialog body or a flex column, leaves
+     the field without rows to share. Chromium then sizes the field's rows by
+     each control's minimum height alone, so a textarea overflowed its field
+     and the actions below it. A start-aligned control measures its content
+     anyway; saying so explicitly keeps the rows tall enough there and changes
+     nothing in a grid. Zero specificity keeps any control's own height. */
+  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error)) {
+    height: var(--k2b-field-control-height);
+  }
 }
 
 /* A fill editor and its field wrapper form one sizing contract. */
@@ -3083,6 +3162,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
 }
 
+.k2b-ui .k2b-field__label,
 .k2b-ui .k2b-check__label,
 .k2b-ui .k2b-switch__label {
   color: var(--k2b-text-secondary);
@@ -3098,55 +3178,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-field__label-row {
   display: flex;
-  min-height: var(--k2b-h-label);
+  min-height: 1.125rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-/* The label row is 20 px (K5) whatever it carries beside the label: a
-   suggestion's status, Accept, a slider's value. An action there is a text
-   link (K5, K8): blue words, no box, no taller than the label's line. On a
-   coarse pointer its hit area still reaches 2.75rem through the shared touch
-   rule. */
-.k2b-ui .k2b-field__label {
-  display: flex;
-  min-height: var(--k2b-h-label);
-  align-items: center;
-  color: var(--k2b-text-secondary);
-  font-size: var(--k2b-font-size-meta);
-  font-weight: 500;
-  line-height: 1.25rem;
-}
-
+/* A label row is as tall as a label alone, whatever it carries beside the
+   label: a suggestion's status, Accept, a slider's value. Fields side by side
+   keep their controls level only if no label row grows, so a button in it is
+   no taller than the label's line. On a coarse pointer its hit area still
+   reaches 2.75rem through the shared touch rule. */
 .k2b-ui .k2b-field__label-row .k2b-button {
   min-height: 0;
-  height: var(--k2b-h-label);
+  height: 1.125rem;
   padding-block: 0;
-  line-height: 1.25rem;
-}
-
-.k2b-ui .k2b-field__label-row .k2b-button:is([data-variant="ghost"], [data-variant="text"]) {
-  padding-inline: 0;
-  color: var(--k2b-action);
-  background: transparent;
-  font-size: var(--k2b-font-size-meta);
-  font-weight: 500;
-}
-
-.k2b-ui .k2b-field__label-row .k2b-button:is([data-variant="ghost"], [data-variant="text"]):not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action-hover);
-  background: transparent;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-field__description,
 .k2b-ui .k2b-field__error {
   margin: 0;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  line-height: 1rem;
+  color: var(--k2b-text-secondary);
+  /* The line box of the former 11px text, so help lines keep their height. */
+  font-size: 0.75rem;
+  line-height: 0.9625rem;
 }
 
 .k2b-ui .k2b-field__error {
@@ -3802,38 +3858,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* K9: the header is a 56 px bar with the title, "…" and close. The state, one
-   meta line, and the framed actions follow as the panel's first section, then
-   the body. The panel divides these bands (k2b-divided), so each hairline runs
-   from edge to edge of the panel, also across a scrollbar gutter. All stand
-   on the column's text edge; the bar's trailing icon buttons end on its 12 px
-   edge. */
+/* The header and the body keep a 0.5rem gutter inside the panel, so a row's
+   hover fill can reach 0.5rem past the text edge without being clipped. */
 .k2b-ui .k2b-detail-panel__header {
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
-  /* The header holds the bar and the first section; each holds its own
-     insets, so the line between them runs from edge to edge. */
-  padding: 0;
+  gap: 0.75rem;
+  padding: 0.875rem 0.5rem 0.75rem;
+  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
+  /* The same gutter as the body's scrollbar, without a scrollbar, so the
+     header's trailing controls end on the body's trailing edge. Popovers and
+     tooltips sit in the top layer and are not clipped. */
+  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
-/* Identity, title, and the compact actions share the bar. */
+/* Identity, title, and the compact actions share the first row; the subtitle
+   line starts under the title and runs to the trailing edge, so its `meta`
+   ends on the same edge as the close button. */
 .k2b-ui .k2b-detail-panel__header-main {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: var(--k2b-h-head);
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 0.5rem;
-  padding: 0 0.75rem 0 var(--k2b-gutter);
-  padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem));
-  /* The same gutter as the body's scrollbar, without a scrollbar, so the bar's
-     trailing controls end on the body's trailing edge. Popovers and tooltips
-     sit in the top layer and are not clipped. */
-  overflow: hidden;
-  scrollbar-gutter: stable;
+  column-gap: 0.625rem;
+  row-gap: 0.125rem;
 }
 
 .k2b-ui .k2b-detail-panel__header-main[data-identity="true"] {
@@ -3852,13 +3904,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   grid-row: 1;
   grid-column: 1;
-  width: 1.25rem;
-  height: 1.25rem;
-  flex: 0 0 1.25rem;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
   place-items: center;
-  border-radius: var(--k2b-radius-mark);
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 14%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 11%, var(--k2b-surface));
   font-size: 0.875rem;
 }
 
@@ -3876,54 +3928,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: -3 / -2;
 }
 
-/* The panel divides its bands (header, first section, body) like k2b-divided,
-   with the same weight: one hairline above every shown band after the first.
-   A band's border runs across its scrollbar gutter, so each line reaches
-   from edge to edge of the panel (K2, K9). */
-.k2b-ui
-  :where(.k2b-detail-panel)
-  > :not([hidden], :empty, template, script, style, dialog, [popover])
-  ~ :not([hidden], :empty, template, script, style, dialog, [popover]) {
-  border-block-start: 1px solid var(--k2b-border);
-}
-
-/* The first section: the state and one meta line, then the actions. */
-.k2b-ui .k2b-detail-panel__lead {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.75rem;
-  flex: 0 0 auto;
-  padding: 0.75rem var(--k2b-gutter);
-  padding-inline-end: calc(var(--k2b-gutter) + var(--k2b-detail-panel-scroll-inset, 0rem));
-  /* The first section stands in the header under the bar, on one hairline from edge to edge. */
-  border-block-start: 1px solid var(--k2b-border);
-}
-
 /* One line: the subtitle ends with an ellipsis, and `meta` keeps its place at
    the end. The subtitle keeps at least 6rem; only a `meta` too wide for that
-   moves to its own line, still on the trailing edge. The line keeps a 20 px
-   avatar's height, so a stack that arrives after the first render moves
-   nothing. */
+   moves to its own line, still on the trailing edge, and wraps inside the
+   header. The line keeps a 20 px avatar's height, so a stack that arrives
+   after the first render moves nothing. */
 .k2b-ui .k2b-detail-panel__supporting {
   display: flex;
+  grid-row: 2;
+  grid-column: -3 / -1;
   min-width: 0;
   min-height: 1.25rem;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: 0.125rem 0.5rem;
 }
 
 .k2b-ui .k2b-detail-panel__supporting > p {
   min-width: min(6rem, 100%);
   flex: 1 1 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-detail-panel__supporting > .k2b-detail-panel__meta {
@@ -3938,21 +3961,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: -2 / -1;
 }
 
+.k2b-ui .k2b-detail-panel__heading h2,
+.k2b-ui .k2b-detail-panel__heading p {
+  margin: 0;
+}
+
 /* A title never wraps: one line that ends with an ellipsis, so a long name
    moves nothing below it. The native hint shows the cut name. */
 .k2b-ui .k2b-detail-panel__heading h2 {
   min-width: 0;
-  margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-body);
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 650;
   line-height: 1.25rem;
+  letter-spacing: -0.018em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The state leads the line, in the quiet meta type; badges keep their own size. */
+/* The state leads the line below the title, in the quiet meta type; badges
+   keep their own size. */
 .k2b-ui .k2b-detail-panel__kind {
   display: flex;
   min-width: 0;
@@ -3960,9 +3989,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
   line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-panel__heading p {
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-detail-panel__meta,
@@ -3975,19 +4013,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
-/* At most two framed actions in one row, then one icon button (K9). A label
-   never wraps or shortens: when two do not fit side by side, each takes its
-   own line (K15). */
 .k2b-ui .k2b-detail-panel__primary-actions {
   width: 100%;
   flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
 /* Plain meta text reads like the subtitle beside it; badges and buttons keep their own size. */
 .k2b-ui .k2b-detail-panel__meta {
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
   line-height: 1rem;
 }
 
@@ -3997,14 +4031,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 0;
-  /* K11: rows and entries of the detail column read at 13 px. */
-  font-size: var(--k2b-font-size-row);
-  line-height: 1.25rem;
+  gap: 1.25rem;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 0 0 1rem;
-  padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
+  padding: 0.25rem 0.5rem 1rem;
   overscroll-behavior: contain;
 }
 
@@ -4016,7 +4046,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-detail-panel__summary-header {
@@ -4031,8 +4064,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex: 1;
   margin: 0;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
@@ -4043,30 +4076,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
-/* Section: one topic, in a panel or on a page (Section.tsx). Cloud flat
-   (K2, K3, K4, K9): on a full page a section has a hairline frame, square
-   corners, and no shadow; in a column (a detail panel, a dialog, another
-   frame) it stands borderless and the column separates its topics with a
-   hairline. Inside another frame (a section, a group, a summary, Paper, a
-   dialog, a settings section) it stands flat, so frames never nest (K14).
-   `sm` suits panels and narrow columns, `md` the topics of a full page. */
+/* Section: one topic, in a panel or on a page (Section.tsx). On a page a
+   section is a card with Paper's light 1 px frame and, like Paper, an island
+   (layer 1): it reads the island shadow and surface, which every flat layer
+   (a panel, a dialog, a column beside the main content) turns off. Inside
+   another frame (a section, a group, a summary, Paper, a dialog, a settings
+   section) it stands flat, so cards and depth never nest. `sm` suits panels
+   and narrow columns, `md` the topics of a full page. */
 .k2b-ui .k2b-section {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .k2b-ui .k2b-section[data-frame="line"] {
-  /* The section keeps only its block insets. Its heading row and its body hold
-     the text edge themselves, so a disclosure row spans the full width without
-     reaching out of any box (K5, layoutProblems). */
-  --k2b-section-inset-inline: var(--k2b-gutter);
-  padding: 0.75rem 0 1rem;
-  /* One line, one owner: a section draws no outer frame and declares no border
-     at all, so the line its container draws between topics (k2b-divided) is
-     not overruled by this rule's weight. */
-  border-radius: var(--k2b-radius-flat);
+  padding: 0.75rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
   background: var(--k2b-island-surface);
   box-shadow: var(--k2b-island-shadow);
 }
@@ -4076,16 +4103,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem 0;
-}
-
-.k2b-ui .k2b-section[data-frame="line"] > :is(.k2b-section__header, .k2b-section__body) {
-  padding-inline: var(--k2b-section-inset-inline);
-}
-
-/* A disclosure row is the button itself: the heading around it adds no inset. */
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header:has(> .k2b-section__toggle) {
-  padding-inline: 0;
+  padding: 1rem 1.125rem;
 }
 
 .k2b-ui
@@ -4095,19 +4113,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-detail-panel__summary,
     .k2b-paper,
     .k2b-panel-dialog,
-    .k2b-settings-section,
-    .k2b-dialog
+    .k2b-settings-section
   )
   .k2b-section[data-frame="line"] {
-  --k2b-section-inset-inline: 0;
   padding: 0;
+  border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
 
-/* Named tones follow the status tokens. A tone colours the symbol tile,
-   never the fill or the title, and always comes with words in the heading. */
+/* Named tones follow the status tokens. A tone colours the frame, the title,
+   the icon, and the restricted marker, never the fill, and always comes with
+   words in the heading. */
 .k2b-ui .k2b-section[data-tone="success"] {
   --k2b-section-tone: var(--k2b-success-text);
 }
@@ -4128,16 +4146,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-section-tone: var(--k2b-ai-accent);
 }
 
-/* K8, K17: a section named like a state carries the tone in its symbol tile,
-   never in its title text. `[data-size]` keeps the tone ahead of the icon's own color. */
-.k2b-ui .k2b-section[data-tone][data-size] > .k2b-section__header .k2b-section__icon {
+.k2b-ui .k2b-section[data-tone][data-frame="line"] {
+  border-color: color-mix(in srgb, var(--k2b-section-tone) 45%, var(--k2b-surface));
+}
+
+/* `[data-size]` keeps the tone ahead of the page title's own color below. */
+.k2b-ui
+  .k2b-section[data-tone][data-size]
+  > .k2b-section__header
+  :is(.k2b-section__title, .k2b-section__icon, .k2b-section__restricted) {
   color: var(--k2b-section-tone);
 }
 
-/* One header rhythm for every section and discussion (K9, K17): a 20 px icon
-   column, 8 px to the title, the count or state right after the title, and at
-   most two quiet controls (text buttons or the chevron) at the end. Row text
-   below starts on the same edge as the title. */
+/* One header rhythm for every section and discussion: a 20 px icon column,
+   10 px to the title, the count or state right after the title, and at most
+   one trailing control (an action or the chevron) at the end. Row text below
+   starts on the same edge as the title. */
 .k2b-ui .k2b-section__header,
 .k2b-ui .k2b-section__toggle {
   display: flex;
@@ -4146,7 +4170,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.75rem;
   margin: 0;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   text-align: start;
 }
 
@@ -4168,11 +4192,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--k2b-text);
+  color: var(--k2b-text-secondary);
   font-family: inherit;
-  font-size: var(--k2b-font-size-row);
+  font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.25rem;
+  line-height: 1rem;
   letter-spacing: normal;
   text-overflow: ellipsis;
   text-transform: none;
@@ -4185,32 +4209,35 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.25rem;
   flex: 0 0 1.25rem;
   place-items: center;
-  border-radius: var(--k2b-radius-mark);
-  color: var(--k2b-text-subtle);
+  color: var(--k2b-text-muted);
   font-size: 0.875rem;
 }
 
-/* A section with an area colour or a tone (K17) sets its symbol in a 20 px
-   tile in that colour: the colour of its area lives only there. */
-.k2b-ui .k2b-section__icon[data-color] {
-  color: var(--k2b-section-icon-color);
-  background: color-mix(in srgb, var(--k2b-section-icon-color) 14%, var(--k2b-surface));
-}
-
-.k2b-ui .k2b-section[data-tone] > .k2b-section__header .k2b-section__icon {
-  background: color-mix(in srgb, var(--k2b-section-tone) 14%, var(--k2b-surface));
-}
-
-/* On a page the title is 14 px (K17 level 2); in a column 13 px (K9). */
+/* On a page the title reads as the topic of a card, and its icon sits in a
+   neutral tile; only a tone colours the tile. */
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header,
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header > .k2b-section__toggle {
   min-height: 2rem;
+  gap: 0.75rem;
 }
 
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__title {
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-body);
+  font-size: 0.9375rem;
   line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-basis: 1.75rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-tone] > .k2b-section__header .k2b-section__icon {
+  background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
 }
 
 /* A heading with an action keeps its title whole. When the row is too narrow
@@ -4224,7 +4251,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
-  --k2b-section-lead: calc(1.25rem + 0.5rem);
+  --k2b-section-lead: calc(1.25rem + 0.625rem);
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-icon="true"] > header.k2b-section__header:has(> .k2b-section__actions) {
+  --k2b-section-lead: calc(1.75rem + 0.75rem);
 }
 
 .k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__copy {
@@ -4234,18 +4265,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui header.k2b-section__header:has(> .k2b-section__actions) > .k2b-section__actions {
   margin-inline-start: auto;
-}
-
-/* A section's count is a quiet number right after its title (K9). */
-.k2b-ui .k2b-section__heading > .k2b-count-chip {
-  min-width: 0;
-  height: auto;
-  padding: 0;
-  color: var(--k2b-text-subtle);
-  background: transparent;
-  font-size: var(--k2b-font-size-row);
-  font-weight: 400;
-  line-height: 1.25rem;
 }
 
 /* A count is a quiet chip right after its title; zero reads as words. */
@@ -4269,8 +4288,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__meta,
 .k2b-ui .k2b-section__restricted {
   flex: 0 0 auto;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
   font-weight: 400;
   line-height: 1rem;
   white-space: nowrap;
@@ -4285,8 +4304,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section__description {
   margin: 0.125rem 0 0;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
   font-weight: 400;
   line-height: 1rem;
 }
@@ -4337,21 +4356,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: 100%;
-  /* The row fills the section's block insets too; across it, it is exactly as wide as the section. */
-  margin-block: -0.75rem -1rem;
-  padding: 0.75rem var(--k2b-section-inset-inline) 1rem;
-  border-radius: 0;
+  width: calc(100% + 1.75rem);
+  margin: -0.75rem -0.875rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  margin-block: -1rem;
-  padding-block: 1rem;
+  width: calc(100% + 2.25rem);
+  margin: -1rem -1.125rem;
+  padding: 1rem 1.125rem;
 }
 
 .k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
-  margin-bottom: -0.5rem;
-  padding-bottom: 0.5rem;
+  margin-bottom: -0.375rem;
+  padding-bottom: 0.375rem;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
@@ -4381,8 +4402,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.75rem;
   height: 1.75rem;
   flex: 0 0 1.75rem;
-  /* The chevron's mark ends on the trailing text edge, like a count or a time, and its box stays inside the row. */
-  place-items: center end;
+  place-items: center;
+  /* The chevron itself ends on the trailing edge, like a count or a time. */
+  margin-inline-end: -0.5rem;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
 }
@@ -4431,7 +4453,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the card's edge; sections outside a panel or page, such as the form
    sections of an editor dialog, keep their full width. */
 .k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"] > .k2b-section__body {
-  padding-inline-start: 1.75rem;
+  padding-inline-start: 1.875rem;
 }
 
 .k2b-ui .k2b-section__footer {
@@ -4526,482 +4548,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section__error + .k2b-section__footer {
   padding-top: 0;
-}
-
-/* ------------------------------------------------ Cloud flat building blocks
- * FieldGrid (K5), RowGroup and Area (K17), FactGroup (K17), FileName (K15).
- * Square structure, hairlines, fixed heights; colour only in marks. */
-
-/* FieldGrid: one row of fields on one grid. Every label row is 20 px, so the
-   controls share their top edge; below 360 px of width the fields stack. */
-.k2b-ui .k2b-field-grid {
-  min-width: 0;
-  container: k2b-field-grid / inline-size;
-}
-
-.k2b-ui .k2b-field-grid__row {
-  display: grid;
-  grid-template-columns: repeat(var(--k2b-field-grid-columns, 2), minmax(0, 1fr));
-  align-items: start;
-  gap: 1rem 0.75rem;
-}
-
-.k2b-ui .k2b-field-grid__row[data-columns="3"] {
-  --k2b-field-grid-columns: 3;
-}
-
-.k2b-ui .k2b-field-grid__row[data-columns="4"] {
-  --k2b-field-grid-columns: 4;
-}
-
-/* A field without a label keeps the empty label row, so its control stays on the row's line. */
-.k2b-ui .k2b-field-grid__row > .k2b-field:not(:has(> .k2b-field__label, > .k2b-field__label-row))::before {
-  content: "";
-  height: var(--k2b-h-label);
-}
-
-/* K15: fields stack in a column under 360 px; the grid stands inside the
-   column's 20 px text edges, so it measures 320 px there. Three or four fields
-   stack earlier, so no field gets narrower than 160 px. */
-@container k2b-field-grid (max-width: 319.98px) {
-  .k2b-ui .k2b-field-grid__row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@container k2b-field-grid (max-width: 503.98px) {
-  .k2b-ui .k2b-field-grid__row[data-columns="3"] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@container k2b-field-grid (max-width: 675.98px) {
-  .k2b-ui .k2b-field-grid__row[data-columns="4"] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* RowGroup (K17 "Gruppe"): a 36 px head on the page's quiet ground, the name
-   13 px bold, its count, and at most one action. A hairline closes the head. */
-.k2b-ui .k2b-row-group {
-  min-width: 0;
-}
-
-.k2b-ui .k2b-row-group__head {
-  display: flex;
-  min-width: 0;
-  height: var(--k2b-h-group-head);
-  align-items: center;
-  gap: 0.5rem;
-  padding-inline: var(--k2b-gutter) 0.75rem;
-  background: var(--k2b-surface-canvas);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
-}
-
-/* After another group the head also closes that group's last row. Anything
-   else above it owns its own lower line. */
-.k2b-ui .k2b-row-group + .k2b-row-group > .k2b-row-group__head {
-  box-shadow:
-    inset 0 1px 0 var(--k2b-border),
-    inset 0 -1px 0 var(--k2b-border);
-}
-
-.k2b-ui .k2b-row-group__title {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
-  font-weight: 600;
-  line-height: 1.25rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-row-group__count {
-  flex: none;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row);
-  font-variant-numeric: tabular-nums;
-}
-
-.k2b-ui .k2b-row-group__action {
-  display: flex;
-  flex: none;
-  align-items: center;
-  margin-inline-start: auto;
-}
-
-.k2b-ui .k2b-row-group__rows {
-  min-width: 0;
-}
-
-/* Area (K17 "Bereich"). Open: a square area of its own, closed above and below
-   by a control-toned line, a 56 px head of two lines on the quiet ground, and
-   its rows on a rail that starts on the name's text edge; open areas stand
-   8 px apart. Closed: one 40 px row like a list row, without a surface or a
-   gap, closed by a hairline. Only the person opens or closes it. */
-.k2b-ui .k2b-area {
-  min-width: 0;
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
-  container: k2b-area / inline-size;
-}
-
-
-.k2b-ui .k2b-area[data-open="true"] {
-  background: var(--k2b-surface);
-  box-shadow:
-    inset 0 1px 0 var(--k2b-border-strong),
-    inset 0 -1px 0 var(--k2b-border-strong);
-}
-
-/* The gap belongs to the area after an open one, so opening or closing an
-   area never moves its own head: only what lies below it moves. */
-.k2b-ui .k2b-area[data-open="true"] + .k2b-area {
-  margin-top: 0.5rem;
-}
-
-/* Right below a closed row its hairline is the open area's top line. */
-.k2b-ui .k2b-area:not([data-open="true"]) + .k2b-area[data-open="true"] {
-  box-shadow: inset 0 -1px 0 var(--k2b-border-strong);
-}
-
-.k2b-ui .k2b-area__head {
-  display: grid;
-  min-width: 0;
-  height: var(--k2b-h-row);
-  grid-template-columns: 1.25rem minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 0 0.75rem;
-  padding: 0 0.75rem 0 var(--k2b-gutter);
-}
-
-.k2b-ui .k2b-area[data-collapsible="true"] > .k2b-area__head {
-  cursor: pointer;
-}
-
-.k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
-  height: var(--k2b-h-area-head);
-  grid-template-rows: auto auto;
-  align-content: center;
-  background: var(--k2b-surface-canvas);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
-}
-
-.k2b-ui .k2b-area__tile {
-  display: grid;
-  width: 1.25rem;
-  height: 1.25rem;
-  grid-row: 1;
-  place-items: center;
-  border-radius: var(--k2b-radius-mark);
-  color: var(--k2b-text-secondary);
-  background: var(--k2b-surface-muted);
-  font-size: var(--k2b-font-size-meta);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.k2b-ui .k2b-area__tile > i {
-  font-size: 0.8125rem;
-}
-
-.k2b-ui .k2b-area__title {
-  display: flex;
-  min-width: 0;
-  grid-row: 1;
-  grid-column: 2;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.k2b-ui .k2b-area__name {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
-  font-weight: 600;
-  line-height: 1.25rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-area[data-open="true"] > .k2b-area__head .k2b-area__name {
-  font-size: var(--k2b-font-size-body);
-}
-
-.k2b-ui .k2b-area__count {
-  flex: none;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row);
-  font-variant-numeric: tabular-nums;
-}
-
-.k2b-ui .k2b-area__end {
-  display: flex;
-  grid-row: 1 / -1;
-  grid-column: 3;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.k2b-ui .k2b-area__state {
-  display: flex;
-  align-items: center;
-  margin-inline-end: 0.5rem;
-}
-
-.k2b-ui .k2b-area__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.k2b-ui .k2b-button.k2b-area__chevron {
-  grid-row: 1 / -1;
-  grid-column: 4;
-  margin-inline-start: -0.5rem;
-  color: var(--k2b-text-subtle);
-}
-
-/* A framed button in the head keeps the page surface on the quiet ground. */
-.k2b-ui .k2b-area__actions .k2b-button[data-variant="secondary"] {
-  background: var(--k2b-surface);
-}
-
-.k2b-ui .k2b-area__meta {
-  display: flex;
-  min-width: 0;
-  grid-row: 2;
-  grid-column: 2;
-  align-items: center;
-  gap: 0.5rem;
-  overflow: hidden;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  line-height: 1rem;
-  white-space: nowrap;
-}
-
-/* The rail: the rows start on the name's text edge, and a line runs from the
-   head down to the last row, left of them under the tile. */
-.k2b-ui .k2b-area__body {
-  position: relative;
-  min-width: 0;
-  padding-inline-start: calc(var(--k2b-gutter) + 2rem);
-}
-
-.k2b-ui .k2b-area__body:empty {
-  display: none;
-}
-
-.k2b-ui .k2b-area__body::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 1.25rem;
-  inset-inline-start: calc(var(--k2b-gutter) + 0.625rem - 0.5px);
-  width: 1px;
-  background: var(--k2b-border-strong);
-}
-
-.k2b-ui .k2b-area__body[hidden] {
-  display: none;
-}
-
-.k2b-ui .k2b-area__empty {
-  display: flex;
-  min-height: var(--k2b-h-row);
-  align-items: center;
-  margin: 0;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row);
-}
-
-/* An area in an area: the tree's second and last level, flat on its parent. */
-.k2b-ui .k2b-area__body > .k2b-area,
-.k2b-ui .k2b-area__body > .k2b-area[data-open="true"] {
-  margin-top: 0;
-  background: transparent;
-  /* The row line above it, or the head's, is its top line. */
-  box-shadow: none;
-}
-
-.k2b-ui .k2b-area__body > .k2b-area > .k2b-area__head {
-  padding-inline-start: 0;
-  background: transparent;
-}
-
-.k2b-ui .k2b-area__body > .k2b-area > .k2b-area__body {
-  padding-inline-start: 2rem;
-}
-
-.k2b-ui .k2b-area__body > .k2b-area > .k2b-area__body::before {
-  inset-inline-start: calc(0.625rem - 0.5px);
-}
-
-/* K15: in a narrow area the open head keeps its name whole and puts state and
-   actions on a line of their own under the meta line; it grows in steps. A
-   closed row stays 40 px and shows only what fits beside its name. */
-@container k2b-area (max-width: 479.98px) {
-  .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
-    height: auto;
-    min-height: var(--k2b-h-area-head);
-    padding-block: 0.5rem;
-    row-gap: 0.25rem;
-  }
-
-  .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head > .k2b-area__end {
-    grid-row: 3;
-    grid-column: 2 / -1;
-    flex-wrap: wrap;
-  }
-
-  /* The chevron keeps the first line beside the name. */
-  .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head > .k2b-button.k2b-area__chevron {
-    grid-row: 1;
-  }
-
-  .k2b-ui .k2b-area__title {
-    min-width: 6rem;
-  }
-}
-
-/* FactGroup (K17 "Angaben-Gruppe"): label quiet, value strong, one pencil per
-   group, copy at values people carry elsewhere. Groups stand apart by space,
-   without lines; below 360 px the label stands above its value. */
-.k2b-ui .k2b-fact-group {
-  min-width: 0;
-  padding: 0.75rem var(--k2b-gutter) 0.25rem;
-  container: k2b-fact-group / inline-size;
-}
-
-.k2b-ui .k2b-fact-group__head {
-  display: flex;
-  min-width: 0;
-  height: 1.75rem;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.k2b-ui .k2b-fact-group__icon {
-  flex: none;
-  width: 1.25rem;
-  text-align: center;
-  color: var(--k2b-text-subtle);
-  font-size: 1rem;
-}
-
-.k2b-ui .k2b-fact-group__title {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
-  font-weight: 600;
-  line-height: 1.25rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-button.k2b-fact-group__edit {
-  margin-inline: auto -0.375rem;
-  color: var(--k2b-text-subtle);
-}
-
-.k2b-ui .k2b-fact-group__facts {
-  display: grid;
-  grid-template-columns: 5rem minmax(0, 1fr);
-  margin: 0;
-  padding-inline-start: 1.75rem;
-  column-gap: 0.5rem;
-}
-
-.k2b-ui .k2b-fact-group__fact {
-  display: contents;
-}
-
-.k2b-ui .k2b-fact-group__fact > dt {
-  padding-block: 0.25rem;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  line-height: 1.25rem;
-}
-
-.k2b-ui .k2b-fact-group__fact > dd {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 1.75rem;
-  align-items: start;
-  column-gap: 0.5rem;
-  margin: 0;
-  padding-block: 0.25rem;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
-  line-height: 1.25rem;
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-fact-group__value {
-  grid-column: 1;
-  min-width: 0;
-}
-
-.k2b-ui .k2b-fact-group__detail {
-  grid-column: 1;
-  display: block;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  line-height: 1rem;
-}
-
-.k2b-ui .k2b-button.k2b-fact-group__copy,
-.k2b-ui .k2b-fact-group__slot {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  margin-block: -0.25rem;
-  width: 1.75rem;
-  min-width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  color: var(--k2b-text-subtle);
-}
-
-/* K15: a column under 360 px, which leaves the group's content box 320 px. */
-@container k2b-fact-group (max-width: 319.98px) {
-  .k2b-ui .k2b-fact-group__facts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .k2b-ui .k2b-fact-group__fact > dt {
-    grid-column: 1 / -1;
-    padding-bottom: 0;
-  }
-
-  .k2b-ui .k2b-fact-group__fact > dd {
-    padding-top: 0;
-  }
-}
-
-/* FileName (K15): one line that shortens before the ending; the ending stays. */
-.k2b-ui .k2b-file-name {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: bottom;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-file-name__stem {
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.k2b-ui .k2b-file-name__ext {
-  flex: none;
 }
 
 /* Field: a label on the left and its value on the right. A value that does
@@ -5109,56 +4655,42 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-success-text);
 }
 
-/* K9: the detail column is one flat column. Its topics (a summary, a group,
-   a section, a discussion) stand borderless on the column's text edge and are
-   separated by one hairline that runs from edge to edge. A group's own
-   sections stay together without lines. Apps draw no line. */
+/* A detail panel frames its topics itself, so its sections stand flat
+   (`DetailPanel` sets `frame="none"`). A group is one quiet surface like the
+   summary; its sections are separated by space and their headings, not by
+   rules or a border. A section placed directly in the body, a discussion
+   included, is a group of one: the same surface, and its heading and content
+   start where a grouped section's do. */
 .k2b-ui .k2b-detail-panel__group {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 1rem;
+  padding-block: 0.25rem;
 }
 
-.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
-  padding: 1rem var(--k2b-gutter);
+.k2b-ui :is(.k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
 }
 
-/* A topic after shown content gets the hairline; a hidden node, a template, or a
-   floating layer before it draws nothing, so the body's own top line stays the only one. */
-.k2b-ui
-  .k2b-detail-panel__body
-  > :not([hidden], template, script, style, dialog, [popover])
-  ~ :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
-  border-top: 1px solid var(--k2b-border);
+.k2b-ui .k2b-detail-panel__body > .k2b-section {
+  padding: 0.75rem 0.875rem 1rem;
 }
 
-/* Other content placed straight into the body, such as guidance, a button, or
-   a preview, stands on the same text edge with the body's 12 px rhythm. An
-   alert cell keeps its edge-to-edge tint (K10). */
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container) {
-  /* A child that sets its own full width still ends on the text edge, so the
-     detail never scrolls sideways (QA B1). */
-  max-width: calc(100% - 2 * var(--k2b-gutter));
-  margin-inline: var(--k2b-gutter);
-}
-
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style):first-child {
-  margin-top: 1rem;
-}
-
-.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style) {
-  margin-top: 0.75rem;
-}
-
-/* Deeper in a section, summary, or group, that host already frames it. */
-.k2b-ui :is(.k2b-section, .k2b-detail-panel__summary, .k2b-detail-panel__group) .k2b-section[data-frame="none"] {
+/* Deeper in a section or summary, that host already frames it. */
+.k2b-ui :is(.k2b-section, .k2b-detail-panel__summary) .k2b-section[data-frame="none"] {
   padding: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.k2b-ui .k2b-detail-panel__group > .k2b-section {
+  padding: 0.5rem 0.875rem 0.75rem;
+}
+
+.k2b-ui .k2b-detail-panel__group > .k2b-section + .k2b-section {
+  padding-top: 0.75rem;
 }
 
 /* A discussion is a Section (Discussion.tsx): its frame, heading, count, and
@@ -5563,15 +5095,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"],
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"],
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="text"] {
-  /* K8: text buttons in a heading are grey and turn dark on hover; their place marks them. Blue stays for the one
-     main action of the page. */
-  color: var(--k2b-text-muted);
+  /* Text, so the fallback is the theme-aware action colour, not the fixed accent the icons use. */
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-text);
-  background: var(--k2b-hover);
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
 }
 
 /* A titled group: a quiet title over secondary sections that stand flush as
@@ -5583,27 +5114,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
 }
 
-/* K17: collapsed sections at the end of the column are rows; the titled
-   group divides them (k2b-divided), and its quiet title stands above them. */
-.k2b-ui .k2b-detail-panel__group[data-titled="true"] {
+.k2b-ui .k2b-detail-panel__group[data-titled="true"],
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group[data-titled="true"] {
   gap: 0;
 }
 
-.k2b-ui .k2b-detail-panel__body > .k2b-detail-panel__group[data-titled="true"] {
-  padding-inline: 0;
-  padding-bottom: 0;
-}
-
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__group-title {
-  padding: 0 var(--k2b-gutter) 0.25rem;
-}
-
-.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section {
-  padding-inline: var(--k2b-gutter);
+  margin-bottom: 0.25rem;
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section[data-open="true"] {
-  padding-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
 }
 
 .k2b-ui .k2b-detail-panel__action {
@@ -5616,7 +5137,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The generic small-button selector is more specific than the base action
  * class, so keep the shared action explicitly flush with its section. Its
- * hover fill reaches 6 px past both text edges, into the section's inset,
+ * hover fill reaches 0.5rem past both text edges, into the panel's gutter,
  * so the text itself never moves. */
 .k2b-ui .k2b-button.k2b-detail-panel__action {
   padding: 0.375rem 0;
@@ -5626,7 +5147,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The fill lives on the label, not the button: the button's own pseudo
    elements stay reserved for touch hit areas. It covers the row's full height
-   and reaches 6 px past both text edges. */
+   and reaches 0.5rem past both text edges. */
 .k2b-ui .k2b-detail-panel__action > .k2b-button__label {
   position: relative;
   isolation: isolate;
@@ -5636,8 +5157,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: absolute;
   z-index: -1;
   inset-block: -0.375rem;
-  /* 6 px past the text edge: inside the 7 px a control may reach out of its box (K5, layoutProblems). */
-  inset-inline: -0.375rem;
+  inset-inline: -0.5rem;
   border-radius: var(--k2b-radius-control);
   background: transparent;
   content: "";
@@ -12805,14 +12325,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 
-/* Cloud's default container class is `paper overflow-auto flex-1 min-h-0`.
-   One line, one owner: a table draws no outer frame of its own; the column,
-   the section, or the container around it owns the lines at its edges. */
+/* Cloud's default container class is `paper overflow-auto flex-1 min-h-0`. */
 .k2b-ui .k2b-table-shell[data-surface="paper"] {
   @apply min-h-0 flex-1;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
 .k2b-ui .k2b-table-wrap {
@@ -12823,84 +12338,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
 }
 
-/* A scrollbar moves nothing (Valentin 21.11.): head and rows share this one
-   scroll area (the head sticks). With a fine pointer the table draws its own
-   overlay thumb and no native scrollbar takes room (below); elsewhere a
-   classic scrollbar's room is reserved whether or not it shows, so the columns
-   and their lines keep their x. The server frame and the first client frame
-   take the same branch, so hydration moves nothing either. */
-@media not ((hover: hover) and (pointer: fine)) {
-  .k2b-ui .k2b-table-wrap {
-    scrollbar-gutter: stable;
-  }
-}
-
 .k2b-ui .k2b-table-wrap:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
-}
-
-/* A table that scrolls sideways fades at the edge where it continues (#3933).
-   A scroll timeline drives the fade: no script, the server frame shows it
-   already, and a table that fits has no timeline, so no animation and no mask.
-   The mask moves nothing. The table still scrolls sideways, so the layout
-   self-check keeps reporting it; column priorities make a table fit. Without
-   scroll timelines the edge stays as it was. The shell draws the focus ring
-   above the mask. */
-@keyframes k2b-table-fade {
-  0% {
-    mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
-  }
-  5%,
-  95% {
-    mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
-  }
-  100% {
-    mask-image: linear-gradient(to right, transparent, #000 1.5rem);
-  }
-}
-
-/* Right to left, the table starts on the right and continues to the left. */
-@keyframes k2b-table-fade-rtl {
-  0% {
-    mask-image: linear-gradient(to left, #000 calc(100% - 1.5rem), transparent);
-  }
-  5%,
-  95% {
-    mask-image: linear-gradient(to left, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
-  }
-  100% {
-    mask-image: linear-gradient(to left, transparent, #000 1.5rem);
-  }
-}
-
-@supports (animation-timeline: scroll()) {
-  .k2b-ui .k2b-table-wrap {
-    animation: k2b-table-fade linear both;
-    animation-timeline: scroll(self inline);
-  }
-
-  .k2b-ui .k2b-table-wrap:is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
-    animation-name: k2b-table-fade-rtl;
-  }
-
-  /* The fade follows the person's own scrolling and moves nothing, so reduced
-     motion keeps its timeline instead of the zero duration it sets elsewhere. */
-  @media (prefers-reduced-motion: reduce) {
-    .k2b-ui .k2b-table-wrap {
-      animation-duration: auto !important;
-    }
-  }
-
-  html[data-k2b-motion="reduced"] .k2b-ui .k2b-table-wrap {
-    animation-duration: auto !important;
-  }
-}
-
-@media (forced-colors: active) {
-  .k2b-ui .k2b-table-wrap {
-    animation: none;
-  }
 }
 
 /* Firefox and Safari paint sticky header and footer rows over the viewport's
@@ -13007,10 +12447,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table {
-  @apply w-full;
-  /* K11: rows and controls read at 13 px. */
-  font-size: var(--k2b-font-size-row);
-  line-height: 1.25rem;
+  @apply w-full text-xs;
   border-collapse: collapse;
   /* Digits share one width, so amounts, counts, and dates line up down a column. */
   font-variant-numeric: tabular-nums;
@@ -13021,46 +12458,52 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table :is(th, td) {
-  @apply text-left align-middle;
-  padding: 0.25rem 0.75rem;
+  @apply px-3 py-2 text-left align-middle;
 }
 
-/* K5: the first and the last column stand on the column's text edge. */
-.k2b-ui .k2b-data-table :is(th, td):first-child {
-  padding-inline-start: var(--k2b-gutter);
-}
-
-.k2b-ui .k2b-data-table :is(th, td):last-child {
-  padding-inline-end: var(--k2b-gutter);
-}
-
-/* K7: hairlines under the rows, nothing else. The head has no fill: grey
-   12 px words on the table's surface and one hairline under it. Every line is
-   an inset shadow on its cell, so no cell changes size and a sticky head lies
-   on the same pixels as the body. A body row is 40 px (32 px compact) and
-   grows only for content that wraps; the head is 36 px. */
+/* Tables are the one surface that keeps lines: a grey head with a stronger
+   line under it, a line under every body row, and lighter column lines. Every
+   line is an inset shadow on its cell, so no cell changes size and a sticky
+   head lies on the same pixels as the body. A body row is 44 px (40 px
+   compact) and grows only for content that wraps; the head is 34 px. */
 .k2b-ui .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: var(--k2b-h-row);
+  height: 2.75rem;
 }
 
 .k2b-ui .k2b-data-table__head-row > th {
-  height: var(--k2b-h-colhead);
-  padding-block: 0.25rem;
-  color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta);
-  font-weight: 500;
+  height: 2.125rem;
+  padding-block: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
   line-height: 1rem;
-  background: transparent;
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
+  background: var(--k2b-surface-muted);
+  box-shadow: inset 0 -1px 0 var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-data-table__head-row > th + th {
+  box-shadow:
+    inset 1px 0 0 var(--k2b-border),
+    inset 0 -1px 0 var(--k2b-border-strong);
 }
 
 .k2b-ui .k2b-data-table__row > td {
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
+.k2b-ui .k2b-data-table__row > td + td {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent),
+    inset 0 -1px 0 var(--k2b-border);
+}
+
 /* The last row ends at the table's frame, which draws its own edge. */
 .k2b-ui .k2b-data-table__row:last-child > td {
   box-shadow: none;
+}
+
+.k2b-ui .k2b-data-table__row:last-child > td + td {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
 }
 
 /* The column the rows are sorted by keeps full text color, so the order is legible at a glance. */
@@ -13074,29 +12517,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__foot-row > td {
-  height: var(--k2b-h-colhead);
-  box-shadow: inset 0 1px 0 var(--k2b-border);
+  box-shadow: inset 0 1px 0 var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-data-table__foot-row > td + td {
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent),
+    inset 0 1px 0 var(--k2b-border-strong);
 }
 
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table :is(th, td) {
-  padding-block: 0.125rem;
+  @apply py-1.5;
 }
 
-/* Dense rows (K1): 32 px. The fill spacer of a `fillHeight` table keeps taking the spare height. */
+/* The fill spacer of a `fillHeight` table keeps taking the spare height, so rows stay compact. */
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: var(--k2b-h-row-dense);
+  height: 2.5rem;
 }
 
 .k2b-ui .k2b-data-table td {
   @apply max-w-[260px];
-}
-
-/* K7: the name column keeps a value beside its name: at least 200 px, at most
-   560 px. When the table gets narrow, columns of a lower priority leave
-   before it shrinks. */
-.k2b-ui .k2b-data-table :is(th, td)[data-primary] {
-  min-width: 12.5rem;
-  max-width: 35rem;
 }
 
 /* Keep dates, amounts, and codes intact while headers can still wrap. */
@@ -13125,15 +12565,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply align-bottom;
 }
 
-/* Column hover: the column's cells, its head included, take one light grey;
-   the head's words turn dark. */
+/* Column hover: body cells take a light grey, and the head cell one step
+   darker than the grey head, never lighter. */
 .k2b-ui .k2b-data-table td[data-highlighted="true"] {
   background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
 }
 
 .k2b-ui .k2b-data-table__head-row > th[data-highlighted="true"] {
-  color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
+  background: color-mix(in srgb, var(--k2b-text) 6%, var(--k2b-surface-muted));
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"],
@@ -13209,8 +12648,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A selected row is a clear fill in the app colour, never a coloured line,
    so its geometry and the row lines stay as they are. */
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  /* K7: the app's tint, as in the mockups; never a line or a bar. */
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 8%, var(--k2b-surface-beneath, var(--k2b-surface)));
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)));
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
@@ -13239,9 +12677,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table td.k2b-data-table__footer-cell {
-  padding-block: 0.25rem;
-  font-size: var(--k2b-font-size-meta);
-  color: var(--k2b-text-subtle);
+  @apply px-3 py-1.5 text-[11px];
+  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-data-table td.k2b-data-table__empty {
@@ -13298,17 +12735,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--stdlib-chart-c1);
 }
 
-/* Groups (K17 "Gruppe"): a 36 px head on the page's quiet ground with the
-   group's value in 13 px bold and its count heads each body. */
+/* Groups: a quiet row with the group's value and count heads each body. */
 .k2b-ui .k2b-data-table__group-row > th {
-  height: var(--k2b-h-group-head);
+  height: 2rem;
   padding-block: 0;
-  color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row);
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
   font-weight: 600;
   text-align: left;
-  /* `--n50`, the quiet ground of the page. */
-  background: var(--k2b-surface-canvas);
+  background: var(--k2b-surface);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -13318,47 +12753,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset 0 -1px 0 var(--k2b-border);
 }
 
-/* A foldable group: the whole head is one disclosure button with the name,
-   the count, and a chevron at the end. Folding keeps the 36 px head. */
-.k2b-ui .k2b-data-table__group-row > th:has(> .k2b-data-table__group-toggle) {
-  padding: 0;
-}
-
-.k2b-ui .k2b-data-table__group-toggle {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  min-height: var(--k2b-h-group-head);
-  align-items: center;
-  padding: 0 var(--k2b-gutter);
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.k2b-ui .k2b-data-table__group-toggle:hover {
-  background: color-mix(in srgb, var(--k2b-text) 3%, transparent);
-}
-
-.k2b-ui .k2b-data-table__group-toggle:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: calc(-1 * var(--k2b-focus-width));
-}
-
-.k2b-ui .k2b-data-table__group-chevron {
-  margin-inline-start: auto;
-  color: var(--k2b-text-subtle);
-  font-size: 0.75rem;
-}
-
 .k2b-ui .k2b-data-table__group-count {
-  margin-left: 0.5rem;
-  color: var(--k2b-text-subtle);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
+  margin-left: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-weight: 500;
 }
 
 /* Nothing matches the host's search: one sentence and the way back, at a fixed height. */
@@ -13479,6 +12877,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
+.k2b-ui .k2b-data-table__row[data-last="true"] > td + td {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+}
+
 .k2b-ui .k2b-data-table__details:last-child > td {
   box-shadow: none;
 }
@@ -13487,6 +12889,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* An open row hands its line to its details, only while they show. */
   .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
     box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
   }
 
   .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
@@ -13516,6 +12922,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     box-shadow: none;
   }
 
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
   .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
     box-shadow: none;
   }
@@ -13538,85 +12948,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-data-table__bar-track {
     display: none;
-  }
-}
-
-/* K7 phone: a table with list roles becomes a list below 480 px. Each row is
-   one entry of two lines: the title, then its meta value in quiet 12 px text,
-   with the end value at the right of both lines. Columns without a role leave;
-   the head leaves too, as the words of the entry name what they are. */
-.k2b-ui .k2b-table-shell[data-list] {
-  container: k2b-data-table / inline-size;
-}
-
-@container k2b-data-table (max-width: 479.98px) {
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table, .k2b-data-table > tbody, .k2b-data-table > tfoot) {
-    display: block;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__head,
-  .k2b-ui .k2b-table-shell[data-list] :is(tbody, tfoot) > tr.k2b-data-table__details:not([hidden]),
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td.k2b-data-table__details-toggle {
-    display: none;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__group-row {
-    display: block;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__group-row > th {
-    display: flex;
-    align-items: center;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) {
-    display: grid;
-    min-height: var(--k2b-h-row-phone);
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-auto-flow: dense;
-    align-content: center;
-    align-items: center;
-    column-gap: 0.75rem;
-    padding: 0.5rem var(--k2b-gutter);
-    box-shadow: inset 0 -1px 0 var(--k2b-border);
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row:last-child,
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row[data-last="true"],
-  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__foot-row {
-    box-shadow: none;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td {
-    display: none;
-    height: auto;
-    max-width: none;
-    padding: 0;
-    box-shadow: none;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td[data-list] {
-    display: block;
-    min-width: 0;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td[data-list="title"] {
-    grid-column: 1;
-    font-weight: 500;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td[data-list="meta"] {
-    grid-column: 1;
-    color: var(--k2b-text-subtle);
-    font-size: var(--k2b-font-size-meta);
-    line-height: 1rem;
-  }
-
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td[data-list="end"] {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    justify-self: end;
-    text-align: right;
   }
 }
 
@@ -13651,9 +12982,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-log-table {
   @apply overflow-x-auto;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-flat);
+  border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
-  box-shadow: none;
+  box-shadow: var(--k2b-shadow-surface);
 }
 
 /* Cloud colours each level with a fixed Tailwind palette pair; the package
@@ -20743,10 +20074,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: flex-start;
 }
 
-/* Tabs: no tray, no separators. The list scrolls sideways only. The `line`
-   variant (the default) stands on a hairline, and the selected tab is a 2 px
-   mark in the app's colour on that line (K2, K6); the `pill` variant keeps
-   the selected fill. Every tab keeps its weight and box in every state, so
+/* Tabs: no tray, no baseline, no separators. The list scrolls sideways only;
+   a tab has no edge until selected, then it takes the selected edge and fill
+   in the app's ink. Every tab keeps its weight and box in every state, so
    selecting or hovering one never moves a neighbour. Focus turns the edge
    blue inside the tab, where the scrolling list cannot clip it. */
 .k2b-ui .k2b-tabs__list {
@@ -20795,40 +20125,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
-/* The line variant: tabs 24 px apart on one hairline, without fill. */
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list {
-  gap: 1.5rem;
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
-}
-
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"] {
-  --k2b-tab-mark: transparent;
-  min-height: 2.25rem;
-  padding-inline: 0;
-  border-radius: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  box-shadow:
-    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
-    inset 0 -2px 0 var(--k2b-tab-mark);
-}
-
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"] {
-  --k2b-tab-mark: var(--k2b-app-workspace-active);
-  color: var(--k2b-text);
-  background: transparent;
-}
-
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"]:hover {
-  background: transparent;
-}
-
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"]:hover:not(:disabled, [aria-selected="true"]) {
-  color: var(--k2b-text);
-  background: transparent;
-}
-
 /* A selected tab shows the choice as fill only, no edge. */
 .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
   color: var(--k2b-app-workspace-active);
@@ -20856,11 +20152,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Forced colours drop the fill and the edge; an underline marks the selected
    tab without changing its box, and focus takes the system outline. */
 @media (forced-colors: active) {
-  /* Shadows disappear in forced colours; the underline marks the selected tab, so the strip draws no baseline. */
-  .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list {
-    box-shadow: none;
-  }
-
   .k2b-ui .k2b-tabs__list button[aria-selected="true"] {
     text-decoration: underline 2px;
     text-underline-offset: 0.3em;
@@ -20872,9 +20163,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 /* View tabs: links to the views of one object, in the same look as the
-   line tabs. The open view is a 2 px mark in the app's colour on the line
-   under the strip, in a head the head's own line (K2, K6); there is no fill.
-   Weight and box never change, so nothing beside a tab moves. "More +n" ends
+   tabs. The open view takes the selected edge and fill in the app's ink;
+   weight and box never change, so nothing beside a tab moves. "More +n" ends
    the strip with the views that do not get a place. Every view keeps its
    full label and count at any width: a strip too narrow for its views
    scrolls sideways, the current view is scrolled into view before the first
@@ -20889,8 +20179,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-view-tabs__list {
   display: flex;
   min-width: 0;
-  align-items: stretch;
-  gap: 1.5rem;
+  align-items: center;
+  gap: 0.125rem;
   margin: 0;
   padding: 0;
   overflow: auto hidden;
@@ -20921,23 +20211,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: inline-flex;
   min-width: 0;
   max-width: 100%;
-  min-height: 2.25rem;
+  min-height: 2rem;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.375rem;
   margin: 0;
-  padding: 0;
+  padding: 0.375rem 0.625rem;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--k2b-radius-control);
   --k2b-edge-color: transparent;
   --k2b-edge-ring: transparent;
-  --k2b-tab-mark: transparent;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   background: transparent;
-  /* Views sit in a strip that scrolls and clips, so the mark and the soft focus band lie inside the tab. */
+  /* Views sit in a strip that scrolls and clips, so the soft focus band lies inside the edge. */
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
-    inset 0 -2px 0 var(--k2b-tab-mark);
+    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
@@ -20991,18 +20279,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-view-tabs__tab:hover:not([aria-current="page"]) {
   color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 
-/* The current view: the mark on the line and the text colour, no fill. */
+/* The current view shows the choice as fill only, no edge. */
 .k2b-ui .k2b-view-tabs__tab[aria-current="page"] {
-  --k2b-tab-mark: var(--k2b-app-workspace-active);
-  color: var(--k2b-text);
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
 }
 
-.k2b-ui .k2b-view-tabs__tab[aria-current="page"] i {
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"]:hover {
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-hover-fill), var(--k2b-surface));
+}
+
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] :is(i, .k2b-view-tabs__count) {
   color: inherit;
 }
 
+.k2b-ui .k2b-view-tabs__tab[aria-current="page"] .k2b-view-tabs__badge {
+  background: var(--k2b-surface);
+}
 
 .k2b-ui .k2b-view-tabs__tab:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
@@ -23166,7 +22462,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 
   .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-ai-suggestion {
-    min-height: var(--k2b-h-label);
+    min-height: 1.125rem;
     flex-basis: 100%;
     justify-content: flex-start;
   }
@@ -23261,9 +22557,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   top: 0;
   right: 0;
   max-width: 40%;
-  height: var(--k2b-h-label);
+  height: 1.125rem;
   font-size: 0.8125rem;
-  line-height: var(--k2b-h-label);
+  line-height: 1.125rem;
   text-align: end;
 }
 

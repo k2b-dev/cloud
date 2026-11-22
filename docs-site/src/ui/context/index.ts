@@ -278,7 +278,6 @@ export const standaloneUiContextFiles = {
   "motion.md": "Motion tokens, interaction budgets, reduced motion, and the prefersReducedMotion helper.",
   "primary-scope.md": "AI primary actions, selection, focus, and inherited portal scopes in light and dark themes.",
   "focus.md": "Focus ring placement inside clipping containers, focus tokens, and the k2b-focus-inset class.",
-  "layout-check.md":
-    "The layoutProblems self-check for page tests: overlap, spill, cut text, double lines, line breaks by scrollbar, and sideways scroll at every width.",
+  "layout-check.md": "The layoutProblems self-check for page tests: overlap, spill, cut text, and sideways scroll at every width.",
   "overview.md": "Catalog landing-page context rendered by the collection root.",
 } as const satisfies Record<string, string>;

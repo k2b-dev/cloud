@@ -75,19 +75,8 @@ function frame() {
   };
 }
 
-async function load(
-  width: number,
-  sidebarWidth = 240,
-  minimum: FixtureOptions["mainMin"] = mainMin,
-  islands = false,
-  detailWidths?: Record<string, number>,
-) {
-  const options: FixtureOptions = {
-    mainMin: minimum,
-    paneSize,
-    detailWidth: "lg",
-    layoutState: { version: 2, sidebarWidth, detailWidths },
-  };
+async function load(width: number, sidebarWidth = 240, minimum: FixtureOptions["mainMin"] = mainMin, islands = false) {
+  const options: FixtureOptions = { mainMin: minimum, paneSize, detailWidth: "lg", layoutState: { version: 2, sidebarWidth } };
   let html = renderToString(() => workspaceTree({ AppWorkspace, createComponent, createSignal, Dynamic }, options));
   if (islands) {
     // Main may be an island while Content remains the shared grid region.
@@ -118,10 +107,8 @@ function expectedFrame(actual: Awaited<ReturnType<typeof frame>>, width: number,
   expect(Math.abs(actual.pane.width - pane)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(actual.workspaceWidth - width)).toBeLessThanOrEqual(0.5);
   const min = typeof minimum === "number" ? minimum : pane + 440;
-  // The lg Detail is 480 px; the flat column has no inset of its own (K5a), so the threshold no longer adds 8 px.
-  expect(actual.column).toBe(width - 2 - actual.sidebar - 480 >= min);
-  // Main keeps its minimum beside the Detail; the pane's boundary inside Main is part of that minimum.
-  if (actual.column) expect(actual.main.width).toBeGreaterThanOrEqual(min - 0.5);
+  expect(actual.column).toBe(width - 2 - actual.sidebar - 488 >= min);
+  if (actual.column) expect(actual.primary.width).toBeGreaterThanOrEqual(min - pane - 0.5);
 }
 
 function sameFrame(actual: ReturnType<typeof frame>, expected: ReturnType<typeof frame>) {
@@ -163,52 +150,6 @@ for (const width of [1376, 1456, 1536, 1600, 1856, 2496, 952, 1462]) {
       sameFrame(await page.evaluate(frame), server);
       const handle = page.locator('[data-app-workspace-resize="pane"]');
       expect(Math.abs(Number(await handle.getAttribute("aria-valuenow")) - server.pane.width)).toBeLessThanOrEqual(0.5);
-    } finally {
-      await page.close();
-    }
-  });
-}
-
-// The layout cookie's Detail width is part of the server output (an inline variable), and the stylesheet bounds it by
-// the room beside Main's minimum in that first frame, so a width saved in a wider window arrives at the width it keeps:
-// the controller, a reload, and a client render move nothing.
-// Main's default 320 px minimum and a share minimum; from about 1700 px the Detail's own 640 px maximum bounds it
-// before the window does. Before the fix the controller reserved the old 8 px inset and moved the Detail from 538 to
-// 530 px (1100) and from 632 to 624 px (1194) as it attached.
-for (const [width, minimum] of [
-  [1100, 320],
-  [1194, 320],
-  [1536, mainMin],
-  [1600, mainMin],
-] as const) {
-  test(`${width}px, Main ${typeof minimum === "number" ? `${minimum}px` : "share"}: a Detail saved wider than the window arrives bounded in the server frame, and nothing moves after it`, async () => {
-    const { page, options } = await load(width, 240, minimum, false, { contact: 900 });
-    try {
-      // settled: the server frame before JS is the subject.
-      const server = await page.evaluate(frame);
-      expect(server.column).toBe(true);
-      const min = typeof minimum === "number" ? minimum : Math.min(452, Math.max(332, width * 0.25 - 12)) + 440;
-      // Bounded: Main keeps exactly its minimum and the Detail takes the rest of the workspace.
-      expect(Math.abs(server.main.width - min)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(server.detail.width - (width - 2 - server.sidebar - min))).toBeLessThanOrEqual(0.5);
-      expect(server.detail.width).toBeLessThan(900);
-      await page.addScriptTag({ content: controller });
-      await workspaceFrames(page);
-      // settled: the frame two frames after the controller attached is the subject.
-      sameFrame(await page.evaluate(frame), server);
-      await page.reload();
-      // settled: the reloaded server frame is the subject.
-      sameFrame(await page.evaluate(frame), server);
-      await page.evaluate((options) => {
-        document.body.dataset.options = JSON.stringify(options);
-        document.getElementById("app")!.innerHTML = "";
-      }, options);
-      await page.addScriptTag({ content: script });
-      // settled: the client-rendered first frame is the subject.
-      sameFrame(await page.evaluate(frame), server);
-      await workspaceFrames(page);
-      // settled: the frame two frames after this step is the subject.
-      sameFrame(await page.evaluate(frame), server);
     } finally {
       await page.close();
     }

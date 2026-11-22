@@ -31,16 +31,12 @@ const navFill = [
 const stackedChip =
   '.k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop :is( .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item ):is(.is-active, [aria-current], :has(> [aria-current]))';
 // Segments and a menu's segment row take the selected edge and fill in the app ink, like an active filter chip;
-// pill tabs take the fill only. No navigation fill. Line tabs and view tabs mark the selected one with a 2 px line
-// in the app ink on the head line, without a fill (K2, K6).
+// tabs and view tabs take the fill only. No navigation fill.
 const edgeSelected = ['.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"])'];
 const fillSelected = [
   '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
   '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
-];
-const markSelected = [
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
-  '.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"]',
 ];
 const selectedEdge = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))";
 const selectedFill = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
@@ -83,20 +79,7 @@ describe("selection hooks", () => {
     expect(declarations(`${sidebar}.is-active`).get("font-weight")).toEqual(["600"]);
   });
 
-  test("line tabs and view tabs mark the selected one with the app ink on the line, without fill or box change", () => {
-    for (const selector of markSelected) {
-      const selected = declarations(selector);
-      expect(selected.get("--k2b-tab-mark"), selector).toEqual(["var(--k2b-app-workspace-active)"]);
-      expect(selected.get("box-shadow"), selector).toBeUndefined();
-      expect([undefined, ["transparent"]], selector).toContainEqual(selected.get("background"));
-      expect(
-        [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)),
-        selector,
-      ).toEqual([]);
-    }
-  });
-
-  test("segments take the selected edge and fill in the host ink, pill tabs the fill only", () => {
+  test("segments take the selected edge and fill in the host ink, tabs and view tabs the fill only", () => {
     for (const selector of [...edgeSelected, ...fillSelected]) {
       const selected = declarations(selector);
       expect(selected.get("--k2b-edge-color"), selector).toEqual(edgeSelected.includes(selector) ? [selectedEdge] : undefined);
@@ -115,8 +98,7 @@ describe("selection hooks", () => {
   test("content selection changes paint without weight, padding, or border width", () => {
     // The selected row mixes into the surface it lies on: an island's surface inside an island.
     expect(declarations(tableRow).get("background")).toEqual([
-      // K7: the app's tint of the mockups.
-      "color-mix(in srgb, var(--k2b-app-workspace-active) 8%, var(--k2b-surface-beneath, var(--k2b-surface)))",
+      "color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)))",
     ]);
     for (const selector of [tableRow, ...rows]) {
       const selected = declarations(selector);

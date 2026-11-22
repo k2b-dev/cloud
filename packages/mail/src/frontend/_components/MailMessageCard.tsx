@@ -577,10 +577,8 @@ export default function MailMessageCard(props: {
                     <Placeholder state="empty" variant="compact" title={messages().noBody} />
                   ) : (
                     // Every pending state has an icon, a title, one hint and one action in a reserved
-                    // height, so switching between them moves nothing below the body. The placeholder text is
-                    // 13px/20px (K11), so on a phone the title and the hint may each take two lines:
-                    // 24 + 32 sign + 4 + 40 + 4 + 40 + 4 + 8 + 28 button + 24 = 208px (13rem).
-                    <div class="min-h-44 max-md:min-h-52" data-mail-body-state>
+                    // height, so switching between them moves nothing below the body.
+                    <div class="min-h-44" data-mail-body-state>
                       {props.message.hydrationStatus === "failed" ? (
                         <Placeholder
                           state="error"

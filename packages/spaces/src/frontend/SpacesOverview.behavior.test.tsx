@@ -109,8 +109,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     await Bun.sleep(30);
     expect(covered).toBe(false);
     expect(dom.root.querySelector(".spaces-overview-work-list")?.textContent).toContain("Created task");
-    // The views only: the strip also carries its "More" trigger, which fits views that do not fit into a menu.
-    expect(Array.from(dom.root.querySelectorAll(".k2b-view-tabs__item > .k2b-view-tabs__tab"), (tab) => tab.textContent?.trim())).toEqual([
+    expect(Array.from(dom.root.querySelectorAll(".k2b-view-tabs__tab"), (tab) => tab.textContent?.trim())).toEqual([
       "For me2",
       "Today2",
       "Upcoming2",

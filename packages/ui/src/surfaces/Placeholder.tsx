@@ -9,8 +9,6 @@ export type PlaceholderSurface = "none" | "paper";
 export type PlaceholderState = "empty" | "no-results" | "no-access" | "loading" | "error";
 /** `compact` stacks inside a section, `inline` is one row in a list or sidebar, `panel` fills a work area. */
 export type PlaceholderVariant = "compact" | "inline" | "panel";
-/** The tone of the round sign; the sentence still says what it means (K8, K10). */
-export type PlaceholderTone = "success" | "info" | "warning" | "danger";
 
 export type PlaceholderProps = {
   title?: JSX.Element;
@@ -22,19 +20,7 @@ export type PlaceholderProps = {
   surface?: PlaceholderSurface;
   state?: PlaceholderState;
   variant?: PlaceholderVariant;
-  /**
-   * Colours the round sign in a state tone, such as `success` with a check for "All done". The title still says it
-   * in words. Without an `icon` the tone brings its own: check, info, alert triangle, or alert circle.
-   */
-  tone?: PlaceholderTone;
   class?: string;
-};
-
-const TONE_ICONS: Record<PlaceholderTone, string> = {
-  success: "ti ti-check",
-  info: "ti ti-info-circle",
-  warning: "ti ti-alert-triangle",
-  danger: "ti ti-alert-circle",
 };
 
 export default function Placeholder(props: PlaceholderProps): JSX.Element {
@@ -44,7 +30,6 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
   const variant = () => props.variant ?? "compact";
   const icon = () =>
     props.icon ??
-    (props.tone && state() !== "loading" && state() !== "error" ? TONE_ICONS[props.tone] : undefined) ??
     (state() === "loading"
       ? "ti ti-loader-2"
       : state() === "error"
@@ -63,15 +48,20 @@ export default function Placeholder(props: PlaceholderProps): JSX.Element {
       data-state={state()}
       data-surface={props.surface ?? "none"}
       data-variant={variant()}
-      data-tone={props.tone}
       role={state() === "error" ? "alert" : state() === "loading" ? "status" : undefined}
       aria-live={state() === "loading" ? "polite" : undefined}
       aria-busy={state() === "loading" ? "true" : undefined}
     >
       <Show when={icon()}>
         {(iconClass) => (
-          // One round sign (K10): a quiet disc for the calm states and an error; loading keeps the same box bare.
-          <span class="k2b-placeholder__icon" data-sign={state() === "loading" ? undefined : ""}>
+          // Quiet states share the chip; loading and error keep the same icon box without it.
+          <span
+            class={
+              ["empty", "no-results", "no-access"].includes(state()) && variant() !== "inline"
+                ? "k2b-placeholder__icon k2b-icon-tile"
+                : "k2b-placeholder__icon"
+            }
+          >
             <i class={iconClass()} aria-hidden="true" />
           </span>
         )}

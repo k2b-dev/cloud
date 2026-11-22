@@ -34,8 +34,7 @@ afterAll(async () => {
 
 const field = () => createComponent(TextInput, { label: "Name", description: "Shown to everyone.", error: "Name is required.", value: "" });
 
-/** Each container, its subtitle, and the color token that subtitle reads. */
-const containers: [string, () => JSX.Element, string, string][] = [
+const containers: [string, () => JSX.Element, string][] = [
   [
     "panel dialog section body",
     () =>
@@ -47,7 +46,6 @@ const containers: [string, () => JSX.Element, string, string][] = [
         },
       }),
     ".k2b-panel-dialog__section-subtitle",
-    "--k2b-text-muted",
   ],
   [
     "app overview toolbar",
@@ -61,7 +59,6 @@ const containers: [string, () => JSX.Element, string, string][] = [
         children: "",
       }),
     ".k2b-app-overview__panel-description",
-    "--k2b-text-muted",
   ],
   [
     "section actions",
@@ -74,8 +71,6 @@ const containers: [string, () => JSX.Element, string, string][] = [
         },
       }),
     ".k2b-section__description",
-    // Cloud flach K11: a section has one quiet meta level; its description reads in the subtle meta ink.
-    "--k2b-text-subtle",
   ],
 ];
 
@@ -87,7 +82,7 @@ const partStyles = (selector: string) => {
 };
 
 describe("field parts inside containers", () => {
-  for (const [name, container, subtitle, subtitleToken] of containers) {
+  for (const [name, container, subtitle] of containers) {
     test(`${name} keeps the styles of a field and of an app paragraph beside it`, async () => {
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       try {
@@ -100,22 +95,17 @@ describe("field parts inside containers", () => {
         );
         const read = (selector: string) => page.evaluate(partStyles, selector);
 
-        const ink = (token: string) =>
-          page.evaluate((name) => {
-            const probe = document.createElement("span");
-            probe.style.color = `var(${name})`;
-            document.body.append(probe);
-            const color = getComputedStyle(probe).color;
-            probe.remove();
-            return color;
-          }, token);
-        const muted = await ink("--k2b-text-muted");
+        const muted = await page.evaluate(() => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-text-muted)";
+          document.body.append(probe);
+          return getComputedStyle(probe).color;
+        });
         const error = await read("#container .k2b-field__error");
         expect(error).toEqual(await read("#reference .k2b-field__error"));
         expect(error.color).not.toBe(muted);
         expect(await read("#container .k2b-field__description")).toEqual(await read("#reference .k2b-field__description"));
-        // settled: compares the subtitle with a colour token; neither changes with a later frame.
-        expect((await read(`#container ${subtitle}`)).color).toBe(await ink(subtitleToken));
+        expect((await read(`#container ${subtitle}`)).color).toBe(muted);
 
         const hint = await page.evaluate(() => {
           const paragraph = document.createElement("p");

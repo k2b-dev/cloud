@@ -154,19 +154,19 @@ describe(`Panes arrangement in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("a boundary resizes by pointer and keys, turns its hairline blue while held, and a double click or Enter resets it", async () => {
+  test("a boundary resizes by pointer and keys, darkens its shade while held, and a double click or Enter resets it", async () => {
     const { page, context } = await open();
     try {
       const separator = page.locator('.k2b-panes__separator[data-direction="vertical"]');
-      // K2, K13: the boundary is a 1 px hairline in the separator; it turns blue while held.
       const shade = () =>
-        page.evaluate(() => {
-          const line = getComputedStyle(document.querySelector('.k2b-panes__separator[data-direction="vertical"]')!, "::before");
-          return `${line.height} ${line.backgroundColor}`;
-        });
+        page.evaluate(() =>
+          getComputedStyle(
+            document.querySelector('.k2b-panes__split[data-direction="vertical"] > .k2b-panes__split-child')!,
+            "::after",
+          ).getPropertyValue("--k2b-panes-shade-edge"),
+        );
       await settled(page);
       const restShade = await shade();
-      expect(restShade.startsWith("1px ")).toBe(true);
       const box = (await separator.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();

@@ -3,7 +3,6 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { PublicNoteComment } from "../../../../api/public-resources";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
-import { DetailsButton } from "../editor/workspace-buttons";
 import {
   ACTIVE_HEADING_EVENT,
   PRESENCE_EVENT,
@@ -176,8 +175,6 @@ render(
         </AppWorkspace.Sidebar>
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
-            {/* The app's own Details button, as the editor's head has it: on a tablet the Detail waits as a drawer behind it. */}
-            <DetailsButton />
             <div style="padding: 2.5rem 3rem; font-size: 0.9375rem; line-height: 1.6">
               <h1 style="font-size: 1.75rem; font-weight: 700; margin: 0 0 1rem">Wareneingang</h1>
               <p>Der Wareneingang ist die erste Station im Lager. Hier prüfen wir jede Lieferung, bevor sie ins System gebucht wird.</p>

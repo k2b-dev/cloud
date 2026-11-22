@@ -9,11 +9,8 @@ For browser printing, mark the complete readable content with `data-print-region
 The sidebar and `Main` share one base surface, white in the light theme. A
 Detail column is part of that surface, with no fill or frame. From 48 rem, every
 column boundary (after the sidebar, between panes and levels, and before
-Detail) is one 1 px hairline in the line colour, and no column casts a shadow
-([Flat criteria](/en/ui/surfaces/flat-criteria) K2, K3). One line has one owner:
-the boundary draws it, so no column, sidebar, or Detail draws a border of its
-own at its side. The outermost workspace, the app card, has a hairline frame,
-the card radius, and no shadow. The bottom drawer uses the subtle surface.
+Detail) has the same quiet shadow and no line. The bottom drawer uses the
+subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Placeholders in `Main` draw no box, and new views add no inset cards or
@@ -113,86 +110,6 @@ folder name. On phones it keeps the same inset from the edge as the view strip.
 Give the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
 
-The head row is one band (K1, K2, K6): 56 px tall (44 px for the tabs row on a
-phone), from the column's text edge (`--k2b-gutter`, 20 px, 16 px on a phone)
-to the same edge on the right, and it ends on the head line, a hairline that
-belongs to the head. The current view is a 2 px mark in the app colour on that
-line, not a fill. The head shows views as tabs **or** a path, never one above
-the other: for a place with a path, such as a folder, put a `Breadcrumbs` with
-`href` items in `views`; when the path does not fit, its front levels wait
-behind "…" and the current level stays. A switch between ways of showing the
-same place, such as list and grid, is a `SegmentedControl` in `actions`. Every
-view keeps its count beside its name ("Unpaid 12"), also in "More +n" and on a
-phone; a view moves behind "More" only when it does not fit. On a phone the one
-filled action floats at the bottom right, above a host's bottom bar.
-
-The main action may also wait as a quiet second entry at the top of the
-sidebar, where people know it ("New task", "Upload"): an
-`AppWorkspace.SidebarItem` with an icon, never filled. Each view keeps exactly
-one filled main action, the head's `primary`.
-
-### Status row
-
-The first line under a column's head is the status row, `StatusRow` (K6, K10):
-52 px, a lead statement in 18 px bold that is never shortened, up to three key
-figures in 13 px with the number bold, and filters at the end. It shows only
-data that exists. A selection puts a check and its count, such as "3 selected",
-in the lead statement's place, its figures (`selection.facts`) in the key
-figures' place, and its actions at the end; a disturbance of the whole page that needs nobody keeps the lead
-statement and shows a round sign, what is wrong, and "next attempt" with the
-time in the place of the key figures. `announcement` says in words what is
-happening right now, such as what a drag moves where, and is announced
-politely to screen readers. The status row has no slot for a main action: that
-is the head's `primary`, and something that needs a person now is a notice
-cell (K10).
-
-```tsx
-import { StatusRow } from "@k2b/ui";
-
-<AppWorkspace.Main>
-  <StatusRow
-    lead="5 tasks open"
-    facts={[{ value: "2", label: "overdue" }, { value: "3", label: "this week" }]}
-    filters={filterButtons}
-    selection={selected.length ? { count: selected.length, actions: moveButton } : undefined}
-    state={syncPaused ? { label: "Sync paused", icon: "ti ti-refresh", next: "14:05" } : undefined}
-  />
-  {tasks}
-</AppWorkspace.Main>
-```
-
-The lead statement keeps its place and size in every state. The status row
-draws no line above itself, because the head line is there; `line` adds a
-hairline below it only where the list below has no column head.
-
-When room runs short, the filters keep their width and a disturbance gives way
-in steps (K15). First the words "next attempt" go, and the time stays. What is
-wrong shortens with an ellipsis, but never below about a word: a label it
-would cut to a letter goes whole, and the sign carries the state. Only where
-even the sign and the time do not fit does the time go, whole. Text that
-leaves the row stays in the state's hint and for screen readers.
-
-### Reading column
-
-A column of running text, such as a note, has neither head nor status row
-(K6, K11): `AppWorkspace.Main width="reading"` gives the text the whole height
-at a 720 px measure, centered. Its views and actions float in a `FloatingPill`,
-the first child of `Main`: round, with the small overlay shadow, at the
-column's top end while the text scrolls. It takes no room from the text.
-
-```tsx
-import { AppWorkspace, FloatingPill, IconButton } from "@k2b/ui";
-
-<AppWorkspace.Main width="reading">
-  <FloatingPill label="Note views and actions">
-    <IconButton label="Edit" size="sm" variant="ghost"><i class="ti ti-pencil" /></IconButton>
-    <FloatingPill.Separator />
-    <IconButton label="Share" size="sm" variant="ghost"><i class="ti ti-share" /></IconButton>
-  </FloatingPill>
-  <article>{note}</article>
-</AppWorkspace.Main>
-```
-
 ```tsx
 import { AppWorkspace, ViewTabs } from "@k2b/ui";
 
@@ -259,13 +176,6 @@ names the object on desktop; the head keeps its views while hiding the repeated
 title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
-
-When the head row runs short of room, the actions give way before the views
-(K15). Below 48 rem of head width the primary shows only its icon. A search
-field in `actions` turns into its icon by the same query,
-`@container k2b-head (width < 48rem)`, in the application's stylesheet. The
-views move into **More +n** only when the lead is still narrower than 32 rem
-after that.
 
 ### Sidebar button in the page's toolbar
 
@@ -360,42 +270,39 @@ is 0. The surfaces on that edge still reach it and fill the inset with their
 own background: the sidebar, `Main` or each of its panes, and an open
 `BottomDrawer`. Their content ends above the inset, so the last row clears the
 home indicator. A scrolling `Main` or pane fades its last rows above the
-inset, and the inset keeps the end of that fade. A Detail column ends above the inset. Cloud
+inset, and the inset keeps the end of that fade. A Detail column keeps its 0.5 rem inset above it. Cloud
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
 
 ### Column boundaries
 
-From 48 rem, every boundary between two columns is one hairline: after the
-sidebar, between MainPanes, between shown levels, and before a Detail column.
-It is 1 px of `--k2b-border` on the column before the boundary, in light and
-dark, and it is the only line there: the columns draw no border at their
-sides. The line is paint only: it does not move content, take pointer input,
-or scroll with a column. A waiting Detail is a drawer with its side shadow, and
-a phone, which shows one column at a time, has no boundary line.
+From 48 rem, every boundary between two columns has the same quiet shadow: after
+the sidebar, between MainPanes, between shown levels, and before a Detail
+column. The column on the right lies slightly higher, so the shadow lies on the
+column before the boundary. It is 24 px wide, darkest at the boundary
+(`--k2b-shadow-column-edge`, through `--k2b-shadow-column-mid`), and becomes
+lighter over the final 96 px. No line, fill, or frame separates the columns.
+The shadow is paint only: it does not move content, take pointer input, or
+scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
+phone, which shows one column at a time, has none.
 
-A boundary that can be dragged carries a grip on that line (K13): 5 × 32 px,
-round and grey, visible at rest. A hover darkens the grip; keyboard focus and
-dragging turn grip and line blue. None of it changes the line's place or
-width, so nothing moves. A line without a grip is fixed. Tablets and phones
-have no grip and no draggable edge.
+The boundary's resize handle uses this same shadow. On hover, keyboard focus,
+and drag, the shadow darkens to `--k2b-shadow-column-active-edge` (through
+`--k2b-shadow-column-active-mid`) and keeps its top, bottom, width, and side,
+so an edge never shows a second strip.
 
-A level head is 56 px tall like the workspace head (K1), and its text starts
-on the column's text edge (`--k2b-gutter`, 20 px, 16 px on a phone). A level
-body adds no inset: rows and their hairlines reach both column edges (K2), and
-each row starts its text on the text edge itself. A page level's body starts
-its content on the text edge.
-
-Navigation groups keep the sidebar's inset. A level whose body holds
-`SidebarSection` groups and a `surface="navigation"` pane keep 0.5 rem on each
-side: a row's fill, hover, and selection stop 0.5 rem before either edge, and a
-group title, row text, and the level head line up 1 rem from the edge. With a mouse, the end space is the column's
+Because the shadow marks both edges of a column, a column keeps the same space
+inside both side edges, as the sidebar does. A level body and a
+`surface="navigation"` pane keep 0.5 rem on each side: a row's fill, hover, and
+selection stop 0.5 rem before either edge, and a group title and row text line
+up with the level head's 1 rem. With a mouse, the end space is the column's
 fixed 0.5 rem scroll track, so a classic scrollbar never widens one side. The
 track is there before anything overflows, so Safari, which reserves no gutter,
 shows the same space and nothing moves when a column starts to scroll. On a
 touch screen, overlay scrollbars take no room and the padding stays on both
-sides. Content in a navigation level adds only its own space beyond the
-0.5 rem; it never cancels the inset with a negative margin. Firefox has no fixed track: it keeps the padding
+sides. Content in a level adds only its own space beyond the 0.5 rem, for
+example `px-2` for text that lines up with the head; it never cancels the inset
+with a negative margin. Firefox has no fixed track: it keeps the padding
 on both sides and adds its own classic scrollbar, if any, at the end. A `MainPane` outside levels without a surface adds no
 inset; its content owns its edges, like `Main`.
 
@@ -658,14 +565,14 @@ after it attaches, which moves them once after the server frame.
 
 Waiting depends on the width of the content region beside the sidebar at
 every host width and with every input device. Column fit requires Main's
-minimum plus the Detail width token; the column has no inset:
+minimum plus the Detail width token plus an 8 px inset:
 
 | Detail width | Fits with the default 320 px Main |
 | --- | --- |
-| `sm` (320 px) | 640 px |
-| `md` (380 px) | 700 px |
-| `lg` (480 px) | 800 px |
-| `xl` (544 px) | 864 px |
+| `sm` (320 px) | 648 px |
+| `md` (416 px) | 744 px |
+| `lg` (480 px) | 808 px |
+| `xl` (544 px) | 872 px |
 
 An open waiting drawer rounds its top-left corner with `--k2b-radius-surface`.
 Its `--k2b-shadow-side` shadow extends toward the covered content and above the
@@ -673,12 +580,10 @@ panel, continuing around that corner in light and dark. The drawer size and
 Main stay unchanged.
 
 The column shares the workspace surface without its own fill, frame, or radius.
-Its boundary has the workspace's column hairline, from the workspace's top to
-its bottom (see [Column boundaries](#column-boundaries)). The column adds no
-inset or padding of its own (K5a): the panel's head line lies on Main's head
-line, its text starts on the panel's own 20 px edge, and its lines run from
-edge to edge. The line disappears when Detail
-closes or becomes a drawer or phone sheet.
+Its boundary has the workspace's column shadow, from the workspace's top to its
+bottom (see [Column boundaries](#column-boundaries)). The panel content keeps
+its 8 px top, right, and bottom inset. The shadow disappears when Detail closes
+or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
 in the head controls it through `aria-controls` and `aria-expanded`. The head
@@ -782,9 +687,8 @@ beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.
 Under an open waiting drawer, a trail gets the drawer's width as space at its
 end, so the last column or card can scroll beside it. A trail inside Detail
 gets no extra space. Calendar's day and week views mark their own scrollers.
-The trail clips to the surface radius; inside a framed Paper it follows the
-inner radius. A paper DataTable draws no frame, so its shell and its trail both
-keep the full surface radius. Put it directly in Main's content box with `scroll={false}` on Main
+The trail clips to the surface radius; inside Paper it follows the inner
+radius. Put it directly in Main's content box with `scroll={false}` on Main
 and no vertical scroller around it. A reserved scrollbar gutter would add a
 second gap before Detail.
 
@@ -880,10 +784,10 @@ phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
 
 Set `flat` on a workspace that is the page itself, such as an app's overview.
-It removes the workspace's own border and corner radius. Where the host shows
-the app area as a card, the outermost workspace is that card and gets the card
-radius (14 px) and its hairline frame, flat or not, without a shadow, so every
-app shows the same rounded card. A workspace inside another draws no frame. Cloud does this from 1024 px for signed-in people and from 768 px on
+It removes the workspace's own border, corner radius, and shadow. Where the
+host shows the app area as a card, the outermost workspace is that card and
+gets its radius and frame, flat or not, so every app shows the same rounded
+card. Cloud does this from 1024 px for signed-in people and from 768 px on
 anonymous pages.
 
 Set `layer="quiet"` on a workspace for settings or administration. Islands in
@@ -1549,10 +1453,10 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
 | MainPane (peer pane or hierarchy level) | 320 | 240 | 640 |
-| Detail | 380 | 320 | 640 |
+| Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width (raised with `Main minWidth`, in pixels or a workspace width share) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/380/480/544px (default md; from 1920 px of host width the start width grows by 60 px, K12); Drawer heights `sm/md/lg` are 192/240/320px (default md). `MainPane.defaultSize` also accepts a workspace width share. Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width (raised with `Main minWidth`, in pixels or a workspace width share) / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). `MainPane.defaultSize` also accepts a workspace width share. Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
@@ -1593,13 +1497,9 @@ human-readable `label`. Arrow keys move through visible rows, Right and Left
 expand, collapse, or move between parent and child, and Home and End jump to
 the first and last visible row.
 
-Resize handles are separators (`role="separator"`) with `aria-orientation`,
-`aria-valuenow`, `aria-valuemin`, `aria-valuemax`, `aria-controls`, and a name
-from the message catalog, such as "Resize navigation". They sit in the source
-between their two columns. Arrow keys change the width by 16 px, 64 px with
-Shift; Home and End jump to the limits; Enter or a double click resets it.
-Their pointer target is 13 px wide, 25 px for a coarse pointer, around the
-5 × 32 px grip. Do not replace them with application-specific handles.
+Resize handles are separators with orientation, limits, and the controlled
+region. Their pointer target is wider than the short visible grip. Do not
+replace them with application-specific handles.
 
 ## Activate resizing
 
@@ -1745,14 +1645,13 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 
 From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
 trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
-same 5 × 32 px grip at rest, centred on the hairline of its boundary. A hover
-darkens the grip; keyboard focus and dragging turn grip and line blue. These
-cues move no content, and their transitions stop under reduced motion.
-`resizeShadow` on `Sidebar` and `MainPane` is kept for compatibility and no
-longer changes anything: no boundary casts a shadow.
-
-From 1920 px of host width (K12) the sidebar and Detail start wider, by 32 and
-60 px; a width someone dragged stays as it is.
+same short grip during hover, keyboard focus, and drag. The sidebar, pane, and
+Detail handles darken the column shadow of their boundary; the drawer, which
+has no column shadow, shows a soft shadow on the region it resizes. Keyboard
+focus gives the grip the focus color. Only the drawer also draws its edge line.
+These cues move no content, and their transitions stop under reduced motion.
+Set `resizeShadow={false}` on `Sidebar` or `MainPane` to keep its column shadow
+at rest during these states.
 
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so

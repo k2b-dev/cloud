@@ -97,7 +97,7 @@ describe("phone object row", () => {
     const { context, page } = await open(phone, "/app/mail/inbox?overview=1&objects=nested");
     try {
       await settled(page);
-      expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("14px");
+      expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("28px");
       expect(
         await page.locator(".k2b-app-workspace").evaluateAll((els) => els.map((el) => getComputedStyle(el, "::before").content)),
       ).toEqual(["none", "none"]);
@@ -132,7 +132,7 @@ describe("phone object row", () => {
       const { context, page } = await open(phone, `/app/mail/inbox?overview=1${suffix}`);
       try {
         await settled(page);
-        expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("14px");
+        expect(await page.locator(".layout-content-main").evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe("28px");
         expect(await page.locator(".k2b-app-workspace").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
       } finally {
         await context.close();

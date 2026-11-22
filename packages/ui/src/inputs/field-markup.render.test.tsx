@@ -8,8 +8,7 @@ import expected from "./field-markup.expected.json" with { type: "json" };
  * Fields without a `suggestion` must render exactly the server markup they rendered before field suggestions
  * existed: no extra node, attribute, or hydration marker. The cases compile as an island does (Solid's hydratable
  * server output), so markers count. The expectation was frozen from origin/main before field suggestions
- * (7126f02737); change it only together with a deliberate change of a field's markup. Changed once since: Cloud flach
- * K5b moved the description below the control (description and error now follow the control, nothing else moved).
+ * (7126f02737); change it only together with a deliberate change of a field's markup.
  */
 const cases = `
 import { createComponent } from "solid-js";

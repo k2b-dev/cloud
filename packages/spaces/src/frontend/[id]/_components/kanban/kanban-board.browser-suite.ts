@@ -2310,18 +2310,12 @@ describePart("cards", "wide Spaces surfaces beside Detail", () => {
               probe.remove();
               return pixels;
             };
-            // The end of Main's content box: the flat Detail column adds no gap of its own (K5a).
-            const main = viewport.closest<HTMLElement>(".k2b-app-workspace__main")!;
-            const mainEnd =
-              main.getBoundingClientRect().right -
-              Number.parseFloat(getComputedStyle(main).paddingRight) -
-              main.offsetWidth +
-              main.clientWidth;
+            const inset = token("--k2b-workspace-detail-inset");
             const radius = token("--k2b-radius-surface");
             const style = getComputedStyle(viewport);
             const paper = viewport.closest(".k2b-paper");
             return {
-              mainEnd,
+              inset,
               // Inside a Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
               radius: radius - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
               // The table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
@@ -2340,8 +2334,7 @@ describePart("cards", "wide Spaces surfaces beside Detail", () => {
             };
           });
           expect(shape.scrollWidth).toBeGreaterThan(shape.clientWidth);
-          expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
-          expect(shape.right).toBeCloseTo(shape.mainEnd, 1);
+          expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
           for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
           if (workspace === "table") {
             expect(shape.scrollHeight).toBeGreaterThan(shape.clientHeight);

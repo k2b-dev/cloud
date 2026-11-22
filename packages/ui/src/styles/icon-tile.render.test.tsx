@@ -43,20 +43,13 @@ const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
 const declarationsFor = (selector: string) => rules.filter((rule) => rule.selector.split(",").includes(selector));
 
 describe("shared icon tile contract", () => {
-  // K10: an empty or unavailable area shows one round sign, not the square chip; loading keeps the same box bare.
-  test("placeholders draw a round sign instead of the chip", () => {
+  test("chips only empty compact and panel placeholders", () => {
     for (const variant of ["compact", "panel", "inline"] as const) {
       for (const state of ["empty", "loading", "error"] as const) {
         const html = render(() => createComponent(Placeholder, { state, variant, icon: "ti ti-inbox", title: "Notes" }));
-        tile(html, "k2b-placeholder__icon", false);
-        expect(html.includes("data-sign"), `${variant} ${state}`).toBe(state !== "loading");
+        tile(html, "k2b-placeholder__icon", state === "empty" && variant !== "inline");
       }
     }
-    expect(
-      declarationsFor(".k2b-ui .k2b-placeholder__icon")
-        .map((rule) => rule.body)
-        .join(";"),
-    ).toMatch(/border-radius:var\(--k2b-radius-round\)/);
   });
 
   test("overview, dialog, widget and link card icons use the shared chip", () => {
@@ -203,6 +196,7 @@ describe("shared icon tile contract", () => {
 
   test("component rules never duplicate chip decoration, including state rules; they may only clear the fill", () => {
     for (const token of [
+      "k2b-placeholder__icon",
       "k2b-app-overview__icon",
       "k2b-widget__icon",
       "k2b-link-card__icon",

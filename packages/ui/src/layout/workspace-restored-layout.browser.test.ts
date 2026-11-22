@@ -89,7 +89,7 @@ test("a resized sidebar keeps its width on every frame while the workspace root 
     expect(Math.round((await page.locator("#navigation").boundingBox())!.width)).toBe(248);
     // The person widens the sidebar: the controller now owns 280 px.
     await handle.focus();
-    for (let step = 0; step < 2; step++) await page.keyboard.press("ArrowRight");
+    for (let step = 0; step < 4; step++) await page.keyboard.press("ArrowRight");
     await settled(page);
     const resized = await page.evaluate(() => ({
       sidebar: document.querySelector("#navigation")!.getBoundingClientRect().width,

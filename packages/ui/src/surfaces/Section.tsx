@@ -4,7 +4,7 @@ import { Button } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { useDetailPanelMessages } from "../layout/detail-panel-messages";
 
-/** Named after the status tokens; a tone colours the symbol tile only, never the fill or the title (K8, K17). */
+/** Named after the status tokens; a tone colours the frame, the title, and the icon, never the fill. */
 export type SectionTone = "neutral" | "success" | "warning" | "danger" | "info" | "ai";
 /** `sm` for detail panels and other narrow columns, `md` for topics on a full page. */
 export type SectionSize = "sm" | "md";
@@ -15,12 +15,6 @@ export type SectionState = "ready" | "loading" | "error";
 type SectionBaseProps = Omit<JSX.HTMLAttributes<HTMLElement>, "title" | "children" | "class"> & {
   title: JSX.Element;
   icon?: string;
-  /**
-   * The colour of the section's area as a CSS colour, such as money or goods on a dense record page (K17). It sets the
-   * icon in a 20 px tile of that colour, the one place the area colour shows. Never a status hue, never near the AI
-   * plum; a `tone` wins.
-   */
-  iconColor?: string;
   size?: SectionSize;
   frame?: SectionFrame;
   tone?: SectionTone;
@@ -53,7 +47,7 @@ export type SectionProps = SectionBaseProps &
   (
     | {
         children?: JSX.Element;
-        /** At most two quiet controls at the end of the heading, such as "+" or text buttons; they read grey. */
+        /** Exactly one control at the end of the heading, such as "+" or one text button. */
         actions?: JSX.Element;
         collapsible?: false;
         summary?: never;
@@ -103,7 +97,6 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
   const [local, rest] = splitProps(props, [
     "title",
     "icon",
-    "iconColor",
     "size",
     "frame",
     "tone",
@@ -167,12 +160,7 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
     <>
       <Show when={local.icon}>
         {(name) => (
-          <span
-            class="k2b-section__icon"
-            aria-hidden="true"
-            data-color={local.iconColor ? "" : undefined}
-            style={local.iconColor ? { "--k2b-section-icon-color": local.iconColor } : undefined}
-          >
+          <span class="k2b-section__icon" aria-hidden="true">
             <i class={name()} />
           </span>
         )}

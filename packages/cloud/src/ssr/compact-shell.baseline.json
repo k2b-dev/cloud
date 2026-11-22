@@ -83,12 +83,12 @@
         "height": 758
       },
       "detail": {
-        "left": 699,
-        "top": 5,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1024x768 light /app/mail/inbox?overview=1": {
@@ -321,12 +321,12 @@
         "height": 698
       },
       "detail": {
-        "left": 699,
-        "top": 65,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 698
+        "height": 682
       }
     },
     "1024x768 dark /app/mail/inbox": {
@@ -412,12 +412,12 @@
         "height": 758
       },
       "detail": {
-        "left": 699,
-        "top": 5,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1024x768 dark /app/mail/inbox?overview=1": {
@@ -650,12 +650,12 @@
         "height": 698
       },
       "detail": {
-        "left": 699,
-        "top": 65,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 698
+        "height": 682
       }
     },
     "1194x834 light /app/mail/inbox": {
@@ -735,18 +735,18 @@
       "pane": {
         "left": 265,
         "top": 7,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 820
       },
       "detail": {
-        "left": 867,
-        "top": 7,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 820
+        "height": 804
       }
     },
     "1194x834 light /app/mail/inbox?overview=1": {
@@ -973,18 +973,18 @@
       "pane": {
         "left": 265,
         "top": 69,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 758
       },
       "detail": {
-        "left": 867,
-        "top": 69,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1194x834 dark /app/mail/inbox": {
@@ -1064,18 +1064,18 @@
       "pane": {
         "left": 265,
         "top": 7,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 820
       },
       "detail": {
-        "left": 867,
-        "top": 7,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 820
+        "height": 804
       }
     },
     "1194x834 dark /app/mail/inbox?overview=1": {
@@ -1302,18 +1302,18 @@
       "pane": {
         "left": 265,
         "top": 69,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 758
       },
       "detail": {
-        "left": 867,
-        "top": 69,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1440x900 light /app/mail/inbox": {
@@ -1399,12 +1399,12 @@
         "height": 882
       },
       "detail": {
-        "left": 1111,
-        "top": 9,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 882
+        "height": 866
       }
     },
     "1440x900 light /app/mail/inbox?overview=1": {
@@ -1637,12 +1637,12 @@
         "height": 818
       },
       "detail": {
-        "left": 1111,
-        "top": 73,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 818
+        "height": 802
       }
     },
     "1440x900 dark /app/mail/inbox": {
@@ -1728,12 +1728,12 @@
         "height": 882
       },
       "detail": {
-        "left": 1111,
-        "top": 9,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 882
+        "height": 866
       }
     },
     "1440x900 dark /app/mail/inbox?overview=1": {
@@ -1966,12 +1966,12 @@
         "height": 818
       },
       "detail": {
-        "left": 1111,
-        "top": 73,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 818
+        "height": 802
       }
     },
     "1920x1080 light /app/mail/inbox": {
@@ -2043,26 +2043,26 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 9,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 1062
       },
       "detail": {
-        "left": 1531,
-        "top": 9,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 1062
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
       }
     },
     "1920x1080 light /app/mail/inbox?overview=1": {
@@ -2134,9 +2134,9 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": null,
@@ -2281,26 +2281,26 @@
       "sidebar": {
         "left": 57,
         "top": 73,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 998
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 73,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 998
       },
       "detail": {
-        "left": 1531,
-        "top": 73,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 998
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
       }
     },
     "1920x1080 dark /app/mail/inbox": {
@@ -2372,26 +2372,26 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 9,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 1062
       },
       "detail": {
-        "left": 1531,
-        "top": 9,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 1062
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
       }
     },
     "1920x1080 dark /app/mail/inbox?overview=1": {
@@ -2463,9 +2463,9 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": null,
@@ -2610,26 +2610,26 @@
       "sidebar": {
         "left": 57,
         "top": 73,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 998
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 73,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 998
       },
       "detail": {
-        "left": 1531,
-        "top": 73,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 998
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
       }
     }
   },
@@ -2717,12 +2717,12 @@
         "height": 758
       },
       "detail": {
-        "left": 699,
-        "top": 5,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1024x768 light /app/mail/inbox?overview=1": {
@@ -2955,12 +2955,12 @@
         "height": 698
       },
       "detail": {
-        "left": 699,
-        "top": 65,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 698
+        "height": 682
       }
     },
     "1024x768 dark /app/mail/inbox": {
@@ -3046,12 +3046,12 @@
         "height": 758
       },
       "detail": {
-        "left": 699,
-        "top": 5,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 13,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1024x768 dark /app/mail/inbox?overview=1": {
@@ -3284,12 +3284,12 @@
         "height": 698
       },
       "detail": {
-        "left": 699,
-        "top": 65,
-        "right": 1019,
-        "bottom": 763,
+        "left": 691,
+        "top": 73,
+        "right": 1011,
+        "bottom": 755,
         "width": 320,
-        "height": 698
+        "height": 682
       }
     },
     "1194x834 light /app/mail/inbox": {
@@ -3369,18 +3369,18 @@
       "pane": {
         "left": 265,
         "top": 7,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 820
       },
       "detail": {
-        "left": 867,
-        "top": 7,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 820
+        "height": 804
       }
     },
     "1194x834 light /app/mail/inbox?overview=1": {
@@ -3607,18 +3607,18 @@
       "pane": {
         "left": 265,
         "top": 69,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 758
       },
       "detail": {
-        "left": 867,
-        "top": 69,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1194x834 dark /app/mail/inbox": {
@@ -3698,18 +3698,18 @@
       "pane": {
         "left": 265,
         "top": 7,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 820
       },
       "detail": {
-        "left": 867,
-        "top": 7,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 15,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 820
+        "height": 804
       }
     },
     "1194x834 dark /app/mail/inbox?overview=1": {
@@ -3936,18 +3936,18 @@
       "pane": {
         "left": 265,
         "top": 69,
-        "right": 547,
+        "right": 539,
         "bottom": 827,
-        "width": 282,
+        "width": 274,
         "height": 758
       },
       "detail": {
-        "left": 867,
-        "top": 69,
-        "right": 1187,
-        "bottom": 827,
+        "left": 859,
+        "top": 77,
+        "right": 1179,
+        "bottom": 819,
         "width": 320,
-        "height": 758
+        "height": 742
       }
     },
     "1440x900 light /app/mail/inbox": {
@@ -4033,12 +4033,12 @@
         "height": 882
       },
       "detail": {
-        "left": 1111,
-        "top": 9,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 882
+        "height": 866
       }
     },
     "1440x900 light /app/mail/inbox?overview=1": {
@@ -4271,12 +4271,12 @@
         "height": 818
       },
       "detail": {
-        "left": 1111,
-        "top": 73,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 818
+        "height": 802
       }
     },
     "1440x900 dark /app/mail/inbox": {
@@ -4362,12 +4362,12 @@
         "height": 882
       },
       "detail": {
-        "left": 1111,
-        "top": 9,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 17,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 882
+        "height": 866
       }
     },
     "1440x900 dark /app/mail/inbox?overview=1": {
@@ -4600,12 +4600,12 @@
         "height": 818
       },
       "detail": {
-        "left": 1111,
-        "top": 73,
-        "right": 1431,
-        "bottom": 891,
+        "left": 1103,
+        "top": 81,
+        "right": 1423,
+        "bottom": 883,
         "width": 320,
-        "height": 818
+        "height": 802
       }
     },
     "1920x1080 light /app/mail/inbox": {
@@ -4677,26 +4677,26 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 9,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 1062
       },
       "detail": {
-        "left": 1531,
-        "top": 9,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 1062
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
       }
     },
     "1920x1080 light /app/mail/inbox?overview=1": {
@@ -4768,9 +4768,9 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": null,
@@ -4915,26 +4915,26 @@
       "sidebar": {
         "left": 57,
         "top": 73,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 998
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 73,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 998
       },
       "detail": {
-        "left": 1531,
-        "top": 73,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 998
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
       }
     },
     "1920x1080 dark /app/mail/inbox": {
@@ -5006,26 +5006,26 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 9,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 1062
       },
       "detail": {
-        "left": 1531,
-        "top": 9,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 1062
+        "left": 1583,
+        "top": 17,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 1046
       }
     },
     "1920x1080 dark /app/mail/inbox?overview=1": {
@@ -5097,9 +5097,9 @@
       "sidebar": {
         "left": 57,
         "top": 9,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 1062
       },
       "pane": null,
@@ -5244,26 +5244,26 @@
       "sidebar": {
         "left": 57,
         "top": 73,
-        "right": 297,
+        "right": 265,
         "bottom": 1071,
-        "width": 240,
+        "width": 208,
         "height": 998
       },
       "pane": {
-        "left": 297,
+        "left": 265,
         "top": 73,
-        "right": 617,
+        "right": 585,
         "bottom": 1071,
         "width": 320,
         "height": 998
       },
       "detail": {
-        "left": 1531,
-        "top": 73,
-        "right": 1911,
-        "bottom": 1071,
-        "width": 380,
-        "height": 998
+        "left": 1583,
+        "top": 81,
+        "right": 1903,
+        "bottom": 1063,
+        "width": 320,
+        "height": 982
       }
     }
   }

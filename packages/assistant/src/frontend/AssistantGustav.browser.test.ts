@@ -1004,7 +1004,7 @@ describe("Gustav", () => {
             return { shadow: style.boxShadow, radius: style.borderTopLeftRadius };
           });
           expect(look.shadow).toBe("none");
-          expect(look.radius).toBe("0px"); // K4/K10: a square tinted cell.
+          expect(look.radius).toBe("12px");
           expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
           expect(h.errors).toEqual([]);
           await shot(h.page, `f-karte-${state.name}-${view.name}-light`);

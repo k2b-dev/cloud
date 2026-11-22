@@ -80,18 +80,6 @@ export type DataTableColumn<T> = {
    * 2 below 420 px. Hidden values stay one tap away in the row's details.
    */
   priority?: 1 | 2 | 3;
-  /**
-   * The name column: at least 200 px and at most 560 px wide, so a value stays beside its name on a wide screen.
-   * When the table gets narrow, columns of a lower `priority` leave before it shrinks.
-   */
-  primary?: boolean;
-  /**
-   * Where the column's value goes when the table is a list. With any column given a role, a table narrower than
-   * 480 px shows each row as one entry of two lines: `title` on the first line, `meta` on the second in quiet text,
-   * and `end` at the right of both lines, such as a status or an amount. Give one column each role; columns without
-   * a role leave, so keep what matters in those three.
-   */
-  list?: "title" | "meta" | "end";
 };
 
 export type DataTableSort = { key: string; direction: "asc" | "desc" };
@@ -173,13 +161,6 @@ export type DataTableProps<T> = {
    * group's value and count, in the order the groups first appear.
    */
   groupBy?: string;
-  /**
-   * Lets the person fold a group: its head becomes a disclosure button with the group's name, count, and a chevron.
-   * A folded group keeps its 36 px head; only its rows leave.
-   */
-  collapsibleGroups?: boolean;
-  /** The keys of the groups that start folded: a group's key is its stored value as text, `""` for missing values. */
-  defaultCollapsedGroups?: readonly string[];
   /**
    * The host's search text. With no rows left, the table says that nothing matches it and offers to clear it
    * through `onClearQuery`, instead of `empty`. Filter the rows with `filterRows`.
@@ -400,13 +381,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const nowrapAttr = (col: DataTableColumn<T>) => (columnPresentation().get(col.id)?.nowrap ? "true" : undefined);
   /** Text columns wrap inside their cell; every other value keeps one line. */
   const wrapAttr = (col: DataTableColumn<T>) => (col.type === "text" && col.nowrap !== true ? "true" : undefined);
-  /**
-   * A table that becomes a list on a phone changes its display, which drops the table semantics in WebKit; explicit
-   * roles keep rows and cells announced in both forms.
-   */
-  const listMode = createMemo(() => props.columns.some((col) => col.list));
-  const tableRole = <R extends "table" | "rowgroup" | "row" | "columnheader" | "rowheader" | "cell">(role: R): R | undefined =>
-    listMode() ? role : undefined;
   const priorityAttr = (col: DataTableColumn<T>) => (col.priority === 2 || col.priority === 3 ? String(col.priority) : undefined);
   /** The lowest priority present: 3 shows the details toggle below 560 px, 2 below 420 px. */
   const detailsPriority = createMemo(() => {
@@ -420,14 +394,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const columnCount = () => props.columns.length + (detailsPriority() ? 1 : 0);
   // Keyed by row id where there is one, so a details line stays open when the rows arrive as new objects.
   const [openDetails, setOpenDetails] = createSignal<ReadonlySet<unknown>>(new Set());
-  const [collapsedGroups, setCollapsedGroups] = createSignal<ReadonlySet<string>>(new Set(props.defaultCollapsedGroups ?? []));
-  const groupCollapsed = (key: string) => Boolean(props.collapsibleGroups) && collapsedGroups().has(key);
-  const toggleGroup = (key: string) =>
-    setCollapsedGroups((folded) => {
-      const next = new Set(folded);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
   const toggleDetails = (key: unknown) =>
     setOpenDetails((open) => {
       const next = new Set(open);
@@ -618,7 +584,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     return (
       <>
         <tr
-          role={tableRole("row")}
           ref={(element) => {
             const key = id();
             if (key !== undefined) props.selection?.register(key, element);
@@ -645,14 +610,11 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               const value = () => valueOf(row(), col);
               return (
                 <td
-                  role={tableRole("cell")}
                   class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
                   data-nowrap={nowrapAttr(col)}
                   data-wrap={wrapAttr(col)}
                   data-align={alignAttr(col)}
                   data-priority={priorityAttr(col)}
-                  data-primary={col.primary ? "" : undefined}
-                  data-list={col.list}
                   data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
                   data-highlighted={columnHighlighted(index())}
                   onMouseEnter={() => setHoveredColumnIfEnabled(index())}
@@ -750,7 +712,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         data-surface={surface()}
         data-has-footer={props.footer ? "true" : undefined}
         data-priorities={detailsPriority()}
-        data-list={props.columns.some((col) => col.list) ? "" : undefined}
         data-overflow-x={scrollbars().x.overflow ? "true" : undefined}
         data-overflow-y={scrollbars().y.overflow ? "true" : undefined}
         data-scrollbar-enhanced={scrollbarEnhanced() ? "true" : undefined}
@@ -772,27 +733,21 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table role={tableRole("table")} ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
+          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
             <Show when={props.loading}>
               {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
               <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>
             </Show>
-            <thead
-              role={tableRole("rowgroup")}
-              class="k2b-data-table__head"
-              data-sticky={props.stickyHeader === false ? undefined : "true"}
-            >
-              <tr role={tableRole("row")} class="k2b-data-table__head-row">
+            <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
+              <tr class="k2b-data-table__head-row">
                 <For each={headerColumns()}>
                   {(col, index) =>
                     col ? (
                       <th
-                        role={tableRole("columnheader")}
                         scope="col"
                         class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
                         data-align={alignAttr(col)}
                         data-priority={priorityAttr(col)}
-                        data-primary={col.primary ? "" : undefined}
                         data-highlighted={columnHighlighted(index())}
                         aria-sort={ariaSortFor(col)}
                         onMouseEnter={() => setHoveredColumnIfEnabled(index())}
@@ -845,7 +800,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         <tr class="k2b-data-table__row" data-loading="true" aria-hidden="true">
                           <For each={props.columns}>
                             {(col) => (
-                              <td data-align={alignAttr(col)} data-priority={priorityAttr(col)} data-list={col.list}>
+                              <td data-align={alignAttr(col)} data-priority={priorityAttr(col)}>
                                 <span class="k2b-data-table__skeleton" />
                               </td>
                             )}
@@ -869,7 +824,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               <Show
                 when={groups()}
                 fallback={
-                  <tbody role={tableRole("rowgroup")}>
+                  <tbody>
                     {renderRows(() => props.rows)}
                     <Show when={props.fillHeight}>
                       <tr aria-hidden="true">
@@ -889,40 +844,17 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                           list()[groupIndex()]!,
                         );
                         return (
-                          <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
-                            <tr role={tableRole("row")} class="k2b-data-table__group-row">
-                              <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
-                                {(() => {
-                                  // One label for both forms: plain text, or the content of the fold button.
-                                  const label = (
-                                    <>
-                                      {group().label || "—"}
-                                      <span class="k2b-data-table__group-count">
-                                        <span aria-hidden="true">{group().rows.length}</span>
-                                        <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group().rows.length })}</span>
-                                      </span>
-                                    </>
-                                  );
-                                  return props.collapsibleGroups ? (
-                                    <button
-                                      type="button"
-                                      class="k2b-data-table__group-toggle"
-                                      aria-expanded={!groupCollapsed(group().key)}
-                                      onClick={() => toggleGroup(group().key)}
-                                    >
-                                      {label}
-                                      <i
-                                        class={`ti ${groupCollapsed(group().key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
-                                        aria-hidden="true"
-                                      />
-                                    </button>
-                                  ) : (
-                                    label
-                                  );
-                                })()}
+                          <tbody class="k2b-data-table__group">
+                            <tr class="k2b-data-table__group-row">
+                              <th scope="rowgroup" colspan={columnCount()}>
+                                {group().label || "—"}
+                                <span class="k2b-data-table__group-count">
+                                  <span aria-hidden="true">{group().rows.length}</span>
+                                  <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group().rows.length })}</span>
+                                </span>
                               </th>
                             </tr>
-                            <Show when={!groupCollapsed(group().key)}>{renderRows(() => group().rows)}</Show>
+                            {renderRows(() => group().rows)}
                           </tbody>
                         );
                       }}
@@ -940,14 +872,13 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             </Show>
             <Show when={props.footer}>
               {(footer) => (
-                <tfoot role={tableRole("rowgroup")} class="k2b-data-table__foot" data-sticky="true">
-                  <tr role={tableRole("row")} class="k2b-data-table__foot-row">
+                <tfoot class="k2b-data-table__foot" data-sticky="true">
+                  <tr class="k2b-data-table__foot-row">
                     <For each={props.columns}>
                       {(col, index) => {
                         const value = () => footer().values?.[col.id];
                         return (
                           <td
-                            role={tableRole("cell")}
                             class="k2b-data-table__footer-cell"
                             data-nowrap={nowrapAttr(col)}
                             data-align={alignAttr(col)}

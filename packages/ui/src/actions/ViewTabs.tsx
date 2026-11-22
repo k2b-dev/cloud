@@ -25,9 +25,8 @@ export type ViewTabsProps = {
   /** At most this many views before More (default 5). */
   max?: number;
   /**
-   * The strip shows only the views that fit its room and counts the rest in More, instead of scrolling them (K15, the
-   * default). The open view and pinned views stay. Pair it with a larger `max` so a wide head shows more views.
-   * `false` lets the strip scroll sideways instead.
+   * The strip shows only the views that fit its room and counts the rest in More, instead of scrolling them. The open
+   * view and pinned views stay. Pair it with a larger `max` so a wide head shows more views.
    */
   fit?: boolean;
   class?: string;
@@ -74,7 +73,8 @@ function settleViewTabs(list: Element | null, edges: (element: HTMLElement) => s
     const room = list.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
     return Math.max(...boxes.map((box) => box.right)) - Math.min(...boxes.map((box) => box.left)) > room + 0.5;
   };
-  const fits = list.hasAttribute("data-fit-room");
+  // The phone head row keeps its scrolling strip: its CSS turns fitting off.
+  const fits = list.hasAttribute("data-fit-room") && getComputedStyle(list).getPropertyValue("--k2b-view-tabs-fit").trim() !== "none";
   if (fits && more && fitCount && overflows()) {
     // Count from the level on screen: the compact strip already keeps fewer views than the wide one.
     const compact = more.querySelector<HTMLElement>('.k2b-view-tabs__more-count[data-level="compact"]');
@@ -146,12 +146,7 @@ type WatchedViewTabs = HTMLElement & {
 function watchViewTabs(list: WatchedViewTabs | null, settle: typeof settleViewTabs, edges: (element: HTMLElement) => string | undefined) {
   if (!(list instanceof HTMLElement)) return;
   const fits = list.hasAttribute("data-fit-room");
-  // A phone head joins the lead's parts into its own row (`display: contents`); there the views' box is the room.
-  const roomOf = () => {
-    const lead = list.closest<HTMLElement>(".k2b-app-workspace__head-lead");
-    if (lead && getComputedStyle(lead).display !== "contents") return lead;
-    return list.closest<HTMLElement>(".k2b-app-workspace__head-views") ?? list.closest<HTMLElement>(".k2b-view-tabs");
-  };
+  const roomOf = () => list.closest<HTMLElement>(".k2b-app-workspace__head-lead") ?? list.closest<HTMLElement>(".k2b-view-tabs");
   // What a fit depends on: the room's width and each shown entry's width, which fonts, icons and labels change.
   const measured = () =>
     [roomOf()?.clientWidth ?? -1, ...Array.from(list.children, (child) => child.getBoundingClientRect().width)].join(" ");
@@ -336,11 +331,11 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
         class="k2b-view-tabs__list"
         data-scroll-fade-mode="both"
         data-scroll-fade-axis="horizontal"
-        data-fit-room={props.fit !== false ? "" : undefined}
+        data-fit-room={props.fit ? "" : undefined}
       >
         <For each={layout().wide}>{stripItem}</For>
         {/* A fitting strip keeps More ready, hidden until a view leaves the strip. */}
-        <Show when={layout().compactHidden + layout().wideHidden > 0 || (props.fit !== false && layout().wide.length > 1)}>
+        <Show when={layout().compactHidden + layout().wideHidden > 0 || (props.fit && layout().wide.length > 1)}>
           <li
             class="k2b-view-tabs__more"
             data-wide={layout().wideHidden > 0 ? "" : undefined}

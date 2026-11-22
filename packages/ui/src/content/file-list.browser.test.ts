@@ -327,9 +327,8 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       const closed = (await toggle.boundingBox())!;
       expect(Math.round(closed.height)).toBe(44);
       const next = (await page.getByRole("button", { name: /Technical details/ }).boundingBox())!;
-      // Cloud flach K17 and "one line, one owner": collapsed sections are rows, and the group draws exactly one 1 px
-      // hairline between two of them.
-      expect(Math.round(next.y - (closed.y + closed.height))).toBe(1);
+      // The rows stand flush below the title.
+      expect(Math.round(next.y - (closed.y + closed.height))).toBe(0);
       await toggle.click();
       await settled(page);
       const header = page.locator('.k2b-section[data-open="true"] .k2b-section__header');

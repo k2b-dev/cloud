@@ -162,8 +162,7 @@ describe("signed-in shell", () => {
                 overflow: style.overflowY,
               };
             });
-            // K4: the card radius, 14 px.
-            expect(soft.radii).toEqual(["14px", "14px", "0px", "0px"]);
+            expect(soft.radii).toEqual(["28px", "28px", "0px", "0px"]);
             expect(["auto", "scroll"]).toContain(soft.overflow);
             expect(await page.locator(".layout-header").evaluate((element) => getComputedStyle(element).borderBottomWidth)).toBe("0px");
             expect(await page.locator(".cloud-app-canvas").evaluate((element) => getComputedStyle(element).backgroundImage)).toContain(
@@ -200,10 +199,9 @@ describe("signed-in shell", () => {
             expect(shape.shell?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
             expect(shape.rail?.box).toMatchObject({ top: 8, bottom: device.height - 8 });
             expect(shape.workspace?.box).toMatchObject({ left: 76, top: 8, right: device.width - 8, bottom: device.height - 8 });
-            // K2, K3, K4: the app card has the card radius and one edge, no shadow: the 1 px frame ring in light, its border in dark.
-            expect(shape.workspace?.radius).toBe("14px");
+            expect(shape.workspace?.radius).toBe("20px");
             expect(shape.workspace?.borders).toEqual([1, 1, 1, 1]);
-            expect(shape.workspace?.shadow === "none").toBe(theme === "dark");
+            expect(shape.workspace?.shadow).not.toBe("none");
             const rail = await page.locator(".layout-rail").evaluate((element) => ({
               radius: getComputedStyle(element).borderRadius,
               image: getComputedStyle(element).backgroundImage,
@@ -211,7 +209,7 @@ describe("signed-in shell", () => {
             expect(rail.radius).toBe("20px");
             expect(rail.image).toContain("gradient");
           } else {
-            // From 1024 px the card's spacing grows until 1440 px; its radius is the card radius (K4).
+            // From 1024 px the card's spacing and radius grow until 1440 px.
             const precise = await geometry(page, false);
             const box = precise.workspace!.box;
             const gaps = [box.top, device.width - box.right, device.height - box.bottom];
@@ -221,17 +219,16 @@ describe("signed-in shell", () => {
             expect(Math.abs(radius - cardRadius(device.width))).toBeLessThanOrEqual(0.05);
             if (device.width === 1024) {
               for (const gap of gaps) expect(gap).toBe(4);
-              expect(radius).toBe(14);
+              expect(radius).toBe(10);
             } else if (device.width >= 1440) {
               for (const gap of gaps) expect(gap).toBe(8);
               expect(radius).toBe(14);
             } else if (device.width === 1194) {
-              // The dense tablet mockup's card: 6 px spacing and the card radius.
+              // The dense tablet mockup's card: 6 px spacing and a 12 px radius.
               for (const gap of gaps) expect(gap).toBe(6);
-              expect(radius).toBe(14);
+              expect(radius).toBe(12);
             }
-            // K2, K3: one edge, no shadow: the 1 px frame ring in light, the border in dark.
-            expect(shape.workspace?.shadow === "none").toBe(theme === "dark");
+            expect(shape.workspace?.shadow).not.toBe("none");
           }
           // Sidebar, Main, and the detail draw no lines. List and reader
           // panes are apart by 12 px of space: a transparent edge, not a line.
@@ -245,19 +242,15 @@ describe("signed-in shell", () => {
           expect(shape.detail?.background).toBe("rgba(0, 0, 0, 0)");
           expect(shape.detail?.shadow).toBe("none");
           expect(shape.detail?.surface).toBe(shape.pane?.surface);
-          if (!compact(device)) {
-            // List and reader stay side by side; the detail spans the workspace.
-            expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-            // K2, K5a: the detail column is flush with the workspace's top edge.
-            expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]!);
-          }
+          // List and reader stay side by side; the detail spans the workspace.
+          expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
+          expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]! + 8);
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
-            // K12: on a tablet the detail waits as a drawer behind the head's Details, so the head spans the workspace.
-            expect(shape.detail!.box.width).toBe(0);
-            expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
-            expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1, height: 46 });
+            // The 320 px detail and its 8 px right inset still reserve a 328 px track.
+            expect(shape.detail!.box.width).toBe(320);
+            expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1 - (320 + 8), height: 46 });
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(55);
@@ -601,7 +594,6 @@ describe("the app card keeps its rounded corners", () => {
           expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
           expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
           for (const radius of shape.radii) expect(Number.parseFloat(radius)).toBeGreaterThan(0);
-          // K2: the 1 px frame ring is the card's one edge (light).
           expect(shape.shadow).not.toBe("none");
           expect(Math.abs(shape.shellSpacing - cardInset(device.width))).toBeLessThanOrEqual(0.05);
           for (const radius of shape.radii)
@@ -635,7 +627,7 @@ describe("the app card keeps its rounded corners", () => {
         const { context, page } = await open(device, path);
         try {
           const shape = await cardGeometry(page);
-          expect(shape.radii).toEqual(Array(4).fill("14px"));
+          expect(shape.radii).toEqual(Array(4).fill("20px"));
           expect(shape.shadow).not.toBe("none");
           expect(shape.box).toMatchObject({ left: shape.railRight! + 8, top: 8, right: device.width - 8, bottom: device.height - 8 });
           if (framed) expect(shape.box).toEqual(framed.box);
@@ -658,8 +650,7 @@ describe("the app card keeps its rounded corners", () => {
     }
   });
 
-  // One line, one owner: in dark the border is the card's one edge, so no ring paints beside it (K2, K3).
-  test("1920×1080 dark: flat and framed cards share their border as their one edge, without a ring or shadow", async () => {
+  test("1920×1080 dark: flat and framed cards share their border and painted edge, without a shadow", async () => {
     const cards: { border: string; shadow: number[][] }[] = [];
     for (const { path } of pages) {
       const { context, page } = await open(desktop, path, { theme: "dark" });
@@ -670,8 +661,7 @@ describe("the app card keeps its rounded corners", () => {
           () => getComputedStyle(document.querySelector(".layout-content-main .k2b-app-workspace")!).borderTopColor,
         );
         const shadow = await shadowPaint(page, shape.box, shape.shellSpacing);
-        expect(shape.shadow).toBe("none");
-        expect(shadow.edgeDepth).toBeLessThanOrEqual(1);
+        expect(shadow.edgeDepth).toBeGreaterThanOrEqual(2);
         expect(shadow.shadowDepth).toBeLessThanOrEqual(1);
         if (cards[0]) expect(difference(shadow.painted, cards[0].shadow)).toBeLessThanOrEqual(1);
         cards.push({ border, shadow: shadow.painted });
@@ -1124,8 +1114,8 @@ describe("soft tablet and phone shell", () => {
               bottom: device.height - insets.bottom - 8,
             });
             expect(shape.workspace!.box.left - shape.rail!.box.right).toBe(8);
-            expect(shape.workspace!.radius).toBe("14px");
-            expect(shape.workspace!.shadow === "none").toBe(theme === "dark");
+            expect(shape.workspace!.radius).toBe("20px");
+            expect(shape.workspace!.shadow).not.toBe("none");
             const rail = await page.locator(".layout-rail").evaluate((element) => ({
               radius: getComputedStyle(element).borderRadius,
               background: getComputedStyle(element).backgroundImage,
@@ -1182,7 +1172,7 @@ describe("soft tablet and phone shell", () => {
               expect(styles.gradient).toContain("gradient");
               expect(styles.canvasHeight).toBe(device.height);
               expect(styles.canvasOverflow).toBe("hidden");
-              expect(styles.radii).toEqual(["14px", "14px", "0px", "0px"]);
+              expect(styles.radii).toEqual(["28px", "28px", "0px", "0px"]);
               expect(["auto", "scroll"]).toContain(styles.overflow);
               expect(styles.padding).toBe(bottom);
               expect(styles.scrollPadding).toBe(styles.padding);

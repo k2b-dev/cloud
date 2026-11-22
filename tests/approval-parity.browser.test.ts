@@ -148,10 +148,8 @@ for (const theme of ["light", "dark"])
               expect(geometry.gap).toBeGreaterThanOrEqual(0);
               expect(geometry.gap).toBeLessThanOrEqual(4);
               expect(geometry.actions.length).toBeLessThanOrEqual(2);
-              // K1: a row with a second text line is 52 px; the phone reserve is 2×20 title + 2×16 detail + 2 gap + 40 actions
-              // + 12 + the row's two 8 px insets = 142 px, and the actions end on that 8 px inset.
-              expect(geometry.height).toBe(width === 1440 ? 52 : geometry.reserve ? 142 : geometry.height);
-              if (width === 390) for (const action of geometry.actions) expect(action.inset).toBeCloseTo(8, 0);
+              expect(geometry.height).toBe(width === 1440 ? 64 : geometry.reserve ? 156 : geometry.height);
+              if (width === 390) for (const action of geometry.actions) expect(action.inset).toBeCloseTo(11, 0);
               if (width === 390 && geometry.actions.length === 2) {
                 expect(Math.abs(geometry.actions[0]!.width - geometry.actions[1]!.width)).toBeLessThan(1);
                 expect(geometry.actions[0]!.top).toBe(geometry.actions[1]!.top);

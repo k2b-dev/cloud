@@ -1,11 +1,9 @@
 import { children, For, type JSX, Show, splitProps } from "solid-js";
 import { dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
-import { rendersSomething } from "../internal/renders-something";
 import { useUiMessages } from "../intl/messages";
 import type { IntentTone } from "../semantics";
 
-/** `yours` is "your turn" (Valentin, 21.11.): a blue tint where the reader has to act; `warning` stays "to clarify". */
-export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai" | "yours";
+export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai";
 
 type NoticeCardContentProps =
   | { title: JSX.Element; detail?: JSX.Element; meta?: JSX.Element; children?: JSX.Element }
@@ -26,9 +24,9 @@ export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" |
      */
     layout?: "line" | "card";
     /**
-     * The deed: one `Button` or `ButtonLink` (`size="sm"`, `secondary`) whose words name what it does, never "Try
-     * again" (K10). A wide notice sets it beside the text, a narrow one below it. A second button is possible but
-     * rare. In a `NoticeCard.Grid` row the actions of all cards share the bottom edge.
+     * The direct next step: one or two `Button`s or `ButtonLink`s (`size="sm"`) in one row below the text. The primary
+     * action takes the tone's button variant; a second one is `secondary`. In a `NoticeCard.Grid` row the actions of all
+     * cards share the bottom edge.
      */
     actions?: JSX.Element;
     class?: string;
@@ -39,7 +37,6 @@ export const NOTICE_CARD_CLASSES = {
   root: "k2b-notice-card",
   icon: "k2b-notice-card__icon",
   content: "k2b-notice-card__content",
-  text: "k2b-notice-card__text",
   head: "k2b-notice-card__head",
   title: "k2b-notice-card__title",
   meta: "k2b-notice-card__meta",
@@ -48,6 +45,8 @@ export const NOTICE_CARD_CLASSES = {
   actions: "k2b-notice-card__actions",
 } as const;
 
+/** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
+const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
   const [local, articleProps] = splitProps(props, [
     "tone",
@@ -97,22 +96,18 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
         )}
       </Show>
       <div class={NOTICE_CARD_CLASSES.content}>
-        {/* The sentence and its consequence share one block, so a wide cell sets the deed beside it and a narrow
-            one below it (K10, K15). */}
-        <div class={NOTICE_CARD_CLASSES.text}>
-          <Show when={local.title}>
-            {(title) => (
-              <div class={NOTICE_CARD_CLASSES.head}>
-                <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>
-                <Show when={local.meta}>{(meta) => <span class={NOTICE_CARD_CLASSES.meta}>{meta()}</span>}</Show>
-              </div>
-            )}
-          </Show>
-          <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
-          <Show when={hasBody()}>
-            <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
-          </Show>
-        </div>
+        <Show when={local.title}>
+          {(title) => (
+            <div class={NOTICE_CARD_CLASSES.head}>
+              <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>
+              <Show when={local.meta}>{(meta) => <span class={NOTICE_CARD_CLASSES.meta}>{meta()}</span>}</Show>
+            </div>
+          )}
+        </Show>
+        <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
+        <Show when={hasBody()}>
+          <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
+        </Show>
         <Show when={hasActions()}>
           <div class={NOTICE_CARD_CLASSES.actions}>{actions()}</div>
         </Show>
