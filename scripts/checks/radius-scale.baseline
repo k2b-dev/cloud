@@ -101,11 +101,6 @@ packages/cloud/src/styles/utilities-navigation.css | css | 0.625rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
-packages/contacts/src/frontend/_components/ContactAddressMap.tsx | class | rounded-xl
-packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | class | rounded-md
-packages/contacts/src/frontend/_components/ContactQuickEdit.tsx | class | rounded-md
-packages/contacts/src/frontend/_components/ContactSearchPicker.tsx | class | rounded-md
-packages/contacts/src/frontend/_components/ContactUpsertForm.tsx | class | rounded-md
 packages/core/src/code/PageTree.island.tsx | class | rounded-xl
 packages/core/src/notifications.ts | style | 10px
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 0 0 12px 12px
@@ -150,23 +145,7 @@ packages/mail/src/frontend/_components/mail-message-document.ts | style | 6px
 packages/mail/src/service/compose-renderer.ts | style | 3px
 packages/mail/src/styles/app.css | css | 0.375rem
 packages/mail/src/styles/app.css | css | 0.3rem
-packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | class | rounded-md
-packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | class | rounded-md
 packages/notebooks/src/service/note-pdf.ts | style | 3px
-packages/notebooks/src/styles/app.css | css | 0.125rem
-packages/notebooks/src/styles/app.css | css | 0.2em
-packages/notebooks/src/styles/app.css | css | 0.3125rem
-packages/notebooks/src/styles/app.css | css | 0.375rem
-packages/notebooks/src/styles/app.css | css | 0.75rem
-packages/notebooks/src/styles/app.css | css | 0.75rem
-packages/notebooks/src/styles/app.css | css | 12px
-packages/notebooks/src/styles/app.css | css | 12px
-packages/notebooks/src/styles/app.css | css | 2px
-packages/notebooks/src/styles/app.css | css | 3px
-packages/notebooks/src/styles/app.css | css | 3px
-packages/notebooks/src/styles/app.css | css | 3px
-packages/notebooks/src/styles/app.css | css | 9px
-packages/notebooks/src/styles/app.css | css | 9px
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | class | rounded-[10px]
 packages/pulse/src/frontend/workspace/SourcesView.tsx | class | rounded-md
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-[10px]

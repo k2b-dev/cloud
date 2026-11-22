@@ -4,8 +4,8 @@ import { NOTEBOOK_DETAIL_ID } from "../detail/events";
 import { NOTEBOOK_NAVIGATION_ID } from "../sidebar/navigation-visibility";
 
 /**
- * The note page draws no workspace head, so the bar under the note holds its buttons: the editor toolbar and, once
- * syncing ended, the bar that replaces it. The shared workspace controller runs both and keeps aria-expanded current.
+ * The note page draws no workspace head, so the pills under the note hold its buttons: the editor toolbar in Write,
+ * the page pill in Read and, once syncing ended, the bar that replaces them. The shared workspace controller runs both and keeps aria-expanded current.
  */
 
 /** Opens the navigation as an overlay below a 64 rem app host and shows or hides the column from there. */

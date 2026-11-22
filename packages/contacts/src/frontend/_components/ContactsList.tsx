@@ -110,7 +110,7 @@ export default function ContactsList(props: Props) {
         />
       }
     >
-      <ul ref={listRef} class="contacts-list flex flex-col gap-1" aria-label={t().contactsListLabel} onKeyDown={moveFocus}>
+      <ul ref={listRef} class="contacts-list k2b-divided" aria-label={t().contactsListLabel} onKeyDown={moveFocus}>
         <For each={props.contacts}>
           {(contact) => {
             const name = () => resolveContactName(contact, t().unnamedContact);
@@ -125,7 +125,7 @@ export default function ContactsList(props: Props) {
             return (
               <li class="group/contact relative">
                 <Show when={props.selectionMode}>
-                  <span class="contacts-list__selection absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center">
+                  <span class="contacts-list__selection absolute left-[var(--k2b-gutter)] top-1/2 z-10 flex -translate-y-1/2 items-center">
                     <Checkbox
                       value={isChecked()}
                       aria-label={t().selectContact({ name: name() })}
@@ -135,8 +135,12 @@ export default function ContactsList(props: Props) {
                 </Show>
                 <a
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
-                  class="contacts-list__row flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
-                  classList={{ "pl-10": props.selectionMode, "bg-[var(--ui-app-selected)]": isSelected() }}
+                  class="contacts-list__row flex h-[var(--k2b-h-row-2)] w-full min-w-0 items-center gap-3 py-1.5 pr-[3.5rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:-outline-offset-2 [@media(min-width:640px)]:pr-[7.5rem]"
+                  classList={{
+                    "pl-[var(--k2b-gutter)]": !props.selectionMode,
+                    "pl-[calc(var(--k2b-gutter)+1.75rem)]": props.selectionMode,
+                    "bg-[var(--ui-app-selected)]": isSelected(),
+                  }}
                   aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
                   data-contact-row
@@ -147,16 +151,16 @@ export default function ContactsList(props: Props) {
                   }}
                 >
                   <span
-                    class="contact-avatar flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                    class="contact-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
                     aria-hidden="true"
                   >
                     {resolveContactInitials(contact)}
                   </span>
 
                   <span class="min-w-0 flex-1">
-                    <span class="flex min-w-0 items-center gap-2">
+                    <span class="flex h-5 min-w-0 items-center gap-2">
                       <span
-                        class="truncate text-sm font-medium transition-colors group-hover/contact:text-[var(--ui-app-accent-text)] group-focus-within/contact:text-[var(--ui-app-accent-text)]"
+                        class="truncate text-[13px] font-medium transition-colors group-hover/contact:text-[var(--ui-app-accent-text)] group-focus-within/contact:text-[var(--ui-app-accent-text)]"
                         classList={{ "app-accent-text": isSelected(), "text-primary": !isSelected() }}
                       >
                         {name()}
@@ -168,7 +172,7 @@ export default function ContactsList(props: Props) {
                       </Show>
                     </span>
 
-                    <span class="contacts-list__context mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-dimmed">
+                    <span class="contacts-list__context flex h-5 min-w-0 items-center gap-x-1.5 overflow-hidden text-xs text-dimmed">
                       <Show when={context()}>
                         <span class="contacts-list__normal-context truncate">{context()}</span>
                       </Show>
@@ -188,13 +192,13 @@ export default function ContactsList(props: Props) {
                       </Show>
                       <For each={visibleTags()}>
                         {(tag) => (
-                          <Tag class="contacts-list__tag" color={tag.color} icon="ti ti-point">
+                          <Tag class="contacts-list__tag shrink-0" color={tag.color} icon="ti ti-point">
                             {tag.name}
                           </Tag>
                         )}
                       </For>
                       <Show when={hiddenTagCount() > 0}>
-                        <span class="contacts-list__tag text-[11px] tabular-nums">+{hiddenTagCount()}</span>
+                        <span class="contacts-list__tag shrink-0 text-[11px] tabular-nums">+{hiddenTagCount()}</span>
                       </Show>
                     </span>
                   </span>
@@ -213,7 +217,7 @@ export default function ContactsList(props: Props) {
                   </span>
                 </a>
 
-                <span class="contacts-list__actions absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 sm:right-4">
+                <span class="contacts-list__actions absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
                   <Show when={phone()}>
                     {(number) => (
                       <IconButtonLink href={`tel:${number()}`} size="sm" class="max-sm:!hidden" label={t().callContact({ name: name() })}>

@@ -80,15 +80,13 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
       // K12: a tablet shows one level at a time; the list stands beside the contact from 1024 px.
       expect(await page.locator('[data-workspace-main-region="contacts-list"]').isVisible()).toBe(width >= 1024);
       if (width === 1440) expect(await page.locator("#contacts-book-navigation").isVisible()).toBe(true);
-      expect(await reader.locator(".k2b-avatar[data-size=lg]").count()).toBe(1);
-      const sections = reader.locator("article > div > section");
-      expect(await sections.locator(":scope > header h2").allTextContents()).toEqual([
-        "Erreichbar",
-        "Adresse",
-        "Beziehungen",
-        "Notizen",
-        "Mehr zu Jana Berger",
-      ]);
+      // K9, K17: the avatar fits the 56 px bar; the topics come first, the facts (reach among them) stand in their quiet
+      // column; nothing is folded under "More about" any more.
+      expect(await reader.locator(".k2b-avatar[data-size=sm]").count()).toBe(1);
+      const sections = reader.locator(".contacts-record__topics > div > section");
+      expect((await sections.locator(":scope > header h2").allTextContents()).slice(0, 3)).toEqual(["Adresse", "Beziehungen", "Notizen"]);
+      expect(await reader.locator(".contacts-record__facts .k2b-fact-group__title").first().textContent()).toBe("Erreichbar");
+      expect(await reader.getByText("Mehr zu Jana Berger").count()).toBe(0);
       expect(await sections.evaluateAll((elements) => elements.every((element) => element.getAttribute("data-size") === "md"))).toBe(true);
       const depth = await sections.first().evaluate((element) => {
         const probe = document.createElement("div");
