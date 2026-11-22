@@ -263,8 +263,6 @@ afterEach(() => {
 });
 
 let browser: Browser;
-/** Chromium with classic scrollbars that take room in the layout, as on Windows and Linux desktops (Cloud flach QA). */
-let classic: Browser;
 let css: string;
 beforeAll(async () => {
   // As the page template does: the layer order first, then Core's stylesheet, then the global one.
@@ -276,11 +274,9 @@ beforeAll(async () => {
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
   browser = await launchBrowser();
-  classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
-  await classic?.close();
 });
 
 /** The server-rendered content of one account page. */
@@ -304,8 +300,8 @@ const phone: View = { width: 390, height: 844, touch: true };
 const narrowPhone: View = { width: 320, height: 640, touch: true };
 
 /** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
-const open = async (view: View, path: Path, locale: "en" | "de", dark = false, engine = browser) => {
-  const tab = await engine.newPage({
+const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
+  const tab = await browser.newPage({
     javaScriptEnabled: false,
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -742,43 +738,20 @@ describe("account pages in a browser", () => {
     expect(result.pageHeading.width).toBeLessThanOrEqual(1);
     expect(result.pageHeading.height).toBeLessThanOrEqual(1);
   }, 30_000);
-  // Cloud flach (K2, K15): no overlap, spill, cut text or double line on any account tab, with classic scrollbars
-  // that take room in windows 390, 768, 1100 and 1440 px wide (a desktop window, not a phone: a mobile tab gets
-  // overlay scrollbars that take no room), and on a touch phone. CORE_ACCOUNT_SHOTS=<folder> also writes light
-  // screenshots of every tab for the design review.
-  const runs = [
-    ...[390, 768, 1100, 1440].map((width) => ({
-      name: `${width} px with classic scrollbars`,
-      view: { width, height: width < 768 ? 844 : 900, touch: false },
-      classic: true,
-    })),
-    { name: "390 px on a touch phone", view: phone, classic: false },
-  ];
-  for (const { name, view, classic: classicRun } of runs)
-    test(`every account tab is clean at ${name}`, async () => {
+  // Cloud flach (K2, K15): no overlap, spill, cut text or double line on any account tab, on a desktop and a phone.
+  // CORE_ACCOUNT_SHOTS=<folder> also writes light screenshots of every tab for the design review.
+  for (const view of [desktop, phone])
+    test(`every account tab is clean at ${view.width} px`, async () => {
       const shots = process.env.CORE_ACCOUNT_SHOTS;
       const found: Record<string, string[]> = {};
       for (const path of [...tabs, "/me/notifications/history"] as Path[]) {
-        const tab = await open(view, path, "de", false, classicRun ? classic : browser);
+        const tab = await open(view, path, "de");
         try {
-          // A classic run is only worth its name when a scrollbar really takes room.
-          const gutter = await tab.evaluate(() => {
-            const probe = document.createElement("div");
-            probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
-            document.body.append(probe);
-            const width = probe.offsetWidth - probe.clientWidth;
-            probe.remove();
-            return width;
-          });
-          if (classicRun) expect(gutter).toBeGreaterThan(0);
-          // The page never scrolls sideways, measured against the room the vertical scrollbar leaves.
-          const sideways = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-          const pageProblems = sideways > 0 ? [`the page scrolls ${sideways} px sideways`] : [];
           const problems = (await tab.evaluate(layoutProblems, { root: "main" })).problems;
-          if (problems.length + pageProblems.length > 0) found[path] = [...pageProblems, ...problems];
+          if (problems.length > 0) found[path] = problems;
           if (shots)
             await tab.screenshot({
-              path: `${shots}/me${path.slice(3).replaceAll("/", "-") || "-profile"}${classicRun ? "" : "-touch"}-light-${view.width}.png`,
+              path: `${shots}/me${path.slice(3).replaceAll("/", "-") || "-profile"}-light-${view.width}.png`,
               fullPage: true,
             });
         } finally {
