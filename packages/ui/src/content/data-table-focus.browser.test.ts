@@ -18,8 +18,10 @@ const params = new URLSearchParams(location.hash.slice(1));
 const columns = Array.from({ length: Number(params.get('columns') || 3) }, (_, i) => ({ id: 'c'+i, header: 'Field '+i, value: 'name' }));
 render(() => {
   const [selected, setSelected] = createSignal(null);
+  const [rows, setRows] = createSignal([{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]);
+  window.setRows = setRows;
   return createComponent(DataTable, {
-    rows: [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }], columns,
+    get rows() { return rows(); }, columns,
     getRowId: row => row.id, get selectedRowId() { return selected(); },
     onRowClick: row => { setSelected(row.id); document.body.dataset.rowCalls = String(Number(document.body.dataset.rowCalls || 0) + 1); },
     surface: 'plain', hoverRows: true, highlightColumns: true,
@@ -148,4 +150,35 @@ for (const theme of ["light", "dark"]) {
       }
     });
   }
+}
+
+// #3996: a live refresh passes new row objects with the same ids. A focused link or button inside a cell keeps its
+// element and its focus while its row's content is unchanged; a row whose content changed shows the new content.
+for (const control of ["link", "button"] as const) {
+  test(`a refresh with new row objects keeps the focus on a ${control} inside a cell`, async () => {
+    const page = await browser.newPage({ viewport: { width: 900, height: 500 }, deviceScaleFactor: 1 });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui"><div id="app"></div></body></html>`,
+      );
+      await page.addScriptTag({ content: script });
+      const row = page.locator("tbody tr").first();
+      const target = control === "link" ? row.getByRole("link") : row.getByRole("button", { name: "Edit" });
+      await target.focus();
+      await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement & { marked?: boolean };
+        active.marked = true;
+        (window as unknown as { setRows: (rows: unknown[]) => void }).setRows([
+          { id: "a", name: "Alpha" },
+          { id: "b", name: "Beta 2" },
+        ]);
+      });
+      await settled(page);
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement & { marked?: boolean }).marked === true)).toBe(true);
+      expect(await target.evaluate((element) => element === document.activeElement)).toBe(true);
+      expect(await page.locator("tbody tr").nth(1).getByRole("link").textContent()).toBe("Beta 2");
+    } finally {
+      await page.close();
+    }
+  });
 }

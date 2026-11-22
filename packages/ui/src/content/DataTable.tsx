@@ -82,6 +82,22 @@ export type DataTableColumn<T> = {
   priority?: 1 | 2 | 3;
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+/** Equal plain data (objects, arrays, dates, primitives); anything else is equal only as the same value. */
+const sameData = (a: unknown, b: unknown): boolean => {
+  if (Object.is(a, b)) return true;
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((item, index) => sameData(item, b[index]));
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameData(a[key], b[key]));
+};
+
 export type DataTableSort = { key: string; direction: "asc" | "desc" };
 
 export type DataTableRenderCell<T> = (ctx: {
@@ -581,6 +597,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
       props.selection ? props.selection.selected().has(id() ?? "") : props.selectedRowId && id() === props.selectedRowId;
     const detailsId = `k2b-data-table-${createUniqueId()}-details`;
     const open = () => openDetails().has(rowKey(row()));
+    // Cells render from the row's content: a refresh with an equal new object keeps their elements and the focus in them.
+    const content = createMemo(row, row(), { equals: sameData });
     return (
       <>
         <tr
@@ -607,7 +625,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         >
           <For each={props.columns}>
             {(col, index) => {
-              const value = () => valueOf(row(), col);
+              const value = () => valueOf(content(), col);
               return (
                 <td
                   class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
@@ -619,7 +637,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   data-highlighted={columnHighlighted(index())}
                   onMouseEnter={() => setHoveredColumnIfEnabled(index())}
                 >
-                  <div class={cellContentClass()}>{cellContent(row(), col, value())}</div>
+                  <div class={cellContentClass()}>{cellContent(content(), col, value())}</div>
                 </td>
               );
             }}
@@ -648,7 +666,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   {(col) => (
                     <div data-priority={priorityAttr(col)}>
                       <dt>{detailLabel(col)}</dt>
-                      <dd>{cellContent(row(), col, valueOf(row(), col))}</dd>
+                      <dd>{cellContent(content(), col, valueOf(content(), col))}</dd>
                     </div>
                   )}
                 </For>
