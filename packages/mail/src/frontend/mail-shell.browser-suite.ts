@@ -3217,8 +3217,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         test("rows: beside the reader at 1440 every row has three lines of one height, tags and all", async () => {
           const page = await open(widePath(), 1440, 900);
           try {
+            // A row stands in its drag source, which holds its height with the hairline above it.
             const rows = await page
-              .locator(".mail-workspace .mail-list-entry")
+              .locator(".mail-workspace .mail-list-rows > .mail-list-drag")
               .evaluateAll((elements) =>
                 elements
                   .filter((element) => element.getBoundingClientRect().bottom < innerHeight)
@@ -4104,10 +4105,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 }),
               ).toBeGreaterThan(0);
             const found = await page.evaluate(layoutProblems, { root: "main" });
-            // The workspace root sizes Main by an end padding that its tracks run into on purpose (`@k2b/ui`, while
-            // an open conversation asks for list and reader room); the root clips nothing a person sees. Every box
-            // inside it is still checked.
-            expect(found.problems.filter((problem) => !/^div\.k2b-app-workspace\.mail-workspace .* is cut by /.test(problem))).toEqual([]);
+            expect(found.problems).toEqual([]);
           } finally {
             await close(page);
           }
