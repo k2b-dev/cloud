@@ -147,9 +147,10 @@ const spacesPage = (detail: boolean, c: Query) =>
                       getRowId: (row) => row.id,
                       selectedRowId: detail ? "t2" : null,
                       // A narrow column keeps the task and its due date; the other values move into the row's details
-                      // by column priority (3 below 560 px, 2 below 420 px), as Spaces does. Nothing scrolls sideways.
+                      // by column priority (3 below 560 px, 2 below 420 px), as Spaces does, and the task breaks
+                      // between words as a text column. Nothing scrolls sideways.
                       columns: [
-                        { id: "title", header: "Aufgabe", value: "title" },
+                        { id: "title", header: "Aufgabe", value: "title", type: "text" },
                         { id: "space", header: "Space", value: "space", priority: 3 },
                         { id: "who", header: "Zuständig", value: "who", priority: 2 },
                         { id: "due", header: "Fällig", value: "due", nowrap: true },
