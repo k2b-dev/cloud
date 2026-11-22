@@ -6397,6 +6397,20 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   display: none;
 }
 
+/* A narrow state lets "next attempt" go first and keeps the sign, what is
+   wrong (shortened), and the time; only when even the sign and the time do
+   not fit does the time wait on the clipped line (see above). The middle's
+   width never depends on its content, so it can measure the state. */
+.k2b-ui .k2b-status-row[data-mode="state"] > .k2b-status-row__middle {
+  container: k2b-status-state / inline-size;
+}
+
+@container k2b-status-state (width < 15rem) {
+  .k2b-ui .k2b-status-row__next-label {
+    display: none;
+  }
+}
+
 .k2b-ui .k2b-status-row__time {
   font-variant-numeric: tabular-nums;
 }

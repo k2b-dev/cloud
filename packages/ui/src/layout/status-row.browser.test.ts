@@ -118,7 +118,10 @@ for (const width of [1440, 768, 390])
       expect(await page.locator(".k2b-status-row").nth(0).locator(".k2b-status-row__fact").count()).toBe(3);
       expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__lead").innerText()).toContain("3 selected");
       expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__end").innerText()).toBe("Move");
-      expect(await page.locator(".k2b-status-row").nth(2).locator(".k2b-status-row__middle").innerText()).toMatch(/next attempt\s*14:05/);
+      // The time always shows; a narrow state lets the words "next attempt" go first (K15).
+      expect(await page.locator(".k2b-status-row").nth(2).locator(".k2b-status-row__middle").innerText()).toMatch(
+        width >= 768 ? /next attempt\s*14:05/ : /14:05/,
+      );
       expect(await page.locator(".k2b-status-row").nth(3).locator("[aria-live=polite]").innerText()).toBe("Moving “Invoice 12” to Done");
     } finally {
       await page.close();
@@ -224,7 +227,15 @@ for (const width of [1440, 768, 390])
 // B4 (flat QA): beside an open Detail the row is narrow (441 px at 1100 px; the state keeps 43 px). The filters keep their
 // width, the sign always shows, what is wrong ends in an ellipsis, and "next attempt 14:05" shows whole or not at all
 // (the hint carries it); a wide row shows it. `layoutProblems` sees neither a 0 px filter group nor a cut time.
-for (const width of [441, 520, 760])
+// Rows as the Spaces status row has them: a phone (390 px, the filters on their own line), 1100 px with Detail open
+// (441 px), and wider. What shows: the sign always; then "next attempt" goes first, the time stays; only where even the
+// sign and the time do not fit (1100 px with Detail) does the time wait in the hint, whole.
+for (const [viewport, width, time, words] of [
+  [390, 390, "shown", false],
+  [1440, 441, "away", false],
+  [1440, 520, "shown", false],
+  [1440, 760, "shown", true],
+] as const)
   test(`a ${width} px row with a disturbance keeps its filters and the whole time of the next attempt`, async () => {
     const html = renderToString(() =>
       createComponent(LocaleProvider, {
@@ -247,7 +258,7 @@ for (const width of [441, 520, 760])
         },
       }),
     );
-    const page = await open(1440, html);
+    const page = await open(viewport, html);
     try {
       const shape = await page.evaluate(() => {
         const end = document.querySelector<HTMLElement>(".k2b-status-row__end")!;
@@ -267,14 +278,15 @@ for (const width of [441, 520, 760])
             time.getBoundingClientRect().top >= middle.top - 0.5 &&
             time.getBoundingClientRect().bottom <= middle.bottom + 0.5,
           timeAway: time.getBoundingClientRect().top >= middle.bottom - 0.5,
+          words:
+            document.querySelector(".k2b-status-row__next-label")!.getClientRects().length > 0 && inside(".k2b-status-row__next-label"),
           sign: inside(".k2b-status-row__sign") && inside(".k2b-status-row__state"),
           hint: document.querySelector(".k2b-status-row__state")!.getAttribute("title"),
         };
       });
-      const { timeShown, timeAway, ...rest } = shape;
-      // The time is whole on the row's line or wholly away, never cut; a wide row shows it.
-      expect(timeShown !== timeAway).toBe(true);
-      if (width >= 760) expect(timeShown).toBe(true);
+      const { timeShown, timeAway, words: wordsShown, ...rest } = shape;
+      // The time is whole on the row's line or wholly away, never cut.
+      expect({ timeShown, timeAway, words: wordsShown }).toEqual({ timeShown: time === "shown", timeAway: time === "away", words });
       expect(rest).toEqual({
         filters: true,
         time: "14:05",
