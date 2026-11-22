@@ -2542,10 +2542,12 @@ html {
   container: k2b-head-lead / inline-size;
 }
 
-/* In the one row the filters give way before the views: they shrink first
-   and scroll sideways. */
-.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
-  flex-shrink: 1000;
+/* In the one row the views keep their own width, at most the lead's; only
+   below that does their fit move views into More. The filters take what is
+   left and scroll sideways, so a filter that hydrates or changes never moves
+   the views (no layout shift between server and client). */
+.k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
+  flex-shrink: 0;
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
