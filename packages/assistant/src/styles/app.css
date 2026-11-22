@@ -1485,13 +1485,13 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-waiting-page__skeleton { display: flex; flex-direction: column; gap: 0.625rem; min-height: 10.5rem; padding: 0.875rem 1rem; }
 .assistant-waiting-page__skeleton-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: auto; }
 
-/* Gustav at a place: the place at the top of the side panel. Gustav flat (panel, P1 A): a band under the panel's head,
-   without tint, closed by the hairline it owns; the first row keeps one height in every state (place, switch, loading,
-   failed, gone), so nothing below it moves. P1 is still open: `assistant-place-bar--box` on the bar brings back
-   today's plum box with the same content. */
+/* Gustav at a place: the place at the top of the side panel (Gustav flat panel, P1 decided 22.11.): a band under the
+   panel's head, without tint, closed by the hairline it owns. Plum as a surface stays with the cards that ask; the
+   place's chip is a neutral grey chip. The first row keeps one height in every state (place, switch, loading, failed,
+   gone), so nothing below it moves. */
 .assistant-place-bar {
-  --k2b-choice-color: var(--k2b-ai-accent);
-  --k2b-choice-background: var(--k2b-surface);
+  --k2b-choice-color: var(--k2b-text-secondary);
+  --k2b-choice-background: var(--k2b-surface-muted);
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
@@ -1499,15 +1499,6 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   padding: .75rem var(--k2b-gutter);
   border-block-end: 1px solid var(--k2b-border);
   color: var(--k2b-text);
-}
-.assistant-place-bar.assistant-place-bar--box {
-  --k2b-choice-background: var(--k2b-surface);
-  gap: .375rem;
-  margin: .5rem .75rem 0;
-  padding: .375rem .5rem;
-  border-block-end: 0;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-ai-surface);
 }
 .assistant-place-bar__row { display: flex; align-items: center; gap: .5rem; min-width: 0; min-height: 1.75rem; }
 .assistant-place-bar__app { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }

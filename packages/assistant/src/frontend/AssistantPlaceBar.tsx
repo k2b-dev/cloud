@@ -3,13 +3,6 @@ import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { type AssistantPlaceView, placePolicyText } from "./assistant-place";
 import { placeMessages } from "./place-messages";
 
-/**
- * How the place shows at the top of the side panel (Gustav flat, panel question P1, still open). Empty: the band under
- * the panel's head with its hairline (the recommendation). `"assistant-place-bar--box"`: today's plum box. The content
- * is the same.
- */
-const PLACE_LOOK_CLASS: string = "";
-
 type Available = Extract<AssistantPlaceView, { state: "available" }>;
 type Unavailable = Extract<AssistantPlaceView, { state: "unavailable" }>;
 
@@ -70,7 +63,7 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
 
   return (
     <div
-      class={`assistant-place-bar ${PLACE_LOOK_CLASS}`.trim()}
+      class="assistant-place-bar"
       role="group"
       aria-label={t().barLabel}
       aria-busy={props.state.kind === "loading" ? "true" : undefined}

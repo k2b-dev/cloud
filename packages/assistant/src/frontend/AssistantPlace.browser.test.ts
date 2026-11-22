@@ -746,6 +746,25 @@ describe("Gustav at a place", () => {
     try {
       await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
       expect(await bar(h.page).getByText("nur du", { exact: true }).count()).toBe(1);
+      // Gustav flat panel, P1 (decided 22.11.): the place is a band without tint under the panel's head, closed by its
+      // own hairline; plum as a surface stays with the cards that ask, so the place's chip is neutral.
+      await settled(h.page);
+      const look = await bar(h.page).evaluate((element) => {
+        const style = getComputedStyle(element);
+        const chip = getComputedStyle(element.querySelector(".assistant-place-chip")!);
+        const plum = document.createElement("span");
+        plum.style.backgroundColor = "var(--k2b-ai-surface)";
+        element.append(plum);
+        const aiSurface = getComputedStyle(plum).backgroundColor;
+        plum.remove();
+        return {
+          background: style.backgroundColor,
+          radius: style.borderTopLeftRadius,
+          line: style.borderBottomWidth,
+          chipIsPlum: chip.backgroundColor === aiSurface,
+        };
+      });
+      expect(look).toEqual({ background: "rgba(0, 0, 0, 0)", radius: "0px", line: "1px", chipIsPlum: false });
       await shot(h.page, "02-panel-ort-chat-light-1440");
       await bar(h.page).getByRole("button", { name: "Was Gustav hier kann" }).click();
       const what = h.page.getByRole("dialog", { name: "Was Gustav hier zusätzlich kann" });
