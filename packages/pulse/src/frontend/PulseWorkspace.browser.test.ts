@@ -352,7 +352,13 @@ describe("Pulse base overview", () => {
               ],
               draft: {
                 content: [
-                  { type: "text", text: "Was braucht in Laden gerade Aufmerksamkeit, und warum?" },
+                  {
+                    type: "text",
+                    // The source dialog asks Gustav to connect a source; the overview asks what needs attention.
+                    text: sourcePicker
+                      ? "Hilf mir, eine Quelle an die Pulse-Basis „Laden“ anzubinden. Schlag die Quelle und ein Skript vor und frag, bevor du etwas anlegst."
+                      : "Was braucht in Laden gerade Aufmerksamkeit, und warum?",
+                  },
                   {
                     type: "resource",
                     ref: { type: "pulse.base", id: "Lad001" },
@@ -740,11 +746,18 @@ describe("Pulse base page after the cut", () => {
   }, 60_000);
 
   test("an open sources view refreshes the status every 5 seconds and keeps every row in place", async () => {
-    const recovered = workspaceFixture.initialSources.map((source) =>
+    // First refresh: newer arrivals, the same problems. Second refresh: the throttled source recovers.
+    const newer = workspaceFixture.initialSources.map((source) => ({
+      ...source,
+      lastSeenAt: "2026-10-19T12:39:58.000Z",
+      status: { ...source.status, newestDataAt: "2026-10-19T12:39:58.000Z" },
+    }));
+    const recovered = newer.map((source) =>
       source.id === "Src004" ? { ...source, status: { ...source.status, throttled: false, throttledAt: null } } : source,
     );
+    let answer = newer;
     const { tab, calls } = await open(views[1]!, workspaceFixture, "de", (url) =>
-      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: recovered } : { status: 500, json: {} },
+      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: answer } : { status: 500, json: {} },
     );
     try {
       await tab.getByText("Gedrosselt", { exact: true }).filter({ visible: true }).first().waitFor();
@@ -756,16 +769,44 @@ describe("Pulse base page after the cut", () => {
             ).length,
         );
       expect(await throttled()).toBe(1);
-      const rows = () => tab.evaluate(() => [...document.querySelectorAll("tbody tr")].map((row) => row.getBoundingClientRect().top));
-      const before = await rows();
+      const top = (selector: string) =>
+        tab.evaluate(
+          (selector) =>
+            [...document.querySelectorAll(selector)]
+              .filter((element) => element.checkVisibility())
+              .map((element) => element.getBoundingClientRect().top),
+          selector,
+        );
+      const sourceRows = () => top(".pulse-sources tbody tr");
+      const attentionRows = () => top(".pulse-attention tbody tr");
+      const statusRow = () => top(".k2b-status-row");
+      const before = { sources: await sourceRows(), attention: await attentionRows(), status: await statusRow() };
+      expect(before.sources).toHaveLength(4);
+      expect(before.attention).toHaveLength(1);
       await tab.clock.runFor(4_900);
       expect(calls).toEqual([]);
       await tab.clock.runFor(200);
-      // The response arrives over the real network; poll from the test side, whose timers are not frozen.
-      for (let attempt = 0; attempt < 50 && (await throttled()) > 0; attempt++) await Bun.sleep(100);
-      expect(await throttled()).toBe(0);
+      // The response arrives over the real network; the locator waits from the test side, whose timers are not frozen.
+      await tab.getByText("vor 2 s", { exact: true }).first().waitFor();
       expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
-      expect(await rows()).toEqual(before);
+      // New values with the same problems: not a row moves.
+      expect({ sources: await sourceRows(), attention: await attentionRows(), status: await statusRow() }).toEqual(before);
+      answer = recovered;
+      await tab.clock.runFor(5_000);
+      await tab
+        .locator(".k2b-status-badge__label")
+        .filter({ hasText: /^Gedrosselt$/, visible: true })
+        .waitFor({ state: "hidden" });
+      expect(await throttled()).toBe(0);
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources", "/api/pulse/bases/Lad001/sources"]);
+      // The recovered source leaves "Needs attention" (concept: the list shows only what needs attention). The status
+      // row keeps its place, and the sources keep their order and spacing: they move up together by the list's height.
+      expect(await attentionRows()).toEqual([]);
+      expect(await statusRow()).toEqual(before.status);
+      const after = await sourceRows();
+      const shift = before.sources[0]! - after[0]!;
+      expect(shift).toBeGreaterThan(0);
+      expect(after.map((value) => value + shift)).toEqual(before.sources);
     } finally {
       await tab.close();
     }

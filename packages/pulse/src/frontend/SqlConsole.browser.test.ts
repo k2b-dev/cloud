@@ -52,6 +52,11 @@ const open = async (width: number, snapshot: Partial<PulseWorkspaceProps> = {}, 
     },
   };
 };
+// The base's settings wait in the head's "…" (on a phone in the host's title menu).
+const openSettings = async (tab: Awaited<ReturnType<typeof open>>["tab"]) => {
+  await tab.getByRole("button", { name: "Mehr zu dieser Basis", exact: true }).click();
+  await tab.getByRole("menuitem", { name: "Einstellungen der Basis", exact: true }).click();
+};
 const geometry = (tab: Awaited<ReturnType<typeof open>>["tab"]) =>
   tab.locator('[data-sql-region]:not([data-sql-region="result"])').evaluateAll((elements) =>
     elements.map((element) => {
@@ -229,7 +234,7 @@ test("opening settings preserves a SQL draft that only just fits the original UR
     const sql = `SELECT '${"x".repeat(3960)}'`;
     await tab.getByRole("textbox", { name: "SQL", exact: true }).fill(sql);
     expect(new URL(tab.url()).searchParams.get("sql")).toBe(sql);
-    await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await openSettings(tab);
     expect(new URL(tab.url()).pathname.length + new URL(tab.url()).search.length).toBeLessThanOrEqual(4000);
     await tab.reload();
     await tab.waitForFunction((text) => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="SQL"]')?.value === text, sql);
@@ -245,7 +250,7 @@ test("settings reload preserves parameter-only overrides and the saved SQL", asy
     initialSql: { limits: sqlTestLimits, query: sqlTestQuery, error: null },
   });
   try {
-    await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await openSettings(tab);
     expect(new URL(tab.url()).searchParams.has("params")).toBe(false);
     await tab.reload();
     await tab.waitForFunction((value) => [...document.querySelectorAll("input")].some((input) => input.value === value), host);
@@ -442,7 +447,8 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     });
     await saveDiagnosis.waitFor();
     await tab.route(`${origin}/api/ai/conversations`, (route) => route.fulfill({ status: 500, json: { code: "REQUEST_FAILED" } }));
-    await tab.getByRole("button", { name: "Mit Gustav auswerten", exact: true }).click();
+    // On a phone Gustav waits in the host's title menu, which activates the entry this page registers.
+    await tab.evaluate(() => window.__cloudWorkspaceNavigation?.navigation.activate("assistant"));
     const assistantDiagnosis = result.getByRole("heading", {
       name: "Der Assistant ließ sich nicht öffnen",
       exact: true,
