@@ -76,7 +76,7 @@ jobs:
           ref: ${{ inputs.version != '' && format('refs/tags/cloud-v{0}', inputs.version) || github.sha }}
       - id: release
         if: inputs.version == ''
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0, release-please 17.6.0
         with:
           # RELEASE_PLEASE_TOKEN (GitHub App or fine-grained PAT) lets the
           # release PR receive normal CI runs; GITHUB_TOKEN cannot trigger them.

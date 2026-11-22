@@ -1,16 +1,19 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { releasePleasePins } from "./checks/release-please-version";
 import {
   bumpedComponents,
   markupSnippets,
+  type ParsedEntry,
   type ReleaseConfig,
   type ReleaseData,
   releaseNoteMarkup,
+  squashCommitFindings,
+  squashMessage,
   verifyReleaseData,
 } from "./release-pr-body";
 
@@ -40,12 +43,7 @@ async function config(): Promise<ReleaseConfig> {
 
 async function command(file: string, args: string[], cwd = root, timeout = 30_000): Promise<string> {
   try {
-    const result = await run(file, args, {
-      cwd,
-      timeout,
-      killSignal: "SIGKILL",
-      env: { ...process.env, npm_config_cache: join(tmpdir(), "release-please-npm-cache") },
-    });
+    const result = await run(file, args, { cwd, timeout, killSignal: "SIGKILL" });
     return result.stdout;
   } catch (cause) {
     const output = isRecord(cause) ? [cause.stdout, cause.stderr].filter((value) => typeof value === "string").join("\n") : "";
@@ -63,40 +61,31 @@ function collectingLogger(messages: string[]) {
   return { error: collect, warn: collect, info: collect, debug: collect, trace: collect };
 }
 
+// The root devDependency, kept at the version main.yml's action pin bundles by the
+// `release-please-version` check, so every mode parses offline after `bun install`.
 async function parser() {
-  const workflow = await readFile(join(root, ".github/workflows/main.yml"), "utf8");
-  const pins = new Set(
-    [...workflow.matchAll(/\buses:\s*googleapis\/release-please-action@([0-9a-f]{40})(?=\s|$)/gi)].map((match) => match[1]),
-  );
-  const [sha] = pins;
-  if (pins.size !== 1 || !sha) throw new Error("main.yml must pin exactly one distinct 40-hex release-please-action SHA");
-  const directory = join(tmpdir(), `release-please-action-${sha}`);
-  const modulePath = join(directory, "node_modules/release-please/build/src/util/pull-request-body.js");
-  if (!existsSync(modulePath)) {
-    console.log(`Installing the release-please parser from release-please-action@${sha}`);
-    await mkdir(directory, { recursive: true });
-    for (const file of ["package.json", "package-lock.json"]) {
-      const response = await fetch(`https://raw.githubusercontent.com/googleapis/release-please-action/${sha}/${file}`, {
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!response.ok) throw new Error(`Downloading ${file} failed: HTTP ${response.status} ${response.statusText}`);
-      await writeFile(join(directory, file), await response.text());
-    }
-    await command("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], directory, 300_000);
-  }
   const require = createRequire(import.meta.url);
-  const loaded: unknown = require(modulePath);
+  const directory = dirname(require.resolve("release-please/package.json"));
+  const loaded: unknown = require(join(directory, "build/src/util/pull-request-body.js"));
   if (!isRecord(loaded)) throw new Error("Invalid release-please parser module");
   const bodyClass = loaded.PullRequestBody;
   if ((typeof bodyClass !== "function" && !isRecord(bodyClass)) || !("parse" in bodyClass) || typeof bodyClass.parse !== "function") {
     throw new Error("release-please module does not export PullRequestBody.parse");
   }
   const parse = bodyClass.parse;
-  const commitModule: unknown = require(join(directory, "node_modules/release-please/build/src/commit.js"));
+  const commitModule: unknown = require(join(directory, "build/src/commit.js"));
   if (!isRecord(commitModule) || typeof commitModule.parseConventionalCommits !== "function") {
     throw new Error("release-please module does not export parseConventionalCommits");
   }
   const parseConventionalCommits = commitModule.parseConventionalCommits;
+  const filterModule: unknown = require(join(directory, "build/src/util/filter-commits.js"));
+  if (!isRecord(filterModule) || typeof filterModule.filterCommits !== "function") {
+    throw new Error("release-please module does not export filterCommits");
+  }
+  const filterCommits = filterModule.filterCommits;
+  if ((await readFile(join(root, "release-please-config.json"), "utf8")).includes("changelog-sections")) {
+    throw new Error("release-please-config.json sets changelog-sections; pass them to filterCommits in parseCommits");
+  }
   const parseBody = (body: string) => {
     const messages: string[] = [];
     const result: unknown = parse(body, collectingLogger(messages));
@@ -116,16 +105,33 @@ async function parser() {
     }
     return { releases, messages };
   };
-  const parseCommits = (message: string) => {
+  // With a pull request body, the parser reads its BEGIN_COMMIT_OVERRIDE block as release-please does on main.
+  const parseCommits = (message: string, pullRequestBody?: string) => {
     const messages: string[] = [];
-    const result: unknown = parseConventionalCommits([{ sha: "0", message, files: [] }], collectingLogger(messages));
+    const pullRequest =
+      pullRequestBody === undefined
+        ? undefined
+        : { number: 0, title: "", body: pullRequestBody, headBranchName: "", baseBranchName: "main", labels: [], files: [] };
+    const result: unknown = parseConventionalCommits([{ sha: "0", message, files: [], pullRequest }], collectingLogger(messages));
     if (!Array.isArray(result)) throw new Error("Commit parser returned invalid commits");
     const commits: unknown[] = result;
+    // The repository configures no changelog-sections, so release-please's defaults decide visibility.
+    const filtered: unknown = filterCommits(commits);
+    if (!Array.isArray(filtered)) throw new Error("Commit filter returned invalid commits");
+    const visible: unknown[] = filtered;
     const texts: string[] = [];
+    const entries: ParsedEntry[] = [];
     for (const commit of commits) {
-      if (!isRecord(commit) || typeof commit.bareMessage !== "string" || !Array.isArray(commit.notes)) {
+      if (
+        !isRecord(commit) ||
+        typeof commit.bareMessage !== "string" ||
+        typeof commit.message !== "string" ||
+        typeof commit.breaking !== "boolean" ||
+        !Array.isArray(commit.notes)
+      ) {
         throw new Error("Commit parser returned an invalid commit");
       }
+      entries.push({ header: commit.message, visible: visible.includes(commit), breaking: commit.breaking });
       texts.push(commit.bareMessage);
       const notes: unknown[] = commit.notes;
       for (const note of notes) {
@@ -133,10 +139,12 @@ async function parser() {
         texts.push(note.text);
       }
     }
-    return { texts, messages };
+    return { texts, entries, messages };
   };
   return { parseBody, parseCommits };
 }
+
+type CommitParser = Awaited<ReturnType<typeof parser>>["parseCommits"];
 
 function report(body: string, findings: string[], messages: string[]): void {
   for (const finding of findings) console.error(finding);
@@ -179,19 +187,37 @@ function repositoryName(): string {
   return repository;
 }
 
+/** The markup lint plus release-please's own parse of the squash message that the merge will write. */
+function messageFindings(parseCommits: CommitParser, title: string, number: string, body: string): string[] {
+  const message = squashMessage(title, number, body);
+  const { entries, messages } = parseCommits(message, body);
+  const findings = squashCommitFindings(`${title} (#${number})`, body, entries, messages);
+  // The parser names line:column in the wrapped message; show that line as the squash merge writes it.
+  const lines = message.split("\n");
+  for (const [, line] of messages.join("\n").matchAll(/ at (\d+):\d+/g)) {
+    const text = lines[Number(line) - 1];
+    if (text !== undefined) findings.push(`Line ${line} of the squash message: ${JSON.stringify(text)}`);
+  }
+  return [...releaseNoteMarkup(title, body), ...findings];
+}
+
 async function checkMessage(number: string): Promise<boolean> {
+  const { parseCommits } = await parser();
   const pr = json(await command("gh", ["api", `repos/${repositoryName()}/pulls/${number}`]));
   if (!isRecord(pr) || typeof pr.title !== "string" || (pr.body !== null && typeof pr.body !== "string")) {
     throw new Error("Invalid pull request response: expected title and body");
   }
-  const findings = releaseNoteMarkup(pr.title, pr.body ?? "");
+  const findings = messageFindings(parseCommits, pr.title, number, pr.body ?? "");
   for (const finding of findings) console.error(finding);
-  if (!findings.length) console.log(`PR #${number}: title, body commit headers, and BREAKING CHANGE footers pass.`);
+  if (findings.length) {
+    console.error(
+      "The squash merge wraps the body at 72 columns. Reflow the sentence so that no line starts with a word followed by ( or :, or see docs-site/docs/en/contributing/release-process.md (#1592).",
+    );
+  } else console.log(`PR #${number}: the squash message parses as its title's entry, and the release notes carry no markup.`);
   return findings.length === 0;
 }
 
 async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
-  // Install first: the check must fetch the live body after this potentially slow step.
   const { parseBody } = await parser();
   const repository = repositoryName();
   const pr = json(await command("gh", ["api", `repos/${repository}/pulls/${number}`]));
@@ -234,11 +260,35 @@ async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
   return findings.length === 0;
 }
 
+/**
+ * The `release-please-version` check keeps the devDependency on the version main.yml's pin
+ * comment names. This proves the comment against the pinned action's own lock file, so a
+ * bumped SHA with a stale comment fails here; release-body runs whenever main.yml changes.
+ */
+async function bundledVersionMatches(): Promise<boolean> {
+  const [pin] = releasePleasePins(await readFile(join(root, ".github/workflows/main.yml"), "utf8"));
+  if (!pin) throw new Error("main.yml has no release-please-action pin");
+  const response = await fetch(`https://raw.githubusercontent.com/googleapis/release-please-action/${pin.sha}/package-lock.json`, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`Downloading the action's package-lock.json failed: HTTP ${response.status} ${response.statusText}`);
+  const lock = json(await response.text());
+  const packages = isRecord(lock) ? lock.packages : undefined;
+  const entry = isRecord(packages) ? packages["node_modules/release-please"] : undefined;
+  const bundled = isRecord(entry) && typeof entry.version === "string" ? entry.version : undefined;
+  const installed: unknown = createRequire(import.meta.url)("release-please/package.json").version;
+  const ok = bundled !== undefined && bundled === installed && bundled === pin.version;
+  console.log(
+    `${ok ? "PASS" : "FAIL"} release-please-action@${pin.sha.slice(0, 12)} bundles ${bundled ?? "(unknown)"}; main.yml names ${pin.version ?? "(none)"}, installed ${String(installed)}`,
+  );
+  return ok;
+}
+
 async function selfTest(): Promise<boolean> {
   const { parseBody, parseCommits } = await parser();
+  let passed = await bundledVersionMatches();
   const configuration = await config();
   const fixture = (name: string) => readFile(join(root, "scripts/fixtures/release-pr-body", name), "utf8");
-  let passed = true;
   for (const [name, manifests, missingCloud] of [
     ["1248-as-merged.md", "1248", true],
     ["1248-recovered.md", "1248", false],
@@ -276,6 +326,38 @@ async function selfTest(): Promise<boolean> {
     const ok = (!parserHasMarkup || findings.length > 0) && (expectMarkup ? parserHasMarkup : findings.length === 0);
     console.log(`${ok ? "PASS" : "FAIL"} ${name} (expected ${expectMarkup ? "markup rejection" : "no lint findings"})`);
     if (!ok) report(message, findings, messages);
+    passed &&= ok;
+  }
+  // The squash merge wraps the body at 72 columns before release-please parses it (#1592).
+  const quoteTitle = "fix(chat): a message sent right after Quote carries its quote instead of leaving it in the field";
+  const quoteBody = await fixture("3998-pr-body.md");
+  const clockBody =
+    "The flowing clock replaces both calls that froze time in these tests, `.clock.setFixedTime(` and `.clock.setSystemTime(` on a page or context.";
+  for (const [name, title, number, body, expectRejection] of [
+    ["#3998 as merged: a call at a wrapped line start", quoteTitle, "3998", quoteBody, true],
+    [
+      "#3998 recovered with its override",
+      quoteTitle,
+      "3998",
+      `${quoteBody}\nBEGIN_COMMIT_OVERRIDE\n${quoteTitle} (#3998)\nEND_COMMIT_OVERRIDE\n`,
+      false,
+    ],
+    ["#1564: a code span with a call at a wrapped line start", "ci: balance the test shards", "1564", clockBody, true],
+    [
+      "#1578: a word and colon at a wrapped line start, a hidden extra entry",
+      "test(gateway-ops): add a browser test",
+      "1578",
+      "- Dev dependency: `packages/gateway-ops` now lists `playwright` and `bun-plugin-tailwind` for its first browser test. No operations note is needed: nothing changed in runtime configuration or deployment.",
+      false,
+    ],
+    ["a fix header in the body, a changelog entry", "feat(x): add y", "1", "Context.\n\nfix: an unrelated typo", true],
+    ["a breaking footer of the title's entry", "feat(x)!: add y", "1", "Context.\n\nBREAKING CHANGE: migrate to DIR", false],
+    ["wrapped prose that stays one entry", "fix(x): keep y", "1", `${"A plain sentence about the change. ".repeat(6)}\n\nCloses #2`, false],
+  ] as const) {
+    const findings = messageFindings(parseCommits, title, number, body);
+    const ok = expectRejection ? findings.length > 0 : findings.length === 0;
+    console.log(`${ok ? "PASS" : "FAIL"} ${name} (expected ${expectRejection ? "squash parse rejection" : "one entry"})`);
+    if (!ok || findings.length) for (const finding of findings) console.error(`  ${finding}`);
     passed &&= ok;
   }
   return passed;
@@ -318,12 +400,14 @@ async function main(): Promise<boolean> {
 
 --pr: check a live release-please PR. --body checks an edited file.
 --self-test: check historical fixtures with the parser pinned in main.yml.
---message: fetch the live PR title and body and check markup copied into release notes.
+--message: fetch the live PR title and body, check markup copied into release notes, and parse
+      the squash message that the merge will write, wrapped at 72 columns, as release-please does.
 --pr and --message accept an optional positive PR number. Otherwise, read
       pull_request.number or merge_group.head_ref from GITHUB_EVENT_PATH.
       With no event file or no PR in the event, there is no pull request to check.
       Both use gh auth locally or GH_TOKEN in CI; GITHUB_REPOSITORY defaults to k2b-dev/cloud.
---pr and --self-test download and install the pinned parser into the OS temp directory.
+Every mode parses with the release-please root devDependency, offline after bun install.
+      --self-test also checks online that main.yml's action pin bundles that version.
 --help: print this usage and exit.`);
     return true;
   }

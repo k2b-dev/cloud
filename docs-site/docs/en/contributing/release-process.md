@@ -47,16 +47,29 @@ covers the usual forms of release-please's commit grammar, not every one; the
 `release-body` job below parses with release-please itself. After fixing the
 text, re-run the failed `check` job to check it again.
 
-The `check` job reads the body as written, but the squash merge writes it
-wrapped at about 72 columns, and wrapped text can parse differently. A line
-that now starts with a word directly followed by an opening parenthesis,
-such as `` `color-mix( ``, can make release-please drop the whole commit
-without a warning. A line that now starts with a word and a colon reads as a
-second commit ([#1592](https://github.com/k2b-dev/cloud/issues/1592)).
-Before a release pull request merges, parse every squash commit since the
-last release with `parseConventionalCommits` from the release-please version
-that `main.yml` pins. Restore a dropped `feat` or `fix` with an override pull
-request, as for an advisory merge below.
+The squash merge writes the body wrapped: each line longer than 72 columns
+outside a fenced code block breaks at whitespace, and the wrapped lines lose
+their indentation. Wrapped text can parse differently. A line that now starts
+with a word directly followed by an opening parenthesis, such as
+`` `color-mix( ``, makes release-please drop the whole commit without a
+warning. A line that now starts with a word and a colon reads as an extra
+entry. So the `check` job also writes the squash message as the merge will
+and parses it with `parseConventionalCommits` from the release-please version
+that `main.yml` pins ([#1592](https://github.com/k2b-dev/cloud/issues/1592)).
+It fails when release-please drops a part of it, does not read the title's
+entry, or reads an extra entry that reaches the changelog (`feat`, `fix`,
+`perf`, `revert`) or is breaking. An extra entry of a hidden type, such as a
+wrapped `https: //…` link, passes. The error names the line of the wrapped
+message; reflow that sentence, for example by moving the code span. With a
+`BEGIN_COMMIT_OVERRIDE` block, the job parses the block instead, as
+release-please does. Run it locally with
+`bun scripts/check-release-pr-body.ts --message <n>`.
+
+Commits that reach `main` without a pull request, such as an advisory
+merge, get no such check. Before a release pull request merges, parse every
+squash commit since the last release with the pinned
+`parseConventionalCommits`. Restore a dropped `feat` or `fix` with an
+override pull request, as for an advisory merge below.
 
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching

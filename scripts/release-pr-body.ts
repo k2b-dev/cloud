@@ -71,6 +71,87 @@ export function markupSnippets(text: string): string[] {
 }
 
 /**
+ * The body as the squash merge writes it into the commit message on `main` (#1592). Each line
+ * longer than 72 columns outside a fenced code block is wrapped greedily at whitespace; the
+ * wrapped lines lose their indentation and repeated spaces, and a word longer than 72 columns at
+ * the start of a line moves to its own line after an empty one. This reproduces every squash
+ * commit on `main` whose pull request body was not edited after the merge (377 of the last 391; the other 14 were edited).
+ */
+export function squashBody(body: string): string {
+  const width = 72;
+  let fenced = false;
+  return body
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .flatMap((line) => {
+      if (/^\s*(?:```|~~~)/.test(line)) {
+        fenced = !fenced;
+        return [line];
+      }
+      if (fenced || line.length <= width) return [line];
+      const lines: string[] = [];
+      let current: string | undefined;
+      for (const word of line.split(/\s+/).filter(Boolean)) {
+        if ((current?.length ?? -1) + 1 + word.length > width) {
+          lines.push(current ?? "");
+          current = word;
+        } else current = current === undefined ? word : `${current} ${word}`;
+      }
+      lines.push(current ?? "");
+      return lines;
+    })
+    .join("\n");
+}
+
+/** The squash commit message that lands on `main`, without the trailers GitHub appends. */
+export function squashMessage(title: string, number: string, body: string): string {
+  const header = `${title} (#${number})`;
+  const wrapped = squashBody(body).trimEnd();
+  return wrapped ? `${header}\n\n${wrapped}` : header;
+}
+
+/** Whether release-please reads a `BEGIN_COMMIT_OVERRIDE` block from this body instead of the commit message. */
+export function hasCommitOverride(body: string): boolean {
+  return Boolean((body.split("BEGIN_COMMIT_OVERRIDE")[1] ?? "").split("END_COMMIT_OVERRIDE")[0]?.trim());
+}
+
+/** One entry that release-please parsed from a commit, as its changelog filter sees it. */
+export interface ParsedEntry {
+  header: string;
+  /** Kept by release-please's `filterCommits` with the default sections, which this repository uses. */
+  visible: boolean;
+  breaking: boolean;
+}
+
+/**
+ * Findings for what release-please's `parseConventionalCommits` made of a squash commit: a
+ * dropped part, no entry, or, without an override, a missing title entry or an extra entry that
+ * reaches the changelog or the version. Extra entries of hidden types, such as a `docs: n/a`
+ * line or a wrapped `https: //…` link, change neither and pass.
+ */
+export function squashCommitFindings(header: string, body: string, entries: ParsedEntry[], messages: string[]): string[] {
+  const findings = messages
+    .filter((message) => message.startsWith("commit could not be parsed") || message.startsWith("error message:"))
+    .map((message) => `release-please drops a part of the squash commit: ${message}`);
+  if (hasCommitOverride(body)) {
+    if (!entries.length) findings.push("The BEGIN_COMMIT_OVERRIDE block yields no release-please entry.");
+    return findings;
+  }
+  if (!entries.some((entry) => entry.header === header)) {
+    const read = entries.length ? entries.map((entry) => JSON.stringify(entry.header)).join(", ") : "no entry";
+    findings.push(`release-please does not read the title's entry ${JSON.stringify(header)} from the squash commit; it reads ${read}.`);
+  }
+  for (const entry of entries) {
+    if (entry.header !== header && (entry.visible || entry.breaking)) {
+      findings.push(
+        `The squash commit yields an extra ${entry.breaking ? "breaking" : "changelog"} entry ${JSON.stringify(entry.header)}; put intended extra entries in a BEGIN_COMMIT_OVERRIDE block.`,
+      );
+    }
+  }
+  return findings;
+}
+
+/**
  * Cheap PR-time lint for markup that release-please copies into release notes. It covers the
  * usual forms of its commit grammar without installing it; the release-body CI job, which
  * parses with release-please itself, stays the authoritative check.
