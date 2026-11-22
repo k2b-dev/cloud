@@ -87,7 +87,7 @@ export default function AssistantEmptyChat(props: {
               {props.place ? placeT().emptyTitle({ title: props.place.title }) : t().workOn}
             </h1>
             {props.place && !props.modelNote ? (
-              <p class="mt-1 text-center text-sm text-[var(--k2b-text-secondary)]">{placeT().emptyText}</p>
+              <p class="mt-1 text-start text-sm text-[var(--k2b-text-secondary)]">{placeT().emptyText}</p>
             ) : null}
             {props.modelNote}
           </div>

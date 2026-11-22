@@ -394,14 +394,15 @@ body:has(> [data-cloud-panel-page]) {
   background: var(--k2b-surface);
 }
 
-/* The shell's consent question: one calm notice above the provider page, inset from the card edge like the
-   tabs above it. The server draws it when the answer is missing, so hydration never moves it; the error line is
-   reserved and fills in place. */
+/* The shell's consent question (Gustav flat panel, K10): a tinted square cell under the head, from edge to edge of the
+   panel, above the provider page. The server draws it when the answer is missing, so hydration never moves it; the
+   error line is reserved and fills in place. */
 .cloud-panel .cloud-panel__consent.k2b-notice-card {
   display: none;
   grid-area: 1 / 1;
-  margin: 0 0.5rem 0.5rem;
-  padding: 0.75rem 0.875rem 0;
+  margin: 0;
+  padding: 0.75rem var(--k2b-gutter) 0;
+  border-radius: var(--k2b-radius-flat);
   outline: none;
 }
 
