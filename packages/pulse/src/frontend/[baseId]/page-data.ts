@@ -44,51 +44,23 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     pulseService.base.list(user),
     getSetting<string>("app.url").catch(() => ""),
   ]);
-  const managersOf = () =>
-    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
-      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
-      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
-      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
-      ORDER BY a.created_at LIMIT 3`;
-  // Not shared: the page says so in its head and names who gives access, as decided on 17.10.; nothing of the base shows.
-  if (!base.ok && base.error.status === 403) {
-    const managers = await managersOf();
-    return {
-      kind: "ok",
-      baseName: "",
-      workspaceProps: {
-        initialAccess: { denied: true, managers: managers.map((manager) => manager.name) },
-        initialPermissions: { write: false, admin: false },
-        initialBases: bases.ok ? await projectBases(bases.data) : [],
-        initialBaseId: publicBaseId,
-        initialRouteState: { view: "sources", sourceId: "" },
-        initialSources: [],
-        initialSourceScrapes: {},
-        initialSourceApiKeys: {},
-        initialQueryCoverage: { bases: bases.ok, baseData: false, sourceDetail: false },
-        initialDateConfig: getDateConfig(c),
-        initialNow: new Date().toISOString(),
-        initialOrigin: publicOrigin(appUrl, url.origin),
-      },
-    };
-  }
   if (!base.ok) return { kind: "error", status: base.error.status };
-  // The tab count and the Usage tab need the sources on every tab of the base.
+  // The sidebar counts the sources on every view of the base.
   const sources = await pulseService.source.list(baseId, user, { signal: c.req.raw.signal });
   if (!sources.ok) return { kind: "error", status: sources.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const [write, admin] = scope.ok
     ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
     : [null, null];
-  const [policy, managers, creator] = await Promise.all([
+  const [policy, managers] = await Promise.all([
     readBasePolicy(),
-    managersOf(),
-    base.data.createdBy && sources.data.length === 0
-      ? sql<{ name: string }[]>`SELECT COALESCE(display_name,uid) AS name FROM auth.users WHERE id::text=${base.data.createdBy}`
-      : Promise.resolve([]),
+    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
+      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
+      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
+      ORDER BY a.created_at LIMIT 3`,
   ]);
   const props: PulseWorkspaceProps = {
-    initialCreator: creator[0]?.name ?? null,
     initialSettings: { maxRawRetentionDays: policy.maxRawRetentionDays, admins: managers.map((manager) => manager.name) },
     initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
     initialBases: await projectBases(bases.ok ? bases.data : [base.data]),

@@ -1,12 +1,18 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { buildWorkspaceHarness, origin, pauseWorkspaceClock, workspaceFixture } from "./PulseWorkspace.browser-fixture";
-import { buildPulseWorkspaceHref } from "./workspace/routes";
+import {
+  attentionWorkspaceFixture,
+  buildWorkspaceHarness,
+  origin,
+  pauseWorkspaceClock,
+  workspaceFixture,
+} from "./PulseWorkspace.browser-fixture";
+import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
 import { sqlTestLimits, sqlTestQuery } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
-// The post-cut base page: sources with their status, one source in detail, and the in-place hint where
-// dashboards and questions used to be. Everything fits a phone and a desktop without horizontal scrolling.
+// The base page: sources with their status and the fired alerts above them, one source in detail, and the notice an
+// old dashboard link leaves. Everything fits a phone and a desktop without horizontal scrolling.
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 
 let browser: Browser;
@@ -50,7 +56,7 @@ const open = async (
 const overflow = (tab: Awaited<ReturnType<typeof open>>["tab"]) =>
   tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 
-describe("Pulse base workspace", () => {
+describe("Pulse base sources and alerts", () => {
   test("source expectation edits send the current revision and preserve the draft on conflict", async () => {
     const props: PulseWorkspaceProps = { ...workspaceFixture, initialRouteState: { view: "sources", sourceId: "Src002" } };
     const { tab } = await open(views[1]!, props, "de", (url) => ({
@@ -80,58 +86,99 @@ describe("Pulse base workspace", () => {
     }
   }, 30_000);
 
-  test("the third source path opens the exact unsent Assistant draft", async () => {
-    const { tab } = await open(views[1]!, workspaceFixture);
+  test("an alert's SQL opens the complete alert draft without running it and survives reload and Back", async () => {
+    const { tab, calls } = await open(views[1]!, attentionWorkspaceFixture);
     tab.setDefaultTimeout(5_000);
-    const requests: unknown[] = [];
-    await tab.route(`${origin}/api/ai/**`, (route) => {
-      const request = route.request();
-      requests.push({ path: new URL(request.url()).pathname, method: request.method(), body: request.postDataJSON() });
-      return route.fulfill({ status: 201, json: { id: "Cht001", draft: { content: [], revision: 1, updatedAt: null } } });
+    const sql = `SELECT :host AS host, :label AS label /* ${"context ".repeat(600)} */`;
+    const params = { host: "db\\01", label: "A&B ü" };
+    await tab.route(`${origin}/app/pulse/**`, (route) => {
+      const state = readWorkspacePathState(route.request().url(), "Lad001");
+      const props: PulseWorkspaceProps =
+        state.alertId === "Alt001"
+          ? {
+              ...attentionWorkspaceFixture,
+              initialRouteState: { ...state, sql, params },
+              initialSql: { limits: sqlTestLimits, query: null, error: null },
+            }
+          : { ...attentionWorkspaceFixture, initialRouteState: state };
+      return route.fulfill({ contentType: "text/html", body: page(props) });
     });
-    await tab.route(`${origin}/app/assistant**`, (route) => route.fulfill({ contentType: "text/html", body: "<p>Assistant fixture</p>" }));
     try {
-      await tab.getByRole("button", { name: "Quelle anlegen", exact: true }).click();
-      const dialog = tab.locator("dialog[open]");
-      await dialog.getByRole("heading", { name: "Neue Quelle in Laden" }).waitFor();
-      await dialog.getByRole("button", { name: /Mit KI fragen/ }).click();
-      await tab.waitForURL(`${origin}/app/assistant?conversation=Cht001`);
-      expect(requests).toEqual([
-        {
-          path: "/api/ai/conversations",
-          method: "POST",
-          body: {
-            launchedByAppId: "pulse",
-            title: "Was ist los in Laden?",
-            skills: ["cloud-pulse"],
-            preloadTools: [
-              { appId: "pulse", kind: "query", id: "sql.run" },
-              { appId: "pulse", kind: "query", id: "base.read" },
-              { appId: "pulse", kind: "query", id: "source.list" },
-            ],
-            draft: {
-              content: [
-                {
-                  type: "text",
-                  text: "Hilf mir, eine Quelle an die Pulse-Basis „Laden“ anzubinden. Schlag die Quelle und ein Skript vor und frag, bevor du etwas anlegst.",
-                },
-                {
-                  type: "resource",
-                  ref: { type: "pulse.base", id: "Lad001" },
-                  title: "Laden",
-                  icon: "ti ti-activity-heartbeat",
-                  href: "/app/pulse/Lad001",
-                },
-              ],
-            },
-          },
-        },
-      ]);
+      await tab.getByRole("row").filter({ hasText: "Antwortzeit" }).getByRole("link", { name: "SQL öffnen", exact: true }).click();
+      await tab.waitForURL(`${origin}/app/pulse/Lad001/sql?alert=Alt001`);
+      const assertDraft = async () => {
+        const editor = tab.getByRole("textbox", { name: "SQL", exact: true });
+        await editor.waitFor();
+        expect(await editor.inputValue()).toBe(sql);
+        for (const [key, value] of Object.entries(params))
+          expect(await tab.getByRole("textbox", { name: `:${key}`, exact: true }).inputValue()).toBe(value);
+        expect(new URL(tab.url()).search).toBe("?alert=Alt001");
+        expect(calls.filter((path) => path.endsWith("/sql"))).toEqual([]);
+      };
+      await assertDraft();
+      await tab.reload();
+      await assertDraft();
+      await tab.goBack();
+      await tab.waitForURL(`${origin}/app/pulse/Lad001`);
+      await tab.getByRole("heading", { name: "Braucht Aufmerksamkeit" }).waitFor();
+      expect(await tab.getByRole("textbox", { name: "SQL", exact: true }).count()).toBe(0);
     } finally {
       await tab.close();
     }
   }, 30_000);
 
+  test("the third source path opens the exact unsent Assistant draft", async () => {
+    {
+      const { tab } = await open(views[1]!, workspaceFixture);
+      tab.setDefaultTimeout(5_000);
+      const requests: unknown[] = [];
+      await tab.route(`${origin}/api/ai/**`, (route) => {
+        const request = route.request();
+        requests.push({ path: new URL(request.url()).pathname, method: request.method(), body: request.postDataJSON() });
+        return route.fulfill({ status: 201, json: { id: "Cht001", draft: { content: [], revision: 1, updatedAt: null } } });
+      });
+      await tab.route(`${origin}/app/assistant**`, (route) =>
+        route.fulfill({ contentType: "text/html", body: "<p>Assistant fixture</p>" }),
+      );
+      try {
+        await tab.getByRole("button", { name: "Quelle", exact: true }).click();
+        const dialog = tab.locator("dialog[open]");
+        await dialog.getByRole("heading", { name: "Neue Quelle in Laden" }).waitFor();
+        await dialog.getByRole("button", { name: /Mit KI fragen/ }).click();
+        await tab.waitForURL(`${origin}/app/assistant?conversation=Cht001`);
+        expect(requests).toEqual([
+          {
+            path: "/api/ai/conversations",
+            method: "POST",
+            body: {
+              launchedByAppId: "pulse",
+              title: "Was ist los in Laden?",
+              skills: ["cloud-pulse"],
+              preloadTools: [
+                { appId: "pulse", kind: "query", id: "sql.run" },
+                { appId: "pulse", kind: "query", id: "base.read" },
+                { appId: "pulse", kind: "query", id: "source.list" },
+              ],
+              draft: {
+                content: [
+                  { type: "text", text: "Was braucht in Laden gerade Aufmerksamkeit, und warum?" },
+                  {
+                    type: "resource",
+                    ref: { type: "pulse.base", id: "Lad001" },
+                    title: "Laden",
+                    icon: "ti ti-activity-heartbeat",
+                    href: "/app/pulse/Lad001",
+                  },
+                ],
+              },
+            },
+          },
+        ]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 30_000);
   test("a lost source-create response preserves the draft, blocks resubmission and offers the reconciled source list", async () => {
     const { tab } = await open(views[1]!, workspaceFixture, "de", (url) => ({
       status: 200,
@@ -149,7 +196,7 @@ describe("Pulse base workspace", () => {
     });
     tab.setDefaultTimeout(5_000);
     try {
-      await tab.getByRole("button", { name: "Quelle anlegen", exact: true }).click();
+      await tab.getByRole("button", { name: "Quelle", exact: true }).click();
       const dialog = tab.locator("dialog[open]");
       expect(await dialog.getByRole("button", { name: /Mit KI fragen/ }).isVisible()).toBe(true);
       await dialog.getByRole("button", { name: /Senden/ }).click();
@@ -213,45 +260,6 @@ describe("Pulse base workspace", () => {
 });
 
 describe("Pulse base page after the cut", () => {
-  // The old ways: /:base/dashboards and /:base/dashboards/:id redirect here with ?notice=dashboards-removed, /:base/overview
-  // without it (redirects: removed-routes.render.test.tsx). The page says what happened once and keeps the base usable.
-  test("an old dashboard link opens the base with a notice that names no dashboard and goes away on request", async () => {
-    for (const view of views) {
-      const props: PulseWorkspaceProps = { ...workspaceFixture, initialNotice: "dashboards-removed" };
-      const { tab, calls } = await open(view, props);
-      try {
-        await tab.goto(`${origin}/app/pulse/${props.initialBaseId}?notice=dashboards-removed`);
-        await tab.getByText("Dashboards gibt es nicht mehr").waitFor();
-        expect(await tab.getByText("Newsletter-Skript").first().isVisible()).toBe(true);
-        expect(await overflow(tab)).toBeLessThanOrEqual(0);
-        // The notice cell stands at the top of Sources and leads to Usage, where the pages that read the base are.
-        expect(await tab.locator(".pulse-tab > :first-child .k2b-notice-card").getByText("Dashboards gibt es nicht mehr").count()).toBe(1);
-        expect(await tab.getByRole("link", { name: "Nutzung öffnen" }).getAttribute("href")).toBe(
-          `/app/pulse/${props.initialBaseId}/usage`,
-        );
-        await tab.getByRole("button", { name: "Verstanden" }).click();
-        await tab.getByText("Dashboards gibt es nicht mehr").waitFor({ state: "hidden" });
-        expect(new URL(tab.url()).searchParams.has("notice")).toBe(false);
-        expect(calls).toEqual([]);
-      } finally {
-        await tab.close();
-      }
-    }
-  }, 60_000);
-
-  test("an old overview link opens the base without a notice, and no menu leads to an overview or dashboards", async () => {
-    const { tab } = await open(views[1]!, workspaceFixture);
-    try {
-      await tab.getByText("Newsletter-Skript").first().waitFor();
-      expect(await tab.getByText("Dashboards gibt es nicht mehr").count()).toBe(0);
-      await tab.getByRole("button", { name: "Mehr zu dieser Basis" }).click();
-      await tab.getByRole("menuitem", { name: "Einstellungen der Basis" }).waitFor();
-      for (const name of ["Übersicht", "Dashboards"]) expect(await tab.getByRole("menuitem", { name }).count()).toBe(0);
-    } finally {
-      await tab.close();
-    }
-  }, 30_000);
-
   test("sources show their status and newest data on phones and desktops", async () => {
     for (const view of views) {
       const { tab, calls } = await open(view, workspaceFixture);
@@ -288,18 +296,11 @@ describe("Pulse base page after the cut", () => {
   }, 60_000);
 
   test("an open sources view refreshes the status every 5 seconds and keeps every row in place", async () => {
-    // First refresh: newer arrivals, the same problems. Second refresh: the throttled source recovers.
-    const newer = workspaceFixture.initialSources.map((source) => ({
-      ...source,
-      lastSeenAt: "2026-10-19T12:39:58.000Z",
-      status: { ...source.status, newestDataAt: "2026-10-19T12:39:58.000Z" },
-    }));
-    const recovered = newer.map((source) =>
+    const recovered = workspaceFixture.initialSources.map((source) =>
       source.id === "Src004" ? { ...source, status: { ...source.status, throttled: false, throttledAt: null } } : source,
     );
-    let answer = newer;
     const { tab, calls } = await open(views[1]!, workspaceFixture, "de", (url) =>
-      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: answer } : { status: 500, json: {} },
+      new URL(url).pathname === "/api/pulse/bases/Lad001/sources" ? { status: 200, json: recovered } : { status: 500, json: {} },
     );
     try {
       await tab.getByText("Gedrosselt", { exact: true }).filter({ visible: true }).first().waitFor();
@@ -311,51 +312,23 @@ describe("Pulse base page after the cut", () => {
             ).length,
         );
       expect(await throttled()).toBe(1);
-      const top = (selector: string) =>
-        tab.evaluate(
-          (selector) =>
-            [...document.querySelectorAll(selector)]
-              .filter((element) => element.checkVisibility())
-              .map((element) => element.getBoundingClientRect().top),
-          selector,
-        );
-      const sourceRows = () => top(".pulse-sources tbody tr");
-      const attentionRows = () => top(".pulse-attention tbody tr");
-      const statusRow = () => top(".k2b-status-row");
-      const before = { sources: await sourceRows(), attention: await attentionRows(), status: await statusRow() };
-      expect(before.sources).toHaveLength(4);
-      expect(before.attention).toHaveLength(1);
+      const rows = () => tab.evaluate(() => [...document.querySelectorAll("tbody tr")].map((row) => row.getBoundingClientRect().top));
+      const before = await rows();
       await tab.clock.runFor(4_900);
       expect(calls).toEqual([]);
       await tab.clock.runFor(200);
-      // The response arrives over the real network; the locator waits from the test side, whose timers are not frozen.
-      await tab.getByText("vor 2 s", { exact: true }).first().waitFor();
-      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
-      // New values with the same problems: not a row moves.
-      expect({ sources: await sourceRows(), attention: await attentionRows(), status: await statusRow() }).toEqual(before);
-      answer = recovered;
-      await tab.clock.runFor(5_000);
-      await tab
-        .locator(".k2b-status-badge__label")
-        .filter({ hasText: /^Gedrosselt$/, visible: true })
-        .waitFor({ state: "hidden" });
+      // The response arrives over the real network; poll from the test side, whose timers are not frozen.
+      for (let attempt = 0; attempt < 50 && (await throttled()) > 0; attempt++) await Bun.sleep(100);
       expect(await throttled()).toBe(0);
-      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources", "/api/pulse/bases/Lad001/sources"]);
-      // The recovered source leaves "Needs attention" (concept: the list shows only what needs attention). The status
-      // row keeps its place, and the sources keep their order and spacing: they move up together by the list's height.
-      expect(await attentionRows()).toEqual([]);
-      expect(await statusRow()).toEqual(before.status);
-      const after = await sourceRows();
-      const shift = before.sources[0]! - after[0]!;
-      expect(shift).toBeGreaterThan(0);
-      expect(after.map((value) => value + shift)).toEqual(before.sources);
+      expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
+      expect(await rows()).toEqual(before);
     } finally {
       await tab.close();
     }
   }, 60_000);
 
-  test("a 5-second refresh keeps the sources tab, its scroll position and the focused row", async () => {
-    // Enough sources that Main scrolls at 1440 px; the refresh brings new values for the same rows.
+  test("a 5-second refresh keeps the sources view, its scroll position and the focused row", async () => {
+    // Enough sources that the list scrolls at 1440 px; the refresh brings new values for the same rows (#3997).
     const template = workspaceFixture.initialSources[0]!;
     const many = [
       ...workspaceFixture.initialSources,
@@ -367,6 +340,7 @@ describe("Pulse base page after the cut", () => {
     ];
     const newer = many.map((source, index) => ({
       ...source,
+      seriesCount: 1000 + index,
       todayCount: 1000 + index,
       lastSeenAt: "2026-10-19T12:39:58.000Z",
       status: { ...source.status, newestDataAt: "2026-10-19T12:39:58.000Z" },
@@ -377,20 +351,25 @@ describe("Pulse base page after the cut", () => {
     try {
       await tab.getByText("Kasse 32", { exact: true }).waitFor({ state: "attached" });
       const before = await tab.evaluate(() => {
-        const main = document.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
-        main.scrollTop = 300;
-        const rows = [...document.querySelectorAll<HTMLElement>(".pulse-sources tbody tr.k2b-data-table__row")];
-        const top = main.getBoundingClientRect().top;
-        // A row in view after the scroll, so focusing it does not move Main.
+        const view = document.querySelector<HTMLElement>('section[aria-label="Quellen"]')!;
+        const rows = [...view.querySelectorAll<HTMLElement>("tbody tr.k2b-data-table__row")];
+        // The element that scrolls the list: the nearest ancestor of a row with overflow.
+        let scroller: HTMLElement | null = rows[0]!.parentElement;
+        while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
+          scroller = scroller.parentElement;
+        scroller!.scrollTop = 300;
+        const top = scroller!.getBoundingClientRect().top;
+        // A row in view after the scroll, so focusing it does not move the list.
         const row = rows.find((element) => element.getBoundingClientRect().top > top + 100)!;
         row.focus({ preventScroll: true });
-        const marks = window as unknown as { pulseTab?: Element | null; pulseRow?: Element };
-        marks.pulseTab = document.querySelector("section.pulse-tab");
+        const marks = window as unknown as { pulseView?: Element; pulseRow?: Element; pulseScroller?: HTMLElement };
+        marks.pulseView = view;
         marks.pulseRow = row;
+        marks.pulseScroller = scroller!;
         return {
           rows: rows.length,
-          overflow: main.scrollHeight - main.clientHeight,
-          scrollTop: main.scrollTop,
+          overflow: scroller!.scrollHeight - scroller!.clientHeight,
+          scrollTop: scroller!.scrollTop,
           focused: document.activeElement === row,
         };
       });
@@ -399,22 +378,77 @@ describe("Pulse base page after the cut", () => {
       expect(before.scrollTop).toBe(300);
       expect(before.focused).toBe(true);
       await tab.clock.runFor(5_100);
-      await tab.locator(".pulse-sources tbody tr.k2b-data-table__row").getByText("1.035", { exact: true }).waitFor({ state: "attached" });
+      await tab
+        .getByText(/^1035 /)
+        .first()
+        .waitFor({ state: "attached" });
       expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
       const after = await tab.evaluate(() => {
-        const main = document.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
-        const marks = window as unknown as { pulseTab?: Element | null; pulseRow?: Element };
+        const marks = window as unknown as { pulseView?: Element; pulseRow?: Element; pulseScroller?: HTMLElement };
         return {
-          scrollTop: main.scrollTop,
+          scrollTop: marks.pulseScroller!.scrollTop,
           sameRow: document.activeElement === marks.pulseRow,
           rowConnected: marks.pulseRow?.isConnected ?? false,
-          sameTab: document.querySelector("section.pulse-tab") === marks.pulseTab,
+          sameView: document.querySelector('section[aria-label="Quellen"]') === marks.pulseView,
         };
       });
       expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(1);
-      expect(after).toMatchObject({ sameRow: true, rowConnected: true, sameTab: true });
+      expect(after).toMatchObject({ sameRow: true, rowConnected: true, sameView: true });
     } finally {
       await tab.close();
+    }
+  }, 60_000);
+
+  // The old ways: /:base/dashboards and /:base/dashboards/:id redirect here with ?notice=dashboards-removed, /:base/overview
+  // without it (redirects: removed-routes.render.test.tsx). The page says what happened once and keeps the base usable.
+  test("an old dashboard link opens the base with a notice that names no dashboard and goes away on request", async () => {
+    for (const view of views) {
+      const props: PulseWorkspaceProps = { ...workspaceFixture, initialNotice: "dashboards-removed" };
+      const { tab, calls } = await open(view, props);
+      try {
+        await tab.goto(`${origin}/app/pulse/${props.initialBaseId}?notice=dashboards-removed&settings=`);
+        const notice = tab.locator(".k2b-notice-card").filter({ hasText: "Dashboards gibt es nicht mehr" });
+        await notice.waitFor();
+        expect(await notice.getByText("Seiten mit Pulse-Daten baust du jetzt in Code.").isVisible()).toBe(true);
+        expect(await tab.getByText("Newsletter-Skript").first().isVisible()).toBe(true);
+        expect(await overflow(tab)).toBeLessThanOrEqual(0);
+        await notice.getByRole("button", { name: "Verstanden" }).click();
+        await notice.waitFor({ state: "detached" });
+        // Only the notice leaves the URL; the rest of it stays.
+        expect(new URL(tab.url()).search).toBe("?settings=");
+        expect(calls).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
+
+  test("fired alerts stand above the sources in the server's order and fit phone and desktop", async () => {
+    for (const view of views) {
+      const { tab, calls } = await open(view, {
+        ...attentionWorkspaceFixture,
+        initialRouteState: { view: "sources", sourceId: "", alertId: "Alt001" },
+      });
+      try {
+        const list = tab.getByRole("region", { name: "Braucht Aufmerksamkeit" });
+        await list.waitFor();
+        const rows = list.locator("tbody tr");
+        expect(await rows.count()).toBe(3);
+        expect(await rows.nth(0).innerText()).toContain("Alarm „Fehlerquote“ ausgelöst");
+        expect(await rows.nth(0).innerText()).toContain("Kritisch");
+        expect(await rows.nth(1).innerText()).toContain("Löst aus, wenn der Wert über 200 liegt.");
+        expect(await rows.nth(2).innerText()).toContain("Alarm „Kassenabschluss“ lässt sich nicht prüfen");
+        // ?alert= marks its alert in the list.
+        expect(await rows.nth(1).getAttribute("data-selected")).toBe("true");
+        expect(await rows.nth(0).getByRole("button", { name: "Mit Gustav anpassen" }).isVisible()).toBe(true);
+        const alertsBox = (await list.boundingBox())!;
+        const sourcesBox = (await tab.locator('section[aria-label="Quellen"] input[type="search"]').boundingBox())!;
+        expect(alertsBox.y + alertsBox.height).toBeLessThanOrEqual(sourcesBox.y);
+        expect(await overflow(tab)).toBeLessThanOrEqual(0);
+        expect(calls).toEqual([]);
+      } finally {
+        await tab.close();
+      }
     }
   }, 60_000);
 
@@ -430,7 +464,6 @@ describe("Pulse base page after the cut", () => {
       {
         ...workspaceFixture,
         initialBases: [clearing],
-        // The SQL view has no periodic source refresh, so only the settings poll reads the base list.
         initialRouteState: { view: "sql", sourceId: "", sql: "" },
         initialSql: { limits: sqlTestLimits, query: null, error: null },
       },
@@ -443,8 +476,7 @@ describe("Pulse base page after the cut", () => {
       },
     );
     try {
-      await tab.getByRole("button", { name: "Mehr zu dieser Basis" }).click();
-      await tab.getByRole("menuitem", { name: "Einstellungen der Basis" }).click();
+      await tab.getByRole("button", { name: "Einstellungen" }).click();
       const settings = tab.locator("dialog[open]");
       const retry = settings.getByRole("button", { name: "Erneut versuchen" });
       await settings.getByText("Allgemein").first().waitFor();
@@ -528,8 +560,7 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
   const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
   const confirmDiscard = confirmation.getByRole("button", { name: "Verwerfen", exact: true });
   try {
-    await tab.getByRole("button", { name: "Mehr zu dieser Basis" }).click();
-    await tab.getByRole("menuitem", { name: "Einstellungen der Basis" }).click();
+    await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
     const name = tab.getByRole("textbox", { name: "Name", exact: true });
     await name.fill("Laden Entwurf");
     await tab.evaluate(() => window.history.back());

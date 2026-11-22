@@ -1,7 +1,7 @@
 import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SQL_PARAMETER_MAX_BYTES } from "../../sql-params";
 
-/** The four tabs of a base. Old overview and dashboard paths are server redirects to the base, not views. */
-export type WorkspaceView = "sources" | "data" | "usage" | "sql";
+/** A base opens on Sources. Old overview and dashboard paths are server redirects to the base, not views. */
+export type WorkspaceView = "sources" | "sql";
 export const PULSE_SIDEBAR_SQL_ID = "sql";
 export const PULSE_SETTINGS_TABS = ["general", "members", "retention", "usage", "danger"] as const;
 export type PulseSettingsTab = (typeof PULSE_SETTINGS_TABS)[number];
@@ -9,10 +9,8 @@ export type WorkspaceRouteState = {
   view: WorkspaceView;
   sourceId: string;
   queryId?: string;
-  /** On `sources`: the fired alert open in the detail column. On `sql`: the alert whose SQL the console opens. */
+  /** On `sources`: the fired alert the list marks. On `sql`: the alert whose SQL the console opens. */
   alertId?: string;
-  /** On `data`: the data kind open in the detail. */
-  kind?: string;
   sql?: string;
   params?: Record<string, string>;
   settings?: PulseSettingsTab;
@@ -53,11 +51,6 @@ export const readWorkspacePathState = (path: string, baseId: string): WorkspaceR
   if (!view || view === "sources") {
     state = { view: "sources", sourceId: decode(id ?? "") };
     if (!state.sourceId && validAlert) state.alertId = validAlert;
-  } else if (view === "usage") state = { view: "usage", sourceId: "" };
-  else if (view === "data") {
-    state = { view: "data", sourceId: "" };
-    const kind = url.searchParams.get("kind");
-    if (kind && kind.length <= 500) state.kind = kind;
   } else if (view === "sql") {
     state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
     if (!state.queryId && validAlert) state.alertId = validAlert;
@@ -83,17 +76,12 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
   if (!baseId) return "/app/pulse";
   const base = `/app/pulse/${encodeURIComponent(baseId)}`;
   const path =
-    state.view === "usage"
-      ? `${base}/usage`
-      : state.view === "data"
-        ? `${base}/data`
-        : state.view === "sql"
-          ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
-          : state.sourceId
-            ? `${base}/sources/${encodeURIComponent(state.sourceId)}`
-            : base;
+    state.view === "sql"
+      ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
+      : state.sourceId
+        ? `${base}/sources/${encodeURIComponent(state.sourceId)}`
+        : base;
   const search = new URLSearchParams();
-  if (state.view === "data" && state.kind) search.set("kind", state.kind);
   if (state.settings) search.set("settings", state.settings);
   if (state.view === "sql" && state.alertId && !state.queryId) search.set("alert", state.alertId);
   if (state.view === "sources" && state.alertId && !state.sourceId) search.set("alert", state.alertId);
