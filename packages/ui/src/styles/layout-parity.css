@@ -2685,6 +2685,8 @@ html {
   display: flex;
   width: clamp(14rem, 32cqi, 26rem);
   min-width: 0;
+  /* One head line tall, so the field sits on the line's centre like the actions. */
+  min-height: var(--k2b-workspace-head-line, 2.5rem);
   flex: 0 1 auto;
   align-items: center;
   margin-inline-start: auto;

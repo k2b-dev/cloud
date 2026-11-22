@@ -88,6 +88,15 @@ test("1440 px: the search stands in the head line before the actions, without it
   const page = await open(1440, false);
   try {
     expect(await state(page)).toMatchObject({ searchShown: true, toggleShown: false });
+    // The field sits on the head line's centre, like the actions and the primary.
+    const centres = await page.evaluate(() => {
+      const centre = (selector: string) => {
+        const box = document.querySelector(selector)!.getBoundingClientRect();
+        return Math.round(box.top + box.height / 2);
+      };
+      return [centre(".k2b-app-workspace__head-search .k2b-input-shell"), centre("[data-workspace-primary]")];
+    });
+    expect(Math.abs(centres[0]! - centres[1]!)).toBeLessThanOrEqual(1);
     expect(await problems(page)).toEqual([]);
   } finally {
     await page.close();
