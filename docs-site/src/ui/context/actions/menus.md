@@ -306,6 +306,19 @@ something else:
 `disabled`, `onOpen`, `onClose`, an optional stable `id`, and an accessible
 `label`.
 
+The host is a `div` with the role `group`, named by `label`. When the host is
+itself the thing it serves, such as a message or a region, pass `as="article"`
+or `as="section"` together with that element's `class`, `ref`, and `data-*`
+attributes instead of wrapping it in a second element. The host then keeps
+its own role and name, and the open menu keeps `label` as its name.
+
+```tsx
+<ContextMenu as="article" class="message" data-message-id={id} tabIndex={-1} items={actions} label="Message actions">
+  <MessageHead />
+  <MessageBody />
+</ContextMenu>
+```
+
 ## API reference
 
 ```ts

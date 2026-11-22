@@ -1,5 +1,5 @@
-import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { Portal } from "solid-js/web";
+import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, type Ref, Show, splitProps } from "solid-js";
+import { Dynamic, Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { inheritUiScope } from "../internal/portal-scope";
 import { useUiMessages } from "../intl/messages";
@@ -22,6 +22,17 @@ export type ContextMenuProps = {
    * Paste, and Open link. Use it where the host wraps readable content rather than one row.
    */
   keepNativeMenu?: boolean;
+  /**
+   * The host's element. A host that is itself the thing it serves, such as a message (`"article"`) or a region
+   * (`"section"`), saves a wrapper; it keeps that element's own role and name instead of the generic group named by
+   * `label`, and the menu still opens with a right-click, the context-menu key, and Shift+F10. The open menu keeps
+   * `label` as its name.
+   */
+  as?: "div" | "article" | "section";
+  /** The host element, for a host that is the element it serves. */
+  ref?: Ref<HTMLElement>;
+  /** Data attributes for the host, so a host that is the element it serves carries its own. */
+  [data: `data-${string}`]: string | undefined;
 };
 
 const NATIVE_MENU_TARGETS = "a[href], input, textarea, select, [contenteditable]:not([contenteditable='false'])";
@@ -58,7 +69,26 @@ export function ContextMenuBase(
   const generatedId = `k2b-context-${createUniqueId()}`;
   const menuId = `${generatedId}-menu`;
   const [position, setPosition] = createSignal<{ x: number; y: number }>();
-  let host: HTMLDivElement | undefined;
+  let host: HTMLElement | undefined;
+  /** Only a plain host is the generic group that names its menu; an article or section keeps its own role. */
+  const group = () => (props.as ?? "div") === "div";
+  const [, data] = splitProps(props, [
+    "items",
+    "children",
+    "class",
+    "tabIndex",
+    "disabled",
+    "onClose",
+    "onOpen",
+    "id",
+    "label",
+    "keepNativeMenu",
+    "as",
+    "ref",
+    "openAt",
+    "title",
+    "closeWith",
+  ]);
   let menu: HTMLDivElement | undefined;
   let listenersAttached = false;
   let hostRing = true;
@@ -202,19 +232,23 @@ export function ContextMenuBase(
 
   return (
     <>
-      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the named group owns the context-menu relationship without pretending arbitrary children form one button. */}
-      <div
-        ref={host}
+      <Dynamic
+        component={props.as ?? "div"}
+        {...data}
+        ref={(element: HTMLElement) => {
+          host = element;
+          if (typeof props.ref === "function") props.ref(element);
+        }}
         id={props.id ?? generatedId}
         class={hostClass()}
-        role="group"
+        role={group() ? "group" : undefined}
         tabIndex={props.disabled ? undefined : (props.tabIndex ?? 0)}
-        aria-label={props.label ?? messages().contextMenu}
-        aria-haspopup="menu"
-        aria-expanded={isOpen()}
-        aria-controls={isOpen() ? menuId : undefined}
-        aria-disabled={props.disabled ? "true" : undefined}
-        onContextMenu={(event) => {
+        aria-label={group() ? (props.label ?? messages().contextMenu) : undefined}
+        aria-haspopup={group() ? "menu" : undefined}
+        aria-expanded={group() ? isOpen() : undefined}
+        aria-controls={group() && isOpen() ? menuId : undefined}
+        aria-disabled={group() && props.disabled ? "true" : undefined}
+        onContextMenu={(event: MouseEvent) => {
           if (props.disabled) return;
           // An enclosing context menu must not take over the browser's own either.
           if (keepsNativeMenu(event.target)) return void event.stopPropagation();
@@ -222,7 +256,7 @@ export function ContextMenuBase(
           event.stopPropagation();
           open(event.clientX, event.clientY);
         }}
-        onKeyDown={(event) => {
+        onKeyDown={(event: KeyboardEvent) => {
           if (props.disabled || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
           // A nested context menu already opened its own; a field keeps the browser's.
           if (
@@ -238,7 +272,7 @@ export function ContextMenuBase(
         }}
       >
         {props.children}
-      </div>
+      </Dynamic>
       <Show when={position()}>
         {(point) => (
           // Like a dropdown's menu, it stays inside an open dialog and shows in the top layer: a modal dialog makes the
