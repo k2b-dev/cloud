@@ -83,7 +83,16 @@ describe("Grids table beside Detail", () => {
           const style = getComputedStyle(viewport);
           const paper = viewport.closest(".k2b-paper");
           return {
-            inset: token("--k2b-workspace-detail-inset"),
+            // The end of Main's content box: the flat Detail column adds no gap of its own (K5a).
+            mainEnd: (() => {
+              const main = viewport.closest(".k2b-app-workspace__main")!;
+              return (
+                main.getBoundingClientRect().right -
+                Number.parseFloat(getComputedStyle(main).paddingRight) -
+                (main as HTMLElement).offsetWidth +
+                (main as HTMLElement).clientWidth
+              );
+            })(),
             // Inside the Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
             radius: token("--k2b-radius-surface") - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
             // The viewport sits inside the table's Paper frame; the frame is the surface's outer edge.
@@ -97,7 +106,8 @@ describe("Grids table beside Detail", () => {
           };
         });
         expect(shape.scroll).toBeGreaterThan(shape.client);
-        expect(shape.right).toBeCloseTo(shape.panelLeft - shape.inset, 1);
+        expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
+        expect(shape.right).toBeCloseTo(shape.mainEnd, 1);
         for (const radius of shape.radii) expect(radius).toBeCloseTo(shape.radius, 1);
         for (const [column, expected] of [
           [4, "12400,00 EUR"],

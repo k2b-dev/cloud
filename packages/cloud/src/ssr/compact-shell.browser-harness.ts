@@ -440,9 +440,10 @@ export const desktop: Device = { name: "desktop", width: 1920, height: 1080, tou
 export const devices = [phone, ipadSplitView, ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop];
 export const tabletBoundary: Device = { name: "tablet boundary", width: 1023, height: 768, touch: false };
 
-// The signed-in card's spacing and radius in whole pixels: 4 and 10 px at 1024 px, 8 and 14 px from 1440 px.
+// The signed-in card's spacing in whole pixels: 4 px at 1024 px, 8 px from 1440 px.
 export const cardInset = (width: number) => Math.round(Math.min(8, Math.max(4, 4 + (width - 1024) / 104)));
-export const cardRadius = (width: number) => Math.round(Math.min(14, Math.max(10, 10 + (width - 1024) / 104)));
+// K4: the signed-in card keeps the one card radius, 14 px, at every width.
+export const cardRadius = (_width: number) => 14;
 
 export type Options = {
   language?: "en" | "de";
