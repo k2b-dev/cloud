@@ -2349,29 +2349,32 @@ html {
     background-clip: padding-box;
   }
 
-  /* The handle after such a region sits on the boundary's line at the end of the space. */
-  .k2b-ui
-    .k2b-app-workspace__main
-    > .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region])
-    + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
-    /* K13: centred on the boundary's hairline, which lies at the end of the space. */
-    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
-  }
-
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
     width: auto;
     flex: 1 1 auto;
   }
 
+  /* K13: a pane's handle takes no room in the flow. It is 1 px wide and pulled back by 1 px onto the boundary's line,
+     the last pixel of the region before it (also at the end of a region's space), so it overlaps no neighbour. Its
+     hit area (`::after`, 13 px, 25 px for a coarse pointer) and its grip lie over both regions, centred on the line
+     on whole pixels. */
   .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     position: relative;
     inset: auto;
+    width: 1px;
     height: auto;
-    flex: 0 0 var(--k2b-workspace-resize-hit-size);
-    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
+    flex: 0 0 1px;
+    margin-inline: -1px 0;
     transform: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc((1px - var(--k2b-workspace-resize-hit-size)) / 2);
+    width: var(--k2b-workspace-resize-hit-size);
+    content: "";
   }
 
   .k2b-ui .k2b-app-workspace__drawer[data-workspace-resizable="true"] {
@@ -3994,6 +3997,15 @@ html {
     + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     flex-basis: 2.75rem;
     margin-inline: 0;
+  }
+
+  /* There the target is the handle's own box; its hit area does not reach into the levels. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after,
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > .k2b-app-workspace__main-pane
+    + .k2b-app-workspace__resize[data-app-workspace-resize="pane"]::after {
+    display: none;
   }
 
   /* The target is the space, so the level before it keeps none of its own. */
