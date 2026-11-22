@@ -17,9 +17,6 @@ export type PulseHeadProps = {
   menu: DropdownItem[];
 };
 
-/** Tab of the head for a view; the views that wait in "…" keep Sources marked as the place they belong to. */
-const currentTab = (view: WorkspaceView) => (view === "overview" || view === "dashboards" ? undefined : view);
-
 /** The base head: four tabs at the text edge, Gustav, "…" and the one filled action at the end. */
 export default function PulseHead(props: PulseHeadProps) {
   const t = usePulseMessages();
@@ -42,7 +39,7 @@ export default function PulseHead(props: PulseHeadProps) {
         views={
           <ViewTabs
             label={t().baseViews}
-            current={currentTab(props.view)}
+            current={props.view}
             fit
             max={4}
             items={[

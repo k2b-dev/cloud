@@ -25,6 +25,8 @@ export type SourcesTabProps = {
   /** The time the store state was read: rows below a lost store show this state. */
   readAt: string;
   storeDownSince: string | null;
+  /** A notice cell at the top of the tab, such as the one an old dashboard link brings. */
+  notice?: JSX.Element;
   openSource: (sourceId: string) => void;
   openAlert: (alertId: string) => void;
   addSource: (kind?: "metrics" | "http_ingest") => void;
@@ -91,7 +93,7 @@ export const attentionText = (item: AttentionItem, t: Messages, context: PulseDa
           ? t.alertCannotCheck({ name: alert.name })
           : t.alertNoData({ name: alert.name });
     const limit =
-      alert.threshold === null || alert.comparison === null
+      alert.threshold === null
         ? null
         : (alert.comparison === "above" ? t.alertLimitAbove : t.alertLimitBelow)({ threshold: String(alert.threshold) });
     const severity = alert.state === "firing" ? (alert.severity === "critical" ? t.severityCritical : t.severityWarning) : null;
@@ -219,6 +221,7 @@ export default function SourcesTab(props: SourcesTabProps) {
   };
   return (
     <section class="pulse-tab" aria-label={t().sources}>
+      {props.notice}
       <Show
         when={props.state !== "loading"}
         fallback={
@@ -254,7 +257,7 @@ export default function SourcesTab(props: SourcesTabProps) {
                   },
                 ]}
               />
-              <p class="pulse-line">{props.canWrite ? t().emptyWhy : `${t().emptyWhy} ${t().overviewEmptyReadOnly}`}</p>
+              <p class="pulse-line">{props.canWrite ? t().emptyWhy : `${t().emptyWhy} ${t().createSourceNeedsWrite}`}</p>
               {/* The ways create a source, so only people who may write see them. */}
               <Show when={props.canWrite}>
                 <DataTable

@@ -161,6 +161,7 @@ describe("Pulse flat base page", () => {
         ["09-nur-lesen", flatStates.readOnly, "Du kannst diese Basis lesen."],
         ["10-speicher-weg", flatStates.storeDown, "Datenspeicher nicht erreichbar"],
         ["12-alarm", flatStates.alert, "Mit Gustav anpassen"],
+        ["13-dashboards-entfernt", flatStates.dashboardsRemoved, "Dashboards gibt es nicht mehr"],
         ["11-sql-konsole", { ...flatStates.sql, initialSql: { limits: sqlTestLimits, query: null, error: null } }, "Beispiel einsetzen"],
       ];
       for (const [name, props, text] of states) {

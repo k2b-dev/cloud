@@ -303,6 +303,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const rowCount = createMemo(() => props.rows.length);
   const loadingRows = () => Math.min(50, Math.max(1, Math.trunc(Number.isNaN(props.loadingRows) ? 5 : (props.loadingRows ?? 5))));
   const rowId = (row: T) => props.getRowId?.(row);
+  /** A row's identity: its id where the table has one, else the row object. */
+  const rowKey = (row: T): unknown => rowId(row) ?? row;
   const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
   const shouldHoverRows = () => props.hoverRows ?? isInteractive();
   const labelledBy = () => props.ariaLabelledBy ?? (panel?.hasHeading() ? panel.headingId : undefined);
@@ -416,7 +418,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const headerColumns = createMemo(() => (detailsPriority() ? [...props.columns, null] : props.columns));
   const hiddenColumns = () => props.columns.filter((col) => priorityAttr(col));
   const columnCount = () => props.columns.length + (detailsPriority() ? 1 : 0);
-  const [openDetails, setOpenDetails] = createSignal<ReadonlySet<T>>(new Set());
+  // Keyed by row id where there is one, so a details line stays open when the rows arrive as new objects.
+  const [openDetails, setOpenDetails] = createSignal<ReadonlySet<unknown>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = createSignal<ReadonlySet<string>>(new Set(props.defaultCollapsedGroups ?? []));
   const groupCollapsed = (key: string) => Boolean(props.collapsibleGroups) && collapsedGroups().has(key);
   const toggleGroup = (key: string) =>
@@ -425,10 +428,10 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
       if (!next.delete(key)) next.add(key);
       return next;
     });
-  const toggleDetails = (row: T) =>
+  const toggleDetails = (key: unknown) =>
     setOpenDetails((open) => {
       const next = new Set(open);
-      if (!next.delete(row)) next.add(row);
+      if (!next.delete(key)) next.add(key);
       return next;
     });
   /** A bar column fills its track at `max`, or else at its largest value. */
@@ -606,12 +609,12 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     props.renderCell ? props.renderCell({ row, col, value, render: (v) => renderTypedValue(col, v) }) : renderTypedValue(col, value);
 
   /** `last` marks the final row of its body when details rows follow every row, so the frame keeps the only edge. */
-  const renderRow = (row: T, last: () => boolean) => {
-    const id = () => rowId(row);
+  const renderRow = (row: Accessor<T>, last: () => boolean) => {
+    const id = () => rowId(row());
     const isSelected = () =>
       props.selection ? props.selection.selected().has(id() ?? "") : props.selectedRowId && id() === props.selectedRowId;
     const detailsId = `k2b-data-table-${createUniqueId()}-details`;
-    const open = () => openDetails().has(row);
+    const open = () => openDetails().has(rowKey(row()));
     return (
       <>
         <tr
@@ -620,7 +623,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             const key = id();
             if (key !== undefined) props.selection?.register(key, element);
           }}
-          class={`k2b-data-table__row ${rowClass(row)}`}
+          class={`k2b-data-table__row ${rowClass(row())}`}
           data-hover={shouldHoverRows() ? "true" : undefined}
           data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
           data-selected={isSelected() ? "true" : undefined}
@@ -632,14 +635,14 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             const key = id();
             if (key !== undefined) props.selection?.markFocused(key);
           }}
-          onClick={(event) => onRowClick(event, row)}
-          onDblClick={(event) => onRowDoubleClick(event, row)}
-          onContextMenu={() => props.onRowContextMenu?.(row)}
-          onKeyDown={(e) => onRowKeyDown(e, row)}
+          onClick={(event) => onRowClick(event, row())}
+          onDblClick={(event) => onRowDoubleClick(event, row())}
+          onContextMenu={() => props.onRowContextMenu?.(row())}
+          onKeyDown={(e) => onRowKeyDown(e, row())}
         >
           <For each={props.columns}>
             {(col, index) => {
-              const value = () => valueOf(row, col);
+              const value = () => valueOf(row(), col);
               return (
                 <td
                   role={tableRole("cell")}
@@ -654,7 +657,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   data-highlighted={columnHighlighted(index())}
                   onMouseEnter={() => setHoveredColumnIfEnabled(index())}
                 >
-                  <div class={cellContentClass()}>{cellContent(row, col, value())}</div>
+                  <div class={cellContentClass()}>{cellContent(row(), col, value())}</div>
                 </td>
               );
             }}
@@ -667,7 +670,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                 aria-expanded={open()}
                 aria-controls={detailsId}
                 aria-label={dataTableMessages().showDetails}
-                onClick={() => toggleDetails(row)}
+                onClick={() => toggleDetails(rowKey(row()))}
               >
                 <i class={`ti ${open() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />
               </button>
@@ -683,7 +686,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                   {(col) => (
                     <div data-priority={priorityAttr(col)}>
                       <dt>{detailLabel(col)}</dt>
-                      <dd>{cellContent(row, col, valueOf(row, col))}</dd>
+                      <dd>{cellContent(row(), col, valueOf(row(), col))}</dd>
                     </div>
                   )}
                 </For>
@@ -692,6 +695,23 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           </tr>
         </Show>
       </>
+    );
+  };
+
+  /**
+   * Rows keyed by `getRowId` where the table has it: a row whose id stays keeps its element, its focus and its open
+   * details when the rows arrive as new objects, and its cells follow the current object in place.
+   */
+  const renderRows = (rows: () => readonly T[]) => {
+    // Read the rows once per change: a caller may pass `rows={x().slice(…)}`, and every row reads the list.
+    const list = createMemo(rows);
+    return (
+      <For each={list().map(rowKey)}>
+        {(_, index) => {
+          const row = createMemo<T>((previous) => list()[index()] ?? previous, list()[index()]!);
+          return renderRow(row, () => index() === list().length - 1);
+        }}
+      </For>
     );
   };
 
@@ -850,7 +870,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                 when={groups()}
                 fallback={
                   <tbody role={tableRole("rowgroup")}>
-                    <For each={props.rows}>{(row, index) => renderRow(row, () => index() === props.rows.length - 1)}</For>
+                    {renderRows(() => props.rows)}
                     <Show when={props.fillHeight}>
                       <tr aria-hidden="true">
                         <td class="k2b-data-table__fill" colspan={columnCount()} />
@@ -861,46 +881,51 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
               >
                 {(list) => (
                   <>
-                    <For each={list()}>
-                      {(group) => (
-                        <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
-                          <tr role={tableRole("row")} class="k2b-data-table__group-row">
-                            <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
-                              {(() => {
-                                // One label for both forms: plain text, or the content of the fold button.
-                                const label = (
-                                  <>
-                                    {group.label || "—"}
-                                    <span class="k2b-data-table__group-count">
-                                      <span aria-hidden="true">{group.rows.length}</span>
-                                      <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group.rows.length })}</span>
-                                    </span>
-                                  </>
-                                );
-                                return props.collapsibleGroups ? (
-                                  <button
-                                    type="button"
-                                    class="k2b-data-table__group-toggle"
-                                    aria-expanded={!groupCollapsed(group.key)}
-                                    onClick={() => toggleGroup(group.key)}
-                                  >
-                                    {label}
-                                    <i
-                                      class={`ti ${groupCollapsed(group.key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
-                                      aria-hidden="true"
-                                    />
-                                  </button>
-                                ) : (
-                                  label
-                                );
-                              })()}
-                            </th>
-                          </tr>
-                          <Show when={!groupCollapsed(group.key)}>
-                            <For each={group.rows}>{(row, index) => renderRow(row, () => index() === group.rows.length - 1)}</For>
-                          </Show>
-                        </tbody>
-                      )}
+                    {/* Groups keep their element by key as rows keep theirs by id. */}
+                    <For each={list().map((group) => group.key)}>
+                      {(_, groupIndex) => {
+                        const group = createMemo<ReturnType<typeof list>[number]>(
+                          (previous) => list()[groupIndex()] ?? previous,
+                          list()[groupIndex()]!,
+                        );
+                        return (
+                          <tbody role={tableRole("rowgroup")} class="k2b-data-table__group">
+                            <tr role={tableRole("row")} class="k2b-data-table__group-row">
+                              <th role={tableRole("rowheader")} scope="rowgroup" colspan={columnCount()}>
+                                {(() => {
+                                  // One label for both forms: plain text, or the content of the fold button.
+                                  const label = (
+                                    <>
+                                      {group().label || "—"}
+                                      <span class="k2b-data-table__group-count">
+                                        <span aria-hidden="true">{group().rows.length}</span>
+                                        <span class="k2b-sr-only">, {dataTableMessages().rowCount({ count: group().rows.length })}</span>
+                                      </span>
+                                    </>
+                                  );
+                                  return props.collapsibleGroups ? (
+                                    <button
+                                      type="button"
+                                      class="k2b-data-table__group-toggle"
+                                      aria-expanded={!groupCollapsed(group().key)}
+                                      onClick={() => toggleGroup(group().key)}
+                                    >
+                                      {label}
+                                      <i
+                                        class={`ti ${groupCollapsed(group().key) ? "ti-chevron-down" : "ti-chevron-up"} k2b-data-table__group-chevron`}
+                                        aria-hidden="true"
+                                      />
+                                    </button>
+                                  ) : (
+                                    label
+                                  );
+                                })()}
+                              </th>
+                            </tr>
+                            <Show when={!groupCollapsed(group().key)}>{renderRows(() => group().rows)}</Show>
+                          </tbody>
+                        );
+                      }}
                     </For>
                     <Show when={props.fillHeight}>
                       <tbody aria-hidden="true">

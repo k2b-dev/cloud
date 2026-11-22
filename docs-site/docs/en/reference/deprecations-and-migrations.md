@@ -13,6 +13,40 @@ updated: 2026-11-21
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
 
+## Pulse dashboards and the overview are removed
+
+Pulse no longer has dashboards or an overview. These are gone:
+
+- the dashboards and the overview in the Pulse app, including dashboard JSON
+  definitions and pinning saved queries to the overview;
+- the `dashboards` and `overview` API routes under `/api/pulse/bases/:baseId`;
+- the capabilities `pulse.dashboard.list`, `pulse.dashboard.read`,
+  `pulse.dashboard.save`, `pulse.dashboard.publish`,
+  `pulse.dashboard.unpublish` and `pulse.dashboard.delete`, and the
+  `pulse.dashboard` resource type;
+- `pinned` in saved-query input and output, and `cld pulse queries save
+  --pin`/`--unpin`;
+- `cld pulse dashboards`.
+
+Public dashboard links stay reachable but answer `410` with a page saying the
+link is no longer valid. The page names no dashboard.
+
+Where things are now:
+
+- A base opens on **Sources**, which shows what needs attention.
+- Numbers and charts for other people are Code pages that read the base, such
+  as `pulse.base(id).sql.run(...)`. Cloud shows such a page only to people who
+  may read the base ([Show Pulse data on a page](/en/apps/pulse#show-pulse-data-on-a-page)).
+- The SQL console and saved queries stay; old links to
+  `/app/pulse/:baseId/dashboards` open the base.
+
+The old data stays in Postgres, unused: the tables `pulse.dashboards`,
+`pulse.dashboard_operations`, `pulse.dashboard_runs` and
+`pulse.overview_state`, and the column `pulse.saved_queries.pinned`. A later
+release removes them after a review; this page will announce it. To keep a
+dashboard definition as a file, export it **before upgrading** with
+`cld pulse dashboards get <dashboard-id> --json` on the old version.
+
 ## Code pages check what they read
 
 A Code route now delivers its answer only to a visitor who may read every

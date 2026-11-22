@@ -1,11 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
-import { type AuthContext, err, fail } from "@k2b/cloud/server";
+import { type AuthContext, err, fail, ok } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import type { PulseBase } from "../contracts";
 import { pulseService } from "../service";
+import * as attention from "../service/base-attention";
 import * as resources from "../service/public-resources";
 import type { RetentionConfirmationRequired } from "../store/admin-contracts";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import baseRoutes from "./routes/bases";
+import { BaseReadSchema } from "./schemas";
 
 const identity = adminFixtureIdentity("33333333-3333-4333-8333-333333333333");
 const app = new Hono<AuthContext>()
@@ -69,5 +72,78 @@ test("retention confirmation returns its baseline and accepts it on the confirme
   } finally {
     base.mockRestore();
     update.mockRestore();
+  }
+});
+
+test("the base read carries the live store outage, and a base being deleted reports none", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const base = spyOn(resources, "resolvePublicId").mockResolvedValue(id);
+  const project = spyOn(resources, "projectBases").mockImplementation(async (items) => items.map((item) => ({ ...item, id: "Base01" })));
+  const stored: PulseBase = {
+    id,
+    shortId: "Base01",
+    name: "Shop",
+    description: null,
+    icon: "ti ti-chart-line",
+    color: "blue",
+    timezone: "UTC",
+    memberCount: 1,
+    store: {
+      state: "active",
+      operation: null,
+      errorCode: null,
+      errorAt: null,
+      writeBlockReason: null,
+      profile: "normal",
+      limits: {
+        queriesPerHour: 600,
+        valuesPerMinute: 2000,
+        bytesPerMinute: 5242880,
+        storageBytes: 5000000000,
+        maxSeries: 50000,
+        maxEventKinds: 2000,
+        maxStateKeys: 2000,
+      },
+      usage: null,
+    },
+    rawRetentionDays: 30,
+    rollupRetentionDays: 365,
+    sensitiveRetentionHours: 24,
+    createdBy: null,
+    deletionStartedAt: null,
+    deletionFailedAt: null,
+    deletionError: null,
+    dataClearStartedAt: null,
+    dataClearCompletedAt: null,
+    dataClearFailedAt: null,
+    dataClearError: null,
+    createdAt: "2026-08-12T00:00:00.000Z",
+    updatedAt: "2026-08-12T00:00:00.000Z",
+  };
+  const get = spyOn(pulseService.base, "get").mockResolvedValue(ok(stored));
+  const outage = spyOn(attention, "readStoreOutage").mockResolvedValue({
+    readAt: "2026-11-22T10:00:00.000Z",
+    store: { unavailable: true, since: "2026-11-22T09:40:00.000Z" },
+  });
+  try {
+    const response = await app.request("/api/pulse/bases/Base01");
+    expect(response.status).toBe(200);
+    const body = BaseReadSchema.parse(await response.json());
+    expect(body).toMatchObject({ id: "Base01", name: "Shop", outage: { unavailable: true, since: "2026-11-22T09:40:00.000Z" } });
+    expect(outage).toHaveBeenCalledWith(id);
+
+    outage.mockResolvedValue(null);
+    expect(await (await app.request("/api/pulse/bases/Base01")).json()).toMatchObject({ outage: { unavailable: false, since: null } });
+
+    // Access stays the base read's: a refusal answers before the store is read.
+    outage.mockClear();
+    get.mockResolvedValue(fail(err.forbidden("Read access required")));
+    expect((await app.request("/api/pulse/bases/Base01")).status).toBe(403);
+    expect(outage).not.toHaveBeenCalled();
+  } finally {
+    base.mockRestore();
+    project.mockRestore();
+    get.mockRestore();
+    outage.mockRestore();
   }
 });

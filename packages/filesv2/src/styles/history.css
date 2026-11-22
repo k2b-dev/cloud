@@ -386,10 +386,7 @@
   min-height: 0;
 }
 
-/* The approved detail uses plain, flush section headings and compact read-only facts. */
-.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel.filesv2-inspector .k2b-detail-panel__body {
-  gap: 1rem;
-}
+/* The approved detail uses plain, flush section headings and compact read-only facts; hairlines part the sections (K9). */
 .k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
   min-height: 0;
   grid-template-rows: auto;
@@ -421,9 +418,14 @@
 .filesv2-inspector-preview {
   position: relative;
   min-width: 0;
+  /* A band of the column: square, edge to edge on the quiet surface; the next section's hairline closes it (K2, K9). */
+  display: flex;
+  justify-content: center;
+  padding: var(--k2b-space-4);
+  background: var(--k2b-surface-muted);
 }
 .k2b-ui .filesv2-inspector-preview .k2b-pdf-viewer {
-  height: min(26rem, 60svh);
+  height: min(18rem, 45svh);
   flex: none;
 }
 .k2b-ui .filesv2-inspector-preview__expand {

@@ -1028,8 +1028,8 @@ of a resource of that local Type. Code page hosting checks those resources for
 each visitor like a target
 ([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
 The declaration grants nothing; the Query still authorizes its caller. Pulse
-declares it on `sql.run`, `source.list`, `alert.list`, `alert.read`,
-`saved_query.list` and `dashboard.list`, and offers target forms such as
+declares it on `sql.run`, `source.list`, `alert.list`, `alert.read` and
+`saved_query.list`, and offers target forms such as
 `base.sql.run` as well.
 
 Call the public client with explicit coordinates:

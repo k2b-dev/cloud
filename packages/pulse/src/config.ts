@@ -8,7 +8,7 @@ export const app = defineApp({
   sessionlessRoutes: ["/api/pulse/ingest"],
   // Resource-bound and roleless service accounts remain eligible.
   access: appAccess.noGuests({
-    // Source keys and dashboard publication tokens retain their own domain checks.
+    // Source keys retain their own domain checks. Removed shared dashboard links stay public so they answer 410.
     publicRoutes: [
       "/api/pulse/openapi.json",
       "/api/pulse/ingest",

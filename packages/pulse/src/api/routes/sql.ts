@@ -10,7 +10,7 @@ import { SavedQueriesPageSchema, SavedQuerySchema, SqlLimitsSchema, SqlResultSch
 
 const Params = z.record(z.string(), z.string());
 const Run = z.object({ sql: z.string(), params: Params.optional(), runId: z.uuid().optional() }).strict();
-const Save = z.object({ name: z.string(), sql: z.string(), params: Params.optional(), pinned: z.boolean().optional() }).strict();
+const Save = z.object({ name: z.string(), sql: z.string(), params: Params.optional() }).strict();
 const Patch = Save.extend({ expectedRevision: z.number().int().positive() }).strict();
 const ErrorBody = z.object({
   code: z.string(),

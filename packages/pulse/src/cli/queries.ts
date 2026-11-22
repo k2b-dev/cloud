@@ -1,4 +1,4 @@
-import { arg, type CloudCliText, command, confirmFlag, flag, localizeCloudCliText, paginationFlags } from "@k2b/cloud/cli";
+import { arg, command, confirmFlag, flag, paginationFlags } from "@k2b/cloud/cli";
 import type { SavedQuery } from "../service/saved-queries";
 import { validateSqlInput } from "../sql-params";
 import { requireDefaultBaseRef } from "./context";
@@ -6,8 +6,7 @@ import { baseFlag } from "./flags";
 import { jsonRequest, printJsonOrTable, printMessage, printStructured, queryString, readApi } from "./shared";
 import { parseSqlParameters, readSqlInput, sqlInputFlags } from "./sql";
 
-export const createQueryCommands = (locale?: string) => {
-  const t = (text: CloudCliText) => localizeCloudCliText(locale, text);
+export const createQueryCommands = () => {
   return [
     command("queries list", {
       summary: "List saved SQL queries in a base",
@@ -43,13 +42,6 @@ export const createQueryCommands = (locale?: string) => {
       flags: {
         ...baseFlag,
         ...sqlInputFlags,
-        pin: flag.boolean({
-          description: t({
-            en: "Show this query on the overview (at most four)",
-            de: "Diese Abfrage auf der Übersicht anzeigen (höchstens vier)",
-          }),
-        }),
-        unpin: flag.boolean({ description: t({ en: "Remove this query from the overview", de: "Diese Abfrage von der Übersicht lösen" }) }),
         name: flag.string({ required: true, description: "Saved query name" }),
         query: flag.string({ description: "Query ID to update" }),
         expectedRevision: flag.int({ name: "expected-revision", min: 1, description: "Revision returned by queries get" }),
@@ -58,15 +50,12 @@ export const createQueryCommands = (locale?: string) => {
       async run({ ctx, args, flags }) {
         if (Boolean(flags.query) !== (flags.expectedRevision !== undefined))
           throw new Error("Use --query and --expected-revision together.");
-        if (flags.pin && flags.unpin)
-          throw new Error(t({ en: "Use either --pin or --unpin.", de: "Verwende entweder --pin oder --unpin." }));
         const base = flags.base ?? (await requireDefaultBaseRef(ctx));
         const sql = await readSqlInput(args.sql, flags.file);
         const params = parseSqlParameters(flags.param);
         validateSqlInput(sql, params);
         const path = `/bases/${encodeURIComponent(base)}/queries${flags.query ? `/${encodeURIComponent(flags.query)}` : ""}`;
         const request = jsonRequest(flags.query ? "PATCH" : "POST", {
-          pinned: flags.pin ? true : flags.unpin ? false : undefined,
           name: flags.name,
           sql,
           params,

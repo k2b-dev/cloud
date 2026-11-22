@@ -27,8 +27,8 @@ The header icon sits in a soft chip of its color, using the host's
 
 ## Dashboard grid
 
-Use the dashboard grid for a page of panels, such as a Pulse dashboard or a
-page of figures in an app:
+Use the dashboard grid for a page of panels, such as a Code page or a page of
+figures in an app:
 
 - `DashboardGrid` is the measuring container. Panel widths follow its own
   width, so a dashboard in a side panel folds like one in a narrow window.

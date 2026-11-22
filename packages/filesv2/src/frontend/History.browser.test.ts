@@ -254,6 +254,16 @@ async function open(
   };
 }
 
+/**
+ * The detail heading of a file by its accessible name. `FileName` (@k2b/ui) splits a name into two flex parts, which
+ * Chromium reads as "Notes .txt"; until the block names itself in one piece, either form counts, then only the exact one.
+ */
+const fileHeading = (name: string) => {
+  const dot = name.lastIndexOf(".");
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return dot > 0 ? new RegExp(`^${escape(name.slice(0, dot))} ?${escape(name.slice(dot))}$`) : new RegExp(`^${escape(name)}$`);
+};
+
 async function focused(tab: Page, target: Locator) {
   const element = await target.elementHandle({ timeout: 5_000 });
   if (!element) throw new Error(`Missing focus target: ${target}`);
@@ -450,7 +460,7 @@ for (const language of [
     const { context, tab, errors } = await open(1200, "light", "", language.locale, true, "history");
     try {
       const address = tab.url();
-      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
+      await focused(tab, tab.getByRole("heading", { name: fileHeading(historyFile.name) }));
       const history = tab.getByRole("group", { name: language.history, exact: true });
       const rows = history.getByRole("article");
       const older = history.getByRole("button", { name: language.older, exact: true });
@@ -479,7 +489,7 @@ for (const language of [
       await history.waitFor({ state: "hidden" });
       expect(tab.url()).toBe(address);
       await tab.keyboard.press("Enter");
-      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
+      await focused(tab, tab.getByRole("heading", { name: fileHeading(historyFile.name) }));
       await older.waitFor();
       expect(await rows.count()).toBe(4);
       expect(errors).toEqual([]);
@@ -542,8 +552,9 @@ for (const touch of [false, true])
       await versions.waitFor({ state: "attached" });
       expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
       expect(await tab.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
+      // K9: hairlines part the detail's sections, not a gap.
       expect(await tab.locator(".filesv2-inspector .k2b-detail-panel__body").evaluate((element) => getComputedStyle(element).rowGap)).toBe(
-        "16px",
+        "0px",
       );
       expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
       expect(await tab.evaluate(() => innerWidth)).toBe(1200);
