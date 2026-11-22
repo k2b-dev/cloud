@@ -2701,10 +2701,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const list = Math.min(Math.max(320, main * 0.4), main - 481);
               expect(Math.abs(frame.list - list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(1);
               // Mail v5 has no Detail column; the reader keeps at least 480 px.
-              expect(frame.reader!.width - 12, `${label}: reader`).toBeGreaterThanOrEqual(479.5);
+              expect(frame.reader!.width - 1, `${label}: reader`).toBeGreaterThanOrEqual(479.5);
               // The reader's head and text take its whole width; nothing stands centred in it.
-              expect(frame.toolbar!.width, `${label}: toolbar`).toBeGreaterThanOrEqual(frame.reader!.width - 12 - 1);
-              expect(frame.column!.width, `${label}: text`).toBeGreaterThan(frame.reader!.width - 12 - 80);
+              expect(frame.toolbar!.width, `${label}: toolbar`).toBeGreaterThanOrEqual(frame.reader!.width - 1 - 1);
+              expect(frame.column!.width, `${label}: text`).toBeGreaterThan(frame.reader!.width - 1 - 80);
               // Opening the conversation marks it read after hydration; that changes no geometry.
               const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
               const server = read(await recordedFrame(page, "server"));

@@ -1284,10 +1284,13 @@ html {
   right: 0;
   bottom: var(--k2b-workspace-panel-size);
   left: 0;
+  /* K13: as long as the drawer's line, so the grip sits on its middle. */
+  grid-area: drawer;
   width: auto;
   height: var(--k2b-workspace-resize-hit-size);
   cursor: row-resize;
-  transform: translateY(50%);
+  /* Centred on the drawer's line, the last pixel above its top edge: whole pixels, no half-pixel shift. */
+  transform: translateY(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
 }
 
 /* K13: a boundary that can be dragged carries a grip; every other line is
@@ -2291,21 +2294,6 @@ html {
     padding: 0.5rem;
   }
 
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > :is(solid-island, solid-client)
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
-    left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
-  }
 }
 
 /* From 48 rem the work area keeps its columns: panes side by side, the detail

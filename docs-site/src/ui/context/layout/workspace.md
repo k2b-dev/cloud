@@ -262,12 +262,13 @@ title. A hidden `h1` supplies the page heading only when Main has no `h1`.
 The primary label stays in the DOM when CSS turns the phone action into an
 icon button, preserving its accessible name.
 
-When the head row runs short of room, the actions give way before the views
-(K15). Below 48 rem of head width the primary shows only its icon. A search
-field in `actions` turns into its icon by the same query,
-`@container k2b-head (width < 48rem)`, in the application's stylesheet. The
-views move into **More +n** only when the lead is still narrower than 32 rem
-after that.
+When the head row runs short of room, an application's search field in
+`actions` turns into its icon first, with its own query in the application's
+stylesheet (Mail and Notebooks use `@container k2b-head (width < 48rem)`).
+The views move into **More +n** when the lead is narrower than 32 rem. The
+primary keeps its word until the head is narrower than 36 rem, then shows only
+its icon (rule 15: a label gives way only when it does not fit). It stays a
+36 px control with 8 px corners.
 
 ### Sidebar button in the page's toolbar
 
