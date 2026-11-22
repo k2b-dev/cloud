@@ -1569,7 +1569,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await filter.getAttribute("data-active")).toBe("true");
             }
             if (route.query === "view=snoozed") {
-              expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
+              // K15: a view waits behind More only when the strip has no room for it; the current view always shows.
+              const hiddenViews = await tabs(page)
+                .locator(".k2b-view-tabs__item")
+                .evaluateAll((items) => items.filter((item) => item.getClientRects().length === 0).length);
+              expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(hiddenViews > 0);
               expect(await tabs(page).locator('a[aria-current="page"]').isVisible()).toBe(true);
             }
           };

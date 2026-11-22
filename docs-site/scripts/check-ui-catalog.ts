@@ -82,6 +82,7 @@ const portableDemoFiles = [
   "../src/ui/demo-sections/mobile-navigation.tsx",
   "../src/ui/demo-sections/resize-separator.tsx",
   "../src/ui/demo-sections/run-log.tsx",
+  "../src/ui/demo-sections/workspace-flat.tsx",
   "../src/ui/demo-sections/workspace-live.tsx",
   "../src/ui/WorkspaceLevelsDemo.island.tsx",
   "../src/ui/ChartGroupDemo.island.tsx",

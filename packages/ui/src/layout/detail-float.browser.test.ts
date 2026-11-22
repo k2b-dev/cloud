@@ -152,7 +152,7 @@ const load = async (width: number, height: number, params = "", options: Browser
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
         : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
-    }.fixture-main{padding:var(--k2b-workspace-detail-inset)}.fixture-date{width:1px}${
+    }.fixture-main{padding:0.5rem}.fixture-date{width:1px}${
       new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
     }${
       new URLSearchParams(params).has("responsive-control")
@@ -207,10 +207,11 @@ const openRow = async (page: Page, id = "row-0") => {
   await page.locator(`#${id}`).click();
   await settlePanel(page);
 };
+// K2, K5a: the Detail column is flush with the workspace's top, end, and bottom edges; its hairline parts it from Main.
 const expectInset = (shape: Awaited<ReturnType<typeof geometry>>) => {
-  expect(shape.detail.top - shape.root.top - shape.border).toBeCloseTo(8, 1);
-  expect(shape.root.right - shape.border - shape.detail.right).toBeCloseTo(8, 1);
-  expect(shape.root.bottom - shape.border - shape.detail.bottom).toBeCloseTo(8, 1);
+  expect(shape.detail.top - shape.root.top - shape.border).toBeCloseTo(0, 1);
+  expect(shape.root.right - shape.border - shape.detail.right).toBeCloseTo(0, 1);
+  expect(shape.root.bottom - shape.border - shape.detail.bottom).toBeCloseTo(0, 1);
 };
 
 describe("floating workspace detail", () => {
@@ -332,7 +333,7 @@ describe("floating workspace detail", () => {
     [1920, 1080],
   ]) {
     for (const [params, wanted] of [
-      ["", 416],
+      ["", 380],
       ["persisted=520", 520],
       ["width=sm", 320],
       ["width=lg", 480],
@@ -344,7 +345,8 @@ describe("floating workspace detail", () => {
           await openRow(page);
           const shape = await geometry(page);
           expectInset(shape);
-          expect(shape.detail.width).toBeCloseTo(wanted, 1);
+          // K12: from 1920 px the preset widths start 60 px wider; a persisted width stays as it is.
+          expect(shape.detail.width).toBeCloseTo(wanted + (width! >= 1920 && !params.startsWith("persisted") ? 60 : 0), 1);
           expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
           expect(shape.main.width).toBeGreaterThanOrEqual(320);
         } finally {
@@ -359,7 +361,7 @@ describe("floating workspace detail", () => {
   ] as const) {
     for (const frame of ["", "&card=1"]) {
       for (const surface of ["trail", "table"]) {
-        test(`${width}×${height} ${surface}${frame}: the scroll viewport rounds the cut edge one inset before Detail`, async () => {
+        test(`${width}×${height} ${surface}${frame}: the scroll viewport rounds the cut edge at Main's padding before Detail`, async () => {
           const page = await load(width, height, `${surface}=1&initial=1${frame}`);
           try {
             await settlePanel(page);
@@ -372,7 +374,8 @@ describe("floating workspace detail", () => {
                 probe.remove();
                 return pixels;
               };
-              const inset = token("--k2b-workspace-detail-inset");
+              // The flat Detail column has no inset (K5a); the surface ends at Main's own padding before it.
+              const inset = Number.parseFloat(getComputedStyle(viewport.closest(".fixture-main")!).paddingRight);
               const radius = token("--k2b-radius-surface");
               viewport.scrollLeft = 130;
               const rect = viewport.getBoundingClientRect();
@@ -383,10 +386,14 @@ describe("floating workspace detail", () => {
               const border = paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0;
               const style = getComputedStyle(viewport);
               const candidates = viewport.querySelectorAll("tbody tr:first-child td, #board button");
-              const cut = [...candidates].find((cell) => {
-                const box = cell.getBoundingClientRect();
-                return box.left < rect.right && box.right > rect.right;
-              });
+              const straddling = () =>
+                [...candidates].find((cell) => {
+                  const box = cell.getBoundingClientRect();
+                  return box.left < rect.right && box.right > rect.right;
+                });
+              // The edge may land in the 16 px gap between two cards; one step past the gap puts it on a card.
+              if (!straddling()) viewport.scrollLeft += 24;
+              const cut = straddling();
               return {
                 inset,
                 radius: radius - border,
@@ -457,7 +464,7 @@ describe("floating workspace detail", () => {
       const shape = await geometry(page);
       expectInset(shape);
       expect(shape.main.width).toBeCloseTo(320, 1);
-      expect(shape.detail.width).toBeCloseTo(shape.root.width - 208 - 328, 1);
+      expect(shape.detail.width).toBeCloseTo(shape.root.width - 208 - 320, 1);
       expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
     } finally {
       await page.close();
@@ -732,15 +739,13 @@ describe("floating workspace detail", () => {
     }
   });
   for (const fixed of [false, true]) {
-    test(`820×1180: a fitting ${fixed ? "permanent" : "closable"} detail is a column even with touch`, async () => {
+    // K12: on a tablet a Detail is a drawer whatever its token, so Main keeps the whole width.
+    test(`820×1180: a ${fixed ? "permanent" : "closable"} detail opens as a drawer on a tablet, also with touch`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
       try {
         await openRow(page);
-        const shape = await geometry(page);
-        expectInset(shape);
-        expect(shape.main.width).toBeCloseTo(shape.root.width - shape.detail.width - 8, 1);
-        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
-        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
+        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
+        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
       } finally {
         await page.close();
       }
@@ -909,7 +914,7 @@ describe("floating workspace detail", () => {
       await openRow(page);
       expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
       expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
-      expect((await geometry(page)).detail.top).toBe(8);
+      expect((await geometry(page)).detail.top).toBe(0);
       expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
       expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
       await page.keyboard.press("Escape");
@@ -1388,13 +1393,15 @@ for (const theme of ["light", "dark"] as const)
 
 // A column's paint belongs to the workspace edge, not the inset scrollport.
 for (const theme of ["light", "dark"] as const) {
-  test(`${theme}: detail column shadow spans the workspace and retains a soft bottom edge`, async () => {
+  test(`${theme}: the detail column's hairline spans the workspace evenly`, async () => {
     const page = await load(2560, 900, `initial=1&reopen&request-control&width=lg&card${theme === "dark" ? "&island" : ""}`);
     try {
       await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
       await page.addStyleTag({
         content:
-          ".fixture-main{background:var(--k2b-surface)}.fixture-main>*{visibility:hidden}.k2b-app-workspace__head>*{visibility:hidden}",
+          ".fixture-main{background:var(--k2b-surface)}.fixture-main>*{visibility:hidden}.k2b-app-workspace__head>*{visibility:hidden}" +
+          // Classic scrollbars are no part of the line; they would paint beside it.
+          "*::-webkit-scrollbar{width:0!important;height:0!important}",
       });
       await settlePanel(page);
       await settled(page);
@@ -1421,17 +1428,19 @@ for (const theme of ["light", "dark"] as const) {
             return sum / 8;
           };
           const edge = (y: number) => mean(2, y) - mean(38, y);
-          return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4) };
+          // Without a shade, the column before the line keeps one paint up to it.
+          // 14 px before the line: inside the old 24 px shade, outside Main's 8 px scrollbar track.
+          const shade = (y: number) => Math.abs(mean(2, y) - mean(26, y));
+          return { top: edge(0), middle: edge(100), bottom: edge(image.height - 4), shade: Math.max(shade(0), shade(100)) };
         },
         `data:image/png;base64,${png.toString("base64")}`,
       );
-      console.info(`column shadow ${theme}: ${JSON.stringify(contrast)}`);
-      // 55 % of the #1672 shadow, the one every column boundary uses.
-      expect(contrast.top).toBeGreaterThan(theme === "light" ? 2.5 : 0.5);
-      expect(contrast.top).toBeLessThan(theme === "light" ? 7.5 : 3);
-      expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(1);
-      expect(contrast.bottom).toBeGreaterThan(theme === "light" ? 1 : 0.2);
-      expect(contrast.bottom).toBeLessThan(contrast.middle);
+      console.info(`column line ${theme}: ${JSON.stringify(contrast)}`);
+      // K2, K3: one hairline at the boundary, the same from top to bottom, and no shade beside it.
+      expect(Math.abs(contrast.top)).toBeGreaterThan(1);
+      expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(0.5);
+      expect(Math.abs(contrast.top - contrast.bottom)).toBeLessThan(0.5);
+      expect(contrast.shade).toBeLessThan(0.5);
       // Removing paint alone must not change the panel or Main geometry.
       const suppress = await page.addStyleTag({ content: ".k2b-app-workspace__content::after{content:none!important}" });
       await settled(page);
@@ -1450,7 +1459,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.keyboard.press("ArrowLeft");
       await settled(page);
       expect((await geometry(page)).detail.width).toBeGreaterThan(before.detail.width);
-      expect((await paint()).width).toBe(24);
+      expect((await paint()).width).toBe(1);
       await page.locator("#close").click();
       await settlePanel(page);
       await settled(page);
@@ -1458,7 +1467,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.locator("[data-app-workspace-detail-toggle]").click();
       await settlePanel(page);
       await settled(page);
-      expect((await paint()).width).toBe(24);
+      expect((await paint()).width).toBe(1);
       await page.setViewportSize({ width: 834, height: 900 });
       await settlePanel(page);
       await settled(page);
@@ -1478,7 +1487,7 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("a nested fixed Detail owns only its own column shadow", async () => {
+test("a nested fixed Detail owns only its own column line", async () => {
   const page = await load(2560, 900, "nested-shadow&card");
   try {
     await settled(page);
@@ -1491,7 +1500,7 @@ test("a nested fixed Detail owns only its own column shadow", async () => {
         }),
       );
     expect((await paints())[0]!.content).toBe("none");
-    expect((await paints())[1]!.width).toBe(24);
+    expect((await paints())[1]!.width).toBe(1);
     expect(await inner.locator('[data-app-workspace-resize="detail"]').count()).toBe(0);
     await inner.evaluate((element) => {
       element.style.width = "500px";
