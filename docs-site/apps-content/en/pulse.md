@@ -32,40 +32,33 @@ Pulse uses the shared app administration list, with no separate sidebar section.
 The base switcher shows the number of configured members. Each person, group
 or agent counts once; general access rules do not count as individual members.
 
-A base opens on **Sources**, `/app/pulse/:baseId`. The head has four tabs:
-**Sources**, **Data** (`/data?kind=`), **Usage** (`/usage`), and **SQL**
-(`/sql[/:queryId]`), then **Analyze with Gustav**, **…**, and **Create source**
-for people with edit access. The head keeps its height in every state.
+A base opens on **Sources**, `/app/pulse/:baseId`. The sidebar holds
+**Sources** and **SQL** (`/sql[/:queryId]`) and opens the base **Settings**.
 
-- **Sources** leads with one statement, such as "All 4 sources receiving" or
-  "2 sources need attention". Below it, sources with refused requests, errors,
-  throttling, or late data, and fired alerts, stand most urgent first; the
-  server renders them. A row opens the source or alert details on the right
-  (`/sources/:id`, `?alert=:ruleId`); the alert details say the condition in
-  words, the value, and since when, and **Adjust with Gustav** opens an unsent
-  draft with the alert's SQL. Keys show only to people who manage the base. A
-  base without sources says since when it is empty and offers the three ways to
-  a first source. A data store that is not reachable becomes the statement
-  "Data store unreachable": no store is configured, the store instance has an
-  outage, or the base's store failed, and nothing can be written or read until
-  it answers again. A running provision, clear or delete is not an outage.
-  While Sources is open and the page is visible, Pulse reads
+- **Sources** lists every source with its state and newest data and refreshes
+  every 5 seconds; focus and scroll position stay. A row opens the source
+  details on the right (`/sources/:id`). Keys show only to people who manage
+  the base. **Source** creates a source for people with edit access.
+- **Needs attention** stands above the sources when alerts fired or cannot be
+  checked: critical first, then warnings, then alerts with failed checks or no
+  data, older first, at most 50; the server renders them. Each row says the
+  condition in words, the value, and since when. **Adjust with Gustav** opens an
+  unsent draft with the alert's SQL, and **Open SQL** opens it in the console.
+  `?alert=:ruleId` on the base marks that alert in the list.
+- A data store that is not reachable shows the notice "Data store unreachable"
+  above the sources: no store is configured, the store instance has an outage,
+  or the base's store failed, and nothing can be written or read until it
+  answers again. A running provision, clear or delete is not an outage. While
+  Sources is open and the page is visible, Pulse reads
   `GET /api/pulse/bases/:baseId` again every 30 seconds; its
-  `outage: { unavailable, since }` field reports the store state, and the page
-  shows the sources again in place once the store answers. An old
-  dashboard link opens Sources with a notice that leads to **Usage**; **Got
-  it** removes `?notice=dashboards-removed` from the address.
-- **Data** reads `GET /api/pulse/bases/:baseId/schema`: kinds, fields with type,
-  example and fill rate, and the five newest entries of one kind.
-- **Usage** lists the Code pages and automations that read the base in the
-  last 30 days and that you may open, with kind, owner and last read; the
-  others appear only as a number. People who manage the base also see the
-  service accounts and source keys that reach it through the API.
+  `outage: { unavailable, since }` field reports the store state, and the list
+  loads again in place once the store answers.
+- An old dashboard link opens Sources with the notice "Dashboards are gone";
+  **Got it** removes `?notice=dashboards-removed` from the address.
 
-A person without access sees "No access" in the head and the base's managers
-who can give it. **…** holds the base settings. Existing
-`/app/pulse/:baseId/sources` links still open the sources view; old
-`/app/pulse/:baseId/overview` links open the base.
+Existing `/app/pulse/:baseId/sources` links still open the sources view; old
+`/app/pulse/:baseId/overview` links open the base, and the 0.84 `/data` and
+`/usage` links open Sources.
 The workspace fills the available app height on desktop and phone. Longer
 content scrolls inside it. `/sql?alert=:ruleId` opens an alert's authorized SQL
 and parameter values in the console without running it. The URL stores the rule

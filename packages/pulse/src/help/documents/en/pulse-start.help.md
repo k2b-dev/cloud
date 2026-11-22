@@ -12,22 +12,15 @@ Open **Pulse** from the app menu. It is hidden from the app bar by default. If y
 
 ## Read a base
 
-A base opens on **Sources**. The head has four tabs: **Sources**, **Data**, **Usage**, and **SQL**. At the end of the head are **Analyze with Gustav**, **…**, and **Create source**. You see **Create source** only with edit access.
+A base opens on **Sources**. The sidebar holds **Sources**, **SQL**, and **Settings**.
 
-- **Sources** tells you if data arrives. The first line says "All 4 sources receiving" or how many sources need attention. Below it are the sources with refused requests, errors, throttling, or late data, and the alerts that fired. Then all sources follow with their state and newest arrival. Select a row to open its details on the right.
-- **Data** lists the data kinds of the base: events, metrics, and states. Select a kind to see its fields with type, an example, and how often each field is filled, and the five newest entries. Pulse never shows confidential event data here.
-- **Usage** lists the Code pages and automations that read the base in the last 30 days and that you may open. The others appear only as a number. If you manage the base, you also see the service accounts and source keys that reach it through the API.
-- **SQL** runs a query and shows its table and time chart. **Analyze with Gustav** then starts from your SQL.
+**Sources** lists all sources with their state and newest data. The list refreshes every 5 seconds; focus and scroll position stay. Select a row to open its details on the right. **Source** creates a new source; you need edit access for it.
 
-The source details start with **What does not arrive** when Pulse refuses requests or a fetch fails. The reason is in words. **Arrival** shows the newest data and what Pulse expects. Keys show only to people who manage the base.
+Above the sources, **Needs attention** appears when alerts fired or cannot be checked. Critical alerts come first, then warnings, then alerts that cannot be checked. Each row gives the condition in words, the value, and since when the alert fired. **Adjust with Gustav** opens an unsent draft with the alert's SQL. **Open SQL** opens the alert's SQL in the console without running it.
 
-An alert row opens the alert: its condition in words, its value, and since when it fired. **Adjust with Gustav** opens an unsent draft with the alert's SQL.
+When the data store is not reachable, a notice above the sources says so. Pulse checks again every 30 seconds while the page is visible. The list shows the last known state.
 
-When the data store is not reachable, the first line says so. Pulse checks again every 30 seconds while the page is visible. The rows show the last known state.
-
-**…** holds the base settings.
-
-To show numbers or charts to other people, ask Gustav for a Code page that reads this base. The page shows data only to people who may read the base. Once the page reads the base, **Usage** lists it.
+An old dashboard link opens the base with the notice **Dashboards are gone**. **Got it** closes the notice. To show numbers or charts to other people, ask Gustav for a Code page that reads this base. The page shows data only to people who may read the base.
 
 ## Connect a source
 
@@ -35,7 +28,7 @@ Pulse needs a connected data store. If **Pulse is not set up yet** appears, cont
 
 :::steps
 1. Choose **New base** and enter a name for your product, environment, or business area.
-2. Open the base and choose **Create source**.
+2. Open the base and choose **Source**.
 3. Choose a metrics endpoint or an HTTP ingest source and save it.
 4. Open the source to check its newest data time, errors, and scrape history.
 :::
@@ -66,4 +59,4 @@ Ctrl-C cancels a running query. When Pulse is busy, wait for the stated retry de
 A result with 10,000 rows reached the limit. More rows can exist.
 Narrow the time range or group the data to get a complete answer.
 
-Open **SQL** in a base to run a query, inspect its table and time chart, or open a saved query. **Analyze with Gustav** opens an unsent draft with your base, SQL and parameter values. Base settings are under **…** and use a modal with General, Members, Retention, Usage and limits, and Clear and delete tabs.
+Open **SQL** in a base to run a query, inspect its table and time chart, or open a saved query. **Ask AI** opens an unsent draft with your base, SQL and parameter values. **Settings** opens a modal with General, Members, Retention, Usage and limits, and Clear and delete tabs.

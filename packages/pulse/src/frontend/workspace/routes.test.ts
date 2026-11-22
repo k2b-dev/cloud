@@ -17,12 +17,9 @@ test("base pages open Sources, and the tab URLs restore their state", () => {
     sourceId: "Src001",
   });
   expect(readWorkspacePathState("/app/pulse/Base01?alert=%2Fbad", "Base01")).toEqual({ view: "sources", sourceId: "" });
-  expect(readWorkspacePathState("/app/pulse/Base01/data?kind=page_view", "Base01")).toEqual({
-    view: "data",
-    sourceId: "",
-    kind: "page_view",
-  });
-  expect(readWorkspacePathState("/app/pulse/Base01/usage", "Base01")).toEqual({ view: "usage", sourceId: "" });
+  // The 0.84 Data and Usage tabs are gone: their links open Sources.
+  expect(readWorkspacePathState("/app/pulse/Base01/data?kind=page_view", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/usage", "Base01")).toEqual({ view: "sources", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base012/sql", "Base01").view).toBe("sources");
 });
 
@@ -32,7 +29,7 @@ test("removed overview and dashboard paths have no view of their own", () => {
   expect(readWorkspacePathState("/app/pulse/Base01/dashboards/Dsh001", "Base01")).toEqual({ view: "sources", sourceId: "" });
 });
 
-test("navigation exposes the four tabs", () => {
+test("navigation exposes Sources and SQL", () => {
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", alertId: "Alt001" } })).toBe(
     "/app/pulse/Base01?alert=Alt001",
@@ -40,10 +37,6 @@ test("navigation exposes the four tabs", () => {
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001", alertId: "Alt001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
   );
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "data", kind: "page view" } })).toBe(
-    "/app/pulse/Base01/data?kind=page+view",
-  );
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "usage" } })).toBe("/app/pulse/Base01/usage");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
   );
