@@ -170,6 +170,8 @@ test("keyboard: Escape calls a lift off and saves nothing; the arrows pass an au
     const before = harness.moves.length;
     await grip(page, "Item02").focus();
     await page.keyboard.press("Space");
+    // The lift starts once the engine's keyboard module has loaded.
+    await page.waitForSelector("[data-sortable-dragging]");
     await page.keyboard.press("ArrowRight");
     // Blocked lies between Offen and In Arbeit; it takes no card from elsewhere, so the lift skips it.
     await until(() => targetColumn(page), "column:Col002");
@@ -230,6 +232,50 @@ test("keyboard: the arrows on a card's grip walk to the next card and move nothi
     await until(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.itemId ?? null), "Item03");
     await page.waitForTimeout(200);
     expect(harness.moves.length).toBe(before);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("1440 px kanban: a card dropped on the first card of another column lands at its top", async () => {
+  const page = await harness.open(desktop, { view: "kanban" });
+  try {
+    const before = harness.moves.length;
+    const from = (await boxOf(page, "Startseite: Texte gegenlesen"))!;
+    const first = (await boxOf(page, "Navigation und Seitenstruktur festlegen"))!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    for (let step = 1; step <= 12; step++)
+      await page.mouse.move(
+        from.x + from.width / 2 + ((first.x - from.x) * step) / 12,
+        from.y + from.height / 2 + ((first.y - from.y) * step) / 12,
+      );
+    await until(() => targetColumn(page), "column:Col002");
+    await page.mouse.up();
+    await until(() => harness.moves.length, before + 1);
+    expect(harness.moves.at(-1)).toEqual({ itemId: "Item02", body: { columnId: "Col002", beforeItemId: "Item06" } });
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("1440 px kanban: a card dragged out of Blocked takes a new open status", async () => {
+  const page = await harness.open(desktop, { view: "kanban", automatic: true });
+  try {
+    const before = harness.moves.length;
+    const from = (await boxOf(page, "Kontaktformular testen"))!;
+    const first = (await boxOf(page, "Navigation und Seitenstruktur festlegen"))!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    for (let step = 1; step <= 12; step++)
+      await page.mouse.move(
+        from.x + from.width / 2 + ((first.x + first.width / 2 - from.x - from.width / 2) * step) / 12,
+        from.y + from.height / 2 + ((first.y + first.height / 2 - from.y - from.height / 2) * step) / 12,
+      );
+    await until(() => targetColumn(page), "column:Col002");
+    await page.mouse.up();
+    await until(() => harness.moves.length, before + 1);
+    expect(harness.moves.at(-1)?.body).toMatchObject({ columnId: "Col002" });
   } finally {
     await page.context().close();
   }
