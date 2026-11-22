@@ -263,7 +263,8 @@ describe("the rule decides the form by depth", () => {
 
   test("a long path collapses its middle into a menu only when it does not fit", async () => {
     const path = `/app/files?path=${encodeURIComponent(folders.join("/"))}&detail=1`;
-    const wide = await open(desktop, path);
+    // From 1920 px the sidebar and Detail start wider (K12), so the path with Detail open fits a wider window.
+    const wide = await open({ ...desktop, name: "wide desktop", width: 2560, height: 1440 }, path);
     try {
       expect(await trail(wide.page)).toMatchObject({ more: false, crumbs: folders.slice(0, 4) });
     } finally {

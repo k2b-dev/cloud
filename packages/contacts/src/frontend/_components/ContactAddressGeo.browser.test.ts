@@ -77,7 +77,8 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
       const reader = page.locator('[data-workspace-main-region="contacts-reader"]');
       await reader.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
       expect(await page.locator(".k2b-app-workspace__detail").count()).toBe(0);
-      expect(await page.locator('[data-workspace-main-region="contacts-list"]').isVisible()).toBe(width >= 768);
+      // K12: a tablet shows one level at a time; the list stands beside the contact from 1024 px.
+      expect(await page.locator('[data-workspace-main-region="contacts-list"]').isVisible()).toBe(width >= 1024);
       if (width === 1440) expect(await page.locator("#contacts-book-navigation").isVisible()).toBe(true);
       expect(await reader.locator(".k2b-avatar[data-size=lg]").count()).toBe(1);
       const sections = reader.locator("article > div > section");
@@ -605,7 +606,8 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
       expect(geometry.controls.map((control) => control.height)).toEqual([38, 38, 38, 38, 38]);
       expect(geometry.left).toBe(width < 768 ? "16px" : "28px");
       expect(geometry.width).toBeLessThanOrEqual(760);
-      if (width >= 768) {
+      // K12: the list stands beside the editor from 1024 px; a tablet shows the editor's level alone.
+      if (width >= 1024) {
         const row = page.locator("a[data-contact-row]");
         expect(await row.isVisible()).toBe(true);
         expect(await row.locator(".contacts-list__contact-points").isVisible()).toBe(false);
@@ -647,7 +649,8 @@ test.each([1440, 768, 390])("reloading and closing an address editor restores th
     await page.waitForFunction(() => "clientHeight" in window);
     await page.bringToFront();
     await addressForm(page).waitFor({ state: "visible" });
-    if (width >= 768) {
+    // K12: beside the editor only from 1024 px; a tablet shows the editor's level alone.
+    if (width >= 1024) {
       const listBox = await page.locator("a[data-contact-row]").boundingBox();
       const formBox = await addressForm(page).boundingBox();
       expect(listBox!.x + listBox!.width).toBeLessThanOrEqual(formBox!.x);
