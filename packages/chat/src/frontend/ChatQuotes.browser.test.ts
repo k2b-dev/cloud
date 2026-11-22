@@ -286,8 +286,9 @@ test("a send right after Quote carries the quote while its code still loads, and
 }, 30_000);
 
 // #3999: a send that waited for a quote whose code then failed to load never goes out without it unasked. It stays
-// "not sent" with the reason; Retry loads the code again, and "Send without quote" is the person's own choice.
-for (const answer of ["Retry", "Send without quote"] as const) {
+// "not sent" with the reason; Retry loads the code again, "Send without quote" is the person's own choice, and "Back to
+// draft" in its menu puts text and quote back into the field without sending anything.
+for (const answer of ["Retry", "Send without quote", "Back to draft"] as const) {
   test(`a quote whose code fails to load keeps the message back until ${answer}`, async () => {
     const chat = seed();
     const { page, errors } = await load(desktop, chat);
@@ -306,6 +307,17 @@ for (const answer of ["Retry", "Send without quote"] as const) {
       expect(await sent.locator(".k2b-message-row__line").innerText()).toContain("The quote could not load");
       expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
       fail = false;
+      if (answer === "Back to draft") {
+        await sent.hover();
+        await sent.getByRole("button", { name: "Message actions", exact: true }).click();
+        await page.getByRole("menuitem", { name: answer, exact: true }).click();
+        await sent.waitFor({ state: "detached" });
+        await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value === "Thanks!");
+        await page.locator(".k2b-chat-composer__quote", { hasText: passage }).waitFor();
+        expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
+        expect(errors).toEqual([]);
+        return;
+      }
       await sent.getByRole("button", { name: answer, exact: true }).click();
       await sent.and(page.locator("[data-status='sent']")).waitFor();
       const source = harness.props({ chat }).open!.page.items.find((item) => item.author.id === lea.id)!.id;
@@ -323,6 +335,37 @@ for (const answer of ["Retry", "Send without quote"] as const) {
     }
   }, 30_000);
 }
+
+test("a message back in the draft while its quote's code still fails keeps the quote for the next send", async () => {
+  const chat = seed();
+  const { page, errors } = await load(desktop, chat);
+  try {
+    await page.route("**/chat-quote-selection-*.js", (route) => route.abort("failed"));
+    const row = page.locator(".k2b-message-row", { hasText: passage });
+    await row.hover();
+    await row.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Quote", exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
+    await page.keyboard.type("Thanks!");
+    await page.keyboard.press("Enter");
+    const sent = page.locator(".k2b-message-row[data-own][data-status='failed']", { hasText: "Thanks!" });
+    await sent.waitFor();
+    await sent.hover();
+    await sent.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Back to draft", exact: true }).click();
+    await sent.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value === "Thanks!");
+    // The quote could not come back as a chip, so the next send of this draft waits for it again and says so.
+    await page.locator(".k2b-chat-composer textarea").first().focus();
+    await page.keyboard.press("Enter");
+    await sent.waitFor();
+    expect(await sent.locator(".k2b-message-row__line").innerText()).toContain("The quote could not load");
+    expect(harness.posted.some((message) => message.body === "Thanks!")).toBe(false);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
 
 test("a send whose quote the server refuses never blocks the next send, and comes back into an empty field", async () => {
   const chat = seed();

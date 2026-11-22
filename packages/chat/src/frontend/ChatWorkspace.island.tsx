@@ -1009,6 +1009,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 ? // Its quote's code did not load: try again, or send it without that quote on purpose.
                   {
                     retry: () => void retryQuotes(send.clientId),
+                    // The field takes back only text, reply and quotes, so a send with shared files or elements stays.
+                    toDraft: send.refs.length || send.attachments.length ? undefined : () => backToDraft(send),
                     failure: {
                       reason: t().quoteUnavailable,
                       action: { label: t().sendWithoutQuote, onSelect: () => sendWithoutMissingQuotes(send.clientId) },
@@ -2105,6 +2107,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
     heldForQuotes.delete(clientId);
     outbox?.release(clientId, held.target(answered, quoted));
+  };
+  /**
+   * The person's choice not to send it now: its text goes back into the field, before what is there already, with its
+   * reply and quotes. A quote whose code still does not load waits with the draft again, like a new one.
+   */
+  const backToDraft = (send: ChatSend) => {
+    const held = heldForQuotes.get(send.clientId);
+    if (!held || !outbox) return;
+    heldForQuotes.delete(send.clientId);
+    sendDrafts.delete(send.clientId);
+    outbox.forget(send.clientId);
+    changeDraft(draft().trim() ? `${send.body}\n\n${draft()}` : send.body);
+    if (held.answered && !reply()) setReply(held.answered);
+    const thread = quotes()[0]?.thread;
+    setQuotes([...quotes(), ...held.quoted.filter((entry) => thread === undefined || entry.thread === thread)]);
+    for (const request of held.missing) quote(request.item, request.text);
   };
   /** The person's choice to send the message with the quotes it already has. */
   const sendWithoutMissingQuotes = (clientId: string) => {
