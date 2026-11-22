@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deleteTestNamespace, type StreamInfo, staleAfterMs, staleTestNamespaces } from "./test-sync";
+import { deleteStreams, deleteTestNamespace, type StreamInfo, staleAfterMs, staleTestNamespaces } from "./test-sync";
 
 const now = Date.parse("2026-09-27T12:00:00Z");
 const old = new Date(now - staleAfterMs - 1).toISOString();
@@ -38,4 +38,12 @@ describe("staleTestNamespaces", () => {
 
 test("deleteTestNamespace refuses a namespace outside the test prefix", async () => {
   await expect(deleteTestNamespace("dev")).rejects.toThrow('Refusing to delete Sync namespace "dev"');
+});
+
+test("a stream delete without an answer names the stream it waited for", async () => {
+  // What the NATS client throws when the broker does not answer in time.
+  const silent = { request: async () => Promise.reject(new Error("timeout")) };
+  await expect(deleteStreams(silent, ["KV_test-mail-0a1b_drafts"])).rejects.toThrow(
+    "Deleting JetStream stream KV_test-mail-0a1b_drafts failed with a 5000 ms request limit: timeout",
+  );
 });
