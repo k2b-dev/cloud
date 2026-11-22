@@ -12841,6 +12841,69 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
+/* A table that scrolls sideways fades at the edge where it continues (#3933).
+   A scroll timeline drives the fade: no script, the server frame shows it
+   already, and a table that fits has no timeline, so no animation and no mask.
+   The mask moves nothing. The table still scrolls sideways, so the layout
+   self-check keeps reporting it; column priorities make a table fit. Without
+   scroll timelines the edge stays as it was. The shell draws the focus ring
+   above the mask. */
+@keyframes k2b-table-fade {
+  0% {
+    mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+  }
+  5%,
+  95% {
+    mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+  }
+  100% {
+    mask-image: linear-gradient(to right, transparent, #000 1.5rem);
+  }
+}
+
+/* Right to left, the table starts on the right and continues to the left. */
+@keyframes k2b-table-fade-rtl {
+  0% {
+    mask-image: linear-gradient(to left, #000 calc(100% - 1.5rem), transparent);
+  }
+  5%,
+  95% {
+    mask-image: linear-gradient(to left, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+  }
+  100% {
+    mask-image: linear-gradient(to left, transparent, #000 1.5rem);
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .k2b-ui .k2b-table-wrap {
+    animation: k2b-table-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  .k2b-ui .k2b-table-wrap:is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
+    animation-name: k2b-table-fade-rtl;
+  }
+
+  /* The fade follows the person's own scrolling and moves nothing, so reduced
+     motion keeps its timeline instead of the zero duration it sets elsewhere. */
+  @media (prefers-reduced-motion: reduce) {
+    .k2b-ui .k2b-table-wrap {
+      animation-duration: auto !important;
+    }
+  }
+
+  html[data-k2b-motion="reduced"] .k2b-ui .k2b-table-wrap {
+    animation-duration: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-table-wrap {
+    animation: none;
+  }
+}
+
 /* Firefox and Safari paint sticky header and footer rows over the viewport's
    outline, so the shell repeats the same inset ring above them. */
 .k2b-ui .k2b-table-shell:has(> .k2b-table-wrap:focus-visible)::after {
