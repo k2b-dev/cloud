@@ -746,9 +746,17 @@ describe("XSD validation entry point", () => {
     unwrap(await createDatevXmlPackage(datevXmlExample, { schemas: { ...schemas, "Belegverwaltung_online_invoice_v060.xsd": "<x/>" } }));
   });
 
-  // Fresh processes, because the validator caches its compiled schemas per module.
+  // Fresh processes, because the validator caches its compiled schemas per module. They start
+  // without the runner's BUN_OPTIONS: a preload that already loaded zod or saxes would hide the
+  // missing-peer case below (Cloud's test-infra preload loads zod once CLOUD_TEST_* is set).
   const isolated = async (source: string) => {
-    const child = Bun.spawn(["bun", "-e", source], { cwd: new URL("../..", import.meta.url).pathname, stdout: "pipe", stderr: "pipe" });
+    const { BUN_OPTIONS: _runnerOptions, ...env } = process.env;
+    const child = Bun.spawn(["bun", "-e", source], {
+      cwd: new URL("../..", import.meta.url).pathname,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [output, errors, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     if (code !== 0) throw new Error(errors);
     return output.trim();
