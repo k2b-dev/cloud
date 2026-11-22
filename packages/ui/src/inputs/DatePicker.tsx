@@ -345,9 +345,9 @@ export const preloadDatePickerPanel = (): Promise<unknown> => {
   panelLoad = import("./date-picker-panel").then(
     (module) => setLoadedPanel(() => module.DatePickerPanel),
     (error: unknown) => {
-      // The next field tries again.
+      // The next field or open tries again; the cause stays findable, as with the prompt form fields.
       panelLoad = undefined;
-      globalThis.reportError(error);
+      console.error("@k2b/ui: the calendar could not load", error);
     },
   );
   return panelLoad;
