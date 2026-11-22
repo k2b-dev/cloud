@@ -1,0 +1,27 @@
+{
+  "name": "@k2b/spike-solid2-demo",
+  "private": true,
+  "type": "module",
+  "description": "Spike: Solid 2 + @k2b/ssr islands + @k2b/ui v2 draft. Not part of the workspace or CI.",
+  "scripts": {
+    "dev": "bun --conditions=solid src/server.tsx",
+    "build": "bun scripts/build.ts"
+  },
+  "dependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@solidjs/babel-plugin": "2.0.2",
+    "@solidjs/web": "2.0.3",
+    "@ui-sdk/core": "0.1.0-beta.14",
+    "@ui-sdk/solid": "0.1.0-beta.14",
+    "hono": "4.13.17",
+    "seroval": "1.8.0",
+    "solid-js": "2.0.3"
+  },
+  "devDependencies": {
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "1.4.2",
+    "playwright": "1.65.0",
+    "typescript": "5.9.3"
+  }
+}

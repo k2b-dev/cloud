@@ -1,0 +1,69 @@
+From 9ce3523e81a5ec93ec8be06da08d5bce94ac4f37 Mon Sep 17 00:00:00 2001
+From: valentinkolb <mail@valentin-kolb.com>
+Date: Sun, 22 Nov 2026 16:02:29 +0000
+Subject: [PATCH] spike: mutation and hotkeys on Solid 2 (flush shim for batch,
+ onSettled)
+
+---
+ src/solid/hotkeys.ts  |  5 +++--
+ src/solid/mutation.ts | 13 ++++++++++---
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/src/solid/hotkeys.ts b/src/solid/hotkeys.ts
+index 06f3668..3f1410d 100644
+--- a/src/solid/hotkeys.ts
++++ b/src/solid/hotkeys.ts
+@@ -1,4 +1,4 @@
+-import { createSignal, getOwner, onCleanup, onMount, type Accessor } from "solid-js";
++import { createSignal, getOwner, onCleanup, onSettled, type Accessor } from "solid-js";
+ 
+ const MODIFIER_PRIORITY = new Map<string, number>([
+   ["mod", 0],
+@@ -342,7 +342,8 @@ const createHotkeys = (
+ 
+   const owner = getOwner();
+   if (owner) {
+-    onMount(() => {
++    // Solid 2: onSettled replaces onMount.
++    onSettled(() => {
+       if (!isBrowser) return;
+       void registerAll();
+     });
+diff --git a/src/solid/mutation.ts b/src/solid/mutation.ts
+index 0ea648e..74daa24 100644
+--- a/src/solid/mutation.ts
++++ b/src/solid/mutation.ts
+@@ -1,4 +1,11 @@
+-import { batch, createSignal, type Accessor } from "solid-js";
++import { createSignal, flush, type Accessor } from "solid-js";
++
++// Solid 2 batches every write until the next flush, so `batch` is gone; the plain mirrors below keep mutate() from
++// reading a signal right after writing it (a read would return the value from before the write until the flush).
++const batch = (fn: () => void) => {
++  fn();
++  flush();
++};
+ 
+ const normalizeError = (err: unknown): Error =>
+   err instanceof Error ? err : new Error(String(err));
+@@ -542,7 +549,7 @@ const create = <T, V, C = unknown>(options: MutationOptions<T, V, C>): MutationR
+     pendingAborts.add(abortPending);
+ 
+     try {
+-      setPending(pendingCalls);
++      batch(() => setPending(pendingCalls));
+       if (!counted) {
+         if (hookFailed) throw hookFailed.error;
+         return "aborted";
+@@ -584,7 +591,7 @@ const create = <T, V, C = unknown>(options: MutationOptions<T, V, C>): MutationR
+       return await runMutation(vars, before.ctx);
+     } finally {
+       // Only still counted when a consumer threw while this call became pending.
+-      if (release()) setPending(pendingCalls);
++      if (release()) batch(() => setPending(pendingCalls));
+     }
+   };
+ 
+-- 
+2.43.0
+

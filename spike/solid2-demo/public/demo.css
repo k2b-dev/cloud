@@ -1,0 +1,6 @@
+/* Demo-only parts: the sender line and the reading text of the mail (14/22). */
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: block; src: url(/fonts/plex-sans-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: block; src: url(/fonts/plex-sans-500.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: block; src: url(/fonts/plex-sans-600.woff2) format("woff2"); }
+.demo-sender { display: flex; align-items: center; gap: 12px; min-height: 40px; }
+.demo-body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; max-width: 72ch; white-space: pre-line; }
