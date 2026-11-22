@@ -377,6 +377,30 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     }
     return [from, to] as const;
   };
+  // The box that pushes a short line or fill inward on one side, so a finding names its owner: a margin of the box or
+  // of an ancestor, or an ancestor's padding or scrollbar gutter, whose edge is where the line or fill ends.
+  const insetBy = (element: Element, area: Element, side: "left" | "right", at: number) => {
+    const Side = side === "left" ? "Left" : "Right";
+    for (let box: Element | null = element; box; box = box.parentElement) {
+      const style = getComputedStyle(box);
+      const rect = box.getBoundingClientRect();
+      const margin = Number.parseFloat(style.getPropertyValue(`margin-${side}`));
+      if (margin > 0.5 && Math.abs(rect[side] - at) <= 0.5) return `, inset by ${name(box)} (margin-${side} ${px(margin)} px)`;
+      if (box !== element) {
+        const padding = Number.parseFloat(style.getPropertyValue(`padding-${side}`));
+        const contentLeft = rect.left + box.clientLeft;
+        const contentRight = contentLeft + box.clientWidth;
+        const gutter = side === "right" ? rect.right - Number.parseFloat(style[`border${Side}Width`]) - contentRight : 0;
+        const inner = side === "left" ? contentLeft + padding : contentRight - padding;
+        if (Math.abs(inner - at) <= 0.5 && (padding > 0.5 || gutter > 0.5)) {
+          const parts = [padding > 0.5 ? `padding-${side} ${px(padding)} px` : "", gutter > 0.5 ? `scrollbar gutter ${px(gutter)} px` : ""];
+          return `, inset by ${name(box)} (${parts.filter(Boolean).join(", ")})`;
+        }
+      }
+      if (box === area) break;
+    }
+    return "";
+  };
   // The layer a box paints in: the nearest fixed box around it, such as a sheet or a dialog over the page.
   const layer = (element: Element) => {
     for (let box: Element | null = element; box; box = box.parentElement) if (getComputedStyle(box).position === "fixed") return box;
@@ -488,7 +512,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
   // same height join into runs, and a run that spans at least half the area reaches both of its edges.
   const shortEdge: string[] = [];
   if (on("short-edge")) {
-    type Segment = { area: Element; key: string; what: string; x0: number; x1: number; label: string };
+    type Segment = { area: Element; key: string; what: string; x0: number; x1: number; label: string; element: Element };
     const segments: Segment[] = [];
     const rowLike = (element: Element) =>
       !element.matches("input, select, textarea, [role='progressbar'], [role='meter'], [role='slider'], [role='separator']");
@@ -498,7 +522,16 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       if (!area || (!line.pseudo && line.element.matches(areaSelector)) || !rowLike(line.element)) continue;
       if (!line.pseudo && (floats(line.element, area) || getComputedStyle(line.element).display === "inline")) continue;
       const [x0, x1] = clipped(line.element, area, line.along0, line.along1, !!line.pseudo);
-      if (x1 > x0) segments.push({ area, key: `line ${Math.round(line.across0)}`, what: "line", x0, x1, label: name(line.element) });
+      if (x1 > x0)
+        segments.push({
+          area,
+          key: `line ${Math.round(line.across0)}`,
+          what: "line",
+          x0,
+          x1,
+          label: name(line.element),
+          element: line.element,
+        });
     }
     for (const element of everything) {
       if (!(element instanceof HTMLElement) || element.matches(areaSelector)) continue;
@@ -517,6 +550,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
             x0,
             x1,
             label: name(element),
+            element,
           });
       }
     }
@@ -542,13 +576,13 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           const last = run.reduce((a, b) => (b.x1 > a.x1 ? b : a));
           if (last.x1 - x0 < width / 2) continue;
           const gaps = [
-            [x0 - edge.left, run[0]!.label, "left"],
-            [edge.right - last.x1, last.label, "right"],
+            [x0 - edge.left, run[0]!, "left", x0],
+            [edge.right - last.x1, last, "right", last.x1],
           ] as const;
-          for (const [gap, label, side] of gaps)
+          for (const [gap, segment, side, at] of gaps)
             if (Math.abs(gap) > 0.5)
               shortEdge.push(
-                `short-edge: the ${run[0]!.what} of ${label} ${gap > 0 ? `stops ${px(gap)} px short of` : `runs ${px(-gap)} px past`} the ${side} edge of ${name(area)}`,
+                `short-edge: the ${run[0]!.what} of ${segment.label} ${gap > 0 ? `stops ${px(gap)} px short of` : `runs ${px(-gap)} px past`} the ${side} edge of ${name(area)}${gap > 0 ? insetBy(segment.element, area, side, at) : ""}`,
               );
         }
       }

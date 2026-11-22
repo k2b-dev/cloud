@@ -40,7 +40,9 @@ apply to them.
   0.5 px. A line is a border of at most 1 px, a 1 px box-shadow line, or a thin
   pseudo-element; a fill is a background colour with square corners that
   differs from what lies behind it. What a scrolling or clipping box cuts off
-  does not count. Lines and fills of one area at the same height count as one run,
+  does not count. The finding names what pushes the line or fill inward when
+  it can: a margin, or an ancestor's padding or scrollbar gutter, such as
+  `inset by div.k2b-detail-panel__body (scrollbar gutter 8 px)`. Lines and fills of one area at the same height count as one run,
   and a run that spans at least half the area must reach both edges. A
   reserved scrollbar gutter is no excuse: lines and fills run under it. Text
   keeps its own inset. Framed elements (round corners, or a border on three

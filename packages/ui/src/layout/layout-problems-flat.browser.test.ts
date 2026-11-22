@@ -55,7 +55,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     expect(result.problems).toEqual([]);
   });
 
-  test("short-edge: a line, a fill, a selected table row, and a line before a scrollbar gutter stop short", async () => {
+  test("short-edge: a line, a fill, a selected table row, a padded body, and a line before a scrollbar gutter stop short and name what insets them", async () => {
     const result = await check(
       `<section data-layout-area data-probe="area">
         <div class="line" data-probe="inset-line" style="margin:0 20px">Inset line</div>
@@ -65,19 +65,34 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
           <tbody><tr><td data-probe="selected" style="height:40px;background:#dbeafe">Selected</td><td style="background:#dbeafe">row</td></tr></tbody>
         </table>
       </section>
+      <section data-layout-area data-probe="padded-area">
+        <div data-probe="body" style="padding:0 8px">
+          <div class="line" data-probe="padded-row-1">Row in a padded body</div>
+          <div class="line" data-probe="padded-row-2">Row in a padded body</div>
+        </div>
+      </section>
       <section data-layout-area data-probe="gutter-area" class="scroll" style="height:120px;overflow-y:auto;scrollbar-gutter:stable">
         ${Array.from({ length: 6 }, (_, index) => `<div class="line" data-probe="gutter-row-${index + 1}">Row ${index + 1}</div>`).join("")}
       </section>`,
       ["short-edge"],
     );
     const inGutterArea = result.shortEdge.filter((line) => line.includes("gutter-area"));
-    expect(result.shortEdge.filter((line) => !line.includes("gutter-area"))).toEqual([
-      'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the left edge of [data-probe="area"]',
-      'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the right edge of [data-probe="area"]',
+    // A padded body in the area (as Warenfluss saw in a detail body): the finding names the padding's owner.
+    expect(result.shortEdge.filter((line) => line.includes("padded-area"))).toEqual(
+      [1, 2].flatMap((row) =>
+        (["left", "right"] as const).map(
+          (side) =>
+            `short-edge: the line of [data-probe="padded-row-${row}"] stops 8 px short of the ${side} edge of [data-probe="padded-area"], inset by [data-probe="body"] (padding-${side} 8 px)`,
+        ),
+      ),
+    );
+    expect(result.shortEdge.filter((line) => !line.includes("gutter-area") && !line.includes("padded-area"))).toEqual([
+      'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the left edge of [data-probe="area"], inset by [data-probe="inset-line"] (margin-left 20 px)',
+      'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the right edge of [data-probe="area"], inset by [data-probe="inset-line"] (margin-right 20 px)',
       'short-edge: the line of [data-probe="drawn-row"] stops 20 px short of the left edge of [data-probe="area"]',
       'short-edge: the line of [data-probe="drawn-row"] stops 20 px short of the right edge of [data-probe="area"]',
-      'short-edge: the fill of [data-probe="notice"] stops 16 px short of the left edge of [data-probe="area"]',
-      'short-edge: the fill of [data-probe="notice"] stops 16 px short of the right edge of [data-probe="area"]',
+      'short-edge: the fill of [data-probe="notice"] stops 16 px short of the left edge of [data-probe="area"], inset by [data-probe="notice"] (margin-left 16 px)',
+      'short-edge: the fill of [data-probe="notice"] stops 16 px short of the right edge of [data-probe="area"], inset by [data-probe="notice"] (margin-right 16 px)',
       'short-edge: the fill of td "row" stops 40 px short of the right edge of [data-probe="area"]',
     ]);
     // The gutter is no excuse: every line before it stops by the gutter's width. WebKit on Linux keeps no gutter.
@@ -88,7 +103,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
         ? Array.from(
             { length: 6 },
             (_, index) =>
-              `short-edge: the line of [data-probe="gutter-row-${index + 1}"] stops ${gutter} px short of the right edge of [data-probe="gutter-area"]`,
+              `short-edge: the line of [data-probe="gutter-row-${index + 1}"] stops ${gutter} px short of the right edge of [data-probe="gutter-area"], inset by [data-probe="gutter-area"] (scrollbar gutter ${gutter} px)`,
           )
         : [],
     );
