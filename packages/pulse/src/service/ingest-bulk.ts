@@ -312,8 +312,11 @@ export const planIngestStates = async (
   return planned;
 };
 
-/** T2 holds lifecycle/source locks through all inserts and replays the committed state plan. */
-export const writePreparedIngestBatchInTransaction = async (params: {
+/**
+ * T2 holds shared lifecycle and source locks through all inserts and replays the committed state plan.
+ * Rows carry deterministic ids and versions, so concurrent writes of one source need no exclusive lock here.
+ */
+export const writePreparedIngestRows = async (params: {
   baseId: string;
   sourceId: string;
   database: string;
@@ -322,9 +325,8 @@ export const writePreparedIngestBatchInTransaction = async (params: {
   replay?: boolean;
   db: PulseSqlClient;
   store: IngestStore;
-  now: Date;
 }) => {
-  const { baseId, sourceId, batch, plannedStates, db, store, now, database } = params;
+  const { baseId, sourceId, batch, plannedStates, db, store, database } = params;
   const series = await loadBatchSeries(baseId, batch, db),
     byKey = new Map(series.map((s) => [JSON.stringify([s.name, s.series_key]), s]));
   await insertStoreRows(
@@ -393,6 +395,17 @@ export const writePreparedIngestBatchInTransaction = async (params: {
       change_id ? [{ ...row, id: change_id, changed_at: changed_at ?? updated_at }] : [],
     ),
   );
+};
+
+/** Runs after the inserts, under the exclusive source lock: SQL only, never external I/O. */
+export const recordWrittenIngestBatch = async (params: {
+  baseId: string;
+  sourceId: string;
+  batch: PreparedIngestBatch;
+  db: PulseSqlClient;
+  now: Date;
+}) => {
+  const { baseId, sourceId, batch, db, now } = params;
   if (batch.metrics.length)
     await db`UPDATE pulse.metric_series s SET mirrored=true,last_seen_at=greatest(s.last_seen_at,${now}::timestamptz)
     FROM (SELECT DISTINCT name,"seriesKey" FROM jsonb_to_recordset((${JSON.stringify(batch.metrics)}::jsonb #>> '{}')::jsonb) AS i(name text,"seriesKey" text)) i,pulse.metric_defs d

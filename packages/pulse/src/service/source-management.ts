@@ -340,6 +340,8 @@ export const removeSource = async (params: {
   const result = await sql.begin(async (tx): Promise<Result<number>> => {
     const active = await requireBaseActive(params.baseId, tx);
     if (!active.ok) return active;
+    // Ingest holds KEY SHARE while it writes; removal waits for those writes as updates do.
+    await tx`SELECT 1 FROM pulse.sources WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid FOR UPDATE`;
     await tx`
       DELETE FROM auth.service_accounts account
       USING pulse.sources source

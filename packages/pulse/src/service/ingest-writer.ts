@@ -26,8 +26,9 @@ import {
   type PulseSqlClient,
   planIngestStates,
   prepareIngestBatch,
+  recordWrittenIngestBatch,
   registerIngestBatch,
-  writePreparedIngestBatchInTransaction,
+  writePreparedIngestRows,
 } from "./ingest-bulk";
 import { type IngestQuota, ingestQuota, type QuotaError } from "./ingest-quota";
 import { MetricSeriesLimitError } from "./metric-cardinality";
@@ -152,12 +153,18 @@ export const validateIngestTimestamps = (batch: PulseIngestBatch, now: Date): Re
   }
   return ok();
 };
-const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlClient) => {
+type SourceRow = { enabled: boolean; last_accepted_at: Date | null }[];
+/**
+ * `exclusive` (T1) orders acceptance times of one source. `shared` (T2) only blocks source updates, removal and
+ * deletion: concurrent writes of one source must not queue behind each other's store inserts (#4031).
+ */
+const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlClient, mode: "exclusive" | "shared") => {
   const writable = await requireBaseWritable(baseId, db);
   if (!writable.ok) throw new IngestTransactionFailure(writable.error);
-  const [source] = await db<
-    { enabled: boolean; last_accepted_at: Date | null }[]
-  >`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`;
+  const [source] =
+    mode === "exclusive"
+      ? await db<SourceRow>`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`
+      : await db<SourceRow>`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR KEY SHARE`;
   if (!source) throw new IngestTransactionFailure(err.notFound("Pulse source"));
   if (!source.enabled)
     throw new IngestTransactionFailure({ code: "PULSE_SOURCE_DISABLED", status: 409, message: "Pulse source is disabled" });
@@ -243,7 +250,7 @@ export const createIngestWriter = ({
       const preflight = await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
-        const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        const base = await lockIngestScope(params.baseId, params.sourceId, tx, "exclusive");
         if (params.resetGeneration !== undefined && params.resetGeneration !== base.reset_generation)
           throw new IngestTransactionFailure(err.conflict("Base data was reset during scrape"));
         if (!sameCheckpoint(base, inspected.row)) throw new BaseStoreError("CHECKPOINT_CHANGED");
@@ -330,28 +337,36 @@ export const createIngestWriter = ({
       return await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
-        const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        const base = await lockIngestScope(params.baseId, params.sourceId, tx, "shared");
         if (params.ownedSource) {
           const owned = await requireOwnedIngestSource(params.baseId, params.sourceId, params.ownedSource, tx);
           if (!owned.ok) throw new IngestTransactionFailure(owned.error);
         }
-        // Source locks serialize this source; lifecycle SHARE locks protect all inserts.
+        // Lifecycle and source SHARE locks protect all inserts; only the SQL bookkeeping after them serializes this source.
         if (base.reset_generation !== preflight.base.reset_generation)
           throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });
         if (!sameCheckpoint(base, inspected.row)) throw new BaseStoreError("CHECKPOINT_CHANGED");
-        if (key) {
-          const [existing] = await tx<
-            KeyRow[]
-          >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
+        // Read the reservation without a lock: a concurrent retry with the same key must reach T1 while this one writes.
+        const reservation = async (lock: boolean) => {
+          if (!key) return null;
+          const [existing] = lock
+            ? await tx<
+                KeyRow[]
+              >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`
+            : await tx<
+                KeyRow[]
+              >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
           if (!existing || existing.request_hash !== hash || existing.accepted_at.getTime() !== preflight.acceptedAt.getTime())
             throw new Error("Idempotency reservation changed during ingest");
-          const response = completedIngestResponse(existing, base);
-          if (response) return ok(response);
-        }
+          return completedIngestResponse(existing, base);
+        };
+        const completed = await reservation(false);
+        if (completed) return ok(completed);
         // Every HTTP insert has a 30-second timeout; five collections fit comfortably inside the durable 10-minute lease.
         if (clock().getTime() - now.getTime() > 5 * 60_000) throw new Error("Ingest preflight lease expired; retry");
         writing = true;
-        await writePreparedIngestBatchInTransaction({
+        const writtenAt = clock();
+        await writePreparedIngestRows({
           baseId: params.baseId,
           sourceId: params.sourceId,
           database: base.database_name,
@@ -367,8 +382,13 @@ export const createIngestWriter = ({
               return connectedStore.query(statement, params);
             },
           },
-          now: clock(),
         });
+        // Upgrades the KEY SHARE lock: this source's bookkeeping stays serial, after its inserts and without external I/O.
+        await tx`SELECT 1 FROM pulse.sources WHERE id=${params.sourceId}::uuid FOR NO KEY UPDATE`;
+        // A concurrent attempt with the same key wrote the same row ids and versions and may have finished first.
+        const finished = await reservation(true);
+        if (finished) return ok(finished);
+        await recordWrittenIngestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: prepared, db: tx, now: writtenAt });
         const changeIds = plannedStates.flatMap((s) => (s.change_id ? [s.change_id] : []));
         if (changeIds.length)
           await tx`UPDATE pulse.state_variants SET pending_change_id=NULL,pending_change_at=NULL
