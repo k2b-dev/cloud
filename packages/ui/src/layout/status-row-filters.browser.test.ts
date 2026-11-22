@@ -22,6 +22,7 @@ process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { StatusRow } = await import("./StatusRow");
 const { FilterChip } = await import("../actions/FilterChip");
 const { LocaleProvider } = await import("../intl/locale");
+const { Button } = await import("../actions/Button");
 
 const ui = resolve(import.meta.dir, "../..");
 const css = workspaceCss();
@@ -263,6 +264,52 @@ test("a phone scrolls the filters sideways with a fade at the edge where they co
     expect({ scrolls: phone.scrolls, folded: phone.folded, button: phone.button }).toEqual({ scrolls: true, folded: 0, button: false });
     // The trailing edge fades where the filters continue (with scroll timelines; without them the edge stays).
     if (phone.timelines) expect(phone.mask).toContain("gradient");
+  } finally {
+    await page.close();
+  }
+});
+
+// L6 (flat QA): with `flex: none` the end grew as wide as its content and the whole status band ran past its column.
+// A selection's actions keep their width while the figures give way; where they still do not fit, the end scrolls
+// them itself, so the row stays inside its column and no action is cut.
+test("768 px: a selection's many actions scroll inside the end; the row never runs past its column", async () => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(StatusRow, {
+          lead: "128 tasks",
+          filters: [],
+          selection: {
+            count: 3,
+            facts: [{ value: "2", label: "overdue" }],
+            get actions() {
+              return ["Move to board", "Assign to someone", "Set a due date", "Add tags", "Duplicate", "Archive"].map((label) =>
+                createComponent(Button, { size: "sm", variant: "secondary", children: label }),
+              );
+            },
+          },
+        });
+      },
+    }),
+  );
+  const page = await browser.newPage({ viewport: { width: 768, height: 700 }, reducedMotion: "reduce" });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:768px">${html}</div></body></html>`,
+    );
+    await settled(page);
+    const band = await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>(".k2b-status-row")!;
+      const end = row.querySelector<HTMLElement>(".k2b-status-row__end")!;
+      return {
+        rowSideways: row.scrollWidth - row.clientWidth,
+        rowInside: row.getBoundingClientRect().right <= document.getElementById("app")!.getBoundingClientRect().right + 0.5,
+        endScrolls: end.scrollWidth > end.clientWidth + 1 && getComputedStyle(end).overflowX === "auto",
+        height: Math.round(row.getBoundingClientRect().height),
+      };
+    });
+    expect(band).toEqual({ rowSideways: 0, rowInside: true, endScrolls: true, height: 52 });
   } finally {
     await page.close();
   }
