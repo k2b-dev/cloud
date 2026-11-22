@@ -687,9 +687,8 @@ beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.
 Under an open waiting drawer, a trail gets the drawer's width as space at its
 end, so the last column or card can scroll beside it. A trail inside Detail
 gets no extra space. Calendar's day and week views mark their own scrollers.
-The trail clips to the surface radius; inside a framed Paper it follows the
-inner radius. A paper DataTable draws no frame, so its shell and its trail both
-keep the full surface radius. Put it directly in Main's content box with `scroll={false}` on Main
+The trail clips to the surface radius; inside Paper it follows the inner
+radius. Put it directly in Main's content box with `scroll={false}` on Main
 and no vertical scroller around it. A reserved scrollbar gutter would add a
 second gap before Detail.
 

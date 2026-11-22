@@ -1,8 +1,10 @@
 # Paper
 
-`Paper` provides a neutral frame for content on a full page: a 1 px hairline,
-square corners, the page surface, and no shadow. An interactive `Paper` is a
-card with 8 px corners. The application owns spacing and layout.
+> **Being replaced.** Under the [flat criteria](/en/ui/surfaces/flat-criteria), `Paper` casts no shadow any more (K3). Its new form, square in columns and with hairlines, comes with the section building block; this page is rewritten then.
+
+`Paper` provides a neutral content surface with a border, radius, background,
+optional elevation and optional interactive focus treatment. The application
+owns spacing and layout.
 
 ## Use Paper
 
@@ -14,17 +16,16 @@ finding, and `PanelDialog` for dialog geometry.
 Do not nest papers to manufacture hierarchy. Use spacing, headings, or one of
 the specific shared components inside the outer surface instead.
 
-`Paper` is flat in every layer (Cloud flat, K2 to K4): only what lies above the
-page, such as a menu, a dialog, or a toast, casts a shadow. Structure is square;
-only what people press is round. Never add a shadow or a radius of your own.
-Clickable `Paper` with `interactive` is a card for one of several independent
-things side by side (K17): flat, a 1 px border, 8 px corners, never nested and
-never the frame of a section.
+`Paper` is an island ([Layers and shadows](/en/ui/surfaces/elevation)). In the
+main content it carries the soft island shadow (`--k2b-shadow-raised`; in dark
+mode a lighter surface instead). In a flat layer, such as an `AppWorkspace`
+sidebar or detail column, a `DetailPanel`, a dialog, a sheet, a popover, or an
+element with `data-k2b-layer="flat"`, it is flat. A Paper inside another island
+is flat too. Never add a shadow of your own.
 
-`elevated` stays for a standalone page card, such as a sign-in or a shared
-document page, that sits on the canvas like the app card. It reads the frame
-shadow token, which the flat design sets to none; it does not change the
-border, radius, or content spacing.
+Set `elevated` only for a standalone page card, such as a sign-in or a shared
+document page, that sits on the canvas like the app card. It uses the frame
+shadow; it does not change the border, radius, or content spacing.
 
 `Paper` has no default padding. This lets the content owner choose its density
 without overriding the surface contract.
@@ -32,7 +33,7 @@ without overriding the surface contract.
 Inside `AppWorkspace.Main`, empty, error, and loading placeholders draw no
 Paper box. A workspace view such as a list, a board, or a table stays one
 surface without inset frames, and a `DataTable` there uses `surface="plain"`.
-A page with several topics separates them with one hairline that the page owns (`k2b-divided`), never a frame per topic. See
+A page with several topics frames each topic once, as an island. See
 [UI-22](/en/docs/conventions/frontend#visual-ui-ui).
 
 ## Import
@@ -46,8 +47,8 @@ import { Paper } from "@k2b/ui";
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `as` | `"div" \| "section" \| "article" \| "a"` | `"div"` | Preserves the native meaning of the grouped content. |
-| `elevated` | `boolean` | `false` | Reads the frame shadow token for a standalone page card on the canvas. |
-| `interactive` | `boolean` | `false` | Makes it a card: 8 px corners, a stronger border, the shared hover and visible focus treatment. |
+| `elevated` | `boolean` | `false` | Uses the frame shadow for a standalone page card on the canvas. |
+| `interactive` | `boolean` | `false` | Adds the shared hover and visible focus treatment. |
 | `class` | `string` | none | Adds application-owned spacing or layout. |
 | `children` | `JSX.Element` | none | Renders the grouped content. |
 

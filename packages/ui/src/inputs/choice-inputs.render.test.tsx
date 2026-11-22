@@ -63,21 +63,24 @@ test("checkbox cards contain their visually hidden input", () => {
   expect(cssRule(".k2b-ui .k2b-checkbox-card > input")).toContain("position: absolute");
 });
 
-// K5: a field has three fixed rows, the label row (20 px), the control, then help or error, so fields in a row keep
-// their controls on one line without sharing rows.
-test("fields keep the label row above the control and the help below it", () => {
+test("fields that share a grid align their controls through a subgrid", () => {
   const described = renderToString(() =>
     createComponent(TextInput, { label: "Address", description: "A two-line description.", value: "" }),
   );
   const plain = renderToString(() => createComponent(TextInput, { label: "Format", value: "" }));
+  // Both fields stack label, description, and control as direct children of
+  // `.k2b-field`; the stylesheet subgrids them so the control row starts at one height.
   expect(described).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
-  expect(described.indexOf("k2b-field__description")).toBeGreaterThan(described.indexOf("<input"));
+  expect(described).toContain('<p class="k2b-field__description"');
   expect(plain).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
   expect(plain).not.toContain("k2b-field__description");
-  expect(cssRule(".k2b-ui .k2b-field__label-row")).toContain("min-height: var(--k2b-h-label)");
-  expect(cssRule(".k2b-ui .k2b-field__label")).toContain("min-height: var(--k2b-h-label)");
-  // No field shares rows with its neighbours any more.
-  expect(indexCss).not.toMatch(/\.k2b-field[^{]*\{[^}]*grid-template-rows: subgrid/);
+  const paired = '.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])';
+  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} {([^}]*)}`))?.[1] ?? "";
+  expect(fieldRule).toContain("grid-template-rows: subgrid");
+  expect(fieldRule).toContain("grid-row: span 4");
+  expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
+  expect(indexCss).toContain(`${paired} > .k2b-field__description {\n    grid-row: 2;`);
+  expect(indexCss).toContain(`${paired} > .k2b-field__error {\n    grid-row: 4;`);
 });
 
 test("input clear actions stay minimal and use danger text on hover", () => {
@@ -662,7 +665,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(full).toContain('data-transparent="true"');
   });
 
-  test("labels a field above its control and describes it below (K5)", () => {
+  test("describes a field above its control, like the Cloud input wrapper", () => {
     const html = renderToString(() =>
       createComponent(PinInput, {
         label: "Access code",
@@ -678,9 +681,9 @@ describe("@k2b/ui complete choice input migrations", () => {
     const error = html.indexOf("k2b-field__error");
 
     expect(label).toBeGreaterThan(-1);
-    expect(control).toBeGreaterThan(label);
-    expect(description).toBeGreaterThan(control);
-    expect(error).toBeGreaterThan(description);
+    expect(description).toBeGreaterThan(label);
+    expect(control).toBeGreaterThan(description);
+    expect(error).toBeGreaterThan(control);
   });
 
   test("keeps the checkbox card label in the content column with or without a glyph", () => {

@@ -326,25 +326,15 @@ describe("AccessDialog in a browser", () => {
         expect(await notice.getAttribute("data-tone")).toBe("warning");
         expect(await notice.locator("i.ti-alert-triangle").count()).toBe(1);
         expect(await notice.locator(".k2b-sr-only").textContent()).toBe("Warnung: ");
-        // K8/K10: the tint and the sign carry the warning tone; the sentence keeps the neutral ink.
-        const tones = await notice.evaluate((card) => {
-          const resolve = (value: string) => {
-            const probe = document.createElement("span");
-            probe.style.color = value;
-            card.append(probe);
-            const color = getComputedStyle(probe).color;
-            probe.remove();
-            return color;
-          };
-          return {
-            sign: getComputedStyle(card.querySelector("i.ti-alert-triangle")!).color,
-            text: getComputedStyle(card).color,
-            warning: resolve("var(--k2b-warning-text)"),
-            neutral: resolve("var(--k2b-text-secondary)"),
-          };
+        const [color, warning] = await notice.evaluate((card) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-warning-text)";
+          card.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(card).color, expected];
         });
-        expect(tones.sign).toBe(tones.warning);
-        expect(tones.text).toBe(tones.neutral);
+        expect(color).toBe(warning);
         const copy = dialog.locator(".k2b-copy-button");
         const link = dialog.locator(".k2b-input-shell", { has: page.locator("input[readonly]") });
         expect(await copy.innerText()).toBe("Kopieren");

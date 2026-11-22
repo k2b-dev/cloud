@@ -19,6 +19,16 @@ const tile = (className: string, attributes = "") => `<span class="${className} 
 // Component markup without hydration: the parent selectors, not a test override, own layout and interaction.
 const fixtures = [
   {
+    kind: "placeholder-compact",
+    size: 32,
+    markup: `<div class="k2b-placeholder" data-variant="compact" data-state="empty" data-parent tabindex="0">${tile("k2b-placeholder__icon")}</div>`,
+  },
+  {
+    kind: "placeholder-panel",
+    size: 40,
+    markup: `<div class="k2b-placeholder" data-variant="panel" data-state="empty" data-parent tabindex="0">${tile("k2b-placeholder__icon")}</div>`,
+  },
+  {
     kind: "overview",
     size: 40,
     markup: `<header class="k2b-app-overview__header" data-parent tabindex="0">${tile("k2b-app-overview__icon")}</header>`,

@@ -89,13 +89,10 @@ describe("Files settings with an unreadable configuration in a browser", () => {
         for (const lang of ["en", "de"]) {
           const { context, tab } = await open(options, theme, lang);
           try {
-            const layout = await tab.evaluate((touch) => {
+            const layout = await tab.evaluate(() => {
               const notice = document.querySelector<HTMLElement>('.k2b-notice-card[data-tone="warning"]')!;
               const card = notice.getBoundingClientRect();
-              const button = notice.querySelector("button")!;
-              const reset = button.getBoundingClientRect();
-              const middle = reset.left + reset.width / 2;
-              const hits = (y: number) => button.contains(document.elementFromPoint(middle, y));
+              const reset = notice.querySelector("button")!.getBoundingClientRect();
               const form = document.querySelector("form")!;
               const retention = document.querySelector<HTMLInputElement>('input[name="activity-retention-days"]')!;
               const field = retention.closest<HTMLElement>(".k2b-field")!.getBoundingClientRect();
@@ -104,15 +101,13 @@ describe("Files settings with an unreadable configuration in a browser", () => {
                 overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
                 first: form.firstElementChild === notice,
                 resetInside: reset.width > 0 && reset.left >= card.left && reset.right <= card.right && reset.bottom <= card.bottom,
-                // K1: the small button keeps its own 28px box; on a phone its touch target reaches 44px, 8px past
-                // each edge, without growing the box.
-                resetHeight: Math.round(reset.height) === 28,
-                resetTarget: !touch || (hits(reset.top - 7) && hits(reset.bottom + 7)),
+                // Touch targets on a phone stay at least 32px high.
+                resetHeight: reset.height >= 32,
                 retentionInside: field.width > 0 && field.left >= 0 && field.right <= window.innerWidth,
                 retentionValue: retention.value,
                 retentionUnit: /days|Tage/.test(unit),
               };
-            }, device === "phone");
+            });
             expect({ device, theme, lang, ...layout }).toEqual({
               device,
               theme,
@@ -121,7 +116,6 @@ describe("Files settings with an unreadable configuration in a browser", () => {
               first: true,
               resetInside: true,
               resetHeight: true,
-              resetTarget: true,
               retentionInside: true,
               retentionValue: "365",
               retentionUnit: true,

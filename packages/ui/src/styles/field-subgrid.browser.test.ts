@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
-// Fields keep a 20 px label row, the control, then help or error (K5). Only a real layout engine
+// Fields with a description subgrid their rows. Only a real layout engine
 // shows whether a field keeps its control inside when its parent is not a grid,
 // as in a form dialog, so the shipped browser build renders real fields here.
 const ui = resolve(import.meta.dir, "../..");
@@ -13,7 +13,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "field-subgrid.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { FieldGrid, prompts, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { prompts, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const description = "Paste the lines exported from the payroll system, one entry per line.";
 const notes = () => createComponent(TextInput, { label: "Notes", description, multiline: true, lines: 3, value: "" });
@@ -30,21 +30,6 @@ render(
     createComponent(TextInput, { label: "Comment", multiline: true, lines: 3, value: "" }),
   ],
   document.getElementById("row"),
-);
-// K5: a field row on one grid: a help text, an error, and a field without a label.
-render(
-  () =>
-    createComponent(FieldGrid, {
-      columns: 3,
-      get children() {
-        return [
-          createComponent(TextInput, { label: "Place", description: "Shelf and row, as on the label.", value: "B" }),
-          createComponent(TextInput, { label: "Daily rate", error: "Enter an amount.", value: "" }),
-          createComponent(TextInput, { "aria-label": "Next check", value: "" }),
-        ];
-      },
-    }),
-  document.getElementById("grid"),
 );
 globalThis.openForm = () =>
   prompts.form({
@@ -74,8 +59,7 @@ const load = async (options: (typeof viewports)[keyof typeof viewports]) => {
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui" style="margin:0;padding:16px"><div id="stacked" style="display:flex;flex-direction:column;gap:1rem"><p>Journal</p></div>` +
-      `<div id="row" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:24px"></div>` +
-      `<div id="grid" style="margin-top:24px"></div></body></html>`,
+      `<div id="row" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:24px"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#row textarea").waitFor();
@@ -164,54 +148,11 @@ describe("@k2b/ui fields with a description", () => {
           fieldBoxes(page, "#row > .k2b-field:last-child"),
         ]);
         const control = (field: typeof described) => field.children.find((child) => !child.class.startsWith("k2b-field__"))!;
-        // K5: both controls stand on one line under their 20 px label rows; the description stands below its control.
+        // The description pushes both controls down to one line.
         expect(control(plain).top).toBe(control(described).top);
-        expect(described.children[2]!.class).toContain("k2b-field__description");
-        expect(described.children[2]!.top).toBeGreaterThanOrEqual(control(described).bottom);
+        expect(control(plain).top).toBeGreaterThan(described.children[1]!.top);
         for (const field of [described, plain]) {
           expect(Math.max(...field.children.map((child) => child.bottom))).toBeLessThanOrEqual(field.height);
-        }
-      } finally {
-        await page.close();
-      }
-    });
-
-    test(`at ${width} px a field grid keeps 20 px label rows and lines its controls up, or stacks when narrow`, async () => {
-      const page = await load(options);
-      try {
-        const fields = await page.locator("#grid .k2b-field").evaluateAll((items) =>
-          items.map((field) => {
-            const control = field.querySelector(".k2b-input-shell")!.getBoundingClientRect();
-            const label = field.querySelector(".k2b-field__label-row, :scope > .k2b-field__label");
-            const help = field.querySelector(".k2b-field__description, .k2b-field__error");
-            return {
-              left: Math.round(field.getBoundingClientRect().left),
-              top: Math.round(field.getBoundingClientRect().top),
-              controlTop: Math.round(control.top),
-              controlHeight: Math.round(control.height),
-              labelHeight: label ? Math.round(label.getBoundingClientRect().height) : null,
-              helpBelow: help ? help.getBoundingClientRect().top >= control.bottom : null,
-            };
-          }),
-        );
-        const gridWidth = await page.locator("#grid .k2b-field-grid").evaluate((grid) => grid.getBoundingClientRect().width);
-        expect(fields).toHaveLength(3);
-        for (const field of fields) {
-          // Label row 20 px, control 36 px, help and error under the control.
-          if (field.labelHeight !== null) expect(field.labelHeight).toBe(20);
-          expect(field.controlHeight).toBe(36);
-          if (field.helpBelow !== null) expect(field.helpBelow).toBe(true);
-          // A field without a label keeps the empty label row: its control starts 24 px below the field's top.
-          expect(field.controlTop - field.top).toBe(24);
-        }
-        // Three fields keep at least 160 px each and 12 px between them; below that they stack.
-        if (gridWidth >= 504) {
-          expect(new Set(fields.map((field) => field.controlTop)).size).toBe(1);
-          expect(new Set(fields.map((field) => field.left)).size).toBe(3);
-        } else {
-          // K15: in a narrow column the fields stand one under the other.
-          expect(new Set(fields.map((field) => field.left)).size).toBe(1);
-          for (let i = 1; i < fields.length; i++) expect(fields[i]!.top).toBeGreaterThan(fields[i - 1]!.top);
         }
       } finally {
         await page.close();

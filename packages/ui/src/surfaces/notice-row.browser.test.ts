@@ -96,35 +96,21 @@ const measure = (page: Awaited<ReturnType<typeof load>>, id: string) =>
     };
   }, id);
 
-/** The column's text edge (K5): 20 px, 16 px on a phone once the token defines it. */
-const gutter = (page: Awaited<ReturnType<typeof load>>) =>
-  page.evaluate(() => {
-    const probe = document.createElement("div");
-    probe.style.paddingLeft = "var(--k2b-gutter)";
-    document.querySelector(".k2b-ui")!.append(probe);
-    const value = Number.parseFloat(getComputedStyle(probe).paddingLeft);
-    probe.remove();
-    return Math.round(value);
-  });
-
 describe("@k2b/ui NoticeRow", () => {
-  // K1, K5, K10: a square 52 px row; tile, text, and action stand on the column's text edge.
-  for (const [width, tile, gap] of [
-    [1440, 32, 12],
-    [390, 28, 10],
+  for (const [width, tile, textLeft] of [
+    [1440, 32, 52],
+    [390, 28, 46],
   ] as const) {
-    test(`on a ${width}px screen a tile and an action keep one 52px row on the text edge, also while loading`, async () => {
+    test(`on a ${width}px screen a tile and an action keep one 48px row, also while loading`, async () => {
       const page = await load(width);
       try {
-        const edge = await gutter(page);
-        const textLeft = edge + tile + gap;
         const split = await measure(page, "split");
-        expect(split).toMatchObject({ height: 52, tile, tileLeft: edge, textLeft, actionRight: edge, sameLine: true });
+        expect(split).toMatchObject({ height: 48, tile, tileLeft: 8, textLeft, actionRight: 8, sameLine: true });
         expect(split.tileColor).toBe("rgb(124, 58, 237)");
-        expect(await measure(page, "loading")).toMatchObject({ height: 52, tile, textLeft, sameLine: true });
-        expect(await measure(page, "danger")).toMatchObject({ height: 52, tile, textLeft, sameLine: true });
-        // Without a tile the text starts on the text edge.
-        expect(await measure(page, "plain")).toMatchObject({ height: 52, tile: null, textLeft: edge, sameLine: true });
+        expect(await measure(page, "loading")).toMatchObject({ height: 48, tile, textLeft, sameLine: true });
+        expect(await measure(page, "danger")).toMatchObject({ height: 48, tile, textLeft, sameLine: true });
+        // Without a tile the text starts at the notice's own inset.
+        expect(await measure(page, "plain")).toMatchObject({ height: 48, tile: null, textLeft: 14, sameLine: true });
         // NoticeCard keeps its calm block layout; only NoticeRow is a row.
         expect(await page.locator("#calm .k2b-notice-card").getAttribute("data-row")).toBeNull();
         expect(await page.evaluate(() => getComputedStyle(document.querySelector("#calm .k2b-notice-card")!).display)).toBe("block");

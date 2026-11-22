@@ -156,16 +156,6 @@ const measure = () => {
     paperPlaceholder: { ...frame(".paper-placeholder"), shadow: style(".paper-placeholder").boxShadow },
     standalonePlaceholder: frame(".standalone-placeholder"),
     group: frame(".k2b-detail-panel__group"),
-    groupSides: ["borderRightStyle", "borderBottomStyle", "borderLeftStyle"].map(
-      (side) => style(".k2b-detail-panel__group")[side as "borderRightStyle"],
-    ),
-    hairline: (() => {
-      const probe = document.querySelector(".k2b-detail-panel__body")!.appendChild(document.createElement("span"));
-      probe.style.color = "var(--k2b-border)";
-      const color = getComputedStyle(probe).color;
-      probe.remove();
-      return color;
-    })(),
     groupedSections: sections.map((element) => getComputedStyle(element).backgroundColor),
     groupGap: sections[1]!.getBoundingClientRect().top - sections[0]!.getBoundingClientRect().bottom,
     statLabel: { transform: style(".k2b-stat-cell__label").textTransform, tracking: style(".k2b-stat-cell__label").letterSpacing },
@@ -209,23 +199,18 @@ describe("@k2b/ui one frame per surface", () => {
 
           expect(result.notice.border).toBe(transparent);
           expect(result.notice.background).not.toBe(transparent);
-          // Cloud flach K10/K11: the notice description is meta text, 12 px.
-          expect(result.noticeDetailSize).toBe("12px");
+          expect(result.noticeDetailSize).toBe("14px");
           expect(result.noticeDetailOpacity).toBe("1");
           expect(result.noticeInk).toEqual(result.neutralInk);
 
           expect(result.nestedPlaceholder).toEqual({ border: transparent, background: transparent });
           expect(result.paperPlaceholder).toEqual({ border: transparent, background: transparent, shadow: "none" });
-          // Cloud flach K10: an empty area shows a round sign, a sentence and a way out, without a box, also standing alone.
-          expect(result.standalonePlaceholder).toEqual({ border: transparent, background: transparent });
+          expect(result.standalonePlaceholder.border).not.toBe(transparent);
+          expect(result.standalonePlaceholder.background).not.toBe(transparent);
 
-          // Cloud flach K2, K9 and "one line, one owner": the body draws one hairline above every topic after the
-          // first (here the group after the summary); the group itself draws no frame on its other sides.
-          expect(result.group.border).toBe(result.hairline);
-          expect(result.groupSides).toEqual(["none", "none", "none"]);
+          expect(result.group.border).toBe("none");
           expect(result.groupedSections).toEqual([transparent, transparent]);
-          // Cloud flach K1, K9: a group's own sections stay together without a line, one 16 px step apart.
-          expect(result.groupGap).toBe(16);
+          expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
           expect(result.statHeader).toEqual({

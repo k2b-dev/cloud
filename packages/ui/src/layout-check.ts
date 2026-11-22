@@ -2,12 +2,7 @@
  * The layout self-check of Cloud flach (K15), the mockups' `?check=1` as a function for browser tests. It finds
  * siblings in a flex or grid box that overlap, content that spills out of its box, text that is cut without an
  * ellipsis or a fade, a double line (two parallel visible borders that touch or lie at most 1 px apart, also across
- * components; "one line, one owner", K2), a line break by scrollbar, and a page that scrolls sideways.
- *
- * A line break by scrollbar (Valentin 21.11.: "dass durch eine Scrollbar plötzlich Platz eingenommen wird und dann
- * Linien nicht mehr verbunden sind in einer Tabelle") is a head cell that does not stand over its body cells within
- * 0.5 px, also when head and body sit in two tables, or a gap between neighbouring head cells, so a line through the
- * head breaks.
+ * components; "one line, one owner", K2), and a page that scrolls sideways.
  *
  * It runs in the page: pass it to Playwright's `page.evaluate`, so it closes over nothing and needs no other module.
  * Check each width in its own test:
@@ -45,8 +40,6 @@ export type LayoutProblems = {
   spill: string[];
   cut: string[];
   double: string[];
-  /** Head and body columns that do not line up, or a head line with a gap: the scrollbar took room in one of them. */
-  scrollbar: string[];
   sideways: boolean;
   /** Every problem as one readable line; empty when the page is clean. */
   problems: string[];
@@ -54,16 +47,7 @@ export type LayoutProblems = {
 
 export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProblems {
   const root = options.root ? document.querySelector(options.root) : document.body;
-  if (!root)
-    return {
-      overlap: [],
-      spill: [],
-      cut: [],
-      double: [],
-      scrollbar: [],
-      sideways: false,
-      problems: [`no element matches ${options.root}`],
-    };
+  if (!root) return { overlap: [], spill: [], cut: [], double: [], sideways: false, problems: [`no element matches ${options.root}`] };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
   const seen = (element: Element) => {
@@ -182,42 +166,6 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           );
       }
   }
-  // Line break by scrollbar: the cells of a head row and of a body row with as many cells share their edges. A table
-  // with a head and no body rows is a head of its own; its body is the next table with rows and no head.
-  const scrollbar: string[] = [];
-  const shownCells = (row: Element) => Array.from(row.children).filter((cell) => seen(cell));
-  const plainRow = (row: Element, count: number) =>
-    seen(row) && shownCells(row).length === count && shownCells(row).every((cell) => (cell as HTMLTableCellElement).colSpan <= 1);
-  const tables = Array.from(root.querySelectorAll("table")).filter((table) => seen(table) && !table.closest(ignore));
-  for (const [index, table] of tables.entries()) {
-    const head = table.querySelector(":scope > thead > tr");
-    if (!head || !seen(head)) continue;
-    const cells = shownCells(head);
-    if (cells.length === 0) continue;
-    const bodyOf = (owner: Element) => Array.from(owner.querySelectorAll(":scope > tbody > tr")).find((row) => plainRow(row, cells.length));
-    const body =
-      bodyOf(table) ??
-      tables
-        .slice(index + 1)
-        .filter((next) => !next.querySelector(":scope > thead > tr"))
-        .map(bodyOf)
-        .find(Boolean);
-    const edges = cells.map((cell) => cell.getBoundingClientRect());
-    for (let k = 1; k < edges.length; k++)
-      if (edges[k]!.left - edges[k - 1]!.right > 0.5)
-        scrollbar.push(
-          `line break by scrollbar: ${name(table)} head line has a ${Math.round(edges[k]!.left - edges[k - 1]!.right)} px gap before column ${k + 1}`,
-        );
-    if (!body) continue;
-    const below = shownCells(body).map((cell) => cell.getBoundingClientRect());
-    for (const [k, top] of edges.entries()) {
-      const shift = Math.max(Math.abs(top.left - below[k]!.left), Math.abs(top.right - below[k]!.right));
-      if (shift > 0.5)
-        scrollbar.push(
-          `line break by scrollbar: column ${k + 1} of ${name(table)} stands ${Math.round(shift * 10) / 10} px off its body cells`,
-        );
-    }
-  }
   const page = document.scrollingElement ?? document.documentElement;
   const sideways = page.scrollWidth > window.innerWidth + 1;
   const problems = [
@@ -225,8 +173,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     ...found.spill,
     ...found.cut,
     ...double,
-    ...scrollbar,
     ...(sideways ? [`the page scrolls sideways (${page.scrollWidth} px)`] : []),
   ];
-  return { ...found, double, scrollbar, sideways, problems };
+  return { ...found, double, sideways, problems };
 }

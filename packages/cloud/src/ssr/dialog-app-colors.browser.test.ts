@@ -111,9 +111,9 @@ const selectedColors = (page: Page) =>
     };
     const tab = getComputedStyle(document.querySelector('dialog [role="tab"][aria-selected="true"]')!);
     const row = document.querySelector('dialog tr[data-selected="true"]')!;
-    // The surface the row names as the one beneath it, read in the row's own scope.
+    // The surface under the row, read in the row's own scope.
     const probe = row.querySelector("td")!.appendChild(document.createElement("span"));
-    probe.style.background = "var(--k2b-surface-beneath, var(--k2b-surface))";
+    probe.style.background = "var(--k2b-surface)";
     const surface = rgbOf(getComputedStyle(probe).backgroundColor);
     probe.remove();
     return { ink: tab.color, selectedNav: tab.backgroundColor, row: rgbOf(getComputedStyle(row).backgroundColor), surface };
@@ -126,9 +126,8 @@ const assertAppColors = async (page: Page, theme: "light" | "dark") => {
     expect(colors[key], `${theme} ${key}`).toBe(rgb(expected[key]));
     expect(colors[key], `${theme} ${key} differs from platform default`).not.toBe(rgb(defaults[theme][key]));
   }
-  // K7: a selected table row is 8 % of the app ink on the surface beneath it, so it follows the app scope inside the
-  // portal too.
-  const mix = (hex: string) => channels(hex).map((channel, i) => channel * 0.08 + colors.surface[i]! * 0.92);
+  // A selected table row is 16 % of the app ink on the surface, so it follows the app scope inside the portal too.
+  const mix = (hex: string) => channels(hex).map((channel, i) => channel * 0.16 + colors.surface[i]! * 0.84);
   colors.row.forEach((channel, i) => expect(Math.abs(channel - mix(expected.ink)[i]!), `${theme} row`).toBeLessThanOrEqual(1.5));
   expect(
     colors.row.some((channel, i) => Math.abs(channel - mix(defaults[theme].ink)[i]!) > 3),

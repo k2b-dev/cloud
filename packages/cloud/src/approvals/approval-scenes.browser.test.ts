@@ -768,9 +768,7 @@ describe("Approval scenes", () => {
           })),
         );
         for (const look of looks) {
-          // K1/K4/K11: a two-line row of 52 px (phone reserve 2×20 + 2×16 + 2 gap + 40 actions + 12 + 2×8 inset = 142 px),
-          // a square cell, the sentence in the 13 px row size.
-          expect(look).toMatchObject({ height: width === 390 ? 142 : 52, radius: "0px", shadow: "none", sentence: "13px", boxes: 0 });
+          expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
           expect(look.actions).toBeLessThanOrEqual(2);
         }
         expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");

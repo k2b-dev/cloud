@@ -227,18 +227,6 @@
 .k2b-ui .cloud-announcement {
   position: relative;
 }
-/* The banners and account notices above the app belong to the shell, which
-   turns flat in its own step (lane L3): until then they keep the card they had,
-   so the shell's geometry does not move with the flat alert cell of @k2b/ui. */
-.k2b-ui :is(.cloud-announcement, .cloud-shell-notice) > .k2b-notice-card {
-  padding: 1rem 1.125rem;
-  border-radius: var(--k2b-radius-card);
-  font-size: 0.875rem;
-  line-height: 1.375rem;
-}
-.k2b-ui .cloud-announcement > .k2b-notice-card .k2b-notice-card__head + .k2b-notice-card__body {
-  margin-top: 0.25rem;
-}
 .k2b-ui .cloud-announcement .k2b-notice-card__content {
   padding-right: 1.75rem;
 }

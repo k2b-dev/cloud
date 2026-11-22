@@ -98,7 +98,6 @@ export type {
 export { filterRows, sortRows } from "./data-table-columns";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProps, type FileGridSelectableProps } from "./FileGrid";
-export { FileName, type FileNameProps, splitFileName } from "./FileName";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
 export { type FileType, FileTypeIcon, type FileTypeIconProps, fileKindLabel, fileTypeOf } from "./FileTypeIcon";
 export {

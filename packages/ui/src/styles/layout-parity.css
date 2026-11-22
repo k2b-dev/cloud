@@ -1472,8 +1472,46 @@ html {
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* The detail panel's topics, lines, and insets are the same on every surface;
-   index.css owns them with DetailPanel (Cloud flat, K9). */
+/* The panel is the one raised surface: its summary, groups, and sections are
+   separated by space, their headings, and one hairline, not by boxes of their
+   own, and they start where the header's title does. */
+.k2b-ui
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
+  :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* One vertical rhythm: every section, discussion, and group sits the body's
+   gap apart, and a group's sections keep that gap between them too. */
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group {
+  gap: 1.5rem;
+}
+
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section,
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section + .k2b-section {
+  padding: 0;
+}
+
+/* One subtle hairline separates the panel's topics: every section,
+   discussion, or group after the body's first element starts below it. A
+   group's own sections stay together without lines. Apps draw no line. */
+.k2b-ui
+  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
+  .k2b-detail-panel__body
+  > :is(.k2b-section, .k2b-detail-panel__group):not(:first-child) {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--k2b-border);
+}
+
+/* The body's scrollbar sits on the panel's edge, and its content keeps the
+   panel's inset inside the scrollport, so overlay scrollbars never leave the
+   text against the rounded edge. */
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
+  gap: 1.25rem;
+  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
+}
 
 @media (max-width: 47.999rem) {
   /* `phone="page"`: the panel is a destination of its own, so it covers the
@@ -1951,15 +1989,6 @@ html {
    so its corner follows the frame's inner curve. */
 .k2b-ui .k2b-paper .k2b-detail-trail {
   border-radius: calc(var(--k2b-radius-surface) - 1px);
-}
-
-/* A paper table draws no frame of its own (one line, one owner), so its
-   viewport has no border to sit inside: it takes the surface's full radius,
-   and the shell that clips it keeps the same corner, so a table cut beside
-   the panel still ends rounded. */
-.k2b-ui .k2b-table-shell[data-surface="paper"]:has(> .k2b-detail-trail),
-.k2b-ui .k2b-table-shell[data-surface="paper"] > .k2b-detail-trail {
-  border-radius: var(--k2b-radius-surface);
 }
 
 /* A data table keeps the width it has without the panel: its columns stay
@@ -3794,10 +3823,9 @@ html {
       overflow-y: scroll;
     }
 
-    /* The detail's 56 px bar keeps the body's track without scrolling, so
-       its trailing controls end on the body's trailing edge. The first
-       section below it keeps the full width, so its line runs edge to edge. */
-    .k2b-ui .k2b-detail-panel__header-main {
+    /* The detail header keeps the body's track without scrolling, so its
+       trailing controls end on the body's trailing edge. */
+    .k2b-ui .k2b-detail-panel__header {
       overflow-x: hidden;
       overflow-y: scroll;
     }

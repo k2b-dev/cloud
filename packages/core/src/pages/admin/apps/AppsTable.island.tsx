@@ -161,7 +161,7 @@ export default function AppsTable(props: {
             return (
               <a
                 href={href(row.id)}
-                class="flex min-w-0 items-center gap-2 py-1"
+                class="flex min-w-0 items-center gap-2.5 py-1"
                 aria-current={row.id === props.selected ? "true" : undefined}
                 data-app={row.id}
               >
