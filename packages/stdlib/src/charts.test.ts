@@ -2293,13 +2293,25 @@ describe("charts.funnel", () => {
     { label: "Verlängert", value: 610 },
   ];
   const compare = { label: "Durchschnitt", values: [31000, 10850, 6510, 2480, 1710] };
-  const decode = (svg: string): ChartDatum[] => [...svg.matchAll(/data-chart-datum="([^"]+)"/g)].map((match) => JSON.parse(match[1]!.replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&#39;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")));
+  const decode = (svg: string): ChartDatum[] =>
+    [...svg.matchAll(/data-chart-datum="([^"]+)"/g)].map((match) =>
+      JSON.parse(
+        match[1]!
+          .replaceAll("&quot;", '"')
+          .replaceAll("&apos;", "'")
+          .replaceAll("&#39;", "'")
+          .replaceAll("&lt;", "<")
+          .replaceAll("&gt;", ">")
+          .replaceAll("&amp;", "&"),
+      ),
+    );
   const field = (datum: ChartDatum, key: string) => datum.values.find((value) => value.key === key);
   const rects = (svg: string) => [...svg.matchAll(/<rect class="stdlib-chart-funnel-bar [^"]*"[^>]*>/g)].map((match) => match[0]);
   const attr = (tag: string, name: string) => Number(tag.match(new RegExp(`\\b${name}="([^"]+)"`))![1]);
-  const paths = (svg: string, kind: "bar" | "compare") => [...svg.matchAll(new RegExp(`<path class="stdlib-chart-funnel-${kind}[^"]*" d="([^"]+)"`, "g"))].map((match) =>
-    [...match[1]!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((point) => [Number(point[1]), Number(point[2])]),
-  );
+  const paths = (svg: string, kind: "bar" | "compare") =>
+    [...svg.matchAll(new RegExp(`<path class="stdlib-chart-funnel-${kind}[^"]*" d="([^"]+)"`, "g"))].map((match) =>
+      [...match[1]!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((point) => [Number(point[1]), Number(point[2])]),
+    );
 
   it("exports the renderer through the namespace and package root", async () => {
     const { charts: rootCharts, funnel: rootFunnel } = await import("./index");
@@ -2326,9 +2338,11 @@ describe("charts.funnel", () => {
   it("supports conversion relative to the start or no step conversion", () => {
     const svg = funnel({ stages, conversion: "first", inspect: true });
     expect(svg).toContain("of start");
-    decode(svg).slice(1).forEach((datum, i) => {
-      expect(field(datum, "step")?.value).toBeCloseTo(stages[i + 1]!.value / stages[0]!.value);
-    });
+    decode(svg)
+      .slice(1)
+      .forEach((datum, i) => {
+        expect(field(datum, "step")?.value).toBeCloseTo(stages[i + 1]!.value / stages[0]!.value);
+      });
     const firstCompare = decode(funnel({ stages, compare, conversion: "first", inspect: true }));
     expect(field(firstCompare[2]!, "compareStep")?.value).toBeCloseTo(6510 / 31000);
     for (const comparison of [undefined, compare]) {
@@ -2398,7 +2412,10 @@ describe("charts.funnel", () => {
   });
 
   it("draws rising stages longer, with absolute values or comparison shares", () => {
-    const rising = [{ label: "Start", value: 100 }, { label: "Rise", value: 140 }];
+    const rising = [
+      { label: "Start", value: 100 },
+      { label: "Rise", value: 140 },
+    ];
     for (const comparison of [undefined, { label: "Average", values: [1000, 1200] }]) {
       const svg = funnel({ stages: rising, compare: comparison });
       const bars = rects(svg);
@@ -2412,7 +2429,11 @@ describe("charts.funnel", () => {
     expect(funnel({ stages: [] })).toContain("no data");
     const invalid = [0, NaN, Infinity, -1, 20].map((value, i) => ({ label: `Stage ${i}`, value }));
     for (const shape of ["bars", "funnel"] as const) {
-      for (const comparison of [undefined, { label: "Short", values: [100, 40] }, { label: "Long", values: [0, NaN, Infinity, -2, 30, 99] }]) {
+      for (const comparison of [
+        undefined,
+        { label: "Short", values: [100, 40] },
+        { label: "Long", values: [0, NaN, Infinity, -2, 30, 99] },
+      ]) {
         const svg = funnel({ stages: invalid, compare: comparison, shape, inspect: true });
         expect(svg).toContain("<svg");
         expect(svg).not.toMatch(/NaN|Infinity/);
@@ -2482,7 +2503,10 @@ describe("charts.funnel", () => {
   });
 
   it("omits overflowing ratios instead of corrupting scale and inspection", () => {
-    const extreme = [{ label: "Tiny", value: 1e-200 }, { label: "Huge", value: 1e200 }];
+    const extreme = [
+      { label: "Tiny", value: 1e-200 },
+      { label: "Huge", value: 1e200 },
+    ];
     for (const shape of ["bars", "funnel"] as const) {
       const svg = funnel({ stages: extreme, compare: { label: "Average", values: [100, 40] }, shape, inspect: true });
       expect(svg).not.toMatch(/NaN|Infinity|null/);
@@ -2494,7 +2518,14 @@ describe("charts.funnel", () => {
   });
 
   it("omits deviations that overflow and keeps comparison ticks inside the viewport", () => {
-    const svg = funnel({ stages: [{ label: "A", value: 1 }, { label: "B", value: 1e305 }], compare: { label: "Average", values: [1, 1] }, inspect: true });
+    const svg = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e305 },
+      ],
+      compare: { label: "Average", values: [1, 1] },
+      inspect: true,
+    });
     expect(svg).not.toMatch(/NaN|Infinity|∞|null/);
     const deviation = field(decode(svg)[1]!, "deviation")?.value;
     expect(typeof deviation === "number" && Number.isFinite(deviation)).toBe(true);
@@ -2510,7 +2541,10 @@ describe("charts.funnel", () => {
   });
 
   it("fits rising split shares and full-width labels inside their columns", () => {
-    const rising = [{ label: "A", value: 1 }, { label: "B", value: 100 }];
+    const rising = [
+      { label: "A", value: 1 },
+      { label: "B", value: 100 },
+    ];
     const svg = funnel({ stages: rising, compare: { label: "Average", values: [1, 100] }, shape: "funnel" });
     const share = svg.match(/<text class="stdlib-chart-funnel-compare-value" x="([\d.]+)"[^>]*>10K%<\/text>/);
     expect(share).not.toBeNull();
@@ -2524,13 +2558,42 @@ describe("charts.funnel", () => {
 
   it("keeps empty trapezoids inspectable and extreme percentages compact", () => {
     for (const comparison of [undefined, { label: "Average", values: [10, 0] }]) {
-      const svg = funnel({ stages: [{ label: "A", value: 10 }, { label: "B", value: 0 }], compare: comparison, shape: "funnel", inspect: true });
+      const svg = funnel({
+        stages: [
+          { label: "A", value: 10 },
+          { label: "B", value: 0 },
+        ],
+        compare: comparison,
+        shape: "funnel",
+        inspect: true,
+      });
       const groups = [...svg.matchAll(/<g data-chart-role="item"[\s\S]*?<\/g>/g)].map((match) => match[0]);
       expect(groups).toHaveLength(2);
-      for (const group of groups) expect(group).toMatch(/<rect class="stdlib-chart-funnel-hit" x="0" y="[\d.]+" width="480" height="[1-9][\d.]*" fill="transparent"\/>/);
+      for (const group of groups)
+        expect(group).toMatch(
+          /<rect class="stdlib-chart-funnel-hit" x="0" y="[\d.]+" width="480" height="[1-9][\d.]*" fill="transparent"\/>/,
+        );
     }
-    expect(funnel({ stages: [{ label: "A", value: 1 }, { label: "B", value: 1 }], shape: "funnel" })).not.toContain('class="stdlib-chart-funnel-hit"');
-    const extreme = funnel({ stages: [{ label: "A", value: 1 }, { label: "B", value: 1e7 }, { label: "C", value: 2e12 }], compare: { label: "Average", values: [1e9, 1] }, shape: "funnel", width: 360, inspect: true });
+    expect(
+      funnel({
+        stages: [
+          { label: "A", value: 1 },
+          { label: "B", value: 1 },
+        ],
+        shape: "funnel",
+      }),
+    ).not.toContain('class="stdlib-chart-funnel-hit"');
+    const extreme = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e7 },
+        { label: "C", value: 2e12 },
+      ],
+      compare: { label: "Average", values: [1e9, 1] },
+      shape: "funnel",
+      width: 360,
+      inspect: true,
+    });
     expect(extreme).toContain(">1B%</text>");
     expect(extreme).toContain(">&lt;0.01%</text>");
     expect(extreme).not.toContain("1,000,000,000%");
@@ -2539,7 +2602,14 @@ describe("charts.funnel", () => {
   });
 
   it("bounds labels for extreme finite values with scientific notation", () => {
-    const svg = funnel({ stages: [{ label: "A", value: 1 }, { label: "B", value: 1e305 }], compare: { label: "Average", values: [1, 1] }, inspect: true });
+    const svg = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e305 },
+      ],
+      compare: { label: "Average", values: [1, 1] },
+      inspect: true,
+    });
     const text = svg.replace(/<style>[\s\S]*?<\/style>/, "").replace(/<title>[\s\S]*?<\/title>/g, "");
     for (const run of text.matchAll(/>([^<]+)</g)) expect(run[1]!.length).toBeLessThan(40);
     expect(svg).toContain("1E305");

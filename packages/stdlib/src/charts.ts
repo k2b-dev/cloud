@@ -3040,12 +3040,17 @@ const FUNNEL_NARROW_WIDTH = 420;
 // generous for wide glyphs so labels and values never touch.
 const glyphWidth = (char: string): number =>
   // Full-width CJK, Hangul, and emoji glyphs take about 1em.
-  /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|\p{Extended_Pictographic}/u.test(char) ? 1
-  : /[il.,:;'|!\s]/.test(char) ? 0.3
-    : /[fjtr()\[\]\-]/.test(char) ? 0.4
-      : /[mwMW@%]/.test(char) ? 0.9
-        : /[A-Z0-9#&]/.test(char) ? 0.7
-          : 0.58;
+  /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|\p{Extended_Pictographic}/u.test(char)
+    ? 1
+    : /[il.,:;'|!\s]/.test(char)
+      ? 0.3
+      : /[fjtr()\[\]\-]/.test(char)
+        ? 0.4
+        : /[mwMW@%]/.test(char)
+          ? 0.9
+          : /[A-Z0-9#&]/.test(char)
+            ? 0.7
+            : 0.58;
 
 const funnelUsable = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -3063,8 +3068,7 @@ const funnelDeviation = (step: number, compareStep: number): number | undefined 
   return Number.isFinite(rounded) ? rounded : Number.isFinite(points) ? points : undefined;
 };
 
-const textWidth = (text: string, fontSize: number): number =>
-  [...text].reduce((sum, char) => sum + glyphWidth(char), 0) * fontSize;
+const textWidth = (text: string, fontSize: number): number => [...text].reduce((sum, char) => sum + glyphWidth(char), 0) * fontSize;
 
 /** Shorten `text` with an ellipsis so its estimated width fits `maxWidth`. */
 const fitText = (text: string, maxWidth: number, fontSize: number): string => {
@@ -3097,10 +3101,11 @@ const funnelLabelText = (
 
 /** Transparent row-wide target so narrow or empty trapezoids stay inspectable. */
 const funnelHitArea = (inspect: boolean | undefined, width: number, y: number, height: number): string =>
-  inspect ? `<rect class="stdlib-chart-funnel-hit" x="0" y="${fmt(y)}" width="${fmt(width)}" height="${fmt(height)}" fill="transparent"/>` : "";
+  inspect
+    ? `<rect class="stdlib-chart-funnel-hit" x="0" y="${fmt(y)}" width="${fmt(width)}" height="${fmt(height)}" fill="transparent"/>`
+    : "";
 
-const fillTemplate = (template: string, key: string, value: string): string =>
-  template.split(`{${key}}`).join(value);
+const fillTemplate = (template: string, key: string, value: string): string => template.split(`{${key}}`).join(value);
 
 /**
  * Render a conversion funnel. Each stage shows its value, its share of the
@@ -3162,17 +3167,19 @@ export const funnel = (opts: FunnelOptions): string => {
     const rounded = Math.round(deviation);
     const sign = rounded > 0 ? "+" : rounded < 0 ? "−" : "±";
     return {
-      text: fillTemplate(deviationTemplate, "delta", `${sign}${(Math.abs(rounded) >= 1e9 ? scientificFormat : integerFormat).format(Math.abs(rounded))}`),
+      text: fillTemplate(
+        deviationTemplate,
+        "delta",
+        `${sign}${(Math.abs(rounded) >= 1e9 ? scientificFormat : integerFormat).format(Math.abs(rounded))}`,
+      ),
       tone: rounded > 0 ? " stdlib-chart-funnel-deviation-up" : rounded < 0 ? " stdlib-chart-funnel-deviation-down" : "",
     };
   };
 
   const values = opts.stages.map((stage) => funnelUsable(stage.value));
-  const compareValues = opts.stages.map((_, i) => compare ? funnelUsable(compare.values[i]) : undefined);
+  const compareValues = opts.stages.map((_, i) => (compare ? funnelUsable(compare.values[i]) : undefined));
   const stepOf = (series: (number | undefined)[], i: number): number | undefined =>
-    i === 0 || conversion === "none"
-      ? undefined
-      : funnelRatio(series[i], conversion === "first" ? series[0] : series[i - 1]);
+    i === 0 || conversion === "none" ? undefined : funnelRatio(series[i], conversion === "first" ? series[0] : series[i - 1]);
 
   const rows: FunnelRow[] = opts.stages.map((stage, i) => {
     const step = stepOf(values, i);
@@ -3229,8 +3236,10 @@ export const funnel = (opts: FunnelOptions): string => {
     const gap = compare ? 26 : 22;
     const rowHeight = narrow ? (compare ? 20 : 22) : 30;
     const labelHeight = narrow ? 20 : 0;
-    const primary = rows.map((row) => compare ? formatPercent(row.share) : formatNumber(row.value));
-    const secondary = rows.map((row) => compare ? fillTemplate(compareTemplate, "share", formatPercent(row.compareShare)) : formatPercent(row.share));
+    const primary = rows.map((row) => (compare ? formatPercent(row.share) : formatNumber(row.value)));
+    const secondary = rows.map((row) =>
+      compare ? fillTemplate(compareTemplate, "share", formatPercent(row.compareShare)) : formatPercent(row.share),
+    );
     const labelWidth = narrow ? 0 : Math.min(150, width * 0.28);
     const valueWidth = narrow
       ? 0
@@ -3245,7 +3254,9 @@ export const funnel = (opts: FunnelOptions): string => {
       if (opts.label) {
         const room = width - x - 15 - 14 - 11 - Math.min(textWidth(compare.label, 11), (width - x) / 2);
         const shown = fitText(opts.label, room, 11);
-        body.push(`<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="10" height="10" rx="2"/>`);
+        body.push(
+          `<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="10" height="10" rx="2"/>`,
+        );
         body.push(funnelLabelText("stdlib-chart-funnel-legend", x + 15, y + 9, opts.label, room, 11));
         x += 15 + textWidth(shown, 11) + 14;
       }
@@ -3260,23 +3271,33 @@ export const funnel = (opts: FunnelOptions): string => {
       if (narrow) {
         const valueLine = `${primary[i]} · ${secondary[i]}`;
         body.push(funnelLabelText("stdlib-chart-funnel-label", 0, y + 14, row.label, width - textWidth(valueLine, 13) - 12, 13));
-        body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(y + 14)}" text-anchor="end">${escapeXml(primary[i]!)}<tspan class="stdlib-chart-funnel-muted"> · ${escapeXml(secondary[i]!)}</tspan></text>`);
+        body.push(
+          `<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(y + 14)}" text-anchor="end">${escapeXml(primary[i]!)}<tspan class="stdlib-chart-funnel-muted"> · ${escapeXml(secondary[i]!)}</tspan></text>`,
+        );
       } else {
         body.push(funnelLabelText("stdlib-chart-funnel-label", 0, mid + 4, row.label, labelWidth - 10, 13));
-        body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(mid - 1)}" text-anchor="end">${escapeXml(primary[i]!)}</text>`);
-        body.push(`<text class="stdlib-chart-funnel-muted" x="${fmt(width)}" y="${fmt(mid + 13)}" text-anchor="end">${escapeXml(secondary[i]!)}</text>`);
+        body.push(
+          `<text class="stdlib-chart-funnel-value" x="${fmt(width)}" y="${fmt(mid - 1)}" text-anchor="end">${escapeXml(primary[i]!)}</text>`,
+        );
+        body.push(
+          `<text class="stdlib-chart-funnel-muted" x="${fmt(width)}" y="${fmt(mid + 13)}" text-anchor="end">${escapeXml(secondary[i]!)}</text>`,
+        );
       }
 
       const marks = [
         `<rect class="stdlib-chart-funnel-track stdlib-chart-series-0" x="${fmt(labelWidth)}" y="${fmt(barY)}" width="${fmt(barWidth)}" height="${fmt(rowHeight)}" rx="5"/>`,
       ];
       if (row.length > 0) {
-        marks.push(`<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(labelWidth)}" y="${fmt(barY)}" width="${fmt(Math.max(barWidth * row.length, 2))}" height="${fmt(rowHeight)}" rx="5"/>`);
+        marks.push(
+          `<rect class="stdlib-chart-funnel-bar stdlib-chart-series-0" x="${fmt(labelWidth)}" y="${fmt(barY)}" width="${fmt(Math.max(barWidth * row.length, 2))}" height="${fmt(rowHeight)}" rx="5"/>`,
+        );
       }
       if (row.compareLength !== undefined) {
         // Keep the whole tick inside the bar's horizontal extent (and the viewport).
         const tickX = clamp(labelWidth + barWidth * row.compareLength - 1.25, labelWidth, labelWidth + barWidth - 2.5);
-        marks.push(`<rect class="stdlib-chart-funnel-tick" x="${fmt(tickX)}" y="${fmt(barY - 4)}" width="2.5" height="${fmt(rowHeight + 8)}" rx="1"/>`);
+        marks.push(
+          `<rect class="stdlib-chart-funnel-tick" x="${fmt(tickX)}" y="${fmt(barY - 4)}" width="2.5" height="${fmt(rowHeight + 8)}" rx="1"/>`,
+        );
       }
       const end = labelWidth + barWidth * Math.max(row.length, row.compareLength ?? 0);
       body.push(chartDatumSvg(marks.join(""), datum(row, i, [end, mid]), opts.inspect));
@@ -3300,7 +3321,11 @@ export const funnel = (opts: FunnelOptions): string => {
   } else if (!compare) {
     const small = width < 520;
     const labelWidth = Math.min(150, width * 0.3);
-    const valueWidth = clamp(Math.max(...rows.map((row) => textWidth(formatNumber(row.value), 13))) + 8, Math.min(150, width * 0.3), width * 0.4);
+    const valueWidth = clamp(
+      Math.max(...rows.map((row) => textWidth(formatNumber(row.value), 13))) + 8,
+      Math.min(150, width * 0.3),
+      width * 0.4,
+    );
     const centerWidth = Math.max(0, width - labelWidth - valueWidth - 28);
     const cx = labelWidth + 14 + centerWidth / 2;
     const rowHeight = 40;
@@ -3311,12 +3336,29 @@ export const funnel = (opts: FunnelOptions): string => {
       const topWidth = centerWidth * row.length;
       const bottomWidth = centerWidth * (rows[i + 1]?.length ?? row.length * 0.8);
       const path = `<path class="stdlib-chart-funnel-bar stdlib-chart-series-0" d="M${fmt(cx - topWidth / 2)},${fmt(y)} L${fmt(cx + topWidth / 2)},${fmt(y)} L${fmt(cx + bottomWidth / 2)},${fmt(bottomY)} L${fmt(cx - bottomWidth / 2)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`;
-      body.push(chartDatumSvg(path + funnelHitArea(opts.inspect, width, y, rowHeight), datum(row, i, [cx, y + rowHeight / 2]), opts.inspect));
-      body.push(funnelLabelText(`stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`, labelWidth, y + rowHeight / 2 + 4, row.label, labelWidth - 6, labelSize, "end"));
-      body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(width - valueWidth)}" y="${fmt(y + rowHeight / 2)}">${escapeXml(formatNumber(row.value))}</text>`);
-      const secondary = conversion === "none"
-        ? formatPercent(row.share)
-        : i === 0 ? startLabel : fillTemplate(stepTemplate, "share", formatPercent(row.step));
+      body.push(
+        chartDatumSvg(path + funnelHitArea(opts.inspect, width, y, rowHeight), datum(row, i, [cx, y + rowHeight / 2]), opts.inspect),
+      );
+      body.push(
+        funnelLabelText(
+          `stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`,
+          labelWidth,
+          y + rowHeight / 2 + 4,
+          row.label,
+          labelWidth - 6,
+          labelSize,
+          "end",
+        ),
+      );
+      body.push(
+        `<text class="stdlib-chart-funnel-value" x="${fmt(width - valueWidth)}" y="${fmt(y + rowHeight / 2)}">${escapeXml(formatNumber(row.value))}</text>`,
+      );
+      const secondary =
+        conversion === "none"
+          ? formatPercent(row.share)
+          : i === 0
+            ? startLabel
+            : fillTemplate(stepTemplate, "share", formatPercent(row.step));
       body.push(funnelLabelText("stdlib-chart-funnel-muted", width - valueWidth, y + rowHeight / 2 + 14, secondary, valueWidth - 4, 11));
     });
     contentHeight = top + rows.length * rowHeight;
@@ -3324,14 +3366,22 @@ export const funnel = (opts: FunnelOptions): string => {
     const small = width < 520;
     const labelWidth = small ? 96 : 150;
     // Rising stages can show shares above 100 %; the columns grow to fit them.
-    const valueWidth = clamp(Math.max(...rows.map((row) => Math.max(textWidth(formatPercent(row.share), 13), textWidth(formatPercent(row.compareShare), 13)))) + 16, small ? 50 : 84, width * 0.25);
+    const valueWidth = clamp(
+      Math.max(...rows.map((row) => Math.max(textWidth(formatPercent(row.share), 13), textWidth(formatPercent(row.compareShare), 13)))) +
+        16,
+      small ? 50 : 84,
+      width * 0.25,
+    );
     const centerWidth = Math.max(0, width - labelWidth - 2 * valueWidth);
     const cx = labelWidth + valueWidth + centerWidth / 2;
     const half = Math.max(0, centerWidth / 2 - 1);
     const rowHeight = small ? 48 : 52;
     const labelSize = small ? 11 : 13;
-    if (opts.label) body.push(funnelLabelText("stdlib-chart-funnel-legend", cx - 6, top + 9, opts.label, cx - 6, 11, "end", { before: "← " }));
-    body.push(funnelLabelText("stdlib-chart-funnel-legend", cx + 6, top + 9, compare.label, width - cx - 6, 11, undefined, { after: " →" }));
+    if (opts.label)
+      body.push(funnelLabelText("stdlib-chart-funnel-legend", cx - 6, top + 9, opts.label, cx - 6, 11, "end", { before: "← " }));
+    body.push(
+      funnelLabelText("stdlib-chart-funnel-legend", cx + 6, top + 9, compare.label, width - cx - 6, 11, undefined, { after: " →" }),
+    );
     const rowsTop = top + 22;
     rows.forEach((row, i) => {
       const y = rowsTop + i * rowHeight;
@@ -3346,7 +3396,9 @@ export const funnel = (opts: FunnelOptions): string => {
       if (row.compareLength !== undefined) {
         const right = row.compareLength;
         const rightNext = next?.compareLength ?? right * 0.8;
-        marks.push(`<path class="stdlib-chart-funnel-compare" d="M${fmt(cx + 1)},${fmt(y)} L${fmt(cx + 1 + half * right)},${fmt(y)} L${fmt(cx + 1 + half * rightNext)},${fmt(bottomY)} L${fmt(cx + 1)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`);
+        marks.push(
+          `<path class="stdlib-chart-funnel-compare" d="M${fmt(cx + 1)},${fmt(y)} L${fmt(cx + 1 + half * right)},${fmt(y)} L${fmt(cx + 1 + half * rightNext)},${fmt(bottomY)} L${fmt(cx + 1)},${fmt(bottomY)} Z" opacity="${fade(i)}"/>`,
+        );
       }
       body.push(chartDatumSvg(marks.join("") + funnelHitArea(opts.inspect, width, y, rowHeight), datum(row, i, [cx, mid]), opts.inspect));
 
@@ -3354,14 +3406,29 @@ export const funnel = (opts: FunnelOptions): string => {
       const hasStep = i > 0 && conversion !== "none";
       const baseline = hasStep ? mid - 2 : mid + 4;
       const share = formatPercent(row.share);
-      body.push(`<text class="stdlib-chart-funnel-value" x="${fmt(labelWidth + valueWidth - 8)}" y="${fmt(baseline)}" text-anchor="end">${escapeXml(share)}</text>`);
-      body.push(`<text class="stdlib-chart-funnel-compare-value" x="${fmt(labelWidth + valueWidth + centerWidth + 8)}" y="${fmt(baseline)}">${escapeXml(formatPercent(row.compareShare))}</text>`);
-      body.push(funnelLabelText(`stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`, 0, baseline, row.label, labelWidth + valueWidth - 14 - textWidth(share, 13), labelSize));
+      body.push(
+        `<text class="stdlib-chart-funnel-value" x="${fmt(labelWidth + valueWidth - 8)}" y="${fmt(baseline)}" text-anchor="end">${escapeXml(share)}</text>`,
+      );
+      body.push(
+        `<text class="stdlib-chart-funnel-compare-value" x="${fmt(labelWidth + valueWidth + centerWidth + 8)}" y="${fmt(baseline)}">${escapeXml(formatPercent(row.compareShare))}</text>`,
+      );
+      body.push(
+        funnelLabelText(
+          `stdlib-chart-funnel-label${small ? " stdlib-chart-funnel-compact" : ""}`,
+          0,
+          baseline,
+          row.label,
+          labelWidth + valueWidth - 14 - textWidth(share, 13),
+          labelSize,
+        ),
+      );
       if (hasStep) {
         const deviation = row.deviation === undefined ? undefined : deviationParts(row.deviation);
         const room = labelWidth + valueWidth - 6 - (deviation ? textWidth(` ${deviation.text}`, 11) : 0);
         const step = fitText(fillTemplate(stepTemplate, "share", formatPercent(row.step)), room, 11);
-        body.push(`<text class="stdlib-chart-funnel-muted" x="0" y="${fmt(mid + 13)}">${escapeXml(step)}${deviation ? ` <tspan class="stdlib-chart-funnel-deviation${deviation.tone}">${escapeXml(deviation.text)}</tspan>` : ""}</text>`);
+        body.push(
+          `<text class="stdlib-chart-funnel-muted" x="0" y="${fmt(mid + 13)}">${escapeXml(step)}${deviation ? ` <tspan class="stdlib-chart-funnel-deviation${deviation.tone}">${escapeXml(deviation.text)}</tspan>` : ""}</text>`,
+        );
       }
     });
     contentHeight = rowsTop + rows.length * rowHeight;

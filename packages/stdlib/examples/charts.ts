@@ -87,12 +87,27 @@ const cases: Case[] = [
   {
     name: "funnel-compare",
     title: "Funnel — comparison ticks (C1), each series relative to its start",
-    svg: charts.funnel({ stages: funnelStages, label: "Aktuell", compare: funnelCompare, locale: "de", labels: funnelLabels, inspect: true }),
+    svg: charts.funnel({
+      stages: funnelStages,
+      label: "Aktuell",
+      compare: funnelCompare,
+      locale: "de",
+      labels: funnelLabels,
+      inspect: true,
+    }),
   },
   {
     name: "funnel-split",
     title: "Funnel — split comparison (D1), shared center axis",
-    svg: charts.funnel({ stages: funnelStages, label: "Aktuell", compare: funnelCompare, shape: "funnel", locale: "de", labels: funnelLabels, inspect: true }),
+    svg: charts.funnel({
+      stages: funnelStages,
+      label: "Aktuell",
+      compare: funnelCompare,
+      shape: "funnel",
+      locale: "de",
+      labels: funnelLabels,
+      inspect: true,
+    }),
   },
   {
     name: "scatter",
