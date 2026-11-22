@@ -69,6 +69,8 @@ const messagesOf = (id: string): AiStoredMessage[] => {
 };
 
 let browser: Browser;
+/** Chromium with classic scrollbars that take room in the layout, as on Windows and Linux desktops (Cloud flach QA). */
+let classic: Browser;
 let staticAsset: (request: Request) => Response | undefined;
 /** The entry's own URL: lazy chunks import shared code from it, so the page loads it under that one URL. */
 let entryUrl = "/harness.js";
@@ -141,18 +143,22 @@ beforeAll(async () => {
     if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))), { headers: cache });
   };
   browser = await launchBrowser();
+  classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 180_000);
 afterAll(async () => {
   await browser?.close();
+  await classic?.close();
 });
 
-const open = async (id: string, width: number, theme: "light" | "dark" = "light") => {
-  const context = await browser.newContext({
+/** A chat in the workspace. `desktop`: a window of this width with a mouse and, in the classic browser, scrollbars that take room. */
+const open = async (id: string, width: number, theme: "light" | "dark" = "light", desktop?: Browser) => {
+  const touch = !desktop && width < 768;
+  const context = await (desktop ?? browser).newContext({
     viewport: { width, height: width < 768 ? 780 : 900 },
     reducedMotion: "reduce",
     locale: "de",
-    isMobile: width < 768,
-    hasTouch: width < 768,
+    isMobile: touch,
+    hasTouch: touch,
   });
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
@@ -311,6 +317,48 @@ for (const width of [1440, 390])
         }
       }, 30_000);
   });
+
+// Cloud flach QA (obligatory): the same scenes with classic scrollbars that take room, in desktop windows 390, 768, 1100,
+// and 1440 px wide (a desktop window, not a phone: a touch tab gets overlay scrollbars that take no room). At 1100 the
+// chat has no room for the docked column, so "In this chat" opens as its drawer over the chat.
+for (const width of [390, 768, 1100, 1440])
+  test(`${width} px with classic scrollbars: every scene is clean and the chat never scrolls sideways`, async () => {
+    const found: Record<string, string[]> = {};
+    for (const [id] of SCENES) {
+      const view = await open(id, width, "light", classic);
+      try {
+        // A classic run is only worth its name when a scrollbar really takes room.
+        const gutter = await view.page.evaluate(() => {
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+          document.body.append(probe);
+          const room = probe.offsetWidth - probe.clientWidth;
+          probe.remove();
+          return room;
+        });
+        expect(gutter).toBeGreaterThan(0);
+        if (width === 1100 && id === "Ctx001") {
+          await view.page.getByRole("button", { name: "In diesem Chat" }).click();
+          await view.page.locator('.assistant-context-boxcol[data-drawer="open"] .assistant-context-box__row').first().waitFor();
+          await settled(view.page);
+        }
+        const sideways = await view.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        const problems = (
+          await view.page.evaluate(layoutProblems, {
+            root: "#root",
+            ignore: ".k2b-chat-timeline__latest, .k2b-sr-only, .sr-only",
+            slack: 8,
+          })
+        ).problems;
+        const all = [...(sideways > 0 ? [`the page scrolls ${sideways} px sideways`] : []), ...problems];
+        if (all.length > 0) found[id] = all;
+        expect(view.errors).toEqual([]);
+      } finally {
+        await view.close();
+      }
+    }
+    expect(found).toEqual({});
+  }, 60_000);
 
 test.skipIf(!shots)(
   "screenshots for the design review",
