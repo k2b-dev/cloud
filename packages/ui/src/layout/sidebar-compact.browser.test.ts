@@ -327,8 +327,7 @@ describe("compact workspace sidebar", () => {
           document.querySelector(".k2b-app-workspace")!.getBoundingClientRect().right -
             document.querySelector<HTMLElement>(".k2b-app-workspace")!.clientLeft -
             document.querySelector(".k2b-app-workspace__content")!.getBoundingClientRect().left -
-            320 -
-            8,
+            320,
         ),
         main: Math.round(width(".k2b-app-workspace__main")),
       };

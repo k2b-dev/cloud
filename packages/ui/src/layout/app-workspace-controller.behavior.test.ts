@@ -372,8 +372,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     const dispose = installAppWorkspaceController({ root });
     try {
       dispatchKey(handle, "End");
-      // 1400 px from Content's start to the workspace's end, less the 8 px inset and Main's 760 px.
-      expect(handle.getAttribute("aria-valuemax")).toBe("632");
+      // 1400 px from Content's start to the workspace's end, less Main's 760 px; the flat column has no inset (K5a).
+      expect(handle.getAttribute("aria-valuemax")).toBe("640");
     } finally {
       dispose();
     }
@@ -2495,9 +2495,11 @@ describe("floating detail layout changes", () => {
     expect(grabber.getAttribute("aria-pressed")).toBe("false");
   });
 
-  test("detail resize limits include the root column and reserve its end inset", () => {
+  test("detail resize limits include the root column and reserve the inset the stylesheet gives the column", () => {
     const { root, content, handle } = detailWorkspace();
     setRect(root, { width: 900, height: 700 });
+    // The flat shell's column has none; the limit follows the stylesheet's value, so it matches the first frame.
+    root.style.setProperty("--k2b-workspace-detail-inset", "8px");
     setRect(content, { width: 480, height: 700 });
     const second = document.createElement("aside");
     second.className = "k2b-app-workspace__detail";

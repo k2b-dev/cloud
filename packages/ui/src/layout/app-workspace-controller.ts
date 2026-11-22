@@ -292,7 +292,8 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
       kind === "sidebar" && reserveMainMinimum
         ? mainExtra
         : kind === "detail"
-          ? 8 + (reserveMainMinimum ? mainExtra : 0)
+          ? // The stylesheet owns the column's inset (none in the flat shell), so the limit matches its first frame.
+            (Number.parseFloat(cssState(root, "--k2b-workspace-detail-inset")) || 0) + (reserveMainMinimum ? mainExtra : 0)
           : kind === "pane"
             ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) +
               separatorSize +

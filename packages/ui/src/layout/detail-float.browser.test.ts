@@ -361,7 +361,7 @@ describe("floating workspace detail", () => {
   ] as const) {
     for (const frame of ["", "&card=1"]) {
       for (const surface of ["trail", "table"]) {
-        test(`${width}×${height} ${surface}${frame}: the scroll viewport rounds the cut edge one inset before Detail`, async () => {
+        test(`${width}×${height} ${surface}${frame}: the scroll viewport rounds the cut edge at Main's padding before Detail`, async () => {
           const page = await load(width, height, `${surface}=1&initial=1${frame}`);
           try {
             await settlePanel(page);
@@ -374,7 +374,8 @@ describe("floating workspace detail", () => {
                 probe.remove();
                 return pixels;
               };
-              const inset = token("--k2b-workspace-detail-inset");
+              // The flat Detail column has no inset (K5a); the surface ends at Main's own padding before it.
+              const inset = Number.parseFloat(getComputedStyle(viewport.closest(".fixture-main")!).paddingRight);
               const radius = token("--k2b-radius-surface");
               viewport.scrollLeft = 130;
               const rect = viewport.getBoundingClientRect();
@@ -385,10 +386,14 @@ describe("floating workspace detail", () => {
               const border = paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0;
               const style = getComputedStyle(viewport);
               const candidates = viewport.querySelectorAll("tbody tr:first-child td, #board button");
-              const cut = [...candidates].find((cell) => {
-                const box = cell.getBoundingClientRect();
-                return box.left < rect.right && box.right > rect.right;
-              });
+              const straddling = () =>
+                [...candidates].find((cell) => {
+                  const box = cell.getBoundingClientRect();
+                  return box.left < rect.right && box.right > rect.right;
+                });
+              // The edge may land in the 16 px gap between two cards; one step past the gap puts it on a card.
+              if (!straddling()) viewport.scrollLeft += 24;
+              const cut = straddling();
               return {
                 inset,
                 radius: radius - border,
@@ -459,7 +464,7 @@ describe("floating workspace detail", () => {
       const shape = await geometry(page);
       expectInset(shape);
       expect(shape.main.width).toBeCloseTo(320, 1);
-      expect(shape.detail.width).toBeCloseTo(shape.root.width - 208 - 328, 1);
+      expect(shape.detail.width).toBeCloseTo(shape.root.width - 208 - 320, 1);
       expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
     } finally {
       await page.close();
