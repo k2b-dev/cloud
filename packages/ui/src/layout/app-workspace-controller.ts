@@ -26,6 +26,7 @@ import {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 import { readAppWorkspaceWidth, resolveAppWorkspaceWidth } from "./app-workspace-width";
+import { installOverlayScrollbars } from "./overlay-scrollbar";
 import { installScrollFades, scrollFadeEdges } from "./scroll-fade";
 import { followSidebarScroll } from "./sidebar-scroll-memory";
 
@@ -1693,6 +1694,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
 
   const stopScrollFades = installScrollFades(eventRoot);
+  // The flat scrollers' overlay thumbs (K2), also of a server-rendered workspace.
+  const stopOverlayScrollbars = installOverlayScrollbars(eventRoot);
   // Hosts install again after a page swap, whose server sidebars ran no inline script.
   const stopSidebarScroll = followSidebarScroll(eventRoot, scrollFadeEdges);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
@@ -2293,6 +2296,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());
     stopScrollFades();
+    stopOverlayScrollbars();
     stopSidebarScroll();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);

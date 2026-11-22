@@ -111,15 +111,13 @@ and wraps inside the header instead of hiding the subtitle; plain
 text in `meta` uses the subtitle's size and color, while badges and buttons keep
 their own.
 `DetailPanel.Body` is the single scrolling element and accepts a
-`scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting
-when expanding content first makes the panel overflow. Inside
-`AppWorkspace.Detail`, that gutter occupies the host's existing trailing inset
-instead of adding a second gap. On a device whose primary pointer is coarse,
-which usually draws overlay scrollbars that reserve no gutter, the panel keeps
-the host inset instead, so its content has the same margin on both sides. The
-pointer only stands in for the scrollbar style: a touch device with classic
-scrollbars shows the gutter next to the inset, and a desktop with overlay
-scrollbars keeps the panel at the trailing edge. Do not add a second
+`scrollPreserveKey`. It reserves no scrollbar track: its scrollbar is an
+overlay thumb over its content (see [ScrollArea](/en/ui/layout/scroll-area)),
+so the hairlines between its bands and a tinted alert cell reach the column's
+edge and nothing moves when it starts to scroll. Inside `AppWorkspace.Detail`
+as a sheet, the panel takes the host's trailing inset into its width and the
+body keeps it as end padding, so its content has the same margin on both
+sides; the thumb stands in that inset at the panel's edge. Do not add a second
 full-height scroller inside it. The body has no padding and no margin of its
 own: it is a column of bands. A band reaches from edge to edge of the column
 and holds its own text edge (20 px, 16 px on a phone). Topics (`Summary`,

@@ -1,5 +1,6 @@
 import { For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { IconButton, IconButtonLink } from "../actions/Button";
+import { installOverlayScrollbars } from "./overlay-scrollbar";
 import ScrollArea from "./ScrollArea";
 import { installScrollFades } from "./scroll-fade";
 import type { TabBarItem } from "./TabBar";
@@ -226,6 +227,7 @@ export function observeMobileShell(root: HTMLElement): () => void {
   documentRoot.setAttribute(SHELL_ATTRIBUTE, root.querySelector(":scope > .k2b-mobile-shell__sidebar") ? "sidebar" : "");
   // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
   const stopScrollFades = body ? installScrollFades(body) : () => {};
+  const stopOverlayScrollbars = body ? installOverlayScrollbars(body) : () => {};
   let frame = 0;
   let owner: HTMLElement | null = null;
   let resize: ResizeObserver | undefined;
@@ -286,6 +288,7 @@ export function observeMobileShell(root: HTMLElement): () => void {
     else documentRoot.setAttribute(SHELL_ATTRIBUTE, previousShell);
     stopLinkTaps();
     stopScrollFades();
+    stopOverlayScrollbars();
   };
 }
 

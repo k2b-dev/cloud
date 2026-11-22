@@ -5,7 +5,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { layoutProblems } from "../../../ui/test/head-overlap";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
@@ -122,9 +122,10 @@ test("the long page scrolls inside the main column, topics and week rows are div
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".weather-week [role='listitem']"));
       return {
         scrolls: main.scrollHeight > main.clientHeight,
-        // A desktop window without touch draws a classic scrollbar that takes room; with touch Chromium would draw an
-        // overlay scrollbar and the classic case would go untested.
+        // A desktop window without touch would draw a classic scrollbar; the flat main column hides it and draws its
+        // overlay thumb instead, so the scrollbar takes no room and the rows reach the column edge (K2).
         gutter: main.offsetWidth - main.clientWidth,
+        thumb: main.querySelector(":scope > .k2b-overlay-scrollbar")?.getAttribute("data-overflow") === "true",
         heights: rows.map((row) => Math.round(row.getBoundingClientRect().height)),
         lines: rows.map((row) => getComputedStyle(row).borderTopWidth),
         // The column draws one hairline above every topic but the first; the left of the two side-by-side columns
@@ -136,7 +137,8 @@ test("the long page scrolls inside the main column, topics and week rows are div
       };
     });
     expect(result.scrolls).toBe(true);
-    if (browserName === "chromium") expect(result.gutter).toBeGreaterThan(0);
+    expect(result.gutter).toBe(0);
+    expect(result.thumb).toBe(true);
     expect(result.heights).toEqual(Array(7).fill(40));
     expect(result.lines).toEqual(["0px", ...Array(6).fill("1px")]);
     // Article: now, hourly, columns; left column: week, measurements.

@@ -67,7 +67,7 @@ one. A reader that needs the current fades in the same frame as a content
 change, such as those scroll margins, calls `measureScrollFade(element)` from
 `@k2b/ui` first.
 
-`DetailPanel` also integrates its gutter with the surrounding workspace inset;
+`DetailPanel` also integrates its end inset with the surrounding workspace;
 that panel-specific geometry is not part of `ScrollArea`.
 
 ## Quiet scrollbars
@@ -121,16 +121,37 @@ A scrollbar never moves content when it appears. Chromium and Firefox reserve
 its room from the start with `scrollbar-gutter: stable`. Safari reserves no
 gutter before content overflows, so with a mouse every scroller that exists
 to scroll always shows the empty 0.5 rem track: `ScrollArea`, level bodies,
-the workspace sidebar, the settings page, `DetailPanel.Body`, `ChatTimeline`,
+the settings page, `ChatTimeline`,
 `VirtualFeed`, `PdfViewer`, the calendar's hours, and code blocks. A plain
 `ScrollArea` is therefore as wide in Safari as in Chrome and never narrows
 when it starts to scroll. Where a scroller already has an end inset or
 padding, the track takes it instead of adding room, so the content keeps its
-width: an inset `ScrollArea`, a level body, and the sidebar keep 0.5 rem on
-both sides. `Main`, `MainPane`, and `DetailPanel.Body` reserve nothing: their
-rows and hairlines reach the column edge, and a classic scrollbar takes its
-room only while they really scroll. A navigation `MainPane` keeps its gutter,
-because its inset rows use it as their end space.
+width: an inset `ScrollArea` and a level body keep 0.5 rem on both sides.
+
+The flat scrollers of a workspace (`Main`, a content `MainPane`,
+`DetailPanel.Body`, and the sidebar body) draw an overlay scrollbar instead
+of a track. They reserve no room, so their rows, hairlines, and fills reach
+the column edge, and nothing moves when content starts or stops overflowing,
+in Chromium and in Safari alike. With a mouse a thin thumb stands over the
+content at the end edge while the pointer is over the scroller or it scrolls;
+dragging it scrolls. Touch screens keep their native overlay scrollbar, and
+forced colors mode keeps the system scrollbar and reserves its room. The
+workspace controller drives the thumbs, also of a server-rendered workspace.
+A navigation `MainPane` keeps its track, because its inset rows use it as
+their end space.
+
+## Rows that reach the edge
+
+Set `scrollbar="overlay"` on a `ScrollArea` that holds full-width rows whose
+lines or fills must reach the column's edge, such as a list or a reader with
+hairlines between its rows. It then behaves like the flat workspace scrollers
+above. The option applies to vertical areas only.
+
+```tsx
+<ScrollArea scrollbar="overlay">
+  <ConversationRows />
+</ScrollArea>
+```
 
 A `ScrollArea` with its own end padding takes the track from that padding
 with one rule, so its content keeps the width it had without a scrollbar:
