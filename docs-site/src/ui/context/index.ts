@@ -41,7 +41,6 @@ import contentRunLog from "./content/run-log.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
-import contentTaskRow from "./content/task-row.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
 import contentTimeline from "./content/timeline.md" with { type: "text" };
 import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
@@ -230,7 +229,6 @@ const catalogContextSources = {
   "content/progress-path": { file: "content/progress-path.md", content: contentProgressPath },
   "content/run-log": { file: "content/run-log.md", content: contentRunLog },
   "content/steps": { file: "content/steps.md", content: contentSteps },
-  "content/task-row": { file: "content/task-row.md", content: contentTaskRow },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/money": { file: "content/money.md", content: contentMoney },
@@ -278,6 +276,5 @@ export const standaloneUiContextFiles = {
   "motion.md": "Motion tokens, interaction budgets, reduced motion, and the prefersReducedMotion helper.",
   "primary-scope.md": "AI primary actions, selection, focus, and inherited portal scopes in light and dark themes.",
   "focus.md": "Focus ring placement inside clipping containers, focus tokens, and the k2b-focus-inset class.",
-  "layout-check.md": "The layoutProblems self-check for page tests: overlap, spill, cut text, and sideways scroll at every width.",
   "overview.md": "Catalog landing-page context rendered by the collection root.",
 } as const satisfies Record<string, string>;

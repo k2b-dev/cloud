@@ -170,21 +170,6 @@ try {
     }
   `;
   run([process.execPath, "--no-install", "-e", inspectionSmoke], consumer);
-  // Apps outside the monorepo import the layout self-check in their page tests; it runs in the page, so it must
-  // close over nothing: no import, no module scope.
-  const layoutCheckSmoke = `
-    const resolved = import.meta.resolve("@k2b/ui/layout-check");
-    if (!resolved.includes("/node_modules/@k2b/ui/dist/ssr/layout-check.js")) {
-      throw new Error("layout check did not resolve to packed dist/ssr/layout-check.js: " + resolved);
-    }
-    const source = await Bun.file(new URL(resolved)).text();
-    if (/^\\s*import\\b/m.test(source)) throw new Error("packed @k2b/ui/layout-check imports another module");
-    const { layoutProblems } = await import("@k2b/ui/layout-check");
-    if (typeof layoutProblems !== "function" || !String(layoutProblems).includes("getBoundingClientRect")) {
-      throw new Error("packed @k2b/ui/layout-check does not export layoutProblems");
-    }
-  `;
-  run([process.execPath, "--no-install", "-e", layoutCheckSmoke], consumer);
   const chartsSmoke = `
     const { renderBarChartSvg } = await import("@k2b/ui/charts");
     if (!renderBarChartSvg({ data: [{ label: "A", value: 1 }], width: 480, height: 280 }).includes('data-bar-layout="columns"')) {
