@@ -234,7 +234,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     }
   };
 
-  const openSettings = async (tab?: PulseSettingsTab) => {
+  const openSettings = async () => {
     if (deps.settingsDialogOpen()) return;
     const base = deps.selectedBase();
     if (!base) return;
@@ -254,7 +254,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       });
       const abort = new AbortController();
       settingsAbort = abort;
-      navigation.open(tab ?? deps.initialTab);
+      navigation.open(deps.initialTab);
       let requestClose: (() => Promise<boolean>) | undefined;
       const unsubscribe = navigation.subscribe((tab) => {
         if (!tab) {

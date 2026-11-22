@@ -68,7 +68,6 @@ const render = (overrides: Partial<PulseSource> = {}, locale = "en", scrapes: Pu
           dateContext: { locale: "en", timeZone: "UTC", now: "2026-01-02T12:00:00.000Z" },
           loading: false,
           scrapes,
-          canManageKeys: true,
           apiKeys: [],
           scrapeColumns: [{ id: "status", header: "Status" }],
           renderScrapeCell: () => "ok",
@@ -102,14 +101,12 @@ test("a source detail follows the K1 outline: kind and state, one main action, p
     /role="menu" aria-label="More source actions"[\s\S]*?<span>Pause<\/span>[\s\S]*?<span>Scrape<\/span>[\s\S]*?<span>Remove source<\/span>/,
   );
   expect(header).not.toContain(">Remove</span></button>");
-  // Arrival comes before the properties, which lead with the target; the scrape history waits collapsed.
-  expect(html).toMatch(
-    />Arrival<\/h3>[\s\S]*>Newest data<\/dt>[\s\S]*>Expectation<\/dt>[\s\S]*>Properties<\/h3>[\s\S]*>Target<\/dt>[\s\S]*shop\.example\.test\/metrics/,
-  );
+  // Properties lead with the target; the scrape history waits collapsed with its newest result.
+  expect(html).toMatch(/>Properties<\/h3>[\s\S]*>Target<\/dt>[\s\S]*shop\.example\.test\/metrics[\s\S]*>Newest data<\/dt>/);
   expect(html).toMatch(/>More about this source<\/div>[\s\S]*>Scrape history<\/span>[\s\S]*>Success · /);
-  // No danger zone section, and nothing "does not arrive" while the source is fine.
+  // No section icons, no danger zone section.
+  expect(html).not.toContain("k2b-section__icon");
   expect(html).not.toContain("Danger zone");
-  expect(html).not.toContain("What does not arrive");
 });
 
 test("an HTTP ingest source keeps its API keys open and its example collapsed, in German", () => {
@@ -119,7 +116,7 @@ test("an HTTP ingest source keeps its API keys open and its example collapsed, i
   expect(html).not.toContain("<span>Abrufen</span>");
   expect(html).toContain("POST https://cloud.example.test/api/pulse/ingest");
   expect(html).toMatch(
-    />Eingang<\/h3>[\s\S]*>Eigenschaften<\/h3>[\s\S]*>API Keys<\/h3>[\s\S]*>Mehr zu dieser Quelle<\/div>[\s\S]*>HTTP-Beispiel für die Datenaufnahme<\/span>/,
+    />Eigenschaften<\/h3>[\s\S]*>API Keys<\/h3>[\s\S]*>Mehr zu dieser Quelle<\/div>[\s\S]*>HTTP-Beispiel für die Datenaufnahme<\/span>/,
   );
   expect(html).toContain(">curl mit Messwerten, Ereignissen und Zuständen</span>");
   expect(html).not.toContain(">Abrufverlauf<");
