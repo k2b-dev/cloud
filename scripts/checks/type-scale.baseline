@@ -170,7 +170,6 @@ packages/cloud/src/styles/effects.css | weight | 650
 packages/cloud/src/styles/file-chooser.css | size | 1.0625rem
 packages/cloud/src/styles/file-chooser.css | size | 1rem
 packages/cloud/src/styles/file-chooser.css | size | 1rem
-packages/cloud/src/styles/global.css | size | 0.6875rem
 packages/cloud/src/styles/privacy-screen.css | size | 0.65625rem
 packages/cloud/src/styles/privacy-screen.css | size | 1rem
 packages/cloud/src/styles/profile-picture.css | size | 0.65625rem

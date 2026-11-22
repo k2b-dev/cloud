@@ -4784,7 +4784,7 @@ html[data-k2b-mobile-shell] body {
 }
 
 /* The phone uses the same four type roles as the desktop (K11): lead for the
-   shell and dialog titles, row for text and buttons, body in a heavier weight
+   shell and dialog titles, row for text and buttons, the body role in a heavier weight
    for section headings, and meta for secondary text, field labels, and the
    options of a segmented control. Buttons match the touch menus' items. Icon
    buttons keep their glyph sizes. */

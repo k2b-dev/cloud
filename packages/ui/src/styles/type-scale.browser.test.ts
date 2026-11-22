@@ -157,7 +157,7 @@ const baseline = {
   sidebarItem: 32,
   sidebarSection: 16,
   sidebarCount: 16,
-  sidebarDescription: 18,
+  sidebarDescription: 20,
   buttonXs: 24,
   buttonSm: 28,
   buttonMd: 32,
@@ -217,8 +217,8 @@ describe(`type scale in ${browserName}`, () => {
           }),
         );
         expect(type).toEqual(scale);
-        // Two-line sidebar labels keep their height too, whatever the host's line height.
-        expect(probe.sidebarItem.lineHeight).toBe("18px");
+        // K11: sidebar labels are the row role, 13/20, whatever the host's line height.
+        expect(probe.sidebarItem.lineHeight).toBe("20px");
         expect(probe.title.letterSpacing).toBe(`${-0.018 * 14}px`);
       } finally {
         await page.close();

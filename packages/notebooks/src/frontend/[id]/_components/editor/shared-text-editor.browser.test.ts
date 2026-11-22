@@ -784,7 +784,7 @@ describe("Notebook on the shared text editor", () => {
       expect(menuGeometry.gaps.every((gap) => Math.abs(gap) < 0.5)).toBe(true);
       // K1: a menu row is a 36 px control row.
       expect(menuGeometry.height).toBe(36);
-      expect(menuGeometry.font).toBe("13.5px");
+      expect(menuGeometry.font).toBe("13px");
       await page.keyboard.press("Escape");
       // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.
       await hoverInPlace(cell(page, 1, 0));
@@ -910,7 +910,7 @@ describe("Notebook on the shared text editor", () => {
         return { color: style.color, expectedColor, fontSize: style.fontSize };
       });
       expect(appearance.color).toBe(appearance.expectedColor);
-      expect(appearance.fontSize).toBe("14.5px");
+      expect(appearance.fontSize).toBe("14px");
       expect(await title.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
       expect(await title.getAttribute("title")).toContain(name);
       await done.tap();

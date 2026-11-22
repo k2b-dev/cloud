@@ -747,7 +747,7 @@ solid-island {
       padding-inline: 0.25rem;
       color: var(--k2b-text);
       background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
-      font-size: 0.6875rem;
+      font-size: var(--k2b-font-size-meta);
       line-height: 1rem;
     }
     & .rail-item-keys {

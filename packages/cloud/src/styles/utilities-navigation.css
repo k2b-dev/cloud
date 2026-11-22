@@ -735,7 +735,9 @@
 }
 
 @utility section-label {
-  @apply text-meta font-medium normal-case tracking-normal mb-5 text-dimmed select-none;
+  @apply font-medium normal-case tracking-normal mb-5 text-dimmed select-none;
+  font-size: var(--k2b-font-size-meta);
+  line-height: var(--k2b-line-height-meta);
 }
 
 /* A rail control: a 44 px target in the 56 px rail. Its icon is 20 px

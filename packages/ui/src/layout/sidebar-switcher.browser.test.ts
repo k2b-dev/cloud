@@ -13,7 +13,7 @@ import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, createNavigation, Navigation } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const params = new URLSearchParams(document.body.dataset.fixtureParams);
-const name = params.has("long") ? "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof" : "Work";
+const name = params.has("long") ? "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof der alten Schule am Marktplatz" : "Work";
 const [options, setOptions] = createSignal();
 const [error, setError] = createSignal();
 let loading = false;
@@ -380,7 +380,7 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   test(
     "short and long names give the head one height that hover and opening keep",
     async () => {
-      const fullName = "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof";
+      const fullName = "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof der alten Schule am Marktplatz";
       for (const [width, base] of [
         [1366, "delay=500"],
         [390, "navigation=1&delay=500"],

@@ -779,8 +779,9 @@ main > .code-page-host {
     grid-column: 1 / -1;
     grid-template-columns: subgrid;
   }
-  .core-code-approvals__change {
-    padding-inline-start: 0.75rem;
+  /* 8 px between the columns: the meta-size chips of the flat type roles (K11) leave the title its line. */
+  .core-code-approvals__row {
+    column-gap: 0.5rem;
   }
 }
 
@@ -803,7 +804,7 @@ main > .code-page-host {
   font-size: var(--k2b-font-size-body);
 }
 .core-code-approvals__title strong {
-  margin-inline-end: 0.5rem;
+  margin-inline-end: 0.25rem;
   font-weight: 600;
 }
 .core-code-approvals__version {
