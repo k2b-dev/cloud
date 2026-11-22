@@ -2542,12 +2542,27 @@ html {
   container: k2b-head-lead / inline-size;
 }
 
-/* In the one row the views keep their own width, at most the lead's; only
-   below that does their fit move views into More. The filters take what is
-   left and scroll sideways, so a filter that hydrates or changes never moves
-   the views (no layout shift between server and client). */
+/* The views keep their width, so a filter that hydrates or changes never
+   moves them (no layout shift between server and client). */
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
   flex-shrink: 0;
+}
+
+/* In the one row from 48 rem the lead also holds the toggle and the way up,
+   so the views give way when it runs short, and their fit moves views into
+   More; nothing leaves the lead. The filters grow from a zero basis into
+   the room the views leave, so they still never move the views; they come
+   before the quiet count up to their own width, and the count takes the
+   rest. They scroll sideways and fade. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-views {
+    flex-shrink: 1;
+  }
+
+  .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
+    max-width: max-content;
+    flex: 1000 1 0;
+  }
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-page-title {
