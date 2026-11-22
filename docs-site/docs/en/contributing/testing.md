@@ -142,6 +142,17 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Build shared fixtures outside test deadlines
+
+Bun gives each test 5 s unless the test sets its own timeout. A fixture that
+several tests share and that starts its own process, such as a packed CLI
+plugin or a bundle, is built once at module scope. Its cost then stays
+outside every test's deadline, and the deadline covers only the steps the
+test checks. `packages/cloud-cli/src/served-plugins.test.ts` and
+`plugins.test.ts` pack the echo plugin once at the top of the file. Installing
+a plugin from a directory reads the directory in place, so every test can use
+the same build.
+
 ## Pin the clock
 
 Tests that render dates use a fixed instant. In behavior tests, use
