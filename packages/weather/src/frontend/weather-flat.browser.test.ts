@@ -146,3 +146,30 @@ test("the long page scrolls inside the main column, topics and week rows are div
     await page.context().close();
   }
 });
+
+// QA 22.11.: the week's rain and sunshine stood at different places per row and ran into the temperatures beside the
+// radar at 768 px. Every row has the same columns: their right edges line up, and a narrow list drops sunshine whole.
+for (const width of [768, 1440])
+  test(`${width} px: the week's rain and sunshine columns line up over all rows`, async () => {
+    const page = await open("many", width);
+    try {
+      await settled(page);
+      const result = await page.evaluate(() => {
+        const edges = (selector: string) =>
+          Array.from(document.querySelectorAll<HTMLElement>(selector))
+            .filter((element) => element.getClientRects().length > 0)
+            .map((element) => Math.round(element.getBoundingClientRect().right));
+        const list = document.querySelector<HTMLElement>(".weather-week [role='list']")!;
+        return { list: list.getBoundingClientRect().width, rain: edges(".weather-day__rain"), sun: edges(".weather-day__sun") };
+      });
+      expect(result.rain).toHaveLength(7);
+      expect(new Set(result.rain).size).toBe(1);
+      if (result.list < 400) expect(result.sun).toEqual([]);
+      else {
+        expect(result.sun).toHaveLength(7);
+        expect(new Set(result.sun).size).toBe(1);
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
