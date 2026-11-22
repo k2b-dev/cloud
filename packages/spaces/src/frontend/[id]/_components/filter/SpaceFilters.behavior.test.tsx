@@ -116,8 +116,9 @@ else {
         const disposeSecond = routeFirst ? mountHead() : mountRoute();
         const settle = () => Bun.sleep(30);
         const click = (label: string) => {
+          // A chip at its default shows its sign alone; its name is its label.
           const button = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
-            (element) => element.textContent?.trim() === label,
+            (element) => element.textContent?.trim() === label || element.getAttribute("aria-label") === label,
           );
           expect(button).toBeDefined();
           button!.click();

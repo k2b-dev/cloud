@@ -43,7 +43,10 @@ test.skipIf(isServer)("list filters retain rapid choices while displayed results
     dom.root,
   );
   const click = async (label: string, selector = "button") => {
-    const element = Array.from(dom.document.querySelectorAll<HTMLElement>(selector)).find((node) => node.textContent?.trim() === label);
+    // A chip at its default shows its sign alone; its name is its label.
+    const element = Array.from(dom.document.querySelectorAll<HTMLElement>(selector)).find(
+      (node) => node.textContent?.trim() === label || node.getAttribute("aria-label") === label,
+    );
     expect(element).toBeDefined();
     element!.click();
     await flush();

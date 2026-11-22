@@ -597,23 +597,20 @@ describePart("head", "Spaces Kanban board in a browser", () => {
   }
 
   for (const view of [desktop, phone]) {
-    test(`${view.width}px: a head chip applies its filter and moves neither the search, its own start, the menu, nor the board`, async () => {
+    test(`${view.width}px: a head chip applies its filter and moves neither the filters' end, the menu, nor the board`, async () => {
       const page = await open(view, { locale: "de" });
       try {
-        // The active chip names its value and Reset appears after the chips; nothing before them and nothing below may move.
+        // The active chip names its value and Reset appears after the chips. The filters stand at the end of the status
+        // row (K6), so they grow toward its start; their end, the menu, and the board below must not move.
         const positions = () =>
           page.evaluate(() => {
             const box = (element: Element | null) => {
               const rect = element!.getBoundingClientRect();
               return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width) };
             };
-            const chip = Array.from(window.document.querySelectorAll("[data-spaces-head-filters] button")).find((button) =>
-              button.textContent?.includes("Zuständigkeit"),
-            )!;
-            const start = box(chip);
+            const filters = window.document.querySelector("[data-spaces-head-filters]")!.getBoundingClientRect();
             return {
-              search: box(window.document.querySelector("[data-spaces-head-filters] input")),
-              chip: { left: start.left, top: start.top },
+              filters: { right: Math.round(filters.right), top: Math.round(filters.top) },
               menu: box(window.document.querySelector("[data-spaces-menu]")),
               board: box(window.document.querySelector('[role="region"]')),
             };

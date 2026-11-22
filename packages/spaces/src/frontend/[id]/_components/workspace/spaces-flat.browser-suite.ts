@@ -60,6 +60,31 @@ for (const view of [phone, narrow, tablet, laptop, desktop])
       }, 30_000);
     }
 
+// K15: from 768 px the filters fit the status row whole; only below it may they scroll sideways (with a fade).
+for (const view of [tablet, desktop])
+  for (const name of ["list", "kanban"] as const)
+    test(`${view.width} px ${name}, many tasks: the status row's filters fit whole, nothing scrolls or spills`, async () => {
+      const page = await harness.open(view, { view: name, many: true });
+      try {
+        const fit = await page.evaluate(() => {
+          const row = document.querySelector<HTMLElement>(".spaces-status")!;
+          const filters = row.querySelector<HTMLElement>(".spaces-head-filters")!;
+          const edge = row.getBoundingClientRect();
+          return {
+            row: row.scrollWidth - row.clientWidth,
+            filters: filters.scrollWidth - filters.clientWidth,
+            // Every control of the filters stands inside the row.
+            outside: [...filters.querySelectorAll<HTMLElement>("button, a, input")]
+              .filter((control) => control.getBoundingClientRect().right > edge.right + 0.5)
+              .map((control) => control.getAttribute("aria-label") ?? control.textContent?.trim()),
+          };
+        });
+        expect(fit).toEqual({ row: 0, filters: 0, outside: [] });
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+
 test("classic scrollbars take room in this suite: a scrolling list in a narrow desktop window has a gutter", async () => {
   const page = await harness.open(narrow, { view: "list", many: true });
   try {
