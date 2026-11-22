@@ -770,7 +770,8 @@ main > .code-page-host {
    not the window's: beside the two navigation columns it is far narrower. */
 @container code-approvals (min-width: 44rem) {
   .core-code-approvals__list {
-    grid-template-columns: auto minmax(0, max-content) minmax(0, max-content) minmax(5.5rem, 1fr) auto;
+    /* The time keeps its own width, not a fixed 5.5 rem, so its slack never takes the title's line (K5a gutter). */
+    grid-template-columns: auto minmax(0, max-content) minmax(0, max-content) minmax(max-content, 1fr) auto;
   }
   .core-code-approvals__list > li,
   .core-code-approvals__row {

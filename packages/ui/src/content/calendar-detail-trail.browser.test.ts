@@ -276,8 +276,9 @@ const hoursPlacement = (page: Page, lane?: string) =>
   });
 
 describe("dayHours calendar beside the workspace detail", () => {
+  // The flat md Detail (380 px, no inset) leaves the week whole at 1280 px; the lg Detail narrows it so the strip scrolls.
   test("1280×800: a resize keeps the week's first day, and a strip a resize clamped settles on a day start", async () => {
-    const { page } = await load(1280, 800, "week", {}, "md", true);
+    const { page } = await load(1280, 800, "week", {}, "lg", true);
     try {
       await page.evaluate(() => {
         const scroller = document.querySelector<HTMLElement>(".k2b-calendar-week__scroll")!;
@@ -385,7 +386,7 @@ describe("dayHours calendar beside the workspace detail", () => {
 
   // A smooth reveal starts a frame before the strip reads it; a resize or settle on the way must not stop or undo it.
   test("1280×800 with motion: the dayHours week scrolls Sunday out beside the panel", async () => {
-    const { page } = await load(1280, 800, "week", motion, "md", true);
+    const { page } = await load(1280, 800, "week", motion, "lg", true);
     try {
       const shape = await hoursPlacement(page);
       expect(shape.scrollLeft).toBeGreaterThan(0);

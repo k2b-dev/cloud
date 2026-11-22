@@ -493,6 +493,11 @@ for (const width of [320, 390, 768, 1440]) {
           document.body.classList.toggle("k2b-dark", theme === "dark");
         }, theme);
         await settled(page);
+        // K12: on a tablet the Detail waits as a drawer; its Details button opens it.
+        if (width === 768) {
+          await page.locator("[data-app-workspace-detail-toggle]").click();
+          await settled(page);
+        }
         const ai = page.getByRole("button", { name: "Mit KI bearbeiten", exact: true });
         const view = page.getByRole("button", { name: "Ansicht", exact: true });
         const metrics = () =>
