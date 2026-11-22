@@ -156,15 +156,30 @@ afterAll(async () => {
  * pills). The text inside the frame is checked on its own, with 8 px of slack: a table in the text reaches 8 px into
  * the scroller's inline padding, so its lines run past the text as in the Book (`@k2b/editor` theme).
  */
+/** How much room the classic scrollbar of a scrolling region takes: a classic run is only worth its name when > 0. */
+const gutter = (page: Page, selector: string) =>
+  page.evaluate((selector) => {
+    const region = document.querySelector<HTMLElement>(selector)!;
+    return Math.max(region.offsetWidth - region.clientWidth, innerWidth - document.documentElement.clientWidth);
+  }, selector);
+
 const problems = async (page: Page, slack?: number) => [
   ...(await page.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-avatar-stack, .notebook-editor-frame", slack })).problems,
   ...(await page.evaluate(layoutProblems, { root: ".notebook-editor-frame > .k2b-scroll-area", slack: 8 })).problems,
 ];
 
-type Open = { width: number; mode?: "write" | "read"; content?: "few" | "many"; detail?: boolean; overview?: boolean; locked?: boolean };
-const open = async ({ width, mode = "write", content = "few", detail = false, overview = false, locked = false }: Open): Promise<Page> => {
-  const phone = width < 768;
-  const page = await browser.newPage({ viewport: { width, height: phone ? 844 : 900 }, isMobile: phone, hasTouch: phone });
+type Open = {
+  width: number;
+  mode?: "write" | "read";
+  content?: "few" | "many";
+  detail?: boolean;
+  overview?: boolean;
+  locked?: boolean;
+  /** A touch phone. Chromium then draws overlay scrollbars that take no room, so the layout runs leave it off. */
+  touch?: boolean;
+};
+const open = async ({ width, mode = "write", content = "few", detail = false, overview = false, locked = false, touch = false }: Open) => {
+  const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 }, isMobile: touch, hasTouch: touch });
   await page.goto(
     `${server.url}?mode=${mode}&content=${content}${detail ? "&detail=1" : ""}${overview ? "&page=overview" : ""}${locked ? "&locked=1" : ""}`,
   );
@@ -177,7 +192,10 @@ const open = async ({ width, mode = "write", content = "few", detail = false, ov
   return page;
 };
 
-/** The phone, the tablet with its drawer, a narrow and a wide desktop (Cloud flach QA). */
+/**
+ * The phone, the tablet with its drawer, a narrow and a wide desktop (Cloud flach QA), as desktop windows without touch,
+ * so the classic scrollbars take room; the Read test also opens a touch phone.
+ */
 const WIDTHS = [390, 768, 1100, 1440];
 
 // Each page loads the note page's bundle (CodeMirror and the Detail's MapLibre), as the Detail panel's test does.
@@ -188,6 +206,7 @@ describe("a note is a reading column without head", () => {
         const page = await open({ width, content });
         try {
           expect(await problems(page)).toEqual([]);
+          if (content === "many") expect(await gutter(page, ".notebook-editor-frame > .k2b-scroll-area")).toBeGreaterThan(0);
         } finally {
           await page.close();
         }
@@ -195,7 +214,7 @@ describe("a note is a reading column without head", () => {
 
   for (const width of [1440, 390])
     test(`${width} px, Read: the page pill holds the way into Write and the Details`, async () => {
-      const page = await open({ width, mode: "read" });
+      const page = await open({ width, mode: "read", touch: width < 768 });
       try {
         const pill = page.getByRole("group", { name: "Aktionen für die Notiz" });
         expect(await pill.getByRole("link", { name: "Notiz bearbeiten" }).count()).toBe(1);
@@ -262,6 +281,7 @@ describe("the overview is one head and one flat list", () => {
         const page = await open({ width, content, overview: true });
         try {
           expect((await page.evaluate(layoutProblems, { root: "#root" })).problems).toEqual([]);
+          if (content === "many") expect(await gutter(page, ".notebooks-overview-main")).toBeGreaterThan(0);
           // K1: a row with a second text line is 52 px, on a phone 60 px.
           const heights = await page
             .locator(".notebooks-overview-note")
