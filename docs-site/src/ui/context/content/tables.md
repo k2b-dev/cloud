@@ -191,7 +191,8 @@ const columns = [
 
 Show a file name in a cell with `FileName`: it stays on one line and shortens
 before its ending, so `Quarterly report 2026.pdf` reads `Quarterly rep….pdf`
-(K15). The whole name is its hint. `splitFileName(name)` returns `stem` and
+(K15). The whole name is its hint, and screen readers read it as one word, also
+in a heading's accessible name. `splitFileName(name)` returns `stem` and
 `ext` for a cell of your own.
 
 ## Add a header and controls

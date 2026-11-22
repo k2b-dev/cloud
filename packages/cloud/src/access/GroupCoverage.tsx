@@ -153,7 +153,7 @@ export function GroupCoveragePanel(props: { coverage: GroupCoverage; groupName: 
                 const kind = () => serviceAccountKindDisplay(member.serviceAccount.kind, t());
                 return (
                   <li class="flex min-w-0 items-center gap-2 text-sm">
-                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full not-dark:bg-zinc-200 text-secondary dark:bg-zinc-700">
                       <i class={`ti ${kind().icon}`} aria-hidden="true" />
                     </span>
                     <span class="truncate">{member.serviceAccount.name}</span>

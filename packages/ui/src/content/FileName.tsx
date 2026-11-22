@@ -18,15 +18,25 @@ export type FileNameProps = Omit<JSX.HTMLAttributes<HTMLSpanElement>, "children"
 
 /**
  * A file name on one line that shortens before its ending (K15): `Quarterly rep….pdf`. The ending always stays, and
- * the whole name is the hint on hover and the text a screen reader reads.
+ * the whole name is the hint on hover and the text a screen reader reads: the visible stem and ending are two flex
+ * items, which accessible names join with a space ("Notes .txt"), so they are hidden from assistive technology and
+ * the whole name stands beside them as screen-reader text. The screen-reader text is out of the flow, so the layout
+ * stays as it was.
  */
 export function FileName(props: FileNameProps): JSX.Element {
   const [local, rest] = splitProps(props, ["name", "class"]);
   const parts = () => splitFileName(local.name);
   return (
     <span {...rest} class={local.class ? `k2b-file-name ${local.class}` : "k2b-file-name"} title={local.name}>
-      <span class="k2b-file-name__stem">{parts().stem}</span>
-      {parts().ext ? <span class="k2b-file-name__ext">{parts().ext}</span> : null}
+      <span class="k2b-sr-only">{local.name}</span>
+      <span class="k2b-file-name__stem" aria-hidden="true">
+        {parts().stem}
+      </span>
+      {parts().ext ? (
+        <span class="k2b-file-name__ext" aria-hidden="true">
+          {parts().ext}
+        </span>
+      ) : null}
     </span>
   );
 }

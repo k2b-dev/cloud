@@ -5,12 +5,12 @@ describe("workspaceMainClass", () => {
   test("insets standard content routes", () => {
     expect(workspaceMainClass("documentTemplate")).toBe("p-[var(--ui-space-shell)]");
     expect(workspaceMainClass("empty")).toBe("p-[var(--ui-space-shell)]");
-    expect(workspaceMainClass("records")).toBe("p-[var(--ui-space-shell)]");
     expect(workspaceMainClass("workflows")).toBe("p-[var(--ui-space-shell)]");
   });
 
-  test("leaves pane routes edge to edge", () => {
+  test("leaves pane routes and the records page edge to edge", () => {
     expect(workspaceMainClass("query")).toBeUndefined();
+    expect(workspaceMainClass("records")).toBeUndefined();
     expect(workspaceMainClass("customApp")).toBeUndefined();
   });
 });

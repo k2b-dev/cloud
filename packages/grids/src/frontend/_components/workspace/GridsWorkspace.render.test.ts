@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
-import type { PublicField, PublicGridRecord, PublicTable } from "../../../api/public-dto";
+import type { PublicField, PublicGridRecord, PublicTable, PublicView } from "../../../api/public-dto";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
 const { default: GridsWorkspace, routeClientState } = await import("./GridsWorkspace");
@@ -186,5 +186,95 @@ describe("GridsWorkspace", () => {
     expect(carrying[0]!.match(/Row value REC00\d/g)).toHaveLength(2);
     // The navigation island still knows the active table.
     expect(props.some((value) => !value.includes("Row value") && value.includes("table:TABLE1"))).toBe(true);
+  });
+
+  test("a table page shows its views as tabs and the one main action in the workspace head", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const table = {
+      id: "TABLE1",
+      baseId: "DEMO01",
+      name: "Articles",
+      description: null,
+      icon: null,
+      kind: "stored",
+      columns: [],
+      displayConfig: { mode: "table" },
+      auditPolicy: {},
+      mutationPolicy: { mode: "all" },
+      position: 0,
+      disableDirectInsert: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      deletedAt: null,
+    } satisfies PublicTable;
+    const view: PublicView = {
+      id: "VIEW01",
+      tableId: table.id,
+      name: "Open articles",
+      description: null,
+      icon: null,
+      source: "from Articles",
+      ui: {},
+      ownerUserId: null,
+      position: 0,
+      deletedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const page = (canWriteRecords: boolean) => {
+      const state = workspaceState();
+      state.catalog.tables = [table];
+      state.catalog.viewsByTable = { [table.id]: [view] };
+      state.route = {
+        kind: "records",
+        activeTable: table,
+        activeView: null,
+        fields: [],
+        formsForTable: [],
+        canReadTable: true,
+        canWriteRecords,
+        canManageActiveTable: false,
+        canEditActiveView: false,
+        otherTables: [{ id: table.id, name: table.name }],
+        initialState: {
+          query: {},
+          cursor: null,
+          selectedRecordId: null,
+          search: { q: "", fieldIds: [], override: false },
+          calendar: { view: "month", date: "2026-01-01" },
+          cardSize: "medium",
+        },
+        initialData: { items: [], nextCursor: null },
+        initialError: null,
+        initialSelectedRecord: null,
+        initialSelectedRecordDetail: null,
+        documentTemplates: [],
+        relationLabels: {},
+        activeViewColumns: undefined,
+        groupedExplode: false,
+        activeRecordQuery: null,
+        displayConfig: { mode: "table" },
+        bulkSelectionLaunchers: [],
+        recordActionLaunchers: [],
+      };
+      return renderToString(() => createComponent(GridsWorkspace, { state }));
+    };
+
+    const writer = page(true);
+    const head = writer.slice(writer.indexOf("k2b-app-workspace__head"), writer.indexOf("k2b-app-workspace__content"));
+    expect(head).toContain(">All records<");
+    expect(head).toContain('href="/app/grids/DEMO01/table/TABLE1"');
+    expect(head).toContain('href="/app/grids/DEMO01/table/TABLE1/view/VIEW01"');
+    expect(head).toContain(">Open articles<");
+    // The one filled action links to the create flow, which the records view opens in place once it runs.
+    expect(head).toMatch(/<a[^>]*data-workspace-primary[^>]*>/);
+    expect(head).toContain('href="/app/grids/DEMO01/table/TABLE1?new=1"');
+    expect(head).toContain('aria-haspopup="dialog"');
+    expect(head).toContain("Add record");
+
+    const reader = page(false);
+    const readerHead = reader.slice(reader.indexOf("k2b-app-workspace__head"), reader.indexOf("k2b-app-workspace__content"));
+    expect(readerHead).toContain(">All records<");
+    expect(readerHead).not.toContain("data-workspace-primary");
   });
 });

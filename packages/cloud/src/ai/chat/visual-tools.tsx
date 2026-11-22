@@ -55,7 +55,7 @@ export function CloudCardBlock(props: { args: unknown }) {
     <Show
       when={card()}
       fallback={
-        <pre class="max-h-52 overflow-auto rounded-md bg-zinc-950/5 p-2 text-xs text-primary dark:bg-white/5">
+        <pre class="max-h-52 overflow-auto rounded-md not-dark:bg-zinc-950/5 p-2 text-xs text-primary dark:bg-white/5">
           {jsonPreview(props.args)}
         </pre>
       }
@@ -365,7 +365,7 @@ export function CloudTextEditorBlock(props: {
         showStats={false}
       />
       <Show when={error()}>
-        <p class="mt-2 text-xs text-red-600 dark:text-red-300" role="alert">
+        <p class="mt-2 text-xs not-dark:text-red-600 dark:text-red-300" role="alert">
           {error()}
         </p>
       </Show>
@@ -425,7 +425,7 @@ export function CloudTextEditorResultBlock(props: { blockId?: string; args?: unk
           aria-hidden="true"
         />
       </summary>
-      <div class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+      <div class="mt-1 w-full min-w-0 rounded-md not-dark:bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
         <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-dimmed">{feedback() ? t().textEditorFeedback : format()}</p>
         <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-primary">
           {feedback() || content() || t().textEditorEmpty}

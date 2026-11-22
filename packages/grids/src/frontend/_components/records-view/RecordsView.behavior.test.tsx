@@ -20,7 +20,26 @@ mock.module("./fetcher", () => ({ fetchTableQuery: (...args: Parameters<FetchRec
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { RecordsView: (await import("./RecordsView")).default };
+    const View = (await import("./RecordsView")).default;
+    const { default: RecordsHeadActions } = await import("../workspace/RecordsHeadActions.island");
+    const { filterSearchableFields } = await import("../../../searchable-fields");
+    // The records page as the workspace renders it: the head's search and "⋯" above the view, joined by records-head-bus.
+    const RecordsView = (props: Parameters<typeof View>[0]) => [
+      createComponent(RecordsHeadActions, {
+        baseId: props.baseId,
+        tableId: props.tableId,
+        tableName: props.tableName,
+        tableKind: props.tableKind,
+        searchableFields: filterSearchableFields(props.fields),
+        initialSearch: { q: props.initialState.search.q, fieldIds: props.initialState.search.fieldIds },
+        trashMode: props.trashMode,
+        canReadTable: props.canReadTable,
+        queryHref: `/app/grids/${props.baseId}/table/${props.tableId}/query`,
+        bulkLaunchers: [],
+      }),
+      createComponent(View, props),
+    ];
+    return { RecordsView };
   } finally {
     dom.cleanup();
   }
@@ -317,7 +336,7 @@ domTest("a failed server read shows its error without repeating the read, and th
     dom.root,
   );
   const retryButton = () =>
-    Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Retry") ?? null;
+    Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Load records") ?? null;
   try {
     await Bun.sleep(0);
     expect(reads).toBe(0);
