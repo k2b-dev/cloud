@@ -1559,7 +1559,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 }
 .assistant-code-decision__more,
 .assistant-code-decision__pages-pending {
-  font-size: var(--k2b-type-13);
+  font-size: var(--k2b-font-size-row);
   color: var(--k2b-text-secondary);
 }
 /* The sentence keeps the line's 32 px row, whether the page occupies the next row or not. */

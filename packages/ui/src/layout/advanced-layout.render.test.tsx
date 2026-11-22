@@ -1065,16 +1065,15 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("scales the PanelHeader subtitle with its size, as Cloud does", () => {
-      // Cloud: `text-xs font-semibold` / `text-base font-semibold` heading,
-      // `text-[10px]` / `mt-1 text-xs` subtitle.
-      expect(rule(".k2b-panel-header__title")).toContain("font-size:.75rem");
+      // K11: meta, body, and lead headings; the subtitle in meta, or body beside a lead title.
+      expect(rule(".k2b-panel-header__title")).toContain("font-size:var(--k2b-font-size-meta)");
       expect(rule(".k2b-panel-header__title")).toContain("font-weight:600");
-      expect(rule(".k2b-panel-header__title.is-medium")).toContain("font-size:1rem");
-      expect(rule(".k2b-panel-header__subtitle")).toContain("font-size:.625rem");
+      expect(rule(".k2b-panel-header__title.is-medium")).toContain("font-size:var(--k2b-font-size-body)");
+      expect(rule(".k2b-panel-header__subtitle")).toContain("font-size:var(--k2b-font-size-meta)");
       // The component emits `data-size`; before this it matched no rule at all.
-      expect(rule(".k2b-panel-header[data-size=md] .k2b-panel-header__subtitle")).toContain("font-size:.75rem");
-      expect(rule(".k2b-panel-header__title.is-large")).toContain("font-size:1.375rem");
-      expect(rule(".k2b-panel-header[data-size=lg] .k2b-panel-header__subtitle")).toContain("font-size:.875rem");
+      expect(rule(".k2b-panel-header[data-size=md] .k2b-panel-header__subtitle")).toContain("font-size:var(--k2b-font-size-meta)");
+      expect(rule(".k2b-panel-header__title.is-large")).toContain("font-size:var(--k2b-font-size-lead)");
+      expect(rule(".k2b-panel-header[data-size=lg] .k2b-panel-header__subtitle")).toContain("font-size:var(--k2b-font-size-body)");
     });
 
     test("gives object rows an accent tile, a strong title, and stacked counts", () => {
@@ -1131,7 +1130,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     test("gives the settings rail Cloud's sidebar-item affordances", () => {
       const tab = rule(".k2b-settings__tabs button");
       expect(tab).toContain("min-height:2rem");
-      expect(tab).toContain("font-size:.75rem");
+      expect(tab).toContain("font-size:var(--k2b-font-size-meta)");
       expect(tab).toContain("padding:.375rem .5rem");
       // Roving tabindex moves focus programmatically — it must be visible.
       expect(css).toContain(".k2b-settings__tabs button:focus-visible");
@@ -1148,11 +1147,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-settings-field__row")).toContain("gap:.375rem .75rem");
       expect(field).not.toContain("background");
       expect(field).not.toContain("border-radius");
-      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:.8125rem");
+      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:var(--k2b-font-size-row)");
       expect(rule(".k2b-settings-field__heading strong")).toContain("font-weight:500");
       // The description rule must not reach the error line or consumer content.
       expect(css).not.toMatch(/\.k2b-settings-field p\s*\{/);
-      expect(rule(".k2b-settings-field__error")).toContain("font-size:.75rem");
+      expect(rule(".k2b-settings-field__error")).toContain("font-size:var(--k2b-font-size-meta)");
       // Cloud's save bar is `z-10`; sticky alone does not raise it.
       expect(rule(".k2b-settings-save-bar")).toContain("z-index:10");
       const pageFooter = rule(".k2b-settings-page__footer");
@@ -1169,7 +1168,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).not.toMatch(/\.k2b-settings__content h2\s*[,{]/);
       expect(css).not.toMatch(/\.k2b-settings__content p\s*[,{]/);
       expect(css).not.toContain(".k2b-settings__content>header");
-      expect(rule(".k2b-settings__section-heading h2")).toContain("font-size:1.25rem");
+      expect(rule(".k2b-settings__section-heading h2")).toContain("font-size:var(--k2b-font-size-lead)");
     });
 
     test("uses compact document-style pane tabs", () => {

@@ -103,7 +103,7 @@ describe("Discussion", () => {
     // A bare discussion stands flat on its page with a larger title.
     expect(html).toContain('data-frame="none"');
     expect(html).toMatch(/<h2[^>]*>Questions and updates<\/h2>/);
-    expect(bareTitle).toContain("font-size: 1rem");
+    expect(bareTitle).toContain("font-size: var(--k2b-font-size-body)");
   });
 
   test("keeps item actions visible on touch and progressive on hovering pointers", async () => {

@@ -159,7 +159,7 @@ building block "area" (planned with the building block).
 | `--k2b-h-label`, `-control` | 20, 36 px | field label, control |
 | `--k2b-h-area-head`, `-group-head` | 56, 36 px | area and group heads |
 | `--k2b-h-head-phone`, `-tabs-phone`, `-row-phone` | 52, 44, 60 px | phone |
-| `--k2b-font-size-meta`, `-row`, `-body`, `-lead` | 12, 13, 14, 18 px | the four sizes |
+| `--k2b-font-size-*`, `--k2b-line-height-*`, `--k2b-font-weight-*` of `meta`, `row`, `body`, `lead` | 12/16, 13/20, 14/20, 18/24 px; 400, 400, 400, 600 | the four type roles ([Type roles](./utilities#type-roles)) |
 | `--k2b-radius-flat`, `-mark`, `-control`, `-overlay`, `-round`, `-card` | 0, 4, 8, 8 px, round, 14 px | the radius roles; `--k2b-radius-dialog` is the overlay role; `--k2b-radius-surface` keeps 12 px until its users move to a role |
 | `--k2b-radius-tile` | 8 px | an icon tile; a tile below 24 px sets `--k2b-radius-mark` |
 | `--k2b-shadow-overlay-sm`, `-overlay-lg` | small, large | menu, popover, toast, pill, drag preview; dialog |

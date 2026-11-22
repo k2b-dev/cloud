@@ -338,7 +338,7 @@ describe("DetailPanel", () => {
     expect(leadingRule).toContain("color: var(--k2b-text-muted);");
     const titleRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-title \{([^}]*)\}/)?.[1] ?? "";
     expect(titleRule).toContain("color: inherit;");
-    expect(titleRule).toContain("font-size: 0.75rem;");
+    expect(titleRule).toContain("font-size: var(--k2b-font-size-meta);");
     expect(css).toContain('.k2b-ui .k2b-description-list[data-size="sm"] .k2b-description-list__item dt');
     expect(css).toContain('.k2b-description-list[data-action-visibility="progressive"]');
     expect(css).toContain(".k2b-description-list__item:focus-within");

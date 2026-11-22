@@ -259,13 +259,13 @@ describe("MobileShell in a phone browser", () => {
       });
       expect(sizes).toEqual({
         title: "18px",
-        text: "16px",
-        button: "16px",
-        segment: "14px",
-        label: "14px",
-        error: "14px",
+        text: "13px",
+        button: "13px",
+        segment: "12px",
+        label: "12px",
+        error: "12px",
         dialogTitle: "18px",
-        tab: "11px",
+        tab: "12px",
         action: "22px",
       });
     } finally {
