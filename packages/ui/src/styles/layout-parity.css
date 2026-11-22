@@ -1141,13 +1141,15 @@ html {
   overflow: auto;
 }
 
-.k2b-ui .k2b-app-workspace__main-pane {
+/* Cloud flach (K2): the main pane reserves no scroll gutter. Its rows, lines and fills reach the column edge; a
+   classic scrollbar takes its room only while the pane really scrolls, and then lines end at the scrollbar. A
+   navigation pane is different: its rows are inset items, 8 px from both edges, and the gutter is that end space. */
+.k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"] {
   scrollbar-gutter: stable;
 }
 
 .k2b-ui .k2b-app-workspace__main-pane[data-scroll="false"] {
   overflow: hidden;
-  scrollbar-gutter: auto;
 }
 
 .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"] {
@@ -3868,24 +3870,15 @@ html {
        track either way, so a ScrollArea is as wide in Safari as in Chrome and
        never narrows when it starts to scroll. Where it has end padding, its
        owner takes the track from it (see the ScrollArea guide). Layout regions
-       that often do not scroll, such as Main and MainPane, keep their gutter
-       and draw no empty track. */
+       whose lines run from edge to edge (Main, MainPane, the detail body)
+       reserve nothing: a scrollbar takes room only while they scroll (K2). */
     .k2b-ui .k2b-scroll-area[data-orientation="vertical"],
     .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
-    .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,
     .k2b-ui .k2b-virtual-feed__viewport,
     /* Match the SSR rule's specificity too: its hidden overflow must not
        remove this track until hydration and narrow every row by 0.5rem. */
     .k2b-ui .k2b-virtual-feed[data-server] > .k2b-virtual-feed__viewport {
-      overflow-y: scroll;
-    }
-
-    /* The detail's 56 px bar keeps the body's track without scrolling, so
-       its trailing controls end on the body's trailing edge. The first
-       section below it keeps the full width, so its line runs edge to edge. */
-    .k2b-ui .k2b-detail-panel__header-main {
-      overflow-x: hidden;
       overflow-y: scroll;
     }
 

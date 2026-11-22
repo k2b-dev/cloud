@@ -333,7 +333,7 @@ must not remove a way to the navigation or the details at any width.
 as direct children of `Content`, possibly through a Solid island wrapper. The
 column and drawer geometry depend on that placement. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel occupies its own full-height column at the workspace's end. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel occupies its own full-height column at the workspace's end. `Main` is the default scroll owner and reserves no scrollbar gutter, so edge-to-edge tables and rows reach its edge; a classic scrollbar takes room only while it scrolls. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
