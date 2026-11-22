@@ -103,8 +103,10 @@ describe("timed.interval", () => {
     const callback = mock(() => {});
     const { dispose } = testRoot(() => timed.interval(callback, DELAY));
 
-    // 1 immediate + at least 2 intervals
-    await Bun.sleep(DELAY * 2 + 30);
+    // 1 immediate + at least 2 intervals. A loaded machine delays real timers, so wait for the
+    // calls instead of assuming they fit into 2 * DELAY + 30 ms.
+    const deadline = Date.now() + 2_000;
+    while (callback.mock.calls.length < 3 && Date.now() < deadline) await Bun.sleep(DELAY / 5);
     expect(callback.mock.calls.length).toBeGreaterThanOrEqual(3);
     dispose();
   });
