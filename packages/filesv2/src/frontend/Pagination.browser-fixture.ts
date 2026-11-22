@@ -83,6 +83,26 @@ export function demoDirectory(after?: string): DirectoryView {
     })),
   };
 }
+/** One page with `count` files and no further page; `renamed` renames the first one, as a later poll would see it. */
+export function longDirectory(count: number, renamed = false): DirectoryView {
+  return {
+    base,
+    path: "",
+    next: null,
+    loadedPages: 1,
+    items: Array.from({ length: count }, (_, index) => {
+      const name = `${renamed && index === 0 ? "Umbenannt" : "Datei"} ${String(index + 1).padStart(2, "0")}.txt`;
+      return {
+        name,
+        path: index === 0 && renamed ? name : `Datei ${String(index + 1).padStart(2, "0")}.txt`,
+        directory: false,
+        size: 1200 + index,
+        modified: "2026-11-07T12:00:00Z",
+        actions: { read: true, write: false, move: false, share: false },
+      };
+    }),
+  };
+}
 export const fixture = (request: Request): Response => {
   const url = new URL(request.url);
   if (url.pathname === "/api/filesv2/bases") return Response.json({ items: [base], issues: [], editor: null });
@@ -92,8 +112,9 @@ export const fixture = (request: Request): Response => {
     return Response.json(page);
   }
   if (url.pathname === "/app/filesv2") {
-    const directory = demoDirectory();
-    if (Number(url.searchParams.get("pages")) > 1) {
+    const long = Number(url.searchParams.get("rows"));
+    const directory = long ? longDirectory(long) : demoDirectory();
+    if (!long && Number(url.searchParams.get("pages")) > 1) {
       directory.items.push(...demoDirectory("next").items);
       directory.next = null;
       directory.loadedPages = 2;
