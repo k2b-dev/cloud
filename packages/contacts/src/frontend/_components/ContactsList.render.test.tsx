@@ -56,6 +56,11 @@ test("renders shared selection, call, email, and favorite controls with accessib
   expect(checkbox).toContain('aria-label="Select Ada Lovelace"');
   expect(checkbox).toMatch(/\schecked(?:=""|="checked")?(?=[\s>])/);
   expect(html).not.toContain('class="h-4 w-4"');
+  // The row makes room for the checkbox with exactly one padding class: two arbitrary paddings on one element would
+  // be decided by Tailwind's sort order, not by the condition (the plain gutter would win and the box cover the avatar).
+  const row = html.match(/<a\b[^>]*data-contact-row[^>]*>/)?.[0] ?? html.match(/<a\b[^>]*class="contacts-list__row[^"]*"[^>]*>/)?.[0];
+  expect(row).toContain("pl-[calc(var(--k2b-gutter)+1.75rem)]");
+  expect(row).not.toMatch(/\bpl-\[var\(--k2b-gutter\)\]/);
   const links = html.match(/<a\b[^>]*>/g) ?? [];
   for (const [href, label] of [
     ["tel:+442079460958", "Call Ada Lovelace"],

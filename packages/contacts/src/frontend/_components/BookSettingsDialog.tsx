@@ -50,7 +50,9 @@ function BookSettingsDialog(props: {
     <Show
       when={settings.data()}
       fallback={
-        <div class={`paper relative ${settingsDialogFrameClass} rounded-[var(--ui-radius-frame)] [box-shadow:var(--ui-shadow-float)]`}>
+        <div
+          class={`paper relative ${settingsDialogFrameClass} rounded-[var(--k2b-radius-overlay)] [box-shadow:var(--k2b-shadow-overlay-lg)]`}
+        >
           <IconButton type="button" class="absolute right-4 top-4 z-10" label={t().closeSettings} onClick={() => props.close()}>
             <i class="ti ti-x" aria-hidden="true" />
           </IconButton>

@@ -111,7 +111,7 @@ const IdentitySection = (props: IdentitySectionProps) => {
           >
             {(parent) => (
               <div class="flex flex-wrap items-center gap-2">
-                <span class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                   <i class="ti ti-corner-down-right text-[10px]" />
                   {resolveContactName(parent(), t().unnamedContact)}
                 </span>
