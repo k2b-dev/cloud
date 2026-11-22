@@ -145,6 +145,7 @@ export {
   type NavigationOptions,
   type NavigationStatus,
 } from "./navigation-model";
+export { attachOverlayScrollbar, installOverlayScrollbars } from "./overlay-scrollbar";
 export type { PageTitleProps, PageTrailLink, PageTrailState } from "./PageTitle";
 export { followPageTrail, PAGE_TRAIL_EVENT, PageTitle, PageTrailProvider, readPageTrail, setPageTrail, usePageTrail } from "./PageTitle";
 export type {

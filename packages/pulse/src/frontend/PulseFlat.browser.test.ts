@@ -87,13 +87,13 @@ const many = (props: PulseWorkspaceProps): PulseWorkspaceProps => ({
 });
 
 // Required since 21.11. ~22:30Z: classic scrollbars that take layout space, at 390/768/1100/1440 px (desktop windows
-// without touch), with the detail column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Chromium
-// only: the flag belongs to Chromium's launch; the WebKit run keeps the checks above.
-const classic = process.env.TEST_BROWSER === "webkit" ? describe.skip : describe;
-classic("Pulse flat base page with classic scrollbars", () => {
+// without touch), with the detail column open at 1100 px. Hidden scrollbars let sideways-scrolling columns and wrapping heads go unnoticed. Both
+// engines: Chromium shows them once its launch drops --hide-scrollbars; WebKit draws the shared styled scrollbar, a
+// classic one, anyway.
+describe("Pulse flat base page with classic scrollbars", () => {
   let scrollbars: Browser;
   beforeAll(async () => {
-    scrollbars = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+    scrollbars = await launchBrowser(process.env.TEST_BROWSER === "webkit" ? {} : { ignoreDefaultArgs: ["--hide-scrollbars"] });
   }, 60_000);
   afterAll(async () => {
     await scrollbars?.close();

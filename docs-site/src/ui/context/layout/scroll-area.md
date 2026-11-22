@@ -96,13 +96,23 @@ takes the whole width, and with a mouse a thin thumb stands over the content
 at the end edge while the pointer is over the area or it scrolls. Drag the
 thumb to scroll. The content never moves when the area starts or stops
 scrolling. Touch screens keep their native overlay scrollbars, and forced
-colors mode keeps the system ones. The option applies to vertical areas only.
+colors mode keeps the system ones. Keyboard scrolling, scrolling a focused
+element into view, and what a screen reader gets stay the browser's; the thumb
+is hidden from assistive technology. The option applies to vertical areas only.
 
 ```tsx
 <ScrollArea scrollbar="overlay">
   <ConversationRows />
 </ScrollArea>
 ```
+
+The flat workspace columns use the same overlay by default: `AppWorkspace.Main`
+without panes, every `AppWorkspace.MainPane` that is not a navigation surface,
+`AppWorkspace.SidebarBody`, and `DetailPanel.Body`. Their lines and fills reach
+the column edge in Chromium and Safari alike, and nothing shifts when they
+start or stop to scroll. The sidebar keeps its 0.5 rem end inset as padding.
+Applications add nothing for this; the workspace attaches the thumb on the
+first hover, scroll, or focus.
 
 ## Scrollbars
 

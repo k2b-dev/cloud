@@ -26,6 +26,7 @@ import {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 import { readAppWorkspaceWidth, resolveAppWorkspaceWidth } from "./app-workspace-width";
+import { installOverlayScrollbars } from "./overlay-scrollbar";
 import { installScrollFades, scrollFadeEdges } from "./scroll-fade";
 import { followSidebarScroll } from "./sidebar-scroll-memory";
 
@@ -497,6 +498,8 @@ const sidebarShown = (root: HTMLElement, sidebar: HTMLElement) =>
 
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
+  // The columns' flat scrollbar: a thumb of their own on first hover, scroll or focus (overlay-scrollbar.ts).
+  const stopOverlayScrollbars = installOverlayScrollbars(eventRoot);
   // A document has no owner document; an element root listens on its own.
   const ownerDocument = eventRoot.ownerDocument ?? document;
   const ownerWindow = ownerDocument.defaultView ?? window;
@@ -2293,6 +2296,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());
     stopScrollFades();
+    stopOverlayScrollbars();
     stopSidebarScroll();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);

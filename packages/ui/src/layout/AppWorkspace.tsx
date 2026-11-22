@@ -913,6 +913,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
         data-width={props.width === "content" || props.width === "reading" ? props.width : undefined}
         data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
         data-scroll={props.scroll === false ? "false" : undefined}
+        data-scrollbar={!hasPanes() && props.scroll !== false ? "overlay" : undefined}
         aria-busy={props["aria-busy"]}
         {...scrollAttrs(props.scrollPreserveKey)}
       >
@@ -985,6 +986,9 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     data-workspace-resizable={resizable() ? "true" : "false"}
                     data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
                     data-scroll={!levelsMode() && pane.props.scroll === false ? "false" : undefined}
+                    data-scrollbar={
+                      !levelsMode() && pane.props.scroll !== false && pane.props.surface !== "navigation" ? "overlay" : undefined
+                    }
                     data-scroll-fade-mode={
                       !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
                     }
@@ -1498,6 +1502,7 @@ const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
         ref={body}
         class={`k2b-app-workspace__sidebar-body ${props.class ?? ""}`}
         data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
+        data-scrollbar="overlay"
         {...scrollAttrs(props.scrollPreserveKey)}
         {...modeAttrs(props.sidebarMode)}
       >

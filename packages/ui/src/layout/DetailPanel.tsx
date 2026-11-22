@@ -228,6 +228,7 @@ const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => {
       ref={body}
       class={classNames("k2b-detail-panel__body", props.class)}
       data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
+      data-scrollbar="overlay"
       data-scroll-preserve={props.scrollPreserveKey}
     >
       {props.children}

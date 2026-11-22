@@ -3842,25 +3842,15 @@ html {
        reserves nothing until content overflows. Chromium draws the same empty
        track either way, so a ScrollArea is as wide in Safari as in Chrome and
        never narrows when it starts to scroll. Where it has end padding, its
-       owner takes the track from it (see the ScrollArea guide). Layout regions
-       that often do not scroll, such as Main and MainPane, keep their gutter
-       and draw no empty track. */
+       owner takes the track from it (see the ScrollArea guide). The flat
+       columns (Main, MainPane, sidebar, detail body) draw an overlay thumb
+       instead and reserve no track at all (below). */
     .k2b-ui .k2b-scroll-area[data-orientation="vertical"],
-    .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
-    .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,
     .k2b-ui .k2b-virtual-feed__viewport,
     /* Match the SSR rule's specificity too: its hidden overflow must not
        remove this track until hydration and narrow every row by 0.5rem. */
     .k2b-ui .k2b-virtual-feed[data-server] > .k2b-virtual-feed__viewport {
-      overflow-y: scroll;
-    }
-
-    /* The detail's 56 px bar keeps the body's track without scrolling, so
-       its trailing controls end on the body's trailing edge. The first
-       section below it keeps the full width, so its line runs edge to edge. */
-    .k2b-ui .k2b-detail-panel__header-main {
-      overflow-x: hidden;
       overflow-y: scroll;
     }
 
@@ -3872,37 +3862,38 @@ html {
   }
 }
 
-/* ScrollArea scrollbar="overlay" (Cloud flach, K2): no scroll track. The content takes the scrollport's whole width, so
-   row lines and fills reach the area's edge also where the track was, and nothing narrows when content starts to
-   scroll. With a mouse a thin thumb stands over the content at the end edge, visible while the pointer is over the area
-   or it scrolls. Touch screens keep their native overlay scrollbar, which takes no room; forced colors keep the system
-   one. The overlay line is sticky and zero-high, so it takes no room either. */
-.k2b-ui .k2b-scroll-area__overlay {
+/* The overlay scrollbar (Cloud flach, K2; overlay-scrollbar.ts): a scroller marked data-scrollbar="overlay" reserves
+   no track. Its content takes the whole width, so row lines and fills reach the area's edge, and nothing shifts when it
+   starts or stops to overflow, in Chromium and WebKit alike. With a mouse a thin thumb of its own stands over the
+   content at the end edge, visible while the pointer is over the area or it scrolls. Touch screens keep their native
+   overlay scrollbar, which takes no room; forced colors keep the system one. The thumb's line is sticky and zero-high,
+   so it takes no room either. The selector names the attribute twice to stay above every track rule of a scroller. */
+.k2b-ui .k2b-overlay-scrollbar {
   display: none;
 }
 
 @media (pointer: fine) and (forced-colors: none) {
-  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"] {
-    overflow-y: auto;
+  .k2b-ui [data-scrollbar="overlay"][data-scrollbar="overlay"] {
     scrollbar-gutter: auto;
     scrollbar-width: none;
   }
 
-  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"]::-webkit-scrollbar {
+  .k2b-ui [data-scrollbar="overlay"][data-scrollbar="overlay"]::-webkit-scrollbar {
     width: 0;
     height: 0;
   }
 
-  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"] > .k2b-scroll-area__overlay[data-overflow="true"] {
+  .k2b-ui [data-scrollbar="overlay"] > .k2b-overlay-scrollbar[data-overflow="true"] {
     position: sticky;
     z-index: 4;
     top: 0;
     display: block;
     height: 0;
+    margin: 0;
     pointer-events: none;
   }
 
-  .k2b-ui .k2b-scroll-area__thumb {
+  .k2b-ui .k2b-overlay-scrollbar__thumb {
     position: absolute;
     top: var(--k2b-scroll-thumb-offset, 0px);
     right: 0;
@@ -3914,7 +3905,7 @@ html {
   }
 
   /* The thumb is 4 px at rest and 6 px under the pointer or while dragged, like the shared scrollbar. */
-  .k2b-ui .k2b-scroll-area__thumb::before {
+  .k2b-ui .k2b-overlay-scrollbar__thumb::before {
     position: absolute;
     inset: 0.125rem 0.125rem 0.125rem auto;
     width: 0.25rem;
@@ -3923,18 +3914,30 @@ html {
     content: "";
   }
 
-  .k2b-ui .k2b-scroll-area__thumb:is(:hover, [data-dragging])::before {
+  .k2b-ui .k2b-overlay-scrollbar__thumb:is(:hover, [data-dragging])::before {
     width: 0.375rem;
     background: var(--k2b-scrollbar-thumb-hover);
   }
 
-  .k2b-ui .k2b-scroll-area[data-scrollbar="overlay"]:is(:hover, :focus-visible, [data-scrolling="true"]) > .k2b-scroll-area__overlay > .k2b-scroll-area__thumb,
-  .k2b-ui .k2b-scroll-area__thumb[data-dragging] {
+  .k2b-ui [data-scrollbar="overlay"]:is(:hover, :focus-visible, [data-scrolling="true"]) > .k2b-overlay-scrollbar > .k2b-overlay-scrollbar__thumb,
+  .k2b-ui .k2b-overlay-scrollbar__thumb[data-dragging] {
     opacity: 1;
   }
 
+  /* The desktop sidebar's body used its always-present 0.5 rem track as its end inset; without a track the inset
+     stays as padding, so its rows keep their place. A sheet's body had no such track. */
+  .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body[data-scrollbar="overlay"] {
+    padding-inline-end: 0.5rem;
+  }
+
+  /* The detail header reserved the body's track so its end controls ended on the body's end edge; the body has no
+     track now, so neither has the header. */
+  .k2b-ui .k2b-detail-panel__header-main {
+    scrollbar-gutter: auto;
+  }
+
   @media (prefers-reduced-motion: no-preference) {
-    .k2b-ui .k2b-scroll-area__thumb {
+    .k2b-ui .k2b-overlay-scrollbar__thumb {
       transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
     }
   }
