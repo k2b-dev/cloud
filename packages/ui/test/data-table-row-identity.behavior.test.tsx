@@ -107,4 +107,33 @@ describe("@k2b/ui DataTable row identity", () => {
     expect(bodyRows()).toEqual([gamma!, alpha!]);
     expect(gamma!.textContent).toBe("Gamma 2");
   });
+  test("loading more rows reads the rows prop a fixed number of times, not once per row", () => {
+    const dom = createDomTestHarness();
+    const { DataTable } = modules!;
+    const many = (count: number): Row[] =>
+      Array.from({ length: count }, (_, index) => ({ id: `r${index}`, name: `Row ${index}`, count: index, team: "Nord" }));
+    const [shown, setShown] = createSignal(10);
+    const all = many(200);
+    let reads = 0;
+    // Like the SQL console's "Load more": the prop is a fresh slice on every read.
+    const visible = () => {
+      reads += 1;
+      return all.slice(0, shown());
+    };
+    const dispose = render(
+      () => <DataTable<Row> rows={visible()} columns={[{ id: "name", header: "Name", value: "name" }]} getRowId={(row) => row.id} />,
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+      cleanup = () => {};
+    };
+
+    reads = 0;
+    setShown(200);
+    expect(dom.root.querySelectorAll("tr.k2b-data-table__row")).toHaveLength(200);
+    // Each row used to read the prop itself (O(rows²) with a slice); the table now reads it once per change.
+    expect(reads).toBeLessThan(10);
+  });
 });

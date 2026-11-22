@@ -702,14 +702,18 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
    * Rows keyed by `getRowId` where the table has it: a row whose id stays keeps its element, its focus and its open
    * details when the rows arrive as new objects, and its cells follow the current object in place.
    */
-  const renderRows = (rows: () => readonly T[]) => (
-    <For each={rows().map(rowKey)}>
-      {(_, index) => {
-        const row = createMemo<T>((previous) => rows()[index()] ?? previous, rows()[index()]!);
-        return renderRow(row, () => index() === rows().length - 1);
-      }}
-    </For>
-  );
+  const renderRows = (rows: () => readonly T[]) => {
+    // Read the rows once per change: a caller may pass `rows={x().slice(…)}`, and every row reads the list.
+    const list = createMemo(rows);
+    return (
+      <For each={list().map(rowKey)}>
+        {(_, index) => {
+          const row = createMemo<T>((previous) => list()[index()] ?? previous, list()[index()]!);
+          return renderRow(row, () => index() === list().length - 1);
+        }}
+      </For>
+    );
+  };
 
   onMount(() => {
     // Measured once before the overlay hides it, so a table that overflows sideways keeps the height of its first frame.
