@@ -2357,7 +2357,8 @@ html {
     > .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region])
     + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     /* K13: centred on the boundary's hairline, which lies at the end of the space. */
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
+    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
+    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
   }
 
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
@@ -2370,7 +2371,8 @@ html {
     inset: auto;
     height: auto;
     flex: 0 0 var(--k2b-workspace-resize-hit-size);
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
+    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
+    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
     transform: none;
   }
 
