@@ -57,7 +57,7 @@ function TokenDialog(props: { token: string }) {
   return (
     <div class="flex flex-col gap-4">
       <NoticeCard tone="warning">{t().copyOnce}</NoticeCard>
-      <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="rounded-lg border not-dark:border-zinc-200 not-dark:bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
         <code class="block break-all font-mono text-xs text-primary">{props.token}</code>
       </div>
       <div class="flex justify-end">
@@ -246,7 +246,7 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  class="shrink-0 text-red-600 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/api-key:opacity-100 sm:group-focus-within/api-key:opacity-100 dark:text-red-400"
+                  class="shrink-0 not-dark:text-red-600 max-sm:opacity-100 transition-opacity sm:opacity-0 sm:group-hover/api-key:opacity-100 sm:group-focus-within/api-key:opacity-100 dark:text-red-400"
                   onClick={() => revoke(key)}
                 >
                   <i class="ti ti-trash" />

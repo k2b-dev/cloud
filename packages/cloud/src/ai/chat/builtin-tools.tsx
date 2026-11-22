@@ -45,7 +45,7 @@ const useMessages = () => {
 
 function DetailSurface(props: { children: JSX.Element }) {
   return (
-    <div class="w-full min-w-0 rounded-md bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+    <div class="w-full min-w-0 rounded-md not-dark:bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
       {props.children}
     </div>
   );
@@ -400,10 +400,10 @@ function LocalBashView(props: { block: ToolBlock }) {
   return (
     <CompletedActivity block={props.block} label="Local Bash">
       <div class="flex w-full min-w-0 flex-col gap-2">
-        <pre class="max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 font-mono text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <pre class="max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md not-dark:bg-zinc-100 p-2 font-mono text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {text(args().command)}
         </pre>
-        <pre class="max-h-64 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 font-mono text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <pre class="max-h-64 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md not-dark:bg-zinc-100 p-2 font-mono text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {formatToolDetailText(props.block.name, props.block.result)}
         </pre>
       </div>

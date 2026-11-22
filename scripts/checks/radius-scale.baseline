@@ -68,7 +68,7 @@ packages/cloud/src/shared/markdown/extensions/code.ts | class | rounded-md
 packages/cloud/src/shared/markdown/extensions/code.ts | class | rounded-md
 packages/cloud/src/ssr/AppAccessDenied.tsx | class | rounded-xl
 packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-2xl
-packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-[0.95rem]
+packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | max-sm:rounded-[0.95rem]
 packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-md
 packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | sm:rounded-[1.25rem]
 packages/cloud/src/styles/blocks.css | css | 0.3125rem
