@@ -634,9 +634,16 @@ describe("Files folder states", () => {
       expect(
         (await tab.evaluate(layoutProblems, { root: ".k2b-app-workspace__detail", ignore: "[data-layout-check='skip']" })).problems,
       ).toEqual([]);
+      // The head keeps its controls, Details among them, while the drawer is open and after it is parked.
+      const head = async () =>
+        (await tab.evaluate(layoutProblems, { root: ".k2b-app-workspace__head", ignore: "[data-layout-check='skip']" })).problems;
+      expect(await head()).toEqual([]);
       await tab.keyboard.press("Escape");
       await settled(tab);
       expect(await detail.getAttribute("data-workspace-detail-drawer")).not.toBe("open");
+      expect(await head()).toEqual([]);
+      // Escape parks the drawer and keeps the chosen file.
+      expect(await row(tab, "Beleg-2026-002").getAttribute("aria-selected")).toBe("true");
       // Focus is back in the column it came from, neither lost on the page nor left in the parked drawer.
       expect(
         await tab.evaluate(

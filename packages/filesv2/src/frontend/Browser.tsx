@@ -7,6 +7,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
+  appWorkspaceDetailElementId,
   Breadcrumbs,
   Button,
   ButtonLink,
@@ -1652,6 +1653,8 @@ export default function Browser(props: {
   );
   // Tiles select on click through the grid itself; while selecting, that click toggles instead of replacing.
   // Ranges, toggles and select-all exist only with checkboxes; otherwise clicks and keys move the single highlight.
+  const detailDrawerOpen = () =>
+    document.getElementById(appWorkspaceDetailElementId("filesv2-inspector"))?.getAttribute("data-workspace-detail-drawer") === "open";
   const interactiveSelection = {
     ...selection,
     select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) => {
@@ -1660,6 +1663,9 @@ export default function Browser(props: {
       return selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id);
     },
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
+      // On a tablet the details are a drawer (768–1023 px): Escape parks it and keeps the selection, so "Details" in
+      // the head brings it back. Clearing the selection here would close the details and take that way away.
+      if (event.key === "Escape" && detailDrawerOpen()) return false;
       // Space shows the highlighted file large, as Quick Look does; Space in the Lightbox closes it again.
       if (event.key === " " && !selecting() && !event.ctrlKey && !event.metaKey) {
         const entry = entries().find((row) => row.path === id);
