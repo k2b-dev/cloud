@@ -96,14 +96,20 @@ a child's border on the same edge). Focus rings and outlines do not count. The
 > nicht mehr verbunden sind in einer Tabelle etc.“ (Valentin, 21 November 2026:
 > a scrollbar suddenly takes room, and the lines of a table no longer meet.)
 
-- **Every scroll area keeps its scrollbar's room** (`scrollbar-gutter:
-  stable`). When a scrollbar appears or goes, nothing moves.
+- **A flat scroller draws an overlay thumb, not a track.** `Main`, a content
+  `MainPane`, `DetailPanel.Body`, the sidebar body, and `ScrollArea
+  scrollbar="overlay"` reserve no room: their rows and lines reach the column
+  edge, and nothing moves when a scrollbar appears or goes, in Chromium and
+  Safari. Touch screens keep their native overlay scrollbar; forced colors
+  keep the system one and reserve its room. Other scroll areas keep their
+  scrollbar's room (`scrollbar-gutter: stable` or an always-present track).
 - **A table's head and its rows lie in the same scroll area**, the head sticky.
   Where two containers cannot be avoided, they take their column widths from
   exactly one source. Never two containers whose widths differ by a scrollbar.
   `DataTable` does this.
-- **Lines inside a scroll area end at its content edge**, before the reserved
-  gutter, at the same place with and without a scrollbar. Lines outside it (the
+- **Lines inside a scroll area end at its content edge**: the column edge in a
+  flat scroller, before the reserved gutter elsewhere, at the same place with
+  and without a scrollbar. Lines outside it (the
   56 px head, the status row) run to the column boundary. Vertical lines (table
   columns, the shell's column boundary) keep their x with and without a
   scrollbar.
@@ -117,7 +123,34 @@ width with `::-webkit-scrollbar` where an element hides its own), each case once
 with a few rows and once
 with many, and compare the head cells' positions before and after the
 scrollbar appears. `scrollbar-lines.browser.test.ts` holds the red and the
-green template.
+green template; `overlay-scrollbar.browser.test.ts` measures the flat
+scrollers in Chromium and WebKit.
+
+### Bands: who holds the text edge
+
+A column holds no text edge of its own. Its content is a stack of **bands**:
+each band reaches from edge to edge of its column, owns the line below or
+above it, and holds its own text edge (`var(--k2b-gutter)`, 20 px, 16 px below
+768 px) with its own padding (`.psec`, `.alert`, `.row`, `td` in the mockup).
+No wrapper between the column and a band has inline padding or margin.
+
+- `@k2b/ui` blocks that are bands say so with `data-k2b-band`: `Section`,
+  `DetailPanel.Group` and `Summary`, and `FactGroup` (`"topic"`: 16 px to their
+  lines, 8 px between heading and content), `NoticeCard` and `NoticeRow`
+  (`"cell"`: a tint from edge to edge, the sign on the text edge), and
+  `DataTable` (its first and last cell stand on the text edge).
+- `DetailPanel.Body` and the body of a page `Section` add nothing to a band.
+  Content without the attribute, such as a sentence of guidance or a button,
+  keeps the text edge there, so it stays readable. The host decides by the
+  attribute, never by class names.
+- An app's own edge-to-edge content (a page, a preview, an editor, a wrapper
+  around a notice) puts `data-k2b-band` on its outermost element and then holds
+  its own text edge with `var(--k2b-gutter)`. A wrapper without it keeps
+  everything inside it on the text edge, so a notice in it stays inset.
+
+**Measure:** `layoutProblems({ flat: true })` reports lines and fills that stop
+short of their column edge (`short-edge`); `flat-primitives.browser.test.ts`
+holds the mockup's numbers for every band.
 
 ### Decisions of 21 November 2026
 
