@@ -1,0 +1,172 @@
+name: Blacksmith Testbox
+on:
+  workflow_dispatch:
+    inputs:
+      testbox_id:
+        type: string
+        description: "Testbox session ID"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+  TEST_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+jobs:
+  integration:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    services:
+      clickhouse:
+        image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
+        env:
+          CLICKHOUSE_USER: cloud_ci
+          CLICKHOUSE_PASSWORD: cloud_ci
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+        ports: ["8123:8123"]
+        options: >-
+          --health-cmd "wget -q -O - http://127.0.0.1:8123/ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      postgres:
+        image: &postgres-17-image ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: cloud
+          POSTGRES_PASSWORD: cloud
+          POSTGRES_DB: cloud_ci_test
+          POSTGRES_INITDB_ARGS: &postgres-diagnostics >-
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+            -c shared_preload_libraries=auto_explain
+            -c "log_line_prefix=%m [%p] %q%d %a: "
+            -c log_min_duration_statement=250ms
+            -c log_parameter_max_length=256
+            -c auto_explain.log_min_duration=250ms
+            -c auto_explain.log_analyze=off
+            -c auto_explain.log_nested_statements=on
+            -c auto_explain.log_parameter_max_length=256
+            -c client_connection_check_interval=5s
+        ports: ["5432:5432"]
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
+          --health-cmd "pg_isready -U cloud -d cloud_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+          --log-opt max-size=4m --log-opt max-file=2
+      valkey:
+        image: ghcr.io/k2b-dev/mirror/valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      rsql:
+        image: ghcr.io/k2b-dev/rsql:1.1.0
+        env:
+          RSQL_LISTEN: 0.0.0.0:8080
+          RSQL_API_TOKEN: cloud-code-test-token
+        ports: ["8081:8080"]
+        options: >-
+          --health-cmd "wget -q -O - http://127.0.0.1:8080/healthz"
+          --health-interval 2s --health-timeout 2s --health-retries 30
+      gotenberg:
+        image: &gotenberg-image ghcr.io/k2b-dev/mirror/gotenberg/gotenberg:8.36.0@sha256:87c16b9f364279d321bc9772d31fa58aa6abe036423c270698bd636c3a8e9466
+        ports: ["3001:3000"]
+    env:
+      CLOUD_TEST_CLICKHOUSE_URL: http://cloud_ci:cloud_ci@127.0.0.1:8123
+      CLOUD_TEST_JMAP_URL: http://admin:cloud_jmap_test@127.0.0.1:8080
+      CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_ci_test
+      CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+      CLOUD_TEST_RSQL_URL: http://127.0.0.1:8081
+      RSQL_API_TOKEN: cloud-code-test-token
+      CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+      CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
+      CLOUD_TEST_S3_BUCKET: cloud-test
+      CLOUD_TEST_S3_ACCESS_KEY_ID: GK0123456789abcdef01234567
+      CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      CLOUD_TEST_S3_REGION: garage
+    steps:
+      - name: Begin Testbox
+        uses: useblacksmith/begin-testbox@d5b883fecd6a7581c3f7467543b819abf8b80bbf # v2
+        with:
+          testbox_id: ${{ inputs.testbox_id }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Start NATS JetStream, Stalwart and install poppler
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0 stalwartlabs/stalwart:v1.0.0
+          docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker run --detach --name ci-stalwart --publish 127.0.0.1:8080:8080 --env STALWART_RECOVERY_ADMIN=admin:cloud_jmap_test stalwartlabs/stalwart:v1.0.0
+          docker compose -f compose.test-s3.yml up -d --wait
+          "$GITHUB_WORKSPACE/.github/poppler.sh" install
+          curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
+      - uses: ./.github/actions/install
+      - name: Build @k2b/ui, which the CI setup job otherwise hands over as an artifact
+        run: bun run --cwd packages/ui build
+      - name: Install the Playwright browser used by the Assistant code host
+        run: ./packages/assistant/node_modules/.bin/playwright install chromium
+      - name: Start Postgres storage and host pressure sampler
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec 'test "$(stat -f -c %T "$PGDATA")" = tmpfs'
+          docker exec "$POSTGRES_CONTAINER" psql -U cloud -d cloud_ci_test \
+            -c 'SHOW fsync' -c 'SHOW synchronous_commit' -c 'SHOW full_page_writes'
+          docker exec -d "$POSTGRES_CONTAINER" sh -ec '
+            exec > /tmp/cloud-pg-storage-sampler.log 2>&1
+            echo "$$" > /tmp/cloud-pg-storage-sampler.pid
+            storage_sleep=
+            stop_sampler() {
+              if [ -n "$storage_sleep" ]; then
+                kill "$storage_sleep" 2>/dev/null || true
+                wait "$storage_sleep" || true
+              fi
+              exit 0
+            }
+            trap stop_sampler TERM INT
+            while true; do
+              date -u +%H:%M:%S
+              df -k "$PGDATA"
+              for resource in cpu memory io; do
+                printf "%s " "$resource"; tr "\n" " " < "/proc/pressure/$resource" 2>/dev/null || printf "unavailable"
+                echo
+              done
+              grep -E "^(MemAvailable|SwapFree):" /proc/meminfo || true
+              sleep 30 &
+              storage_sleep=$!
+              wait "$storage_sleep"
+            done
+          '
+      - name: Wait for the Stalwart JMAP session
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 90))
+          status=000
+          while (( SECONDS < deadline )); do
+            remaining=$((deadline - SECONDS))
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time "$remaining" http://127.0.0.1:8080/jmap/session) || status=000
+            if [[ "$status" == 200 ]]; then exit 0; fi
+            sleep 1
+          done
+          echo "Stalwart JMAP session did not return 200 within 90 s (last HTTP status: $status)" >&2
+          docker logs ci-stalwart || true
+          exit 1
+      - name: Run Testbox
+        uses: useblacksmith/run-testbox@9b976c32aa3bcbffb348889673585a5deee1b2f3 # v2
+        if: always()
+        env:
+          CLOUD_TEST_CLICKHOUSE_URL: http://cloud_ci:cloud_ci@127.0.0.1:8123
+          CLOUD_TEST_JMAP_URL: http://admin:cloud_jmap_test@127.0.0.1:8080
+          CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_ci_test
+          CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
+          CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+          CLOUD_TEST_RSQL_URL: http://127.0.0.1:8081
+          RSQL_API_TOKEN: cloud-code-test-token
+          CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+          CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
+          CLOUD_TEST_S3_BUCKET: cloud-test
+          CLOUD_TEST_S3_ACCESS_KEY_ID: GK0123456789abcdef01234567
+          CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          CLOUD_TEST_S3_REGION: garage
