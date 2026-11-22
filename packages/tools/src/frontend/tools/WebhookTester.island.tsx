@@ -424,22 +424,24 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     }
   };
 
-  // A primary list never scrolls sideways (K7, K15): no column has a fixed minimum width. The long texts (URL, target,
-  // body) take the room that is left and end with an ellipsis; side columns wait in the row details when it is narrow.
+  // A primary list never scrolls sideways (K7, K15): no column has a fixed minimum width. One long text per table (URL,
+  // target) takes the room that is left (`w-full! max-w-0!`: the table's own cell cap outranks a plain utility);
+  // content type and body end at a fixed width inside their cell; all three end with an ellipsis. Side columns wait
+  // in the row details when the table is narrow.
   const endpointColumns = (): DataTableColumn<Endpoint>[] => [
     { id: "name", header: t().colName, value: "name" },
-    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "w-full max-w-0", priority: 2 },
-    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24", priority: 3 },
-    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()) },
+    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "w-full! max-w-0!", priority: 2 },
+    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24" },
+    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()), priority: 3 },
     { id: "actions", header: "", value: (row) => row.id, class: "w-14" },
   ];
 
   const logColumns = (): DataTableColumn<WebhookLog>[] => [
-    { id: "method", header: t().colMethod, value: "method", class: "w-20" },
-    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "w-1/2 max-w-0" },
+    { id: "method", header: t().colMethod, value: "method", class: "w-20", priority: 2 },
+    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "w-full! max-w-0!" },
     { id: "status", header: t().colStatus, value: (row) => row.responseStatus ?? row.error ?? "logged", class: "w-24" },
     { id: "contentType", header: t().colContentType, value: "requestContentType", priority: 3 },
-    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), class: "w-1/2 max-w-0", priority: 2 },
+    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), priority: 2 },
     { id: "created", header: t().colTime, value: (row) => formatDate(row.createdAt, locale()) },
   ];
 
@@ -478,10 +480,11 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
         <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(ctx.row.responseStatus, ctx.row.error)}`}>{label}</span>
       );
     }
-    if (ctx.col.id === "target" || ctx.col.id === "body") {
+    if (ctx.col.id === "target" || ctx.col.id === "body" || ctx.col.id === "contentType") {
       const text = String(ctx.value ?? "");
+      const width = ctx.col.id === "contentType" ? "max-w-24" : ctx.col.id === "body" ? "max-w-32" : "";
       return (
-        <span class="block truncate" title={text}>
+        <span class={`block truncate ${width}`} title={text}>
           {text}
         </span>
       );
