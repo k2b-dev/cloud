@@ -67,7 +67,8 @@ for (const state of states) {
       .transform(html);
     expect(descendants).toEqual(["fill", "header icon"]);
     expect(html).toContain("ti ti-notebook");
-    if (state.status === "ok" || state.status === "forbidden") expect(html).toContain('class="k2b-placeholder__icon k2b-icon-tile"');
+    // K10: an empty or unavailable tile shows the placeholder's round sign, not the square chip.
+    if (state.status === "ok" || state.status === "forbidden") expect(html).toContain('class="k2b-placeholder__icon" data-sign=""');
     if (state.status === "loading" || state.status === "error" || state.status === "timeout")
       expect(html).toContain('class="k2b-placeholder__icon"');
   });

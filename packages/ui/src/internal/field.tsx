@@ -73,12 +73,13 @@ export function Field(props: FieldLayoutProps): JSX.Element {
           </div>
         </Show>
       </Show>
+      {props.children}
+      {/* K5: help and error stand under the control, so fields in a row keep their controls on one line. */}
       <Show when={props.description}>
         <p class="k2b-field__description" id={props.meta.descriptionId}>
           {props.description}
         </p>
       </Show>
-      {props.children}
       <Show when={error()}>
         <p class="k2b-field__error" id={props.meta.errorId} role="alert" aria-live="polite">
           {error()}

@@ -32,7 +32,6 @@ packages/ui/src/styles/index.css | css | .k2b-ui .k2b-disclosure border
 packages/ui/src/styles/index.css | css | .k2b-ui .k2b-discussion-thread border-inline-start
 packages/ui/src/styles/index.css | css | .k2b-ui .k2b-discussion-thread[data-writing] border-inline-start
 packages/ui/src/styles/index.css | css | .k2b-ui .k2b-log-table border
-packages/ui/src/styles/index.css | css | .k2b-ui .k2b-section[data-frame="line"] border
 packages/ui/src/styles/index.css | css | .k2b-ui .k2b-settings-save-bar border
 packages/ui/src/styles/layout-parity.css | css | .k2b-ui .k2b-settings border
 packages/ui/src/styles/surfaces-widgets-parity.css | css | .k2b-ui .k2b-dashboard-panel border

@@ -188,7 +188,7 @@ describe("AppWorkspace resize controller behaviour", () => {
       flushFrames();
       expect(locked.root.style.getPropertyValue(variable)).toBe("300px");
       dispatchKey(enabled.handle, "ArrowRight");
-      expect(enabled.root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("184px");
+      expect(enabled.root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("192px");
       expect(locked.root.style.getPropertyValue(variable)).toBe("300px");
     } finally {
       dispose();
@@ -248,7 +248,7 @@ describe("AppWorkspace resize controller behaviour", () => {
         expect(root.style.getPropertyValue(variable)).toBe("");
         expect(handle.getAttribute("aria-valuenow")).toBe("354");
         dispatchKey(handle, "ArrowRight");
-        expect(root.style.getPropertyValue(variable)).toBe("362px");
+        expect(root.style.getPropertyValue(variable)).toBe("370px");
         handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
         expect(root.style.getPropertyValue(variable)).toBe("");
         expect(handle.getAttribute("aria-valuenow")).toBe("354");
@@ -372,8 +372,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     const dispose = installAppWorkspaceController({ root });
     try {
       dispatchKey(handle, "End");
-      // 1400 px from Content's start to the workspace's end, less the 8 px inset and Main's 760 px.
-      expect(handle.getAttribute("aria-valuemax")).toBe("632");
+      // 1400 px from Content's start to the workspace's end, less Main's 760 px; the flat column has no inset (K5a).
+      expect(handle.getAttribute("aria-valuemax")).toBe("640");
     } finally {
       dispose();
     }
@@ -437,11 +437,11 @@ describe("AppWorkspace resize controller behaviour", () => {
     const dispose = installAppWorkspaceController({ root });
 
     dispatchKey(handle, "ArrowUp");
-    expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("312px");
+    expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("304px");
 
     handle.dataset.workspaceResizeEdge = "start";
     dispatchKey(handle, "ArrowUp");
-    expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("328px");
+    expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("336px");
     dispose();
   });
 
@@ -463,8 +463,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     const dispose = installAppWorkspaceController({ root, writeState: (state) => written.push(state) });
 
     dispatchKey(handle, "ArrowLeft");
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("424px");
-    expect(written.at(-1)).toMatchObject({ detailWidths: { record: 424 } });
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("432px");
+    expect(written.at(-1)).toMatchObject({ detailWidths: { record: 432 } });
     dispose();
   });
 
@@ -911,7 +911,7 @@ const detailWorkspace = (
   const handle = document.createElement("button");
   handle.dataset.appWorkspaceResize = "detail";
   handle.dataset.workspacePanelId = "record";
-  handle.dataset.workspaceDefaultSize = "416";
+  handle.dataset.workspaceDefaultSize = String(APP_WORKSPACE_DETAIL_DEFAULT);
   handle.setAttribute("aria-controls", aside.id);
   content.append(main, handle, aside);
   root.append(content);
@@ -1773,9 +1773,9 @@ describe("floating detail controller", () => {
         const sectionsWidth = Math.round(main.querySelector<HTMLElement>("#sections")!.getBoundingClientRect().width);
         const itemsWidth = Math.round(main.querySelector<HTMLElement>("#items")!.getBoundingClientRect().width);
         dispatchKey(handles[0]!, "ArrowLeft");
-        expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe(`${sectionsWidth - 8}px`);
+        expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe(`${sectionsWidth - 16}px`);
         expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe(`${itemsWidth}px`);
-        expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: sectionsWidth - 8, items: itemsWidth } })]);
+        expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: sectionsWidth - 16, items: itemsWidth } })]);
       } finally {
         dispose();
       }
@@ -1894,9 +1894,9 @@ describe("floating detail controller", () => {
       expect(written).toEqual([]);
       expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe("720px");
       dispatchKey(handle!, "ArrowLeft");
-      expect(sectionsWidth()).toBe(552);
+      expect(sectionsWidth()).toBe(544);
       expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe("");
-      expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: 552 } })]);
+      expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: 544 } })]);
     } finally {
       dispose();
     }
@@ -2121,7 +2121,7 @@ describe("floating detail controller", () => {
         expect(root.dataset.sidebarCollapsed).toBe("true");
         handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
         flushFrames();
-        expect(root.style.getPropertyValue(variable)).toBe("208px");
+        expect(root.style.getPropertyValue(variable)).toBe("calc(208px + var(--k2b-workspace-sidebar-wide, 0px))"); // K12: the start width, wider from 1920 px
         expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
         expect(handle.getAttribute("aria-valuenow")).toBe("208");
         expect(written.at(-1)).toEqual({ version: 2, detailWidths: { other: 420 } });
@@ -2230,7 +2230,8 @@ describe("floating detail controller", () => {
     flushFrames();
     expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("500px");
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("416px");
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("calc(380px + var(--k2b-workspace-detail-wide, 0px))"); // K9, K12: the start width, wider from 1920 px
+    // The fixture's measured box stays 416 px wide, and the value reads the box.
     expect(handle.getAttribute("aria-valuenow")).toBe("416");
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     dispose();
@@ -2261,7 +2262,7 @@ describe("floating detail controller", () => {
     });
     flushFrames();
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue(variable)).toBe(`${APP_WORKSPACE_DETAIL_DEFAULT}px`);
+    expect(root.style.getPropertyValue(variable)).toBe(`calc(${APP_WORKSPACE_DETAIL_DEFAULT}px + var(--k2b-workspace-detail-wide, 0px))`);
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     expect(written.at(-1)).not.toMatchObject({ detailWidths: { record: 500 } });
     dispose();
@@ -2494,9 +2495,11 @@ describe("floating detail layout changes", () => {
     expect(grabber.getAttribute("aria-pressed")).toBe("false");
   });
 
-  test("detail resize limits include the root column and reserve its end inset", () => {
+  test("detail resize limits include the root column and reserve the inset the stylesheet gives the column", () => {
     const { root, content, handle } = detailWorkspace();
     setRect(root, { width: 900, height: 700 });
+    // The flat shell's column has none; the limit follows the stylesheet's value, so it matches the first frame.
+    root.style.setProperty("--k2b-workspace-detail-inset", "8px");
     setRect(content, { width: 480, height: 700 });
     const second = document.createElement("aside");
     second.className = "k2b-app-workspace__detail";

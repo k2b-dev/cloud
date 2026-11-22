@@ -70,7 +70,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).not.toContain("data-icon");
     expect(html).toContain('<span class="k2b-sr-only">Warning: </span>');
     expect(html).toContain(
-      '<p class="k2b-notice-card__description">2 rows have no owner.</p><div class="k2b-notice-card__actions">Assign owners</div></div></article>',
+      '<p class="k2b-notice-card__description">2 rows have no owner.</p></div><div class="k2b-notice-card__actions">Assign owners</div></div></article>',
     );
     // The compact status line is still what an icon alone gives, and a notice without actions keeps its markup.
     const line = renderToString(() => createComponent(NoticeCard, { tone: "warning", icon: true, title: "x" }));
@@ -203,7 +203,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).toContain('data-elevated="true"');
     expect(link).toContain('data-interactive="true"');
     expect(link).toContain('aria-label="Projects"');
-    expect(rule).toContain("border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent)");
+    // K2-K4: a frame on a full page is a hairline with square corners; the island hooks carry no shadow (K3).
+    expect(rule).toContain("border: 1px solid var(--k2b-border)");
+    expect(rule).toContain("border-radius: var(--k2b-radius-flat)");
     expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
     expect(rule).toContain("background: var(--k2b-island-surface)");
     expect(rule).not.toContain("padding:");
@@ -521,13 +523,21 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(error).toContain("Try again.");
   });
 
-  test("leaves placeholder chip decoration to the shared icon tile", () => {
-    const iconDeclarations = [...parityCss.matchAll(/[^{}]*\.k2b-placeholder__icon[^{}]*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
+  // K10: the sign is round and never a framed chip: no border, and a fill only on the sign itself.
+  test("draws the placeholder's sign as one round disc without a border", () => {
+    const iconRules = [...parityCss.matchAll(/([^{}]*\.k2b-placeholder__icon[^{}]*)\{([^}]*)\}/g)].map((match) => ({
+      selector: match[1]!.trim(),
+      declarations: match[2] ?? "",
+    }));
 
-    expect(iconDeclarations.length).toBeGreaterThan(0);
-    for (const declarations of iconDeclarations) {
-      expect(declarations).not.toMatch(/(?:^|;)\s*(?:background|border(?:-[\w-]+)?):/);
+    expect(iconRules.length).toBeGreaterThan(0);
+    for (const { selector, declarations } of iconRules) {
+      expect(declarations, selector).not.toMatch(/(?:^|;)\s*border(?!-radius)(?:-[\w-]+)?:/);
+      if (/(?:^|;)\s*background:/.test(declarations)) expect(selector).toContain("[data-sign]");
     }
+    expect(iconRules.find((rule) => rule.selector.endsWith("\n.k2b-ui .k2b-placeholder__icon"))?.declarations).toContain(
+      "border-radius: var(--k2b-radius-round)",
+    );
   });
 
   test("lays an inline placeholder out as one row that starts where a sidebar row starts", () => {
@@ -889,8 +899,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 
   test("keeps the Cloud chrome that earlier ports dropped", () => {
-    // Every Paper is an island: it reads the one island hook, which each layer sets (layers and shadows).
-    // A key-figure tile and a dashboard panel are islands of their own and read the same hook.
+    // K3: every island reads the one island hook, which the flat tokens leave without a shadow.
     for (const selector of [".k2b-paper", ".k2b-stat-cell", ".k2b-dashboard-panel"]) {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
@@ -995,7 +1004,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 });
 
-test("empty, no results, and no access remain quiet, with chips only on stacked placeholders", () => {
+test("empty, no results, and no access remain quiet, with a round sign only on stacked placeholders", () => {
   for (const [state, icon] of [
     ["empty", undefined],
     ["no-results", "ti ti-search-off"],
@@ -1005,9 +1014,10 @@ test("empty, no results, and no access remain quiet, with chips only on stacked 
     expect(html).toContain(`data-state="${state}"`);
     expect(html).not.toContain("role=");
     expect(html).not.toContain("aria-live");
+    expect(html).not.toContain("k2b-icon-tile");
     if (icon) {
       expect(html).toContain(icon);
-      expect(html).toContain("k2b-icon-tile");
+      expect(html).toContain('class="k2b-placeholder__icon" data-sign=""');
     } else expect(html).not.toContain("k2b-placeholder__icon");
     const inline = renderToString(() => createComponent(Placeholder, { state, variant: "inline", icon: "ti ti-inbox" }));
     expect(inline).not.toContain("k2b-icon-tile");
@@ -1058,4 +1068,15 @@ test("absolute changes keep the saved measure's amount and unit in the shared de
   expect(html).toContain('data-tone="good"');
   expect(html).toContain("Last month");
   expect(html).not.toContain("1,200");
+});
+
+test("a toned placeholder colours its round sign and brings the tone's icon (K8, K10)", () => {
+  const done = renderToString(() => createComponent(Placeholder, { tone: "success", title: "All done" }));
+  expect(done).toContain('data-tone="success"');
+  expect(done).toContain('<span class="k2b-placeholder__icon" data-sign=""><i class="ti ti-check" aria-hidden="true">');
+  const own = renderToString(() => createComponent(Placeholder, { tone: "success", icon: "ti ti-confetti", title: "All done" }));
+  expect(own).toContain("ti ti-confetti");
+  expect(parityCss).toMatch(
+    /\.k2b-placeholder\[data-tone\] \.k2b-placeholder__icon\[data-sign\] \{ color: var\(--k2b-placeholder-tone\); \}/,
+  );
 });

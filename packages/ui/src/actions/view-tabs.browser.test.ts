@@ -224,7 +224,8 @@ for (const labels of ["en", "de"]) {
     test(`${labels} labels and counts keep their max-content width in a ${host}`, async () => {
       const page = await browser!.newPage(host === "phone" ? phone : { viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
       try {
-        await load(page, { labels, ...(host === "phone" ? {} : { width: "640", primary: "true", current: "4" }) });
+        // K15: the strip moves what does not fit into More instead of shrinking or scrolling its tabs.
+        await load(page, { labels, fit: "true", ...(host === "phone" ? {} : { width: "640", primary: "true", current: "4" }) });
         const measurements = await page.locator(listSelector).evaluate((list) => {
           const labels = Array.from(list.querySelectorAll<HTMLElement>(".k2b-view-tabs__label"))
             .filter((label) => label.getClientRects().length > 0)
@@ -244,10 +245,10 @@ for (const labels of ["en", "de"]) {
             });
           return { labels, tabs, scrollWidth: list.scrollWidth, clientWidth: list.clientWidth };
         });
-        // The strip must overflow by a clear margin in every engine, or nothing would press the tabs to shrink.
-        expect(measurements.scrollWidth).toBeGreaterThan(measurements.clientWidth + 24);
+        // The shown tabs keep their full width and the rest waits under More: nothing scrolls sideways.
+        expect(measurements.scrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1);
         expect(measurements.labels.length).toBeGreaterThan(0);
-        expect(measurements.tabs).toHaveLength(4);
+        expect((await fitState(page)).count).toBeGreaterThan(0);
         for (const label of measurements.labels) expect(label.scroll, label.text ?? "label").toBeLessThanOrEqual(label.width);
         for (const tab of measurements.tabs) {
           expect(tab.width, tab.text ?? "tab").toBeGreaterThanOrEqual(tab.maxTab - 0.5);
@@ -412,7 +413,10 @@ for (const dir of ["ltr", "rtl"]) {
         expect(focused.id).toBe(id);
         // Focus turns the tab's own inset edge blue, inside the tab where the strip cannot clip it.
         expect(focused.edge).toContain("inset");
-        expect(focused.edge).not.toContain("rgba(0, 0, 0, 0)");
+        // The first layer is the selected view's 2 px mark (K6), transparent on another view; the edge layers follow.
+        const edge = focused.edge.split(/,(?![^(]*\))/).filter((layer) => !layer.includes("-2px"));
+        expect(edge.length).toBeGreaterThan(0);
+        for (const layer of edge) expect(layer).not.toContain("rgba(0, 0, 0, 0)");
         expectVisible(focused);
       }
     } finally {
@@ -491,7 +495,9 @@ test("resizing a narrow workspace host settles the current view again before pai
     await settled(page);
     const resized = await snapshot(page);
     expectVisible(resized);
-    expect(Math.abs(resized.scroll)).toBeGreaterThan(0);
+    // The narrow strip still overflows, so the current view's place is a settled choice, not the whole strip
+    // fitting. With 24 px between views (K6), view 5 now sits in the first screen, so no scroll is needed for it.
+    expect(await page.locator(".k2b-view-tabs__list").evaluate((list) => list.scrollWidth > list.clientWidth + 0.5)).toBe(true);
   } finally {
     await page.close();
   }
@@ -627,11 +633,15 @@ test("a strip without fit keeps scrolling its views", async () => {
   }
 });
 
-test("a fitting strip keeps the phone's scrolling head row", async () => {
+// K15 (B9): the phone's head row fits its strip too; views that do not fit wait under "More +n", none scrolls.
+test("a fitting strip moves views into More in the phone's head row too", async () => {
   const page = await browser!.newPage(phone);
   try {
     await load(page, { fit: "true", pinned: "true", current: "5" });
-    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBe(0);
+    expect(await page.locator(".k2b-view-tabs__item[data-fit-hidden]").count()).toBeGreaterThan(0);
+    const state = await fitState(page);
+    expect(state.count).toBeGreaterThan(0);
+    expect(state.currentInside).toBe(true);
     expectVisible(await snapshot(page));
   } finally {
     await page.close();
@@ -650,3 +660,61 @@ test("a fitting strip with three views still moves one that does not fit under M
     await page.close();
   }
 });
+
+// K6, K15: in the flat head every view keeps its count beside its name ("Needs action 12"): on the strip at every
+// width, on a phone, and in the menu behind "More +n" for the views that wait there.
+for (const [host, width, viewport] of [
+  ["1440 px host", "1440", { width: 1440, height: 900 }],
+  ["640 px host", "640", { width: 1440, height: 900 }],
+  ["phone", "", { width: 390, height: 844 }],
+] as const)
+  test(`counts stay beside their views on the strip and under More in a ${host}`, async () => {
+    const page = await browser!.newPage({ viewport, isMobile: host === "phone", reducedMotion: "reduce" });
+    try {
+      await load(page, width ? { width } : {});
+      const counts = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".k2b-view-tabs__item")]
+          .filter((item) => item.getClientRects().length > 0)
+          .map((item) => {
+            const list = item.closest(".k2b-view-tabs__list")!.getBoundingClientRect();
+            const count = item.querySelector<HTMLElement>(".k2b-view-tabs__count");
+            const box = count?.getBoundingClientRect();
+            return {
+              label: item.querySelector(".k2b-view-tabs__label")?.textContent ?? "",
+              count: count?.textContent ?? null,
+              visible: !!box && box.width > 0 && getComputedStyle(count!).visibility === "visible",
+              // Scrolled out of the strip is fine; drawn but cut is not.
+              cut: !!box && box.right > list.right + 0.5 && box.left < list.right - 0.5,
+            };
+          }),
+      );
+      const expected = {
+        Focus: "12",
+        "Needs action": "12",
+        "Assigned to me": "5",
+        "Waiting for a customer reply": "2",
+        "Not assigned": "4",
+      };
+      expect(counts.length).toBeGreaterThan(0);
+      for (const tab of counts) {
+        const want = expected[tab.label as keyof typeof expected] ?? null;
+        expect({ label: tab.label, count: tab.count, visible: tab.count ? tab.visible : false, cut: tab.cut }).toEqual({
+          label: tab.label,
+          count: want,
+          visible: want !== null,
+          cut: false,
+        });
+      }
+      const more = page.locator(".k2b-view-tabs__more-trigger");
+      if (await more.isVisible()) {
+        await more.click();
+        await page.locator('[role="menu"], [role="dialog"]').first().waitFor({ state: "visible" });
+        const entries = await page.locator('[role="menuitem"], [role="menuitemradio"]').allInnerTexts();
+        const shown = new Set(counts.map((tab) => tab.label));
+        for (const [label, count] of Object.entries(expected))
+          if (!shown.has(label)) expect(entries.some((entry) => entry.includes(label) && entry.includes(count))).toBe(true);
+      }
+    } finally {
+      await page.close();
+    }
+  });

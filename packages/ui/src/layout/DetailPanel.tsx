@@ -162,10 +162,13 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
       </Dropdown.Trigger>
     </Dropdown.Root>
   );
-  // With primary actions, "…" ends their row, next to the commands it extends; otherwise it sits beside close.
-  const menuInActions = () => Boolean(props.menu?.length) && !props.primaryActions;
+  // K9: "…" always stands in the 56 px bar, beside close, never in the row of framed actions.
+  const menuInActions = () => Boolean(props.menu?.length);
+  const hasLead = () => Boolean(props.kind || props.subtitle || props.meta || props.primaryActions);
   return (
-    <header class={classNames("k2b-detail-panel__header", props.class)}>
+    <header class={classNames("k2b-detail-panel__header", props.class)} data-lead={hasLead() ? "true" : undefined}>
+      {/* K9: a 56 px bar with the title, "…" and close. The first section below it draws the hairline under the bar,
+          from edge to edge; the panel draws the one under the header (k2b-divided). */}
       <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
         <Show when={props.icon}>
           {(icon) => (
@@ -181,6 +184,17 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           {/* The name comes first, beside the close button. It never wraps: a long title ends with an ellipsis, and
               then the native hint shows all of it. */}
           <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
+        </div>
+        <Show when={menuInActions() || props.actions}>
+          <div class="k2b-detail-panel__actions">
+            <Show when={menuInActions()}>{menuTrigger()}</Show>
+            {props.actions}
+          </div>
+        </Show>
+      </div>
+      {/* K9: the first section holds the state, one meta line, and at most two framed actions with one icon button. */}
+      <Show when={hasLead()}>
+        <div class="k2b-detail-panel__lead">
           <Show when={props.kind || props.subtitle || props.meta}>
             <div class="k2b-detail-panel__supporting">
               <Show when={props.kind}>
@@ -194,18 +208,9 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
               </Show>
             </div>
           </Show>
-        </div>
-        <Show when={menuInActions() || props.actions}>
-          <div class="k2b-detail-panel__actions">
-            <Show when={menuInActions()}>{menuTrigger()}</Show>
-            {props.actions}
-          </div>
-        </Show>
-      </div>
-      <Show when={props.primaryActions}>
-        <div class="k2b-detail-panel__primary-actions">
-          {props.primaryActions}
-          <Show when={props.menu?.length}>{menuTrigger()}</Show>
+          <Show when={props.primaryActions}>
+            <div class="k2b-detail-panel__primary-actions">{props.primaryActions}</div>
+          </Show>
         </div>
       </Show>
     </header>
@@ -250,7 +255,7 @@ const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
   const titleId = `k2b-detail-panel-group-${createUniqueId()}`;
   return (
     <div
-      class={classNames("k2b-detail-panel__group", props.class)}
+      class={classNames(props.title ? "k2b-detail-panel__group k2b-divided" : "k2b-detail-panel__group", props.class)}
       role="group"
       aria-label={props.title ? undefined : props.label}
       aria-labelledby={props.title ? titleId : undefined}

@@ -493,6 +493,11 @@ for (const width of [320, 390, 768, 1440]) {
           document.body.classList.toggle("k2b-dark", theme === "dark");
         }, theme);
         await settled(page);
+        // K12: on a tablet the Detail waits as a drawer; its Details button opens it.
+        if (width === 768) {
+          await page.locator("[data-app-workspace-detail-toggle]").click();
+          await settled(page);
+        }
         const ai = page.getByRole("button", { name: "Mit KI bearbeiten", exact: true });
         const view = page.getByRole("button", { name: "Ansicht", exact: true });
         const metrics = () =>
@@ -510,7 +515,13 @@ for (const width of [320, 390, 768, 1440]) {
         expect(menu!.height).toBe(action!.height);
         expect(action!.padding).toBe(menu!.padding);
         expect(action!.fontSize).toBe(menu!.fontSize);
-        closeTo(action!.y, menu!.y);
+        // K15: two actions stand side by side while both labels fit; otherwise they stand one below the other, never
+        // shortened, the menu on the action's edge one 0.625rem row gap below it. With "…" in the head bar (K9) the
+        // row has room for both at every width here; a narrower row still stacks.
+        if (Math.abs(menu!.y - action!.y) > 1) {
+          closeTo(menu!.x, action!.x);
+          closeTo(menu!.y, action!.y + action!.height + 10);
+        } else expect(menu!.x).toBeGreaterThanOrEqual(action!.x + action!.width);
         // The content width is independent of the room left by the view menu.
         const intrinsicWidth = await ai.evaluate((button) => {
           const style = getComputedStyle(button);
@@ -536,8 +547,11 @@ for (const width of [320, 390, 768, 1440]) {
           await settled(page);
           expect(await metrics()).toEqual(before);
         }
-        // Enter the pair from the preceding header control using the keyboard.
+        // Enter the pair from the preceding controls using the keyboard. K9: close ends the 56 px bar; the lead below
+        // it holds the meta line, whose edit time takes the focus before the actions.
         await page.getByRole("button", { name: "Notizdetails schließen", exact: true }).focus();
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.matches(".k2b-detail-panel__lead time"))).toBe(true);
         await page.keyboard.press("Tab");
         expect(await ai.evaluate((button) => button.matches(":focus-visible"))).toBe(true);
         await settled(page);

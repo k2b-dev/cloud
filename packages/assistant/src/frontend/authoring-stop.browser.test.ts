@@ -242,8 +242,9 @@ describe("the v10 pause card", () => {
                     })(),
                   };
                 });
-                expect(layout.styles.map((style) => style.size)).toEqual([14, 13]);
-                expect(layout.styles.every((style) => style.weight === "400")).toBe(true);
+                // K11: the sentence is a 13 px row in the semibold weight, its consequence quiet 12 px meta.
+                expect(layout.styles.map((style) => style.size)).toEqual([13, 12]);
+                expect(layout.styles.map((style) => style.weight)).toEqual(["600", "400"]);
                 for (const contrast of layout.contrast) expect(contrast).toBeGreaterThanOrEqual(4.5);
                 expect(layout.buttonFill).toBe(layout.expectedFill);
                 expect(layout.overflow).toBe(0);
@@ -252,7 +253,8 @@ describe("the v10 pause card", () => {
                 expect(await card.locator("button").getAttribute("data-size")).toBe(width === 390 ? "md" : "sm");
                 if (width === 390) {
                   expect(layout.button.y).toBeGreaterThanOrEqual(layout.textBottom);
-                  expect(layout.button.width).toBeCloseTo(layout.card.width - 28, 0);
+                  // K5: the button spans the cell between its two 16 px phone gutters.
+                  expect(layout.button.width).toBeCloseTo(layout.card.width - 32, 0);
                 } else {
                   expect(layout.button.height).toBeCloseTo(layout.expectedButtonHeight, 0);
                 }
