@@ -131,6 +131,9 @@ export const server = new Hono<Environment>()
               <button type="button" data-workspace-detail-close>
                 Close detail
               </button>
+              <div data-fixture-detail-rows style="height:1600px;flex:none">
+                Rows of the selected item
+              </div>
             </AppWorkspace.Detail>
           </AppWorkspace.Content>
         </AppWorkspace>

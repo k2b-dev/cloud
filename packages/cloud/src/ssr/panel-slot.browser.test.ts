@@ -1368,6 +1368,11 @@ test("1440px: the panel parks Detail without a squeezed frame, closing restores 
     const dragged = await column();
     expect(dragged).not.toBe(start);
     const list = (await page.locator(mainArea).boundingBox())!;
+    // The person scrolled the Detail; parking keeps the place (decided 21.11., option A).
+    await page.locator(workspaceDetail).evaluate((detail) => {
+      detail.scrollTop = 300;
+    });
+    await page.waitForFunction((selector) => document.querySelector(selector)!.scrollTop === 300, workspaceDetail);
     // Every frame while the panel opens shows the Detail at its column width or not at all.
     await page.evaluate((selector) => {
       const detail = document.querySelector(selector)!;
@@ -1394,6 +1399,7 @@ test("1440px: the panel parks Detail without a squeezed frame, closing restores 
       workspaceDetail,
     );
     expect(await handle.isVisible()).toBe(false);
+    expect(await page.locator(workspaceDetail).evaluate((detail) => detail.scrollTop)).toBe(300);
     await page.locator(workspaceDetail).locator("button").first().focus();
     await page.keyboard.press("Escape");
     await page.waitForFunction(
@@ -1406,6 +1412,7 @@ test("1440px: the panel parks Detail without a squeezed frame, closing restores 
     await closed(page);
     await settle(page);
     expect(await column()).toBeCloseTo(dragged, 0);
+    expect(await page.locator(workspaceDetail).evaluate((detail) => detail.scrollTop)).toBe(300);
   } finally {
     await context.close();
   }
