@@ -115,9 +115,9 @@ const open = async (viewport: number, host: number, body: "server" | "client") =
       }),
     );
   });
-  const document = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:${host}px">${body === "server" ? serverHtml : ""}</div></body></html>`;
+  const html = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:${host}px">${body === "server" ? serverHtml : ""}</div></body></html>`;
   // A navigation, so the init script sees the page load as a browser does.
-  await page.route("http://status-row.test/**", (route) => route.fulfill({ contentType: "text/html", body: document }));
+  await page.route("http://status-row.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
   await page.goto("http://status-row.test/");
   if (body === "client") await page.addScriptTag({ content: client });
   await page.locator(".k2b-status-row").waitFor();
