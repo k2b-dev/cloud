@@ -21,6 +21,8 @@ registerSsrTestPlugin({ dev: true, rootDir: directory });
 
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+// Primary has no stylesheet minimum of its own; the platform keeps it at Main's 320 px minimum when a pane grows.
+const { APP_WORKSPACE_MAIN_MIN } = await import("./app-workspace-state");
 const script = await clientFixture();
 const controllerEntry = resolve(directory, "controller.ts");
 const controllerBuild = await Bun.build({
@@ -122,6 +124,7 @@ function expectedFrame(actual: Awaited<ReturnType<typeof frame>>, width: number,
   expect(actual.column).toBe(width - 2 - actual.sidebar - 480 >= min);
   // Main keeps its minimum beside the Detail; the pane's boundary inside Main is part of that minimum.
   if (actual.column) expect(actual.main.width).toBeGreaterThanOrEqual(min - 0.5);
+  expect(actual.primary.width).toBeGreaterThanOrEqual(APP_WORKSPACE_MAIN_MIN - 0.5);
 }
 
 function sameFrame(actual: ReturnType<typeof frame>, expected: ReturnType<typeof frame>) {
@@ -263,6 +266,10 @@ test("share default resets on double-click after a keyboard resize; limits resol
     await page.keyboard.press("ArrowRight");
     await settled(page);
     expect((await page.evaluate(frame)).pane.width).toBeGreaterThan(388);
+    // At the pane's end the reader keeps Primary's minimum.
+    await page.keyboard.press("End");
+    await settled(page);
+    expect((await page.evaluate(frame)).primary.width).toBeGreaterThanOrEqual(APP_WORKSPACE_MAIN_MIN - 0.5);
     await pane.dblclick();
     await settled(page);
     expect((await page.evaluate(frame)).pane.width).toBeCloseTo(388, 0);
