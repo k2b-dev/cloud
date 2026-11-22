@@ -7,8 +7,7 @@
 
 import type { BunPlugin } from "bun";
 import { dirname, join, resolve } from "path";
-import type { JSX } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { type JSX, renderToString } from "@solidjs/web";
 // @ts-ignore - Bun text import
 import devClientCode from "./adapter/client.js" with { type: "text" };
 import { getReloadId, normalizeBasePath, readAssetManifest, toSsrPath } from "./adapter/utils";

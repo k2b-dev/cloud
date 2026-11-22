@@ -238,7 +238,7 @@ const browserSources = async (entrypoints: string[], external?: string[]): Promi
   const discovery = await Bun.build({
     entrypoints,
     target: "browser",
-    conditions: ["browser", "production"],
+    conditions: ["solid", "browser", "production"],
     external: [...(external ?? []), "solid-js/jsx-runtime", "solid-js/jsx-dev-runtime"],
     jsx: { runtime: "automatic", importSource: "solid-js" },
     metafile: true,
@@ -377,7 +377,8 @@ export const buildIslands = async (options: {
       outdir: variantOutdir,
       naming: { entry: "[name].js", chunk: "chunk-[hash].js" },
       target: "browser",
-      conditions: ["browser", dev ? "development" : "production"],
+      // "solid" picks the untransformed JSX sources of Solid 2 component libraries such as @ui-sdk/solid.
+      conditions: ["solid", "browser", dev ? "development" : "production"],
       external,
       minify: !dev,
       splitting: true,
@@ -390,10 +391,17 @@ export const buildIslands = async (options: {
             // Core, DOM and store must use the app's Solid copy and the same mode.
             // Explicit exported entries avoid mixing a production core with
             // development store/web modules from the host process conditions.
-            build.onResolve({ filter: /^solid-js(?:\/(?:web|store))?$/ }, (args) => {
-              const module = args.path === "solid-js" ? "solid" : args.path.slice("solid-js/".length);
-              const entry = `${args.path}/dist/${dev ? "dev" : module}.js`;
-              return { path: Bun.resolveSync(entry, resolvedCwd) };
+            // Solid 2: core and store live in solid-js (on @solidjs/signals), the DOM renderer in @solidjs/web.
+            // Their exports no longer list ./dist/*, so the entry is found next to the resolved package.
+            const solidEntries: Record<string, string> = {
+              "solid-js": dev ? "dist/solid.dev.js" : "dist/solid.js",
+              "@solidjs/web": dev ? "dist/web.dev.js" : "dist/web.js",
+              "@solidjs/signals": dev ? "dist/dev.js" : "dist/prod/index.js",
+            };
+            build.onResolve({ filter: /^(?:solid-js|@solidjs\/web|@solidjs\/signals)$/ }, (args) => {
+              const main = Bun.resolveSync(args.path, resolvedCwd);
+              const root = main.slice(0, main.lastIndexOf(`/node_modules/${args.path}/`) + `/node_modules/${args.path}/`.length);
+              return { path: join(root, solidEntries[args.path]!) };
             });
 
             // Resolve component IDs as virtual entrypoints

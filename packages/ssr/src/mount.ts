@@ -1,6 +1,6 @@
 import { fromJSON } from "seroval";
-import { type Component, getOwner, type Owner } from "solid-js";
-import { createComponent, ErrorBoundary, render } from "solid-js/web";
+import { type Component, createComponent, Errored, getOwner, type Owner } from "solid-js";
+import { render } from "@solidjs/web";
 import { captureTypedFields, composingIn, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
@@ -50,7 +50,8 @@ const registry = (): IslandRegistry => {
 /** Find the wrapper through the registering Solid runtime's owner chain, including across bundle copies. */
 export const islandOf = (owner: Owner): HTMLElement | undefined => {
   const roots = registry().roots;
-  for (let current: Owner | null = owner; current; current = current.owner) {
+  // Solid 2 names the parent link `_parent` (kept in production builds); the walk stays structural so it works across bundle copies.
+  for (let current: Owner | null = owner; current; current = current._parent) {
     const element = roots?.get(current);
     if (element) return element;
   }
@@ -84,13 +85,15 @@ const mountElement = <Props extends object>(
           islands.roots ??= new WeakMap();
           islands.roots.set(owner, element);
         }
-        return createComponent(ErrorBoundary, {
-          fallback: (error: unknown, reset: () => void) => {
+        return createComponent(Errored, {
+          // Solid 2 passes the error as an accessor.
+          fallback: (errorOf: () => unknown, reset: () => void) => {
+            const error = errorOf();
             report(element, error, reset);
             if (!Fallback) return defaultFallback(reset);
-            return createComponent(ErrorBoundary, {
-              fallback: (fallbackError: unknown) => {
-                globalThis.reportError(fallbackError);
+            return createComponent(Errored, {
+              fallback: (fallbackError: () => unknown) => {
+                globalThis.reportError(fallbackError());
                 return defaultFallback(reset);
               },
               get children() {

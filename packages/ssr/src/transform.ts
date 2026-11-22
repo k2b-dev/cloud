@@ -6,7 +6,7 @@ import { types as t, transformAsync } from "@babel/core";
 // @ts-ignore - no types are available for this package
 import tsPreset from "@babel/preset-typescript";
 // @ts-ignore - no types are available for this package
-import solidPreset from "babel-preset-solid";
+import solidPlugin from "@solidjs/babel-plugin";
 import { dirname } from "path";
 import { islandIdFromFile } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
@@ -132,7 +132,7 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
         if (usesMergeProps) {
           programPath.node.body.unshift(
             t.importDeclaration(
-              [t.importSpecifier(t.identifier("__solid_mergeProps"), t.identifier("mergeProps"))],
+              [t.importSpecifier(t.identifier("__solid_mergeProps"), t.identifier("merge"))],
               t.stringLiteral("solid-js"),
             ),
           );
@@ -160,11 +160,13 @@ export const transform = async (
   const result = await transformAsync(source, {
     filename,
     parserOpts: mode === "ssr" ? { plugins: ["jsx", "typescript"] } : undefined,
-    plugins: mode === "ssr" ? [() => componentWrapperPlugin(filename, rootDir, dev)] : [],
-    presets: [
-      [tsPreset, {}],
-      [solidPreset, { generate: mode, hydratable: false }],
+    // Solid 2 ships its JSX compiler as a plugin (@solidjs/babel-plugin), no longer as a preset. Plugins run in order,
+    // so the island wrapper sees the JSX before Solid lowers it.
+    plugins: [
+      ...(mode === "ssr" ? [() => componentWrapperPlugin(filename, rootDir, dev)] : []),
+      [solidPlugin, { generate: mode, hydratable: false }],
     ],
+    presets: [[tsPreset, {}]],
   });
 
   if (!result?.code) throw new Error(`Transform failed: ${filename}`);

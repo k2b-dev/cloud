@@ -5,8 +5,8 @@
  * an island decides whether an enhanced click updates client state, and an
  * installed page swap replaces a declared content column with server HTML.
  */
-import { type JSX, mergeProps, splitProps } from "solid-js";
-import { createDynamic } from "solid-js/web";
+import { createComponent, merge, omit } from "solid-js";
+import { Dynamic, type JSX } from "@solidjs/web";
 import {
   cancelPageSwap,
   captureScroll,
@@ -115,7 +115,9 @@ const callUserClick = (handler: LinkProps["onClick"], event: MouseEvent, anchor:
  * SSR-safe anchor with opt-in progressive navigation.
  */
 export function Link(props: LinkProps) {
-  const [local, anchorProps] = splitProps(props, ["href", "replace", "scroll", "onNavigate", "onClick"]);
+  // Solid 2 replaces splitProps with omit; the omitted keys stay readable on props itself.
+  const local = props;
+  const anchorProps = omit(props, "href", "replace", "scroll", "onNavigate", "onClick");
 
   const handleClick: JSX.EventHandler<HTMLAnchorElement, MouseEvent> = (event) => {
     callUserClick(local.onClick, event, event.currentTarget);
@@ -188,9 +190,10 @@ export function Link(props: LinkProps) {
     startViewTransition(runNavigation);
   };
 
-  return createDynamic(
-    () => "a",
-    mergeProps(anchorProps, {
+  return createComponent(
+    Dynamic,
+    merge(anchorProps, {
+      component: "a" as const,
       get href() {
         return local.href;
       },
