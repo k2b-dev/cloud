@@ -9,6 +9,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { buildIslands } from "../../../../ssr/src/build";
+import { islandIdFromFile } from "../../../../ssr/src/island-id";
 import { layoutProblems } from "../../../../ui/src/layout-check";
 import { launchBrowser } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
@@ -56,6 +57,18 @@ beforeEach(() => {
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
+
+/**
+ * The island id in the server markup is a hash of the island's path relative to the SSR root of the test that first
+ * compiled the page in this process, or of its absolute path when the file lies outside that root (island-id.ts).
+ * Core's test files share one process in CI, and the sign-in page test compiles the page with a temporary root
+ * first. So the markup's ids map to the ids of this file's build, whichever file compiled the page.
+ */
+const islandIds = new Map<string, string>();
+for (const file of new Bun.Glob("**/*.island.tsx").scanSync({ cwd: import.meta.dir, absolute: true })) {
+  const own = islandIdFromFile(file, rootDir);
+  for (const root of [tmpdir(), resolve(rootDir, "../..")]) islandIds.set(islandIdFromFile(file, root), own);
+}
 
 const pages = new Hono().get("/auth/login", ...signIn).get("/auth/password-reset", ...passwordReset);
 
@@ -106,6 +119,10 @@ beforeAll(async () => {
         const response = await pages.fetch(request);
         // Keep the shipped island loader; drop the other module scripts and link the compiled styles once.
         const html = (await response.text())
+          .replace(
+            /(<solid-(?:island|client)\b[^>]*\bdata-id=")([^"]+)"/g,
+            (_, start: string, id: string) => `${start}${islandIds.get(id) ?? id}"`,
+          )
           .replace(/<script type="module"(?![^>]*data-ssr-assets)[^>]*>[\s\S]*?<\/script>/g, "")
           .replace(/<link\b[^>]*rel="stylesheet"[^>]*>/g, "")
           .replace(
