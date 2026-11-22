@@ -2967,6 +2967,12 @@ html {
     border-end-start-radius: var(--k2b-workspace-start-radius);
     border-end-end-radius: var(--k2b-workspace-inner-radius);
   }
+
+  /* The flush Detail column lies in the workspace's end corners (K5a). */
+  .k2b-ui .k2b-app-workspace__detail:not([data-workspace-detail-drawer]) {
+    border-start-end-radius: var(--k2b-workspace-inner-radius);
+    border-end-end-radius: var(--k2b-workspace-inner-radius);
+  }
 }
 
 /* Compact: from a 48 rem viewport, below 64 rem host width the sidebar is an
