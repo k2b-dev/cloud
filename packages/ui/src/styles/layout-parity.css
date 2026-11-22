@@ -1251,7 +1251,8 @@ html {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 20;
+  /* K13: the grip lies over its line; the column lines are pseudo-elements at z-index 20. */
+  z-index: 21;
   display: none;
   width: var(--k2b-workspace-resize-hit-size);
   margin: 0;
@@ -1263,7 +1264,6 @@ html {
   /* WebKit may resolve a selection gesture before the drag's pointerdown handler suppresses selection. */
   -webkit-user-select: none;
   user-select: none;
-  transform: translateX(-50%);
 }
 
 .k2b-ui .k2b-app-workspace[data-workspace-resizable="false"] .k2b-app-workspace__resize {
@@ -1271,7 +1271,12 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
-  left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
+  /* K13: the sidebar's line is the last pixel of its track; the hit area is centred on that pixel, so line, area,
+     and grip lie on whole pixels. */
+  left: calc(
+    var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px))) -
+      (var(--k2b-workspace-resize-hit-size) + 1px) / 2
+  );
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
@@ -1279,10 +1284,13 @@ html {
   right: 0;
   bottom: var(--k2b-workspace-panel-size);
   left: 0;
+  /* K13: as long as the drawer's line, so the grip sits on its middle. */
+  grid-area: drawer;
   width: auto;
   height: var(--k2b-workspace-resize-hit-size);
   cursor: row-resize;
-  transform: translateY(50%);
+  /* Centred on the drawer's line, the last pixel above its top edge: whole pixels, no half-pixel shift. */
+  transform: translateY(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
 }
 
 /* K13: a boundary that can be dragged carries a grip; every other line is
@@ -1312,24 +1320,29 @@ html {
    needs no border of its own. */
 .k2b-ui .k2b-resize-separator::before {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
+  inset: 0;
   content: "";
   pointer-events: none;
   background: var(--k2b-border);
-  transform: translateX(-50%);
 }
 
-.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
-  top: 50%;
+/* Its hit area lies over the neighbours, centred on the line: 13 px, 25 px for a coarse pointer. It draws nothing. */
+.k2b-ui .k2b-resize-separator::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((1px - var(--k2b-resize-hit-size)) / 2);
+  width: var(--k2b-resize-hit-size);
+  content: "";
+}
+
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::after {
+  top: calc((1px - var(--k2b-resize-hit-size)) / 2);
   right: 0;
   bottom: auto;
   left: 0;
   width: auto;
-  height: 1px;
-  transform: translateY(-50%);
+  height: var(--k2b-resize-hit-size);
 }
 
 .k2b-ui :is(.k2b-resize-separator:focus-visible, .k2b-resize-separator[data-active="true"])::before {
@@ -1338,21 +1351,23 @@ html {
 
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) > span {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  /* Centred, rounded down to whole pixels: an odd 5 px grip on a 1 px line keeps its edges on whole pixels. */
+  top: round(down, calc(50% - 1rem), 1px);
+  left: round(down, calc(50% - 2.5px), 1px);
   width: 5px;
   height: 2rem;
   border-radius: var(--k2b-radius-round);
   background: var(--k2b-resize-grip);
   /* A ring of the surface keeps the grip apart from the line under it. */
   box-shadow: 0 0 0 2px var(--k2b-surface);
-  transform: translate(-50%, -50%);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui
   :is(.k2b-app-workspace__resize[data-app-workspace-resize="drawer"], .k2b-resize-separator[data-orientation="horizontal"])
   > span {
+  top: round(down, calc(50% - 2.5px), 1px);
+  left: round(down, calc(50% - 1rem), 1px);
   width: 2rem;
   height: 5px;
 }
@@ -1695,7 +1710,8 @@ html {
     bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
     z-index: 21;
     grid-area: detail;
-    transform: translateX(50%);
+    /* Centred on Detail's line, the last pixel before its leading edge: whole pixels, no half-pixel shift. */
+    transform: translateX(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
   }
 }
 
@@ -2278,21 +2294,6 @@ html {
     padding: 0.5rem;
   }
 
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
-  .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__sidebar:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
-    )
-    > :is(solid-island, solid-client)
-    > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
-    left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
-  }
 }
 
 /* From 48 rem the work area keeps its columns: panes side by side, the detail
@@ -2354,7 +2355,8 @@ html {
     > .k2b-app-workspace__main-pane:has(~ [data-workspace-main-region])
     + .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     /* K13: centred on the boundary's hairline, which lies at the end of the space. */
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
+    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
+    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
   }
 
   .k2b-ui .k2b-app-workspace__main-pane.is-primary {
@@ -2367,7 +2369,8 @@ html {
     inset: auto;
     height: auto;
     flex: 0 0 var(--k2b-workspace-resize-hit-size);
-    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2);
+    /* The line is the last pixel before the boundary: the grip's middle lies half a pixel before it. */
+    margin-inline: calc(var(--k2b-workspace-resize-hit-size) / -2 - 0.5px) calc(var(--k2b-workspace-resize-hit-size) / -2 + 0.5px);
     transform: none;
   }
 
@@ -2701,19 +2704,31 @@ html {
   opacity: 0.85;
 }
 
-/* K15: in a head narrower than 48 rem the actions give way first, before any
-   view moves into "More +n": the primary shows only its icon and keeps its
-   name for assistive technology, and an app's search in `actions` turns into
-   its icon by the same query (`@container k2b-head (width < 48rem)`). The
-   views compact only when the lead is still narrower than 32 rem after that.
-   If the lead and actions still cannot fit, flex puts them on separate rows. */
-@container k2b-head (width < 48rem) {
+/* K1, K4: the head's primary action is a control like the mockup's: 36 px
+   high, 8 px corners, its icon and its word in the row size. */
+.k2b-ui .k2b-app-workspace__head-primary {
+  min-height: var(--k2b-h-control);
+  height: var(--k2b-h-control);
+  padding: 0 0.75rem;
+  gap: 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+}
+
+/* K15: the primary keeps its word while the head has room for it (rule 15:
+   a label gives way only when it does not fit). Views move into "More +n"
+   first, when the lead is narrower than 32 rem; the primary shows only its
+   icon in a head narrower than 36 rem, and keeps its name for assistive
+   technology. It stays a 36 px control with 8 px corners: only the floating
+   primary on a phone is round (below). An app's search in `actions` turns
+   into its icon by the same query. If the lead and actions still cannot fit,
+   flex puts them on separate rows. */
+@container k2b-head (width < 36rem) {
   .k2b-ui .k2b-app-workspace__head-primary {
-    width: 2.5rem;
-    min-width: 2.5rem;
-    height: 2.5rem;
+    width: var(--k2b-h-control);
+    min-width: var(--k2b-h-control);
     padding: 0;
-    border-radius: 999px;
   }
 
   .k2b-ui .k2b-app-workspace__head-primary-label {
@@ -6059,13 +6074,17 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
 
-/* A standalone separator is an invisible hit area. It shows the drag cue of
-   the workspace's resize handles, defined with them. */
+/* K13: a standalone separator is its 1 px line in the flow between two
+   regions, so applications size their split by it and no gap opens beside the
+   line. Its hit area and grip lie over the neighbours, centred on the line on
+   whole pixels. It shows the drag cue of the workspace's resize handles,
+   defined with them. */
 .k2b-ui .k2b-resize-separator {
+  --k2b-resize-hit-size: 13px;
   position: relative;
+  z-index: 1;
   flex: none;
-  /* In the flow between two regions, so applications size their split by it; the grip and line sit centred. */
-  width: 12px;
+  width: 1px;
   align-self: stretch;
   cursor: col-resize;
   outline: 0;
@@ -6076,8 +6095,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
   width: auto;
-  height: 12px;
+  height: 1px;
   cursor: row-resize;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-resize-separator {
+    --k2b-resize-hit-size: 25px;
+  }
 }
 /* An app with separate visibility keeps one shared way to reopen its current
    object, including a closed column and a phone sheet. Selection-only panels

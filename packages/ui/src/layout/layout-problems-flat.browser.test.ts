@@ -17,6 +17,15 @@ const classic = `
   .k2b-ui .scroll::-webkit-scrollbar-thumb { background: #a1a1aa; }
   [data-layout-area] { width: 400px; margin-bottom: 24px; background: #fff; }
   .line { height: 40px; border-bottom: 1px solid #e4e4e7; }
+  /* Lines drawn by pseudo-elements, as the flat columns and rows draw them. */
+  .drawn-row { position: relative; height: 40px; }
+  .drawn-row::after { content: ""; position: absolute; right: 20px; bottom: 0; left: 20px; height: 1px; background: #e4e4e7; }
+  .column-line { position: relative; }
+  .column-line::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: #e4e4e7; }
+  .sep { position: relative; width: 1px; }
+  .sep.own-line::before { content: ""; position: absolute; inset: 0; background: #e4e4e7; }
+  .sep.line-on-top::before { z-index: 1; }
+  .no-line::before { display: none; }
 `;
 
 let browser: Browser;
@@ -50,6 +59,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     const result = await check(
       `<section data-layout-area data-probe="area">
         <div class="line" data-probe="inset-line" style="margin:0 20px">Inset line</div>
+        <div class="drawn-row" data-probe="drawn-row">A row whose line is a pseudo-element with an inset</div>
         <div data-probe="notice" style="margin:8px 16px;height:48px;background:#fef3c7">A notice that keeps a margin</div>
         <table data-probe="table" style="width:360px;border-collapse:collapse">
           <tbody><tr><td data-probe="selected" style="height:40px;background:#dbeafe">Selected</td><td style="background:#dbeafe">row</td></tr></tbody>
@@ -64,6 +74,8 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     expect(result.shortEdge.filter((line) => !line.includes("gutter-area"))).toEqual([
       'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the left edge of [data-probe="area"]',
       'short-edge: the line of [data-probe="inset-line"] stops 20 px short of the right edge of [data-probe="area"]',
+      'short-edge: the line of [data-probe="drawn-row"] stops 20 px short of the left edge of [data-probe="area"]',
+      'short-edge: the line of [data-probe="drawn-row"] stops 20 px short of the right edge of [data-probe="area"]',
       'short-edge: the fill of [data-probe="notice"] stops 16 px short of the left edge of [data-probe="area"]',
       'short-edge: the fill of [data-probe="notice"] stops 16 px short of the right edge of [data-probe="area"]',
       'short-edge: the fill of td "row" stops 40 px short of the right edge of [data-probe="area"]',
@@ -103,7 +115,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     expect(result.shortEdge).toEqual([]);
   });
 
-  test("near-double: lines 1 to 8 px apart over half of the shorter one are found, also from a shadow", async () => {
+  test("near-double: lines up to 8 px apart over half of the shorter one are found, also from a shadow or a pseudo-element", async () => {
     const result = await check(
       `<header data-probe="head" style="height:40px;border-bottom:1px solid #e4e4e7">Head</header>
       <section data-probe="section" style="margin-top:4px;border-top:1px solid #e4e4e7">Section 4 px below the head line</section>
@@ -112,13 +124,18 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
         <div data-probe="inner-column" style="width:200px;margin-left:5px;box-shadow:-1px 0 0 #d4d4d8"></div>
       </div>
       <div data-probe="row" style="height:40px;margin-top:24px;border-bottom:1px solid #e4e4e7"></div>
-      <div data-probe="band" style="margin-top:8px;height:40px;border-top:1px solid #d4d4d8"></div>`,
+      <div data-probe="band" style="margin-top:8px;height:40px;border-top:1px solid #d4d4d8"></div>
+      <div style="display:flex;height:80px;margin-top:24px">
+        <div class="column-line" data-probe="column-line" style="width:200px"></div>
+        <div data-probe="card" style="width:200px;border:1px solid #d4d4d8;border-radius:8px">A card on the column line</div>
+      </div>`,
       ["near-double"],
     );
     expect(result.nearDouble).toEqual([
       'near-double: [data-probe="head"] bottom and [data-probe="section"] top lie 4 px apart over 1248 px',
       'near-double: [data-probe="row"] bottom and [data-probe="band"] top lie 8 px apart over 1248 px',
       'near-double: [data-probe="column"] right and [data-probe="inner-column"] left shadow lie 4 px apart over 80 px',
+      'near-double: [data-probe="column-line"]::after and [data-probe="card"] left lie 0 px apart over 80 px',
     ]);
   });
 
@@ -145,35 +162,61 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     ]);
   });
 
-  // A column boundary with a grip in the source between its two columns, as in K13: 5 x 32 px, on the line.
-  const columns = (grip: string, after = "") => `
-    <div style="display:flex;height:200px">
-      <div data-probe="left" style="width:200px;border-right:1px solid #e4e4e7"></div>
-      <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the list" style="position:relative;width:0">
-        <span style="position:absolute;top:50%;left:50%;width:5px;height:32px;border-radius:999px;background:#8a8a94;${grip}"></span>
+  // A column boundary with a grip in the source between its two columns, as in K13: 5 x 32 px, on the line. The line
+  // is the left column's border, or the separator's own pseudo-element (`own-line`), as a standalone separator draws it.
+  const columns = ({ grip = "", separator = "own-line", left = "", after = "" }) => `
+    <div style="display:flex;height:140px">
+      <div data-probe="left" style="width:200px;${left}"></div>
+      <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the list" data-probe="sep" class="sep ${separator}">
+        <span style="position:absolute;top:50%;left:50%;width:5px;height:32px;border-radius:999px;background:#8a8a94;transform:translate(-50%,-50%);${grip}"></span>
       </div>
       <div data-probe="right" style="flex:1">${after}</div>
     </div>`;
-  const centred = "transform:translate(-50%,-50%)";
+  const border = "border-right:1px solid #e4e4e7";
 
-  test("grip-off-center: a grip beside its line, one low on its edge, and one behind the column are found", async () => {
+  test("grip-off-center: beside its line, on half pixels, low on its line, under its line, under a column, or without a line", async () => {
     const result = await check(
       [
-        columns("transform:translate(calc(-50% + 3px),-50%)"),
-        columns("transform:translate(-50%,calc(-50% + 40px))"),
-        columns(centred, '<div data-probe="cover" style="position:relative;z-index:1;margin-left:-8px;height:100%;background:#fff"></div>'),
+        // The line is the left column's last pixel; the grip is centred on the separator after it.
+        columns({ separator: "", left: border }),
+        // Half a pixel off: blurred at both edges (the Mail list grip in the audit, 704.5 to 709.5).
+        columns({ grip: "transform:translate(calc(-50% + 0.5px),-50%)" }),
+        columns({ grip: "transform:translate(-50%,calc(-50% + 40px))" }),
+        columns({ separator: "own-line line-on-top" }),
+        columns({
+          after: '<div data-probe="cover" style="position:relative;z-index:1;margin-left:-8px;height:100%;background:#fff"></div>',
+        }),
+        columns({ separator: "" }),
       ].join(""),
       ["grip-off-center"],
     );
     expect(result.gripOffCenter).toEqual([
-      'grip-off-center: the grip of "Width of the list" sits 3 px off its edge at 216 px',
-      'grip-off-center: the grip of "Width of the list" sits 40 px off the middle of its 200 px edge',
+      'grip-off-center: the grip of "Width of the list" sits 1 px off the middle of [data-probe="left"] right',
+      'grip-off-center: the grip of "Width of the list" sits 0.5 px off the middle of [data-probe="sep"]::before',
+      'grip-off-center: the grip of "Width of the list" has edges on fractions of a pixel (214.5, 219.5)',
+      'grip-off-center: the grip of "Width of the list" sits 40 px off the middle of its 140 px line',
+      'grip-off-center: the grip of "Width of the list" lies behind [data-probe="sep"]::before',
       'grip-off-center: the grip of "Width of the list" lies behind [data-probe="cover"]',
+      'grip-off-center: the grip of "Width of the list" has no line under it',
     ]);
   });
 
-  test("grip-off-center: a grip centred on its edge and in front of the line passes, also with a hit area that lets the pointer through", async () => {
-    const result = await check(columns(centred) + columns(`${centred};pointer-events:none`), ["grip-off-center"]);
+  test("grip-off-center: a grip on the middle of its line and in front of it passes, also under its own hit area or without a line on purpose", async () => {
+    const result = await check(
+      [
+        columns({}),
+        columns({ grip: "pointer-events:none" }),
+        columns({ separator: "", left: border, grip: "transform:translate(calc(-50% - 1px),-50%)" }),
+        // The shipped separator: its own invisible hit area lies over the grip; that covers nothing.
+        `<div style="display:flex;height:140px"><div style="width:200px"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the inspector" class="k2b-resize-separator"><span></span></div><div style="flex:1"></div></div>`,
+        // The Assistant's column: the line is the column's border, and the separator without a line of its own lies on
+        // that pixel; its hit area over the grip still covers nothing.
+        `<div style="display:flex;height:140px"><div style="width:200px;${border}"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the column" class="k2b-resize-separator no-line" style="margin-left:-1px"><span></span></div><div style="flex:1"></div></div>`,
+        // A separator in the gap between two framed cards hides its line on purpose; its grip sits on its own box.
+        `<div style="display:flex;height:140px;gap:8px"><div style="width:200px;border:1px solid #d4d4d8;border-radius:12px"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the panel" class="k2b-resize-separator no-line"><span></span></div><div style="flex:1;border:1px solid #d4d4d8;border-radius:12px"></div></div>`,
+      ].join(""),
+      ["grip-off-center"],
+    );
     expect(result.gripOffCenter).toEqual([]);
   });
 
@@ -183,7 +226,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
         <span data-probe="fifteen" style="display:block;font-size:15px;line-height:20px">Fifteen</span>
         <b data-probe="bold" style="display:block;font:700 13px/20px sans-serif">Seven hundred</b>
         <span data-probe="normal" style="display:block;font-size:13px;line-height:normal">Normal line height</span>
-        <span data-probe="lead-light" style="display:block;font:400 18px/24px sans-serif">A lead in 400</span>
+        <span data-probe="lead-light" style="display:block;font:300 18px/24px sans-serif">A lead in 300</span>
       </section>`,
       ["type-role"],
     );

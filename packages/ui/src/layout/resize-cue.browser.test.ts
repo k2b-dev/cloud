@@ -164,6 +164,11 @@ async function cue(page: Page, selector: string) {
             : null;
     return {
       content: shadow.content,
+      // A standalone separator's `::after` is its invisible hit area; a shade would draw a fill or a shadow.
+      shade:
+        shadow.content !== "none" &&
+        shadow.content !== "normal" &&
+        (!/^(transparent|rgba\(0, 0, 0, 0\))$/.test(shadow.backgroundColor) || shadow.boxShadow !== "none"),
       opacity: shadow.opacity,
       left: Number.parseFloat(shadow.left),
       right: Number.parseFloat(shadow.right),
@@ -252,7 +257,7 @@ async function exercise(page: Page, spec: Edge) {
   // K13: focus and dragging turn the boundary's hairline blue; hover leaves it as it is.
   const blueLine = (state: typeof idle) => (spec.column ? state.columnEdge : state.lineColor) === state.focusColor;
   // No handle casts a shadow (K3).
-  expect(idle.content).toBe("none");
+  expect(idle.shade).toBe(false);
   if (spec.column) {
     // A column edge keeps one line: the boundary's own 1 px hairline, never a second one on the handle.
     expect(idle.columnContent).not.toBe("none");
@@ -332,7 +337,7 @@ async function exercise(page: Page, spec: Edge) {
   expect(blueLine(dragging)).toBe(true);
   expect(dragging.background).toBe(dragging.focusColor);
   expect(dragging.grip).toBe("1");
-  expect(dragging.content).toBe("none");
+  expect(dragging.shade).toBe(false);
   await page.mouse.up();
   await away(page);
   expect(await handle.getAttribute(spec.active)).toBeNull();

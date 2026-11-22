@@ -2362,7 +2362,8 @@
 /* F8: list and reader share the full width, the list at the person's share (40 % by default), at least 320 px, and
    the reader at least 480 px. Without an open conversation the list takes it all; nothing is centered. */
 .mail-split-panes { display: flex; min-height: 0; flex: 1 1 auto; }
-.mail-split-list { display: flex; min-width: 0; min-height: 0; flex: 0 0 auto; flex-direction: column; width: clamp(20rem, var(--mail-list-share, 40) * 1%, 100% - 30.75rem); }
+/* The width is rounded to whole pixels, so the line between list and reader stays one sharp pixel at any share (K2). */
+.mail-split-list { display: flex; min-width: 0; min-height: 0; flex: 0 0 auto; flex-direction: column; width: round(down, clamp(20rem, var(--mail-list-share, 40) * 1%, 100% - 30rem - 1px), 1px); }
 .mail-split[data-reader="closed"] .mail-split-list { width: 100%; flex: 1 1 auto; }
 .mail-split-list > * { flex: 1 1 auto; min-height: 0; }
 .k2b-ui .mail-split-list > .mail-list-bar { flex: none; }
@@ -2370,11 +2371,11 @@
 .mail-split-reader > .mail-reader { min-width: 0; flex: 1 1 0; }
 .mail-split[data-list="hidden"] :is(.mail-split-list, .mail-list-bar) { display: none; }
 
-/* K12: where list and reader do not both get their least width (20 rem and 30.75 rem), such as a tablet, the open
+/* K12: where list and reader do not both get their least width (20 rem, and 30 rem beside the 1 px handle), such as a tablet, the open
    conversation stands alone; closing it returns to the list. Mail's own room decides, so a wide window with a panel
    keeps both. */
 @media (min-width: 48rem) {
-  @container mail-split (width < 50.75rem) {
+  @container mail-split (width < 50.0625rem) {
     .mail-split[data-reader="open"] .mail-split-list { display: none; }
     .k2b-ui .mail-split[data-reader="open"] .mail-split-reader .mail-list-handle { display: none; }
   }
