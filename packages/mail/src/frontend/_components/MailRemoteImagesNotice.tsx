@@ -5,7 +5,7 @@ import type { mailMessageMessages } from "./mail-message-messages";
 
 /**
  * What the external-images row shows. `blocked`, `loading`, `failed`, and `limited` sit on a tinted notice; `once` and
- * `always` are a quiet line after the images are shown. Every kind keeps the same 48px row, so the message never moves.
+ * `always` are a quiet line after the images are shown. Every kind keeps the same 52px row (K1), so the message never moves.
  */
 export type RemoteImagesNoticeKind = "blocked" | "loading" | "failed" | "limited" | "once" | "always";
 
@@ -208,8 +208,9 @@ export default function MailRemoteImagesNotice(props: {
           </NoticeRow>
         }
       >
-        {/* The quiet line keeps the notice's metrics: the same padding, tile box, and 48px row, without a surface. */}
-        <div class="flex min-h-12 items-center gap-3 rounded-[var(--ui-radius-control)] border border-transparent p-[calc(0.5rem-1px)] text-sm leading-[1.375rem] text-secondary max-md:gap-2.5">
+        {/* The quiet line keeps the NoticeRow metrics (K1): the 52px square row on the gutter, the same tile box, gap, and
+            13px text, without a surface. */}
+        <div class="flex min-h-[var(--k2b-h-row-2)] items-center gap-3 border border-transparent px-[calc(var(--k2b-gutter)-1px)] py-[calc(0.625rem-1px)] text-[length:var(--k2b-font-size-row)] leading-5 text-secondary max-md:gap-2.5">
           <span
             class="grid size-8 shrink-0 place-items-center text-lg max-md:size-7 max-md:text-base"
             style={{ color: props.kind === "always" ? "var(--k2b-reference-image)" : "var(--k2b-success-text)" }}

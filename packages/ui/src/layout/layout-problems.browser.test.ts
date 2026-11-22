@@ -40,6 +40,11 @@ const clean = `
     </span>
     <span style="white-space:nowrap">12.04.2026</span>
   </div>
+  <div data-probe="visually-hidden-head" style="position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">
+    <div style="width:120px;overflow:hidden">
+      <h1 style="margin:0">A head kept for screen readers only, whose title is far wider than its box</h1>
+    </div>
+  </div>
   <div class="k2b-avatar-stack" style="display:flex;padding:0 20px">
     <span style="width:24px;height:24px;border-radius:50%;background:#71717a"></span>
     <span style="width:24px;height:24px;border-radius:50%;background:#2563eb;margin-left:-4px"></span>

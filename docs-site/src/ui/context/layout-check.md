@@ -15,6 +15,9 @@ use it with Playwright or any browser test that can run a function in the page.
 - A scroll container that scrolls sideways, such as a detail panel body whose
   content is a few pixels too wide. A box with only `overflow-y: auto` counts
   too, because the browser makes its `overflow-x` auto as well.
+- A line break by scrollbar: a head cell that does not stand over its body
+  cells within 0.5 px, also when head and body sit in two tables, or a gap
+  between neighbouring head cells ("a scrollbar moves nothing").
 - A page that scrolls sideways.
 
 It does not see what runs out of the bottom of a scroll area or what a floating
@@ -66,10 +69,12 @@ may scroll sideways. A toolbar (`role="toolbar"`) may scroll sideways below
 768 px, because on a phone its tools scroll instead of moving into "⋯".
 Everywhere else, a sideways scroller is a finding.
 
-It returns `overlap`, `spill`, `cut`, `scroll`, and `double` as lists of readable lines,
+It returns `overlap`, `spill`, `cut`, `scroll`, `double`, and `scrollbar` as lists of readable lines,
 `sideways` as a boolean, and `problems` as every problem in one list. If the
 page is clean, `problems` is empty. To skip a box, give it
-`data-layout-check="skip"`.
+`data-layout-check="skip"`. A visually hidden box, 1 px and clipped like
+`k2b-sr-only`, keeps its content for screen readers on purpose; the check skips
+it and everything inside it.
 
 ## Run with classic scrollbars
 

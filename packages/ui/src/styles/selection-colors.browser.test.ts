@@ -267,11 +267,23 @@ describe("selection colors in the browser", () => {
                 }
               if (colors) {
                 if (target.kind === "table") {
-                  // A selected table row mixes 16 % of the host ink into the surface below it.
-                  const surface = before[index]!.paint.background;
+                  // K7: a selected table row mixes 8 % of the host ink into the surface it names as the one beneath it
+                  // (`--k2b-surface-beneath`, else the surface), not into whatever the fixture paints behind the table.
+                  // settled: resolves a colour token, which no frame or transition changes.
+                  const surface = await target.element.evaluate((row) => {
+                    const probe = document.createElement("span");
+                    probe.style.color = "var(--k2b-surface-beneath, var(--k2b-surface))";
+                    row.querySelector("td")!.append(probe);
+                    const context = document.createElement("canvas").getContext("2d")!;
+                    context.fillStyle = getComputedStyle(probe).color;
+                    context.fillRect(0, 0, 1, 1);
+                    probe.remove();
+                    const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+                    return [r!, g!, b!] as [number, number, number];
+                  });
                   const ink = rgb(colors.ink);
                   selected.background.forEach((channel, i) =>
-                    expect(Math.abs(channel - (ink[i]! * 0.16 + surface[i]! * 0.84)), "table fill").toBeLessThanOrEqual(1.5),
+                    expect(Math.abs(channel - (ink[i]! * 0.08 + surface[i]! * 0.92)), "table fill").toBeLessThanOrEqual(1.5),
                   );
                 } else expect(selected.background).toEqual(rgb(colors[target.kind]));
                 if (target.kind === "nav") expect(selected.ink).toEqual(rgb(colors.ink));
@@ -323,11 +335,21 @@ describe("selection colors in the browser", () => {
             await page.mouse.move(1400, 1100);
             await settled(page);
 
-            // Tabs, views, segments, and active filters share the selected edge and fill, mixed from the host ink.
+            // K2, K6: the selected line tab and view carry a 2 px mark in the host ink on the line, without a fill.
+            for (const selector of ['.k2b-tabs__list button[aria-selected="true"]', '.k2b-view-tabs__tab[aria-current="page"]']) {
+              await settled(page);
+              const mark = await page.locator(`#controls ${selector}`).evaluate((element) => {
+                const style = getComputedStyle(element);
+                const layer = style.boxShadow.split(/,(?![^(]*\))/).find((part) => part.includes("-2px"));
+                return { color: layer?.match(/(?:rgba?|color)\([^)]*\)/)?.[0] ?? "", fill: style.backgroundColor };
+              });
+              expect(mark.fill, `${selector}: no fill`).toBe("rgba(0, 0, 0, 0)");
+              expect(mark.color, `${selector}: a mark`).not.toBe("");
+              if (colors) expect(composite(mark.color, [0, 0, 0]), `${selector}: host ink mark`).toEqual(rgb(colors.ink));
+            }
+            // Segments and active filters share the selected edge and fill, mixed from the host ink.
             const edgeSelected = (await paint(page.locator("#probe-edgeSelected"))).background;
             for (const selector of [
-              '.k2b-tabs__list button[aria-selected="true"]',
-              '.k2b-view-tabs__tab[aria-current="page"]',
               '.k2b-segmented-control__option[data-selected="true"]',
               '.k2b-filter-chip[data-active="true"][aria-haspopup]',
               '.k2b-filter-chip[data-active="true"][aria-pressed="true"]',

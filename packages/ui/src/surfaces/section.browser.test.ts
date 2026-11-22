@@ -49,21 +49,35 @@ const markup = renderToString(() => [
 ]);
 
 describe("Section in a real engine", () => {
-  test("a tone colors the title of a page section and of a panel section alike", async () => {
+  // Cloud flach K8, K17: a tone lives only in the symbol tile; the title keeps the text color.
+  test("a tone colors the symbol tile, never the title, of a page section and of a panel section alike", async () => {
     const page = await browser.newPage({ viewport: { width: 1024, height: 700 } });
     try {
       await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">${markup}</body></html>`);
       await settled(page);
       const colors = await page.evaluate(() => {
         const color = (selector: string) => getComputedStyle(document.querySelector(selector)!).color;
-        const probe = document.body.appendChild(document.createElement("span"));
-        probe.style.color = "var(--k2b-danger-text)";
-        const danger = getComputedStyle(probe).color;
-        probe.remove();
-        return { danger, page: color("#page .k2b-section__title"), panel: color("#panel .k2b-section__title") };
+        const resolve = (value: string) => {
+          const probe = document.body.appendChild(document.createElement("span"));
+          probe.style.color = value;
+          const resolved = getComputedStyle(probe).color;
+          probe.remove();
+          return resolved;
+        };
+        return {
+          danger: resolve("var(--k2b-danger-text)"),
+          text: resolve("var(--k2b-text)"),
+          page: color("#page .k2b-section__title"),
+          panel: color("#panel .k2b-section__title"),
+          pageIcon: color("#page .k2b-section__icon"),
+          panelIcon: color("#panel .k2b-section__icon"),
+        };
       });
-      expect(colors.page).toBe(colors.danger);
-      expect(colors.panel).toBe(colors.danger);
+      expect(colors.danger).not.toBe(colors.text);
+      expect(colors.page).toBe(colors.text);
+      expect(colors.panel).toBe(colors.text);
+      expect(colors.pageIcon).toBe(colors.danger);
+      expect(colors.panelIcon).toBe(colors.danger);
     } finally {
       await page.close();
     }
@@ -170,7 +184,13 @@ describe("Section in a real engine", () => {
           const oneLine =
             width(".k2b-section__icon") + gap + title.scrollWidth + (count ? inner + count : 0) + gap + width(".k2b-section__actions");
           return {
-            tight: oneLine > header.getBoundingClientRect().width + 0.5,
+            // The heading row holds the section's text edge as its own inline padding; the row's content box is the room.
+            tight:
+              oneLine >
+              header.clientWidth -
+                Number.parseFloat(getComputedStyle(header).paddingInlineStart) -
+                Number.parseFloat(getComputedStyle(header).paddingInlineEnd) +
+                0.5,
             truncated: title.scrollWidth > title.clientWidth + 0.5,
             actionInside: buttonBox.left >= box.left - 0.5 && buttonBox.right <= box.right + 0.5,
             actionBelowTitle: buttonBox.top >= title.getBoundingClientRect().bottom - 0.5,

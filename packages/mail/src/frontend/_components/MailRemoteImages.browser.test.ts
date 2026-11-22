@@ -7,7 +7,7 @@ import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { RemoteContentAllowRule } from "../../service/remote-content";
 import type {} from "./MailMessageBody.browser-harness";
 
-// The external-images row must keep one 48px height through every state, keep the focus, and open its menu as a
+// The external-images row must keep one 52px height (K1 NoticeRow) through every state, keep the focus, and open its menu as a
 // sheet on phones. That needs real layout and the shipped styles, so the real message body runs in a browser.
 const buildHarness = async (): Promise<string> => {
   const ui = new URL("../../../../ui/", import.meta.url).pathname;
@@ -244,19 +244,19 @@ const waitKind = (page: Page, kind: string) => page.locator(`section[data-remote
 
 describe("Mail external images row", () => {
   for (const [width, context] of screens) {
-    test(`at ${width}px every state keeps one 48px row and the message never moves`, async () => {
+    test(`at ${width}px every state keeps one 52px row and the message never moves`, async () => {
       imageMode = "ok";
       imageDelay = 400;
       const page = await open(context);
       try {
         const blocked = await row(page);
-        expect(blocked).toMatchObject({ kind: "blocked", height: 48, overflow: false, fits: true });
+        expect(blocked).toMatchObject({ kind: "blocked", height: 52, overflow: false, fits: true });
         await shoot(page, `1-blockiert-${width}`);
 
         await page.getByRole("button", { name: width === "390" ? "Laden" : "Bilder laden" }).click();
         await waitKind(page, "loading");
         const loading = await row(page);
-        expect(loading).toMatchObject({ height: 48, top: blocked.top, textLeft: blocked.textLeft, frameTop: blocked.frameTop, fits: true });
+        expect(loading).toMatchObject({ height: 52, top: blocked.top, textLeft: blocked.textLeft, frameTop: blocked.frameTop, fits: true });
         expect(loading.announcement).toBe("Bilder werden geladen …");
         await shoot(page, `3-laedt-${width}`);
 
@@ -264,7 +264,7 @@ describe("Mail external images row", () => {
         await settled(page);
         const once = await row(page);
         expect(once).toMatchObject({
-          height: 48,
+          height: 52,
           top: blocked.top,
           textLeft: blocked.textLeft,
           frameTop: blocked.frameTop,
@@ -340,7 +340,7 @@ describe("Mail external images row", () => {
       await settled(page);
       expect(ruleCalls).toEqual([`create sender ${SENDER}`]);
       const always = await row(page);
-      expect(always.height).toBe(48);
+      expect(always.height).toBe(52);
       expect(await page.locator("section[data-remote-images]").textContent()).toContain(`Bilder von ${SENDER} werden immer geladen`);
 
       await page.getByRole("button", { name: "Ändern" }).click();
@@ -354,7 +354,7 @@ describe("Mail external images row", () => {
       expect(ruleCalls).toEqual([`create sender ${SENDER}`, "delete 00000000-0000-4000-8000-0000000000bb"]);
       const once = await row(page);
       expect(once).toMatchObject({
-        height: 48,
+        height: 52,
         top: always.top,
         frameTop: always.frameTop,
         announcement: "Bilder werden nicht mehr automatisch geladen",
@@ -376,7 +376,7 @@ describe("Mail external images row", () => {
         await waitKind(page, "always");
         await shownImages(page, imageIds.length);
         await settled(page);
-        expect((await row(page)).height).toBe(48);
+        expect((await row(page)).height).toBe(52);
         const trigger = page.locator("section[data-remote-images] .k2b-dropdown__trigger");
         const restingColor = await trigger.evaluate((element) => getComputedStyle(element).color);
         const text = await page.locator("section[data-remote-images]").innerText();
@@ -430,7 +430,7 @@ describe("Mail external images row", () => {
         await waitKind(page, "failed");
         await settled(page);
         const failed = await row(page);
-        expect(failed).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
+        expect(failed).toMatchObject({ height: 52, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
         expect(await page.getByRole("alert").textContent()).toContain(
           width === "390" ? "Laden fehlgeschlagen" : "Bilder konnten nicht geladen werden",
         );
@@ -544,7 +544,7 @@ describe("Mail external images row", () => {
         await waitKind(page, "limited");
         await settled(page);
         const limited = await row(page);
-        expect(limited).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
+        expect(limited).toMatchObject({ height: 52, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
         expect(limited.announcement).toBe("Einige Bilder nicht geladen. Die Nachricht ist größer als das sichere Limit.");
         expect(await page.locator("section[data-remote-images] button").count()).toBe(0);
         await shoot(page, `6b-limit-${width}`);
@@ -561,7 +561,7 @@ describe("Mail external images row", () => {
     try {
       expect(await page.getByRole("button", { name: "Bilder laden" }).count()).toBe(1);
       expect(await page.getByRole("button", { name: "Weitere Optionen für externe Bilder" }).count()).toBe(0);
-      expect((await row(page)).height).toBe(48);
+      expect((await row(page)).height).toBe(52);
       await shoot(page, "7-mehrere-absender-1440");
       await page.getByRole("button", { name: "Bilder laden" }).click();
       await waitKind(page, "once");

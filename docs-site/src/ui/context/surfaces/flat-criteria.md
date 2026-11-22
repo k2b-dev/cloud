@@ -46,7 +46,7 @@ heights, lines, and radii follow from the tokens below.
 | K12 | Phone below 768 px, tablet to 1023 px, wide from 1920 px | judgement | Does every width look intended? (`host-breakpoints` and `layoutProblems` at 390 and 768 px measure the rest) |
 | K13 | A draggable edge carries a grip, and no other edge does | measure | `resize-grips` |
 | K14 | No needless nesting: a square area with one framed child loses the inner frame | measure | `workspace-surfaces`, `notice-cards` |
-| K15 | Overflow and wrapping: one behaviour per kind of content; nothing overlaps, spills, is cut without a sign, or draws a double line | measure | `layoutProblems` at 390, 768, 1100, 1280, 1440, and 1920 px, with the detail open and with a narrow reader |
+| K15 | Overflow and wrapping: one behaviour per kind of content; nothing overlaps, spills, is cut without a sign, draws a double line, or breaks a line by a scrollbar | measure | `layoutProblems` at 390, 768, 1100, 1280, 1440, and 1920 px, with the detail open and with a narrow reader |
 | K16 | Overlays: menus, toasts, and pills small shadow; dialog large shadow over a 28 % scrim; no blur | measure | `glass-surfaces`, `shadow-tokens` |
 | K17 | Dense detail pages: three type steps, order "who, what now, domain, holdings, history", group or area below a section | measure, judgement | a browser test of the area building block (planned); Do you find within five seconds what to do and how much money flows? |
 
@@ -89,6 +89,35 @@ a child's border on the same edge). Focus rings and outlines do not count. The
   <li>Palette 15</li>
 </ul>
 ```
+
+### A scrollbar moves nothing (K1, K15)
+
+> „dass durch eine Scrollbar plötzlich Platz eingenommen wird und dann Linien
+> nicht mehr verbunden sind in einer Tabelle etc.“ (Valentin, 21 November 2026:
+> a scrollbar suddenly takes room, and the lines of a table no longer meet.)
+
+- **Every scroll area keeps its scrollbar's room** (`scrollbar-gutter:
+  stable`). When a scrollbar appears or goes, nothing moves.
+- **A table's head and its rows lie in the same scroll area**, the head sticky.
+  Where two containers cannot be avoided, they take their column widths from
+  exactly one source. Never two containers whose widths differ by a scrollbar.
+  `DataTable` does this.
+- **Lines inside a scroll area end at its content edge**, before the reserved
+  gutter, at the same place with and without a scrollbar. Lines outside it (the
+  56 px head, the status row) run to the column boundary. Vertical lines (table
+  columns, the shell's column boundary) keep their x with and without a
+  scrollbar.
+
+**Measure:** `layoutProblems` reports a line break by scrollbar: a head cell
+that does not stand over its body cells within 0.5 px (also when head and body
+are two tables), or a gap in a head line. Browser tests run with classic
+scrollbars (Chromium draws them once it is launched without its headless
+default: `launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] })`; set a
+width with `::-webkit-scrollbar` where an element hides its own), each case once
+with a few rows and once
+with many, and compare the head cells' positions before and after the
+scrollbar appears. `scrollbar-lines.browser.test.ts` holds the red and the
+green template.
 
 ### Decisions of 21 November 2026
 
@@ -183,7 +212,8 @@ Every app lane tests each page it builds this way. This rule is binding:
   classic scrollbars. The run checks `scrollbarWidth()` above 0, so it measures
   what it claims. Touch is a separate run.
 - **Check:** `layoutProblems` finds overlap, spill, cut text, a double line, a
-  scroll container that scrolls sideways, and a page that scrolls sideways.
+  scroll container that scrolls sideways, a line break by scrollbar, and a page
+  that scrolls sideways.
   `problems` is empty at every width.
 
 The `layout-check-coverage` rule fails a browser test that calls
@@ -210,7 +240,8 @@ for (const width of layoutWidths)
 
 The criteria are CSS tokens and building blocks; they render on the server and
 need no browser code. In a browser test, call `layoutProblems` from
-`@k2b/ui/layout-check` with `page.evaluate`, once per width in its own test.
+`@k2b/ui/layout-check` with `page.evaluate`, once per width in its own test
+([Layout self-check](/en/ui/layout-check)).
 
 ## Example
 

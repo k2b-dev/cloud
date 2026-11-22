@@ -65,9 +65,19 @@ const listStreams = async (connection: NatsConnection): Promise<StreamInfo[]> =>
   }
 };
 
-const deleteStreams = async (connection: NatsConnection, names: string[]): Promise<void> => {
+/**
+ * Deletes the streams one by one. A request that fails names its stream and the wait, so a broker that does not
+ * answer in time (#3945: the whole CI runner stalled for 13 s) reads apart from a delete that JetStream refused.
+ */
+export const deleteStreams = async (connection: Pick<NatsConnection, "request">, names: string[]): Promise<void> => {
   for (const name of names) {
-    const response = (await connection.request(`$JS.API.STREAM.DELETE.${name}`, undefined, apiTimeout)).json<{
+    const reply = await connection.request(`$JS.API.STREAM.DELETE.${name}`, undefined, apiTimeout).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Deleting JetStream stream ${name} failed with a ${apiTimeout.timeout} ms request limit: ${message}`, {
+        cause: error,
+      });
+    });
+    const response = reply.json<{
       success?: boolean;
       error?: ApiError;
     }>();

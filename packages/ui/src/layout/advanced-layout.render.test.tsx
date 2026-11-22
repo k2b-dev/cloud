@@ -628,7 +628,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(rootRule).toBeDefined();
     expect(rootRule).not.toContain("--k2b-workspace-sidebar-width");
     // The sidebar space calculation also inherits the server-rendered width.
-    expect(css.match(/var\(--k2b-workspace-sidebar-width, 13rem\)/g)).toHaveLength(4);
+    // From 1920 px the fallback start width grows by --k2b-workspace-sidebar-wide (K12).
+    expect(css.match(/var\(--k2b-workspace-sidebar-width, calc\(13rem \+ var\(--k2b-workspace-sidebar-wide, 0px\)\)\)/g)).toHaveLength(4);
     expect(css).not.toContain("var(--k2b-workspace-sidebar-width)");
   });
 
@@ -848,7 +849,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       renderToString(() => createComponent(AppWorkspace.BottomDrawer, { id: "b", open: true, height, children: "x" }));
 
     expect(detail("sm")).toContain('aria-valuenow="320"');
-    expect(detail("md")).toContain('aria-valuenow="416"');
+    expect(detail("md")).toContain('aria-valuenow="380"');
     expect(detail("md")).toContain('aria-valuemin="320"');
     expect(detail("lg")).toContain("480px");
     expect(detail("xl")).toContain("544px");
@@ -972,11 +973,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("keeps the workspace surface hierarchy aligned with Cloud", () => {
-      expect(rule(".k2b-app-workspace")).toContain("--k2b-workspace-resize-hit-size:1.25rem");
+      expect(rule(".k2b-app-workspace")).toContain("--k2b-workspace-resize-hit-size:13px");
       expect(rule(".k2b-app-workspace")).toContain("background:var(--k2b-surface)");
       expect(rule(".k2b-app-workspace")).toContain("border:1px solid #0000");
       expect(css).toContain(
-        ".k2b-ui[data-theme=dark] .k2b-app-workspace,.k2b-ui.k2b-dark .k2b-app-workspace,.dark .k2b-ui .k2b-app-workspace",
+        // K2, K3: only the outermost, framed workspace draws the dark hairline edge.
+        ".k2b-ui[data-theme=dark] .k2b-app-workspace:not(:is(.k2b-app-workspace *,[data-flat=true])),.k2b-ui.k2b-dark .k2b-app-workspace:not(:is(.k2b-app-workspace *,[data-flat=true])),.dark .k2b-ui .k2b-app-workspace:not(:is(.k2b-app-workspace *,[data-flat=true]))",
       );
       expect(css).toContain("border-color:var(--k2b-border)");
       expect(rule(".k2b-app-workspace__sidebar")).toContain("background:var(--k2b-surface)");
@@ -997,7 +999,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
       // A phone sheet belongs to the window; from 48 rem the column or drawer sits inside the workspace.
       expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
-      expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
+      // The column adds no padding or scroll inset of its own (K5a).
+      expect(css).toMatch(
+        /\.k2b-ui \.k2b-app-workspace__detail\{--k2b-detail-panel-scroll-inset:0(rem)?;position:absolute;[^}]*padding:0[;}]/,
+      );
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
     });
 
@@ -1197,15 +1202,17 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(tab).toContain("font-weight:500");
       expect(css).not.toContain(".k2b-panes__single-header");
 
-      // Cloud: `w-2`/`h-2` track; the grip is the workspace's 3 px by 2 rem resize grip.
+      // Cloud: `w-2`/`h-2` track; the grip is the workspace's 5 px by 2 rem resize grip (K13).
       expect(rule(".k2b-panes__separator[data-direction=horizontal]")).toContain("width:.5rem");
-      expect(rule(".k2b-panes__separator>span")).toContain("width:3px");
+      expect(rule(".k2b-panes__separator>span")).toContain("width:5px");
       expect(rule(".k2b-panes__separator[data-direction=vertical]>span")).toContain("width:2rem");
-      // A neutral grip, visible at rest; keyboard focus turns it blue. No green, no line.
-      expect(rule(".k2b-panes__separator>span")).toContain("background:var(--k2b-border-strong)");
+      // A neutral grip, visible at rest; keyboard focus and dragging turn it blue. No green.
+      expect(rule(".k2b-panes__separator>span")).toContain("background:#8a8a94");
       expect(rule(".k2b-panes__separator>span")).toContain("height:2rem");
       expect(rule(".k2b-panes__separator>span")).not.toContain("opacity");
-      expect(rule(".k2b-panes__separator:not([aria-disabled=true]):focus-visible>span")).toContain("background:var(--k2b-focus-ring)");
+      expect(rule(".k2b-panes__separator:not([aria-disabled=true]):is(:focus-visible,[data-active=true])>span")).toContain(
+        "background:var(--k2b-focus-ring)",
+      );
       expect(css).not.toMatch(/\.k2b-panes__separator[^{]*\{[^}]*--k2b-success/);
       const targets = rule(".k2b-panes__drop-target");
       expect(targets).toContain("pointer-events:auto");
@@ -1305,7 +1312,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("hides the grip of a pane separator that cannot be dragged", () => {
       // Cloud paints the highlight only when `canResize()` is true.
-      expect(css).toContain(".k2b-panes__separator:not([aria-disabled=true]):is(:hover,[data-active=true])>span");
+      expect(css).toContain(".k2b-panes__separator:not([aria-disabled=true]):hover>span");
+      expect(css).toContain(".k2b-panes__separator:not([aria-disabled=true]):is(:focus-visible,[data-active=true])>span");
       expect(css).not.toMatch(/\.k2b-panes__separator:hover>span/);
       expect(rule(".k2b-panes__separator[aria-disabled=true]>span")).toContain("display:none");
       // The document-style tab rail meets the pane body without a second gutter.

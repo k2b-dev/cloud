@@ -118,6 +118,8 @@ export type {
   DiscussionThreadProps,
 } from "./Discussion";
 export { default as Discussion } from "./Discussion";
+export type { FloatingPillProps } from "./FloatingPill";
+export { FloatingPill } from "./FloatingPill";
 export type {
   FloatingWindowClose,
   FloatingWindowProps,
@@ -260,6 +262,8 @@ export {
   type AppWorkspaceSwitcherAction,
   type AppWorkspaceSwitcherOption,
 } from "./SidebarSwitcher";
+export type { StatusRowFact, StatusRowProps, StatusRowSelection, StatusRowState } from "./StatusRow";
+export { StatusRow } from "./StatusRow";
 export { measureScrollFade } from "./scroll-fade";
 export { attachSheetHandle, type SheetHandleOptions } from "./sheet-handle";
 export type { TabBarItem, TabBarProps } from "./TabBar";
