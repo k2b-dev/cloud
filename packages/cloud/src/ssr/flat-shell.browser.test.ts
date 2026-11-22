@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { launchBrowser } from "../../../ui/test/browser";
+import { scrollbarWidth } from "../../../ui/src/layout-check";
+import { launchWithScrollbars } from "../../../ui/test/browser";
 import { layoutProblems } from "../../../ui/test/head-overlap";
 import { installFlatShellHarness, openFlatShell } from "./flat-shell.browser-harness";
 
 // Classic visible scrollbars, as a desktop with a mouse draws them: their tracks take room as they do for people.
-installFlatShellHarness((options) => launchBrowser({ ...options, ignoreDefaultArgs: ["--hide-scrollbars"] }));
+installFlatShellHarness(launchWithScrollbars);
 
 // `FLAT_SHELL_SHOTS=<dir>` also saves light screenshots of the invented pages for review.
 const shots = process.env.FLAT_SHELL_SHOTS;
@@ -36,6 +37,8 @@ for (const name of ["spaces", "files", "notebooks", "mail"])
       // A mouse: a coarse pointer gives icon buttons a 44 px hit area beyond their box on purpose.
       const page = await openFlatShell(width, `/app/${name}`, { touch: false });
       try {
+        // A desktop window without touch: classic scrollbars take their room.
+        expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
         // The workspace is the subject; the rail's names are visually hidden on purpose below 1680 px. A grip lies over
         // its line by design (K13), and the head's heading and the phone's primary label are visually hidden text.
         const found = await page.evaluate(layoutProblems, {
