@@ -87,7 +87,8 @@ export default ssr<AuthContext>(async (c) => {
       >
         <AccountPage title={t.profile} description={t.profilePageDescription}>
           {(action === "extend" || user.accountExpires || pendingRequest || (user.provider === "ipa" && user.profile === "guest")) && (
-            <div class="flex flex-col gap-2">
+            // Notices are cells from edge to edge of the page frame; their text stays on the page's text edge (K5, K10).
+            <div class="mx-[calc(-1*var(--k2b-gutter))] flex flex-col gap-2" data-account-notices>
               {action === "extend" && <NoticeCard tone="info">{t.extendHint}</NoticeCard>}
 
               {expiryNotice && user.accountExpires && (
