@@ -546,7 +546,9 @@ describe("Files folder is flat (K1–K15)", () => {
           // With many files the list's classic scrollbar really takes room, so the check sees what a person sees.
           if (amount === "many")
             expect(
-              await tab.$eval(".filesv2-browser__collection .k2b-scroll-area", (area) => area.offsetWidth - area.clientWidth),
+              await tab.$eval(".filesv2-browser__collection .k2b-scroll-area", (area) =>
+                area instanceof HTMLElement ? area.offsetWidth - area.clientWidth : 0,
+              ),
             ).toBeGreaterThan(0);
           expect((await problems(tab)).problems).toEqual([]);
           const names = items().map((item) => item.name);
