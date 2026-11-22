@@ -6163,6 +6163,33 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   }
 }
 
+/* An open Detail that waits behind the button, such as one the side panel
+   parked, is not lost: the button shows it in the platform blue with a small
+   mark, without the open drawer's fill. Only colour and a mark inside the
+   button's box change, so nothing moves. */
+.k2b-ui
+  .k2b-app-workspace__detail-toggle:not([aria-expanded="true"]):has(
+    + .k2b-app-workspace__detail:not([hidden]),
+    + .k2b-app-workspace__resize + .k2b-app-workspace__detail:not([hidden])
+  ) {
+  color: var(--k2b-action);
+}
+
+.k2b-ui
+  .k2b-app-workspace__detail-toggle:not([aria-expanded="true"]):has(
+    + .k2b-app-workspace__detail:not([hidden]),
+    + .k2b-app-workspace__resize + .k2b-app-workspace__detail:not([hidden])
+  )::after {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  content: "";
+  border-radius: var(--k2b-radius-round);
+  background: currentColor;
+}
+
 /* Breadcrumbs (K6, K15): one line of quiet text links up to the current
    level, which is strong text; chevrons part the levels. When the path does
    not fit, the front levels wait behind "…" and the current level stays.
