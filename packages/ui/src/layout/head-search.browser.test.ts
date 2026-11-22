@@ -17,6 +17,7 @@ const fixture = `
 import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, ButtonLink, IconButton, TextInput, ViewTabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const filled = document.body.dataset.filled === "true";
+const empty = document.body.dataset.empty === "true";
 const icon = (name) => { const node = document.createElement("i"); node.className = name; node.setAttribute("aria-hidden", "true"); return node; };
 render(() => createComponent(AppWorkspace, { get children() { return [
   createComponent(AppWorkspace.Sidebar, { id: "navigation", label: "Navigation", get children() {
@@ -29,7 +30,7 @@ render(() => createComponent(AppWorkspace, { get children() { return [
       { id: "all", label: "All records", href: "?view=all" }, { id: "lent", label: "On loan", href: "?view=lent" },
       { id: "due", label: "Check due", href: "?view=due" },
     ] }),
-    search: createComponent(TextInput, { type: "search", "aria-label": "Search records", placeholder: "Search devices …",
+    search: empty ? document.createElement("span") : createComponent(TextInput, { type: "search", "aria-label": "Search records", placeholder: "Search devices …",
       icon: "ti ti-search", value: () => (filled ? "lamp" : ""), onValueChange: () => {} }),
     searchLabel: "Search records",
     actions: [
@@ -55,10 +56,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, filled: boolean): Promise<Page> => {
+const open = async (width: number, filled: boolean, empty = false): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 844 }, reducedMotion: "reduce" });
   await page.setContent(
-    `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-filled="${filled}" style="margin:0"><div id="app" style="height:100dvh"></div></body></html>`,
+    `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-filled="${filled}" data-empty="${empty}" style="margin:0"><div id="app" style="height:100dvh"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator(".k2b-app-workspace__head").waitFor();
@@ -120,6 +121,30 @@ for (const width of [390, 768])
     const page = await open(width, true);
     try {
       expect(await state(page)).toMatchObject({ searchShown: true, toggleShown: true, expanded: "true" });
+      expect(await problems(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+for (const width of [390, 1440])
+  test(`${width} px: a search place without a field yet takes no room and shows no icon`, async () => {
+    const page = await open(width, false, true);
+    try {
+      const shape = await page.evaluate(() => {
+        const head = document.querySelector<HTMLElement>(".k2b-app-workspace__head")!;
+        return {
+          searchShown: head.querySelector<HTMLElement>(".k2b-app-workspace__head-search")!.checkVisibility(),
+          toggleShown: head.querySelector<HTMLElement>("[data-app-workspace-head-search-toggle]")!.checkVisibility(),
+          // The actions keep their place at the end of the head.
+          actionsEnd: Math.round(
+            head.getBoundingClientRect().right - head.querySelector(".k2b-app-workspace__head-actions")!.getBoundingClientRect().right,
+          ),
+        };
+      });
+      expect(shape.searchShown).toBe(false);
+      expect(shape.toggleShown).toBe(false);
+      expect(shape.actionsEnd).toBeLessThanOrEqual(24);
       expect(await problems(page)).toEqual([]);
     } finally {
       await page.close();

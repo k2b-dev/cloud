@@ -2704,8 +2704,20 @@ html {
   display: none;
 }
 
+/* A search place whose island shows no field yet (a table without searchable
+   fields) takes no room and shows no icon; its field appears in place later. */
+.k2b-ui .k2b-app-workspace__head-search:not(:has(input, textarea)) {
+  display: none;
+}
+
+.k2b-ui .k2b-app-workspace__head-search:not(:has(input, textarea)) + .k2b-app-workspace__head-actions {
+  margin-inline-start: auto;
+}
+
 @container k2b-head (width < 60rem) {
-  .k2b-ui .k2b-app-workspace__head-search-toggle {
+  .k2b-ui
+    .k2b-app-workspace__head:has(> .k2b-app-workspace__head-search :is(input, textarea))
+    .k2b-app-workspace__head-search-toggle {
     display: inline-flex;
   }
 

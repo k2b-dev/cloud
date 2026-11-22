@@ -288,6 +288,9 @@ names its icon ("Search tasks"); it defaults to "Search".
   empty.
 - Opening and closing move only what lies below the head; the head line and
   its views, actions, and primary keep their place.
+- A search place whose island shows no field yet, such as a table without
+  searchable fields, takes no room and shows no icon; the field appears in
+  place once the island renders it.
 
 The shared workspace controller runs the icon, so a head rendered on the
 server needs no island of its own for it. A field that does not fit ends its
