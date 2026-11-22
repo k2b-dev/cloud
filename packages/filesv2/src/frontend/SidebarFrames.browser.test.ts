@@ -168,7 +168,8 @@ for (const [width, saved] of [
         await tab
           .locator(".k2b-app-workspace")
           .evaluate((root) => getComputedStyle(root).getPropertyValue("--k2b-workspace-detail-filesv2-inspector-width")),
-      ).toBe("400px");
+        // K9: the detail column is 380 px wide.
+      ).toBe("380px");
       const row = (name: string) => tab.locator(".filesv2-list__row", { hasText: name }).first();
       const treeRow = (name: string) => tab.locator(".k2b-app-workspace__nav-tree-row", { hasText: name }).first();
       for (const [step, path] of [

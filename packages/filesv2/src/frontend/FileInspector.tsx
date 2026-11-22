@@ -272,8 +272,13 @@ export default function FileInspector(props: {
                       item().directory ? (
                         item().name
                       ) : (
-                        // K15: the name shortens before its ending; the whole name is the hint.
-                        <FileName name={item().name} />
+                        // K15: the name shortens before its ending; the whole name is the hint. The two parts of the
+                        // shortened name are flex items, which a screen reader would read with a pause ("Notes .txt"),
+                        // so the heading's name is the whole name in one piece.
+                        <>
+                          <FileName name={item().name} aria-hidden="true" />
+                          <span class="sr-only">{item().name}</span>
+                        </>
                       )
                     }
                     subtitle={

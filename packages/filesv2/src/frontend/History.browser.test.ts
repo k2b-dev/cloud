@@ -542,8 +542,9 @@ for (const touch of [false, true])
       await versions.waitFor({ state: "attached" });
       expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
       expect(await tab.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
+      // K9: hairlines part the detail's sections, not a gap.
       expect(await tab.locator(".filesv2-inspector .k2b-detail-panel__body").evaluate((element) => getComputedStyle(element).rowGap)).toBe(
-        "16px",
+        "0px",
       );
       expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
       expect(await tab.evaluate(() => innerWidth)).toBe(1200);

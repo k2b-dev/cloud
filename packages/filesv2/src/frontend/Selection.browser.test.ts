@@ -644,14 +644,8 @@ describe("Files folder states", () => {
       expect(await head()).toEqual([]);
       // Escape parks the drawer and keeps the chosen file.
       expect(await row(tab, "Beleg-2026-002").getAttribute("aria-selected")).toBe("true");
-      // Focus is back in the column it came from, neither lost on the page nor left in the parked drawer.
-      expect(
-        await tab.evaluate(
-          () =>
-            !!document.activeElement?.closest(".filesv2-browser, .k2b-app-workspace__head") &&
-            !document.activeElement.closest(".k2b-app-workspace__detail"),
-        ),
-      ).toBe(true);
+      // Focus returns to Details, the way back to the parked drawer (PR3), never lost on the page or left in the drawer.
+      expect(await tab.evaluate(() => !!document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
       const toggle = tab.locator("[data-app-workspace-detail-toggle]").first();
       expect(await toggle.isVisible()).toBe(true);
       await toggle.click();
