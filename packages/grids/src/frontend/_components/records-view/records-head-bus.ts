@@ -1,4 +1,5 @@
 import type { PublicField as Field } from "../../../api/public-dto";
+import type { CardSize } from "./query-url";
 
 /**
  * The records page has two islands: the head's search and actions (in the workspace head, K6) and the records view
@@ -18,6 +19,10 @@ export type RecordsHeadStatus = {
   selectedCount: number;
   /** A bulk workflow is being prepared. */
   queueing: boolean;
+  /** A live reconciliation failed and waits for a person; `running` while the refresh loads. */
+  refresh: { needed: boolean; running: boolean };
+  /** The card size while the records show as cards; `null` in every other display. */
+  cardSize: CardSize | null;
 };
 
 export type RecordsHeadCommand =
@@ -25,7 +30,9 @@ export type RecordsHeadCommand =
   | { kind: "metadata" }
   | { kind: "export" }
   | { kind: "audit" }
-  | { kind: "workflow"; launcherId: string };
+  | { kind: "workflow"; launcherId: string }
+  | { kind: "refresh" }
+  | { kind: "cardSize"; size: CardSize };
 
 const COMMAND = "grids:records-head-command";
 const STATUS = "grids:records-head-status";

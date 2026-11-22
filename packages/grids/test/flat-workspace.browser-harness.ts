@@ -192,6 +192,10 @@ export type FlatWorkspaceCase = {
   form?: boolean;
   /** Sorted by name, so the sort panel stands open under the status row. */
   sorted?: boolean;
+  /** The trash of the table: deleted records and the way back to the live ones. */
+  trash?: boolean;
+  /** Only workflows may change the table, so adding a record is locked for this writer. */
+  locked?: boolean;
 };
 
 const workspaceState = (options: FlatWorkspaceCase): PublicOkWorkspaceState => {
@@ -239,7 +243,7 @@ const workspaceState = (options: FlatWorkspaceCase): PublicOkWorkspaceState => {
     },
     route: {
       kind: "records",
-      activeTable: geraete,
+      activeTable: options.locked ? { ...geraete, mutationPolicy: { mode: "selected", sources: ["workflow"] } } : geraete,
       activeView: null,
       fields,
       formsForTable: [],
@@ -249,7 +253,10 @@ const workspaceState = (options: FlatWorkspaceCase): PublicOkWorkspaceState => {
       canEditActiveView: false,
       otherTables: tables.map((entry) => ({ id: entry.id, name: entry.name })),
       initialState: {
-        query: options.sorted ? { sort: [{ fieldId: "BEZEIC", direction: "asc" }] } : {},
+        query: {
+          ...(options.sorted ? { sort: [{ fieldId: "BEZEIC", direction: "asc" as const }] } : {}),
+          ...(options.trash ? { deletedOnly: true } : {}),
+        },
         cursor: null,
         selectedRecordId: selected?.id ?? null,
         search: { q: "", fieldIds: [], override: false },
@@ -291,6 +298,8 @@ const caseOf = (query: (key: string) => string | undefined): FlatWorkspaceCase =
   failed: query("failed") === "1",
   form: query("form") === "1",
   sorted: query("sorted") === "1",
+  trash: query("trash") === "1",
+  locked: query("locked") === "1",
 });
 
 /** The record form as the edit dialog shows it; the dialog itself opens only in the browser. */

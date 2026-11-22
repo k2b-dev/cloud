@@ -7,10 +7,8 @@ import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicView } from "../../../api/public-dto";
 import type { ColumnSpec, RecordQuery } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
-import type { CardSize } from "../records-view/query-url";
 import { errorMessage } from "../utils/api-helpers";
 import { type AggregationRow, isAggregationRowComplete } from "./AggregationsPanel";
-import { CardSizeDropdown } from "./CardSizeDropdown";
 import FilterPanel, { blankLeaf, type FilterLeaf, isFilterLeafComplete } from "./FilterPanel";
 import { filterableFields } from "./filter-ops";
 import { type GroupByRow, isGroupByRowComplete } from "./GroupByPanel";
@@ -49,9 +47,6 @@ type Props = {
     aggregations?: RecordQuery["aggregations"];
   }) => void;
   dateConfig?: DateContext;
-  showCardSize?: boolean;
-  cardSize?: CardSize;
-  onCardSizeChange?: (size: CardSize) => void;
   /** Places the chips (in the status row) and the open filter and sort panels (under it). */
   frame: (chips: JSX.Element, panels: JSX.Element) => JSX.Element;
 };
@@ -296,10 +291,6 @@ export default function GridToolbar(props: Props) {
           <i class="ti ti-calculator" />
           {t().computed}
         </Button>
-      </Show>
-
-      <Show when={props.showCardSize && props.onCardSizeChange}>
-        <CardSizeDropdown value={props.cardSize ?? "medium"} onChange={(size) => props.onCardSizeChange?.(size)} />
       </Show>
 
       {/* Smart Clear — appears when any query dimension is active.

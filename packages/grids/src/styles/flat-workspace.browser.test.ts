@@ -91,3 +91,39 @@ test("1440 px: the name column stays within 560 px, numbers stand right-aligned 
     await page.context().close();
   }
 });
+
+// K6: actions stand in the head, the status row keeps filters and the selection's actions. On a phone, a tablet, and a
+// laptop every head action is in sight and inside the head: the main action and "⋯", the way back from the trash, and
+// the locked "Add record" that says why adding is not possible.
+for (const width of [390, 768, 1440])
+  test(`${width} px: the records page's actions are in the head and in sight`, async () => {
+    const reachable = async (query: string, names: string[]) => {
+      const page = await openFlatWorkspace(width, `/app/grids${query}`, { touch: false });
+      try {
+        return await page.evaluate((labels) => {
+          const head = document.querySelector(".k2b-app-workspace__head")!.getBoundingClientRect();
+          const status = document.querySelector(".k2b-status-row");
+          return labels.map((label) => {
+            const control = Array.from(document.querySelectorAll<HTMLElement>(".k2b-app-workspace__head :is(a, button)")).find(
+              (node) => node.getAttribute("aria-label")?.startsWith(label) || node.textContent?.trim().includes(label),
+            );
+            const box = control?.getBoundingClientRect();
+            return {
+              label,
+              inHead: Boolean(box && box.width > 0 && box.top >= head.top - 0.5 && box.bottom <= head.bottom + 0.5),
+              inView: Boolean(box && control?.checkVisibility() && box.left >= 0 && box.right <= innerWidth),
+              inStatusRow: Boolean(status?.textContent?.includes(label)),
+            };
+          });
+        }, names);
+      } finally {
+        await page.context().close();
+      }
+    };
+    const expected = (labels: string[]) => labels.map((label) => ({ label, inHead: true, inView: true, inStatusRow: false }));
+    expect(await reachable("?rows=15", ["Datensatz hinzufügen", "Aktionen"])).toEqual(expected(["Datensatz hinzufügen", "Aktionen"]));
+    expect(await reachable("?rows=15&trash=1", ["Zurück zu aktiven Datensätzen"])).toEqual(expected(["Zurück zu aktiven Datensätzen"]));
+    expect(await reachable("?rows=15&locked=1", ["Datensatz kann nicht hinzugefügt werden"])).toEqual(
+      expected(["Datensatz kann nicht hinzugefügt werden"]),
+    );
+  });

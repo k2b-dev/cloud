@@ -221,13 +221,13 @@ describe("GridsWorkspace", () => {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    const page = (canWriteRecords: boolean) => {
+    const page = (canWriteRecords: boolean, variant: { trash?: boolean; locked?: boolean } = {}) => {
       const state = workspaceState();
       state.catalog.tables = [table];
       state.catalog.viewsByTable = { [table.id]: [view] };
       state.route = {
         kind: "records",
-        activeTable: table,
+        activeTable: variant.locked ? { ...table, mutationPolicy: { mode: "selected", sources: ["workflow"] } } : table,
         activeView: null,
         fields: [],
         formsForTable: [],
@@ -237,7 +237,7 @@ describe("GridsWorkspace", () => {
         canEditActiveView: false,
         otherTables: [{ id: table.id, name: table.name }],
         initialState: {
-          query: {},
+          query: variant.trash ? { deletedOnly: true } : {},
           cursor: null,
           selectedRecordId: null,
           search: { q: "", fieldIds: [], override: false },
@@ -276,5 +276,20 @@ describe("GridsWorkspace", () => {
     const readerHead = reader.slice(reader.indexOf("k2b-app-workspace__head"), reader.indexOf("k2b-app-workspace__content"));
     expect(readerHead).toContain(">All records<");
     expect(readerHead).not.toContain("data-workspace-primary");
+
+    // K6: actions stand in the head, never among the status row's filters.
+    const headOf = (html: string) => html.slice(html.indexOf("k2b-app-workspace__head"), html.indexOf("k2b-app-workspace__content"));
+    const statusOf = (html: string) => {
+      const start = html.indexOf("k2b-status-row__end");
+      return html.slice(start, html.indexOf("k2b-sr-only", start));
+    };
+    const locked = page(true, { locked: true });
+    expect(headOf(locked)).toContain("Add record unavailable: This table does not allow changes from direct editing or forms.");
+    expect(headOf(locked)).not.toContain("data-workspace-primary");
+    expect(statusOf(locked)).not.toContain("Add record");
+    const trash = page(true, { trash: true });
+    expect(headOf(trash)).toContain('href="/app/grids/DEMO01/table/TABLE1"');
+    expect(headOf(trash)).toContain("Back to live records");
+    expect(statusOf(trash)).not.toContain("Back to live records");
   });
 });

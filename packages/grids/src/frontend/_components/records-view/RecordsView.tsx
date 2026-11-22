@@ -10,7 +10,6 @@ import {
   panelDialogWideOptions,
   prompts,
   StatusRow,
-  Tooltip,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
@@ -46,7 +45,6 @@ import { recordMessages } from "../records/messages";
 import { createRecordAccess } from "../records/record-access";
 import { fieldDisplayFormatForView } from "../records/record-display";
 import type { GroupBucket } from "../table/GroupedTable";
-import { CardSizeDropdown } from "../toolbar/CardSizeDropdown";
 import { GridCreateActions, GridCreatePrimary, offersGridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
 // Plain children share RecordsView's hydrated state; nested islands cannot
@@ -791,6 +789,8 @@ export default function RecordsView(props: Props) {
       searchableFields: searchableFields(),
       selectedCount: selectedBulkCount(),
       queueing: bulkQueueing(),
+      refresh: { needed: needsManualRefresh(), running: liveRefreshing() },
+      cardSize: renderMode() === "cards" ? cardSize() : null,
     }),
   );
   onCleanup(() => forgetRecordsHeadStatus(props.tableId));
@@ -801,6 +801,8 @@ export default function RecordsView(props: Props) {
         else if (command.kind === "metadata") void openRecordMetaDialog();
         else if (command.kind === "export") openExportDialog();
         else if (command.kind === "audit") openCombinedAudit();
+        else if (command.kind === "refresh") void applyLiveRefresh();
+        else if (command.kind === "cardSize") onCardSizeChange(command.size);
         else {
           const launcher = props.bulkSelectionLaunchers.find((entry) => entry.id === command.launcherId);
           if (launcher) void queueBulkWorkflow(launcher);
@@ -814,60 +816,15 @@ export default function RecordsView(props: Props) {
   // records without a number; the alert cell below says what went wrong.
   const statusLead = () =>
     queryFailure() && items().length === 0 ? t().records : props.trashMode ? `${t().deleted} ${recordCountText()}` : recordCountText();
-  /** Adding is locked here: the head has no main action, so the locked button explains why at the row's end. */
-  const createLocked = () =>
-    !props.trashMode &&
-    !props.viewMode &&
-    props.canWrite &&
-    !canDirectWrite() &&
-    !(mutationSourceAllowed("form") && forms().some((form) => form.isActive));
+  // K6: the status row holds filters and the selection's actions only. "Record info · n" is the active record-info
+  // filter; refreshing, the card size, the way back from the trash, and the locked "Add record" stand in the head.
   const statusExtras = () => (
-    <>
-      <Show when={needsManualRefresh()}>
-        <Tooltip.Anchor content={t().refreshRecords}>
-          <Button
-            variant="secondary"
-            size="sm"
-            type="button"
-            class="app-accent-text"
-            loading={liveRefreshing()}
-            onClick={() => void applyLiveRefresh()}
-          >
-            <i class="ti ti-refresh" />
-            {t().updatesAvailable}
-          </Button>
-        </Tooltip.Anchor>
-      </Show>
-      <Show when={renderMode() === "cards" && (props.viewMode || props.trashMode)}>
-        <CardSizeDropdown value={cardSize()} onChange={onCardSizeChange} />
-      </Show>
-      <Show when={props.trashMode && props.canReadTable}>
-        <ButtonLink variant="secondary" size="sm" href={`/app/grids/${props.baseId}/table/${props.tableId}`}>
-          <i class="ti ti-arrow-back" />
-          {t().backToLive}
-        </ButtonLink>
-      </Show>
-      <Show when={!props.trashMode && activeRecordMetaCount() > 0}>
-        <Button variant="secondary" size="sm" aria-pressed="true" type="button" onClick={openRecordMetaDialog}>
-          <i class="ti ti-user-search" />
-          {t().recordInfo} · {activeRecordMetaCount()}
-        </Button>
-      </Show>
-      <Show when={createLocked()}>
-        <GridCreateActions
-          variant="secondary"
-          baseId={props.baseId}
-          tableId={props.tableId}
-          tableName={tableName()}
-          disableDirectInsert={disableDirectInsert()}
-          fields={tableFields()}
-          forms={[]}
-          canWrite={props.canWrite}
-          canDirectWrite={false}
-          canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
-        />
-      </Show>
-    </>
+    <Show when={!props.trashMode && activeRecordMetaCount() > 0}>
+      <Button variant="secondary" size="sm" aria-pressed="true" type="button" onClick={openRecordMetaDialog}>
+        <i class="ti ti-user-search" />
+        {t().recordInfo} · {activeRecordMetaCount()}
+      </Button>
+    </Show>
   );
   const statusSelection = () =>
     bulkSelectionEnabled() && selectedBulkCount() > 0
@@ -931,9 +888,6 @@ export default function RecordsView(props: Props) {
                 canWrite={props.canWrite}
                 onCommit={onToolbarCommit}
                 dateConfig={props.dateConfig}
-                showCardSize={renderMode() === "cards"}
-                cardSize={cardSize()}
-                onCardSizeChange={onCardSizeChange}
                 frame={(chips, panels) => (
                   <>
                     <StatusRow

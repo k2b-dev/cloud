@@ -30,10 +30,13 @@ const status = (overrides: Partial<Parameters<typeof publishRecordsHeadStatus>[1
   searchableFields: [field],
   selectedCount: 0,
   queueing: false,
+  refresh: { needed: false, running: false },
+  cardSize: null,
   ...overrides,
 });
 
-const mount = async (tableId: string, searchableFields: PublicField[]) => {
+type HeadProps = Partial<{ trashMode: boolean; createLock: "activeFormRequired" | "changesUnavailable" }>;
+const mount = async (tableId: string, searchableFields: PublicField[], extra: HeadProps = {}) => {
   const dom = createDomTestHarness();
   const { default: RecordsHeadActions } = await import("./RecordsHeadActions.island");
   const dispose = render(
@@ -49,6 +52,7 @@ const mount = async (tableId: string, searchableFields: PublicField[]) => {
         canReadTable: true,
         queryHref: `/app/grids/BASE01/table/${tableId}/query`,
         bulkLaunchers: [],
+        ...extra,
       }),
     dom.root,
   );
@@ -104,6 +108,58 @@ domTest("clearing the search sends one search command to the records view of its
     expect(received).toEqual([{ kind: "search", q: "", fieldIds: [] }]);
   } finally {
     stop();
+    head.dispose();
+  }
+});
+
+const buttonNamed = (root: Element, name: string) =>
+  Array.from(root.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("button, a")).find((node) =>
+    node.textContent?.trim().includes(name),
+  );
+
+domTest("the head offers refreshing when a live update needs a person, and sends the refresh to the records view", async () => {
+  const head = await mount("TABLED", [field]);
+  const received: RecordsHeadCommand[] = [];
+  const stop = onRecordsHeadCommand("TABLED", (command) => received.push(command));
+  try {
+    expect(buttonNamed(head.root, "Updates available")).toBeUndefined();
+    publishRecordsHeadStatus("TABLED", status({ refresh: { needed: true, running: false } }));
+    buttonNamed(head.root, "Updates available")!.click();
+    expect(received).toEqual([{ kind: "refresh" }]);
+    publishRecordsHeadStatus("TABLED", status({ refresh: { needed: true, running: true } }));
+    expect(buttonNamed(head.root, "Updates available")?.getAttribute("aria-busy")).toBe("true");
+  } finally {
+    stop();
+    head.dispose();
+  }
+});
+
+domTest("a card display puts its card size in the head; the trash puts the way back to live records there", async () => {
+  const cards = await mount("TABLEE", [field]);
+  try {
+    expect(cards.root.querySelector('[aria-label="Card size"]')).toBeNull();
+    publishRecordsHeadStatus("TABLEE", status({ cardSize: "large" }));
+    expect(cards.root.querySelector('[aria-label="Card size"]')).not.toBeNull();
+  } finally {
+    cards.dispose();
+  }
+  const trash = await mount("TABLEF", [field], { trashMode: true });
+  try {
+    expect(buttonNamed(trash.root, "Back to live records")?.getAttribute("href")).toBe("/app/grids/BASE01/table/TABLEF");
+    expect(trash.root.querySelector('[aria-label="Actions"]')).toBeNull();
+  } finally {
+    trash.dispose();
+  }
+});
+
+domTest("where adding is locked, the head shows the locked Add record with its reason in the main action's place", async () => {
+  const head = await mount("TABLEG", [field], { createLock: "activeFormRequired" });
+  try {
+    const locked = buttonNamed(head.root, "Add record") as HTMLButtonElement | undefined;
+    expect(locked?.disabled).toBe(true);
+    expect(locked?.getAttribute("aria-label")).toBe("Add record unavailable: Add an active form before creating records in this table.");
+    expect(head.root.lastElementChild?.contains(locked ?? null)).toBe(true);
+  } finally {
     head.dispose();
   }
 });
