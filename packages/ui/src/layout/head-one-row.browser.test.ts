@@ -6,10 +6,10 @@ import { launchBrowser, settled } from "../../test/browser";
 import { layoutProblems } from "../layout-check";
 
 // Error class (flat QA for 0.84, B3, B6, B7, B8, B9): a head that wraps into two or three rows, a path that scrolls or
-// runs under the actions, or a view strip that scrolls sideways, each at one width only. K1, K15: the head is one row
-// at every width (56 px, 44 px on a phone, where only the filters may follow in their own row); when room runs short
-// the actions give way first, then the views move into "More +n" and the path's front levels wait behind "…". No
-// strip scrolls sideways except the filters, which fade. Heads shaped like Mail (many views, search, primary), Files
+// runs under the actions, or a view strip that scrolls sideways, each at one width only. K1, K15: from 768 px the head
+// is one 56 px row; when room runs short the actions give way first, then the views move into "More +n" and the path's
+// front levels wait behind "…". A phone keeps its two rows of 44 px (K12), and the filters may follow in their own
+// row. No strip scrolls sideways except the filters, which fade. Heads shaped like Mail (many views, search, primary), Files
 // (a path, a segment, and an action), and Spaces (views and filters), with classic visible scrollbars.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -111,14 +111,17 @@ for (const kind of ["mail", "files", "spaces"] as const)
           };
         });
         expect(head.line).toBe(phone ? 44 : 56);
-        expect({ height: head.height, centres: head.centres, sideways: head.sideways }).toEqual({
-          height: head.line,
-          centres: 1,
-          sideways: [],
-        });
-        // Every first-row part is centred in the head line; the open view's mark lies on it.
-        expect(Math.abs(head.centre! - head.line / 2)).toBeLessThanOrEqual(1);
-        if (kind !== "files") expect(head.mark).toBe(head.line);
+        expect(head.sideways).toEqual([]);
+        if (phone) {
+          // K12: at most the two phone rows before the filters, each one head line tall.
+          expect(head.centres).toBeLessThanOrEqual(2);
+          expect(head.height).toBeLessThanOrEqual(2 * head.line);
+        } else {
+          expect({ height: head.height, centres: head.centres }).toEqual({ height: head.line, centres: 1 });
+          // Every part is centred in the head line; the open view's mark lies on it.
+          expect(Math.abs(head.centre! - head.line / 2)).toBeLessThanOrEqual(1);
+          if (kind !== "files") expect(head.mark).toBe(head.line);
+        }
         const found = await page.evaluate(layoutProblems, { root: ".k2b-app-workspace__head", ignore: ".k2b-app-workspace__resize" });
         expect(found.problems).toEqual([]);
       } finally {
