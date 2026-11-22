@@ -1,6 +1,6 @@
 import { createUniqueId, For, type JSX, Show, splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { IconButton } from "../actions/Button";
+import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
 import { useFlatBlockMessages } from "./flat-block-messages";
 import { useSectionMessages } from "./section-messages";
@@ -27,6 +27,13 @@ export type FactGroupProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | 
   items: readonly FactGroupItem[];
   /** The group's one pencil. It replaces "Edit" links on single values. */
   onEdit?: () => void;
+  /** A word beside the pencil, such as "Edit"; without it the pencil stands alone. */
+  editText?: string;
+  /**
+   * `false` sets labels on the column's text edge instead of the title's (24 px further in, `.irows` in the mockup), for
+   * a column of facts without symbols beside them, such as the info column of a record.
+   */
+  inset?: boolean;
   /** Heading level of the title; defaults to 3. */
   level?: 3 | 4;
 };
@@ -38,7 +45,7 @@ export type FactGroupProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | 
  * an address keeps its line. Put the groups into a column of at most 400 px beside the detail column, or into it.
  */
 export function FactGroup(props: FactGroupProps): JSX.Element {
-  const [local, rest] = splitProps(props, ["title", "icon", "items", "onEdit", "level", "class"]);
+  const [local, rest] = splitProps(props, ["title", "icon", "items", "onEdit", "editText", "inset", "level", "class"]);
   const t = useFlatBlockMessages();
   const copyLabel = useSectionMessages();
   const titleId = `k2b-fact-group-${createUniqueId()}`;
@@ -50,6 +57,7 @@ export function FactGroup(props: FactGroupProps): JSX.Element {
       class={local.class ? `k2b-fact-group ${local.class}` : "k2b-fact-group"}
       aria-labelledby={titleId}
       data-k2b-band="topic"
+      data-inset={local.inset === false ? "false" : undefined}
     >
       <div class="k2b-fact-group__head">
         <Show when={local.icon}>{(icon) => <i class={`${icon()} k2b-fact-group__icon`} aria-hidden="true" />}</Show>
@@ -58,15 +66,33 @@ export function FactGroup(props: FactGroupProps): JSX.Element {
         </Dynamic>
         <Show when={local.onEdit}>
           {(edit) => (
-            <IconButton
-              size="sm"
-              variant="ghost"
-              class="k2b-fact-group__edit"
-              label={t().editFacts({ title: local.title })}
-              onClick={() => edit()()}
+            <Show
+              when={local.editText}
+              fallback={
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  class="k2b-fact-group__edit"
+                  label={t().editFacts({ title: local.title })}
+                  onClick={() => edit()()}
+                >
+                  <i class="ti ti-pencil" aria-hidden="true" />
+                </IconButton>
+              }
             >
-              <i class="ti ti-pencil" aria-hidden="true" />
-            </IconButton>
+              {(text) => (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="k2b-fact-group__edit"
+                  aria-label={t().editFacts({ title: local.title })}
+                  onClick={() => edit()()}
+                >
+                  <i class="ti ti-pencil" aria-hidden="true" />
+                  {text()}
+                </Button>
+              )}
+            </Show>
           )}
         </Show>
       </div>

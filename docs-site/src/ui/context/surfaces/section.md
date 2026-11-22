@@ -126,6 +126,10 @@ and its rows on a rail that starts on the name's text edge. Two areas stand on
 one shared line; `--k2b-gap-area` (0 by default) adds space after an open
 area, and with space both lines show, so keep it 0 or at least 16 px. A meta line that does not fit wraps and grows
 the head. With `href` the name is a link to the thing's own page. With
+`rail={false}` the area has no rail: its content stands on the column's text
+edge, a band in it (a table, an alert cell) reaches both edges, its rows stand
+together without lines, and the area is marked only by the line above its
+head. With
 `collapsible`, a closed area is one 40 px row like a list row: name, state,
 count, and the chevron, without a surface or a gap. Only the person opens or
 closes it, and opening moves only what lies below its head. An area holds rows
@@ -212,10 +216,13 @@ import { Area, FactGroup, Field, FieldGrid, RowGroup, Section } from "@k2b/ui";
 
 `RowGroup` takes `title`, `count`, one `action`, `level` (3 to 5, default 4),
 and the rows as `children`. `Area` takes `name`, `href`, `marker` or `icon` for its tile,
-`state`, `count`, `actions`, `meta`, `empty`, `level`, and the rows as
+`state`, `count`, `actions`, `meta`, `empty`, `level`, `rail`, and the rows as
 `children`; `collapsible` with `defaultOpen` (default open) or `open` and
 `onOpenChange` lets the person close it. `FactGroup` takes `title`, `icon`,
-`items` (`label`, `value`, `detail`, `copy`), `onEdit`, and `level`.
+`items` (`label`, `value`, `detail`, `copy`), `onEdit` with an optional word
+`editText` beside the pencil, `inset`, and `level`. Labels stand on the title's
+text edge (24 px in, `.irows` in the mockup); `inset={false}` sets them on the
+column's text edge. A copy button's symbol ends on the column's end text edge.
 `FieldGrid` takes `columns` (2, 3, or 4; default 2) and the fields as
 `children`.
 

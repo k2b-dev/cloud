@@ -33,6 +33,11 @@ export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "titl
   onOpenChange?: (open: boolean) => void;
   /** Heading level of the name; defaults to 4. */
   level?: 3 | 4 | 5;
+  /**
+   * `false` sets the content on the column's text edge without the rail, and the area marks itself only by the line
+   * above its head; its rows draw no lines of their own. A band in it (a table, an alert cell) reaches both edges.
+   */
+  rail?: boolean;
 };
 
 /**
@@ -59,6 +64,7 @@ export function Area(props: AreaProps): JSX.Element {
     "defaultOpen",
     "onOpenChange",
     "level",
+    "rail",
     "class",
   ]);
   const t = useFlatBlockMessages();
@@ -83,6 +89,7 @@ export function Area(props: AreaProps): JSX.Element {
       class={local.class ? `k2b-area ${local.class}` : "k2b-area"}
       data-open={String(open())}
       data-collapsible={local.collapsible ? "true" : undefined}
+      data-rail={local.rail === false ? "false" : undefined}
       aria-labelledby={`${id}-name`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the chevron button is the keyboard and screen-reader control; the head's free space is a larger pointer target for the same toggle. */}

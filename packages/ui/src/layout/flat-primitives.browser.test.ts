@@ -15,7 +15,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "flat-primitives.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, NoticeCard, NoticeRow, ProgressPath, Section, SegmentedControl, StatusBadge, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, FactGroup, NoticeCard, NoticeRow, ProgressPath, Section, SegmentedControl, StatusBadge, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const facts = [
   { term: "Status", description: "In progress" },
@@ -55,6 +55,18 @@ render(() => [
     children: "The receipt waits for a signature." }),
   createComponent(NoticeRow, { id: "row-plain", action: createComponent(Button, { size: "sm", variant: "secondary", children: "Show" }), children: "2 items go back." }),
 ], document.getElementById("rows"));
+render(() => [
+  createComponent(Area, { id: "area-flat", name: "EL-2611-00009", marker: 3, rail: false, get children() { return [
+    (() => { const r = document.createElement("div"); r.className = "row"; r.id = "flat-row"; r.textContent = "10 items ended"; return r; })(),
+    (() => { const r = document.createElement("div"); r.className = "row"; r.textContent = "8 items run until tomorrow"; return r; })(),
+    createComponent(NoticeCard, { id: "flat-alert", tone: "warning", icon: true, title: "2 items go back." }),
+  ]; } }),
+], document.getElementById("areas-flat"));
+const facts2 = [{ label: "Phone", value: "+49 30 5550 142", copy: true }, { label: "Email", value: "o.brandner@example.test", copy: true }];
+render(() => [
+  createComponent(FactGroup, { id: "facts-title", title: "Contact", icon: "ti ti-address-book", items: facts2, onEdit: () => {}, editText: "Edit" }),
+  createComponent(FactGroup, { id: "facts-edge", title: "Bank", items: facts2, inset: false, onEdit: () => {} }),
+], document.getElementById("info"));
 
 render(() => [
   createComponent(Area, { id: "area-1", name: "EL-2611-00021", href: "#el-21", marker: 1, state: createComponent(StatusBadge, { tone: "warning", label: "Receipt open" }),
@@ -105,6 +117,8 @@ const load = async (width: number) => {
       `<main id="page" class="col" data-layout-area style="width:${Math.min(720, width)}px"></main>` +
       `<div id="page-notes" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="rows" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
+      `<div id="areas-flat" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
+      `<div id="info" class="col" data-layout-area style="width:${Math.min(400, width)}px"></div>` +
       `<div id="areas" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="tabs" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="path" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter)"></div>` +
@@ -279,6 +293,43 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       expect(meta.cut).toBe(false);
       expect(meta.right).toBeLessThanOrEqual(area.right);
       expect((await box(page, "#area-2")).top).toBe(area.bottom);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an area without its rail keeps its content on the text edge and is marked by the line above its head", async () => {
+    const page = await load(width);
+    try {
+      const area = await box(page, "#area-flat");
+      expect((await textLeft(page, "#flat-row")) - area.left).toBe(gutter);
+      const alert = await box(page, "#flat-alert");
+      expect([alert.left, alert.right]).toEqual([area.left, area.right]);
+      const look = await page.locator("#area-flat").evaluate((element) => ({
+        lines: getComputedStyle(element).boxShadow,
+        head: getComputedStyle(element.querySelector(".k2b-area__head")!).boxShadow,
+        rail: getComputedStyle(element.querySelector(".k2b-area__body")!, "::before").display,
+        rowLine: getComputedStyle(element.querySelectorAll(".row")[1]!).borderTopWidth,
+      }));
+      expect(look.lines).toContain("0px 1px 0px 0px inset");
+      expect(look.lines).not.toContain("-1px");
+      expect([look.head, look.rail, look.rowLine]).toEqual(["none", "none", "0px"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a fact group sets labels on the title's text edge, or on the column's with inset false; copy ends on the edge", async () => {
+    const page = await load(width);
+    try {
+      const column = await box(page, "#info");
+      const edge = column.left + 1 + gutter;
+      expect((await box(page, "#facts-title dt")).left - edge).toBe(24);
+      expect((await box(page, "#facts-edge dt")).left - edge).toBe(0);
+      expect(await page.locator("#facts-title .k2b-fact-group__edit").textContent()).toContain("Edit");
+      // K5: the copy symbol (16 px in its 28 px box) ends on the column's end text edge.
+      const copy = await box(page, "#facts-edge .k2b-fact-group__copy");
+      expect(Math.round(column.right - 1 - gutter - (copy.right - 6))).toBe(0);
     } finally {
       await page.close();
     }
