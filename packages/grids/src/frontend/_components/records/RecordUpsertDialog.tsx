@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
+import { Button, confirmDiscardIfDirty, dialogCore, FieldGrid, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { GridsRecordLiveEvent } from "../../../live-events";
 import { initialFieldInputValue, isRecordInputField, sanitizeFieldValues } from "../fields/field-render";
 import { FieldInput, type UserInputEntry } from "../forms/form-fields";
 import { recordMessages } from "./messages";
+import { recordFieldRows } from "./record-field-rows";
 
 /**
  * Shared create/edit dialog for grids records.
@@ -46,6 +47,48 @@ type OpenArgs = {
 };
 
 export class RecordSaveConflictError extends Error {}
+
+/**
+ * The fields of the record form in rows (K5b): one-line values pair up on one grid, the rest stand alone. Each field
+ * delegates to {@link FieldInput}, the same widget forms and field defaults use.
+ */
+export function RecordFormFields(props: {
+  fields: Field[];
+  values: Record<string, unknown>;
+  errors: Record<string, string>;
+  onChange: (fieldId: string, value: unknown) => void;
+  baseId: string;
+  relationLabels?: Record<string, string>;
+  recordId?: string;
+  dateConfig?: DateContext;
+}) {
+  const renderField = (f: Field) => {
+    const entry: UserInputEntry = {
+      kind: "user_input",
+      fieldId: f.id,
+      required: f.required,
+      helpText: f.description ?? undefined,
+    };
+    return (
+      <FieldInput
+        field={f}
+        entry={entry}
+        value={props.values[f.id]}
+        onChange={(v) => props.onChange(f.id, v)}
+        error={() => props.errors[f.id]}
+        baseId={props.baseId}
+        relationLabels={props.relationLabels}
+        currentRecordId={props.recordId}
+        dateConfig={props.dateConfig}
+      />
+    );
+  };
+  return (
+    <For each={recordFieldRows(props.fields)}>
+      {(row) => (row.length > 1 ? <FieldGrid>{row.map((f) => renderField(f))}</FieldGrid> : renderField(row[0]!))}
+    </For>
+  );
+}
 
 /**
  * Keeps the record draft open until onSubmit persists successfully.
@@ -232,27 +275,6 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
       // select widget, relation widget) now matches what
       // PublicFormSubmit, FormSubmitModal, and the field-designer's
       // default-value editor render for the same type.
-      const renderField = (f: Field) => {
-        const entry: UserInputEntry = {
-          kind: "user_input",
-          fieldId: f.id,
-          required: f.required,
-          helpText: f.description ?? undefined,
-        };
-        return (
-          <FieldInput
-            field={f}
-            entry={entry}
-            value={values()[f.id]}
-            onChange={(v) => update(f.id, v)}
-            error={() => errors()[f.id]}
-            baseId={args.baseId}
-            relationLabels={args.relationLabels}
-            currentRecordId={args.record?.id}
-            dateConfig={args.dateConfig}
-          />
-        );
-      };
       const tableName = args.tableName?.trim();
       const title =
         args.mode === "create"
@@ -262,16 +284,24 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
           : tableName
             ? t().titled({ action: t().editRecord, table: tableName })
             : t().editRecord;
-      const icon = args.mode === "create" ? "ti ti-row-insert-bottom" : "ti ti-pencil";
 
       return (
         <form onSubmit={handleSubmit} class="contents">
           <PanelDialog>
-            <PanelDialog.Header title={title} icon={icon} close={requestClose} closeDisabled={submitting()} />
+            <PanelDialog.Header title={title} close={requestClose} closeDisabled={submitting()} />
             <PanelDialog.Body>
               <Show when={editableFields.length > 0} fallback={<p class="text-sm text-dimmed">{t().noEditableFields}</p>}>
                 <fieldset disabled={submitting()} class="contents">
-                  <For each={editableFields}>{(f) => renderField(f)}</For>
+                  <RecordFormFields
+                    fields={editableFields}
+                    values={values()}
+                    errors={errors()}
+                    onChange={update}
+                    baseId={args.baseId}
+                    relationLabels={args.relationLabels}
+                    recordId={args.record?.id}
+                    dateConfig={args.dateConfig}
+                  />
                 </fieldset>
               </Show>
               <Show when={submitError()}>{(message) => <NoticeCard tone="danger">{message()}</NoticeCard>}</Show>

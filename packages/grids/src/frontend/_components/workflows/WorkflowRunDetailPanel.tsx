@@ -499,10 +499,9 @@ export function WorkflowRunDetailPanel(props: {
                 when={running()}
                 fallback={
                   <Button
-                    variant="subtle"
+                    variant="secondary"
                     size="sm"
                     type="button"
-                    class="grids-details-main"
                     onClick={() => void runAgain()}
                     disabled={rerunMut.loading()}
                     aria-label={t().rerunWithInputs}

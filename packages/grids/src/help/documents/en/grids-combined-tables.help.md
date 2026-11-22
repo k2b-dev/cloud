@@ -87,7 +87,7 @@ Revoked access returns only when you publish a newly authorized revision.
 
 Combined tables keep the lifecycle of published records without giving access to their source bases. A person with access to the target base can choose **Show deleted** to inspect records that were deleted in a source table. Their detail panel is read-only and names the published source by base and table name. To restore or edit the original record, use its source base.
 
-The record detail shows its published history. People with access to the target base can also choose **Actions → Audit trail** to browse and filter the history of all published records. A person who uses a Grids App receives only the history that the published capability snapshot explicitly includes.
+The record detail shows its published history. People with access to the target base can also choose **⋯ Actions → Audit trail** in the head of the table to browse and filter the history of all published records. A person who uses a Grids App receives only the history that the published capability snapshot explicitly includes.
 
 :::reference
 - **Current publication:** Grids projects the history through the active canonical mappings. Fields removed from the publication no longer appear, also in older events.

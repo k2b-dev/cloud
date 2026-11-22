@@ -87,7 +87,7 @@ Widerrufener Zugriff kehrt erst zurück, wenn du eine neu autorisierte Revision 
 
 Kombinierte Tabellen erhalten den Lebenszyklus veröffentlichter Datensätze, ohne Zugriff auf ihre Quell-Bases zu geben. Eine Person mit Zugriff auf die Ziel-Base kann **Gelöschte anzeigen** wählen, um Datensätze zu prüfen, die in einer Quelltabelle gelöscht wurden. Ihre Detailansicht ist schreibgeschützt und nennt die veröffentlichte Quelle mit dem Namen von Base und Tabelle. Um den ursprünglichen Datensatz wiederherzustellen oder zu bearbeiten, nutze seine Quell-Base.
 
-Die Detailansicht des Datensatzes zeigt seinen veröffentlichten Verlauf. Personen mit Zugriff auf die Ziel-Base können außerdem **Aktionen → Änderungsverlauf** wählen, um den Verlauf aller veröffentlichten Datensätze zu durchsuchen und zu filtern. Eine Person, die eine Grids App verwendet, erhält nur den Verlauf, den der veröffentlichte Capability-Snapshot ausdrücklich enthält.
+Die Detailansicht des Datensatzes zeigt seinen veröffentlichten Verlauf. Personen mit Zugriff auf die Ziel-Base können außerdem im Kopf der Tabelle **⋯ Aktionen → Änderungsverlauf** wählen, um den Verlauf aller veröffentlichten Datensätze zu durchsuchen und zu filtern. Eine Person, die eine Grids App verwendet, erhält nur den Verlauf, den der veröffentlichte Capability-Snapshot ausdrücklich enthält.
 
 :::reference
 - **Aktuelle Veröffentlichung:** Grids projiziert den Verlauf durch die aktiven kanonischen Zuordnungen. Aus der Veröffentlichung entfernte Felder erscheinen nicht mehr, auch nicht in älteren Ereignissen.
