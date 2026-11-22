@@ -67,6 +67,7 @@ import {
 } from "./app-workspace-width";
 import { preloadBottomSheet, withBottomSheet } from "./bottom-sheet-load";
 import { DETAILS_ICON } from "./DetailsToggle";
+import { OverlayScrollbar } from "./overlay-scrollbar";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
@@ -911,10 +912,22 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
         data-width={props.width === "content" || props.width === "reading" ? props.width : undefined}
         data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
         data-scroll={props.scroll === false ? "false" : undefined}
+        // K2: a scrolling main column draws no track; its rows reach the column edge under an overlay thumb.
+        data-scrollbar={!hasPanes() && props.scroll !== false ? "overlay" : undefined}
         aria-busy={props["aria-busy"]}
         {...scrollAttrs(props.scrollPreserveKey)}
       >
-        <Show when={hasPanes()} fallback={resolved() as JSX.Element}>
+        <Show
+          when={hasPanes()}
+          fallback={
+            <>
+              {resolved() as JSX.Element}
+              <Show when={props.scroll !== false}>
+                <OverlayScrollbar scroller={() => mainElement} />
+              </Show>
+            </>
+          }
+        >
           <For each={regions()}>
             {(region) => {
               const activeMobilePane = () => {
@@ -947,6 +960,9 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
               const minSize = () => pane.props.minSize ?? APP_WORKSPACE_PANE_MIN;
               const maxSize = () => Math.max(minSize(), pane.props.maxSize ?? APP_WORKSPACE_PANE_MAX);
               const before = () => levelsMode() || region.index < (anchorRegion()?.index ?? 0);
+              let paneElement: HTMLElement | undefined;
+              // K2: a scrolling content pane draws no track; a navigation pane keeps its track as the end of its inset rows.
+              const paneOverlay = () => !levelsMode() && pane.props.scroll !== false && pane.props.surface !== "navigation";
               const handle = () => (
                 <ResizeHandle
                   kind="pane"
@@ -965,6 +981,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                 <Show when={pane.props.open !== false}>
                   <Show when={resizable() && !before()}>{handle()}</Show>
                   <section
+                    ref={paneElement}
                     id={pane.domId}
                     class={`k2b-app-workspace__main-pane ${isAnchor() ? "is-primary" : ""} ${pane.props.class ?? ""}`}
                     aria-label={pane.props.label}
@@ -983,6 +1000,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     data-workspace-resizable={resizable() ? "true" : "false"}
                     data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
                     data-scroll={!levelsMode() && pane.props.scroll === false ? "false" : undefined}
+                    data-scrollbar={paneOverlay() ? "overlay" : undefined}
                     data-scroll-fade-mode={
                       !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
                     }
@@ -1044,7 +1062,12 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                         </div>
                       </>
                     ) : (
-                      pane.props.children
+                      <>
+                        {pane.props.children}
+                        <Show when={paneOverlay()}>
+                          <OverlayScrollbar scroller={() => paneElement} />
+                        </Show>
+                      </>
                     )}
                   </section>
                   <Show when={resizable() && before()}>{handle()}</Show>
@@ -1498,8 +1521,11 @@ const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
         data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
         {...scrollAttrs(props.scrollPreserveKey)}
         {...modeAttrs(props.sidebarMode)}
+        // K2: the sidebar draws no track either, so its rows keep their inset whether it scrolls or not.
+        data-scrollbar="overlay"
       >
         {props.children}
+        <OverlayScrollbar scroller={() => body} />
       </div>
       <script innerHTML={SIDEBAR_SCROLL_MEMORY_SCRIPT} />
     </>

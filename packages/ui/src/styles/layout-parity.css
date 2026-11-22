@@ -3890,6 +3890,98 @@ html {
   }
 }
 
+/* The overlay scrollbar (Cloud flach K2): the flat scrollers (Main, a content
+   MainPane, the detail body, the sidebar body, ScrollArea scrollbar="overlay")
+   reserve no track. Their content takes the scrollport's whole width, so row
+   lines and fills reach the column edge also where the track was, and nothing
+   moves when content starts or stops overflowing, in Chromium and in WebKit,
+   whose classic scrollbar `scrollbar-gutter` does not reserve. With a mouse
+   a thin thumb (overlay-scrollbar.tsx) stands over the content at the end
+   edge while the pointer is over the scroller or it scrolls. A touch screen
+   keeps its native overlay scrollbar, which takes no room; forced colors keep
+   the system scrollbar and reserve its room. The thumb's line is the
+   scroller's last child, zero high and stuck to the scrollport's bottom. */
+.k2b-ui .k2b-overlay-scrollbar {
+  display: none;
+}
+
+@media (pointer: fine) and (forced-colors: none) {
+  .k2b-ui
+    :is(
+      .k2b-scroll-area,
+      .k2b-app-workspace__sidebar-body,
+      .k2b-app-workspace__main,
+      .k2b-app-workspace__main-pane,
+      .k2b-detail-panel__body
+    )[data-scrollbar="overlay"] {
+    overflow-y: auto;
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  .k2b-ui [data-scrollbar="overlay"]::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .k2b-ui [data-scrollbar="overlay"] > .k2b-overlay-scrollbar[data-overflow="true"] {
+    position: sticky;
+    z-index: 4;
+    bottom: 0;
+    display: block;
+    flex: none;
+    width: auto;
+    max-width: none;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    pointer-events: none;
+  }
+
+  .k2b-ui .k2b-overlay-scrollbar__thumb {
+    position: absolute;
+    width: 0.5rem;
+    opacity: 0;
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  /* The thumb is 4 px at rest and 6 px under the pointer or while dragged, like the shared scrollbar. */
+  .k2b-ui .k2b-overlay-scrollbar__thumb::before {
+    position: absolute;
+    inset: 0.125rem 0.125rem 0.125rem auto;
+    width: 0.25rem;
+    border-radius: 9999px;
+    background: var(--k2b-scrollbar-thumb);
+    content: "";
+  }
+
+  .k2b-ui .k2b-overlay-scrollbar__thumb:is(:hover, [data-dragging])::before {
+    width: 0.375rem;
+    background: var(--k2b-scrollbar-thumb-hover);
+  }
+
+  .k2b-ui [data-scrollbar="overlay"]:is(:hover, :focus-visible, [data-scrolling="true"]) > .k2b-overlay-scrollbar > .k2b-overlay-scrollbar__thumb,
+  .k2b-ui .k2b-overlay-scrollbar__thumb[data-dragging] {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .k2b-ui .k2b-overlay-scrollbar__thumb {
+      transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
+    }
+  }
+}
+
+/* Forced colors draw the system scrollbar; its room is reserved, so content
+   still never moves when it starts to scroll. */
+@media (forced-colors: active) {
+  .k2b-ui [data-scrollbar="overlay"] {
+    scrollbar-gutter: stable;
+  }
+}
+
 /* The last shown level takes what is left. Its flex basis is 0, not its
    content: a long title or paragraph in the selected item would otherwise
    shrink the levels before it, away from their stored widths. */
@@ -6563,7 +6655,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   padding-inline: var(--k2b-gutter);
 }
 
-.k2b-ui .k2b-app-workspace__main[data-width="reading"] > :not(.k2b-floating-pill) {
+.k2b-ui .k2b-app-workspace__main[data-width="reading"] > :not(.k2b-floating-pill, .k2b-overlay-scrollbar) {
   width: min(100%, 45rem);
   margin-inline: auto;
 }

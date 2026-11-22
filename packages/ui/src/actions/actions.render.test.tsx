@@ -1024,7 +1024,7 @@ describe("@k2b/ui complete action migrations", () => {
 });
 
 describe("@k2b/ui action geometry parity", () => {
-  test("segments keep field-sized, flex-1 geometry on a grey track", () => {
+  test("segments keep field-sized, equal geometry on a grey track", () => {
     const control = rule(".k2b-ui .k2b-segmented-control");
     const option = rule(".k2b-ui .k2b-segmented-control__option");
 
@@ -1034,7 +1034,10 @@ describe("@k2b/ui action geometry parity", () => {
     // A 3 px track around 30 px options: as tall as a field.
     expect(control).toContain("padding: 3px");
     expect(control).toContain("gap: 2px");
-    expect(option).toContain("flex-1");
+    // Equal parts while every label fits; an option is never narrower than its label, so a crowded row wraps (K15).
+    expect(option).toContain("flex: 1 1 0;");
+    expect(option).toContain("min-width: min(max-content, 100%);");
+    expect(control).toContain("flex-wrap: wrap;");
     expect(option).toContain("min-height: 1.875rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
     expect(option).toMatch(

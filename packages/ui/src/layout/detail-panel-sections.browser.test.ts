@@ -249,7 +249,7 @@ const measure = () => {
   const box = (element: Element) => element.getBoundingClientRect();
   const style = (element: Element) => getComputedStyle(element);
   const blocks = (id: string) =>
-    Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__body > *`)).map((element) => ({
+    Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__body > :not(.k2b-overlay-scrollbar)`)).map((element) => ({
       // A discussion is a section; name it by its own class.
       kind: element.classList.contains("k2b-discussion") ? "k2b-discussion" : element.className.split(" ")[0],
       left: box(element).left,

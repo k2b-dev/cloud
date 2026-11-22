@@ -1094,8 +1094,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("centers a content-width main as the shared 72rem page column", () => {
-      expect(rule(".k2b-app-workspace__main[data-width=content]>*")).toContain("width:min(100%,72rem)");
-      expect(rule(".k2b-app-workspace__main[data-width=content]>*")).toContain("margin-inline-start:auto");
+      expect(rule(".k2b-app-workspace__main[data-width=content]>:not(.k2b-overlay-scrollbar)")).toContain("width:min(100%,72rem)");
+      expect(rule(".k2b-app-workspace__main[data-width=content]>:not(.k2b-overlay-scrollbar)")).toContain("margin-inline-start:auto");
     });
 
     test("keeps a stacked sidebar visible above the content below the desktop breakpoint", () => {

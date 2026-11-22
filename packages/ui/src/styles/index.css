@@ -2127,22 +2127,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Cloud flach (K2): the main column reserves no track; its scrollbar is the
+   overlay thumb (layout-parity.css), so its rows reach the column edge. */
 .k2b-ui .k2b-app-workspace__main {
   @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
   z-index: 1;
   overflow: auto;
-  scrollbar-gutter: stable;
   background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-app-workspace__main[data-scroll="false"] {
   overflow: hidden;
-  scrollbar-gutter: auto;
 }
 
 /* A reading column: the same 72rem page width AppOverview uses, centered on
    large screens, full width below. Padding stays application-owned. */
-.k2b-ui .k2b-app-workspace__main[data-width="content"] > * {
+.k2b-ui .k2b-app-workspace__main[data-width="content"] > :not(.k2b-overlay-scrollbar) {
   width: min(100%, 72rem);
   margin-inline: auto;
 }
@@ -3586,8 +3586,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
 }
 
-/* The heading takes a type role from `size` (K11): meta by default, body
-   (the head title, 14/20) at `size="md"`, lead (18/24) at `size="lg"`. */
+/* The heading takes a type role from `size` (K11): meta by default, the body
+   role (the head title, 14/20) at `size="md"`, lead (18/24) at `size="lg"`. */
 .k2b-ui .k2b-panel-header__title {
   color: var(--k2b-text);
   font-size: var(--k2b-font-size-meta);
@@ -3866,11 +3866,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   column-gap: 0.5rem;
   padding: 0 0.75rem 0 var(--k2b-gutter);
   padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem));
-  /* The same gutter as the body's scrollbar, without a scrollbar, so the bar's
-     trailing controls end on the body's trailing edge. Popovers and tooltips
-     sit in the top layer and are not clipped. */
+  /* The body below draws no track (an overlay thumb), so the bar needs no
+     gutter to end on its trailing edge. Popovers and tooltips sit in the top
+     layer and are not clipped. */
   overflow: hidden;
-  scrollbar-gutter: stable;
 }
 
 .k2b-ui .k2b-detail-panel__header-main[data-identity="true"] {
@@ -4039,7 +4038,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* No track either: its scrollbar is the overlay thumb (layout-parity.css). */
   /* No padding of its own (K9, K14): its bands reach the column's edges and
      hold their own text edge, so a page placed in it ends on the edge too. */
   padding: 0;
@@ -4415,6 +4414,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section__toggle:disabled {
   cursor: default;
+}
+
+/* The row is as high as its 20 px title line (`.psec > h4`); its hit area
+   reaches 24 px with an invisible layer, like a resize grip's, and 44 px on
+   touch (above). The visible row does not grow. */
+@media not (pointer: coarse) {
+  .k2b-ui .k2b-section__toggle {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-section__toggle::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 1.5rem) / 2));
+    inset-inline: 0;
+  }
 }
 
 .k2b-ui .k2b-section__toggle:not(:disabled):hover :is(.k2b-section__title, .k2b-section__chevron) {
@@ -5285,23 +5300,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    on the text edge with a 12 px rhythm, so an app that places plain content
    keeps it readable. It never decides by class name: whatever should reach the
    edge says so with `data-k2b-band`. */
-.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style) {
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style, .k2b-overlay-scrollbar) {
   /* A child that sets its own full width still ends on the text edge, so the
      detail never scrolls sideways (QA B1). */
   max-width: calc(100% - 2 * var(--k2b-gutter));
   margin-inline: var(--k2b-gutter);
 }
 
-.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style):first-child {
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style, .k2b-overlay-scrollbar):first-child {
   margin-top: var(--k2b-space-4);
 }
 
-.k2b-ui .k2b-detail-panel__body > * + :not([data-k2b-band], dialog, [popover], template, script, style) {
+.k2b-ui .k2b-detail-panel__body > * + :not([data-k2b-band], dialog, [popover], template, script, style, .k2b-overlay-scrollbar) {
   margin-top: var(--k2b-space-3);
 }
 
 /* The last plain content keeps 16 px to the end of the column; a band ends on its own line. */
-.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style):last-child {
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style, .k2b-overlay-scrollbar):is(:last-child, :has(+ .k2b-overlay-scrollbar:last-child)) {
   margin-bottom: var(--k2b-space-4);
 }
 

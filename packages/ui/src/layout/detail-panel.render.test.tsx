@@ -128,12 +128,13 @@ describe("DetailPanel", () => {
     // The 56 px bar carries its own insets; the header itself has none.
     expect(headerRule).toContain("padding: 0;");
     expect(bodyRule).toContain("overflow-y: auto");
-    expect(bodyRule).toContain("scrollbar-gutter: stable");
+    // K2: no reserved track; its scrollbar is the overlay thumb, so its bands reach the column edge.
+    expect(bodyRule).not.toContain("scrollbar-gutter");
     // No padding of its own: its bands reach the column's edges (K9, K14).
     expect(bodyRule).toContain("padding: 0;");
   });
 
-  test("absorbs its stable scrollbar gutter into the workspace trailing inset", async () => {
+  test("keeps the workspace trailing inset beside its overlay scrollbar", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const layoutCss = await Bun.file(resolve(import.meta.dir, "../styles/layout-parity.css")).text();
     const panelRule = css.match(/\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
@@ -147,9 +148,11 @@ describe("DetailPanel", () => {
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
     // The bar holds the inset beside its own 12 px edge, so the header's lines run from edge to edge.
     expect(barRule).toContain("padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem))");
-    expect(barRule).toContain("scrollbar-gutter: stable");
+    expect(barRule).not.toContain("scrollbar-gutter");
+    // As a sheet the body keeps the inset as end padding, so its content has the same margin on both sides; the
+    // overlay thumb stands in that inset at the panel's edge.
     expect(bodyRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
-    expect(bodyRule).toContain("scrollbar-gutter: stable");
+    expect(bodyRule).not.toContain("scrollbar-gutter");
   });
 
   test("keeps the host inset on touch devices whose overlay scrollbars reserve no gutter", async () => {

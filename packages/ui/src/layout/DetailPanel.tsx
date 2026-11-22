@@ -5,6 +5,7 @@ import { Checkbox } from "../inputs/Checkbox";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { SectionFrameDefault } from "../surfaces/Section";
 import { useDetailPanelMessages } from "./detail-panel-messages";
+import { OverlayScrollbar } from "./overlay-scrollbar";
 import { createScrollFade } from "./scroll-fade";
 
 export type DetailPanelProps = {
@@ -229,8 +230,11 @@ const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => {
       class={classNames("k2b-detail-panel__body", props.class)}
       data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
       data-scroll-preserve={props.scrollPreserveKey}
+      // K2: no scroll track; its bands reach the column edge, and the thumb stands over them.
+      data-scrollbar="overlay"
     >
       {props.children}
+      <OverlayScrollbar scroller={() => body} />
     </div>
   );
 };

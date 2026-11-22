@@ -136,17 +136,8 @@ const textLeft = (page: Page, selector: string): Promise<number> =>
       return Number.NaN;
     });
 
-/** `layoutProblems` with every flat kind, without the one known gap: the detail column's stable scrollbar gutter
- * (8 px, audit class 1), which the overlay-scrollbar lane (#4007) removes. Every other finding fails the test. */
-const problems = async (page: Page): Promise<string[]> => {
-  const gutter = await page
-    .locator("#detail .k2b-detail-panel__body")
-    .evaluate((body) => (body as HTMLElement).offsetWidth - (body as HTMLElement).clientWidth);
-  const all = (await page.evaluate(layoutProblems, { flat: true })).problems;
-  return all.filter(
-    (line) => !(gutter > 0 && line.startsWith("short-edge:") && line.includes(`stops ${gutter} px short of the right edge of aside.col`)),
-  );
-};
+/** `layoutProblems` with every flat kind and no exceptions. */
+const problems = async (page: Page): Promise<string[]> => (await page.evaluate(layoutProblems, { flat: true })).problems;
 
 describe.each([1440, 390])("flat primitives at %i px", (width) => {
   const gutter = width >= 768 ? 20 : 16;
