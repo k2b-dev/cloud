@@ -584,7 +584,8 @@
 /* Beside a wide list the filters leave room for the key figures; on a phone they take their own line. */
 @container k2b-app-area (min-width: 48rem) { .k2b-ui .spaces-status .k2b-status-row__end { max-width: 60%; } }
 .k2b-ui .k2b-status-row__end > .spaces-head-filters {
-  min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none;
+  /* 1 px at the end: a scroll position is whole pixels, so the last control is never cut by a fraction. */
+  min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; padding-inline-end: 1px;
 }
 /* While a card moves, the row says what moves where; the filters wait (K7). */
 .k2b-ui .spaces-status[data-mode="announcement"] > .k2b-status-row__end { display: none; }
