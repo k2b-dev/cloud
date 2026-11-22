@@ -157,7 +157,7 @@ const AttachmentsOverview = (props: Props) => {
 
                 {/* Hover overlay: download / copy / delete. Sits on the
                       preview so meta row stays clean (filename + size). */}
-                <div class="k2b-progressive-action k2b-overlay-surface absolute right-1 top-1 flex items-center gap-0.5 rounded-md p-0.5">
+                <div class="k2b-progressive-action k2b-overlay-surface absolute right-1 top-1 flex items-center gap-0.5 rounded-lg p-0.5">
                   <Tooltip.Anchor content={t().downloadAttachment}>
                     <IconButton
                       label={t().downloadNamedAttachment({ filename: att.filename })}

@@ -234,7 +234,7 @@ for (const width of [1440, 820, 390]) {
         article.querySelectorAll("figure.notebook-map").forEach((map) => map.remove());
         return ["h1", "h2", "p"].map((selector) => getComputedStyle(article.querySelector(selector)!).fontSize);
       });
-      expect(ordinary).toEqual(["30px", "24px", "16px"]);
+      expect(ordinary).toEqual(["18px", "16px", "14px"]);
     } finally {
       await context.close();
     }

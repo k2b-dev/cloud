@@ -11,9 +11,10 @@ import {
   Avatar,
   Button,
   ButtonLink,
-  DescriptionList,
   DetailAccess,
   DetailPanel,
+  FactGroup,
+  type FactGroupItem,
   Format,
   IconButton,
   InlineGuidance,
@@ -35,6 +36,7 @@ import ContactFavoriteButton from "./ContactFavoriteButton";
 import ContactNotesSection from "./ContactNotesSection";
 import ContactOrgTreeView from "./ContactOrgTreeView";
 import ContactQuickEdit from "./ContactQuickEdit";
+import { contactFormMessages } from "./contact-form-messages";
 import { announceContactOutcome } from "./contact-outcome";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
@@ -71,6 +73,10 @@ type Props = {
   timeZone: string;
 };
 
+// K17 area colours, only in a topic's symbol tile: contact blue-green, people grey. Never a status hue, never plum.
+const CONTACT_AREA_COLOR = "#0f766e";
+const RELATION_AREA_COLOR = "#52525b";
+
 const formatAddress = (address: Contact["addresses"][number]) => {
   const cityLine = [address.postalCode, address.city].filter(Boolean).join(" ");
   const regionLine = [address.stateRegion, address.countryCode].filter(Boolean).join(" · ");
@@ -92,6 +98,7 @@ type DetailSnapshot = {
 export default function ContactDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => detailMessages.resolve([locale()]).t;
+  const form = () => contactFormMessages.resolve([locale()]).t;
   const initialTarget =
     props.initialContactId && props.initialBookId
       ? {
@@ -439,51 +446,82 @@ export default function ContactDetailPanel(props: Props) {
         const hasPersonal = () => hasFormalName() || !!(c().birthday || c().salutation || c().pronouns || c().preferredLanguage);
         const hasOrgTree = () => c().parentContactId !== null || c().members.length > 0;
         const accessShown = () => accessBookId() === c().bookId;
-        // The one main action is the first way to reach the contact; the rest stay quiet beside it.
-        const mainAction = () => (c().emails[0] ? "email" : c().phones[0] ? "call" : "edit");
-        const actionVariant = (action: "email" | "call" | "edit") => (mainAction() === action ? "subtle" : "secondary");
-        const actionClass = (action: "email" | "call" | "edit") => (mainAction() === action ? "contacts-details-main" : undefined);
-        // Closed sections under "More about this contact" say in one line what they hold.
-        const terms = (entries: Array<[unknown, string]>) =>
-          entries
-            .filter(([value]) => Boolean(value))
-            .map(([, term]) => term)
-            .join(", ");
-        const bankSummary = () =>
-          c()
-            .bankAccounts.map((account) => account.label || account.bankName || account.accountHolderName)
-            .filter(Boolean)
-            .join(" · ");
-        const personalSummary = () =>
-          terms([
-            [hasFormalName() && c().firstName, t().firstName],
-            [hasFormalName() && c().lastName, t().lastName],
-            [c().birthday, t().birthday],
-            [c().salutation, t().salutation],
-            [c().pronouns, t().pronouns],
-            [c().preferredLanguage, t().language],
-          ]);
-        const workSummary = () =>
-          terms([
-            [c().companyName, t().company],
-            [c().department, t().department],
-            [c().jobTitle, t().jobTitle],
-            [c().vatId, t().vatId],
-          ]);
+        // K9: at most two framed actions in a row; a third waits beside them as an icon button.
+        const framedReach = () => (c().emails[0] ? 1 : 0) + (c().phones[0] ? 1 : 0);
         const hasOrganization = () => !!(c().parent || hasOrgTree() || actions.canEdit());
-        const keyDetailItems = () => [
+        // K17: the facts beside the topics, quiet label and strong value, one pencil per group, copy where people
+        // carry a value elsewhere. Every fact of the former sections stays; nothing is folded away any more.
+        const reachItems = (): FactGroupItem[] => [
+          ...c().emails.map((email) => ({
+            label: email.label ?? t().email,
+            value: (
+              <a class="contacts-fact-link" href={`mailto:${email.email}`}>
+                {email.email}
+              </a>
+            ),
+            copy: email.email,
+          })),
+          ...c().phones.map((phone) => ({
+            label: phone.label ?? t().phone,
+            value: (
+              <a class="contacts-fact-link tabular-nums" href={`tel:${phone.phone}`}>
+                {phone.phone}
+              </a>
+            ),
+            copy: phone.phone,
+          })),
+          ...c().websites.map((website) => {
+            const href = safeWebsiteHref(website.url);
+            return {
+              label: website.label ?? t().website,
+              value: href ? (
+                <a class="contacts-fact-link" href={href} target="_blank" rel="noopener noreferrer">
+                  {website.url}
+                </a>
+              ) : (
+                website.url
+              ),
+              copy: website.url,
+            };
+          }),
+        ];
+        const personalItems = (): FactGroupItem[] => [
+          ...(hasFormalName() && c().firstName ? [{ label: t().firstName, value: c().firstName }] : []),
+          ...(hasFormalName() && c().lastName ? [{ label: t().lastName, value: c().lastName }] : []),
+          ...(c().birthday
+            ? [{ label: t().birthday, value: <Format.Date value={c().birthday} fallback={c().birthday ?? undefined} /> }]
+            : []),
+          ...(c().salutation ? [{ label: t().salutation, value: c().salutation }] : []),
+          ...(c().pronouns ? [{ label: t().pronouns, value: c().pronouns }] : []),
+          ...(c().preferredLanguage ? [{ label: t().language, value: c().preferredLanguage }] : []),
+        ];
+        const workItems = (): FactGroupItem[] => [
+          ...(c().companyName ? [{ label: t().company, value: c().companyName }] : []),
+          ...(c().department ? [{ label: t().department, value: c().department }] : []),
+          ...(c().jobTitle ? [{ label: t().jobTitle, value: c().jobTitle }] : []),
+          ...(c().vatId ? [{ label: t().vatId, value: <span class="font-mono">{c().vatId}</span>, copy: c().vatId ?? undefined }] : []),
+        ];
+        const bankItems = (account: Contact["bankAccounts"][number]): FactGroupItem[] => [
+          { label: form().accountHolder, value: account.accountHolderName },
+          { label: form().iban, value: <span class="font-mono">{account.iban}</span>, copy: account.iban },
+          ...(account.bic || account.bankName
+            ? [{ label: form().bankName, value: [account.bankName, account.bic].filter(Boolean).join(" · ") }]
+            : []),
+          ...(account.note ? [{ label: form().note, value: account.note }] : []),
+        ];
+        const keyDetailItems = (): FactGroupItem[] => [
           {
-            term: t().name,
-            description: [c().firstName, c().lastName].filter(Boolean).join(" ") || resolveContactName(c(), t().unnamedContact),
+            label: t().name,
+            value: [c().firstName, c().lastName].filter(Boolean).join(" ") || resolveContactName(c(), t().unnamedContact),
           },
-          ...(c().companyName ? [{ term: t().company, description: c().companyName }] : []),
-          ...(c().jobTitle ? [{ term: t().jobTitle, description: c().jobTitle }] : []),
-          { term: t().book, description: props.bookNames[c().bookId] ?? c().bookId },
+          ...(c().companyName ? [{ label: t().company, value: c().companyName }] : []),
+          ...(c().jobTitle ? [{ label: t().jobTitle, value: c().jobTitle }] : []),
+          { label: t().book, value: props.bookNames[c().bookId] ?? c().bookId },
           ...(c().tags.length > 0
             ? [
                 {
-                  term: t().tags,
-                  description: (
+                  label: t().tags,
+                  value: (
                     <span class="flex flex-wrap gap-1.5">
                       <For each={c().tags}>
                         {(tag) => (
@@ -529,50 +567,45 @@ export default function ContactDetailPanel(props: Props) {
               <Show
                 when={detailMode() === "tree" && actions.orgTree()}
                 fallback={
-                  <article
-                    class="contacts-reader flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3 sm:p-5"
-                    data-scroll-preserve="contacts-detail"
-                    data-print-region
-                  >
+                  <article class="contacts-reader" data-scroll-preserve="contacts-detail" data-print-region>
                     <DetailPanel.Header
-                      leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} size="lg" />}
+                      leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} size="sm" />}
                       title={resolveContactName(c(), t().unnamedContact)}
                       subtitle={[c().jobTitle, c().companyName].filter(Boolean).join(" · ")}
                       primaryActions={
                         <nav aria-label={t().contactActions} class="flex flex-wrap gap-2">
                           <Show when={c().emails[0]}>
                             {(email) => (
-                              <ButtonLink
-                                href={`mailto:${email().email}`}
-                                variant={actionVariant("email")}
-                                class={actionClass("email")}
-                                size="sm"
-                              >
+                              <ButtonLink href={`mailto:${email().email}`} variant="secondary" size="sm">
                                 <i class="ti ti-mail" aria-hidden="true" /> {t().email}
                               </ButtonLink>
                             )}
                           </Show>
                           <Show when={c().phones[0]}>
                             {(phone) => (
-                              <ButtonLink
-                                href={`tel:${phone().phone}`}
-                                variant={actionVariant("call")}
-                                class={actionClass("call")}
-                                size="sm"
-                              >
+                              <ButtonLink href={`tel:${phone().phone}`} variant="secondary" size="sm">
                                 <i class="ti ti-phone" aria-hidden="true" /> {t().call}
                               </ButtonLink>
                             )}
                           </Show>
                           <Show when={actions.canEdit()}>
-                            <Button
-                              variant={actionVariant("edit")}
-                              class={actionClass("edit")}
-                              size="sm"
-                              onClick={() => actions.openEditDialog(c())}
+                            <Show
+                              when={framedReach() < 2}
+                              fallback={
+                                <IconButton
+                                  size="sm"
+                                  label={t().editAddress}
+                                  tooltip={t().editAddress}
+                                  onClick={() => actions.openEditDialog(c())}
+                                >
+                                  <i class="ti ti-pencil" aria-hidden="true" />
+                                </IconButton>
+                              }
                             >
-                              <i class="ti ti-pencil" aria-hidden="true" /> {t().editAddress}
-                            </Button>
+                              <Button variant="secondary" size="sm" onClick={() => actions.openEditDialog(c())}>
+                                <i class="ti ti-pencil" aria-hidden="true" /> {t().editAddress}
+                              </Button>
+                            </Show>
                           </Show>
                         </nav>
                       }
@@ -616,329 +649,252 @@ export default function ContactDetailPanel(props: Props) {
                       }
                     />
 
-                    <div class="flex flex-col gap-5">
-                      <Show when={hasReach()}>
-                        <Section size="md" title={t().reach} icon="ti ti-address-book">
-                          <div class="flex flex-col gap-1">
-                            <For each={c().emails}>
-                              {(email) => (
-                                <DetailPanel.Action
-                                  href={`mailto:${email.email}`}
-                                  leading={<i class="ti ti-mail" aria-hidden="true" />}
-                                  title={<span class="break-all">{email.email}</span>}
-                                  description={email.label ?? t().email}
-                                />
-                              )}
-                            </For>
-                            <For each={c().phones}>
-                              {(phone) => (
-                                <DetailPanel.Action
-                                  href={`tel:${phone.phone}`}
-                                  leading={<i class="ti ti-phone" aria-hidden="true" />}
-                                  title={phone.phone}
-                                  description={phone.label ?? t().phone}
-                                />
-                              )}
-                            </For>
-                            <For each={c().websites}>
-                              {(website) => (
-                                <Show
-                                  when={safeWebsiteHref(website.url)}
-                                  fallback={
-                                    <div class="flex min-w-0 items-start gap-3 py-2 text-sm">
-                                      <i class="ti ti-world mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-                                      <span class="min-w-0">
-                                        <span class="block break-all text-secondary">{website.url}</span>
-                                        <span class="block text-xs text-dimmed">{website.label ?? t().website}</span>
-                                      </span>
+                    {/* K17: the topics, and the facts beside them in a quiet column; under 50rem they stand one below
+                        the other, topics first. The record draws the line between the two, the topics' column divides
+                        its topics (K2, one line, one owner). */}
+                    <div class="contacts-record">
+                      <div class="contacts-record__topics k2b-divided">
+                        <Show when={c().addresses.length > 0}>
+                          <div>
+                            <Section title={t().addresses} icon="ti ti-map-pin" iconColor={CONTACT_AREA_COLOR} size="md">
+                              <div class="flex flex-col gap-3">
+                                <For each={c().addresses}>
+                                  {(address) => (
+                                    <div class="py-1">
+                                      <div class="flex items-start gap-3 text-sm text-primary">
+                                        <i class="ti ti-map-pin mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
+                                        <div class="min-w-0 flex-1">
+                                          <Show when={address.label}>
+                                            <p class="text-xs text-dimmed">{address.label}</p>
+                                          </Show>
+                                          <For each={formatAddress(address)}>{(line) => <p class="leading-snug">{line}</p>}</For>
+                                        </div>
+                                      </div>
+                                      <ContactAddressMap
+                                        bookId={c().bookId}
+                                        contactId={c().id}
+                                        contactName={resolveContactName(c(), t().unnamedContact)}
+                                        address={address}
+                                        availability={props.geoAvailability}
+                                        timeZone={props.timeZone}
+                                        canEdit={actions.canEdit()}
+                                        onEdit={() => void actions.openAddressEditor(c(), address.id)}
+                                      />
                                     </div>
-                                  }
-                                >
-                                  {(href) => (
+                                  )}
+                                </For>
+                              </div>
+                            </Section>
+                          </div>
+                        </Show>
+                        <Show when={hasOrganization()}>
+                          <div>
+                            <Section
+                              size="md"
+                              title={t().relationships}
+                              iconColor={RELATION_AREA_COLOR}
+                              icon="ti ti-sitemap"
+                              actions={
+                                <>
+                                  <Show when={hasOrgTree()}>
+                                    <Button
+                                      variant="ghost"
+                                      size="xs"
+                                      loading={actions.orgTreeLoading()}
+                                      onClick={() => actions.openOrgTree(c())}
+                                    >
+                                      <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
+                                    </Button>
+                                  </Show>
+                                  <Show when={actions.canEdit()}>
+                                    <Button variant="ghost" size="xs" onClick={() => actions.openAddMemberDialog(c())}>
+                                      <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
+                                    </Button>
+                                  </Show>
+                                </>
+                              }
+                            >
+                              {orgTreeFeedback}
+                              <div class="flex flex-col gap-1">
+                                <Show when={c().parent}>
+                                  {(parent) => (
                                     <DetailPanel.Action
-                                      href={href()}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      leading={<i class="ti ti-world" aria-hidden="true" />}
-                                      title={<span class="break-all">{website.url}</span>}
-                                      description={website.label ?? t().website}
-                                      trailing={<i class="ti ti-external-link" aria-hidden="true" />}
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedContactInUrl({
+                                          contactId: parent().id,
+                                          bookId: c().bookId,
+                                          contact: null,
+                                        })
+                                      }
+                                      leading={<i class="ti ti-arrow-up" aria-hidden="true" />}
+                                      title={resolveContactName(parent(), t().unnamedContact)}
+                                      description={t().parentContact}
+                                      trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                                     />
                                   )}
                                 </Show>
-                              )}
-                            </For>
+                                <Show when={c().members.length > 0}>
+                                  <ul class="flex flex-col gap-1">
+                                    <For each={c().members}>
+                                      {(member) => (
+                                        <li class="k2b-progressive-row flex items-center gap-1">
+                                          <DetailPanel.Action
+                                            type="button"
+                                            class="min-w-0 flex-1"
+                                            onClick={() =>
+                                              setSelectedContactInUrl({
+                                                contactId: member.id,
+                                                bookId: c().bookId,
+                                                contact: null,
+                                              })
+                                            }
+                                            leading={
+                                              <span
+                                                class="contact-avatar flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium"
+                                                aria-hidden="true"
+                                              >
+                                                {(resolveContactName(member as ContactRef, t().unnamedContact) || "?")
+                                                  .charAt(0)
+                                                  .toUpperCase()}
+                                              </span>
+                                            }
+                                            title={resolveContactName(member as ContactRef, t().unnamedContact)}
+                                            description={[member.companyName, member.jobTitle].filter(Boolean).join(" · ") || undefined}
+                                            trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                                          />
+                                          <Show when={actions.canEdit()}>
+                                            <Tooltip.Anchor content={t().removeFromMembers}>
+                                              <IconButton
+                                                variant="ghost"
+                                                size="xs"
+                                                onClick={() => actions.unlinkMember(member, c())}
+                                                class="k2b-progressive-action shrink-0 text-dimmed hover:text-red-500"
+                                                label={t().removeMemberLabel({
+                                                  name: resolveContactName(member as ContactRef, t().unnamedContact),
+                                                })}
+                                              >
+                                                <i class="ti ti-unlink" aria-hidden="true" />
+                                              </IconButton>
+                                            </Tooltip.Anchor>
+                                          </Show>
+                                        </li>
+                                      )}
+                                    </For>
+                                  </ul>
+                                </Show>
+                                <Show when={!c().parent && c().members.length === 0}>
+                                  <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
+                                </Show>
+                              </div>
+                            </Section>
                           </div>
-                        </Section>
-                      </Show>
+                        </Show>
+                        <div>
+                          <Show when={`${c().bookId}:${c().id}`} keyed>
+                            {(_contactKey) => (
+                              <ContactNotesSection
+                                bookId={c().bookId}
+                                contactId={c().id}
+                                currentUserId={props.currentUserId}
+                                initialNotesPage={
+                                  c().id === props.initialContactId && c().bookId === props.initialBookId
+                                    ? props.initialNotesPage
+                                    : undefined
+                                }
+                                canWrite={actions.canEdit()}
+                              />
+                            )}
+                          </Show>
+                        </div>
+                        <Show when={accessShown()}>
+                          <div>
+                            <DetailAccess
+                              entries={accessMemberEntries(accessCache().get(c().bookId) ?? [], {
+                                currentUserId: props.currentUserId,
+                                locale: locale(),
+                              })}
+                              state={accessState(c().bookId)}
+                              onRetry={() => reloadAccess(c().bookId)}
+                              note={t().accessWholeBook}
+                              manage={
+                                props.adminBookIds.includes(c().bookId)
+                                  ? { label: t().manageAccess, onClick: () => void openBookAccess(c().bookId) }
+                                  : undefined
+                              }
+                            />
+                          </div>
+                        </Show>
+                      </div>
 
-                      <Show when={c().addresses.length > 0}>
-                        <Section title={t().addresses} icon="ti ti-map-pin" size="md">
-                          <div class="flex flex-col gap-3">
-                            <For each={c().addresses}>
-                              {(address) => (
-                                <div class="py-1">
-                                  <div class="flex items-start gap-3 text-sm text-primary">
-                                    <i class="ti ti-map-pin mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-                                    <div class="min-w-0 flex-1">
-                                      <Show when={address.label}>
-                                        <p class="text-xs text-dimmed">{address.label}</p>
-                                      </Show>
-                                      <For each={formatAddress(address)}>{(line) => <p class="leading-snug">{line}</p>}</For>
-                                    </div>
-                                  </div>
-                                  <ContactAddressMap
-                                    bookId={c().bookId}
-                                    contactId={c().id}
-                                    contactName={resolveContactName(c(), t().unnamedContact)}
-                                    address={address}
-                                    availability={props.geoAvailability}
-                                    timeZone={props.timeZone}
-                                    canEdit={actions.canEdit()}
-                                    onEdit={() => void actions.openAddressEditor(c(), address.id)}
-                                  />
-                                </div>
-                              )}
-                            </For>
-                          </div>
-                        </Section>
-                      </Show>
-                      <Show when={hasOrganization()}>
-                        <Section
-                          size="md"
-                          title={t().relationships}
-                          icon="ti ti-sitemap"
-                          actions={
-                            <>
-                              <Show when={hasOrgTree()}>
-                                <Button
-                                  variant="ghost"
-                                  size="xs"
-                                  loading={actions.orgTreeLoading()}
-                                  onClick={() => actions.openOrgTree(c())}
-                                >
-                                  <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
-                                </Button>
-                              </Show>
-                              <Show when={actions.canEdit()}>
-                                <Button variant="ghost" size="xs" onClick={() => actions.openAddMemberDialog(c())}>
-                                  <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
-                                </Button>
-                              </Show>
-                            </>
-                          }
-                        >
-                          {orgTreeFeedback}
-                          <div class="flex flex-col gap-1">
-                            <Show when={c().parent}>
-                              {(parent) => (
-                                <DetailPanel.Action
-                                  type="button"
-                                  onClick={() =>
-                                    setSelectedContactInUrl({
-                                      contactId: parent().id,
-                                      bookId: c().bookId,
-                                      contact: null,
-                                    })
-                                  }
-                                  leading={<i class="ti ti-arrow-up" aria-hidden="true" />}
-                                  title={resolveContactName(parent(), t().unnamedContact)}
-                                  description={t().parentContact}
-                                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                      <div class="contacts-record__facts">
+                        <Section size="sm" frame="none" level={2} title={t().details} icon="ti ti-id">
+                          <div class="contacts-record__groups">
+                            <Show when={hasReach()}>
+                              <FactGroup
+                                title={t().reach}
+                                icon="ti ti-address-book"
+                                items={reachItems()}
+                                onEdit={actions.canEdit() ? () => actions.openEditDialog(c()) : undefined}
+                              />
+                            </Show>
+                            <Show
+                              when={quickEditing()}
+                              fallback={
+                                <FactGroup
+                                  title={t().properties}
+                                  icon="ti ti-list-details"
+                                  items={keyDetailItems()}
+                                  onEdit={actions.canEdit() ? () => setQuickEditing(true) : undefined}
+                                />
+                              }
+                            >
+                              <ContactQuickEdit
+                                contact={c()}
+                                onCancel={() => setQuickEditing(false)}
+                                onSaved={(updated) => {
+                                  setQuickEditing(false);
+                                  setSelectedContactInUrl({
+                                    contactId: updated.id,
+                                    bookId: updated.bookId,
+                                    contact: updated,
+                                  });
+                                }}
+                                onEditAll={() => {
+                                  setQuickEditing(false);
+                                  void actions.openEditDialog(c());
+                                }}
+                              />
+                            </Show>
+                            <Show when={hasPersonal()}>
+                              <FactGroup
+                                title={t().personal}
+                                icon="ti ti-user"
+                                items={personalItems()}
+                                onEdit={actions.canEdit() ? () => actions.openEditDialog(c()) : undefined}
+                              />
+                            </Show>
+                            <Show when={hasWork()}>
+                              <FactGroup
+                                title={t().work}
+                                icon="ti ti-briefcase"
+                                items={workItems()}
+                                onEdit={actions.canEdit() ? () => actions.openEditDialog(c()) : undefined}
+                              />
+                            </Show>
+                            <For each={c().bankAccounts}>
+                              {(account) => (
+                                <FactGroup
+                                  title={account.label ?? t().bankDetails}
+                                  icon="ti ti-building-bank"
+                                  items={bankItems(account)}
+                                  onEdit={actions.canEdit() ? () => actions.openEditDialog(c()) : undefined}
                                 />
                               )}
-                            </Show>
-                            <Show when={c().members.length > 0}>
-                              <ul class="flex flex-col gap-1">
-                                <For each={c().members}>
-                                  {(member) => (
-                                    <li class="k2b-progressive-row flex items-center gap-1">
-                                      <DetailPanel.Action
-                                        type="button"
-                                        class="min-w-0 flex-1"
-                                        onClick={() =>
-                                          setSelectedContactInUrl({
-                                            contactId: member.id,
-                                            bookId: c().bookId,
-                                            contact: null,
-                                          })
-                                        }
-                                        leading={
-                                          <span
-                                            class="contact-avatar flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium"
-                                            aria-hidden="true"
-                                          >
-                                            {(resolveContactName(member as ContactRef, t().unnamedContact) || "?").charAt(0).toUpperCase()}
-                                          </span>
-                                        }
-                                        title={resolveContactName(member as ContactRef, t().unnamedContact)}
-                                        description={[member.companyName, member.jobTitle].filter(Boolean).join(" · ") || undefined}
-                                        trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                                      />
-                                      <Show when={actions.canEdit()}>
-                                        <Tooltip.Anchor content={t().removeFromMembers}>
-                                          <IconButton
-                                            variant="ghost"
-                                            size="xs"
-                                            onClick={() => actions.unlinkMember(member, c())}
-                                            class="k2b-progressive-action shrink-0 text-dimmed hover:text-red-500"
-                                            label={t().removeMemberLabel({
-                                              name: resolveContactName(member as ContactRef, t().unnamedContact),
-                                            })}
-                                          >
-                                            <i class="ti ti-unlink" aria-hidden="true" />
-                                          </IconButton>
-                                        </Tooltip.Anchor>
-                                      </Show>
-                                    </li>
-                                  )}
-                                </For>
-                              </ul>
-                            </Show>
-                            <Show when={!c().parent && c().members.length === 0}>
-                              <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
-                            </Show>
+                            </For>
                           </div>
                         </Section>
-                      </Show>
-
-                      <Show when={`${c().bookId}:${c().id}`} keyed>
-                        {(_contactKey) => (
-                          <ContactNotesSection
-                            bookId={c().bookId}
-                            contactId={c().id}
-                            currentUserId={props.currentUserId}
-                            initialNotesPage={
-                              c().id === props.initialContactId && c().bookId === props.initialBookId ? props.initialNotesPage : undefined
-                            }
-                            canWrite={actions.canEdit()}
-                          />
-                        )}
-                      </Show>
-
-                      <Section size="md" title={t().moreAboutName({ name: resolveContactName(c(), t().unnamedContact) })} icon="ti ti-dots">
-                        {/* Read-only for everyone with access of their own; public-only readers never get the list. */}
-                        <Show when={accessShown()}>
-                          <DetailAccess
-                            entries={accessMemberEntries(accessCache().get(c().bookId) ?? [], {
-                              currentUserId: props.currentUserId,
-                              locale: locale(),
-                            })}
-                            state={accessState(c().bookId)}
-                            onRetry={() => reloadAccess(c().bookId)}
-                            note={t().accessWholeBook}
-                            manage={
-                              props.adminBookIds.includes(c().bookId)
-                                ? { label: t().manageAccess, onClick: () => void openBookAccess(c().bookId) }
-                                : undefined
-                            }
-                          />
-                        </Show>
-                        <Section
-                          title={t().properties}
-                          icon="ti ti-list-details"
-                          actions={
-                            actions.canEdit() && !quickEditing() ? (
-                              <Button variant="ghost" size="xs" onClick={() => setQuickEditing(true)}>
-                                <i class="ti ti-pencil" aria-hidden="true" /> {t().quickEdit}
-                              </Button>
-                            ) : undefined
-                          }
-                        >
-                          <Show when={quickEditing()} fallback={<DescriptionList layout="rows" size="sm" items={keyDetailItems()} />}>
-                            <ContactQuickEdit
-                              contact={c()}
-                              onCancel={() => setQuickEditing(false)}
-                              onSaved={(updated) => {
-                                setQuickEditing(false);
-                                setSelectedContactInUrl({
-                                  contactId: updated.id,
-                                  bookId: updated.bookId,
-                                  contact: updated,
-                                });
-                              }}
-                              onEditAll={() => {
-                                setQuickEditing(false);
-                                void actions.openEditDialog(c());
-                              }}
-                            />
-                          </Show>
-                        </Section>
-                        <Show when={c().bankAccounts.length > 0}>
-                          <Section title={t().bankDetails} icon="ti ti-building-bank" collapsible summary={bankSummary()}>
-                            <div class="flex flex-col gap-3">
-                              <For each={c().bankAccounts}>
-                                {(account) => (
-                                  <div class="flex items-start gap-3 py-1 text-sm text-primary">
-                                    <i class="ti ti-building-bank mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-                                    <div class="min-w-0 flex-1">
-                                      <Show when={account.label}>
-                                        <p class="text-xs text-dimmed">{account.label}</p>
-                                      </Show>
-                                      <p class="leading-snug">{account.accountHolderName}</p>
-                                      <p class="break-all font-mono text-xs leading-snug">{account.iban}</p>
-                                      <Show when={account.bic || account.bankName}>
-                                        <p class="text-xs leading-snug text-dimmed">
-                                          {[account.bankName, account.bic].filter(Boolean).join(" · ")}
-                                        </p>
-                                      </Show>
-                                      <Show when={account.note}>
-                                        <p class="text-xs leading-snug text-dimmed">{account.note}</p>
-                                      </Show>
-                                    </div>
-                                  </div>
-                                )}
-                              </For>
-                            </div>
-                          </Section>
-                        </Show>
-
-                        <Show when={hasPersonal()}>
-                          <Section title={t().personal} icon="ti ti-user" collapsible summary={personalSummary()}>
-                            <DescriptionList
-                              layout="rows"
-                              size="sm"
-                              items={[
-                                ...(hasFormalName() && c().firstName ? [{ term: t().firstName, description: c().firstName }] : []),
-                                ...(hasFormalName() && c().lastName ? [{ term: t().lastName, description: c().lastName }] : []),
-                                ...(c().birthday
-                                  ? [
-                                      {
-                                        term: t().birthday,
-                                        description: <Format.Date value={c().birthday} fallback={c().birthday ?? undefined} />,
-                                      },
-                                    ]
-                                  : []),
-                                ...(c().salutation ? [{ term: t().salutation, description: c().salutation }] : []),
-                                ...(c().pronouns ? [{ term: t().pronouns, description: c().pronouns }] : []),
-                                ...(c().preferredLanguage ? [{ term: t().language, description: c().preferredLanguage }] : []),
-                              ]}
-                            />
-                          </Section>
-                        </Show>
-
-                        <Show when={hasWork()}>
-                          <Section title={t().work} icon="ti ti-briefcase" collapsible summary={workSummary()}>
-                            <DescriptionList
-                              layout="rows"
-                              size="sm"
-                              items={[
-                                ...(c().companyName ? [{ term: t().company, description: c().companyName }] : []),
-                                ...(c().department ? [{ term: t().department, description: c().department }] : []),
-                                ...(c().jobTitle ? [{ term: t().jobTitle, description: c().jobTitle }] : []),
-                                ...(c().vatId
-                                  ? [
-                                      {
-                                        term: t().vatId,
-                                        description: <span class="break-all font-mono">{c().vatId}</span>,
-                                      },
-                                    ]
-                                  : []),
-                              ]}
-                            />
-                          </Section>
-                        </Show>
-                      </Section>
+                      </div>
                     </div>
                   </article>
                 }

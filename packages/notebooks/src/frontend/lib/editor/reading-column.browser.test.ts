@@ -9,7 +9,7 @@ import type { ReadingColumnHarness } from "./reading-column.browser-harness";
 // Only a real browser measures the shipped cascade, line wrapping and CodeMirror's block widgets.
 const prose =
   "Unser Team sammelt hier die Gedanken für die nächste gemeinsame Woche. Wir besprechen die Erfahrungen aus dem letzten Projekt und halten fest, welche Fragen noch offen sind. Everyone can read the same notes and add an explanation for everyone who joins the project. Gute Dokumentation gibt uns Zeit, sorgfältig zu arbeiten und unsere Entscheidungen später nachzuvollziehen. Am Freitag schauen wir gemeinsam auf die Ergebnisse und planen die nächsten Schritte. The shared notebook keeps the details close to the people who need them.";
-// Shift word positions across the 704px column edge, including words whose trailing space would not fit.
+// Shift word positions across the 720px column edge, including words whose trailing space would not fit.
 // One lucky paragraph can have identical breaks even with CodeMirror's default break-spaces.
 const paragraphPrefixes = ["Unser Team", ...Array.from({ length: 40 }, (_, index) => `${"w".repeat(index + 1)} Bei Regen`)];
 const lineBreakDocument = [
@@ -199,13 +199,13 @@ const measure = (page: Page) => page.evaluate(() => (window as unknown as { harn
 const closeTo = (actual: number, expected: number) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1);
 
 for (const width of [2560, 1280, 900]) {
-  test(`Write and Book center a text column of at most 704px at ${width}px`, async () => {
+  test(`Write and Book center a text column of at most 720px at ${width}px`, async () => {
     for (const mode of ["write", "book"] as const) {
       const page = await open(mode, width);
       try {
         const result = await measure(page);
-        expect(result.width).toBeLessThanOrEqual(704);
-        if (width !== 900) closeTo(result.width, 704);
+        expect(result.width).toBeLessThanOrEqual(720);
+        if (width !== 900) closeTo(result.width, 720);
         closeTo(result.gaps[0]!, result.gaps[1]!);
       } finally {
         await page.close();
@@ -241,8 +241,8 @@ for (const width of [2560, 1280]) {
       written.forEach((a, index) => {
         const b = read[index]!;
         const context = `Paragraph ${index}: ${paragraphPrefixes[index]}`;
-        expect(a.width).toBe(704);
-        expect(b.width).toBe(704);
+        expect(a.width).toBe(720);
+        expect(b.width).toBe(720);
         expect(a.lines.length).toBeGreaterThan(1);
         expect(a.lines, context).toHaveLength(b.lines.length);
         expect(a.breaks, context).toEqual(b.breaks);
@@ -363,8 +363,8 @@ for (const mode of ["write", "book"] as const) {
     const page = await open(mode, 2560);
     try {
       const body = await measure(page);
-      expect(body.fontSize).toBe("16px");
-      expect(body.lineHeight).toBe("25.6px");
+      expect(body.fontSize).toBe("14px");
+      expect(body.lineHeight).toBe("22px");
       const sizes = await page.evaluate((mode) => {
         const headings =
           mode === "book"
@@ -387,10 +387,11 @@ for (const mode of ["write", "book"] as const) {
           ),
         };
       }, mode);
-      expect(sizes.headings).toEqual(["30px", "24px", "20px"]);
-      expect(sizes.notice).toBe("16px");
+      // K11: only running text has headings above the text size, 18 and 16 px.
+      expect(sizes.headings).toEqual(["18px", "16px", "14px"]);
+      expect(sizes.notice).toBe("14px");
       // Inline code at 0.9em and code blocks at 0.85em, as in the Book.
-      expect(sizes.code).toEqual(["14.4px", "13.6px"]);
+      expect(sizes.code).toEqual(["12.6px", "11.9px"]);
       expect(sizes.cells.length).toBeGreaterThan(0);
       expect(sizes.cells).toEqual(sizes.cells.map(() => "14px"));
     } finally {
@@ -489,8 +490,8 @@ test("source mode keeps 14px mono and centers the text column together with its 
         lineHeight: style.lineHeight,
       };
     });
-    expect(result.width).toBeLessThanOrEqual(704);
-    closeTo(result.width, 704);
+    expect(result.width).toBeLessThanOrEqual(720);
+    closeTo(result.width, 720);
     closeTo(result.gaps[0]!, result.gaps[1]!);
     expect(result.size).toBe("14px");
     expect(result.lineHeight).toBe("19.6px");
@@ -593,11 +594,11 @@ for (const { rows, truncated } of [
             marginBottom: style.marginBottom,
           };
         });
-        expect(count.fontSize).toBe("16px");
-        expect(count.lineHeight).toBe("25.6px");
+        expect(count.fontSize).toBe("14px");
+        expect(count.lineHeight).toBe("22px");
         expect(count.marginTop).toBe("16px");
         expect(count.marginBottom).toBe("16px");
-        closeTo(count.height, 25.6);
+        closeTo(count.height, 22);
       }
       const result = await page.evaluate(() => {
         const harness = (window as unknown as { harness: ReadingColumnHarness }).harness;

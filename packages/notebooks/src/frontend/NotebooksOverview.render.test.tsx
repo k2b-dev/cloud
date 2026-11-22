@@ -93,11 +93,13 @@ describe("Notebooks overview", () => {
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/notebooks/Book01"');
     expect(html).toContain("12 notes");
-    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*notebooks-overview-main ?"[^>]*data-width="content"/);
+    // K7: the recent notes are one list that reaches the column's edges.
+    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*notebooks-overview-main ?"/);
+    expect(html).not.toMatch(/notebooks-overview-main ?"[^>]*data-width=/);
     expect(html).toContain("Unpin Product");
-    // The main area is a page: title, scope, primary create action, search.
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Recently edited<\/h2>/);
-    expect(html).toMatch(/class="k2b-tag notebooks-overview-scope"[^>]*>.*All notebooks/);
+    // K6: the head names the place and holds Search and the one filled action, which opens a menu.
+    expect(html).toMatch(/<h2 class="notebooks-overview-title">Recently edited<\/h2>/);
+    expect(html).toMatch(/data-workspace-primary=""[^>]*aria-haspopup="menu"/);
     expect(html).toContain("New notebook");
     expect(html).toContain("Search");
     expect(html).toContain('href="/app/notebooks/Book01/notes/Note01"');
@@ -129,7 +131,6 @@ describe("Notebooks overview", () => {
     const html = renderOverview(null, "de-CH");
     expect(html).toContain("Neues Notizbuch");
     expect(html).toContain("Zuletzt bearbeitet");
-    expect(html).toContain("Alle Notizbücher");
     expect(html).toContain("12 Notizen");
     expect(html).toContain("Product lösen");
     expect(html).not.toContain("New notebook");
