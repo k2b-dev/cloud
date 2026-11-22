@@ -29,24 +29,20 @@ const read = (): TypeRole[] => {
   const list = token("--k2b-type-roles")
     .split(",")
     .map((entry) => entry.trim().split("/"));
-  return ["meta", "row", "body", "lead"]
-    .map((name, index) => {
-      const [head = "", weights = ""] = list[index]!;
-      const [, size = "", ...lines] = value(head).trim().split(/\s+/);
-      return {
-        name,
-        size: px(token(`--k2b-font-size-${name}`)),
-        lineHeight: px(token(`--k2b-line-height-${name}`)),
-        weight: Number(token(`--k2b-font-weight-${name}`)),
-        lineHeights: lines.map(px),
-        weights: weights.trim().split(/\s+/).map(Number),
-      };
-    })
-    .map((role, index) => {
-      const listed = px(value(list[index]![0]!).trim().split(/\s+/)[1]!);
-      if (listed !== role.size) throw new Error(`type roles: --k2b-type-roles entry ${index + 1} is not the ${role.name} size`);
-      return role;
-    });
+  return ["meta", "row", "body", "lead"].map((name, index) => {
+    const [head = "", weights = ""] = list[index]!;
+    const [, listed = "", ...lines] = value(head).trim().split(/\s+/);
+    const size = px(token(`--k2b-font-size-${name}`));
+    if (px(listed) !== size) throw new Error(`type roles: --k2b-type-roles entry ${index + 1} is not the ${name} size`);
+    return {
+      name,
+      size,
+      lineHeight: px(token(`--k2b-line-height-${name}`)),
+      weight: Number(token(`--k2b-font-weight-${name}`)),
+      lineHeights: lines.map(px),
+      weights: weights.trim().split(/\s+/).map(Number),
+    };
+  });
 };
 
 export const TYPE_ROLES: readonly TypeRole[] = read();
