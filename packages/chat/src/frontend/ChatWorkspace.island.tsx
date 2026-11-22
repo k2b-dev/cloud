@@ -2008,14 +2008,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // Quoted passages of the draft; they lie in one thread with its reply, which the message goes to.
   const [quotes, setQuotes] = createSignal<readonly DraftQuote[]>([]);
   const quoteDrafts = new Map<string, readonly DraftQuote[]>();
-  // The pill that offers a quote has loaded this module already.
-  const quote = (item: ChatFeedItem, text: string) =>
-    void importOnDemand(() => import("./chat-quote-selection")).then((module) => {
-      const next = module?.addQuote(quotes(), reply(), item, text, t().quotesReplaced);
-      if (!next) return;
-      if (!next.keepReply) setReply(null);
-      setQuotes(next.quotes);
+  // The focus is in the field before a quote's module has loaded, so a send waits for the quotes on their way: the
+  // message carries them instead of leaving them behind in the emptied field (#3702).
+  let quotesOnTheWay: Promise<void> | undefined;
+  const quote = (item: ChatFeedItem, text: string) => {
+    const landed = (quotesOnTheWay ?? Promise.resolve())
+      .then(() => importOnDemand(() => import("./chat-quote-selection")))
+      .then((module) => {
+        const next = module?.addQuote(quotes(), reply(), item, text, t().quotesReplaced);
+        if (!next) return;
+        if (!next.keepReply) setReply(null);
+        setQuotes(next.quotes);
+      });
+    quotesOnTheWay = landed;
+    void landed.then(() => {
+      if (quotesOnTheWay === landed) quotesOnTheWay = undefined;
     });
+  };
   // A quote whose message was deleted leaves the draft.
   createEffect(() => {
     const gone = new Set(openChat()?.messages.flatMap((message) => (message.deletedAt ? [message.id] : [])) ?? []);
@@ -2079,6 +2088,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     pendingSends++;
     try {
       if (current.hasNewer) await store?.loadLatest();
+      if (quotesOnTheWay) await quotesOnTheWay;
       const answered = reply();
       const quoted = quotes();
       const thread = answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
