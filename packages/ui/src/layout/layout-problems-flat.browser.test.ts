@@ -25,6 +25,7 @@ const classic = `
   .sep { position: relative; width: 1px; }
   .sep.own-line::before { content: ""; position: absolute; inset: 0; background: #e4e4e7; }
   .sep.line-on-top::before { z-index: 1; }
+  .no-line::before { display: none; }
 `;
 
 let browser: Browser;
@@ -200,12 +201,19 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     ]);
   });
 
-  test("grip-off-center: a grip on the middle of its line and in front of it passes, also when it lets the pointer through", async () => {
+  test("grip-off-center: a grip on the middle of its line and in front of it passes, also under its own hit area or without a line on purpose", async () => {
     const result = await check(
       [
         columns({}),
         columns({ grip: "pointer-events:none" }),
         columns({ separator: "", left: border, grip: "transform:translate(calc(-50% - 1px),-50%)" }),
+        // The shipped separator: its own invisible hit area lies over the grip; that covers nothing.
+        `<div style="display:flex;height:140px"><div style="width:200px"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the inspector" class="k2b-resize-separator"><span></span></div><div style="flex:1"></div></div>`,
+        // The Assistant's column: the line is the column's border, and the separator without a line of its own lies on
+        // that pixel; its hit area over the grip still covers nothing.
+        `<div style="display:flex;height:140px"><div style="width:200px;${border}"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the column" class="k2b-resize-separator no-line" style="margin-left:-1px"><span></span></div><div style="flex:1"></div></div>`,
+        // A separator in the gap between two framed cards hides its line on purpose; its grip sits on its own box.
+        `<div style="display:flex;height:140px;gap:8px"><div style="width:200px;border:1px solid #d4d4d8;border-radius:12px"></div><div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the panel" class="k2b-resize-separator no-line"><span></span></div><div style="flex:1;border:1px solid #d4d4d8;border-radius:12px"></div></div>`,
       ].join(""),
       ["grip-off-center"],
     );

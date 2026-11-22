@@ -465,7 +465,13 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       if (getComputedStyle(element).display === "none" || (element.parentElement && !element.parentElement.checkVisibility())) continue;
       for (const pseudo of ["::before", "::after"] as const) {
         const style = getComputedStyle(element, pseudo);
-        if (style.content === "none" || style.content === "normal" || !["absolute", "fixed"].includes(style.position)) continue;
+        if (
+          style.content === "none" ||
+          style.content === "normal" ||
+          style.display === "none" ||
+          !["absolute", "fixed"].includes(style.position)
+        )
+          continue;
         if (!visibleColor(style.backgroundColor) || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
         const box = pseudoBox(element, style);
         const width = box.right - box.left;
@@ -590,7 +596,13 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       Number(style.opacity) < 1 ||
       style.transform !== "none" ||
       style.filter !== "none" ||
-      style.isolation === "isolate";
+      style.isolation === "isolate" ||
+      style.mixBlendMode !== "normal" ||
+      style.clipPath !== "none" ||
+      (style.maskImage !== "none" && style.maskImage !== "") ||
+      /transform|opacity|filter/.test(style.willChange) ||
+      /layout|paint|strict|content/.test(style.contain) ||
+      style.containerType !== "normal";
     const layers = (painter: Painter) => {
       const path: Element[] = [];
       for (let box: Element | null = painter.element; box; box = box.parentElement) path.unshift(box);
@@ -640,7 +652,8 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           (child) => seen(child) && visibleColor(getComputedStyle(child).backgroundColor),
         );
         if (!grip) continue;
-        const vertical = separator.getAttribute("aria-orientation") !== "horizontal";
+        // A separator is horizontal unless it says otherwise (ARIA's default).
+        const vertical = separator.getAttribute("aria-orientation") === "vertical";
         const box = grip.getBoundingClientRect();
         const middle = vertical ? (box.left + box.right) / 2 : (box.top + box.bottom) / 2;
         const along = vertical ? (box.top + box.bottom) / 2 : (box.left + box.right) / 2;
@@ -656,15 +669,43 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
               Math.abs((candidate.across0 + candidate.across1) / 2 - middle) <= 12,
           )
           .sort((a, b) => Math.abs((a.across0 + a.across1) / 2 - middle) - Math.abs((b.across0 + b.across1) / 2 - middle))[0];
-        if (!line) {
+        // A separator that hides its own line on purpose, such as one in the gap between two framed cards, sits on
+        // its own box instead.
+        const own = separator.getBoundingClientRect();
+        const reference: Line | undefined =
+          line ??
+          (getComputedStyle(separator, "::before").display === "none"
+            ? vertical
+              ? {
+                  element: separator,
+                  side: "box",
+                  kind: "line",
+                  across0: own.left,
+                  across1: own.right,
+                  along0: own.top,
+                  along1: own.bottom,
+                }
+              : {
+                  element: separator,
+                  side: "box",
+                  kind: "line",
+                  across0: own.top,
+                  across1: own.bottom,
+                  along0: own.left,
+                  along1: own.right,
+                }
+            : undefined);
+        if (!reference) {
           gripOffCenter.push(`grip-off-center: the grip of "${label}" has no line under it`);
           continue;
         }
-        const centre = (line.across0 + line.across1) / 2;
+        const centre = (reference.across0 + reference.across1) / 2;
         if (Math.abs(middle - centre) > 0.25)
-          gripOffCenter.push(`grip-off-center: the grip of "${label}" sits ${px(middle - centre)} px off the middle of ${lineName(line)}`);
+          gripOffCenter.push(
+            `grip-off-center: the grip of "${label}" sits ${px(middle - centre)} px off the middle of ${lineName(reference)}`,
+          );
         // The part of the line in the viewport is what a person sees; the grip sits on its middle.
-        const [from, to] = [Math.max(line.along0, 0), Math.min(line.along1, vertical ? window.innerHeight : window.innerWidth)];
+        const [from, to] = [Math.max(reference.along0, 0), Math.min(reference.along1, vertical ? window.innerHeight : window.innerWidth)];
         if (to > from && Math.abs(along - (from + to) / 2) > 1)
           gripOffCenter.push(
             `grip-off-center: the grip of "${label}" sits ${px(along - (from + to) / 2)} px off the middle of its ${Math.round(to - from)} px line`,
@@ -675,7 +716,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           const fraction = (value: number) => Math.abs(value - Math.round(value)) > 0.01;
           const edges = [
             ["grip", [box.left, box.right, box.top, box.bottom]],
-            ["line", [line.across0, line.across1]],
+            ["line", [reference.across0, reference.across1]],
           ] as const;
           for (const [part, values] of edges) {
             const off = values.filter(fraction);
@@ -685,10 +726,10 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
               );
           }
         }
-        if (!paintsAbove({ element: grip }, line))
-          gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${lineName(line)}`);
+        if (reference.side !== "box" && !paintsAbove({ element: grip }, reference))
+          gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${lineName(reference)}`);
         const top = document.elementFromPoint(vertical ? middle : along, vertical ? along : middle);
-        if (top && top !== grip && !grip.contains(top) && top !== line.element)
+        if (top && top !== grip && !grip.contains(top) && top !== reference.element && top !== separator && !separator.contains(top))
           gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${name(top)}`);
       }
     } finally {

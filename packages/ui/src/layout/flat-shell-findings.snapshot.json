@@ -90,8 +90,8 @@
     },
     "1440-panes": {
       "overlap": [
-        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x842",
-        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x842"
+        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x602",
+        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x602"
       ],
       "spill": [],
       "cut": [],
@@ -120,7 +120,12 @@
         "short-edge: the line of section.k2b-section \"History3 eventsCreated o\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
         "short-edge: the fill of article.k2b-notice-card \"Caution: The invoice cou\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\""
       ],
-      "nearDouble": [],
+      "nearDouble": [
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"A-4483\" bottom shadow lie 5 px apart over 200 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"Holzwerk Brandt\" bottom shadow lie 5 px apart over 145 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"Open\" bottom shadow lie 5 px apart over 68 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"€570.00\" bottom shadow lie 5 px apart over 84 px"
+      ],
       "gripOffCenter": [],
       "typeRole": [
         "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Open\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/600, no type role",
@@ -131,7 +136,8 @@
         "type-role: span.k2b-data-table__header-title \"Customer\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"State\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"Amount\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
-        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role"
+        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role",
+        "type-role: aside.k2b-app-workspace__drawer \"Recent activity\" in aside.k2b-app-workspace__drawer \"Recent activity\" is 15px/normal/400, no type role"
       ]
     }
   },
@@ -196,8 +202,8 @@
     },
     "1440-panes": {
       "overlap": [
-        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x842",
-        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x842"
+        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x602",
+        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x602"
       ],
       "spill": [],
       "cut": [],
@@ -211,7 +217,12 @@
         "short-edge: the line of section.k2b-section \"History3 eventsCreated o\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
         "short-edge: the fill of article.k2b-notice-card \"Caution: The invoice cou\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\""
       ],
-      "nearDouble": [],
+      "nearDouble": [
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"A-4483\" bottom shadow lie 5 px apart over 200 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"Holzwerk Brandt\" bottom shadow lie 5 px apart over 144 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"Open\" bottom shadow lie 5 px apart over 68 px",
+        "near-double: aside.k2b-app-workspace__drawer \"Recent activity\"::before and td \"€570.00\" bottom shadow lie 5 px apart over 83 px"
+      ],
       "gripOffCenter": [],
       "typeRole": [
         "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Open\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/600, no type role",
@@ -222,7 +233,8 @@
         "type-role: span.k2b-data-table__header-title \"Customer\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"State\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"Amount\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
-        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role"
+        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role",
+        "type-role: aside.k2b-app-workspace__drawer \"Recent activity\" in aside.k2b-app-workspace__drawer \"Recent activity\" is 15px/normal/400, no type role"
       ]
     }
   }

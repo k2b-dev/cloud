@@ -23,7 +23,7 @@ const snapshotPath = resolve(import.meta.dir, "flat-shell-findings.snapshot.json
 const recording = process.env.RECORD_FLAT_FINDINGS === "1";
 const kinds = ["overlap", "spill", "cut", "double", "scrollbar", "shortEdge", "nearDouble", "gripOffCenter", "typeRole"] as const;
 type Findings = Pick<LayoutProblems, (typeof kinds)[number]>;
-// A scene is a viewport width, with `panes` for a resizable pane in Main.
+// A scene is a viewport width, with `panes` for a resizable pane in Main and a resizable bottom drawer.
 const scenes = ["1440", "390", "1440-panes"];
 const expected: Record<string, Record<string, Findings>> = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : {};
 
@@ -94,6 +94,8 @@ render(() => createComponent(AppWorkspace, { get children() { return [
       ]; } });
     } }),
   ]; } }),
+  // With panes, also a resizable bottom drawer, whose grip sits on the drawer's top line.
+  document.body.dataset.panes === "true" ? createComponent(AppWorkspace.BottomDrawer, { id: "activity", open: true, children: "Recent activity" }) : null,
 ]; } }), document.getElementById("app"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
