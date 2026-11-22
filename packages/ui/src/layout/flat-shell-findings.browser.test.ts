@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
-import { type LayoutProblems, layoutProblems } from "../layout-check";
+import { type LayoutProblemOptions, type LayoutProblems, layoutProblems } from "../layout-check";
 
 // The defects of today's flat shell, written down by the flat kinds of the self-check (Cloud flach K2, K11, K13): lines
 // and fills that stop short of their column, near-double lines, grips off their edge, and type outside the roles. The
@@ -161,7 +161,8 @@ for (const scene of scenes)
 test(`the pane and drawer grips overlap nothing and sit on their lines at 1920 px in ${browserName}`, async () => {
   const page = await load(1920, true);
   try {
-    const result = await page.evaluate(layoutProblems, { root: "#app", flat: ["grip-off-center"], ignore: ":not(*)" });
+    const options: LayoutProblemOptions = { root: "#app", flat: ["grip-off-center"], ignore: ":not(*)" };
+    const result = await page.evaluate(layoutProblems, options);
     expect(await page.locator('[data-app-workspace-resize="pane"]').count()).toBe(1);
     expect({ overlap: result.overlap, grips: result.gripOffCenter }).toEqual({ overlap: [], grips: [] });
   } finally {
