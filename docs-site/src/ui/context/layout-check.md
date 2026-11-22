@@ -17,13 +17,6 @@ use it with Playwright or any browser test that can run a function in the page.
 It does not see what runs out of the bottom of a scroll area or what a floating
 layer covers. A review of screenshots checks those.
 
-A touch hit area is not a spill. On a coarse pointer, small controls reach
-44 px with an empty, invisible pseudo-element: `::before` or `::after` with
-`content: ""`, absolute or fixed position, and no fill, border, or shadow. The
-check ignores overflow that only such hit areas cause, in `@k2b/ui` and in
-your own controls, so a page with touch needs no `data-layout-check="skip"`. A
-pseudo-element that draws something and reaches past its box still counts.
-
 ## Import
 
 ```ts
