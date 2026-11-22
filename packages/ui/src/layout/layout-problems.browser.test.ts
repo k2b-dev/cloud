@@ -148,6 +148,49 @@ describe(`layout self-check with touch in ${browserName}`, () => {
     expect(result.problems).toEqual([]);
   });
 
+  // Mail at 390 px in WebKit (coarse pointer): the head's actions carry hit areas, and the primary action keeps its
+  // label for screen readers in a 1 px clipped box whose text runs on past the head. That text is no reason to report
+  // the hit areas; the same label drawn visibly is.
+  const headActions = (label: string) => `${hitAreaStyle}
+    <div data-probe="head-actions" style="display:flex;justify-content:flex-end;gap:4px;width:200px">
+      <button type="button" class="app-hit" aria-label="Filter"></button>
+      <button type="button" class="app-hit"><span style="position:relative">+</span>${label}</button>
+    </div>`;
+  test("390 px: a visually hidden label beside hit areas is no spill", async () => {
+    const result = await checkTouch(
+      headActions(
+        '<span class="k2b-sr-only">Write a new message to someone</span><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">Write a new message</span>',
+      ),
+    );
+    // Without the hit-area rule this box would spill: its hit areas reach past it by more than the slack.
+    expect(await touch.locator('[data-probe="head-actions"]').evaluate((box) => box.scrollWidth - box.clientWidth)).toBeGreaterThan(7);
+    expect(result.problems).toEqual([]);
+  });
+
+  test("390 px: the same label drawn visibly beside hit areas still spills", async () => {
+    const result = await checkTouch(
+      headActions('<span style="position:absolute;white-space:nowrap">Write a new message to someone</span>'),
+    );
+    // The head and the button whose label runs past it both spill.
+    expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
+      '[data-probe="head-actions"]',
+      'button.app-hit "+Write a new message to "',
+    ]);
+  });
+
+  // Counter-checks: only text in a 1 px clipped box is left out. A visible element that reaches 8 px past the box is
+  // reported, with or without hit areas beside it; 8 px is just past the 7 px slack.
+  test("390 px: a visible button 8 px past the head is reported, also beside hit areas", async () => {
+    const result = await checkTouch(`${hitAreaStyle}
+      <div data-probe="plain" style="display:flex;width:200px"><span style="flex:none;width:200px;height:20px"></span><button type="button" data-probe="plain-over" style="flex:none;width:8px;height:20px;padding:0;border:0;background:#2563eb"></button></div>
+      <div data-probe="with-hit" style="display:flex;width:200px"><span style="flex:none;width:200px;height:20px"></span><button type="button" class="app-hit" aria-label="Filter" style="flex:none;width:8px;height:20px;padding:0;border:0;background:#2563eb"></button><span class="k2b-sr-only">Write a new message to someone</span></div>`);
+    // The visible 8 px are reported; beside a hit area the finding also counts the hit area, but it is reported.
+    expect(result.spill).toEqual([
+      '[data-probe="plain"] spills 8 px out of its box',
+      expect.stringMatching(/^\[data-probe="with-hit"\] spills \d+ px out of its box$/),
+    ]);
+  });
+
   test("390 px: a drawn pseudo-element or real content beside a hit area still spills", async () => {
     const result = await checkTouch(touchDefects);
     expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
