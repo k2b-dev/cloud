@@ -22,8 +22,14 @@ export default function FiredAlerts(props: {
   const columns = (): DataTableColumn<AlertAttention>[] => [
     { id: "alert", header: t().alertDetailsTitle, cellClass: "min-w-56 max-sm:min-w-0" },
     { id: "since", header: t().alertSince, headerClass: "max-sm:hidden", cellClass: "w-56 whitespace-nowrap max-sm:hidden" },
-    { id: "actions", header: "", cellClass: "w-px whitespace-nowrap" },
+    { id: "actions", header: "", nowrap: true, headerClass: "max-sm:hidden", cellClass: "max-sm:hidden" },
   ];
+  const adjustButton = (alert: AlertAttention) => (
+    <Button variant="secondary" size="sm" loading={props.adjustPending} onClick={() => props.adjust(alert.reference)}>
+      <i class="ti ti-sparkles" aria-hidden="true" />
+      {t().adjustWithGustav}
+    </Button>
+  );
   const title = (alert: AlertAttention) =>
     alert.state === "firing"
       ? t().alertFired({ name: alert.name })
@@ -51,24 +57,23 @@ export default function FiredAlerts(props: {
     );
   const cell = (alert: AlertAttention, col: DataTableColumn<AlertAttention>): JSX.Element => {
     if (col.id === "alert")
+      // Text wraps instead of truncating; a phone shows the time and the Gustav action under it.
       return (
-        <div class="flex min-w-0 items-start gap-2">
-          {badge(alert)}
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-primary">{title(alert)}</p>
-            <p class="mt-0.5 text-xs text-dimmed">{condition(alert)}</p>
-            <p class="mt-0.5 text-xs text-dimmed sm:hidden">{since(alert)}</p>
+        <div class="min-w-0 whitespace-normal">
+          <div class="flex min-w-0 items-start gap-2">
+            <span class="shrink-0">{badge(alert)}</span>
+            <p class="min-w-0 text-sm font-medium text-primary [overflow-wrap:anywhere]">{title(alert)}</p>
           </div>
+          <p class="mt-0.5 text-xs text-dimmed [overflow-wrap:anywhere]">{condition(alert)}</p>
+          <p class="mt-0.5 text-xs text-dimmed sm:hidden">{since(alert)}</p>
+          <div class="mt-2 sm:hidden">{adjustButton(alert)}</div>
         </div>
       );
     if (col.id === "since") return <span class="text-xs text-secondary">{since(alert)}</span>;
     return (
       <div class="flex items-center gap-2">
-        <Button variant="secondary" size="sm" loading={props.adjustPending} onClick={() => props.adjust(alert.reference)}>
-          <i class="ti ti-sparkles" aria-hidden="true" />
-          {t().adjustWithGustav}
-        </Button>
-        <ButtonLink class="max-sm:hidden" variant="ghost" size="sm" href={props.sqlHref(alert.reference)}>
+        {adjustButton(alert)}
+        <ButtonLink variant="ghost" size="sm" href={props.sqlHref(alert.reference)}>
           {t().openAlertSql}
         </ButtonLink>
       </div>

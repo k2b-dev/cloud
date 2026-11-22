@@ -317,8 +317,8 @@ describe("Pulse base page after the cut", () => {
       await tab.clock.runFor(4_900);
       expect(calls).toEqual([]);
       await tab.clock.runFor(200);
-      // The response arrives over the real network; poll from the test side, whose timers are not frozen.
-      for (let attempt = 0; attempt < 50 && (await throttled()) > 0; attempt++) await Bun.sleep(100);
+      // The response arrives over the real network; the locator waits from the test side, whose timers are not frozen.
+      await tab.getByText("Gedrosselt", { exact: true }).filter({ visible: true }).waitFor({ state: "detached" });
       expect(await throttled()).toBe(0);
       expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
       expect(await rows()).toEqual(before);
