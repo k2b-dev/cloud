@@ -12,7 +12,7 @@ describe("@k2b/ui focus and color contract", () => {
     const css = await Bun.file(resolve(stylesDir, "index.css")).text();
     const root = css.match(/\.k2b-ui\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
-    expect(root).toContain("font-size: 0.9375rem;");
+    expect(root).toContain("font-size: var(--k2b-font-size-row);");
     expect(root).toContain("font-weight: 400;");
     expect(css).not.toMatch(/(?:^|\})\s*body\s*\{/);
   });
@@ -195,7 +195,7 @@ describe("@k2b/ui focus and color contract", () => {
     }
     expect(css).not.toContain(".k2b-select-shell");
     expect(css).toMatch(
-      /\.k2b-ui \.k2b-input\s*\{[^}]*padding:\s*0\.375rem 0\.5rem;[^}]*font-size:\s*0\.875rem;[^}]*line-height:\s*1\.25rem;/s,
+      /\.k2b-ui \.k2b-input\s*\{[^}]*padding:\s*0\.375rem 0\.5rem;[^}]*font-size:\s*var\(--k2b-font-size-body\);[^}]*line-height:\s*1\.25rem;/s,
     );
   });
 

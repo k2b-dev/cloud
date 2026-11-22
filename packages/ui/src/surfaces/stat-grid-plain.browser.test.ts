@@ -127,7 +127,7 @@ describe("@k2b/ui key figures without tiles", () => {
         expect(row.values).toHaveLength(1);
         expect(row.supports).toHaveLength(1);
         expect(row.heights).toHaveLength(1);
-        expect(row.valueSize).toBe("28px");
+        expect(row.valueSize).toBe("18px");
         expect(row.unitSize).toBe("14px");
         // The warning colours the figure and its third line; the others keep the text colours.
         const [open, , overdue] = row.colors;
@@ -154,10 +154,11 @@ describe("@k2b/ui key figures without tiles", () => {
     }
   });
 
-  test("size lg makes a main figure larger", async () => {
+  // K11: a main figure is the lead statement at every size; lg adds no fifth text size.
+  test("size lg keeps a main figure in the lead role", async () => {
     const tab = await page(1440, markup({ size: "lg" }));
     try {
-      expect((await tab.evaluate(measure)).valueSize).toBe("36px");
+      expect((await tab.evaluate(measure)).valueSize).toBe("18px");
     } finally {
       await tab.close();
     }

@@ -240,9 +240,9 @@ describe("@k2b/ui Cloud content contract", () => {
     );
     expect(contentCss).toMatch(/\.k2b-calendar-preview--timed \{[^}]*right: 0\.25rem;[^}]*left: 0\.25rem;/s);
     expect(contentCss).toMatch(
-      /\.k2b-calendar-month__events > \.k2b-calendar-preview \{[^}]*padding-block: calc\(0\.25rem - 1px\);[^}]*font-size: 0\.6875rem;[^}]*line-height: 1\.15;/s,
+      /\.k2b-calendar-month__events > \.k2b-calendar-preview \{[^}]*padding-block: calc\(0\.25rem - 1px\);[^}]*font-size: var\(--k2b-font-size-meta\);[^}]*line-height: 1\.15;/s,
     );
-    expect(contentCss).toMatch(/\.k2b-calendar-preview__title \{[^}]*font-size: 0\.6875rem;[^}]*font-weight: 600;/s);
+    expect(contentCss).toMatch(/\.k2b-calendar-preview__title \{[^}]*font-size: var\(--k2b-font-size-meta\);[^}]*font-weight: 600;/s);
     expect(contentCss).toMatch(
       /\.k2b-calendar-preview--timed\[data-short="true"\] \.k2b-calendar-preview__content \{[^}]*bottom: calc\(100% \+ 0\.25rem\);[^}]*display: flex;/s,
     );
@@ -723,7 +723,7 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(compactMarkdown).toContain("<h2>Result</h2>");
     expect(contentCss).toMatch(/\.k2b-content-markdown \{[^}]*white-space: normal/s);
     expect(contentCss).toContain('.k2b-content-markdown[data-heading-scale="compact"] h1');
-    expect(contentCss).toContain('.k2b-content-markdown[data-heading-scale="large"] h1');
+    expect(contentCss).toContain('.k2b-content-markdown[data-heading-scale="large"] :is(h1, h2)');
     expect(contentCss).toMatch(/\.k2b-content-markdown :is\(h1, h2, h3, h4, h5, h6\) \{[^}]*margin: 1rem 0 0\.5em/s);
     expect(contentCss).toMatch(/data-heading-scale="compact"[^}]*margin: 0\.75rem 0 0\.4em/s);
     expect(contentCss).toMatch(/> :first-child \{[^}]*margin-block-start: 0/s);

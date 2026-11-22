@@ -191,7 +191,7 @@ unknown text stays ordinary Markdown. Use
 
 The component does not impose a reading width. The parent owns width, scrolling, and surrounding layout. A `FileView` with `variant="plain"` caps Markdown at a reading measure of 72 characters.
 
-Set `headingScale` to `"compact"`, `"normal"`, or `"large"`. Compact mode uses smaller headings and tighter paragraph spacing for embedded content such as comments and dialogs. Normal is the default prose hierarchy, and large gives standalone pages a stronger hierarchy. The scale changes presentation only; Markdown heading levels remain intact. Use `class` for other context-specific text sizing.
+Set `headingScale` to `"compact"`, `"normal"`, or `"large"`. Compact mode uses smaller headings and tighter paragraph spacing for embedded content such as comments and dialogs. Normal is the default prose hierarchy: 14 px text on a 22 px leading, `h1` 18 px, `h2` 16 px, and the other headings 14 px in weight 600. Large keeps these sizes and adds space above `h1` and `h2` for standalone pages; reading text has no sizes beyond 18 px (K11). Bold text is weight 600. The scale changes presentation only; Markdown heading levels remain intact.
 
 ## Editing and preview
 

@@ -781,7 +781,7 @@ describe("@k2b/ui portable chat family", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const textareaRule = css.match(/\.k2b-ui \.k2b-chat-composer__input textarea \{([^}]+)\}/)?.[1] ?? "";
 
-    expect(textareaRule).toContain("font-size: 0.875rem");
+    expect(textareaRule).toContain("font-size: var(--k2b-font-size-body)");
     expect(textareaRule).not.toContain("font-size: 0.8125rem");
   });
 

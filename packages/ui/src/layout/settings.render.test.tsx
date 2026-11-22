@@ -289,7 +289,7 @@ describe("@k2b/ui complete settings surfaces", () => {
 
     expect(directFieldRule).toContain("padding: 0");
     expect(fieldRule).toContain("min-width: 0");
-    expect(groupHeadingRule).toContain("font-size: 0.875rem");
+    expect(groupHeadingRule).toContain("font-size: var(--k2b-font-size-body)");
     expect(footerRule).toContain("background: var(--k2b-surface)");
     expect(bodyRule).toContain("overflow-x: hidden");
     expect(bodyRule).toContain("overflow-y: auto");

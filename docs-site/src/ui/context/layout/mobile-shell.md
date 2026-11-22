@@ -79,7 +79,7 @@ device: an iPad in Split View narrower than 48 rem shows the tab bar.
   an element that renders one, such as a count read in the browser. An item's
   `badge`, which calls for attention, such as unread messages, takes the
   count's place. A group
-  without items is left out. Rows are 44 px with 1rem labels; the open item is
+  without items is left out. Rows are 44 px with row-role (13 px) labels; the open item is
   tinted like the selected row of a web sidebar, in the action colour and
   weight. A press shows the item's page frame at
   once, as a tab does, and the row of a loading page pulses.
@@ -151,13 +151,13 @@ the first paint too.
   every pointer.
 - Text fields have 16 px text and are at least 44 px high, so iOS never zooms
   into a focused field.
-- One type scale: the header and dialog titles at 1.125rem; text and button
-  labels at 1rem, with headings and names in a heavier weight; secondary text,
-  segmented options, and field labels, descriptions, and errors at 0.875rem;
-  and the tab labels at 0.6875rem. Settings section headings, notices,
-  placeholders, and navigation descriptions follow it too. Icon buttons keep
-  their glyph sizes. Use these sizes for application content on the phone
-  rather than sizes of your own.
+- The four type roles of the desktop (K11): the header and dialog titles in
+  the lead role (18 px); text and button labels in the row role (13 px);
+  settings section headings, notice and placeholder titles in the body role
+  (14 px) at weight 600; secondary text, segmented options, field labels,
+  descriptions, and errors, and the tab labels in the meta role (12 px). Icon
+  buttons keep their glyph sizes. Use these roles for application content on
+  the phone rather than sizes of your own.
 
 ### Toasts
 

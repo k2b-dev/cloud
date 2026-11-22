@@ -110,10 +110,9 @@ lines use secondary ink at 12px, sidebar row descriptions 13px. Each primitive
 sets its own line height, so its box keeps its height whatever the host page's
 line height, also inside a `NoticeCard`. Titles use `-0.018em` tracking.
 
-Three surfaces keep their own sizes: object sidebar rows keep a compact 11px
-subtitle, sidebar items shown as chips on narrow workspaces use 13px semibold
-labels, and the [mobile shell](../layout/mobile-shell) applies its touch type
-scale.
+Sidebar items shown as chips on narrow workspaces use 13px semibold labels.
+Object sidebar rows and the [mobile shell](../layout/mobile-shell) use the
+same four roles.
 
 ## Icon tile
 
