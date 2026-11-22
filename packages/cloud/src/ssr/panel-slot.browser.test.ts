@@ -941,11 +941,13 @@ test("opening the panel parks an open workspace detail drawer", async () => {
   }
 });
 
-// 12: The real workspace follows the host at its 808px threshold from the first paint.
+// 12: The real workspace follows the host from the first paint. Beside the default 26 rem panel at 1440 px the app area
+// is narrower than 64 rem, a tablet's, so Detail waits as a drawer there too (K12).
 for (const [width, stored, waiting] of [
   [1194, "", true],
-  [1440, "", false],
+  [1440, "", true],
   [1440, "36", true],
+  [1920, "", false],
 ] as const)
   test(`${width}px with ${stored || "default"} rem panel: lg Detail waiting=${waiting}`, async () => {
     const { context, page } = await fixture(width, `1:fixture:${stored}`);

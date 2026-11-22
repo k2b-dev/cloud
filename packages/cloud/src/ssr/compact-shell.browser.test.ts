@@ -247,7 +247,8 @@ describe("signed-in shell", () => {
           expect(shape.detail?.surface).toBe(shape.pane?.surface);
           // List and reader stay side by side; the detail spans the workspace.
           expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-          expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]! + 8);
+          // K2, K5a: the detail column is flush with the workspace's top edge.
+          expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]!);
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
