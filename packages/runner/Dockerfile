@@ -17,6 +17,7 @@ RUN bun install --frozen-lockfile --ignore-scripts
 # Build the same public package exports as the application images.
 COPY tsconfig.base.json ./
 COPY packages/ssr/src packages/ssr/src
+COPY packages/stdlib/src packages/stdlib/src
 COPY packages/ui packages/ui
 RUN bun run --cwd packages/ui build
 COPY packages/cloud/src packages/cloud/src

@@ -6,9 +6,11 @@ import { join, resolve } from "node:path";
 // Only the host, the shared `@k2b/cloud/cli` helpers (with the import-free
 // permalink path they build on), the pure principal label the access helpers
 // name grantees with, and the embedded core skill may load for host commands;
-// no plugin from the store or the plugins directory may.
+// no plugin from the store or the plugins directory may. Dependencies are not
+// CLI code: npm packages load from node_modules, and the workspace library
+// `@k2b/stdlib` from packages/stdlib/src.
 const hostFile =
-  /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities|events)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
+  /\/packages\/(stdlib\/src\/.+|cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities|events)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
 
 test("host commands load no module", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-modules-test-"));

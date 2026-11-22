@@ -25,7 +25,7 @@
     "@k2b/cloud": "workspace:*",
     "@k2b/editor": "workspace:*",
     "@k2b/ssr": "workspace:*",
-    "@k2b/stdlib": "catalog:",
+    "@k2b/stdlib": "workspace:*",
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
     "@zone-eu/mailsplit": "5.4.30",

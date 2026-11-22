@@ -55,6 +55,7 @@ jobs:
     outputs:
       cloud: ${{ steps.filter.outputs.cloud }}
       grids: ${{ steps.filter.outputs.grids }}
+      stdlib: ${{ steps.filter.outputs.stdlib }}
       ui: ${{ steps.filter.outputs.ui }}
       docs: ${{ steps.filter.outputs.docs }}
       images: ${{ steps.filter.outputs.images }}
@@ -82,7 +83,7 @@ jobs:
           # Without the base, a commit that changes the release manifest against its parent still
           # gets the release checks. Without a parent, it gets them too: they are only stricter.
           all() {
-            for key in cloud grids ui docs images runner packed webkit releasebody; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
+            for key in cloud grids stdlib ui docs images runner packed webkit releasebody; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
             echo "bundles=$apps" >> "$GITHUB_OUTPUT"
             echo "release=$(git diff --quiet HEAD^1 HEAD -- .release-please-manifest.json 2>/dev/null && echo false || echo true)" | tee -a "$GITHUB_OUTPUT"
           }
@@ -93,7 +94,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|packages/editor/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|packages/editor/|packages/stdlib/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
@@ -106,11 +107,12 @@ jobs:
           {
             echo "cloud=$(match "$shared")"
             echo "grids=$(match '^packages/grids/')"
-            echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
+            echo "stdlib=$(match '^packages/stdlib/')"
+            echo "ui=$(match '^(packages/ui/|packages/ssr/|packages/stdlib/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(packages/speedtest/|Dockerfile|\.dockerignore|docs-site/Dockerfile|packages/runner/|pwas/|compose[^/]*\.yml)')"
             echo "runner=$(match "$shared|^packages/runner/|^compose[^/]*\.yml$")"
-            echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
+            echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/stdlib/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
             echo "webkit=$(match "$shared|^tests/fixtures/|^($browser)/")"
@@ -544,6 +546,24 @@ jobs:
           docker logs grids-postgres 2>&1 || true
           echo "::endgroup::"
           docker rm --force grids-postgres grids-nats
+
+  # @k2b/stdlib's finance generators are checked against independent validators (Saxon with the
+  # EN16931 Schematron on Java, Python), DATEV's pinned schemas, and original CII invoices.
+  # The runner image ships Java and Python; the scripts download and verify their pinned inputs.
+  stdlib:
+    needs: [changes, setup]
+    if: needs.changes.outputs.stdlib == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/install
+      - run: bun run --cwd packages/stdlib datev:fixtures
+      - run: bun run --cwd packages/stdlib test:finance-conformance
+      - run: bun run --cwd packages/stdlib test:einvoice-external
 
   ui:
     needs: [changes, setup]
@@ -1027,7 +1047,7 @@ jobs:
           docker ps -aq --filter 'name=^/code-c14-' | xargs -r docker rm --force
 
   gate:
-    needs: [changes, mirror, setup, check, unit, webkit, integration, grids, ui, docs, packed, release-body, bundles, images, runner-attacks]
+    needs: [changes, mirror, setup, check, unit, webkit, integration, grids, stdlib, ui, docs, packed, release-body, bundles, images, runner-attacks]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1036,7 +1056,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           # The path-filtered jobs, whose `if:` reads the `changes` outputs.
           # Only they may be skipped; every other job must succeed (`ci-gate` check).
-          MAY_SKIP: webkit grids ui docs packed release-body bundles images runner-attacks
+          MAY_SKIP: webkit grids stdlib ui docs packed release-body bundles images runner-attacks
         run: |
           set -euo pipefail
           jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }

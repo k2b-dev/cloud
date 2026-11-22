@@ -10,6 +10,7 @@ RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
 COPY packages/ssr/src packages/ssr/src
+COPY packages/stdlib/src packages/stdlib/src
 COPY packages/ui/tsconfig.json packages/ui/tsconfig.build.json packages/ui/
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
