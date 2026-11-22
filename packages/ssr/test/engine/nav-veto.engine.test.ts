@@ -36,7 +36,7 @@ beforeAll(async () => {
   const column = join(root, "Column.island.tsx");
   writeFileSync(
     shell,
-    `import { onMount, onCleanup } from "solid-js";
+    `import { onSettled, onCleanup } from "solid-js";
     import { installPageSwap, swapPage, onBeforeLeave, listenPopState } from ${nav};
     // Loaded before nav installs, as a shared chunk would be: dialog-core then hides its own Back from nav.
     import { dialogCore } from ${dialog};
@@ -44,7 +44,7 @@ beforeAll(async () => {
     const count = key => { const d = document.documentElement.dataset; d[key] = String(Number(d[key] ?? 0) + 1); };
     export default function Shell() {
       onBeforeLeave(event => { count("shellChecks"); event.preventDefault(); });
-      onMount(() => {
+      onSettled(() => {
         // This listener observes the browser's rollback, before nav absorbs it from application listeners.
         const observed = () => { count("observedPops"); const d = document.documentElement.dataset; d.observedPaths = (d.observedPaths ? d.observedPaths + " " : "") + location.pathname; };
         window.addEventListener("popstate", observed, true);
@@ -64,7 +64,7 @@ beforeAll(async () => {
   );
   writeFileSync(
     column,
-    `import { createSignal, onMount } from "solid-js";
+    `import { createSignal, onSettled } from "solid-js";
     import { onBeforeLeave } from ${nav};
     const count = key => { const d = document.documentElement.dataset; d[key] = String(Number(d[key] ?? 0) + 1); };
     export default function Column(props) {
@@ -90,7 +90,7 @@ beforeAll(async () => {
           d.replacedPath = location.pathname;
         });
       });
-      onMount(() => onBeforeLeave(() => count("laterChecks")));
+      onSettled(() => onBeforeLeave(() => count("laterChecks")));
       return <section><b data-state>{props.label}:{value()}</b><button id="edit" onClick={() => setValue(value() + 1)}>Edit</button>
         <button id="dialog" onClick={() => void window.dialogCore.open(() => <p>Transient dialog</p>, { history: true, ariaLabel: "History dialog" })}>Dialog</button></section>;
     }`,

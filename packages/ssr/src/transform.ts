@@ -95,7 +95,8 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
                 sources.push(a.argument);
               }
               if (group.length) sources.push(t.objectExpression(group));
-              props = t.callExpression(t.identifier("__solid_mergeProps"), sources);
+              // Solid 2's merge() returns a lazy view that Seroval cannot serialize; island props are data, so copy it.
+              props = t.objectExpression([t.spreadElement(t.callExpression(t.identifier("__solid_mergeProps"), sources))]);
               usesMergeProps = true;
             } else {
               props = t.objectExpression(attributes.map(named));

@@ -79,19 +79,19 @@ beforeAll(async () => {
   const broken = join(root, "Broken.island.tsx");
   writeFileSync(
     rail,
-    `import { onMount, onCleanup } from "solid-js";
+    `import { onSettled, onCleanup } from "solid-js";
     import { installPageSwap, swapPage } from ${JSON.stringify(resolve(import.meta.dir, "../../src/nav.ts"))};
     export default function Rail() {
       const timeout = new URL(location.href).searchParams.get("timeout");
-      onMount(() => { onCleanup(installPageSwap(timeout ? { timeout: Number(timeout) } : {})); document.documentElement.dataset.ready = "yes"; });
+      onSettled(() => { onCleanup(installPageSwap(timeout ? { timeout: Number(timeout) } : {})); document.documentElement.dataset.ready = "yes"; });
       return <nav>${scenarios.map((name) => `<a id="${name.replace("/", "-")}" href="/app/${name}">${name}</a>`).join("")}
       <button id="swap-replace" onClick={() => void swapPage("/app/new", { replace: true })}>Replace page</button>
       <a id="prevented" href="/app/prevented" onClick={e => e.preventDefault()}>prevented</a></nav>;
     }`,
   );
-  const source = `import { onMount, onCleanup } from "solid-js";
+  const source = `import { onSettled, onCleanup } from "solid-js";
     export default function Page(props) {
-      onMount(() => { const handler = () => {}; window.addEventListener("resize", handler);
+      onSettled(() => { const handler = () => {}; window.addEventListener("resize", handler);
         onCleanup(() => window.removeEventListener("resize", handler)); });
       return <b data-mounted>{props.label}</b>;
     }`;

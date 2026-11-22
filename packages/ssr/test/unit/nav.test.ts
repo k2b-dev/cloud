@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { renderToString } from "solid-js/web";
+import { renderToString } from "@solidjs/web";
 import {
   captureScroll,
   currentPathWithQuery,

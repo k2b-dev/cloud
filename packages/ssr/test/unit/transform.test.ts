@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { fromJSON } from "seroval";
-import { renderToString } from "solid-js/web";
+import { renderToString } from "@solidjs/web";
 import { islandIdFromFile } from "../../src/island-id";
 import { transform } from "../../src/transform";
 import { makeTempRoot as makeResolvableTempRoot } from "../temp-root";
@@ -392,7 +392,8 @@ test("spread attributes reach the island props in JSX order", async () => {
   expect(attribute).toBeDefined();
   const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
   expect(fromJSON<Record<string, unknown>>(JSON.parse(decoded))).toEqual({
-    label: "from spread",
+    // Solid 2: merge() lets a later undefined override an earlier value (Solid 1 skipped it).
+    label: undefined,
     route: { view: "overview" },
     count: 2,
     hidden: "override",

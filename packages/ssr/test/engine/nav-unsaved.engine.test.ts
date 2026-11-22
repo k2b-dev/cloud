@@ -31,10 +31,10 @@ beforeAll(async () => {
   const column = join(root, "Column.island.tsx");
   writeFileSync(
     shell,
-    `import { onMount, onCleanup } from "solid-js";
+    `import { onSettled, onCleanup } from "solid-js";
     import { installPageSwap } from ${nav};
     export default function Shell() {
-      onMount(() => {
+      onSettled(() => {
         onCleanup(installPageSwap());
         document.documentElement.dataset.ready = "yes";
       });

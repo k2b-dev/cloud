@@ -32,12 +32,12 @@ beforeAll(async () => {
   // The island's own values: a draft or prefill it restores, and a field it may lock.
   writeFileSync(
     form,
-    `import { createSignal, onMount } from "solid-js";
+    `import { createSignal, onSettled } from "solid-js";
     ${recorder}
     export default function Form() {
       const [message, setMessage] = createSignal(window.islandMessage ?? window.serverPrefill ?? "");
       const [search, setSearch] = createSignal("Lager");
-      onMount(() => { document.documentElement.dataset.mounted = "yes"; });
+      onSettled(() => { document.documentElement.dataset.mounted = "yes"; });
       return <form>
         <textarea aria-label="Message" id="message" value={message()} onInput={(e) => { setMessage(e.currentTarget.value); record("message", "Input", e.currentTarget.value); document.documentElement.dataset.messageType = e.inputType.startsWith("insert") ? "insert" : e.inputType; }} onChange={() => record("message", "Change")} />
         <input type="search" aria-label="Search" id="search" value={search()} onInput={(e) => { setSearch(e.currentTarget.value); record("search", "Input", e.currentTarget.value); }} onChange={() => record("search", "Change")} />

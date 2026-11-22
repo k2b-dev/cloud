@@ -75,7 +75,7 @@ test("production builds each island variant once, and pages load the variant the
       server,
       `import { strict as assert } from "node:assert";
       import { Hono } from "hono";
-      import { ssr } from "solid-js/web";
+      import { ssr } from "@solidjs/web";
       import { createConfig } from ${JSON.stringify(join(core, "index.ts"))};
       import { routes as honoRoutes } from ${JSON.stringify(join(core, "adapter/hono.ts"))};
       import { routes as bunRoutes } from ${JSON.stringify(join(core, "adapter/bun.ts"))};

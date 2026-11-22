@@ -38,7 +38,7 @@ test("production adapters preserve one module URL through lazy imports", async (
       `
       import { strict as assert } from "node:assert";
       import { Hono } from "hono";
-      import { ssr } from "solid-js/web";
+      import { ssr } from "@solidjs/web";
       import { createConfig } from ${JSON.stringify(join(core, "index.ts"))};
       import { routes as honoRoutes } from ${JSON.stringify(join(core, "adapter/hono.ts"))};
       import { routes as bunRoutes } from ${JSON.stringify(join(core, "adapter/bun.ts"))};
@@ -230,7 +230,7 @@ test("production manifests are required, validated, and memoized only after a su
       import { mkdirSync, rmSync, writeFileSync } from "node:fs";
       import { join } from "node:path";
       import { Hono } from "hono";
-      import { ssr } from "solid-js/web";
+      import { ssr } from "@solidjs/web";
       import { createConfig } from ${JSON.stringify(join(core, "index.ts"))};
       import { readAssetManifest, getAssetDirectory } from ${JSON.stringify(join(core, "adapter/utils.ts"))};
       import { routes as honoRoutes } from ${JSON.stringify(join(core, "adapter/hono.ts"))};
@@ -288,7 +288,7 @@ test("loader data exposes escaped asset paths and the ordered shared module set 
       `
       import { strict as assert } from "node:assert";
       import { mkdirSync, writeFileSync } from "node:fs";
-      import { ssr } from "solid-js/web";
+      import { ssr } from "@solidjs/web";
       import { createConfig } from ${JSON.stringify(resolve(import.meta.dir, "../../src/index.ts"))};
       mkdirSync(import.meta.dir + "/_ssr");
       const version = "0123456789abcdef";

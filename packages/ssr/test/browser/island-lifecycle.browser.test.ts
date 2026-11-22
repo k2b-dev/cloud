@@ -39,12 +39,12 @@ const wrapper = (id: string, label = "one", tag = "solid-island") => {
   return element;
 };
 const lifecycleSource = `
-  import { onCleanup, onMount, createEffect } from "solid-js";
+  import { onCleanup, onSettled, createEffect } from "solid-js";
   const notify = (phase, label) => window.dispatchEvent(new CustomEvent("lifetime", { detail: phase + ":" + label }));
   export default function Lifetime(props) {
     onCleanup(() => notify("cleanup", props.label));
     createEffect(() => { onCleanup(() => notify("effect-cleanup", props.label)); });
-    onMount(() => notify("mount", props.label));
+    onSettled(() => notify("mount", props.label));
     return <b>{props.label}</b>;
   }`;
 const observeLifetime = () => {
@@ -131,9 +131,9 @@ test("disposal notifies before each cleanup in document order and permits remoun
 
 test("50 cycles retain no window listeners, document listeners or intervals", async () => {
   const bundle = await build(`
-    import { onMount, onCleanup } from "solid-js";
+    import { onSettled, onCleanup } from "solid-js";
     export default function Lifetime() {
-      onMount(() => {
+      onSettled(() => {
         const resize = () => {};
         const keydown = () => {};
         window.addEventListener("resize", resize);

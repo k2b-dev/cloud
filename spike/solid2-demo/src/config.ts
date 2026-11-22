@@ -5,8 +5,8 @@ type PageOptions = { title?: string };
 
 export const { config, plugin, html } = createConfig<PageOptions>({
   dev: process.env.NODE_ENV === "development",
-  rootDir: `${import.meta.dir}/..`,
-  componentRoots: ["src"],
+  // Islands are found under src and built to src/_ssr, next to the server entry that serves them.
+  rootDir: import.meta.dir,
   template: ({ body, scripts, title }) => `<!doctype html>
 <html lang="de">
   <head>

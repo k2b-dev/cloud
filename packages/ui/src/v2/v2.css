@@ -90,7 +90,9 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Shell: tinted ground, one white app card, columns inside ────────────── */
 .k2-shell { height: 100dvh; display: flex; padding: 8px; background: linear-gradient(135deg, color-mix(in srgb, var(--k2-app) 9%, var(--k2-surface)), color-mix(in srgb, #4f46e5 7%, var(--k2-surface))); }
-.k2-card { position: relative; flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: var(--k2-w-side) minmax(0, 1fr); background: var(--k2-surface); border: 1px solid rgb(9 9 11 / 0.07); border-radius: var(--k2-r-card); overflow: hidden; }
+.k2-card { position: relative; flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: var(--k2-w-side) minmax(0, 1fr); background: var(--k2-surface); border-radius: var(--k2-r-card); overflow: hidden; }
+/* No border on the card (mockup v10 has 7 %): the white fill on the tinted ground is its edge, and a row line that
+   scrolls onto the card bottom would otherwise read as a double line. */
 .k2-card[data-detail] { grid-template-columns: var(--k2-w-side) minmax(0, 1fr) min(var(--k2-w-detail), calc(100% - var(--k2-w-side) - var(--k2-w-main-min))); }
 /* A column: head, optional status row, one scroller. Its children never pad each other. */
 .k2-col { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -245,6 +247,8 @@ textarea.k2-input { height: auto; min-height: 120px; padding: 8px 12px; resize: 
 .k2-combobox__popup [data-slot="combobox-item"][data-highlighted] { background: var(--k2-n100); }
 .k2-combobox__popup [data-slot="combobox-item"][data-selected] { color: var(--k2-app-ink); font-weight: 500; }
 .k2-combobox__popup [data-slot="combobox-empty"] { padding: 8px 12px; color: var(--k2-subtle); }
+/* ui-sdk keeps the empty part in the DOM and marks it; showing it is the stylesheet's job */
+.k2-combobox__popup [data-slot="combobox-empty"]:not([data-empty]) { display: none; }
 
 /* ── Breakpoints: tablet = detail as drawer, phone = one column at a time ── */
 .k2-phone-only { display: none !important; }

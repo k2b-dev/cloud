@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { toJSON } from "seroval";
-import { createRoot, onMount } from "solid-js";
+import { createRoot, onSettled } from "solid-js";
 import { disposeIslands, mount } from "../../src/mount";
 import { type BeforeLeaveEvent, installPageSwap, listenPopState, onBeforeLeave, swapPage } from "../../src/nav";
 import { allowsLeave } from "../../src/nav-veto";
@@ -20,7 +20,7 @@ const island = (check: (event: BeforeLeaveEvent) => void, outside = false, mount
   element.dataset.props = JSON.stringify(toJSON({}));
   (outside ? document.querySelector("nav")! : root()).append(element);
   mount(() => {
-    if (mounted) onMount(() => onBeforeLeave(check));
+    if (mounted) onSettled(() => onBeforeLeave(check));
     else onBeforeLeave(check);
     return null;
   }, `solid-island[data-id="${element.dataset.id}"]`);
@@ -43,7 +43,7 @@ afterEach(() => {
   mock.restore();
 });
 
-test.each([false, true])("island render/onMount registration (%s) ends with its Solid owner", (mounted) => {
+test.each([false, true])("island render/onSettled registration (%s) ends with its Solid owner", (mounted) => {
   const check = mock((event: BeforeLeaveEvent) => event.preventDefault());
   const element = island(check, false, mounted);
   expect(ask()).toBe(false);

@@ -33,7 +33,7 @@ describe("buildIslands() nested imports", () => {
     const cwd = makeTempRoot();
     writeTempFile(join(cwd, "src", "Outer.island.tsx"), `import Inner from "./Inner.island"; export default () => <Inner />;`);
     writeTempFile(join(cwd, "src", "Inner.island.tsx"), `export default () => <span>Inner</span>;`);
-    const { plugin } = createConfig({ rootDir: cwd, dev: true, verbose: false, external: ["solid-js/web", "seroval"] });
+    const { plugin } = createConfig({ rootDir: cwd, dev: true, verbose: false, external: ["@solidjs/web", "seroval"] });
     const starts: Bun.OnStartCallback[] = [];
     await plugin().setup({
       config: { entrypoints: [], plugins: [] },
@@ -79,7 +79,7 @@ describe("buildIslands() nested imports", () => {
       outdir: join(workspace, "dist"),
       verbose: false,
       dev: true,
-      external: ["solid-js/web", "seroval"],
+      external: ["@solidjs/web", "seroval"],
     });
     await expect(build).rejects.toThrow("src/Outer.island.tsx imports src/Inner.island.tsx via src/shared.tsx");
     await expect(build).rejects.not.toThrow("../");
@@ -149,7 +149,7 @@ describe("buildIslands() nested imports", () => {
         outdir,
         verbose: false,
         dev,
-        external: ["solid-js/web", "seroval"],
+        external: ["@solidjs/web", "seroval"],
       }),
     ).rejects.toThrow(`src/Outer.island.tsx imports src/${nested}${via}\nMove the shared component into a plain .tsx module`);
   });
@@ -162,7 +162,7 @@ describe("buildIslands() nested imports", () => {
     writeTempFile(inner, `export type Props = { label: string }; export default (props: Props) => <span>{props.label}</span>;`);
     for (const dev of [true, false]) {
       const outdir = join(cwd, dev ? "dev" : "prod");
-      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["solid-js/web", "seroval"] });
+      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["@solidjs/web", "seroval"] });
       for (const file of [outer, inner]) expect(existsSync(join(outdir, `${islandIdFromFile(file, cwd)}.js`))).toBe(true);
     }
   });
@@ -179,7 +179,7 @@ describe("buildIslands() nested imports", () => {
     writeTempFile(join(cwd, "src", "shared.tsx"), `export default () => <span>Shared</span>;`);
     for (const dev of [true, false]) {
       const outdir = join(cwd, dev ? "dev" : "prod");
-      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["solid-js/web", "seroval"] });
+      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["@solidjs/web", "seroval"] });
       for (const file of [outer, inner]) expect(existsSync(join(outdir, `${islandIdFromFile(file, cwd)}.js`))).toBe(true);
     }
   });
@@ -199,7 +199,7 @@ describe("buildIslands() nested imports", () => {
         outdir: join(cwd, "dist"),
         verbose: false,
         dev: true,
-        external: ["solid-js/web", "seroval"],
+        external: ["@solidjs/web", "seroval"],
       }),
     ).rejects.toThrow(
       "src/Outer.island.tsx imports src/Outer.island.tsx via src/first.tsx -> src/second.tsx\nMove the shared component into a plain .tsx module",
@@ -218,7 +218,7 @@ describe("buildIslands() nested imports", () => {
     const outdir = join(cwd, "dist");
     writeTempFile(join(outdir, "chunk-stale.js"), "stale");
     await expect(
-      buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev: false, external: ["solid-js/web", "seroval"] }),
+      buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev: false, external: ["@solidjs/web", "seroval"] }),
     ).rejects.toThrow(
       "  src/Inner.island.tsx imports src/Leaf.client.tsx\n  src/Outer.island.tsx imports src/Inner.island.tsx\nMove the shared component into a plain .tsx module",
     );
@@ -250,7 +250,7 @@ describe("buildIslands()", () => {
       outdir,
       verbose: false,
       dev: true,
-      external: ["solid-js/web", "seroval"],
+      external: ["@solidjs/web", "seroval"],
     });
 
     const id = islandIdFromFile(islandPath, workspaceRoot);
@@ -304,7 +304,7 @@ describe("buildIslands()", () => {
       verbose: false,
       dev: true,
       devSourcemap: "inline",
-      external: ["solid-js/web", "seroval"],
+      external: ["@solidjs/web", "seroval"],
     });
 
     const [entryChunk] = [...new Bun.Glob("*.js").scanSync({ cwd: outdir, absolute: true })];
@@ -328,7 +328,7 @@ describe("buildIslands()", () => {
       outdir,
       verbose: false,
       dev: true,
-      external: ["solid-js/web", "seroval"],
+      external: ["@solidjs/web", "seroval"],
     });
 
     expect(existsSync(join(outdir, `${islandIdFromFile(appIsland, workspaceRoot)}.js`))).toBe(true);
@@ -371,14 +371,14 @@ describe("buildIslands()", () => {
       source,
       `
       import { createContext, useContext } from "solid-js";
-      import { createStore } from "solid-js/store";
+      import { createStore } from "solid-js";
       const Context = createContext("missing");
       function Child() {
         const label = useContext(Context);
         const [state, set] = createStore({ count: 0 });
-        return <button onClick={() => set("count", state.count + 1)}>{label} {state.count}</button>;
+        return <button onClick={() => set((draft) => { draft.count += 1; })}>{label} {state.count}</button>;
       }
-      export default () => <Context.Provider value="Clicks"><Child /></Context.Provider>;
+      export default () => <Context value="Clicks"><Child /></Context>;
     `,
     );
     for (const dev of [true, false]) {
@@ -491,7 +491,7 @@ describe("buildIslands()", () => {
       dev: false,
       rootDir: workspaceRoot,
       verbose: false,
-      external: ["solid-js/web", "seroval"],
+      external: ["@solidjs/web", "seroval"],
       errorFallback: "./IslandError.tsx",
     });
     const result = await Bun.build({
@@ -499,7 +499,7 @@ describe("buildIslands()", () => {
       outdir,
       target: "bun",
       plugins: [plugin()],
-      external: ["seroval", "solid-js", "solid-js/web"],
+      external: ["seroval", "solid-js", "@solidjs/web"],
       minify: false,
     });
 

@@ -37,16 +37,16 @@ beforeAll(async () => {
   const column = join(root, "Column.island.tsx");
   writeFileSync(
     rail,
-    `import { onMount, onCleanup } from "solid-js";
+    `import { onSettled, onCleanup } from "solid-js";
     import { installPageSwap } from ${nav};
     export default function Rail() {
-      onMount(() => { onCleanup(installPageSwap()); document.documentElement.dataset.ready = "yes"; });
+      onSettled(() => { onCleanup(installPageSwap()); document.documentElement.dataset.ready = "yes"; });
       return <nav data-rail><a id="A" href="/app/A">A</a><a id="B" href="/app/B">B</a></nav>;
     }`,
   );
   writeFileSync(
     column,
-    `import { createSignal, Show, onMount, onCleanup } from "solid-js";
+    `import { createSignal, Show, onSettled, onCleanup } from "solid-js";
     import { listenPopState } from ${nav};
     import { dialogCore } from ${dialog};
     export default function Column(props) {
@@ -58,7 +58,7 @@ beforeAll(async () => {
       const showUrl = () => setTab(new URL(location.href).searchParams.get("tab") ?? "0");
       const count = key => { document.documentElement.dataset[key] = String(Number(document.documentElement.dataset[key] ?? 0) + 1); };
       const push = value => { ++generation; history.pushState(null, "", '/app/' + props.label + (props.async ? '?async=1&tab=' : '?tab=') + value); showUrl(); setPending(false); };
-      onMount(() => {
+      onSettled(() => {
         onCleanup(listenPopState(navigation => {
           count("helperPops");
           if (!props.async) { showUrl(); return; }

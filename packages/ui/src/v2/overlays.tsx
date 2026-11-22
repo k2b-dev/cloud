@@ -82,7 +82,7 @@ export function ActionMenu(props: { trigger: TriggerLook; items: MenuEntry[]; on
       <MenuTrigger {...triggerAttrs(props.trigger)}>
         <TriggerContent look={props.trigger} />
       </MenuTrigger>
-      <MenuContent class="k2-menu">
+      <MenuContent class="k2-menu" align="end" sideOffset={4} collisionPadding={8}>
         <For each={props.items}>
           {(entry) => (
             <Show
@@ -125,7 +125,7 @@ export function ComboboxField(props: {
         <ComboboxLabel class="k2-field__label">{props.label}</ComboboxLabel>
         <ComboboxInput class="k2-input" placeholder={props.placeholder} />
       </div>
-      <ComboboxContent class="k2-combobox__popup">
+      <ComboboxContent class="k2-combobox__popup" sideOffset={4} collisionPadding={8}>
         <ComboboxList>
           <For each={props.options}>
             {(option) => (

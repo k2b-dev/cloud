@@ -3,7 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Window } from "happy-dom";
 import { toJSON } from "seroval";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { disposeIslands, mount, mountIslands } from "../../src/mount";
@@ -89,9 +89,9 @@ beforeAll(async () => {
   const slow = join(root, "Slow.island.tsx");
   writeFileSync(
     file,
-    `import { onMount, onCleanup } from "solid-js";
+    `import { onSettled, onCleanup } from "solid-js";
     export default function Page(props) {
-      onMount(() => {
+      onSettled(() => {
         const listener = () => {};
         window.addEventListener("resize", listener);
         document.addEventListener("nav-probe", listener);
@@ -123,9 +123,9 @@ beforeAll(async () => {
   const history = join(root, "History.island.tsx");
   writeFileSync(
     history,
-    `import { onMount } from "solid-js";
+    `import { onSettled } from "solid-js";
     export default function History() {
-      onMount(() => window.history.replaceState({ island: 1 }, ""));
+      onSettled(() => window.history.replaceState({ island: 1 }, ""));
       return <b>island history</b>;
     }`,
   );

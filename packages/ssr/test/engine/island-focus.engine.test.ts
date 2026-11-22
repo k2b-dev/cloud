@@ -23,9 +23,9 @@ beforeAll(async () => {
   const island = join(root, "Focus.island.tsx");
   writeFileSync(
     island,
-    `import { onMount } from "solid-js";
+    `import { onSettled } from "solid-js";
     export default function Focus() {
-      onMount(() => { document.documentElement.dataset.mounted = "yes"; });
+      onSettled(() => { document.documentElement.dataset.mounted = "yes"; });
       const count = () => { document.documentElement.dataset.focusins = String(Number(document.documentElement.dataset.focusins ?? 0) + 1); };
       return <section><h2>Chart</h2><div class="chart" tabindex="0" id="target" data-client="yes" onFocusIn={count}>Values</div><button id="other">Other</button></section>;
     }`,

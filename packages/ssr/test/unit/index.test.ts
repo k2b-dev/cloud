@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { createComponent } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic } from "@solidjs/web";
 import { createConfig } from "../../src/index";
 import { TYPED_INPUT_SCRIPT } from "../../src/typed-fields";
 
