@@ -237,7 +237,15 @@ for (const { label, options } of scenarios)
               centred: across
                 ? Math.abs(box.top + box.height / 2 - (area.top + area.height / 2)) <= 0.5
                 : Math.abs(box.left + box.width / 2 - (area.left + area.width / 2)) <= 0.5,
-              area: Math.round(across ? area.height : area.width),
+              // A handle that takes no room in the flow grabs with its invisible `::after` over the regions.
+              area: Math.round(
+                Math.max(
+                  across ? area.height : area.width,
+                  getComputedStyle(handle, "::after").content === "none"
+                    ? 0
+                    : Number.parseFloat(getComputedStyle(handle, "::after")[across ? "height" : "width"]) || 0,
+                ),
+              ),
               role: handle.getAttribute("role"),
               aria: ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-controls", "aria-label"].every((name) =>
                 handle.hasAttribute(name),

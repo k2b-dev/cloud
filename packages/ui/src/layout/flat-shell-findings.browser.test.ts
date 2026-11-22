@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
-import { type LayoutProblems, layoutProblems } from "../layout-check";
+import { type LayoutProblemOptions, type LayoutProblems, layoutProblems } from "../layout-check";
 
 // The defects of today's flat shell, written down by the flat kinds of the self-check (Cloud flach K2, K11, K13): lines
 // and fills that stop short of their column, near-double lines, grips off their edge, and type outside the roles. The
@@ -23,8 +23,9 @@ const snapshotPath = resolve(import.meta.dir, "flat-shell-findings.snapshot.json
 const recording = process.env.RECORD_FLAT_FINDINGS === "1";
 const kinds = ["overlap", "spill", "cut", "double", "scrollbar", "shortEdge", "nearDouble", "gripOffCenter", "typeRole"] as const;
 type Findings = Pick<LayoutProblems, (typeof kinds)[number]>;
-// A scene is a viewport width, with `panes` for a resizable pane in Main and a resizable bottom drawer.
-const scenes = ["1440", "390", "1440-panes"];
+// A scene is a viewport width, with `panes` for a resizable pane in Main and a resizable bottom drawer (at 1920 px
+// as in Warenfluss's customer record, where the pane grip was reported as an overlap).
+const scenes = ["1440", "390", "1440-panes", "1920-panes"];
 const expected: Record<string, Record<string, Findings>> = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : {};
 
 const entry = resolve(import.meta.dir, "flat-shell-findings.fixture.ts");
@@ -154,6 +155,20 @@ for (const scene of scenes)
       await page.close();
     }
   });
+
+// K13 (Warenfluss's customer record at 1920 px): a pane's grip and hit area lie over both regions without taking room,
+// so the overlap check finds nothing, and every grip sits on the middle of its line on whole pixels.
+test(`the pane and drawer grips overlap nothing and sit on their lines at 1920 px in ${browserName}`, async () => {
+  const page = await load(1920, true);
+  try {
+    const options: LayoutProblemOptions = { root: "#app", flat: ["grip-off-center"], ignore: ":not(*)" };
+    const result = await page.evaluate(layoutProblems, options);
+    expect(await page.locator('[data-app-workspace-resize="pane"]').count()).toBe(1);
+    expect({ overlap: result.overlap, grips: result.gripOffCenter }).toEqual({ overlap: [], grips: [] });
+  } finally {
+    await page.close();
+  }
+});
 
 // K1, K4, rule 15: beside an open Detail at 1280 px the head is narrower than 48 rem but has room, so the primary keeps
 // its word and stays a 36 px control with 8 px corners; only the floating primary on a phone is round.

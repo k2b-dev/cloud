@@ -129,7 +129,9 @@ test("1440: panes have 12px of space; sidebar/pane grips show at rest and turn b
               : getComputedStyle(element.nextElementSibling!, "::before");
           return {
             line: generated(line),
-            shadow: generated(shadow),
+            // A pane handle's `::after` is its invisible hit area; a shadow would draw a fill or a shadow.
+            shadow:
+              generated(shadow) && (!/^(transparent|rgba\(0, 0, 0, 0\))$/.test(shadow.backgroundColor) || shadow.boxShadow !== "none"),
             column: generated(boundary),
             columnEdge: boundary.backgroundColor,
             gripOpacity: getComputedStyle(element.querySelector("span")!).opacity,
