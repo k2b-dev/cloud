@@ -411,6 +411,20 @@ const open = async (
 };
 /** A real mouse drag in small steps, as a person drags: press, cross the threshold, travel, rest, and let go. */
 const pointerDrag = async (page: Page, from: Locator, to: Locator, options: { restMs?: number } = {}) => {
+  // A row drags once the drop's code has loaded after the page (S7).
+  await from.evaluate(
+    (element) =>
+      new Promise<void>((done) => {
+        const ready = () => !element.closest(".k2b-drag-source")?.hasAttribute("data-drag-disabled");
+        if (ready()) return done();
+        const observer = new MutationObserver(() => {
+          if (!ready()) return;
+          observer.disconnect();
+          done();
+        });
+        observer.observe(element.closest(".k2b-drag-source") ?? element, { attributes: true });
+      }),
+  );
   const start = (await from.boundingBox())!;
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();

@@ -202,7 +202,7 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   },
   {
     file: "packages/mail/src/styles/app.css",
-    subject: '.k2b-ui .mail-folder-drop[data-drop="over"]::before { background }',
+    subject: '.k2b-ui .mail-sidebar .k2b-app-workspace__nav-tree-row:has(.mail-folder-drop[data-drop="over"]) { background }',
     reason: "Control: a sidebar folder under a dragged conversation, in the platform's drop-target look (S7).",
   },
   {

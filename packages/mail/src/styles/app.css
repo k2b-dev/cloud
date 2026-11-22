@@ -2342,14 +2342,18 @@
 
 /* S7: the drop surface lies over list and reader while a conversation is dragged; the sidebar stays free. */
 .mail-split-panes { position: relative; }
-/* A sidebar folder takes a dragged conversation on its whole row: the target in the row's meta place covers the row,
-   which is the positioned box. */
-.k2b-ui .mail-sidebar .k2b-app-workspace__nav-tree-row:has(.mail-folder-drop) { position: relative; isolation: isolate; }
+/* A sidebar folder takes a dragged conversation on its whole row: the target stands in the row's meta place, and while
+   a drag runs (the engine marks every target that takes it) its area covers the row, which is the positioned box, so
+   the pointer finds the target over the folder's name too. Outside a drag the area is gone and the link takes clicks. */
+.k2b-ui .mail-sidebar .k2b-app-workspace__nav-tree-row:has(.mail-folder-drop) { position: relative; }
 .k2b-ui .mail-folder-drop { display: inline-flex; align-items: center; }
-/* Behind the row's icon and name, above its own fill. */
-.k2b-ui .mail-folder-drop::before { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: inherit; }
-/* Over it, the platform's drop-target look (K7): the selected fill with a 2 px ring inside. */
-.k2b-ui .mail-folder-drop[data-drop="over"]::before { background: var(--k2b-selected); box-shadow: inset 0 0 0 2px var(--k2b-action-solid); }
+.k2b-ui .mail-folder-drop[data-drop]::before { content: ""; position: absolute; z-index: 1; inset: 0; }
+/* Over it, the platform's drop-target look (K7) on the row, behind its icon and name: the selected fill with a 2 px
+   ring inside. */
+.k2b-ui .mail-sidebar .k2b-app-workspace__nav-tree-row:has(.mail-folder-drop[data-drop="over"]) {
+  background: var(--k2b-selected);
+  box-shadow: inset 0 0 0 2px var(--k2b-action-solid);
+}
 .k2b-ui .mail-folder-drop[data-drop="over"] { background: transparent; box-shadow: none; }
 .mail-drop-tag { display: inline-block; width: 0.75rem; height: 0.75rem; flex: none; border-radius: var(--k2b-radius-round, 9999px); background: var(--mail-tag); }
 
