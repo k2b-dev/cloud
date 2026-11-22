@@ -60,7 +60,8 @@ export type LayoutProblemOptions = {
  * - `near-double`: two parallel lines at most 8 px apart that run side by side over half of the shorter one or more,
  *   also lines drawn as a shadow or a pseudo-element (the column lines), which `double` does not see.
  * - `grip-off-center`: a resize grip that is not centred on the line under it within 0.25 px, sits off the middle of
- *   that line by more than 1 px, or lies behind the line or anything else.
+ *   that line by more than 1 px, has its or its line's edges on fractions of a pixel (at a device pixel ratio of 1),
+ *   or lies behind the line or anything else.
  * - `type-role`: text in a flat area whose size, line height, and weight are no type role of `--k2b-type-roles`.
  */
 export type FlatProblemKind = "short-edge" | "near-double" | "grip-off-center" | "type-role";
@@ -668,6 +669,22 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           gripOffCenter.push(
             `grip-off-center: the grip of "${label}" sits ${px(along - (from + to) / 2)} px off the middle of its ${Math.round(to - from)} px line`,
           );
+        // Edges on a fraction of a pixel are drawn blurred: at a device pixel ratio of 1, the grip's edges and the
+        // line's edges lie on whole pixels.
+        if (window.devicePixelRatio === 1) {
+          const fraction = (value: number) => Math.abs(value - Math.round(value)) > 0.01;
+          const edges = [
+            ["grip", [box.left, box.right, box.top, box.bottom]],
+            ["line", [line.across0, line.across1]],
+          ] as const;
+          for (const [part, values] of edges) {
+            const off = values.filter(fraction);
+            if (off.length)
+              gripOffCenter.push(
+                `grip-off-center: the ${part} of "${label}" has edges on fractions of a pixel (${off.map((value) => px(value)).join(", ")})`,
+              );
+          }
+        }
         if (!paintsAbove({ element: grip }, line))
           gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${lineName(line)}`);
         const top = document.elementFromPoint(vertical ? middle : along, vertical ? along : middle);

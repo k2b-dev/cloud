@@ -22,8 +22,8 @@ const classic = `
   .drawn-row::after { content: ""; position: absolute; right: 20px; bottom: 0; left: 20px; height: 1px; background: #e4e4e7; }
   .column-line { position: relative; }
   .column-line::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: #e4e4e7; }
-  .sep { position: relative; width: 0; }
-  .sep.own-line::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #e4e4e7; transform: translateX(-50%); }
+  .sep { position: relative; width: 1px; }
+  .sep.own-line::before { content: ""; position: absolute; inset: 0; background: #e4e4e7; }
   .sep.line-on-top::before { z-index: 1; }
 `;
 
@@ -164,7 +164,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
   // A column boundary with a grip in the source between its two columns, as in K13: 5 x 32 px, on the line. The line
   // is the left column's border, or the separator's own pseudo-element (`own-line`), as a standalone separator draws it.
   const columns = ({ grip = "", separator = "own-line", left = "", after = "" }) => `
-    <div style="display:flex;height:200px">
+    <div style="display:flex;height:140px">
       <div data-probe="left" style="width:200px;${left}"></div>
       <div role="separator" tabindex="0" aria-orientation="vertical" aria-label="Width of the list" data-probe="sep" class="sep ${separator}">
         <span style="position:absolute;top:50%;left:50%;width:5px;height:32px;border-radius:999px;background:#8a8a94;transform:translate(-50%,-50%);${grip}"></span>
@@ -173,11 +173,13 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
     </div>`;
   const border = "border-right:1px solid #e4e4e7";
 
-  test("grip-off-center: half a pixel beside its line, low on its line, under its line, under a column, or without a line", async () => {
+  test("grip-off-center: beside its line, on half pixels, low on its line, under its line, under a column, or without a line", async () => {
     const result = await check(
       [
-        // The flat sidebar's defect: the line is the column's last pixel, the grip is centred on the column's edge.
+        // The line is the left column's last pixel; the grip is centred on the separator after it.
         columns({ separator: "", left: border }),
+        // Half a pixel off: blurred at both edges (the Mail list grip in the audit, 704.5 to 709.5).
+        columns({ grip: "transform:translate(calc(-50% + 0.5px),-50%)" }),
         columns({ grip: "transform:translate(-50%,calc(-50% + 40px))" }),
         columns({ separator: "own-line line-on-top" }),
         columns({
@@ -188,8 +190,10 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
       ["grip-off-center"],
     );
     expect(result.gripOffCenter).toEqual([
-      'grip-off-center: the grip of "Width of the list" sits 0.5 px off the middle of [data-probe="left"] right',
-      'grip-off-center: the grip of "Width of the list" sits 40 px off the middle of its 200 px line',
+      'grip-off-center: the grip of "Width of the list" sits 1 px off the middle of [data-probe="left"] right',
+      'grip-off-center: the grip of "Width of the list" sits 0.5 px off the middle of [data-probe="sep"]::before',
+      'grip-off-center: the grip of "Width of the list" has edges on fractions of a pixel (214.5, 219.5)',
+      'grip-off-center: the grip of "Width of the list" sits 40 px off the middle of its 140 px line',
       'grip-off-center: the grip of "Width of the list" lies behind [data-probe="sep"]::before',
       'grip-off-center: the grip of "Width of the list" lies behind [data-probe="cover"]',
       'grip-off-center: the grip of "Width of the list" has no line under it',
@@ -201,7 +205,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
       [
         columns({}),
         columns({ grip: "pointer-events:none" }),
-        columns({ separator: "", left: border, grip: "transform:translate(calc(-50% - 0.5px),-50%)" }),
+        columns({ separator: "", left: border, grip: "transform:translate(calc(-50% - 1px),-50%)" }),
       ].join(""),
       ["grip-off-center"],
     );

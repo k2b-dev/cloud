@@ -55,8 +55,9 @@ apply to them.
   a double line, a card below a row line is not.
 - `grip-off-center`: the grip of a `role="separator"` is not centred on the
   line under it within 0.25 px, sits more than 1 px off the middle of that
-  line's visible length, has no line under it, or is painted behind the line
-  or anything else. The check compares stacking contexts and tree order, so it
+  line's visible length, has no line under it, has its or its line's edges on
+  fractions of a pixel (at a device pixel ratio of 1, where they blur), or is
+  painted behind the line or anything else. The check compares stacking contexts and tree order, so it
   also sees a line drawn by a pseudo-element.
 - `type-role`: text in a flat area whose font size, line height, and weight
   are no type role. The roles come from the `--k2b-type-roles` token of
