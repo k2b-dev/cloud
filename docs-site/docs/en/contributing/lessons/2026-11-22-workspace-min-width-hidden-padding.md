@@ -1,6 +1,0 @@
-### A workspace counted Main's minimum as hidden width on a tablet
-
-- **What happened:** At 768 px, `layoutProblems` reported "div.k2b-app-workspace … is cut by 449 px" as soon as an app set `AppWorkspace.Main minWidth={820}` (Warenfluss, and Mail in #3966 with 434 px). Nothing visible was missing: the list and the reader filled the workspace, and the Detail waited.
-- **Root cause:** Below 64 rem, Main's minimum above 20 rem lies in the workspace's end padding, and the grid tracks reach into that padding. The workspace clipped with `overflow: hidden`, which makes it a scroll box, and a scroll box counts its end padding after its content as scrollable width: `scrollWidth` 1215 at `clientWidth` 766.
-- **Error class:** A box that only needs to clip uses `overflow: hidden` and so becomes a scroll box. Its padding then counts as hidden width, and focus or script can scroll it sideways.
-- **Guard:** `packages/ui/src/layout/workspace-tablet.browser.test.ts` renders a workspace with `Main minWidth={820}` at 768 and 834 px and checks that the workspace holds no hidden width (`scrollWidth <= clientWidth`), that Main fills it, and that `layoutProblems` is empty. The workspace now clips with `overflow: clip`.
