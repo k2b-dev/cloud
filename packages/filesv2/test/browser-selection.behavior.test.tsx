@@ -6,6 +6,9 @@ import type { DirectoryResult, FileEntry } from "../src/contracts";
 import { browserWithUploads } from "./browser-with-uploads";
 import { env, page } from "./history-fixtures";
 
+/** The name as a screen reader reads it: `FileName` (@k2b/ui) keeps the whole name as screen-reader text beside its visible parts. */
+const nameText = (node: Element | null | undefined) => node?.querySelector(".k2b-sr-only")?.textContent ?? node?.textContent;
+
 const shareRequests: Array<{ resolve: (response: Response) => void }> = [];
 const branchRequests: Array<{ input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
 const favoriteRequests: Array<{ input: unknown; resolve: (response: Response) => void }> = [];
@@ -72,7 +75,7 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   expect(requests).toHaveLength(0);
   const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")];
-  const header = dom.root.querySelector(".filesv2-browser__header")!;
+  const header = dom.root.querySelector(".k2b-status-row")!;
   const headerBlocks = header.childElementCount;
   rows[0]!.click();
   await flush();
@@ -87,7 +90,7 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   requests[0]!.resolve(Response.json({ base: initial.base, entry: initial.items[0] }));
   await flush();
-  expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
+  expect(nameText(dom.root.querySelector("h2"))).toBe("B.txt");
   expect(dom.window.location.search).toContain("file=B.txt");
   // The details panel labels the personal base and keeps the technical location as tooltip.
   expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal / B.txt");
@@ -99,11 +102,11 @@ test("view changes preserve selection; superseded details cannot replace current
   setDirectory({ ...initial, path: "A", items: [] });
   setSource("/app/filesv2?base=home&path=A");
   await flush();
-  expect(dom.root.querySelector("h2")?.textContent).not.toBe("B.txt");
+  expect(nameText(dom.root.querySelector("h2"))).not.toBe("B.txt");
   expect(dom.root.textContent).toContain("This folder is empty");
 });
 
-test("favorite action is beside primary actions, suppresses duplicate requests and cannot leak across bases", async () => {
+test("favorite action is in the detail head beside close, suppresses duplicate requests and cannot leak across bases", async () => {
   const dom = createDomTestHarness();
   const { default: FileInspector } = await import("../src/frontend/FileInspector");
   const [base, setBase] = createSignal(initial.base);
@@ -136,7 +139,8 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
-  expect(button().parentElement?.parentElement?.textContent).toContain("Download");
+  // K9: the head holds the title, the star, "…" and close; the framed actions follow below it.
+  expect(button().closest(".k2b-detail-panel__actions")).not.toBeNull();
   button().click();
   button().click();
   await flush();
@@ -302,7 +306,7 @@ test("tree navigation keeps loaded ancestors and current files through folder ch
   await flush();
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
-  const names = () => [...dom.root.querySelectorAll(".filesv2-list__name")].map((node) => node.textContent);
+  const names = () => [...dom.root.querySelectorAll(".filesv2-list__name")].map((node) => nameText(node));
   for (const path of ["Bilder", "Finanzen", "Bilder"]) {
     setDirectory({ ...initial, path, items: [{ ...initial.items[0]!, name: `${path}.txt`, path: `${path}/${path}.txt` }] });
     await flush();
@@ -330,18 +334,18 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   await flush();
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
-  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  expect(nameText(dom.root.querySelector(".filesv2-list__name"))).toBe("A.txt");
   expect(dom.root.textContent).toContain("Loading files");
   branchRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Offline" }, { status: 503 }));
   await flush();
   expect(dom.root.textContent).toContain("The folder tree could not be loaded");
-  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  expect(nameText(dom.root.querySelector(".filesv2-list__name"))).toBe("A.txt");
   [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Try again")!.click();
   await flush();
   // The current folder can also be absent from a filtered or paginated root page.
   branchRequests[1]!.resolve(Response.json({ ...initial, items: [], next: "root-page-2" }));
   await flush();
-  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  expect(nameText(dom.root.querySelector(".filesv2-list__name"))).toBe("A.txt");
   expect(dom.root.textContent).not.toContain("Loading files");
   expect(dom.root.textContent).not.toContain("The folder tree could not be loaded");
 });
@@ -379,7 +383,7 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   setDirectory({ ...initial, items: [folder, other] });
   await flush();
   const row = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
-    (node) => node.querySelector(".filesv2-list__name")?.textContent === "Finanzen",
+    (node) => nameText(node.querySelector(".filesv2-list__name")) === "Finanzen",
   )!;
   row.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
   await flush();
@@ -412,9 +416,9 @@ test("list and tree mark their active row with one class; checked rows in select
   await flush();
   const row = (name: string) =>
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
-      (node) => node.querySelector(".filesv2-list__name")?.textContent === name,
+      (node) => nameText(node.querySelector(".filesv2-list__name")) === name,
     )!;
-  const active = () => [...dom.root.querySelectorAll(".filesv2-list__row--active .filesv2-list__name")].map((node) => node.textContent);
+  const active = () => [...dom.root.querySelectorAll(".filesv2-list__row--active .filesv2-list__name")].map((node) => nameText(node));
   const icon = (name: string) => row(name).querySelector(".filesv2-list__cell--icon i")!.classList;
   const button = (text: string) =>
     [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === text)!;
@@ -469,9 +473,9 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   await flush();
   const row = (name: string) =>
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
-      (node) => node.querySelector(".filesv2-list__name")?.textContent === name,
+      (node) => nameText(node.querySelector(".filesv2-list__name")) === name,
     )!;
-  const names = (selector: string) => [...dom.root.querySelectorAll(`${selector} .filesv2-list__name`)].map((node) => node.textContent);
+  const names = (selector: string) => [...dom.root.querySelectorAll(`${selector} .filesv2-list__name`)].map((node) => nameText(node));
   const shiftDown = (name: string) => {
     const event = new KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true, cancelable: true });
     row(name).dispatchEvent(event);
@@ -553,7 +557,9 @@ test("inspector commands retain their permissions and busy state beside history"
   // The preview stands in the panel, so Download leads and no second "Preview" repeats it.
   expect(primary.some((item) => item.textContent?.trim() === "Preview")).toBe(false);
   expect(primary[0]?.textContent?.trim()).toBe("Download");
-  for (const label of ["Download", "Share"]) expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  // K9: Share stands beside the two framed actions as a sign; its name is its label.
+  for (const label of ["Download", "Share"])
+    expect(primary.find((item) => (item.textContent?.trim() || item.getAttribute("aria-label")) === label)?.disabled).toBe(true);
   expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
   setBusy(false);
   dispose();

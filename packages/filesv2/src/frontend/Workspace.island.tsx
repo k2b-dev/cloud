@@ -782,6 +782,17 @@ export default function Workspace(props: {
       />
     );
   };
+  /** The folder the browser shows, or null where another place (Activity, a list, the overview, a problem) is open. */
+  const browsedDirectory = () =>
+    currentView() === "activity" ||
+    currentView() === "favorites" ||
+    currentView() === "shares" ||
+    (currentView() === "trash" && selected()?.status === "existing") ||
+    (overview() && !problem())
+      ? null
+      : snapshot().directory;
+  // Decision 4 (21.11.): Upload also waits, quiet, at the top of the sidebar while a folder takes new files.
+  const [uploadHere, setUploadHere] = createSignal<(() => void) | null>(null);
   const editorView = () => (
     <AppWorkspace mobileSurface="flush">
       <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
@@ -839,6 +850,14 @@ export default function Workspace(props: {
               <AppWorkspace.SidebarBody scrollPreserveKey="filesv2-storage">
                 {/* Places across all storage first, as approved: overview, recent, favorites, links and activity. */}
                 <AppWorkspace.SidebarSection>
+                  {/* From the snapshot, so server and browser show it alike; the folder's picker answers the click. */}
+                  <Show
+                    when={browsedDirectory()?.query === undefined && browsedDirectory()?.actions?.create !== false && browsedDirectory()}
+                  >
+                    <AppWorkspace.SidebarItem icon="ti ti-upload" class="filesv2-sidebar-upload" onClick={() => uploadHere()?.()}>
+                      {b().upload}
+                    </AppWorkspace.SidebarItem>
+                  </Show>
                   <Show when={hasOverview()}>
                     <AppWorkspace.SidebarItem href={filesUrl()} navigation="enhanced" onNavigate={onNavigate} active={overview()}>
                       <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
@@ -970,79 +989,80 @@ export default function Workspace(props: {
               </AppWorkspace.SidebarFooter>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
-          <AppWorkspace.Content>
-            <Show
-              when={currentView() !== "activity"}
-              fallback={
-                <AppWorkspace.Main class="flex min-h-0 flex-col">
-                  <ActivityView
-                    env={historyEnv()}
-                    actions={activityActions}
-                    filters={activityFilters()}
-                    onFiltersChange={changeActivityFilters}
-                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
-                    people={peopleOptions()}
-                    initial={snapshot().activity}
-                    load={async (request, signal) => {
-                      const page = await loadActivity(request, signal, h().errorTitle);
-                      notePeople(page.items);
-                      return page;
-                    }}
-                    loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
-                    loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
-                    retentionDays={props.retentionDays ?? 365}
-                    opened={{ initial: snapshot().marks ?? null, load: (signal) => loadRecent(signal, b().loadFailed) }}
-                  />
-                </AppWorkspace.Main>
-              }
-            >
-              <Show
-                when={currentView() !== "favorites"}
-                fallback={
-                  <FavoritesPage
-                    initial={snapshot().marks ?? null}
-                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
-                    timeZone={props.timeZone ?? "UTC"}
-                    now={snapshot().now ?? new Date().toISOString()}
-                    onOpen={openMarked}
-                  />
-                }
-              >
+          {/* A folder brings its own head (path, search, view, New) and columns; every other place keeps the shell's. */}
+          <Show
+            when={browsedDirectory()}
+            fallback={
+              <AppWorkspace.Content>
                 <Show
-                  when={currentView() !== "shares"}
+                  when={currentView() !== "activity"}
                   fallback={
-                    <SharesOverview
-                      shares={snapshot().shares ?? { items: [], next: null }}
-                      baseId={snapshot().selectedId}
-                      onNavigate={onNavigate}
-                    />
+                    <AppWorkspace.Main class="flex min-h-0 flex-col">
+                      <ActivityView
+                        env={historyEnv()}
+                        actions={activityActions}
+                        filters={activityFilters()}
+                        onFiltersChange={changeActivityFilters}
+                        bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
+                        people={peopleOptions()}
+                        initial={snapshot().activity}
+                        load={async (request, signal) => {
+                          const page = await loadActivity(request, signal, h().errorTitle);
+                          notePeople(page.items);
+                          return page;
+                        }}
+                        loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
+                        loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
+                        retentionDays={props.retentionDays ?? 365}
+                        opened={{ initial: snapshot().marks ?? null, load: (signal) => loadRecent(signal, b().loadFailed) }}
+                      />
+                    </AppWorkspace.Main>
                   }
                 >
                   <Show
-                    when={!(currentView() === "trash" && selected()?.status === "existing")}
+                    when={currentView() !== "favorites"}
                     fallback={
-                      <TrashView
-                        base={selected()!}
-                        onNavigate={onNavigate}
-                        onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
+                      <FavoritesPage
+                        initial={snapshot().marks ?? null}
+                        bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
+                        timeZone={props.timeZone ?? "UTC"}
+                        now={snapshot().now ?? new Date().toISOString()}
+                        onOpen={openMarked}
                       />
                     }
                   >
                     <Show
-                      when={!overview() || !!problem()}
+                      when={currentView() !== "shares"}
                       fallback={
-                        <StorageOverview
-                          bases={snapshot().bases.items}
-                          issues={snapshot().bases.issues}
-                          favorites={snapshot().favoritesPreview}
-                          env={historyEnv()}
+                        <SharesOverview
+                          shares={snapshot().shares ?? { items: [], next: null }}
+                          baseId={snapshot().selectedId}
                           onNavigate={onNavigate}
                         />
                       }
                     >
                       <Show
-                        when={snapshot().directory}
+                        when={!(currentView() === "trash" && selected()?.status === "existing")}
                         fallback={
+                          <TrashView
+                            base={selected()!}
+                            onNavigate={onNavigate}
+                            onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
+                          />
+                        }
+                      >
+                        <Show
+                          when={!overview() || !!problem()}
+                          fallback={
+                            <StorageOverview
+                              bases={snapshot().bases.items}
+                              issues={snapshot().bases.issues}
+                              favorites={snapshot().favoritesPreview}
+                              env={historyEnv()}
+                              onNavigate={onNavigate}
+                            />
+                          }
+                        >
                           <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
                             <Show
                               when={!workspace.pending()}
@@ -1120,104 +1140,97 @@ export default function Workspace(props: {
                               </Show>
                             </Show>
                           </AppWorkspace.Main>
-                        }
-                      >
-                        {(directory) => (
-                          <Browser
-                            directory={directory()}
-                            bases={snapshot().bases.items}
-                            after={after()}
-                            source={snapshot().source}
-                            onLoadMore={async () => {
-                              const url = new URL(workspace.committedSource(), window.location.origin);
-                              url.searchParams.set("pages", String((snapshot().directory?.loadedPages ?? 1) + 1));
-                              setPreserveSelection(true);
-                              try {
-                                await go(`${url.pathname}${url.search}`, true);
-                              } finally {
-                                setPreserveSelection(false);
-                              }
-                              if (workspace.failure()) throw new Error(workspace.failure()!.message);
-                            }}
-                            detail={snapshot().detail}
-                            preferences={props.preferences}
-                            issues={snapshot().bases.issues}
-                            onSelectionSource={(source) => {
-                              workspace.rememberSource(source);
-                              setContextSource(source);
-                            }}
-                            onBranchRefreshReady={(refresh) => {
-                              refreshBrowserBranches = refresh;
-                            }}
-                            pending={workspace.pending()}
-                            preserveSelection={preserveSelection()}
-                            error={workspace.failure()?.message}
-                            notice={cursorNotice() ? b().cursorReset : undefined}
-                            onRetry={() => void go(retryHref(), true)}
-                            onOpenDirectory={(path) =>
-                              goTree(
-                                treeId(directory().base.id, path),
-                                filesUrl(directory().base.id, path, null, null, null, currentBrowse()),
-                              )
-                            }
-                            onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
-                            onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
-                            pendingSearch={pendingSearch()}
-                            onSearch={(search) =>
-                              void go(filesUrl(directory().base.id, directory().path, null, null, search, currentBrowse()))
-                            }
-                            onSearchHistory={(query) => void go(activityUrl({ q: query }))}
-                            history={{
-                              env: historyEnv(),
-                              initial: snapshot().history,
-                              actions: { onOpen: openHistoryTarget, onRecheck: activityActions.onRecheck },
-                              activityHref: (baseId, path, scope) =>
-                                activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
-                            }}
-                            onBrowseChange={(options) =>
-                              void go(filesUrl(directory().base.id, directory().path, null, null, null, options))
-                            }
-                            onChanged={(selectPath) => {
-                              // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
-                              ensureLoaded(Object.keys(folders()), true);
-                              return go(
-                                filesUrl(directory().base.id, directory().path, null, selectPath ?? null, currentSearch(), currentBrowse()),
-                                true,
-                              );
-                            }}
-                            selectionPillHint={!!props.initial.hints?.selectionPill}
-                            onShare={(paths) =>
-                              void openShareDialog({
-                                baseId: directory().base.id,
-                                kind: "download",
-                                paths,
-                                defaultTitle:
-                                  paths.length === 1
-                                    ? paths[0]!.split("/").at(-1)!
-                                    : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
-                              })
-                            }
-                            onShareInbox={(folder) =>
-                              void openShareDialog({
-                                baseId: directory().base.id,
-                                kind: "inbox",
-                                folder,
-                                defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
-                              })
-                            }
-                            editor={snapshot().bases.editor}
-                            onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
-                            onNavigate={onNavigate}
-                            uploads={uploads}
-                          />
-                        )}
+                        </Show>
                       </Show>
                     </Show>
                   </Show>
                 </Show>
-              </Show>
-            </Show>
-          </AppWorkspace.Content>
+              </AppWorkspace.Content>
+            }
+          >
+            {(directory) => (
+              <Browser
+                directory={directory()}
+                bases={snapshot().bases.items}
+                after={after()}
+                source={snapshot().source}
+                onLoadMore={async () => {
+                  const url = new URL(workspace.committedSource(), window.location.origin);
+                  url.searchParams.set("pages", String((snapshot().directory?.loadedPages ?? 1) + 1));
+                  setPreserveSelection(true);
+                  try {
+                    await go(`${url.pathname}${url.search}`, true);
+                  } finally {
+                    setPreserveSelection(false);
+                  }
+                  if (workspace.failure()) throw new Error(workspace.failure()!.message);
+                }}
+                detail={snapshot().detail}
+                preferences={props.preferences}
+                issues={snapshot().bases.issues}
+                onSelectionSource={(source) => {
+                  workspace.rememberSource(source);
+                  setContextSource(source);
+                }}
+                onBranchRefreshReady={(refresh) => {
+                  refreshBrowserBranches = refresh;
+                }}
+                pending={workspace.pending()}
+                preserveSelection={preserveSelection()}
+                error={workspace.failure()?.message}
+                notice={cursorNotice() ? b().cursorReset : undefined}
+                onRetry={() => void go(retryHref(), true)}
+                onOpenDirectory={(path) =>
+                  goTree(treeId(directory().base.id, path), filesUrl(directory().base.id, path, null, null, null, currentBrowse()))
+                }
+                onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
+                onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
+                pendingSearch={pendingSearch()}
+                onSearch={(search) => void go(filesUrl(directory().base.id, directory().path, null, null, search, currentBrowse()))}
+                onSearchHistory={(query) => void go(activityUrl({ q: query }))}
+                history={{
+                  env: historyEnv(),
+                  initial: snapshot().history,
+                  actions: { onOpen: openHistoryTarget, onRecheck: activityActions.onRecheck },
+                  activityHref: (baseId, path, scope) => activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
+                }}
+                onBrowseChange={(options) => void go(filesUrl(directory().base.id, directory().path, null, null, null, options))}
+                onChanged={(selectPath) => {
+                  // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
+                  ensureLoaded(Object.keys(folders()), true);
+                  return go(
+                    filesUrl(directory().base.id, directory().path, null, selectPath ?? null, currentSearch(), currentBrowse()),
+                    true,
+                  );
+                }}
+                onShare={(paths) =>
+                  void openShareDialog({
+                    baseId: directory().base.id,
+                    kind: "download",
+                    paths,
+                    defaultTitle:
+                      paths.length === 1
+                        ? paths[0]!.split("/").at(-1)!
+                        : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
+                  })
+                }
+                onShareInbox={(folder) =>
+                  void openShareDialog({
+                    baseId: directory().base.id,
+                    kind: "inbox",
+                    folder,
+                    defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
+                  })
+                }
+                editor={snapshot().bases.editor}
+                onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
+                onNavigate={onNavigate}
+                uploads={uploads}
+                selectionHint={!!props.initial.hints?.selectionActions}
+                onUploadReady={(upload) => setUploadHere(() => upload)}
+              />
+            )}
+          </Show>
         </AppWorkspace>
       </Show>
     </>

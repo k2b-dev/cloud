@@ -39,6 +39,7 @@ render(() => {
             size: "Size",
             modified: "Modified",
             details: (name) => `Details for ${name}`,
+            folder: "Folder",
             toggle: (name) => `Toggle ${name}`,
             select: (name) => `Select ${name}`,
             more: "More",
