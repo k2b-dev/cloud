@@ -87,6 +87,52 @@
         "type-role: span.k2b-data-table__header-title \"State\" in div.k2b-app-workspace__main \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"Amount\" in div.k2b-app-workspace__main \"14 orders3 waiting1 over\" is 12px/15px/500, no type role"
       ]
+    },
+    "1440-panes": {
+      "overlap": [
+        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x842",
+        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x842"
+      ],
+      "spill": [],
+      "cut": [],
+      "double": [],
+      "scrollbar": [],
+      "shortEdge": [
+        "short-edge: the line of th \"Customer\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Holzwerk Brandt\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Stadtwerke Auental\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Lackfabrik Nordhaus\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Mira Solberg\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Holzwerk Brandt\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Stadtwerke Auental\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Lackfabrik Nordhaus\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Mira Solberg\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Holzwerk Brandt\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Stadtwerke Auental\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Lackfabrik Nordhaus\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Mira Solberg\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of td \"Holzwerk Brandt\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the fill of tr.k2b-data-table__row \"A-4472Stadtwerke Auental\" stops 8 px short of the right edge of section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\"",
+        "short-edge: the line of section.k2b-section \"Items2Oak cabinetBrass l\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"NotesCollect on Friday.\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of div.k2b-detail-panel__group.k2b-divided \"More about this orderDel\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"DeliveryCarrierNordfrach\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"History3 eventsCreated o\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the fill of article.k2b-notice-card \"Caution: The invoice cou\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\""
+      ],
+      "nearDouble": [],
+      "gripOffCenter": [],
+      "typeRole": [
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Open\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/600, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Waiting\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Done\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Archive\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-data-table__header-title \"Order\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"Customer\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"State\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"Amount\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role"
+      ]
     }
   },
   "webkit": {
@@ -146,6 +192,37 @@
         "type-role: span.k2b-data-table__header-title \"Customer\" in div.k2b-app-workspace__main \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"State\" in div.k2b-app-workspace__main \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
         "type-role: span.k2b-data-table__header-title \"Amount\" in div.k2b-app-workspace__main \"14 orders3 waiting1 over\" is 12px/15px/500, no type role"
+      ]
+    },
+    "1440-panes": {
+      "overlap": [
+        "button.k2b-app-workspace__resize overlaps section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" by 7x842",
+        "div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" overlaps button.k2b-app-workspace__resize by 6x842"
+      ],
+      "spill": [],
+      "cut": [],
+      "double": [],
+      "scrollbar": [],
+      "shortEdge": [
+        "short-edge: the line of section.k2b-section \"Items2Oak cabinetBrass l\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"NotesCollect on Friday.\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of div.k2b-detail-panel__group.k2b-divided \"More about this orderDel\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"DeliveryCarrierNordfrach\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the line of section.k2b-section \"History3 eventsCreated o\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\"",
+        "short-edge: the fill of article.k2b-notice-card \"Caution: The invoice cou\" stops 8 px short of the right edge of aside.k2b-app-workspace__detail \"A-4472More actionsDuplic\""
+      ],
+      "nearDouble": [],
+      "gripOffCenter": [],
+      "typeRole": [
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Open\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/600, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Waiting\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Done\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-app-workspace__sidebar-item-label-text.k2b-truncate-fade-lines \"Archive\" in aside.k2b-app-workspace__sidebar \"OrdersOpenWaitingDoneArc\" is 13px/18px/400, no type role",
+        "type-role: span.k2b-data-table__header-title \"Order\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"Customer\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"State\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: span.k2b-data-table__header-title \"Amount\" in section.k2b-app-workspace__main-pane \"14 orders3 waiting1 over\" is 12px/15px/500, no type role",
+        "type-role: p \"Order A-4472 for Stadtwe\" in div.k2b-app-workspace__main-primary \"Order A-4472 for Stadtwe\" is 15px/normal/400, no type role"
       ]
     }
   }

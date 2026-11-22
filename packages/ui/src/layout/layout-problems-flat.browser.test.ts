@@ -214,7 +214,7 @@ describe(`flat kinds of the layout self-check in ${browserName}`, () => {
         <span data-probe="fifteen" style="display:block;font-size:15px;line-height:20px">Fifteen</span>
         <b data-probe="bold" style="display:block;font:700 13px/20px sans-serif">Seven hundred</b>
         <span data-probe="normal" style="display:block;font-size:13px;line-height:normal">Normal line height</span>
-        <span data-probe="lead-light" style="display:block;font:400 18px/24px sans-serif">A lead in 400</span>
+        <span data-probe="lead-light" style="display:block;font:300 18px/24px sans-serif">A lead in 300</span>
       </section>`,
       ["type-role"],
     );

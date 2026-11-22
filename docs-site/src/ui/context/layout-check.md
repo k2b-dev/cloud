@@ -73,12 +73,14 @@ boxes. The innermost area owns an element.
 | --- | --- | --- | --- |
 | meta | 12 px | 16, 20 px | 400, 500, 600 |
 | row | 13 px | 20 px | 400, 500, 600 |
-| title | 14 px | 20, 22 px | 400, 600 |
-| lead | 18 px | 20, 24 px | 600 |
+| text | 14 px | 20, 22 px | 400, 500, 600 |
+| lead | 18 px | 20, 24 px | 400, 500, 600 |
 
-The values are the computed styles of the approved mockup (Cloud flach,
-version 10). The head title and reading text use 14 px, the lead statement
-18 px; a phone title sets the lead in a 20 px line.
+Meta is 12 px, rows and controls 13 px, reading text and the head title
+14 px, and the key statement 18 px. The line heights are the computed styles of
+the approved mockup (Cloud flach, version 10); a phone title sets the key
+statement in a 20 px line. The list is provisional: the type tokens of
+`@k2b/ui` replace it.
 
 ## Import
 

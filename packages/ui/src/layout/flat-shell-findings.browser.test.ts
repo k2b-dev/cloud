@@ -23,7 +23,8 @@ const snapshotPath = resolve(import.meta.dir, "flat-shell-findings.snapshot.json
 const recording = process.env.RECORD_FLAT_FINDINGS === "1";
 const kinds = ["overlap", "spill", "cut", "double", "scrollbar", "shortEdge", "nearDouble", "gripOffCenter", "typeRole"] as const;
 type Findings = Pick<LayoutProblems, (typeof kinds)[number]>;
-const widths = [1440, 390];
+// A scene is a viewport width, with `panes` for a resizable pane in Main.
+const scenes = ["1440", "390", "1440-panes"];
 const expected: Record<string, Record<string, Findings>> = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : {};
 
 const entry = resolve(import.meta.dir, "flat-shell-findings.fixture.ts");
@@ -60,11 +61,19 @@ render(() => createComponent(AppWorkspace, { get children() { return [
     } }); } });
   } }),
   createComponent(AppWorkspace.Content, { get children() { return [
-    createComponent(AppWorkspace.Main, { get children() { return [
-      createComponent(StatusRow, { lead: "14 orders", facts: [{ value: "3", label: "waiting" }, { value: "1", label: "overdue" }, { value: "4 min", label: "since the last order" }],
-        get filters() { return [createComponent(Button, { size: "sm", children: "Customer" }), createComponent(Button, { size: "sm", children: "State" })]; } }),
-      createComponent(DataTable, { columns, rows, getRowId: (row) => row.id, selectedRowId: "o2", surface: "plain", ariaLabel: "Orders" }),
-    ]; } }),
+    createComponent(AppWorkspace.Main, { get children() {
+      const list = () => [
+        createComponent(StatusRow, { lead: "14 orders", facts: [{ value: "3", label: "waiting" }, { value: "1", label: "overdue" }, { value: "4 min", label: "since the last order" }],
+          get filters() { return [createComponent(Button, { size: "sm", children: "Customer" }), createComponent(Button, { size: "sm", children: "State" })]; } }),
+        createComponent(DataTable, { columns, rows, getRowId: (row) => row.id, selectedRowId: "o2", surface: "plain", ariaLabel: "Orders" }),
+      ];
+      // With panes: the orders as a resizable pane beside the work area, as in a list beside a reader.
+      if (document.body.dataset.panes !== "true") return list();
+      return [
+        createComponent(AppWorkspace.MainPane, { id: "orders", label: "Orders", href: "#orders", get children() { return list(); } }),
+        text("p", "Order A-4472 for Stadtwerke Auental, ready for pickup on Friday."),
+      ];
+    } }),
     createComponent(AppWorkspace.Detail, { id: "order", open: true, get children() {
       return createComponent(DetailPanel, { get children() { return [
         createComponent(DetailPanel.Header, { title: "A-4472", subtitle: "Stadtwerke Auental", menu: [{ label: "Duplicate", onSelect: () => {} }],
@@ -102,14 +111,14 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width: number) => {
+const load = async (width: number, panes = false) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style></head>` +
-      '<body class="k2b-ui" data-theme="light" style="margin:0"><div id="app" style="height:900px"></div></body></html>',
+      `<body class="k2b-ui" data-theme="light" data-panes="${panes}" style="margin:0"><div id="app" style="height:900px"></div></body></html>`,
   );
   await page.evaluate(() =>
     Promise.all(
@@ -124,20 +133,21 @@ const load = async (width: number) => {
 
 const recorded: Record<string, Findings> = {};
 afterAll(() => {
-  if (recording && Object.keys(recorded).length === widths.length)
+  if (recording && Object.keys(recorded).length === scenes.length)
     writeFileSync(snapshotPath, `${JSON.stringify({ ...expected, [browserName]: recorded }, null, 2)}\n`);
 });
 
-// Every kind, without exceptions: the `ignore` lists of the app tests (such as Pulse's detail header and groups) left
-// out exactly the building blocks where the defects sit.
-for (const width of widths)
-  test(`today's flat shell at ${width} px in ${browserName}: the findings of every kind, without exceptions`, async () => {
-    const page = await load(width);
+// Every kind, without exceptions: the `ignore` lists of the app tests left out exactly the building blocks where the
+// defects sit, such as Pulse's detail header, groups, and status row (PulseFlat.browser.test.ts) and every grip in
+// Grids (flat-workspace.browser.test.ts). Here they are measured: grips of the sidebar, Detail, and a pane included.
+for (const scene of scenes)
+  test(`today's flat shell at ${scene} px in ${browserName}: the findings of every kind, without exceptions`, async () => {
+    const page = await load(Number.parseInt(scene, 10), scene.endsWith("panes"));
     try {
       const result = await page.evaluate(layoutProblems, { root: "#app", flat: true, ignore: ":not(*)" });
       const findings: Findings = Object.fromEntries(kinds.map((kind) => [kind, result[kind]])) as Findings;
-      if (recording) recorded[width] = findings;
-      else expect(findings).toEqual(expected[browserName]![width]!);
+      if (recording) recorded[scene] = findings;
+      else expect(findings).toEqual(expected[browserName]![scene]!);
     } finally {
       await page.close();
     }
