@@ -3733,7 +3733,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                       return <Surface level={controller().dropLevel} locale={controller().locale()} />;
                     }}
                   </Show>
-                  <section id="mail-conversation-list" class="mail-split-list" aria-label={controller().t().conversationList}>
+                  <section
+                    id="mail-conversation-list"
+                    class="mail-split-list"
+                    data-layout-area="mail-list"
+                    aria-label={controller().t().conversationList}
+                  >
                     {listBar()}
                     {controller().data.eventsMode ? eventsFeed() : conversationList()}
                   </section>

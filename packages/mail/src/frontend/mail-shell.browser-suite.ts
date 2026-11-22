@@ -14,7 +14,6 @@ import { mailTagSearch } from "../search-url";
 import { renderComposeContent, renderComposeSignatureBlock } from "../service/compose-renderer";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
 import { buildMessageDocument } from "./_components/mail-message-document";
-import { probeFlat } from "./mail-flat-probe.browser-source";
 import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 
 setDefaultTimeout(20_000);
@@ -1678,8 +1677,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("flat", () => {
-      // Cloud flach (K2, K7, K11): lines and fills run from area edge to area edge, no line is doubled, and text uses
-      // only the four sizes of the mockup: 12 meta, 13 rows and controls, 14 reading text and head titles, 18 lead.
+      // Cloud flach (K2, K7, K11, K13): lines and fills run from area edge to area edge, no line is doubled, text uses only
+      // the type roles (12 meta, 13 rows, 14 reading text and head titles, 18 lead), and grips sit on their line.
       const states = [
         // Sidebar 248 px and list 432 px, the mockup's geometry, so built and mockup compare column by column.
         [
@@ -1702,10 +1701,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               mkdirSync(screenshots, { recursive: true });
               await page.screenshot({ path: join(screenshots, `flat-${state}-light-${width}.png`) });
             }
-            const probe = await page.evaluate(probeFlat, [
-              ["list", ".mail-split-list"],
-              ["reader", ".mail-reader"],
-            ] as [string, string][]);
             if (screenshots) {
               // The parity numbers of the review: boxes, paddings and type of the parts the mockup measures.
               const parts = await page.evaluate(() => {
@@ -1746,9 +1741,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 };
                 return Object.fromEntries(Object.entries(selectors).map(([name, selector]) => [name, pick(selector)]));
               });
-              writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify({ ...probe, parts }, null, 1));
+              writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify(parts, null, 1));
             }
-            expect(probe.areas.length).toBeGreaterThan(0);
             // Scrolling or not, nothing breaks, overlaps, is cut, or scrolls sideways (K2, K15).
             const flow = await page.evaluate(() =>
               Array.from(document.querySelectorAll<HTMLElement>(".mail-list-scroll, .mail-reader-scroll"))
@@ -1763,6 +1757,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             if (state === "split" || state === "few")
               expect(flow.find((area) => area.area === "list")?.scrolls, `${state}: the list scrolls`).toBe(state === "split");
             expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
+            // The flat kinds of the shared check (short edge, near-double line, grip off centre, type role) on Mail's own
+            // areas, list and reader (data-layout-area). The sidebar and the head are @k2b/ui primitives whose type the
+            // type-role lane moves to the roles; widen this root to "main" when it has landed.
+            expect((await page.evaluate(layoutProblems, { root: ".mail-split-panes", flat: true })).problems).toEqual([]);
             // The line between list and reader is one sharp pixel: it starts on a whole pixel and is not transformed.
             const handleLine = await page.evaluate(() => {
               const handle = document.querySelector(".mail-list-handle");
@@ -1777,15 +1775,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 width: "1px",
                 transform: "none",
               });
-            for (const area of probe.areas) {
-              expect(area.short, `${state} ${area.name}: lines and fills reach both edges`).toEqual([]);
-              expect(area.double, `${state} ${area.name}: no doubled line`).toEqual([]);
-              const sizes = new Set(Object.keys(area.sizes).map((key) => key.split("/")[0]));
-              expect(
-                [...sizes].filter((size) => !["12px", "13px", "14px", "18px"].includes(size!)),
-                `${state} ${area.name}: type sizes`,
-              ).toEqual([]);
-            }
           } finally {
             await close(page);
           }

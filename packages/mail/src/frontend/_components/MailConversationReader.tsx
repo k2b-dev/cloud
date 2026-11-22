@@ -1256,6 +1256,7 @@ export default function MailConversationReader(props: {
   return (
     <div
       class="mail-reader flex h-full min-h-0 flex-col overflow-hidden"
+      data-layout-area="mail-reader"
       data-mail-print-root
       data-print-region={printing() ? "" : undefined}
     >

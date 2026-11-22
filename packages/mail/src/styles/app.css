@@ -419,6 +419,7 @@
     margin: 0;
     padding: 0 var(--mail-row-gutter);
     font-size: 0.75rem;
+    line-height: 1rem;
     color: var(--k2b-text-muted);
     white-space: nowrap;
   }
@@ -575,6 +576,7 @@
     align-items: center;
     gap: 0.1875rem;
     font-size: 0.75rem;
+    line-height: 1rem;
   }
 
   .mail-row-assignee {

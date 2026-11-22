@@ -188,8 +188,9 @@
 .k2b-ui .mail-reader-chip-label {
   min-width: 0;
   overflow: hidden;
-  /* The label clips its overflow, so its line box must hold the font's descenders; the chip's line-height of 1 does not. */
-  line-height: normal;
+  /* The label clips its overflow, so its line box must hold the font's descenders; the chip's line-height of 1 does
+     not. 16 px holds them and is the meta role's line (K11). */
+  line-height: 1rem;
   text-overflow: ellipsis;
 }
 
@@ -699,7 +700,8 @@
 }
 
 /* A note's text is a row's text (13 px on 20 px), not reading text; the Markdown inside takes the row's size. */
-.k2b-ui .mail-note .mail-note-body :is(p, li, blockquote) {
+.k2b-ui .mail-note .mail-note-body > .k2b-content-markdown,
+.k2b-ui .mail-note .mail-note-body > .k2b-content-markdown :is(p, li, blockquote) {
   font-size: inherit;
   line-height: inherit;
 }
