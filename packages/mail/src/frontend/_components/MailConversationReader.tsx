@@ -1242,6 +1242,7 @@ export default function MailConversationReader(props: {
           createNote={notes.create}
           onReconcile={props.onReconcileAfterWrite}
           onExplainSenderUnavailable={() => void explainSenderUnavailable()}
+          onOpenSenderSettings={props.canAdmin ? props.onOpenDeliverySettings : undefined}
           register={(api) => {
             replyBox = api;
             onCleanup(() => {

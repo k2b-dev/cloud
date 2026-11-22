@@ -1812,6 +1812,39 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+      // #9: a reply box that cannot open is a cell of the reader from edge to edge (K10, K14), and its one button names
+      // its deed: it never says "Try again" for something that opens settings.
+      for (const permission of ["admin", "write"] as const)
+        test(`flat no sender, ${permission}: an edge-to-edge cell whose button names what it does`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&locale=de&shell=1&demo=1&permission=${permission}`, 1440, 900);
+          try {
+            const cell = page.locator('[data-mail-reply-box="no-sender"]');
+            await cell.waitFor({ state: "visible" });
+            await settled(page);
+            if (screenshots) await page.screenshot({ path: join(screenshots, `flat-no-sender-${permission}-light-1440.png`) });
+            const edges = await page.evaluate(() => {
+              const box = document.querySelector('[data-mail-reply-box="no-sender"]')!.getBoundingClientRect();
+              const reader = document.querySelector(".mail-reader")!.getBoundingClientRect();
+              return { left: box.left - reader.left, right: reader.right - box.right };
+            });
+            expect(edges).toEqual({ left: 0, right: 0 });
+            expect((await page.evaluate(layoutProblems, { root: ".mail-split-panes", flat: true })).problems).toEqual([]);
+            const buttons = cell.getByRole("button");
+            expect(await cell.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+            if (permission === "write") {
+              // No deed for this person: the cell says who can fix it, and offers no button.
+              expect(await buttons.count()).toBe(0);
+              expect(await cell.textContent()).toContain("Verwaltungszugriff");
+              return;
+            }
+            expect(await buttons.allTextContents()).toEqual(["Absendereinstellungen öffnen"]);
+            // The label is the deed: the button opens the mailbox settings.
+            await buttons.first().click();
+            await page.getByRole("dialog").first().waitFor({ state: "visible" });
+          } finally {
+            await close(page);
+          }
+        });
     });
 
     section("layout", () => {

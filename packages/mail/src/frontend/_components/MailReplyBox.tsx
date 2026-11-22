@@ -1,6 +1,6 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { announce, Button, Dropdown, type DropdownItem, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { AlertCell, announce, Button, Dropdown, type DropdownItem, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConversationDraftSummary, MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
@@ -36,6 +36,7 @@ import {
   writeMailReplyNote,
 } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
+import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 
 type ComposerModule = typeof import("./MailComposer");
 type ComposerParts = { Composer: ComposerModule["default"]; signatures: MailComposerSignatures };
@@ -128,10 +129,13 @@ export default function MailReplyBox(props: {
   createNote: (body: string, failed: string) => Promise<ConversationComment>;
   onReconcile: () => Promise<void>;
   onExplainSenderUnavailable: () => void;
+  /** Opens the mailbox's sender settings; absent when the person cannot manage the mailbox. */
+  onOpenSenderSettings?: () => void;
   register: (api: MailReplyBoxApi) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailReplyBoxMessages.resolve([locale()]).t);
+  const senderStatus = createMemo(() => mailSenderIdentityStatusMessages.resolve([locale()]).t);
   const replyDraft = () => props.conversationDrafts.find((draft) => draft.intent !== "new") ?? null;
   // Local box text belongs to the signed-in person: it lives in their Mail storage, which signing out clears. The box
   // keeps the handle it opened for its whole life: after signing out, that handle refuses every read and write, so
@@ -168,6 +172,12 @@ export default function MailReplyBox(props: {
   const [mount, setMount] = createSignal<Mount | null>(null);
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [noSender, setNoSender] = createSignal(false);
+  /**
+   * The page data already says when no verified sender can answer and no reply draft waits: the server's first frame
+   * shows the cell then, so nothing below jumps when the browser finds the same (#9).
+   */
+  const unsendable = () =>
+    noSender() || (!loadError() && !replyDraft() && !props.identities.some((identity) => identity.status === "verified"));
   const [switching, setSwitching] = createSignal(false);
   /** The draft this box handed to a compose window; the box shows a line to bring it back while the window holds it. */
   const [detachedId, setDetachedId] = createSignal<string | null>(null);
@@ -952,32 +962,50 @@ export default function MailReplyBox(props: {
           keyed
           fallback={
             <Show when={mode() !== "note"}>
-              <section
-                class="mail-reply-box mail-reply-box-pending"
-                data-mail-reply-box="pending"
-                aria-label={t().boxLabel}
-                aria-busy={!loadError() && !noSender()}
-              >
-                <Show
-                  when={loadError() || noSender()}
-                  fallback={
+              {/* Waiting, the box keeps its place. A box that cannot open says so in a cell of the column (K10, K14),
+                  with a button only when there is a deed, and its label names that deed. */}
+              <Show
+                when={unsendable() || loadError()}
+                fallback={
+                  <section
+                    class="mail-reply-box mail-reply-box-pending"
+                    data-mail-reply-box="pending"
+                    aria-label={t().boxLabel}
+                    aria-busy="true"
+                  >
                     <div class="mail-reply-box-skeleton" aria-hidden="true">
                       <span />
                       <span />
                       <span />
                     </div>
+                  </section>
+                }
+              >
+                <Show
+                  when={unsendable()}
+                  fallback={
+                    <AlertCell
+                      tone="danger"
+                      data-mail-reply-box="failed"
+                      title={t().loadFailed}
+                      detail={loadError() && loadError() !== t().loadFailed ? loadError()! : undefined}
+                      action={{ label: t().retry, icon: "ti ti-refresh", onClick: () => void settle() }}
+                    />
                   }
                 >
-                  <Placeholder
-                    state="error"
-                    variant="compact"
-                    align="left"
-                    title={noSender() ? t().noSender : t().loadFailed}
-                    description={loadError() ?? undefined}
-                    onRetry={noSender() ? props.onExplainSenderUnavailable : () => settle()}
+                  <AlertCell
+                    tone="warning"
+                    data-mail-reply-box="no-sender"
+                    title={t().noSender}
+                    detail={`${senderUnavailableDetail(props.identities, locale())}${props.onOpenSenderSettings ? "" : ` ${senderStatus().askAdmin}`}`}
+                    action={
+                      props.onOpenSenderSettings
+                        ? { label: senderStatus().openSenderSettings, icon: "ti ti-settings", onClick: props.onOpenSenderSettings }
+                        : undefined
+                    }
                   />
                 </Show>
-              </section>
+              </Show>
             </Show>
           }
         >
