@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.76.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.75.0...npm-cloud-v0.76.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pulse:** Pulse drops dashboards and the overview; Sources keeps fired alerts and the store state ([#3936](https://github.com/k2b-dev/cloud/issues/3936))
+
+### Features
+
+* **assistant:** Gustav asks for a secret as a card in the conversation, also for an automation ([#3871](https://github.com/k2b-dev/cloud/issues/3871)) ([f0efaae](https://github.com/k2b-dev/cloud/commit/f0efaae61ed93ef80bd92144692262fa3c88cb81))
+* **assistant:** Gustav asks for a secret in the conversation, also for an automation ([#3791](https://github.com/k2b-dev/cloud/issues/3791)) ([96b1f45](https://github.com/k2b-dev/cloud/commit/96b1f45a171da1dc5cab215a84b58469c9f118ec))
+* **assistant:** Gustav is flat – cards in the reading column and a docked "In this chat" column with a grip ([#3930](https://github.com/k2b-dev/cloud/issues/3930)) ([aa21c44](https://github.com/k2b-dev/cloud/commit/aa21c44bb3cbda93af30e9e8645fb37dace35449))
+* **pulse:** Pulse drops dashboards and the overview; Sources keeps fired alerts and the store state ([#3936](https://github.com/k2b-dev/cloud/issues/3936)) ([183937f](https://github.com/k2b-dev/cloud/commit/183937fe7fdb627905f2771f4aeaaa07257c37e0))
+* **pulse:** Pulse serves data that Code pages show only to people who may read it ([#3910](https://github.com/k2b-dev/cloud/issues/3910)) ([e1b301d](https://github.com/k2b-dev/cloud/commit/e1b301df433551d15d3dc3c974c2d1b7ad66fa0d))
+* **ui:** Cloud flach foundation – tokens, radius roles, and checks ([#3895](https://github.com/k2b-dev/cloud/issues/3895)) ([8053203](https://github.com/k2b-dev/cloud/commit/805320338d803eca667523bf5657afd256b6fb74))
+* **ui:** drag and drop that never jumps – dimmed card in place, target line, drop overlay, keyboard and touch ([#3904](https://github.com/k2b-dev/cloud/issues/3904)) ([31f5b8b](https://github.com/k2b-dev/cloud/commit/31f5b8bcdf197ba0c0c7c7c300d8afb53818fa2f))
+* **ui:** flat app shell with hairlines, grips, a status row, and tabs or a path in the head ([#3909](https://github.com/k2b-dev/cloud/issues/3909)) ([23ec84e](https://github.com/k2b-dev/cloud/commit/23ec84e6b26fedea9aade60f56b3155cb95501fb))
+* **ui:** flat overlays – dialog B, sheet, menus with submenus, toast ([#3898](https://github.com/k2b-dev/cloud/issues/3898)) ([594ec25](https://github.com/k2b-dev/cloud/commit/594ec25b4a3ef7f95f456c571c13f2d4ceb350d7))
+* **ui:** flat tables, fields, sections, areas and alert cells ([#3902](https://github.com/k2b-dev/cloud/issues/3902)) ([7dcd200](https://github.com/k2b-dev/cloud/commit/7dcd200ec7f9bca06024daa01a45eb2ba3f3cca9))
+
+
+### Bug Fixes
+
+* **cloud:** a Cloud variant keeps its value when an app's own utility comes later ([#3970](https://github.com/k2b-dev/cloud/issues/3970)) ([8025e1e](https://github.com/k2b-dev/cloud/commit/8025e1ecea6e4001aad559294d294f598cabb513))
+* **cloud:** an app's own stylesheet loads after the shared one, so its utilities win ([#3928](https://github.com/k2b-dev/cloud/issues/3928)) ([1cc7b4f](https://github.com/k2b-dev/cloud/commit/1cc7b4f6746119558a8fef18ed61f49be31d8bda))
+* **cloud:** apps typecheck with @k2b/ssr again ([#3914](https://github.com/k2b-dev/cloud/issues/3914)) ([aceefa8](https://github.com/k2b-dev/cloud/commit/aceefa87710535ad22a6bb3eb6ffd6497f706e87)), closes [#3912](https://github.com/k2b-dev/cloud/issues/3912)
+* **cloud:** capability manifests share repeated schemas, so Core keeps 41 KiB below its limit ([#3915](https://github.com/k2b-dev/cloud/issues/3915)) ([422fd59](https://github.com/k2b-dev/cloud/commit/422fd593c3e83c42cd6f8ebae13f0ae2bc2bbc43))
+* **cloud:** older apps that return a presentation keep working ([#3919](https://github.com/k2b-dev/cloud/issues/3919)) ([35e4918](https://github.com/k2b-dev/cloud/commit/35e4918d94bd4bd0f27831216a70e3a6b4668822))
+* **cloud:** public pages keep their language after loading ([#3913](https://github.com/k2b-dev/cloud/issues/3913)) ([cd55f7d](https://github.com/k2b-dev/cloud/commit/cd55f7db46c493399f1c200c4a7fdb67ee908f3d))
+* **test:** a browser launch gets its own budget instead of failing inside a hook's 5 s default ([#3874](https://github.com/k2b-dev/cloud/issues/3874)) ([09aeea8](https://github.com/k2b-dev/cloud/commit/09aeea8facc180a2576808d94c61bf7560bf9f02))
+* **ui:** Escape closes a dialog from the moment it opens; no hint opens on the browser's first focus ([#3922](https://github.com/k2b-dev/cloud/issues/3922)) ([3feb32e](https://github.com/k2b-dev/cloud/commit/3feb32ecba16f28045f39d5ca0ff27e44908c085))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.23.0 to 0.23.1
+    * @k2b/ui bumped from 0.63.0 to 0.64.0
+    * @k2b/editor bumped from 0.13.0 to 0.14.0
+
 ## [0.75.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.74.1...npm-cloud-v0.75.0) (2026-11-21)
 
 

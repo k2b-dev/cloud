@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.23.0...npm-ssr-v0.23.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ssr:** keep unused barrel modules out of island static closures ([#3901](https://github.com/k2b-dev/cloud/issues/3901)) ([1257c4b](https://github.com/k2b-dev/cloud/commit/1257c4bf3f6f975d4f31bd890f909c1a91b5f35e))
+
 ## [0.23.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.22.0...npm-ssr-v0.23.0) (2026-11-21)
 
 

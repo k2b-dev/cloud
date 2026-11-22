@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.64.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.63.0...npm-ui-v0.64.0) (2026-11-22)
+
+
+### Features
+
+* **assistant:** Gustav asks for a secret as a card in the conversation, also for an automation ([#3871](https://github.com/k2b-dev/cloud/issues/3871)) ([f0efaae](https://github.com/k2b-dev/cloud/commit/f0efaae61ed93ef80bd92144692262fa3c88cb81))
+* **assistant:** Gustav is flat – cards in the reading column and a docked "In this chat" column with a grip ([#3930](https://github.com/k2b-dev/cloud/issues/3930)) ([aa21c44](https://github.com/k2b-dev/cloud/commit/aa21c44bb3cbda93af30e9e8645fb37dace35449))
+* **ui:** a table that scrolls sideways fades at the edge where it continues ([#3948](https://github.com/k2b-dev/cloud/issues/3948)) ([904857e](https://github.com/k2b-dev/cloud/commit/904857ed718f048a84a17e3a698dec6ea434eaee))
+* **ui:** Cloud flach foundation – tokens, radius roles, and checks ([#3895](https://github.com/k2b-dev/cloud/issues/3895)) ([8053203](https://github.com/k2b-dev/cloud/commit/805320338d803eca667523bf5657afd256b6fb74))
+* **ui:** decision cards can ask for one value ([#3796](https://github.com/k2b-dev/cloud/issues/3796)) ([f673047](https://github.com/k2b-dev/cloud/commit/f6730477738e595a827cdc0ea61a972a79d30b61))
+* **ui:** drag and drop that never jumps – dimmed card in place, target line, drop overlay, keyboard and touch ([#3904](https://github.com/k2b-dev/cloud/issues/3904)) ([31f5b8b](https://github.com/k2b-dev/cloud/commit/31f5b8bcdf197ba0c0c7c7c300d8afb53818fa2f))
+* **ui:** flat app shell with hairlines, grips, a status row, and tabs or a path in the head ([#3909](https://github.com/k2b-dev/cloud/issues/3909)) ([23ec84e](https://github.com/k2b-dev/cloud/commit/23ec84e6b26fedea9aade60f56b3155cb95501fb))
+* **ui:** flat overlays – dialog B, sheet, menus with submenus, toast ([#3898](https://github.com/k2b-dev/cloud/issues/3898)) ([594ec25](https://github.com/k2b-dev/cloud/commit/594ec25b4a3ef7f95f456c571c13f2d4ceb350d7))
+* **ui:** flat tables, fields, sections, areas and alert cells ([#3902](https://github.com/k2b-dev/cloud/issues/3902)) ([7dcd200](https://github.com/k2b-dev/cloud/commit/7dcd200ec7f9bca06024daa01a45eb2ba3f3cca9))
+* **ui:** flat task row, a progress path with the current step, and the layout self-check for apps ([#3903](https://github.com/k2b-dev/cloud/issues/3903)) ([dd73fe5](https://github.com/k2b-dev/cloud/commit/dd73fe5c2f70554887c35020455f637cb730f888))
+
+
+### Bug Fixes
+
+* **cloud:** an app's own stylesheet loads after the shared one, so its utilities win ([#3928](https://github.com/k2b-dev/cloud/issues/3928)) ([1cc7b4f](https://github.com/k2b-dev/cloud/commit/1cc7b4f6746119558a8fef18ed61f49be31d8bda))
+* **pulse:** a 5-second refresh keeps the sources tab, its scroll position and the focused row ([#3997](https://github.com/k2b-dev/cloud/issues/3997)) ([d85bd55](https://github.com/k2b-dev/cloud/commit/d85bd55e29ceaf2bc4cdb5fd9cf0e9c6c41cc457))
+* **ssr:** keep unused barrel modules out of island static closures ([#3901](https://github.com/k2b-dev/cloud/issues/3901)) ([1257c4b](https://github.com/k2b-dev/cloud/commit/1257c4bf3f6f975d4f31bd890f909c1a91b5f35e))
+* **test:** a browser launch gets its own budget instead of failing inside a hook's 5 s default ([#3874](https://github.com/k2b-dev/cloud/issues/3874)) ([09aeea8](https://github.com/k2b-dev/cloud/commit/09aeea8facc180a2576808d94c61bf7560bf9f02))
+* **ui:** a date field loads its month panel on demand, so Button and DatePicker fit their bundle budget again ([#3934](https://github.com/k2b-dev/cloud/issues/3934)) ([17a7376](https://github.com/k2b-dev/cloud/commit/17a7376ecd0b4e4e176f65823abbe7d25deecfd5))
+* **ui:** a dialog's footer stays put when an error appears, and panel dialogs open as a sheet on a phone ([#3929](https://github.com/k2b-dev/cloud/issues/3929)) ([f72677b](https://github.com/k2b-dev/cloud/commit/f72677b7055a4fb2f481d28a9f519f3ffa874251))
+* **ui:** a file name reads as one word to screen readers ([#3979](https://github.com/k2b-dev/cloud/issues/3979)) ([191145c](https://github.com/k2b-dev/cloud/commit/191145c10a99e0baa3874fdf6615ac3a555e78c8))
+* **ui:** a number input keeps grouped amounts instead of cutting them ([#3899](https://github.com/k2b-dev/cloud/issues/3899)) ([218c68d](https://github.com/k2b-dev/cloud/commit/218c68d748f001ba42e4e4bc40ec0eef9e5ba16a))
+* **ui:** a status row drops a label it would cut to a letter, and the icon carries the state ([#3973](https://github.com/k2b-dev/cloud/issues/3973)) ([cc14b90](https://github.com/k2b-dev/cloud/commit/cc14b90a57994891bf4e8e623c975cf97217a1c4))
+* **ui:** a workspace clips without being a scroll box, so Main's minimum never counts as hidden width on a tablet ([#3982](https://github.com/k2b-dev/cloud/issues/3982)) ([e579466](https://github.com/k2b-dev/cloud/commit/e57946662b760e14214ea9f87680c69cac798d2d))
+* **ui:** Escape closes a dialog from the moment it opens; no hint opens on the browser's first focus ([#3922](https://github.com/k2b-dev/cloud/issues/3922)) ([3feb32e](https://github.com/k2b-dev/cloud/commit/3feb32ecba16f28045f39d5ca0ff27e44908c085))
+* **ui:** over a drop overlay the drag preview is a small badge at the pointer and covers no tile's words ([#3931](https://github.com/k2b-dev/cloud/issues/3931)) ([d8f5564](https://github.com/k2b-dev/cloud/commit/d8f556499d584ed0952514800128447aa671aeb9))
+* **ui:** the date picker's phone touch target is at least 44 px in every engine ([#3920](https://github.com/k2b-dev/cloud/issues/3920)) ([71b58ec](https://github.com/k2b-dev/cloud/commit/71b58ec33af4c174a4f2d35e1779509b6324dffa))
+* **ui:** the layout check ignores visually hidden text when it allows touch hit areas ([#3988](https://github.com/k2b-dev/cloud/issues/3988)) ([a2c823d](https://github.com/k2b-dev/cloud/commit/a2c823d1b71ed7b598d434f87405d8f227a0d271))
+* **ui:** the layout self-check knows touch hit areas and no longer reports them as spills ([#3923](https://github.com/k2b-dev/cloud/issues/3923)) ([8770056](https://github.com/k2b-dev/cloud/commit/8770056cc727489d24ae2430468698a902b6783b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.23.0 to 0.23.1
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 || ^0.23.0 to ^0.23.1
+
 ## [0.63.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.62.0...npm-ui-v0.63.0) (2026-11-21)
 
 
