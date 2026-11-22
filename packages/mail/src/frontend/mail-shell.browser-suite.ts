@@ -3939,7 +3939,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(`${boxPath}?team=1&locale=de`, 1440, 900, "no-preference");
         try {
           const seen = await watch(page);
-          await lift(page, "Conv02");
+          // Conv03 is only yours, so Nora is free to take it; Conv02 is hers already and her tile is locked.
+          await lift(page, "Conv03");
           await page.locator(overlay).waitFor();
           expect(await page.locator(`${overlay} .k2b-drop-overlay__tile`).allTextContents()).toEqual(
             expect.arrayContaining([
@@ -3955,17 +3956,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(surface.x).toBeGreaterThanOrEqual(side.x + side.width - 1);
           await glide(page, tile(page, "Jemand anderem zuweisen"));
           await page.locator(`${overlay} .k2b-drop-overlay__title`).filter({ hasText: "Häufig" }).waitFor();
-          const person = page.locator(`${overlay} .k2b-drop-overlay__tile:not([data-back])`).first();
+          // The first person who is not responsible yet; one who is stays in place, locked with the reason.
+          const person = page.locator(`${overlay} .k2b-drop-overlay__tile:not([data-back]):not([aria-disabled])`).first();
           await page.waitForTimeout(260);
           await glide(page, person);
           const name = (await person.locator(".k2b-drop-overlay__label").textContent())!;
           expect(seen.requests, "no request before the drop").toEqual([]);
           await page.route("**/api/mail/mailboxes/Box001/conversations/assign", (route) =>
-            route.fulfill({ json: { results: [{ conversationId: "Conv02", status: "ok" }] } }),
+            route.fulfill({ json: { results: [{ conversationId: "Conv03", status: "ok" }] } }),
           );
           const assigned = page.waitForRequest((request) => request.url().endsWith("/conversations/assign"));
           await page.mouse.up();
-          expect((await assigned).postDataJSON()).toMatchObject({ conversationIds: ["Conv02"], mode: "add" });
+          expect((await assigned).postDataJSON()).toMatchObject({ conversationIds: ["Conv03"], mode: "add" });
           await page.locator(".k2b-toast").filter({ hasText: name }).getByRole("button", { name: "Rückgängig" }).waitFor();
           expect(await page.locator(overlay).count()).toBe(0);
           expect(await seen.shift()).toBe(0);
@@ -3982,9 +3984,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await glide(page, tile(page, "Jemand anderem zuweisen"));
           await page.waitForTimeout(260);
           await page.mouse.up();
+          // The person search: a dialog with its search field (a combobox over the results).
           await page
             .getByRole("dialog")
-            .filter({ has: page.getByRole("searchbox") })
+            .filter({ has: page.getByRole("combobox") })
             .first()
             .waitFor();
         } finally {

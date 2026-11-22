@@ -29,7 +29,7 @@ import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import type { MailRespondIntent } from "./mail-conversation-menu";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { MAIL_CONVERSATION_DRAG } from "./mail-drop-targets";
+import { MAIL_CONVERSATION_DRAG } from "./mail-drag";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";

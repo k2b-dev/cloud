@@ -399,6 +399,13 @@
   white-space: nowrap;
 }
 
+/* A long name ends in "…"; the whole address stands in the sender's tooltip. */
+.k2b-ui .mail-message-sender-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .k2b-ui button.mail-message-sender {
   cursor: pointer;
 }

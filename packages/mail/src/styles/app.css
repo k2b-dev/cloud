@@ -164,8 +164,11 @@
     height: 1rem;
   }
 
+  /* Marks (tags, avatars) are 20 px high on a 16 px line: they hang down from its top into the row's bottom space and
+     never reach up into the subject line. */
   .mail-row-marks {
     grid-area: marks;
+    align-self: start;
   }
 
   .mail-row-time-cell {
@@ -331,6 +334,7 @@
     }
 
     .mail-list-row > .mail-row-marks {
+      align-self: center;
       justify-content: flex-start;
       overflow: hidden;
     }
@@ -2321,7 +2325,7 @@
 
 /* F3, K6: the status row over the list (52 px, with the hairline under it). With the first selection the bulk
    actions take its place at the same height; the select-all box stands in the rows' checkbox column. */
-.mail-split { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.mail-split { display: flex; height: 100%; min-height: 0; flex-direction: column; container: mail-split / inline-size; }
 .k2b-ui .mail-list-bar { display: flex; flex: none; min-width: 0; height: var(--k2b-h-status, 3.25rem); align-items: stretch; box-shadow: inset 0 -1px 0 var(--k2b-border); }
 .k2b-ui .mail-list-bar > .k2b-status-row { width: 100%; }
 .k2b-ui .mail-status-row .k2b-status-row__lead { display: inline-flex; min-width: 0; align-items: center; gap: 0.5rem; }
@@ -2353,10 +2357,11 @@
 .mail-split-reader > .mail-reader { min-width: 0; flex: 1 1 0; }
 .mail-split[data-list="hidden"] :is(.mail-split-list, .mail-list-bar) { display: none; }
 
-/* K12: a tablet (from 48 rem of window, below 64 rem of app area) shows the list or the open conversation, not both;
-   closing the conversation returns to the list. The app area decides, so a panel beside it counts too. */
+/* K12: where list and reader do not both get their least width (20 rem and 30.75 rem), such as a tablet, the open
+   conversation stands alone; closing it returns to the list. Mail's own room decides, so a wide window with a panel
+   keeps both. */
 @media (min-width: 48rem) {
-  @container k2b-app-area (width < 64rem) {
+  @container mail-split (width < 50.75rem) {
     .mail-split[data-reader="open"] .mail-split-list { display: none; }
     .k2b-ui .mail-split[data-reader="open"] .mail-split-reader .mail-list-handle { display: none; }
   }

@@ -1,4 +1,8 @@
+import { toast } from "@k2b/ui";
+import { apiClient } from "../../api/client";
+import type { ConversationLocalTags } from "../../service/local-tags";
 import type { MailListItem } from "../../service/workspace";
+import { readApiError } from "./api-response";
 import type { MailAssigneeChoice } from "./mail-assign-picker";
 import { mailDropMessages } from "./mail-drop-messages";
 import type { MailDropAction } from "./mail-drop-targets";
@@ -150,4 +154,102 @@ export const runMailDrop = async <Item extends MailDropItem>(params: {
       retry,
     );
   }
+};
+
+type MailDropRowPatch = Partial<Pick<MailListItem, "workStatus" | "snoozedUntil" | "revision" | "localTags">>;
+
+const putTags = (mailboxId: string, conversationId: string, tagIds: string[], expectedRevision: number) =>
+  apiClient.mailboxes[":mailboxId"].conversations[":conversationId"]["local-tags"].$put({
+    param: { mailboxId, conversationId },
+    json: { expectedRevision, tagIds },
+  });
+
+/**
+ * The drop's host, built from the workspace's own paths when a drop runs: assigning, moving and completing come from
+ * the workspace; the requests behind tags and the Undo of done, and the notices, live here with the drop's code. Each
+ * request throws with the server's reason or the workspace's fallback; `apply` puts an answer on the rows, and
+ * `refresh` reconciles the workspace, reporting its own failure under the given message.
+ */
+export const createMailDropHost = <Item extends MailDropItem>(base: {
+  mailboxId: string;
+  assign: MailDropHost<Item>["assign"];
+  move: MailDropHost<Item>["move"];
+  complete: MailDropHost<Item>["complete"];
+  rememberFolder: MailDropHost<Item>["rememberFolder"];
+  apply: (conversationId: string, patch: MailDropRowPatch) => void;
+  applyTags: (answer: ConversationLocalTags) => void;
+  refresh: (failed: string) => Promise<void>;
+  data: {
+    listItems: readonly Pick<MailListItem, "conversationId" | "localTags">[];
+    localTags: readonly MailListItem["localTags"][number][];
+  };
+  t: () => { addTagsFailed: string; tagsRefreshFailed: string; updateTagsFailed: string };
+  conversationText: () => { completionFailed: string };
+  retryToast: (message: string, options: { title: string; retryLabel: string; retry: () => void }) => void;
+  active: () => boolean;
+}): MailDropHost<Item> => {
+  const { mailboxId } = base;
+  const patchWork = async (
+    conversationId: string,
+    json: { expectedRevision: number; completion?: "open" | "waiting" | "needs_action" | "done"; snoozedUntil?: string },
+  ) => {
+    const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].collaboration.$patch({
+      param: { mailboxId, conversationId },
+      json,
+    });
+    if (!response.ok) throw new Error(await readApiError(response, base.conversationText().completionFailed));
+    return response.json();
+  };
+  return {
+    assign: base.assign,
+    move: base.move,
+    complete: base.complete,
+    rememberFolder: base.rememberFolder,
+    /** Puts each conversation's work state back: the status first, then a snooze at the revision that change left. */
+    restoreWork: async (entries) => {
+      let failure: unknown = null;
+      for (const { conversationId, state, expectedRevision } of entries) {
+        if (!base.active()) return;
+        try {
+          // A conversation without a status before reopens to what its latest message says, as Reopen does.
+          let result = await patchWork(conversationId, { expectedRevision, completion: state.workStatus ?? "open" });
+          if (state.snoozedUntil)
+            result = await patchWork(conversationId, { expectedRevision: result.revision, snoozedUntil: state.snoozedUntil });
+          base.apply(conversationId, { workStatus: result.workStatus, snoozedUntil: result.snoozedUntil, revision: result.revision });
+        } catch (error) {
+          failure ??= error;
+        }
+      }
+      await base.refresh(base.conversationText().completionFailed);
+      if (failure) throw failure;
+    },
+    addTag: async (conversationIds, tagId) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations["local-tags"].$post({
+        param: { mailboxId },
+        json: { conversationIds, tagIds: [tagId] },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, base.t().addTagsFailed));
+      const result = await response.json();
+      const tag = base.data.localTags.find((candidate) => candidate.id === tagId);
+      for (const conversationId of result.updatedConversationIds) {
+        const row = base.data.listItems.find((candidate) => candidate.conversationId === conversationId);
+        if (row && tag) base.apply(conversationId, { localTags: [...row.localTags, tag] });
+      }
+      await base.refresh(base.t().tagsRefreshFailed);
+      return result.updatedConversationIds;
+    },
+    setTags: async (conversationId, tagIds, expectedRevision) => {
+      const response = await putTags(mailboxId, conversationId, tagIds, expectedRevision);
+      if (!response.ok) throw new Error(await readApiError(response, base.t().updateTagsFailed));
+      base.applyTags(await response.json());
+    },
+    success: ({ title, message }, undo) =>
+      void toast.success(message, {
+        title,
+        ...(undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost" as const, onClick: undo.run } } : {}),
+      }),
+    failed: ({ title, message, retryLabel }, retry) => base.retryToast(message, { title, retryLabel, retry }),
+    error: ({ title, message }) => void toast.error(message, { title }),
+    active: base.active,
+  };
 };

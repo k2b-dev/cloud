@@ -12,7 +12,7 @@ import { buildVisibleMailFolderTree, flattenMailFolderTree } from "./mail-folder
  */
 
 /** The type a dragged conversation row carries; the drop surface and the sidebar's folders take it. */
-export const MAIL_CONVERSATION_DRAG = "mail.conversation";
+export { MAIL_CONVERSATION_DRAG, mailDraggedRows } from "./mail-drag";
 
 /** The first people and folders level of the drop surface: the most frequent ones, then "More" (S7). */
 export const MAIL_DROP_FIRST_LEVEL_SIZE = 11;
@@ -69,21 +69,6 @@ export type MailDropContext = {
 
 const every = <T>(items: readonly T[], test: (item: T) => boolean) => items.length > 0 && items.every(test);
 const assignable = (context: MailDropContext) => context.assignees !== null && context.teamMailbox && context.currentUserId !== null;
-
-/**
- * The rows a drag carries, found by the dragged row's own ID: in a message list, rows of one conversation can sit in
- * different folders, so a drop moves exactly that row. A row of a selection carries every selected row.
- */
-export const mailDraggedRows = <Row extends Pick<MailListItem, "id" | "conversationId">>(
-  rows: readonly Row[],
-  selectedConversationIds: ReadonlySet<string>,
-  rowId: string,
-): Row[] => {
-  const row = rows.find((candidate) => candidate.id === rowId);
-  if (!row) return [];
-  if (!row.conversationId || !selectedConversationIds.has(row.conversationId)) return [row];
-  return rows.filter((candidate) => candidate.conversationId && selectedConversationIds.has(candidate.conversationId));
-};
 
 /** The folders a conversation can move to, in the sidebar's order. */
 export const mailDropFolders = (folders: readonly MailFolderView[]): MailFolderView[] =>

@@ -17,13 +17,9 @@ import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
-  AvatarFaces,
   announce,
   type DragPayload,
-  DropOverlay,
   type DropOverlayLevel,
-  type DropOverlayTile,
-  dropOverlayPages,
   openSpotlightSearch,
   prompts,
   StatusRow,
@@ -93,22 +89,8 @@ import { mailConversationUiMessages } from "./_components/mail-conversation-ui-m
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
-import { type MailDropHost, runMailDrop } from "./_components/mail-drop-actions";
-import { mailDropMessages } from "./_components/mail-drop-messages";
-import {
-  MAIL_CONVERSATION_DRAG,
-  MAIL_DROP_FIRST_LEVEL_SIZE,
-  type MailDropAction,
-  type MailDropContext,
-  type MailDropTarget,
-  mailDraggedRows,
-  mailDropFolderTargets,
-  mailDropPeople,
-  mailDropRoot,
-  mailDropTags,
-  readMailDropRecentFolders,
-  rememberMailDropFolder,
-} from "./_components/mail-drop-targets";
+import { MAIL_CONVERSATION_DRAG, mailDraggedRows } from "./_components/mail-drag";
+import type { MailDropAction } from "./_components/mail-drop-targets";
 import { mailEventsMessages } from "./_components/mail-events-messages";
 import { createRetryToasts } from "./_components/mail-feedback";
 import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
@@ -2774,203 +2756,109 @@ function createMailboxController(props: MailboxControllerProps) {
     return { assigned: assignees.includes(userId), others: assigneeNames(assignees.filter((id) => id !== userId)) };
   });
   // A drag's targets and drops (S7). The targets come from the first load, so a drag makes no request before its drop.
-  /** A dragged row carries every selected row when it is one of them, else itself. */
-  const dropItemsFor = (item: MailListItem): MailListItem[] => mailDraggedRows(selectableRows(), selectedConversationIds(), item.id);
-  const dropContext = (items: readonly MailListItem[]): MailDropContext => ({
-    locale: locale(),
-    currentUserId: props.currentUserId ?? null,
-    items,
-    assignees: canAssign() ? data.dropAssignees : null,
-    teamMailbox: sharedMailbox(),
-    folders: data.folders,
-    folderName: folderName(),
-    tags: data.localTags,
-    recentFolderIds: readMailDropRecentFolders(mailboxId),
+  // Their code loads right after the page, outside its first bundle; until it is there, rows do not drag.
+  type MailDropKit = typeof import("./_components/mail-drop-levels");
+  const [dropKit, setDropKit] = createSignal<MailDropKit | null>(null);
+  onMount(() => {
+    if (!canWrite()) return;
+    void importOnDemand(() => import("./_components/mail-drop-levels")).then((kit) => {
+      if (kit && !disposed) setDropKit(kit);
+    });
   });
-  const dropHost: MailDropHost<MailListItem> = {
-    assign: (conversationIds, choice) =>
-      runMailBulkAssignment(
-        conversationIds,
-        assignmentHost(
-          choice ? async () => choice : () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
-          () => !disposed,
-          conversationIds.some((id) => selectedConversationIds().has(id)),
+  /** A dragged row carries every selected row when it is one of them, else itself. */
+  const draggedRows = (rowId: string): MailListItem[] => mailDraggedRows(selectableRows(), selectedConversationIds(), rowId);
+  /** The drop's host from the workspace's paths; its code loads with the drop's (runDrop needs it). */
+  const dropHost = (kit: MailDropKit) =>
+    kit.createMailDropHost<MailListItem>({
+      mailboxId,
+      assign: (conversationIds, choice) =>
+        runMailBulkAssignment(
+          conversationIds,
+          assignmentHost(
+            choice ? async () => choice : () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
+            () => !disposed,
+            conversationIds.some((id) => selectedConversationIds().has(id)),
+          ),
+          t(),
         ),
-        t(),
-      ),
-    move: (items, folderId) => {
-      const targets = items.flatMap((item) => {
-        const target = actionTargetForItem(item, "move");
-        return target ? [target] : [];
-      });
-      // A drop never ends silently: rows this view cannot move say so and offer the drop again.
-      if (targets.length === 0) throw new Error(dropText().moveUnavailable);
-      return runAction("move", { targets, destinationFolderId: folderId });
-    },
-    complete: (conversationIds) => submitCompletion(conversationIds, "done"),
-    restoreWork: async (entries) => {
-      let failure: unknown = null;
-      for (const { conversationId, state, expectedRevision } of entries) {
-        if (disposed) return;
-        try {
-          const patch = async (json: {
-            expectedRevision: number;
-            completion?: "open" | "waiting" | "needs_action" | "done";
-            snoozedUntil?: string;
-          }) => {
-            const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].collaboration.$patch({
-              param: { mailboxId, conversationId },
-              json,
-            });
-            if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
-            return response.json();
-          };
-          // Status and snooze are separate changes; the snooze follows at the revision the status change left.
-          // A conversation without a status before reopens to what its latest message says, as Reopen does.
-          let result = await patch({ expectedRevision, completion: state.workStatus ?? "open" });
-          if (state.snoozedUntil) result = await patch({ expectedRevision: result.revision, snoozedUntil: state.snoozedUntil });
-          const listPatch = { workStatus: result.workStatus, snoozedUntil: result.snoozedUntil, revision: result.revision };
-          rememberPendingListState(conversationId, listPatch);
-          setConversationListState(conversationId, listPatch);
-          setData("collaborationState", (current) => (current?.conversationId === conversationId ? { ...current, ...listPatch } : current));
-        } catch (error) {
-          failure ??= error;
-        }
-      }
-      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
-      if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
-      if (failure) throw failure;
-    },
-    addTag: async (conversationIds, tagId) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations["local-tags"].$post({
-        param: { mailboxId },
-        json: { conversationIds, tagIds: [tagId] },
-      });
-      if (!response.ok) throw new Error(await readApiError(response, t().addTagsFailed));
-      const result = await response.json();
-      const added = data.localTags.find((tag) => tag.id === tagId);
-      for (const conversationId of result.updatedConversationIds) {
-        const row = data.listItems.find((candidate) => candidate.conversationId === conversationId);
-        if (!row || !added) continue;
-        const patch: MailListOptimisticPatch = { localTags: [...row.localTags, added] };
+      move: (items, folderId) => {
+        const targets = items.flatMap((item) => {
+          const target = actionTargetForItem(item, "move");
+          return target ? [target] : [];
+        });
+        // A drop never ends silently: rows this view cannot move say so and offer the drop again.
+        if (targets.length === 0) throw new Error(kit.mailDropMessages.resolve([locale()]).t.moveUnavailable);
+        return runAction("move", { targets, destinationFolderId: folderId });
+      },
+      complete: (conversationIds) => submitCompletion(conversationIds, "done"),
+      rememberFolder: (folderId) => kit.rememberMailDropFolder(mailboxId, folderId),
+      apply: (conversationId, patch) => {
         rememberPendingListState(conversationId, patch);
         setConversationListState(conversationId, patch);
-      }
-      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
-      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed);
-      return result.updatedConversationIds;
-    },
-    setTags: async (conversationId, tagIds, expectedRevision) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"]["local-tags"].$put({
-        param: { mailboxId, conversationId },
-        json: { expectedRevision, tagIds },
-      });
-      if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
-      applyConversationTags(await response.json());
-    },
-    rememberFolder: (folderId) => rememberMailDropFolder(mailboxId, folderId),
-    success: ({ title, message }, undo) =>
-      toast.success(message, {
-        title,
-        ...(undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost" as const, onClick: undo.run } } : {}),
-      }),
-    failed: ({ title, message, retryLabel }, retry) => retryToast(message, { title, retryLabel, retry }),
-    error: ({ title, message }) => void toast.error(message, { title }),
-    active: () => !disposed,
-  };
+        const { workStatus, snoozedUntil, revision } = patch;
+        if (workStatus && snoozedUntil !== undefined && revision !== undefined)
+          setData("collaborationState", (current) =>
+            current?.conversationId === conversationId ? { ...current, workStatus, snoozedUntil, revision } : current,
+          );
+      },
+      applyTags: applyConversationTags,
+      refresh: async (failed) => {
+        const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+        if (refreshError) reportRefreshFailure(refreshError, failed);
+      },
+      data,
+      t,
+      conversationText,
+      retryToast,
+      active: () => !disposed,
+    });
   /** Rows of a conversation can be dragged where the person may write (S7). */
-  const canDrag = (item: MailListItem) => canWrite() && Boolean(item.conversationId);
+  const canDrag = (item: MailListItem) => canWrite() && Boolean(item.conversationId) && dropKit() !== null;
   /** What a row's drag carries, read when the drag starts: the row, and with a selection that holds it every selected row. */
   const dragPayload = (item: MailListItem): DragPayload => {
-    const count = new Set(dropItemsFor(item).map((row) => row.conversationId)).size;
+    const count = new Set(draggedRows(item.id).map((row) => row.conversationId)).size;
     return {
       type: MAIL_CONVERSATION_DRAG,
       value: item.id,
-      label: count > 1 ? dropText().conversations({ count }) : item.subject || t().noSubject,
+      label: count > 1 ? (dropText()?.conversations({ count }) ?? String(count)) : item.subject || t().noSubject,
       icon: "ti ti-mail",
       ...(count > 1 ? { count } : {}),
     };
   };
-  const dropText = createMemo(() => mailDropMessages.resolve([locale()]).t);
-  const draggedItems = (payload: DragPayload) => mailDraggedRows(selectableRows(), selectedConversationIds(), payload.value);
-  /** A drop target as the drop surface draws it; a drop runs through the same paths as the menus. */
-  const dropTile = (target: MailDropTarget, items: readonly MailListItem[]): DropOverlayTile => ({
-    id: target.id,
-    label: target.label,
-    ...(target.disabled ? { disabled: target.description } : target.description ? { description: target.description } : {}),
-    ...(target.visual.kind === "icon" ? { icon: target.visual.icon } : {}),
-    ...(target.visual.kind === "person"
-      ? {
-          leading: <AvatarFaces people={[{ name: target.visual.person.displayName, src: avatarUrl(target.visual.person) }]} max={1} />,
-        }
-      : {}),
-    ...(target.visual.kind === "tag"
-      ? { leading: <span class="mail-drop-tag" style={{ "--mail-tag": target.visual.color }} aria-hidden="true" /> }
-      : {}),
-    ...(target.level ? { opens: target.level } : {}),
-    ...(target.action ? { onDrop: () => void runDrop(target.action!, items) } : {}),
-  });
-  /**
-   * A level of the drop surface (S7), from the first load's data: no request before the drop. People and folders show
-   * 11 and "More N", then ranges of 12; where the search knows more people, it stays one drop away.
-   */
+  const dropText = () => dropKit()?.mailDropMessages.resolve([locale()]).t ?? null;
+  /** A level of the drop surface (S7); rows drag only once its code is there (canDrag), so without it a level is empty. */
   const dropLevel = (id: string, payload: DragPayload): DropOverlayLevel => {
-    const items = draggedItems(payload);
-    const context = dropContext(items);
-    const text = dropText();
-    const range = (first: string, last: string) => (first === last ? first : `${first} – ${last}`);
-    const people = mailDropPeople(context);
-    const peoplePages = dropOverlayPages(
-      "assign",
-      people.targets.map((target) => dropTile(target, items)),
-      { title: text.assignFrequentCrumb, moreTitle: text.assignMoreCrumb, more: (count) => text.morePeople({ count }), range },
-      { first: MAIL_DROP_FIRST_LEVEL_SIZE },
-    );
-    const recentFolders = context.recentFolderIds.length > 0;
-    const folderPages = dropOverlayPages(
-      "folder",
-      mailDropFolderTargets(context).map((target) => dropTile(target, items)),
-      {
-        title: recentFolders ? text.folderRecentCrumb : text.folderCrumb,
-        moreTitle: text.folderMoreCrumb,
-        more: (count) => text.moreFolders({ count }),
-        range,
+    const kit = dropKit();
+    if (!kit) return { tiles: [] };
+    return kit.mailDropLevel({
+      id,
+      mailboxId,
+      context: {
+        locale: locale(),
+        currentUserId: props.currentUserId ?? null,
+        items: draggedRows(payload.value),
+        assignees: canAssign() ? data.dropAssignees : null,
+        teamMailbox: sharedMailbox(),
+        folders: data.folders,
+        folderName: folderName(),
+        tags: data.localTags,
       },
-      { first: MAIL_DROP_FIRST_LEVEL_SIZE },
-    );
-    const assign = peoplePages(id);
-    if (assign)
-      return id === "assign" && people.more
-        ? {
-            ...assign,
-            tiles: [
-              ...assign.tiles,
-              {
-                id: "search",
-                label: text.searchPeople,
-                icon: "ti ti-search",
-                onDrop: () => void runDrop({ kind: "choose-assignee" }, items),
-              },
-            ],
-          }
-        : assign;
-    const folder = folderPages(id);
-    if (folder) return folder;
-    if (id === "tag") return { title: text.tagCrumb, tiles: mailDropTags(context).map((target) => dropTile(target, items)) };
-    return { tiles: mailDropRoot(context).map((target) => dropTile(target, items)) };
+      runDrop,
+    });
   };
   /**
    * Runs a drop on a target; nothing happens without write access or while a structure change (merge, split) runs. A
    * drop while earlier moves are still being sent queues like any action does.
    */
   const runDrop = (action: MailDropAction, items: readonly MailListItem[]) => {
-    if (!canWrite() || structureMutationLoading() || disposed) return Promise.resolve();
-    return runMailDrop({
+    const kit = dropKit();
+    if (!kit || !canWrite() || structureMutationLoading() || disposed) return Promise.resolve();
+    return kit.runMailDrop({
       action,
       items,
       currentUserId: props.currentUserId ?? null,
       locale: locale(),
-      host: dropHost,
+      host: dropHost(kit),
       text: { undo: t().undo, assignFailed: t().assignFailed },
       // Try again runs the same drop under the same rules as the first one.
       retry: () => void runDrop(action, items),
@@ -3264,7 +3152,7 @@ function createMailboxController(props: MailboxControllerProps) {
       onMoveConversation: (input) => {
         // The dragged row, not the first row of its conversation: in a message list, rows of one
         // conversation can sit in different folders. A drag from a selection moves every selected row.
-        const items = mailDraggedRows(selectableRows(), selectedConversationIds(), input.itemId);
+        const items = draggedRows(input.itemId);
         const folder = data.folders.find((candidate) => candidate.id === input.destinationFolderId);
         if (items.length === 0 || !folder) return;
         return runDrop({ kind: "move", folderId: folder.id, name: folderName()(folder) }, items);
@@ -3320,7 +3208,8 @@ function createMailboxController(props: MailboxControllerProps) {
     canDrag,
     dragPayload,
     dropLevel,
-    dropText,
+    dropKit,
+    locale,
     assigneeNames,
     rowAssignees,
     assignToMe,
@@ -3838,14 +3727,12 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               when={controller().data.scheduledMode || controller().data.draftsMode}
               fallback={
                 <div class="mail-split-panes">
-                  {/* S7: while a conversation is dragged, its targets cover list and reader; the sidebar stays free. */}
-                  <DropOverlay
-                    class="mail-drop-overlay"
-                    accept={[MAIL_CONVERSATION_DRAG]}
-                    level={controller().dropLevel}
-                    hint={controller().dropText().sidebarHint}
-                    onCancel={() => toast(controller().dropText().cancelled)}
-                  />
+                  <Show when={controller().dropKit()}>
+                    {(kit) => {
+                      const Surface = kit().MailDropSurface;
+                      return <Surface level={controller().dropLevel} locale={controller().locale()} />;
+                    }}
+                  </Show>
                   <section id="mail-conversation-list" class="mail-split-list" aria-label={controller().t().conversationList}>
                     {listBar()}
                     {controller().data.eventsMode ? eventsFeed() : conversationList()}

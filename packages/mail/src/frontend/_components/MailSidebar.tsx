@@ -19,7 +19,7 @@ import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
 import MailFocusNotice from "./MailFocusNotice";
-import { MAIL_CONVERSATION_DRAG } from "./mail-drop-targets";
+import { MAIL_CONVERSATION_DRAG } from "./mail-drag";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
