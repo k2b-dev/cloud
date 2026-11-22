@@ -128,6 +128,8 @@ export default function ItemsTable(props: Props) {
         rows={props.items}
         columns={tableColumns}
         getRowId={(item) => item.id}
+        // The flat main column owns the line around the table; a paper frame would double it.
+        surface="plain"
         selectedRowId={props.selectedItemId}
         hoverRows
         class="min-h-0 overflow-x-auto"

@@ -37,17 +37,19 @@ const desktop: View = { width: 1440, height: 900, touch: false };
 const laptop: View = { width: 1100, height: 800, touch: false };
 const tablet: View = { width: 768, height: 1024, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
+/** A narrow desktop window: Chromium draws overlay scrollbars without room on a touch screen, classic ones only here. */
+const narrow: View = { width: 390, height: 844, touch: false };
 const card = (page: Page, title: string) => page.locator("[data-sortable-column] li", { hasText: title });
 const boxOf = (page: Page, title: string) => card(page, title).boundingBox();
 
 // K15 and "one line, one owner": nothing overlaps, spills, is cut, or draws a double line, with few tasks (no
 // scrollbar) and with many (every column and the list scroll), with classic scrollbars that take room (harness). At
 // 1100 px a task is open beside the list or the board.
-for (const view of [phone, tablet, laptop, desktop])
+for (const view of [phone, narrow, tablet, laptop, desktop])
   for (const name of ["list", "kanban"] as const)
     for (const many of [false, true]) {
       const detail = view === laptop;
-      test(`${view.width} px ${name}, ${many ? "many tasks" : "few tasks"}${detail ? ", a task open" : ""}: no overlap, spill, cut, double line, or scrollbar break`, async () => {
+      test(`${view.width} px${view.touch ? " touch" : ""} ${name}, ${many ? "many tasks" : "few tasks"}${detail ? ", a task open" : ""}: no overlap, spill, cut, double line, or scrollbar break`, async () => {
         const page = await harness.open(view, { view: name, many, detail });
         try {
           const result = await page.evaluate(layoutProblems, { root: "body", ignore: detail ? ignoredWithDetail : ignored });
@@ -58,8 +60,22 @@ for (const view of [phone, tablet, laptop, desktop])
       }, 30_000);
     }
 
+test("classic scrollbars take room in this suite: a scrolling list in a narrow desktop window has a gutter", async () => {
+  const page = await harness.open(narrow, { view: "list", many: true });
+  try {
+    const gutters = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("body *")]
+        .filter((element) => element.scrollHeight > element.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(element).overflowY))
+        .map((element) => element.offsetWidth - element.clientWidth - element.clientLeft * 2),
+    );
+    expect(Math.max(0, ...gutters)).toBeGreaterThan(0);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
 test("390 px table: a list of two-line entries without a head that never scrolls sideways (K7, K12)", async () => {
-  const page = await harness.open(phone, { view: "table", many: true });
+  const page = await harness.open(narrow, { view: "table", many: true });
   try {
     const result = await page.evaluate(layoutProblems, { root: "body", ignore: ignored });
     expect(result.problems).toEqual([]);
