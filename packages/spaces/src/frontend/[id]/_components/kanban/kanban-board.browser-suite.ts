@@ -421,6 +421,12 @@ const center = async (locator: ReturnType<Page["locator"]>) => {
   const box = (await locator.boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 };
+/** Moves a card through its "⋯" menu: "Move to ▸" and the column, the way a phone moves it (K7). */
+const moveByMenu = async (page: Page, itemId: string, column: string, locale: "en" | "de" = "en") => {
+  await page.locator(`[data-spaces-kanban-card-menu="${itemId}"]`).click();
+  await page.getByRole("menuitem", { name: locale === "de" ? "Verschieben nach" : "Move to" }).click();
+  await page.getByRole("menuitem", { name: column, exact: true }).click();
+};
 /** Where a pointer picks a card up: the whole card drags (K7). */
 const cardHandle = async (page: Page, title: string) => (await page.locator("article").filter({ hasText: title }).boundingBox())!;
 const columnTitles = (page: Page) =>
@@ -761,19 +767,13 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       const de = locale === "de";
       const page = await open(desktop, { locale });
       const question = page.getByRole("dialog", { name: de ? "Aufgabe übernehmen" : "Take over task" });
-      const toDone = async () =>
-        drag(
-          page,
-          await cardHandle(page, "Book the stage"),
-          await center(page.locator('[data-spaces-kanban-column="column:Col004"] article').first()),
-        );
+      // The rules of the claim are the subject here; the menu moves the card, the pointer's way has its own tests.
+      const toDone = () => moveByMenu(page, "Item04", "Done", locale);
       try {
         moves.splice(0);
         const before = await layout(page);
+        // Claims coordinate work and do not lock it: the done status takes the card.
         await toDone();
-        // Claims coordinate work and do not lock it: the done status takes the drop.
-        expect(await page.locator('[data-spaces-kanban-column="column:Col004"][data-sortable-target]').count()).toBe(1);
-        await page.mouse.up();
         await question.waitFor();
         expect(await question.textContent()).toContain(
           de ? "Von Kim Example übernommen – übernehmen und abschließen?" : "Claimed by Kim Example – take over and complete?",
@@ -789,20 +789,14 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
         expect(await page.locator("[data-k2b-toast]").count()).toBe(0);
 
         // Between open statuses the claim does not matter, and the move sends no completion state at all.
-        await drag(
-          page,
-          await cardHandle(page, "Book the stage"),
-          await center(page.locator('[data-spaces-kanban-column="column:Col003"] article').first()),
-        );
         const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
-        await page.mouse.up();
+        await moveByMenu(page, "Item04", "Review", locale);
         await moved;
         expect(await question.count()).toBe(0);
         expect(moves).toEqual([{ columnId: "Col003", beforeItemId: "Item06" }]);
 
         // Confirm: the claim is taken over and the task completed in the same request.
         await toDone();
-        await page.mouse.up();
         await question.waitFor();
         const completed = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
         await question.getByRole("button", { name: de ? "Übernehmen und abschließen" : "Take over and complete" }).click();
@@ -820,17 +814,13 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
     }, 30_000);
   }
 
-  test("a card dragged out of Blocked into an open status stays there with its new status; one done leaves Overdue", async () => {
+  test("a card moved out of Blocked into an open status stays there with its new status; one done leaves Overdue", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {
       moves.splice(0);
-      await drag(
-        page,
-        await cardHandle(page, "Hang the signs"),
-        await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first()),
-      );
+      // The automatic columns' rules are the subject here; the menu moves the cards.
       const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item08/move"));
-      await page.mouse.up();
+      await moveByMenu(page, "Item08", "In progress");
       await moved;
       expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04" }]);
       await notifications(page).getByText("Moved to In progress. It shows under Blocked until its blockers are done.").waitFor();
@@ -840,13 +830,8 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       );
       expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
 
-      await drag(
-        page,
-        await cardHandle(page, "Pay the deposit"),
-        await center(page.locator('[data-spaces-kanban-column="column:Col004"] article').first()),
-      );
       const completed = page.waitForResponse((response) => response.url().endsWith("/items/Item09/move"));
-      await page.mouse.up();
+      await moveByMenu(page, "Item09", "Done");
       await completed;
       expect(moves.at(-1)).toMatchObject({ columnId: "Col004", completed: true });
       await page.waitForFunction(
@@ -855,13 +840,8 @@ describePart("columns", "Spaces Kanban board in a browser", () => {
       expect(await cardsIn(page, "column:Col004")).toContain("Item09");
 
       // Reopened while its deadline is still past, it goes straight back to Overdue and says why.
-      await drag(
-        page,
-        await cardHandle(page, "Pay the deposit"),
-        await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first()),
-      );
       const reopened = page.waitForResponse((response) => response.url().endsWith("/items/Item09/move"));
-      await page.mouse.up();
+      await moveByMenu(page, "Item09", "In progress");
       // It lands in Overdue, not in the status it was dropped on.
       await page.waitForSelector('[data-spaces-kanban-column="virtual:overdue"] [data-item-id="Item09"]');
       expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
