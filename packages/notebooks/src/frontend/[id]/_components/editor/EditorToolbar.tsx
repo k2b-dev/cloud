@@ -2,14 +2,11 @@ import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { asUndoStep, type EditorAction, type EditorHandle, Toolbar, type ToolbarCustom, type ToolbarMenu } from "@k2b/editor";
 import { indentListItems, outdentListItems, setListKind } from "@k2b/editor/markdown";
-import { Button, type DictationSource, Dropdown, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { type DictationSource, Dropdown, useLocale } from "@k2b/ui";
 import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
-import { buildNoteUrl } from "../../../params";
+import { isApple, shortcutLabel } from "../../../lib/shortcut-label";
 import { notebookWorkspaceMessages } from "../../messages";
-import { bookMessages } from "../book/messages";
-import { commentMessages } from "../comments/messages";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import {
   type CaretFormat,
@@ -22,7 +19,8 @@ import {
   toggleHeadingLevel,
   toggleInlineMark,
 } from "./editor-actions";
-import { DetailsButton, NavigationButton } from "./workspace-buttons";
+import { PagePill } from "./page-pill";
+import { NavigationButton } from "./workspace-buttons";
 
 type Props = {
   connected: boolean;
@@ -339,47 +337,19 @@ export default function EditorToolbar(props: Props) {
       dictation={props.dictation ? { source: props.dictation } : undefined}
       start={<NavigationButton />}
       end={
-        <div class="k2b-pill notebooks-editor-pill notebooks-editor-pill--page">
-          <Show when={showDisconnected()}>
-            <span class="flex shrink-0 items-center gap-1 text-xs" role="status">
-              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-              {t().reconnecting}
-            </span>
-          </Show>
-
-          <Show when={props.comments}>
-            {(comments) => (
-              <Tooltip.Anchor content={commentMessages.resolve([locale()]).t.commentsShortcut}>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  class="text-dimmed notebook-comments-button"
-                  aria-label={commentMessages.resolve([locale()]).t.commentsButton({ count: comments().open })}
-                  aria-keyshortcuts={ariaShortcut("Mod-Alt-m")}
-                  onClick={() => comments().onOpen()}
-                >
-                  <i class="ti ti-message-circle text-sm" aria-hidden="true" />
-                  <Show when={comments().open}>
-                    <span class="tabular-nums font-semibold">{comments().open}</span>
-                  </Show>
-                </Button>
-              </Tooltip.Anchor>
-            )}
-          </Show>
-          {/* Detail panel toggle */}
-          <Tooltip.Anchor content={bookMessages.resolve([locale()]).t.openBook}>
-            <IconButtonLink
-              href={buildNoteUrl(props.notebookId, props.noteId, "book")}
-              label={bookMessages.resolve([locale()]).t.openBook}
-              tooltip={false}
-              size="xs"
-              class="text-dimmed"
-            >
-              <i class="ti ti-book" aria-hidden="true" />
-            </IconButtonLink>
-          </Tooltip.Anchor>
-          <DetailsButton />
-        </div>
+        <PagePill
+          notebookId={props.notebookId}
+          noteId={props.noteId}
+          comments={props.comments}
+          status={
+            <Show when={showDisconnected()}>
+              <span class="flex shrink-0 items-center gap-1 text-xs" role="status">
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                {t().reconnecting}
+              </span>
+            </Show>
+          }
+        />
       }
     />
   );
