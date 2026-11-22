@@ -399,7 +399,7 @@ describe("Pulse base page after the cut", () => {
       expect(before.scrollTop).toBe(300);
       expect(before.focused).toBe(true);
       await tab.clock.runFor(5_100);
-      await tab.getByText("1.035", { exact: true }).waitFor({ state: "attached" });
+      await tab.locator(".pulse-sources tbody tr.k2b-data-table__row").getByText("1.035", { exact: true }).waitFor({ state: "attached" });
       expect(calls).toEqual(["/api/pulse/bases/Lad001/sources"]);
       const after = await tab.evaluate(() => {
         const main = document.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
