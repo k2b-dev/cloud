@@ -751,20 +751,31 @@ describe("Gustav at a place", () => {
       await settled(h.page);
       const look = await bar(h.page).evaluate((element) => {
         const style = getComputedStyle(element);
-        const chip = getComputedStyle(element.querySelector(".assistant-place-chip")!);
-        const plum = document.createElement("span");
-        plum.style.backgroundColor = "var(--k2b-ai-surface)";
-        element.append(plum);
-        const aiSurface = getComputedStyle(plum).backgroundColor;
-        plum.remove();
+        const chip = element.querySelector(".assistant-place-chip");
+        // The neutral grey the chip must take, resolved in the bar's own scope.
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = "var(--k2b-surface-muted)";
+        element.append(probe);
+        const muted = getComputedStyle(probe).backgroundColor;
+        probe.remove();
         return {
           background: style.backgroundColor,
           radius: style.borderTopLeftRadius,
           line: style.borderBottomWidth,
-          chipIsPlum: chip.backgroundColor === aiSurface,
+          margin: style.marginLeft,
+          // From edge to edge of the panel's page.
+          fullWidth: Math.abs(element.getBoundingClientRect().width - (element.parentElement?.clientWidth ?? 0)) < 1,
+          chipIsNeutral: chip ? getComputedStyle(chip).backgroundColor === muted : null,
         };
       });
-      expect(look).toEqual({ background: "rgba(0, 0, 0, 0)", radius: "0px", line: "1px", chipIsPlum: false });
+      expect(look).toEqual({
+        background: "rgba(0, 0, 0, 0)",
+        radius: "0px",
+        line: "1px",
+        margin: "0px",
+        fullWidth: true,
+        chipIsNeutral: true,
+      });
       await shot(h.page, "02-panel-ort-chat-light-1440");
       await bar(h.page).getByRole("button", { name: "Was Gustav hier kann" }).click();
       const what = h.page.getByRole("dialog", { name: "Was Gustav hier zusätzlich kann" });
@@ -959,7 +970,7 @@ describe("Gustav at a place", () => {
       const failedHeight = await rowHeight(h.page);
       await shot(h.page, "06-ort-laden-fehler-light-1440");
       answers.u_marta = available("u_marta", null);
-      await bar(h.page).getByRole("button", { name: "Erneut versuchen" }).click();
+      await bar(h.page).getByRole("button", { name: "Ort neu laden" }).click();
       await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
       expect(await rowHeight(h.page)).toBe(failedHeight);
       expect(h.errors).toEqual([]);

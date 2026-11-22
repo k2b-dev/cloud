@@ -146,7 +146,7 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
               <span class="grow" />
               <Button
                 size="xs"
-                variant="ai"
+                variant="secondary"
                 class="assistant-place-bar__switch"
                 disabled={state().disabled || state().busy}
                 onClick={() => state().onSwitch()}

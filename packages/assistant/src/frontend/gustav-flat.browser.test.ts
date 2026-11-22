@@ -354,13 +354,14 @@ for (const width of [390, 768, 1100, 1440])
         ];
         const all = [...(sideways > 0 ? [`the page scrolls ${sideways} px sideways`] : []), ...problems];
         if (all.length > 0) found[id] = all;
+        expect(view.unknown).toEqual([]);
         expect(view.errors).toEqual([]);
       } finally {
         await view.close();
       }
     }
     expect(found).toEqual({});
-  }, 60_000);
+  }, 90_000);
 
 test.skipIf(!shots)(
   "screenshots for the design review",

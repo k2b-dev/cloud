@@ -74,7 +74,7 @@ export default function AssistantEmptyChat(props: {
   const selectedProject = () => props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 
   return (
-    <section class="flex min-h-full items-center justify-center px-[var(--ui-space-section)] py-10" aria-labelledby="assistant-empty-title">
+    <section class="flex min-h-full items-center justify-center px-[var(--k2b-gutter)] py-10" aria-labelledby="assistant-empty-title">
       <div class="w-full max-w-3xl -translate-y-[3vh] sm:-translate-y-[9vh]">
         {/* A fixed height: a long note grows upward into the free space and never moves the composer. */}
         <div class="relative mb-8 h-28 sm:mb-12 sm:h-20">
