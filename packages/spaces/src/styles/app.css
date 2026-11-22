@@ -369,7 +369,8 @@
    the card's own fill, so nothing moves; a title keeps room only for tools that always show: on touch, and for a task
    someone works on. */
 .spaces-kanban-card__tools {
-  position: absolute; top: var(--k2b-space-2); right: var(--k2b-space-2); z-index: 2; display: flex; align-items: center; gap: 2px;
+  /* 12 px from the edge: on touch the buttons' hit areas reach 10 px past their box and must stay inside the column. */
+  position: absolute; top: var(--k2b-space-2); right: var(--k2b-space-3); z-index: 2; display: flex; align-items: center; gap: 2px;
   padding-inline-start: var(--k2b-space-3);
 }
 .k2b-ui .spaces-kanban-card:is(:hover, :focus-within) > .spaces-kanban-card__tools {
