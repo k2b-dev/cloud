@@ -101,6 +101,11 @@ packages/cloud/src/styles/utilities-navigation.css | css | 0.625rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
 packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
+packages/contacts/src/frontend/_components/ContactAddressMap.tsx | class | rounded-xl
+packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactQuickEdit.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactSearchPicker.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactUpsertForm.tsx | class | rounded-md
 packages/core/src/code/PageTree.island.tsx | class | rounded-xl
 packages/core/src/notifications.ts | style | 10px
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 0 0 12px 12px
