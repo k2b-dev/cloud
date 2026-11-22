@@ -239,7 +239,7 @@ const DetailPanelSummary = (props: DetailPanelSummaryProps): JSX.Element => {
   const headingId = `k2b-detail-panel-summary-${createUniqueId()}`;
 
   return (
-    <section class={classNames("k2b-detail-panel__summary", props.class)} aria-labelledby={headingId}>
+    <section class={classNames("k2b-detail-panel__summary", props.class)} aria-labelledby={headingId} data-k2b-band="topic">
       <header class="k2b-detail-panel__summary-header">
         <h3 id={headingId}>{props.title}</h3>
         <Show when={props.actions}>
@@ -260,6 +260,7 @@ const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
       aria-label={props.title ? undefined : props.label}
       aria-labelledby={props.title ? titleId : undefined}
       data-titled={props.title ? "true" : undefined}
+      data-k2b-band="topic"
     >
       <Show when={props.title}>
         <div class="k2b-detail-panel__group-title" id={titleId}>

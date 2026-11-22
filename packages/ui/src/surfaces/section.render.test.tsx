@@ -27,7 +27,7 @@ describe("Section", () => {
     const page = renderToString(() => createComponent(Section, { title: "Details", icon: "ti ti-id", size: "md", children: "Born 1961" }));
 
     expect(panel).toMatch(
-      /<section class="k2b-section[^"]*" data-size="sm" data-frame="line" data-icon="true" aria-labelledby="(k2b-section-[^"]+-title)"/,
+      /<section class="k2b-section[^"]*" data-k2b-band="topic" data-size="sm" data-frame="line" data-icon="true" aria-labelledby="(k2b-section-[^"]+-title)"/,
     );
     expect(panel).toMatch(/<h3[^>]*id="k2b-section-[^"]+-title"[^>]*>Customer<\/h3>/);
     expect(page).toContain('data-size="md"');

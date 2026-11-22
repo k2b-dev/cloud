@@ -83,6 +83,8 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
       {...articleProps}
       class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`}
       data-tone={local.tone ?? "neutral"}
+      // An alert cell is a band (K10): its tint runs from edge to edge of its column; it holds its own text edge.
+      data-k2b-band="cell"
       {...(local.icon ? { [local.layout === "card" ? "data-card-icon" : "data-icon"]: "" } : {})}
       // A spread, not `data-actions={… : undefined}`: SSR writes an absent attribute as a stray space before `>`.
       {...(hasActions() ? { "data-actions": "" } : {})}

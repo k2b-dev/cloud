@@ -45,7 +45,12 @@ export function FactGroup(props: FactGroupProps): JSX.Element {
   const copyValue = (item: FactGroupItem) =>
     typeof item.copy === "string" ? item.copy : item.copy && typeof item.value === "string" ? item.value : undefined;
   return (
-    <section {...rest} class={local.class ? `k2b-fact-group ${local.class}` : "k2b-fact-group"} aria-labelledby={titleId}>
+    <section
+      {...rest}
+      class={local.class ? `k2b-fact-group ${local.class}` : "k2b-fact-group"}
+      aria-labelledby={titleId}
+      data-k2b-band="topic"
+    >
       <div class="k2b-fact-group__head">
         <Show when={local.icon}>{(icon) => <i class={`${icon()} k2b-fact-group__icon`} aria-hidden="true" />}</Show>
         <Dynamic component={`h${local.level ?? 3}`} id={titleId} class="k2b-fact-group__title">

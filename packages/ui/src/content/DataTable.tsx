@@ -747,6 +747,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
       <Dynamic
         component={surface() === "paper" ? Paper : "div"}
         class={`k2b-table-shell ${props.class ?? ""}`}
+        // A table is a band (K7, K14): it reaches both edges of its column; its first and last cell hold the text edge.
+        data-k2b-band=""
         data-surface={surface()}
         data-has-footer={props.footer ? "true" : undefined}
         data-priorities={detailsPriority()}

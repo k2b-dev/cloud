@@ -98,7 +98,7 @@ export function NoticeRow(props: NoticeRowProps): JSX.Element {
     });
   });
   return (
-    <div class="k2b-notice-card-container" ref={host} style={{ "--k2b-notice-tile-color": local.tileColor }}>
+    <div class="k2b-notice-card-container" data-k2b-band="cell" ref={host} style={{ "--k2b-notice-tile-color": local.tileColor }}>
       <NoticeCard
         {...articleProps}
         class={local.class}

@@ -121,8 +121,8 @@ describe("Cloud flat building blocks", () => {
       expect(opened.a1).toEqual(before.a1);
       expect(opened.a2.top).toBe(before.a2.top);
       expect((await box(page, "#a2 > .k2b-area__head")).height).toBe(56);
-      // The next area follows by the growth and the 8 px that stand after an open area.
-      expect(opened.a3.top - before.a3.top).toBe(opened.a2.height - before.a2.height + 8);
+      // The next area follows by the growth alone: two areas share one line (`--k2b-gap-area` is 0, as in the mockup).
+      expect(opened.a3.top - before.a3.top).toBe(opened.a2.height - before.a2.height);
       expect(await page.locator("#a2 .k2b-area__chevron").getAttribute("aria-expanded")).toBe("true");
 
       await page.locator("#a1 .k2b-area__chevron").click();
@@ -130,8 +130,8 @@ describe("Cloud flat building blocks", () => {
       const closed = await box(page, "#a1");
       expect(closed.top).toBe(before.a1.top);
       expect(closed.height).toBe(40);
-      // A closed row has no gap after it: the next area moves up by the shrink and the 8 px.
-      expect((await box(page, "#a2")).top - opened.a2.top).toBe(closed.height - opened.a1.height - 8);
+      // The next area moves up by the shrink alone.
+      expect((await box(page, "#a2")).top - opened.a2.top).toBe(closed.height - opened.a1.height);
     } finally {
       await page.close();
     }

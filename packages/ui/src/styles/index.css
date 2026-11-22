@@ -252,6 +252,10 @@
   --k2b-h-control: 36px;
   --k2b-h-area-head: 56px;
   --k2b-h-group-head: 36px;
+  /* The space between two areas (K17). The mockup stacks them on one shared
+     line, so it is 0; a host that sets more keeps both lines, at least 16 px
+     apart (two lines closer than that read as one doubled line). */
+  --k2b-gap-area: 0px;
   --k2b-h-head-phone: 52px;
   --k2b-h-tabs-phone: 44px;
   --k2b-h-row-phone: 60px;
@@ -2989,6 +2993,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    shadow. With the track the control is as tall as a field. */
 .k2b-ui .k2b-segmented-control {
   @apply inline-flex w-full items-stretch;
+  /* K15: the control never reaches past its column. It may shrink beside a
+     neighbour; when its labels do not fit side by side, the options wrap into
+     a second row instead of being cut or sticking out. */
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
   border: 0;
@@ -2997,7 +3007,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-segmented-control__option {
-  @apply relative inline-flex min-w-0 flex-1 items-center justify-center;
+  @apply relative inline-flex items-center justify-center;
+  /* Equal parts while every label fits; an option never gets narrower than
+     its label (or than the whole control), so a row that cannot hold them all wraps. */
+  flex: 1 1 0;
+  min-width: min(max-content, 100%);
+  white-space: nowrap;
   --k2b-edge-color: transparent;
   --k2b-edge-ring: transparent;
   min-height: 1.875rem;
@@ -4025,7 +4040,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.25rem;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 0 0 1rem;
+  /* No padding of its own (K9, K14): its bands reach the column's edges and
+     hold their own text edge, so a page placed in it ends on the edge too. */
+  padding: 0;
   padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
   overscroll-behavior: contain;
 }
@@ -4084,7 +4101,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      the text edge themselves, so a disclosure row spans the full width without
      reaching out of any box (K5, layoutProblems). */
   --k2b-section-inset-inline: var(--k2b-gutter);
-  padding: 0.75rem 0 1rem;
+  /* As `.psec` in the mockup: 16 px to its lines, 8 px between heading and content. */
+  padding: var(--k2b-space-4) 0;
   /* One line, one owner: a section draws no outer frame and declares no border
      at all, so the line its container draws between topics (k2b-divided) is
      not overruled by this rule's weight. */
@@ -4098,10 +4116,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem 0;
+  /* A page topic (K17, `.sec` in the mockup): a 52 px head band and 8 px below its content. */
+  padding: 0 0 var(--k2b-space-2);
+  gap: 0;
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > :is(.k2b-section__header, .k2b-section__body) {
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header {
+  min-height: var(--k2b-h-status);
+  padding-top: var(--k2b-space-2);
+}
+
+/* The heading holds the text edge. The body adds none: its bands, such as a
+   table, a row list, or an alert cell, reach both edges and hold their own
+   text edge; plain content and nested topics stand on the text edge (K5, K14). */
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header {
+  padding-inline: var(--k2b-section-inset-inline);
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__body > :not([data-k2b-band], dialog, [popover], template, script, style) {
+  margin-inline: var(--k2b-section-inset-inline);
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__body > [data-k2b-band="topic"] {
   padding-inline: var(--k2b-section-inset-inline);
 }
 
@@ -4126,6 +4162,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* A page topic standing flat in another frame keeps its title line, not the 52 px head band. */
+.k2b-ui
+  :is(
+    .k2b-section,
+    .k2b-detail-panel__group,
+    .k2b-detail-panel__summary,
+    .k2b-paper,
+    .k2b-panel-dialog,
+    .k2b-settings-section,
+    .k2b-dialog
+  )
+  .k2b-section[data-size="md"][data-frame="line"]
+  > .k2b-section__header {
+  min-height: 2rem;
+  padding-top: 0;
 }
 
 /* Named tones follow the status tokens. A tone colours the symbol tile,
@@ -4165,7 +4218,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 1.75rem;
+  /* The head is as high as its title line (20 px, K1, `.psec > h4`); a
+     disclosure row keeps the 28 px of its chevron button. */
+  min-height: var(--k2b-h-label);
   margin: 0;
   align-items: center;
   gap: 0.5rem;
@@ -4182,8 +4237,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__heading {
   display: flex;
   min-width: 0;
+  /* K15: a meta line that does not fit beside the title takes its own line on
+     the title's text edge (`.shead.two` in the mockup); it is never cut. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0 0.5rem;
 }
 
 .k2b-ui .k2b-section__title {
@@ -4221,6 +4279,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-tone] > .k2b-section__header .k2b-section__icon {
   background: color-mix(in srgb, var(--k2b-section-tone) 14%, var(--k2b-surface));
+}
+
+/* In a column a plain symbol is a 16 px glyph on the icon axis, so the title
+   and everything below it start 24 px in (16 + 8, `.psec` in the mockup). A
+   symbol in a tile (an area colour or a tone, K17) keeps its 20 px tile and
+   starts the text 28 px in. */
+.k2b-ui .k2b-section[data-size="sm"]:not([data-tone]) > .k2b-section__header .k2b-section__icon:not([data-color]) {
+  width: 1rem;
+  flex-basis: 1rem;
+  font-size: 1rem;
 }
 
 /* On a page the title is 14 px (K17 level 2); in a column 13 px (K9). */
@@ -4287,6 +4355,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1;
 }
 
+.k2b-ui .k2b-section__toggle,
+.k2b-ui .k2b-section[data-collapsible="true"] > .k2b-section__header {
+  min-height: 1.75rem;
+}
+
 .k2b-ui .k2b-section__none,
 .k2b-ui .k2b-section__meta,
 .k2b-ui .k2b-section__restricted {
@@ -4299,6 +4372,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Restricted visibility is a marker, not a colour: a lock and the app's words. */
+.k2b-ui .k2b-section__heading > .k2b-section__meta {
+  flex: 0 1 auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .k2b-ui .k2b-section__restricted {
   display: inline-flex;
   align-items: center;
@@ -4318,6 +4397,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   gap: 0.25rem;
+  /* A 28 px quiet button overhangs the 20 px head by 4 px on each side, like
+     the copy button of a value row, so the head keeps the height of its line. */
+  margin-block: calc((var(--k2b-h-label) - 1.75rem) / 2);
   /* A text action in a heading ends on the trailing edge, like a count or a time. */
   margin-inline-end: -0.375rem;
 }
@@ -4361,17 +4443,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
   width: 100%;
   /* The row fills the section's block insets too; across it, it is exactly as wide as the section. */
-  margin-block: -0.75rem -1rem;
-  padding: 0.75rem var(--k2b-section-inset-inline) 1rem;
+  margin-block: calc(-1 * var(--k2b-space-4));
+  padding: var(--k2b-space-4) var(--k2b-section-inset-inline);
   border-radius: 0;
 }
 
-.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  margin-block: -1rem;
-  padding-block: 1rem;
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header:has(> .k2b-section__toggle) {
+  padding-top: 0;
 }
 
-.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  min-height: var(--k2b-h-status);
+  margin-block: 0;
+  padding-block: var(--k2b-space-2) 0;
+}
+
+.k2b-ui .k2b-section[data-size="sm"][data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
   margin-bottom: -0.5rem;
   padding-bottom: 0.5rem;
 }
@@ -4453,6 +4540,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    the card's edge; sections outside a panel or page, such as the form
    sections of an editor dialog, keep their full width. */
 .k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"] > .k2b-section__body {
+  padding-inline-start: 1.5rem;
+}
+
+.k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"]:is([data-tone], :has(> .k2b-section__header .k2b-section__icon[data-color])) > .k2b-section__body {
   padding-inline-start: 1.75rem;
 }
 
@@ -4680,11 +4771,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The gap belongs to the area after an open one, so opening or closing an
    area never moves its own head: only what lies below it moves. */
 .k2b-ui .k2b-area[data-open="true"] + .k2b-area {
-  margin-top: 0.5rem;
+  margin-top: var(--k2b-gap-area);
 }
 
-/* Right below a closed row its hairline is the open area's top line. */
-.k2b-ui .k2b-area:not([data-open="true"]) + .k2b-area[data-open="true"] {
+/* One line, one owner: right below another area, that area's bottom line is
+   the open area's top line, so two areas share one line. */
+.k2b-ui .k2b-area + .k2b-area[data-open="true"] {
   box-shadow: inset 0 -1px 0 var(--k2b-border-strong);
 }
 
@@ -4703,7 +4795,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
-  height: var(--k2b-h-area-head);
+  /* 56 px; a meta line that wraps grows the head by its lines, it is never cut (K15). */
+  height: auto;
+  min-height: var(--k2b-h-area-head);
+  padding-block: var(--k2b-space-2);
   grid-template-rows: auto auto;
   align-content: center;
   background: var(--k2b-surface-canvas);
@@ -4712,6 +4807,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-area__tile {
   display: grid;
+  line-height: var(--k2b-line-height-meta);
   width: 1.25rem;
   height: 1.25rem;
   grid-row: 1;
@@ -4733,8 +4829,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   grid-row: 1;
   grid-column: 2;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
+}
+
+/* The name is a link when the thing has a page of its own; it reads as the name, underlined. */
+.k2b-ui .k2b-area__link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.1875rem;
+}
+
+.k2b-ui .k2b-area__link:hover {
+  text-decoration-color: currentColor;
+}
+
+.k2b-ui .k2b-area__link:focus-visible {
+  border-radius: var(--k2b-radius-mark);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-area__name {
@@ -4768,10 +4882,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
+/* The state stands right after the name (and its count), never at the far end. */
 .k2b-ui .k2b-area__state {
   display: flex;
+  flex: none;
   align-items: center;
-  margin-inline-end: 0.5rem;
 }
 
 .k2b-ui .k2b-area__actions {
@@ -4806,6 +4921,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* K15: a meta line that does not fit wraps; it is never cut. */
+.k2b-ui .k2b-area[data-open="true"] > .k2b-area__head > .k2b-area__meta {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* The rail: the rows start on the name's text edge, and a line runs from the
    head down to the last row, left of them under the tile. */
 .k2b-ui .k2b-area__body {
@@ -4834,6 +4957,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-area__empty {
   display: flex;
+  line-height: 1.25rem;
   min-height: var(--k2b-h-row);
   align-items: center;
   margin: 0;
@@ -5131,49 +5255,57 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-success-text);
 }
 
-/* K9: the detail column is one flat column. Its topics (a summary, a group,
-   a section, a discussion) stand borderless on the column's text edge and are
-   separated by one hairline that runs from edge to edge. A group's own
-   sections stay together without lines. Apps draw no line. */
+/* K9, K14: the detail column is one flat column of bands. A band (a summary,
+   a group, a section, a fact group, an alert cell, or any element an app marks
+   with `data-k2b-band`) reaches from edge to edge of the column and holds its
+   own text edge; the column adds no padding and no margin. A topic band
+   (`data-k2b-band="topic"`) stands 16 px from its lines and 20 px (16 px on a
+   phone) from the column's edges, as `.psec` in the mockup, with 8 px between
+   its heading and its content. Bands are separated by one hairline from edge
+   to edge. A group's own sections stay together without lines. Apps draw no
+   line. */
 .k2b-ui .k2b-detail-panel__group {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--k2b-space-4);
 }
 
-.k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
-  padding: 1rem var(--k2b-gutter);
+.k2b-ui .k2b-detail-panel__body > [data-k2b-band="topic"] {
+  padding: var(--k2b-space-4) var(--k2b-gutter);
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-/* A topic after shown content gets the hairline; a hidden node, a template, or a
-   floating layer before it draws nothing, so the body's own top line stays the only one. */
-.k2b-ui
-  .k2b-detail-panel__body
-  > :not([hidden], template, script, style, dialog, [popover])
-  ~ :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
+/* A band after shown content gets the hairline; a hidden node, a template, or a
+   floating layer before it draws nothing, so the header's line stays the only one. */
+.k2b-ui .k2b-detail-panel__body > :not([hidden], template, script, style, dialog, [popover]) ~ [data-k2b-band]:not([hidden]) {
   border-top: 1px solid var(--k2b-border);
 }
 
-/* Other content placed straight into the body, such as guidance, a button, or
-   a preview, stands on the same text edge with the body's 12 px rhythm. An
-   alert cell keeps its edge-to-edge tint (K10). */
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container) {
+/* Content that is not a band, such as guidance, a button, or a preview, stands
+   on the text edge with a 12 px rhythm, so an app that places plain content
+   keeps it readable. It never decides by class name: whatever should reach the
+   edge says so with `data-k2b-band`. */
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style) {
   /* A child that sets its own full width still ends on the text edge, so the
      detail never scrolls sideways (QA B1). */
   max-width: calc(100% - 2 * var(--k2b-gutter));
   margin-inline: var(--k2b-gutter);
 }
 
-.k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style):first-child {
-  margin-top: 1rem;
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style):first-child {
+  margin-top: var(--k2b-space-4);
 }
 
-.k2b-ui .k2b-detail-panel__body > * + :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style) {
-  margin-top: 0.75rem;
+.k2b-ui .k2b-detail-panel__body > * + :not([data-k2b-band], dialog, [popover], template, script, style) {
+  margin-top: var(--k2b-space-3);
+}
+
+/* The last plain content keeps 16 px to the end of the column; a band ends on its own line. */
+.k2b-ui .k2b-detail-panel__body > :not([data-k2b-band], dialog, [popover], template, script, style):last-child {
+  margin-bottom: var(--k2b-space-4);
 }
 
 /* Deeper in a section, summary, or group, that host already frames it. */
@@ -6873,6 +7005,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply flex shrink-0 items-center overflow-x-auto;
   gap: 0.25rem;
   padding: 0.375rem var(--k2b-panel-dialog-inset, 1.5rem) 0.625rem;
+  box-shadow: none;
+}
+
+/* A panel dialog's tab strip draws no line of its own. */
+.k2b-ui .k2b-panel-dialog__tabs.k2b-tabs[data-variant]:not([data-orientation="vertical"]) .k2b-tabs__bar {
   box-shadow: none;
 }
 
@@ -11622,13 +11759,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* A fixed height, not a minimum: an empty line and a line with text then measure the same to the subpixel. */
 .k2b-ui .k2b-date-status {
-  height: 0.9625rem;
+  height: var(--k2b-line-height-meta);
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-secondary);
   font-size: var(--k2b-font-size-meta);
   font-variant-numeric: tabular-nums;
-  line-height: 0.9625rem;
+  line-height: var(--k2b-line-height-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -12835,8 +12972,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-table-shell[data-surface="paper"] {
   @apply min-h-0 flex-1;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--k2b-radius-flat);
   background: transparent;
+  /* Flat (K2, K14): a table casts no shadow, also outside a flat layer. */
+  box-shadow: none;
 }
 
 .k2b-ui .k2b-table-wrap {
@@ -13177,7 +13316,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__header-content {
-  @apply flex flex-col items-start gap-0.5 text-left leading-tight;
+  /* The meta role (12/16, K11), as the column head in the mockup. */
+  @apply flex flex-col items-start gap-0.5 text-left;
+  line-height: var(--k2b-line-height-meta);
   color: inherit;
   text-decoration: none;
 }
@@ -20815,6 +20956,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font: inherit;
   font-size: var(--k2b-font-size-meta);
   font-weight: 500;
+  line-height: 1.25rem;
   cursor: pointer;
   transition:
     background-color 150ms ease-out,
@@ -20826,10 +20968,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
-/* The line variant: tabs 24 px apart on one hairline, without fill. */
+/* The line variant: tabs 24 px apart on one hairline, without fill. The
+   hairline belongs to the whole bar (also under `trailing`), and the list and
+   every tab stretch down to it, so the 2 px mark of the selected tab always
+   lies on the line, however high the bar is (K2, K6, `.tab` in the mockup). */
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__bar {
+  align-items: stretch;
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__trailing {
+  display: flex;
+  align-items: center;
+}
+
 .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list {
   gap: 1.5rem;
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__item {
+  align-items: stretch;
 }
 
 .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"] {
@@ -20888,7 +21046,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    tab without changing its box, and focus takes the system outline. */
 @media (forced-colors: active) {
   /* Shadows disappear in forced colours; the underline marks the selected tab, so the strip draws no baseline. */
-  .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list {
+  .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__bar {
     box-shadow: none;
   }
 
@@ -21007,6 +21165,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: var(--k2b-font-size-meta);
   font-weight: 400;
+  line-height: var(--k2b-line-height-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -21673,11 +21832,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.25rem;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
-  min-height: 2.25rem;
+  /* K1, K9: a value row is the dense row height (32 px), not its content plus padding. */
+  min-height: var(--k2b-h-row-dense);
   grid-column: 1 / -1;
   grid-template-areas: "term description action";
   grid-template-columns: subgrid;
-  grid-template-rows: minmax(2.25rem, auto);
+  grid-template-rows: minmax(var(--k2b-h-row-dense), auto);
   align-content: stretch;
   align-items: center;
   column-gap: 0.75rem;
@@ -21695,7 +21855,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
   align-self: start;
-  padding-block-start: 0.5rem;
+  padding-block-start: calc((var(--k2b-h-row-dense) - 1.25rem) / 2);
+}
+
+/* In a topic band (`.psec` in the mockup) the 32 px rows are the 24 px value
+   lines of the mockup with 8 px between them: the list gives the 4 px above its
+   first and below its last row back, so the band keeps 16 px to its lines. */
+.k2b-ui [data-k2b-band="topic"] .k2b-description-list[data-layout="rows"] {
+  margin-block: calc((1.5rem - var(--k2b-h-row-dense)) / 2);
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt,
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
@@ -21728,6 +21895,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
   font-variant-numeric: tabular-nums;
   text-align: end;
+}
+.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dd {
+  /* K11: the label is meta (12), the value a row (13), as `.fields` and `.irows` in the mockup. */
+  font-size: var(--k2b-font-size-row);
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;
@@ -22841,6 +23012,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-description-list__item > dd > .k2b-field > [data-appearance="plain"] {
   position: static;
   isolation: auto;
+}
+
+/* As the value of a 32 px row a plain control is as high as the row. */
+.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item > dd > .k2b-field > [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger),
+.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item > dd > .k2b-field > .k2b-number-input[data-appearance="plain"] {
+  min-height: var(--k2b-h-row-dense);
 }
 
 .k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger) {

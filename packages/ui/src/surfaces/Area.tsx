@@ -7,11 +7,13 @@ import { useFlatBlockMessages } from "./flat-block-messages";
 export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "title"> & {
   /** The thing's name, such as "Stack 2". */
   name: string;
+  /** Makes the name a link to the thing's own page, such as a delivery's record. */
+  href?: string;
   /** A short number or code in the 20 px tile before the name, such as "2". Pass `icon` instead for a symbol. */
   marker?: string | number;
   /** A Tabler icon class for the tile, when the area has no number. */
   icon?: string;
-  /** The area's own state, such as a `StatusBadge`; it stays in the closed row too. */
+  /** The area's own state, such as a `StatusBadge`, right after the name; it stays in the closed row too. */
   state?: JSX.Element;
   /** How many rows hang on the area; the closed row shows it after the name. */
   count?: number;
@@ -35,14 +37,15 @@ export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "titl
 
 /**
  * An area (K17 "Bereich"): a thing the rows hang on, such as a stack with its lists. Open, it is a square area of its
- * own with a 56 px head of two lines (tile, name in 14 px, state and actions at the right, a 12 px meta line) and its
- * rows on a rail that starts on the name's text edge; areas stand 8 px apart. Closed, it is one 40 px row like a list
+ * own with a 56 px head of two lines (tile, name in 14 px with its state beside it, actions at the right, a 12 px meta
+ * line) and its rows on a rail that starts on the name's text edge; two areas share one line (`--k2b-gap-area`, 0 by default). Closed, it is one 40 px row like a list
  * row: name, state, count, and the chevron, without a surface or a gap. Take an area over a `RowGroup` when it exists
  * also empty, has a state of its own, or two or more actions of its own.
  */
 export function Area(props: AreaProps): JSX.Element {
   const [local, rest] = splitProps(props, [
     "name",
+    "href",
     "marker",
     "icon",
     "state",
@@ -92,16 +95,22 @@ export function Area(props: AreaProps): JSX.Element {
         </span>
         <div class="k2b-area__title">
           <Dynamic component={`h${local.level ?? 4}`} id={`${id}-name`} class="k2b-area__name">
-            {local.name}
+            <Show when={local.href} fallback={local.name}>
+              {(href) => (
+                <a class="k2b-area__link" href={href()}>
+                  {local.name}
+                </a>
+              )}
+            </Show>
           </Dynamic>
           <Show when={local.count !== undefined && !open()}>
             <span class="k2b-area__count">{local.count}</span>
           </Show>
-        </div>
-        <div class="k2b-area__end">
           <Show when={local.state}>
             <span class="k2b-area__state">{local.state}</span>
           </Show>
+        </div>
+        <div class="k2b-area__end">
           <Show when={open() && local.actions}>
             <div class="k2b-area__actions">{local.actions}</div>
           </Show>

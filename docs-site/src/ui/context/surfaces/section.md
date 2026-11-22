@@ -11,7 +11,12 @@ and `Field` shows one value with its label.
 The heading follows three levels (K17): the title is 13 px bold in a column and
 14 px bold on a page, the count is a quiet grey number right after the title,
 and the content below is rows (13 px) and meta (12 px). In a detail panel every
-row starts on the title's text edge; the symbols stand on one axis. Text
+row starts on the title's text edge; the symbols stand on one axis. A plain
+symbol in a column is 16 px, so the title and its rows start 24 px in; a symbol
+in a tile (below) starts them 28 px in. The heading is as high as its title line
+(20 px); in a column a section has 16 px to its lines and 8 px between heading
+and content, and its value rows (`DescriptionList` with `layout="rows"`) are
+32 px. Text
 buttons in the heading are grey and turn dark on hover: their place marks them,
 and blue stays for the one main action of the page.
 
@@ -28,6 +33,13 @@ Give each topic of a page its own `Section` and lay the sections out with the
 page's own grid. Use `size="md"` on pages and keep the default `size="sm"` in
 panels and other narrow columns. Order the sections by use: what people work
 with first, context later.
+
+On a page a `size="md"` section is a band with a 52 px head band (8 px above
+its title line) and 8 px below its content. Its head holds the text edge; its
+body adds none. A table, a notice, or any element marked `data-k2b-band` in its
+body reaches both edges of the section and holds its own text edge; plain
+content stands on the text edge. A `meta` that does not fit beside the title
+moves to its own line on the title's text edge; it is never cut.
 
 A section never holds a frame. A section inside another section, a
 `DetailPanel.Group`, a summary, `Paper`, a dialog, a panel dialog, or a settings
@@ -106,8 +118,11 @@ bold, its count, and at most one action. It disappears when it has no rows.
 area when it exists also empty, has a state of its own, or two or more actions
 of its own; otherwise take a group. Open, an area is a square area of its own
 with a 56 px head of two lines (a 20 px tile with its number, the name in 14 px
-bold, state and actions at the right, a 12 px meta line) and its rows on a rail
-that starts on the name's text edge; open areas stand 8 px apart. With
+bold with its state right after it, actions at the right, a 12 px meta line)
+and its rows on a rail that starts on the name's text edge. Two areas stand on
+one shared line; `--k2b-gap-area` (0 by default) adds space after an open
+area, and with space both lines show, so keep it 0 or at least 16 px. A meta line that does not fit wraps and grows
+the head. With `href` the name is a link to the thing's own page. With
 `collapsible`, a closed area is one 40 px row like a list row: name, state,
 count, and the chevron, without a surface or a gap. Only the person opens or
 closes it, and opening moves only what lies below its head. An area holds rows
@@ -193,7 +208,7 @@ import { Area, FactGroup, Field, FieldGrid, RowGroup, Section } from "@k2b/ui";
 `"stack"`).
 
 `RowGroup` takes `title`, `count`, one `action`, `level` (3 to 5, default 4),
-and the rows as `children`. `Area` takes `name`, `marker` or `icon` for its tile,
+and the rows as `children`. `Area` takes `name`, `href`, `marker` or `icon` for its tile,
 `state`, `count`, `actions`, `meta`, `empty`, `level`, and the rows as
 `children`; `collapsible` with `defaultOpen` (default open) or `open` and
 `onOpenChange` lets the person close it. `FactGroup` takes `title`, `icon`,

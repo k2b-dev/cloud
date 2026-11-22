@@ -61,6 +61,7 @@ test("ProgressPath names each state in words and marks the current step", () => 
   expect(html).toMatch(/data-state="current"><span class="k2b-progress-path__marker" aria-hidden="true"><\/span>/);
   expect(html).not.toContain("aria-current");
   expect(html).toContain('Packed<span class="k2b-sr-only">, current step</span>');
-  expect(html).toContain('data-state="open"><span class="k2b-progress-path__marker" aria-hidden="true"><i class="ti ti-truck"></i>');
+  // A slim dot carries no symbol, also for an open step with the deprecated icon.
+  expect(html).toContain('data-state="open"><span class="k2b-progress-path__marker" aria-hidden="true"></span>');
   expect(html).toContain('Shipped<span class="k2b-sr-only">, not yet</span>');
 });

@@ -66,7 +66,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
         actions: "Assign owners",
       }),
     );
-    expect(html).toMatch(/^<article class="k2b-notice-card\s*" data-tone="warning" data-card-icon="" data-actions="">/);
+    expect(html).toMatch(
+      /^<article class="k2b-notice-card\s*" data-tone="warning" data-k2b-band="cell" data-card-icon="" data-actions="">/,
+    );
     expect(html).not.toContain("data-icon");
     expect(html).toContain('<span class="k2b-sr-only">Warning: </span>');
     expect(html).toContain(
@@ -78,7 +80,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(line).not.toMatch(/data-card-icon|data-actions|k2b-notice-card__actions/);
     // A notice without actions keeps its exact bytes; an absent attribute must not leave a stray space before `>`.
     expect(renderToString(() => createComponent(NoticeCard, { title: "x" }))).toMatch(
-      /^<article class="k2b-notice-card\s*" data-tone="neutral"><div class="k2b-notice-card__content">/,
+      /^<article class="k2b-notice-card\s*" data-tone="neutral" data-k2b-band="cell"><div class="k2b-notice-card__content">/,
     );
     // Actions that render nothing, such as `readOnly() || <Button />` while read-only, add no row.
     expect(renderToString(() => createComponent(NoticeCard, { title: "x", actions: true }))).toBe(

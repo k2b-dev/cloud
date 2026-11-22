@@ -153,12 +153,14 @@
   }
 }
 
-/* ProgressPath: the way of one thing through its stages. Dots on one line, each stage with a name and an optional
-   quiet line, done, now, or open. The line between the dots is the only line that does not structure the page; it
-   connects (K2, exception). Side by side when the column is wide enough, one below the other under 360 px. The state
-   is in words for screen readers and in the dot's form, never in color alone. */
-/* The path keeps 12 px clear above and below, so the ring of a dot never lies on a hairline of its container (K2). */
+/* ProgressPath: the way of one thing through its stages. A slim line with a small dot per stage, each stage with a
+   name and an optional quiet line, done, now, or open. The line is the only line that does not structure the page; it
+   connects (K2, exception). It is green from the first stage to the stage the thing is at now and grey after it. Side
+   by side when the column is wide enough, one below the other under 360 px. The state is in words for screen readers
+   and in the dot's form (filled, ring, hollow), never in color alone. */
 .k2b-ui .k2b-progress-path {
+  --k2b-progress-path-dot: 10px;
+  --k2b-progress-path-done: var(--k2b-success-text);
   container-type: inline-size;
   min-width: 0;
   padding-block: var(--k2b-space-3);
@@ -181,65 +183,51 @@
   padding-inline-end: var(--k2b-space-2);
 }
 
-/* The line runs from the right of a dot to the start of the next column, with 4 px air on both sides. */
+/* The 2 px line runs through the dots, from the middle of a dot to the middle of the next one. */
 .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
   content: "";
   position: absolute;
-  top: 9px;
-  inset-inline: 24px 4px;
+  top: calc(var(--k2b-progress-path-dot) / 2 - 1px);
+  inset-inline: calc(var(--k2b-progress-path-dot) / 2) calc(var(--k2b-progress-path-dot) / -2);
   height: 2px;
   background: var(--k2b-border-strong);
 }
 
+.k2b-ui .k2b-progress-path__step[data-state="done"]:not(:last-child)::before {
+  background: var(--k2b-progress-path-done);
+}
+
 .k2b-ui .k2b-progress-path__marker {
-  display: grid;
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
-  width: 20px;
-  height: 20px;
+  width: var(--k2b-progress-path-dot);
+  height: var(--k2b-progress-path-dot);
   flex: none;
-  place-items: center;
   margin-bottom: var(--k2b-space-2);
-  border: 1px solid var(--k2b-border-strong);
+  border: 2px solid var(--k2b-border-strong);
   border-radius: var(--k2b-radius-round);
-  color: var(--k2b-text-muted);
   background: var(--k2b-surface);
-  font-size: 0.75rem;
-  line-height: 1;
 }
 
-/* Done is a quiet grey dot, so the current stage leads. */
+/* Done: a filled dot on the green line. */
 .k2b-ui .k2b-progress-path__step[data-state="done"] .k2b-progress-path__marker {
-  border-color: var(--k2b-text-subtle);
-  color: var(--k2b-surface);
-  background: var(--k2b-text-subtle);
+  border-color: var(--k2b-progress-path-done);
+  background: var(--k2b-progress-path-done);
 }
 
-/* Now: the place the thing is at, a ring with a dot in the primary role ("you are here", K8). The role follows a
-   primary scope (AI plum) and the dark theme; the accent ramp would not. */
+/* Now: the place the thing is at, a dark ring that ends the green line ("you are here", K8). */
 .k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker {
-  border: 2px solid var(--k2b-action);
-}
-
-.k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__marker::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: var(--k2b-radius-round);
-  background: var(--k2b-action);
+  border-color: var(--k2b-text);
 }
 
 /* A name wraps between words; only a word longer than its column breaks. */
 .k2b-ui .k2b-progress-path__label {
   overflow-wrap: break-word;
-  color: var(--k2b-text-secondary);
-  font-size: var(--k2b-font-size-row);
-  font-weight: 500;
-  line-height: 1.25rem;
-}
-
-.k2b-ui .k2b-progress-path__step[data-state="current"] .k2b-progress-path__label {
   color: var(--k2b-text);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
+  line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-progress-path__step[data-state="open"] .k2b-progress-path__label {
@@ -261,7 +249,7 @@
 
   .k2b-ui .k2b-progress-path__step {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-columns: var(--k2b-progress-path-dot) minmax(0, 1fr);
     align-content: start;
     column-gap: var(--k2b-space-3);
     min-height: var(--k2b-h-row);
@@ -272,9 +260,10 @@
     min-height: 0;
   }
 
+  /* The dot stands in the middle of the name's first line. */
   .k2b-ui .k2b-progress-path__marker {
     grid-row: span 2;
-    margin: 0;
+    margin: calc((1.25rem - var(--k2b-progress-path-dot)) / 2) 0 0;
   }
 
   .k2b-ui .k2b-progress-path__label,
@@ -288,9 +277,9 @@
   }
 
   .k2b-ui .k2b-progress-path__step:not(:last-child)::before {
-    top: 24px;
-    bottom: 4px;
-    inset-inline: 9px auto;
+    top: 0.625rem;
+    bottom: -0.625rem;
+    inset-inline: calc(var(--k2b-progress-path-dot) / 2 - 1px) auto;
     width: 2px;
     height: auto;
   }

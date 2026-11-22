@@ -120,9 +120,21 @@ the host inset instead, so its content has the same margin on both sides. The
 pointer only stands in for the scrollbar style: a touch device with classic
 scrollbars shows the gutter next to the inset, and a desktop with overlay
 scrollbars keeps the panel at the trailing edge. Do not add a second
-full-height scroller inside it. Every topic of the body stands borderless on
-the column's 20 px text edge, and one hairline separates each topic from the
-one before; a group's own sections stay together without lines.
+full-height scroller inside it. The body has no padding and no margin of its
+own: it is a column of bands. A band reaches from edge to edge of the column
+and holds its own text edge (20 px, 16 px on a phone). Topics (`Summary`,
+`Group`, `Section`, `FactGroup`) are bands with 16 px to their lines, a 20 px
+heading, and 8 px to their content; a notice (`NoticeCard`, the alert cell) is
+a band whose tint runs from edge to edge, with its sign on the text edge. One
+hairline separates each band from the one before; a group's own sections stay
+together without lines.
+
+Content that should reach the column's edges, such as a page or a preview an
+app draws itself, marks its outermost element with `data-k2b-band` and then
+holds its own text edge with `var(--k2b-gutter)`. Anything without the
+attribute, such as a line of guidance or a button, stands on the text edge
+with a 12 px rhythm. The body decides by this attribute, never by class names,
+so a wrapper around a notice must carry it too or the notice stays inset.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
 item has a primary set of facts or controls. It is a flat topic like the others

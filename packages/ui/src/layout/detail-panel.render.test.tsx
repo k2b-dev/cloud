@@ -129,7 +129,8 @@ describe("DetailPanel", () => {
     expect(headerRule).toContain("padding: 0;");
     expect(bodyRule).toContain("overflow-y: auto");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
-    expect(bodyRule).toContain("padding: 0 0 1rem");
+    // No padding of its own: its bands reach the column's edges (K9, K14).
+    expect(bodyRule).toContain("padding: 0;");
   });
 
   test("absorbs its stable scrollbar gutter into the workspace trailing inset", async () => {
@@ -198,18 +199,12 @@ describe("DetailPanel", () => {
     );
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const groupRule = css.match(/\.k2b-ui \.k2b-detail-panel__group \{([^}]*)\}/)?.[1];
-    // K9: a summary, a group, and a section placed directly in the body (a discussion is one) share one flat rule,
-    // and one hairline separates each from the one before.
-    const topic =
-      ".k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group)";
-    const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const frame = css.match(new RegExp(`${escaped} \\{([^}]*)\\}`))?.[1];
-    // A topic after shown content (not after a hidden node or a floating layer) gets the line.
-    const topics = ":is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group)";
+    // K9, K14: a topic band (a summary, a group, a section, a fact group; a discussion is a section) holds its own
+    // insets by one attribute rule, never by class names, and one hairline separates each band from the one before.
+    const frame = css.match(/\.k2b-ui \.k2b-detail-panel__body > \[data-k2b-band="topic"\] \{([^}]*)\}/)?.[1];
+    // A band after shown content (not after a hidden node or a floating layer) gets the line.
     const separator = css.match(
-      new RegExp(
-        `\\.k2b-detail-panel__body\\s*> :not\\(\\[hidden\\][^)]*\\)\\s*~ ${topics.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`,
-      ),
+      /\.k2b-detail-panel__body > :not\(\[hidden\][^)]*\) ~ \[data-k2b-band\]:not\(\[hidden\]\) \{([^}]*)\}/,
     )?.[1];
     const sectionIconRule = css.match(/\.k2b-ui \.k2b-section__icon \{([^}]*)\}/)?.[1];
 
@@ -222,7 +217,7 @@ describe("DetailPanel", () => {
     // A group's own sections stay together without rules; the column's topics stand borderless on its text edge.
     expect(groupRule).not.toContain("gap: 1px");
     expect(groupRule).not.toContain("border");
-    expect(frame).toContain("padding: 1rem var(--k2b-gutter)");
+    expect(frame).toContain("padding: var(--k2b-space-4) var(--k2b-gutter)");
     expect(frame).toContain("border: 0;");
     expect(frame).toContain("background: transparent");
     expect(separator).toContain("border-top: 1px solid var(--k2b-border)");
@@ -344,7 +339,8 @@ describe("DetailPanel", () => {
     expect(css).toContain(".k2b-description-list__item:focus-within");
     expect(css).toContain('grid-template-areas: "term description action";');
     expect(css).toContain("grid-template-columns: subgrid;");
-    expect(css).toContain("grid-template-rows: minmax(2.25rem, auto);");
+    // A value row is the dense row height (32 px), as `.fields` in the mockup.
+    expect(css).toContain("grid-template-rows: minmax(var(--k2b-h-row-dense), auto);");
     expect(css).toContain("align-content: stretch;");
     expect(css).toContain("grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr) auto;");
     expect(css).toContain("text-transform: uppercase;");

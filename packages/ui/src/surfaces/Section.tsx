@@ -207,6 +207,8 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
     <section
       {...rest}
       class={local.class ? `k2b-section ${local.class}` : "k2b-section"}
+      // One topic is one band (K9, K14): in a column it reaches both edges and holds its own text edge.
+      data-k2b-band="topic"
       data-size={local.size ?? "sm"}
       data-frame={local.frame ?? frameDefault}
       data-tone={local.tone && local.tone !== "neutral" ? local.tone : undefined}
