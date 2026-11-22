@@ -6,7 +6,7 @@ import { CodeNavStatus, codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-st
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, createNavigation, Dropdown, IconButton, type NavigationItem, prompts, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, createNavigation, Dropdown, DropTarget, IconButton, type NavigationItem, prompts, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, getOwner, on, onCleanup, runWithOwner, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
@@ -19,6 +19,7 @@ import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
 import MailFocusNotice from "./MailFocusNotice";
+import { MAIL_CONVERSATION_DRAG } from "./mail-drop-targets";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
@@ -294,7 +295,6 @@ export default function MailSidebar(
   onCleanup(() => restoreMailbox.abort());
 
   // The open mailbox's folders ---------------------------------------------------------------------------------------------
-  const [dropFolderId, setDropFolderId] = createSignal<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set());
   const [moreExpanded, setMoreExpanded] = createSignal(false);
   // Every change of the open mailbox's data reruns what reads it, and folders may change in place. The content decides:
@@ -335,18 +335,6 @@ export default function MailSidebar(
     setCollapsedFolders(new Set(customFolderBranchIds().filter((id) => !expanded.has(id))));
   };
 
-  const dropConversation = (event: DragEvent, destinationFolderId: string) => {
-    event.preventDefault();
-    setDropFolderId(null);
-    try {
-      const value = JSON.parse(event.dataTransfer?.getData("application/x-cloud-mail-conversation") ?? "") as { itemId?: unknown };
-      if (typeof value.itemId !== "string") return;
-      void openMailbox()?.onMoveConversation({ itemId: value.itemId, destinationFolderId });
-    } catch {
-      // Ignore unrelated drags; only Mail conversation payloads are accepted.
-    }
-  };
-
   // These parts render only while a mailbox is open. They read it through `open()`, so live counts and a renamed
   // mailbox show without recreating the rows.
   const open = () => openMailbox()!;
@@ -366,6 +354,33 @@ export default function MailSidebar(
         <span class="sr-only">{messages().onlyInFolder}</span>
       </Show>
     );
+    const status =
+      count && "unread" in count ? (
+        <>
+          {pin}
+          <AppWorkspace.SidebarItemStatus unread={count.unread} />
+        </>
+      ) : onlyInFolder || total !== null ? (
+        <span class="inline-flex items-center tabular-nums">
+          {pin}
+          <Show when={total !== null}>{total}</Show>
+        </span>
+      ) : undefined;
+    // A dragged conversation can be let go on the folder's whole row (S7). The target stands in the row's meta place and
+    // covers the row, so the label stays text: the tree keeps its hint and the bold label's reserved width.
+    const meta = () =>
+      open().canWrite && folder.selectable ? (
+        <DropTarget
+          class="mail-folder-drop"
+          accept={[MAIL_CONVERSATION_DRAG]}
+          label={folderName()(folder)}
+          onDrop={(payload) => void open().onMoveConversation({ itemId: payload.value, destinationFolderId: folder.id })}
+        >
+          {status}
+        </DropTarget>
+      ) : (
+        status
+      );
     return (
       <AppWorkspace.NavTree.Item
         id={folder.id}
@@ -375,44 +390,11 @@ export default function MailSidebar(
         expandedIcon={hasChildren ? "ti ti-folder-open" : undefined}
         // Unread counts change while the folder is on screen, so they use the shared status from the first paint,
         // which keeps a long folder name on one line.
-        meta={
-          count && "unread" in count ? (
-            <>
-              {pin}
-              <AppWorkspace.SidebarItemStatus unread={count.unread} />
-            </>
-          ) : onlyInFolder || total !== null ? (
-            <span class="inline-flex items-center tabular-nums">
-              {pin}
-              <Show when={total !== null}>{total}</Show>
-            </span>
-          ) : undefined
-        }
+        meta={meta()}
         title={onlyInFolder ? messages().onlyInFolderTitle({ name: folderName()(folder) }) : folderName()(folder)}
         navigation="enhanced"
         onNavigate={folder.selectable ? open().onNavigate : undefined}
         scroll="preserve"
-        class={dropFolderId() === folder.id ? "bg-[var(--ui-selected)]" : undefined}
-        onDragEnter={(event) => {
-          event.stopPropagation();
-          if (!open().canWrite || !folder.selectable) return;
-          event.preventDefault();
-          setDropFolderId(folder.id);
-        }}
-        onDragOver={(event) => {
-          event.stopPropagation();
-          if (!open().canWrite || !folder.selectable) return;
-          event.preventDefault();
-          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-        }}
-        onDragLeave={(event) => {
-          event.stopPropagation();
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropFolderId(null);
-        }}
-        onDrop={(event) => {
-          event.stopPropagation();
-          if (open().canWrite && folder.selectable) dropConversation(event, folder.id);
-        }}
       >
         <For each={node.children}>{(child) => folderNode(child)}</For>
       </AppWorkspace.NavTree.Item>

@@ -6,6 +6,7 @@ import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, pageErrors as collectPageErrors, hoverInPlace, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { layoutProblems } from "../../../ui/test/head-overlap";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
@@ -372,11 +373,16 @@ const open = async (
   motion: "reduce" | "no-preference" = "reduce",
   /** Runs before the first navigation, for example to delay some responses. */
   prepare?: (page: Page) => Promise<void>,
+  /** Another browser, such as one that draws classic scrollbars. */
+  engine: Browser = browser,
 ) => {
-  const context = await browser.newContext({
+  // 390 px is a touch phone in the default browser. Another browser opens a desktop window: a mobile tab would get
+  // overlay scrollbars that take no room, even without --hide-scrollbars.
+  const touch = width === 390 && engine === browser;
+  const context = await engine.newContext({
     viewport: { width, height },
-    isMobile: width === 390,
-    hasTouch: width === 390,
+    isMobile: touch,
+    hasTouch: touch,
     timezoneId: "UTC",
     reducedMotion: motion,
   });
@@ -403,6 +409,20 @@ const open = async (
     throw error;
   }
 };
+/** A real mouse drag in small steps, as a person drags: press, cross the threshold, travel, rest, and let go. */
+const pointerDrag = async (page: Page, from: Locator, to: Locator, options: { restMs?: number } = {}) => {
+  const start = (await from.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(start.x + start.width / 2 + 12, start.y + start.height / 2 + 4, { steps: 4 });
+  // settled: the target is read during the drag, where it stands still under the moving pointer.
+  const end = (await to.boundingBox())!;
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 });
+  await page.waitForTimeout(options.restMs ?? 300);
+  await page.mouse.move(end.x + end.width / 2 + 1, end.y + end.height / 2, { steps: 1 });
+  await page.mouse.up();
+};
+
 const close = async (page: Page) => {
   try {
     expect(pageErrors.get(page), "No page errors, including live connections").toEqual([]);
@@ -502,7 +522,7 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "performance";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "drag" | "performance";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
@@ -981,16 +1001,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 expect(await group.locator('[data-mailbox="Box001"]').count()).toBe(1);
                 expect(await group.locator(".mail-sidebar-folders").count()).toBe(1);
                 expect(await group.locator('[data-mailbox="Box002"]').count()).toBe(0);
-                const colors = await group.evaluate((element) => {
-                  const probe = document.createElement("span");
-                  probe.style.background = "var(--ui-app-selected)";
-                  element.append(probe);
-                  const fill = getComputedStyle(element).backgroundColor;
-                  const expected = getComputedStyle(probe).backgroundColor;
-                  probe.remove();
-                  return { fill, expected };
-                });
-                expect(colors.fill).toBe(colors.expected);
+                // K8, K14: the group draws no fill around its rows; only the marked folder row is tinted.
+                expect(await group.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
               }
               // The real Cloud appearance scope supplies the approved 10% navigation fill.
               const selectedColors = await folder.evaluate((element) => {
@@ -1663,15 +1675,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             column: box(".mail-reading-column"),
             toolbar: box("[data-mail-reader-toolbar]"),
             bar: box(".mail-list-bar"),
-            rows: Array.from(document.querySelectorAll<HTMLElement>(".mail-list-entry"))
+            // A row's height includes the hairline above it (K7): the drag source around the row holds both.
+            rows: Array.from(document.querySelectorAll<HTMLElement>(".mail-list-rows > .mail-list-drag"))
               .filter((row) => row.getClientRects().length > 0)
               .slice(0, 6)
               .map((row) => Math.round(row.getBoundingClientRect().height)),
             open: box(".mail-list-entry-active"),
           };
         });
-      const oneLine = 44;
-      const threeLines = 78;
+      // K7: a table row is 32 px under a 36 px column head; a stacked row of three lines is 72 px.
+      const oneLine = 32;
+      const threeLines = 72;
 
       // F8: list 40 % at least 320 px, reader the rest at least 480 px, no centered column, the density follows.
       for (const [width, height] of [
@@ -1711,7 +1725,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-      test("F8: without an open conversation the list takes the full width in one line per row, with no empty reader", async () => {
+      test("F8: without an open conversation the list takes the full width as a table under its column head, with no empty reader", async () => {
         const page = await open(boxPath, 1440, 900);
         try {
           const shown = await split(page);
@@ -1719,9 +1733,26 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(shown.handle).toBeNull();
           expect(Math.abs(shown.list!.width - shown.panes!.width)).toBeLessThanOrEqual(1);
           expect(new Set(shown.rows)).toEqual(new Set([oneLine]));
-          // Date in every row, no column heads, no day groups.
+          // Date in every row, no day groups; the column head (36 px) stands in line with the rows' columns (K7).
           expect(await page.locator(".mail-list-entry .mail-row-time").count()).toBe(await page.locator(".mail-list-entry").count());
           expect(await page.getByText(/^(Today|Yesterday|This week|Earlier)$/).count()).toBe(0);
+          const columns = await page.evaluate(() => {
+            const left = (selector: string) => Math.round(document.querySelector(selector)!.getBoundingClientRect().left);
+            const head = document.querySelector<HTMLElement>("[data-mail-list-colhead]")!;
+            return {
+              head: Math.round(head.getBoundingClientRect().height),
+              from: [left('[data-mail-list-colhead] [data-col="from"]'), left(".mail-list-entry .mail-row-from")],
+              subject: [left('[data-mail-list-colhead] [data-col="subject"]'), left(".mail-list-entry .mail-row-subject-line")],
+              preview: [left('[data-mail-list-colhead] [data-col="preview"]'), left(".mail-list-entry .mail-list-preview")],
+              time: [
+                Math.round(document.querySelector('[data-mail-list-colhead] [data-col="time"]')!.getBoundingClientRect().right),
+                Math.round(document.querySelector(".mail-list-entry .mail-row-time-cell")!.getBoundingClientRect().right),
+              ],
+            };
+          });
+          expect(columns.head).toBe(36);
+          for (const [name, [head, row]] of Object.entries(columns).filter(([name]) => name !== "head") as [string, number[]][])
+            expect(Math.abs(head! - row!), `${name} column stands in line`).toBeLessThanOrEqual(1);
           if (screenshots) await page.screenshot({ path: join(screenshots, "list-full-light-1440.png") });
         } finally {
           await close(page);
@@ -1872,13 +1903,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("views: the day's done line above the list", async () => {
+      test("views: the day's done conversations are the status row's key figures above the list", async () => {
         const page = await open(`${boxPath}?done=19,14`, 1440, 900);
         try {
-          const line = page.locator("[data-mail-done-line]");
-          await line.getByText("Heute 19 erledigt").or(line.getByText("19 done today")).waitFor();
-          await line.getByRole("progressbar").waitFor({ state: "attached" });
-          expect((await line.boundingBox())!.height).toBeCloseTo(28, 0);
+          const row = page.locator(".mail-list-bar .k2b-status-row");
+          await row.waitFor();
+          expect(await row.locator(".k2b-status-row__fact").allTextContents()).toEqual(["19 done today", "14 of them automatically"]);
+          // K6: the status row is 52 px with its hairline, above the list only.
+          expect((await page.locator(".mail-list-bar").boundingBox())!.height).toBe(52);
           if (screenshots) await page.screenshot({ path: join(screenshots, "views-done-line-light-1440.png") });
         } finally {
           await close(page);
@@ -1904,8 +1936,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const footer = page.locator("[data-mail-hidden-done]");
             await footer.waitFor({ state: "visible" });
             expect(await footer.textContent()).toBe("1.207 erledigte Unterhaltungen·Erledigt anzeigen");
-            // One fixed line after the rows: it never moves what is above it.
-            expect((await footer.boundingBox())!.height).toBeCloseTo(32, 0);
+            // One fixed line after the rows (36 px, the list's foot, K7): it never moves what is above it.
+            expect((await footer.boundingBox())!.height).toBeCloseTo(36, 0);
             const rows = page.locator("[data-mail-conversation-list] [role='list']");
             expect((await footer.boundingBox())!.y).toBeGreaterThanOrEqual(
               (await rows.boundingBox())!.y + (await rows.boundingBox())!.height,
@@ -2009,7 +2041,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const action = page.waitForRequest(
             (request) => request.method() === "POST" && request.url().endsWith("/conversations/Conv01/actions"),
           );
-          await page.locator('[data-conversation-id="Conv01"] [draggable="true"]').dragTo(destination);
+          await pointerDrag(page, page.locator('[data-conversation-id="Conv01"] .mail-list-row'), destination);
           const request = await action;
           expect(request.postDataJSON()).toMatchObject({ kind: "move_to_folder", sourceFolderId: "Inbox1", destinationFolderId: "Filed1" });
           await sidebar(page).getByRole("button", { name: "More", exact: true }).click();
@@ -3457,7 +3489,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               try {
                 const list = page.locator(".mail-workspace [role='list']").first();
                 const entries = await list
-                  .locator(":scope > [role='listitem']")
+                  // Each row stands in its drag source (S7); headings stand on their own.
+                  .locator(":scope > [role='listitem'], :scope > .mail-list-drag > [role='listitem']")
                   .evaluateAll((items) =>
                     items.map((item) => item.getAttribute("data-mail-assigned-group") ?? item.getAttribute("data-conversation-id")),
                   );
@@ -3472,11 +3505,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   type: "and",
                   expressions: [{ type: "assigned_to_me" }, { type: "work_status", value: "done" }],
                 });
-                // Headings keep the height of day headings, so the rows do not move after hydration.
+                // Headings have the group head's fixed height (36 px, K17), so the rows do not move after hydration.
                 const heights = await list
                   .locator("[data-mail-assigned-group]")
                   .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
-                for (const height of heights) expect(height).toBe(32);
+                for (const height of heights) expect(height).toBe(36);
                 if (screenshots && locale === "de") {
                   mkdirSync(join(screenshots, browserName), { recursive: true });
                   await page.screenshot({ path: join(screenshots, browserName, `assigned-groups-light-${width}.png`) });
@@ -3856,6 +3889,263 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(`${boxPath}?permission=assigned-only&locale=de`);
         try {
           expect(await tabs(page).locator('[data-view-tab="events"]').count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+    });
+
+    // S7: a conversation dragged with the mouse shows its targets over list and reader; the sidebar stays free.
+    section("drag", () => {
+      const overlay = ".mail-workspace .k2b-drop-overlay";
+      const tile = (page: Page, name: string | RegExp) =>
+        page.locator(`${overlay} .k2b-drop-overlay__tile`).filter({ hasText: name }).first();
+      /** Presses a row and crosses the 6 px threshold; returns the pointer's place. */
+      const lift = async (page: Page, conversationId: string) => {
+        await settled(page);
+        const box = (await page.locator(`[data-conversation-id="${conversationId}"] .mail-list-row`).boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 4, { steps: 3 });
+      };
+      const glide = async (page: Page, target: Locator) => {
+        // settled: a tile is read during the drag; the surface keeps its tiles still while the pointer moves.
+        const box = (await target.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+      };
+      /** Counts API requests and layout shifts from now on. */
+      const watch = async (page: Page) => {
+        const requests: string[] = [];
+        page.on("request", (request) => {
+          if (new URL(request.url()).pathname.startsWith("/api/")) requests.push(`${request.method()} ${request.url()}`);
+        });
+        await page.evaluate(() => {
+          const record = window as unknown as { __shift: number };
+          record.__shift = 0;
+          new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) record.__shift += (entry as unknown as { value: number }).value;
+          }).observe({ type: "layout-shift" });
+        });
+        return { requests, shift: () => page.evaluate(() => (window as unknown as { __shift: number }).__shift) };
+      };
+
+      test("S7: resting on Assign to someone else, then a person, assigns on the drop; no request or shift before it", async () => {
+        const page = await open(`${boxPath}?team=1&locale=de`, 1440, 900, "no-preference");
+        try {
+          const seen = await watch(page);
+          await lift(page, "Conv02");
+          await page.locator(overlay).waitFor();
+          expect(await page.locator(`${overlay} .k2b-drop-overlay__tile`).allTextContents()).toEqual(
+            expect.arrayContaining([
+              expect.stringContaining("Mir zuweisen"),
+              expect.stringContaining("Jemand anderem zuweisen"),
+              expect.stringContaining("In Ordner verschieben"),
+              expect.stringContaining("Als erledigt markieren"),
+            ]),
+          );
+          // The sidebar stays free beside the surface.
+          const surface = (await page.locator(overlay).boundingBox())!;
+          const side = (await page.locator(sidebarSelector).boundingBox())!;
+          expect(surface.x).toBeGreaterThanOrEqual(side.x + side.width - 1);
+          await glide(page, tile(page, "Jemand anderem zuweisen"));
+          await page.locator(`${overlay} .k2b-drop-overlay__title`).filter({ hasText: "Häufig" }).waitFor();
+          const person = page.locator(`${overlay} .k2b-drop-overlay__tile:not([data-back])`).first();
+          await page.waitForTimeout(260);
+          await glide(page, person);
+          const name = (await person.locator(".k2b-drop-overlay__label").textContent())!;
+          expect(seen.requests, "no request before the drop").toEqual([]);
+          await page.route("**/api/mail/mailboxes/Box001/conversations/assign", (route) =>
+            route.fulfill({ json: { results: [{ conversationId: "Conv02", status: "ok" }] } }),
+          );
+          const assigned = page.waitForRequest((request) => request.url().endsWith("/conversations/assign"));
+          await page.mouse.up();
+          expect((await assigned).postDataJSON()).toMatchObject({ conversationIds: ["Conv02"], mode: "add" });
+          await page.locator(".k2b-toast").filter({ hasText: name }).getByRole("button", { name: "Rückgängig" }).waitFor();
+          expect(await page.locator(overlay).count()).toBe(0);
+          expect(await seen.shift()).toBe(0);
+          if (screenshots) await page.screenshot({ path: join(screenshots, "drag-assigned-light-1440.png") });
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("S7: a drop straight on Assign to someone else opens the person search", async () => {
+        const page = await open(`${boxPath}?team=1&locale=de`);
+        try {
+          await lift(page, "Conv02");
+          await glide(page, tile(page, "Jemand anderem zuweisen"));
+          await page.waitForTimeout(260);
+          await page.mouse.up();
+          await page
+            .getByRole("dialog")
+            .filter({ has: page.getByRole("searchbox") })
+            .first()
+            .waitFor();
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("S7: Esc cancels with a note and changes nothing; letting go on the cancel area does too", async () => {
+        const page = await open(`${boxPath}?team=1&locale=de`);
+        try {
+          const seen = await watch(page);
+          await lift(page, "Conv02");
+          await page.locator(overlay).waitFor();
+          if (screenshots) await page.screenshot({ path: join(screenshots, "drag-surface-light-1440.png") });
+          await page.keyboard.press("Escape");
+          await page.mouse.up();
+          await page.locator(".k2b-toast").filter({ hasText: "Abgebrochen, nichts geändert" }).waitFor();
+          await settled(page);
+          await lift(page, "Conv03");
+          await glide(page, page.locator(`${overlay} .k2b-drop-overlay__cancel`));
+          await page.mouse.up();
+          expect(await page.locator(overlay).count()).toBe(0);
+          expect(seen.requests).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("S7: a selection drags as one; a personal mailbox has no assignment targets", async () => {
+        const page = await open(`${boxPath}?locale=de`);
+        try {
+          await page.locator('[data-conversation-id="Conv02"] .mail-list-checkbox').check();
+          await page.locator('[data-conversation-id="Conv03"] .mail-list-checkbox').check();
+          await lift(page, "Conv02");
+          await page.locator(overlay).waitFor();
+          expect(await page.locator(`${overlay} .k2b-drop-overlay__what`).textContent()).toBe("2 Unterhaltungen");
+          const labels = await page.locator(`${overlay} .k2b-drop-overlay__label`).allTextContents();
+          expect(labels).not.toContain("Mir zuweisen");
+          expect(labels).not.toContain("Jemand anderem zuweisen");
+          await page.keyboard.press("Escape");
+          await page.mouse.up();
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("S7: a mailbox read only has no drag", async () => {
+        const page = await open(`${boxPath}?permission=read&locale=de`);
+        try {
+          await lift(page, "Conv02");
+          await page.mouse.move(700, 500, { steps: 6 });
+          await page.waitForTimeout(300);
+          expect(await page.locator(overlay).count()).toBe(0);
+          await page.mouse.up();
+        } finally {
+          await close(page);
+        }
+      });
+
+      // The flat layout (K1, K2, K7): nothing overlaps, spills, is cut, or draws a double line; a scrollbar moves
+      // nothing. Playwright hides scrollbars, while Linux and Windows desktops draw classic ones that take room, so
+      // Chromium runs these with classic scrollbars in desktop windows (no touch, see open). Few and many rows, list and
+      // reader, 390 to 1440 px; at 1100 px with the reader open.
+      let classic: Browser | undefined;
+      beforeAll(async () => {
+        classic = browserName === "chromium" ? await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] }) : undefined;
+      }, 30_000);
+      afterAll(async () => {
+        await classic?.close();
+      });
+      for (const [name, path, width, height] of [
+        ["stacked list, few rows", `${boxPath}?team=1&view=mine`, 390, 844],
+        ["stacked list, many rows", boxPath, 390, 844],
+        ["reader", `${boxPath}?conversation=Conv02`, 390, 844],
+        ["table", `${boxPath}?team=1`, 768, 1024],
+        ["open conversation", `${boxPath}?team=1&conversation=Conv02`, 768, 1024],
+        ["list and reader", `${boxPath}?shell=1&team=1&conversation=Conv02`, 1100, 800],
+        ["table without scrollbar", `${boxPath}?shell=1&team=1&view=mine`, 1440, 900],
+        ["table with reader and scrolling list", `${boxPath}?shell=1&team=1&conversation=Conv02`, 1440, 900],
+      ] as const)
+        test(`flat ${width} px, ${name}, classic scrollbars: no overlap, spill, cut, or double line`, async () => {
+          const page = await open(path, width, height, "reduce", undefined, classic);
+          try {
+            await settled(page);
+            // A classic run is only worth its name when a scrollbar really takes room.
+            if (classic)
+              expect(
+                await page.evaluate(() => {
+                  const probe = document.createElement("div");
+                  probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+                  document.body.append(probe);
+                  const gutter = probe.offsetWidth - probe.clientWidth;
+                  probe.remove();
+                  return gutter;
+                }),
+              ).toBeGreaterThan(0);
+            const found = await page.evaluate(layoutProblems, { root: "main" });
+            expect(found.problems).toEqual([]);
+          } finally {
+            await close(page);
+          }
+        });
+
+      test("K12: a tablet shows the open conversation alone at its full width; closing it returns to the list", async () => {
+        const page = await open(`${boxPath}?team=1&conversation=Conv02`, 768, 1024);
+        try {
+          await settled(page);
+          expect(await page.locator(".mail-split-list").isVisible()).toBe(false);
+          expect(await page.locator(".mail-list-handle").isVisible()).toBe(false);
+          const reader = (await page.locator(".mail-split-reader").boundingBox())!;
+          const panes = (await page.locator(".mail-split-panes").boundingBox())!;
+          expect(Math.abs(reader.width - panes.width)).toBeLessThanOrEqual(1);
+          await page.locator("[data-mail-reader-close]").click();
+          await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
+          await settled(page);
+          expect(await page.locator(".mail-split-list").isVisible()).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("phone: a stacked row keeps its time and has no …; the open conversation's … holds every action of the row's menu", async () => {
+        const page = await open(boxPath, 390, 844);
+        let rowEntries: string[] = [];
+        try {
+          await settled(page);
+          const entry = page.locator('.mail-list-entry[data-conversation-id="Conv02"]');
+          // K15: the time stays; the row's actions live in its menu (long press) and in the open conversation's ….
+          expect(await entry.locator(".mail-row-time-cell").evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+          expect(
+            await entry
+              .locator(".mail-row-menu")
+              .evaluateAll((elements) => elements.every((element) => getComputedStyle(element).display === "none")),
+          ).toBe(true);
+          await entry.locator("a.mail-list-row").click({ button: "right" });
+          const menu = page.locator(".k2b-context-menu");
+          await menu.waitFor({ state: "visible" });
+          rowEntries = (await menu.getByRole("menuitem").allTextContents()).map((text) => text.trim());
+          expect(rowEntries.length).toBeGreaterThan(3);
+        } finally {
+          await close(page);
+        }
+        const reader = await open(`${boxPath}?conversation=Conv02`, 390, 844);
+        try {
+          // K13: a phone shows the reader alone, without the list's handle (it stands in a contents slot).
+          expect(await reader.locator(".mail-list-handle").isVisible()).toBe(false);
+          await reader.getByRole("button", { name: "More conversation actions" }).click();
+          const menu = reader.locator(".k2b-dropdown__menu:popover-open");
+          await menu.waitFor({ state: "visible" });
+          const readerEntries = (await menu.getByRole("menuitem").allTextContents()).map((text) => text.trim());
+          expect(rowEntries.filter((label) => !readerEntries.includes(label))).toEqual([]);
+        } finally {
+          await close(reader);
+        }
+      });
+
+      test("S7: on a phone a finger never drags; holding a row opens its menu", async () => {
+        const page = await open(`${boxPath}?locale=de`, 390, 844);
+        try {
+          const row = page.locator('[data-conversation-id="Conv02"] .mail-list-row');
+          const box = (await row.boundingBox())!;
+          const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+          await row.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, button: 0, clientX: point.x, clientY: point.y });
+          await page.waitForTimeout(650);
+          await row.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, button: 0, clientX: point.x, clientY: point.y });
+          await page.locator(".k2b-context-menu").waitFor();
+          expect(await page.locator(overlay).count()).toBe(0);
         } finally {
           await close(page);
         }
@@ -4430,8 +4720,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                     text: firstLine.left,
                     signature: rect("[data-mail-draft-signature]").left,
                     quote: quote?.left ?? firstLine.left,
-                    send: rect("[data-mail-reply-send]").left,
                   },
+                  // Composer A: Send ends on the box's right text edge, inside its padding.
+                  sendRight: (
+                    box.querySelector("[data-mail-reply-send]")!.closest(".mail-compose-action") ??
+                    box.querySelector("[data-mail-reply-send]")!
+                  ).getBoundingClientRect().right,
+                  textRight: box.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(box).paddingRight),
                   quoteHeight: quote?.height ?? 0,
                 };
               });
@@ -4447,10 +4742,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(Math.abs(fitted.sendGap - 10), `send gap ${fitted.sendGap}`).toBeLessThanOrEqual(1);
             // No hole: below the content only the 8 px room that puts the caret at the end of the text.
             expect(Math.abs(fitted.hole - 8), `room ${fitted.hole}`).toBeLessThanOrEqual(2);
-            // The first line starts 12 px under the head; text, signature, quote line, and Send share one edge.
+            // The first line starts 12 px under the head; text, signature, and quote line share one edge, and Send ends on
+            // the box's right text edge (Composer A, like a chat).
             expect(Math.abs(fitted.headGap - 12), `head gap ${fitted.headGap}`).toBeLessThanOrEqual(1);
             for (const [part, left] of Object.entries(fitted.edges))
               expect(Math.abs(left - fitted.edges.text), `${part} edge ${left} vs text ${fitted.edges.text}`).toBeLessThanOrEqual(1);
+            expect(
+              Math.abs(fitted.sendRight - fitted.textRight),
+              `send end ${fitted.sendRight} vs ${fitted.textRight}`,
+            ).toBeLessThanOrEqual(1);
             // Leaving the original out is the person's own input: the box loses the card's height, and adding it back
             // restores the height.
             await draftBox(page).getByRole("button", { name: "Leave the original message out" }).click();

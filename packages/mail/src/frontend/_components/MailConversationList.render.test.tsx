@@ -86,13 +86,19 @@ describe("Mail conversation list", () => {
     expect(html).toContain("Needs action");
   });
 
+  test("an empty list shows no count under its empty state", () => {
+    expect(renderList({ items: [] })).not.toContain("data-mail-list-count");
+  });
+
   test("keeps the semantic list heading and puts its shown count after the rows", () => {
     const html = renderList({
+      items: [mailTestRow("Conv01")],
       requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }) })}`,
     });
     expect(html).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
     expect(html).not.toContain('role="search"');
     expect(html).toContain("data-mail-list-count");
+    expect(html.indexOf("data-mail-list-count")).toBeGreaterThan(html.indexOf('data-conversation-id="Conv01"'));
     expect(html).not.toContain("mail-search-summary");
     expect(html).not.toContain('aria-label="Choose list view"');
   });

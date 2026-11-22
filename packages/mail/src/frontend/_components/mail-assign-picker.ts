@@ -9,7 +9,7 @@ export type MailAssigneeChoice =
   | { mode: "add" | "remove"; userId: string; name: string | null }
   | { mode: "replace"; userId: null; name: null };
 
-const avatarUrl = (user: Pick<MailAssignableUser, "id" | "avatarHash">): string | undefined =>
+export const avatarUrl = (user: Pick<MailAssignableUser, "id" | "avatarHash">): string | undefined =>
   user.avatarHash ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}` : undefined;
 
 /**

@@ -17,6 +17,7 @@ import type { MailCollaborator } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { LocalTag } from "../../service/local-tags";
 import type { ConversationPresenceParticipant } from "../../service/presence";
+import MailStar from "./MailStar";
 import { getMailAction } from "./mail-actions";
 import type { MailLinkedItem } from "./mail-conversation-links";
 import { mailReaderMessages } from "./mail-reader-messages";
@@ -288,7 +289,7 @@ export default function MailReaderHead(props: {
         </h1>
         <Show when={props.flagged}>
           <span class="mail-reader-flag" role="img" aria-label={props.flaggedLabel} title={props.flaggedLabel}>
-            <i class={getMailAction("flag").icon} aria-hidden="true" />
+            <MailStar filled />
           </span>
         </Show>
         <div class="mail-reader-actions">

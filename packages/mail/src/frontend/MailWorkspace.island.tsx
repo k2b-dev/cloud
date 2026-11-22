@@ -15,7 +15,22 @@ import {
 } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  AvatarFaces,
+  announce,
+  type DragPayload,
+  DropOverlay,
+  type DropOverlayLevel,
+  type DropOverlayTile,
+  dropOverlayPages,
+  openSpotlightSearch,
+  prompts,
+  StatusRow,
+  type ToastHandle,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -56,7 +71,7 @@ import {
   mailRoleDestinationFolderId,
   spamActionForConversation,
 } from "./_components/mail-actions";
-import { chooseMailAssignee, type MailAssigneeChoice } from "./_components/mail-assign-picker";
+import { avatarUrl, chooseMailAssignee, type MailAssigneeChoice } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { type MailBulkAssignmentHost, runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
@@ -79,10 +94,18 @@ import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
 import { type MailDropHost, runMailDrop } from "./_components/mail-drop-actions";
+import { mailDropMessages } from "./_components/mail-drop-messages";
 import {
+  MAIL_CONVERSATION_DRAG,
+  MAIL_DROP_FIRST_LEVEL_SIZE,
   type MailDropAction,
-  type MailDropLevel,
-  mailDropView,
+  type MailDropContext,
+  type MailDropTarget,
+  mailDraggedRows,
+  mailDropFolderTargets,
+  mailDropPeople,
+  mailDropRoot,
+  mailDropTags,
   readMailDropRecentFolders,
   rememberMailDropFolder,
 } from "./_components/mail-drop-targets";
@@ -2670,7 +2693,12 @@ function createMailboxController(props: MailboxControllerProps) {
     await manageConversationTagsMutation.mutate(item);
   };
 
-  const assignmentHost = (chooseAssignee: () => Promise<MailAssigneeChoice | null>, active: () => boolean): MailBulkAssignmentHost => ({
+  const assignmentHost = (
+    chooseAssignee: () => Promise<MailAssigneeChoice | null>,
+    active: () => boolean,
+    /** A drop of a row outside the selection leaves the selection as it is. */
+    clearsSelection = true,
+  ): MailBulkAssignmentHost => ({
     chooseAssignee,
     assign: async (ids, assigneeUserIds, mode) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
@@ -2682,6 +2710,7 @@ function createMailboxController(props: MailboxControllerProps) {
     },
     assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
     clearSelection: () => {
+      if (!clearsSelection) return;
       setConversationSelection(emptyMailConversationSelection());
       setSelectionMode(false);
     },
@@ -2746,43 +2775,72 @@ function createMailboxController(props: MailboxControllerProps) {
   });
   // A drag's targets and drops (S7). The targets come from the first load, so a drag makes no request before its drop.
   /** A dragged row carries every selected row when it is one of them, else itself. */
-  const dropItemsFor = (item: MailListItem): MailListItem[] => {
-    const selected = selectedConversationIds();
-    if (!item.conversationId || !selected.has(item.conversationId)) return [item];
-    return selectableRows().filter((row) => row.conversationId && selected.has(row.conversationId));
-  };
-  const dropView = (level: MailDropLevel, items: readonly MailListItem[]) =>
-    mailDropView(level, {
-      locale: locale(),
-      currentUserId: props.currentUserId ?? null,
-      items,
-      assignees: canAssign() ? data.dropAssignees : null,
-      teamMailbox: sharedMailbox(),
-      folders: data.folders,
-      folderName: folderName(),
-      tags: data.localTags,
-      recentFolderIds: readMailDropRecentFolders(mailboxId),
-    });
-  const dropHost: MailDropHost = {
+  const dropItemsFor = (item: MailListItem): MailListItem[] => mailDraggedRows(selectableRows(), selectedConversationIds(), item.id);
+  const dropContext = (items: readonly MailListItem[]): MailDropContext => ({
+    locale: locale(),
+    currentUserId: props.currentUserId ?? null,
+    items,
+    assignees: canAssign() ? data.dropAssignees : null,
+    teamMailbox: sharedMailbox(),
+    folders: data.folders,
+    folderName: folderName(),
+    tags: data.localTags,
+    recentFolderIds: readMailDropRecentFolders(mailboxId),
+  });
+  const dropHost: MailDropHost<MailListItem> = {
     assign: (conversationIds, choice) =>
       runMailBulkAssignment(
         conversationIds,
         assignmentHost(
           choice ? async () => choice : () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
           () => !disposed,
+          conversationIds.some((id) => selectedConversationIds().has(id)),
         ),
         t(),
       ),
-    move: (items, folderId) =>
-      runAction("move", {
-        targets: items.flatMap((item) => {
-          const row = selectableRows().find((candidate) => candidate.conversationId === item.conversationId);
-          const target = row ? actionTargetForItem(row, "move") : null;
-          return target ? [target] : [];
-        }),
-        destinationFolderId: folderId,
-      }),
-    complete: (conversationIds, completion) => submitCompletion(conversationIds, completion),
+    move: (items, folderId) => {
+      const targets = items.flatMap((item) => {
+        const target = actionTargetForItem(item, "move");
+        return target ? [target] : [];
+      });
+      // A drop never ends silently: rows this view cannot move say so and offer the drop again.
+      if (targets.length === 0) throw new Error(dropText().moveUnavailable);
+      return runAction("move", { targets, destinationFolderId: folderId });
+    },
+    complete: (conversationIds) => submitCompletion(conversationIds, "done"),
+    restoreWork: async (entries) => {
+      let failure: unknown = null;
+      for (const { conversationId, state, expectedRevision } of entries) {
+        if (disposed) return;
+        try {
+          const patch = async (json: {
+            expectedRevision: number;
+            completion?: "open" | "waiting" | "needs_action" | "done";
+            snoozedUntil?: string;
+          }) => {
+            const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].collaboration.$patch({
+              param: { mailboxId, conversationId },
+              json,
+            });
+            if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
+            return response.json();
+          };
+          // Status and snooze are separate changes; the snooze follows at the revision the status change left.
+          // A conversation without a status before reopens to what its latest message says, as Reopen does.
+          let result = await patch({ expectedRevision, completion: state.workStatus ?? "open" });
+          if (state.snoozedUntil) result = await patch({ expectedRevision: result.revision, snoozedUntil: state.snoozedUntil });
+          const listPatch = { workStatus: result.workStatus, snoozedUntil: result.snoozedUntil, revision: result.revision };
+          rememberPendingListState(conversationId, listPatch);
+          setConversationListState(conversationId, listPatch);
+          setData("collaborationState", (current) => (current?.conversationId === conversationId ? { ...current, ...listPatch } : current));
+        } catch (error) {
+          failure ??= error;
+        }
+      }
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
+      if (failure) throw failure;
+    },
     addTag: async (conversationIds, tagId) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations["local-tags"].$post({
         param: { mailboxId },
@@ -2820,9 +2878,93 @@ function createMailboxController(props: MailboxControllerProps) {
     error: ({ title, message }) => void toast.error(message, { title }),
     active: () => !disposed,
   };
-  /** Runs a drop on a target; nothing happens without write access or while the list's structure is still changing. */
+  /** Rows of a conversation can be dragged where the person may write (S7). */
+  const canDrag = (item: MailListItem) => canWrite() && Boolean(item.conversationId);
+  /** What a row's drag carries, read when the drag starts: the row, and with a selection that holds it every selected row. */
+  const dragPayload = (item: MailListItem): DragPayload => {
+    const count = new Set(dropItemsFor(item).map((row) => row.conversationId)).size;
+    return {
+      type: MAIL_CONVERSATION_DRAG,
+      value: item.id,
+      label: count > 1 ? dropText().conversations({ count }) : item.subject || t().noSubject,
+      icon: "ti ti-mail",
+      ...(count > 1 ? { count } : {}),
+    };
+  };
+  const dropText = createMemo(() => mailDropMessages.resolve([locale()]).t);
+  const draggedItems = (payload: DragPayload) => mailDraggedRows(selectableRows(), selectedConversationIds(), payload.value);
+  /** A drop target as the drop surface draws it; a drop runs through the same paths as the menus. */
+  const dropTile = (target: MailDropTarget, items: readonly MailListItem[]): DropOverlayTile => ({
+    id: target.id,
+    label: target.label,
+    ...(target.disabled ? { disabled: target.description } : target.description ? { description: target.description } : {}),
+    ...(target.visual.kind === "icon" ? { icon: target.visual.icon } : {}),
+    ...(target.visual.kind === "person"
+      ? {
+          leading: <AvatarFaces people={[{ name: target.visual.person.displayName, src: avatarUrl(target.visual.person) }]} max={1} />,
+        }
+      : {}),
+    ...(target.visual.kind === "tag"
+      ? { leading: <span class="mail-drop-tag" style={{ "--mail-tag": target.visual.color }} aria-hidden="true" /> }
+      : {}),
+    ...(target.level ? { opens: target.level } : {}),
+    ...(target.action ? { onDrop: () => void runDrop(target.action!, items) } : {}),
+  });
+  /**
+   * A level of the drop surface (S7), from the first load's data: no request before the drop. People and folders show
+   * 11 and "More N", then ranges of 12; where the search knows more people, it stays one drop away.
+   */
+  const dropLevel = (id: string, payload: DragPayload): DropOverlayLevel => {
+    const items = draggedItems(payload);
+    const context = dropContext(items);
+    const text = dropText();
+    const range = (first: string, last: string) => (first === last ? first : `${first} – ${last}`);
+    const people = mailDropPeople(context);
+    const peoplePages = dropOverlayPages(
+      "assign",
+      people.targets.map((target) => dropTile(target, items)),
+      { title: text.assignFrequentCrumb, moreTitle: text.assignMoreCrumb, more: (count) => text.morePeople({ count }), range },
+      { first: MAIL_DROP_FIRST_LEVEL_SIZE },
+    );
+    const recentFolders = context.recentFolderIds.length > 0;
+    const folderPages = dropOverlayPages(
+      "folder",
+      mailDropFolderTargets(context).map((target) => dropTile(target, items)),
+      {
+        title: recentFolders ? text.folderRecentCrumb : text.folderCrumb,
+        moreTitle: text.folderMoreCrumb,
+        more: (count) => text.moreFolders({ count }),
+        range,
+      },
+      { first: MAIL_DROP_FIRST_LEVEL_SIZE },
+    );
+    const assign = peoplePages(id);
+    if (assign)
+      return id === "assign" && people.more
+        ? {
+            ...assign,
+            tiles: [
+              ...assign.tiles,
+              {
+                id: "search",
+                label: text.searchPeople,
+                icon: "ti ti-search",
+                onDrop: () => void runDrop({ kind: "choose-assignee" }, items),
+              },
+            ],
+          }
+        : assign;
+    const folder = folderPages(id);
+    if (folder) return folder;
+    if (id === "tag") return { title: text.tagCrumb, tiles: mailDropTags(context).map((target) => dropTile(target, items)) };
+    return { tiles: mailDropRoot(context).map((target) => dropTile(target, items)) };
+  };
+  /**
+   * Runs a drop on a target; nothing happens without write access or while a structure change (merge, split) runs. A
+   * drop while earlier moves are still being sent queues like any action does.
+   */
   const runDrop = (action: MailDropAction, items: readonly MailListItem[]) => {
-    if (!canWrite() || structurePending() || disposed) return Promise.resolve();
+    if (!canWrite() || structureMutationLoading() || disposed) return Promise.resolve();
     return runMailDrop({
       action,
       items,
@@ -2830,15 +2972,23 @@ function createMailboxController(props: MailboxControllerProps) {
       locale: locale(),
       host: dropHost,
       text: { undo: t().undo, assignFailed: t().assignFailed },
+      // Try again runs the same drop under the same rules as the first one.
+      retry: () => void runDrop(action, items),
     });
   };
   const selectedWorkStatus = () => {
     const state = data.collaborationState;
     return state?.conversationId === data.selectedConversationId ? state.workStatus : (selectedListItem()?.workStatus ?? null);
   };
-  /** Marks one conversation done or reopens it, through the same path as the details panel's button. */
-  /** Marks conversations done or reopens them; resolves with the ones whose status changed, throws when any did not. */
-  const submitCompletion = async (conversationIds: string[], completion: "done" | "open"): Promise<string[]> => {
+  /**
+   * Marks conversations done or reopens them; resolves with the ones whose status changed, each with its new revision,
+   * and how many the server did not find (one that left the mailbox meanwhile). Throws only when the request as a whole
+   * failed.
+   */
+  const submitCompletion = async (
+    conversationIds: string[],
+    completion: "done" | "open",
+  ): Promise<{ changed: Array<{ conversationId: string; revision: number }>; failed: number }> => {
     const before = new Map(data.listItems.map((item) => [item.conversationId, item.workStatus]));
     const response = await apiClient.mailboxes[":mailboxId"].conversations.completion.$post({
       param: { mailboxId },
@@ -2847,13 +2997,14 @@ function createMailboxController(props: MailboxControllerProps) {
     if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
     // A selection may hold a conversation that left the mailbox meanwhile: the others still change.
     let failed = 0;
-    const changed: string[] = [];
+    const changed: Array<{ conversationId: string; revision: number }> = [];
     for (const result of (await response.json()).results) {
       if (result.status !== "ok") {
         failed += 1;
         continue;
       }
-      if (before.get(result.conversationId) !== result.workStatus) changed.push(result.conversationId);
+      if (before.get(result.conversationId) !== result.workStatus)
+        changed.push({ conversationId: result.conversationId, revision: result.revision });
       const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
       rememberPendingListState(result.conversationId, patch);
       setConversationListState(result.conversationId, patch);
@@ -2861,11 +3012,13 @@ function createMailboxController(props: MailboxControllerProps) {
     }
     const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
     if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
-    if (failed > 0) throw new Error(conversationText().completionFailed);
-    return changed;
+    return { changed, failed };
   };
   const completion = mutation.create<void, { conversationIds: string[]; completion: "done" | "open" }>({
-    mutation: async ({ conversationIds, completion }) => void (await submitCompletion(conversationIds, completion)),
+    mutation: async ({ conversationIds, completion }) => {
+      const { failed } = await submitCompletion(conversationIds, completion);
+      if (failed > 0) throw new Error(conversationText().completionFailed);
+    },
     onError: (error) => toast.error(error.message),
   });
   const setItemCompletion = (item: MailListItem, next: "done" | "open") => {
@@ -3110,10 +3263,11 @@ function createMailboxController(props: MailboxControllerProps) {
       onCompose: (options) => void startCompose(options),
       onMoveConversation: (input) => {
         // The dragged row, not the first row of its conversation: in a message list, rows of one
-        // conversation can sit in different folders.
-        const item = selectableRows().find((candidate) => candidate.id === input.itemId);
-        const target = item ? actionTargetForItem(item, "move") : null;
-        return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+        // conversation can sit in different folders. A drag from a selection moves every selected row.
+        const items = mailDraggedRows(selectableRows(), selectedConversationIds(), input.itemId);
+        const folder = data.folders.find((candidate) => candidate.id === input.destinationFolderId);
+        if (items.length === 0 || !folder) return;
+        return runDrop({ kind: "move", folderId: folder.id, name: folderName()(folder) }, items);
       },
       onNavigate: navigateWorkspace,
       // Administrators always reach the mailbox's Code; others once Core said they may see it.
@@ -3163,9 +3317,10 @@ function createMailboxController(props: MailboxControllerProps) {
     laterPending,
     listCounts,
     sharedMailbox,
-    dropItemsFor,
-    dropView,
-    runDrop,
+    canDrag,
+    dragPayload,
+    dropLevel,
+    dropText,
     assigneeNames,
     rowAssignees,
     assignToMe,
@@ -3371,6 +3526,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onNavigationStart={props.onNavigationStart}
       onLoadMore={controller().loadMoreConversations}
       onRefresh={controller().refreshList}
+      drag={{ enabled: controller().canDrag, payload: controller().dragPayload }}
       assignees={controller().sharedMailbox() ? controller().rowAssignees : undefined}
       assignedGroups={controller().listCounts().assignedGroups}
       hiddenDone={(() => {
@@ -3413,7 +3569,34 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
     />
   );
 
-  /** Bulk actions take the tab row's place with the first selection, at the same height (F3). */
+  /** What the status row says first: the open folder's unread mail, else how many conversations the view holds. */
+  const statusLead = () => {
+    const data = controller().data;
+    const text = controller().listText();
+    if (data.draftsMode)
+      return controller()
+        .conversationText()
+        .draftCount({ count: data.draftsPage?.total ?? 0 });
+    if (data.scheduledMode)
+      return controller()
+        .conversationText()
+        .waitingForDelivery({ count: data.scheduledPage?.total ?? data.scheduledCount });
+    const folder =
+      data.folderId && !data.query
+        ? controller()
+            .listCounts()
+            .folders.find((entry) => entry.id === data.folderId)
+        : null;
+    if (folder) return text.statusUnread({ count: folder.unread });
+    const view = !data.query && data.activeView ? controller().listCounts().viewCounts[data.activeView] : undefined;
+    return view === undefined ? data.listTitle : text.statusConversations({ count: view });
+  };
+
+  /**
+   * The status row under the head (K6, K10), above the list only: the select-all box and the lead statement, the day's
+   * done conversations as key figures, and a paused live connection as the page's state. A selection takes its place
+   * at the same height (F3).
+   */
   const listBar = () => (
     <div class="mail-list-bar" data-mail-list-bar>
       <Show
@@ -3454,75 +3637,101 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
           </div>
         }
       >
-        <span class="mail-list-bar-check">
-          <Show
-            when={
-              controller().canWrite() &&
-              controller().data.listMode === "conversations" &&
-              !controller().data.draftsMode &&
-              !controller().data.scheduledMode &&
-              !controller().data.eventsMode &&
-              controller()
-                .listView()
-                .items.some((item) => item.conversationId)
-            }
-          >
-            <input
-              type="checkbox"
-              class="h-4 w-4"
-              checked={false}
-              aria-label={controller().t().selectAllConversations}
-              title={controller().t().selectAllConversations}
-              data-mail-selection-trigger
-              onChange={(event) => {
-                event.currentTarget.checked = false;
-                controller().searchControls.cancelPending();
-                controller().toggleAllConversations();
-              }}
-            />
-          </Show>
-        </span>
-        <Show
-          when={!controller().data.draftsMode && !controller().data.scheduledMode}
-          fallback={
-            <span class="mail-queue-count text-xs text-muted" data-mail-queue-count>
-              {controller().data.draftsMode
-                ? controller()
-                    .conversationText()
-                    .draftCount({ count: controller().data.draftsPage?.total ?? 0 })
-                : controller()
-                    .conversationText()
-                    .waitingForDelivery({ count: controller().data.scheduledPage?.total ?? controller().data.scheduledCount })}
-            </span>
-          }
-        >
-          <Show
-            when={controller().currentTab() !== null}
-            fallback={
-              <span
-                data-mail-head-title
-                class={
-                  controller().listNamedBy() === "sidebar"
-                    ? "mail-list-heading truncate text-sm font-semibold"
-                    : "truncate text-sm font-semibold"
-                }
-              >
-                {controller().data.listTitle}
+        <StatusRow
+          class="mail-status-row"
+          lead={
+            <>
+              <span class="mail-list-bar-check">
+                <Show
+                  when={
+                    controller().canWrite() &&
+                    controller().data.listMode === "conversations" &&
+                    !controller().data.draftsMode &&
+                    !controller().data.scheduledMode &&
+                    !controller().data.eventsMode &&
+                    controller()
+                      .listView()
+                      .items.some((item) => item.conversationId)
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4"
+                    checked={false}
+                    aria-label={controller().t().selectAllConversations}
+                    title={controller().t().selectAllConversations}
+                    data-mail-selection-trigger
+                    onChange={(event) => {
+                      event.currentTarget.checked = false;
+                      controller().searchControls.cancelPending();
+                      controller().toggleAllConversations();
+                    }}
+                  />
+                </Show>
               </span>
-            }
-          >
-            <MailboxViewTabs
-              items={controller().viewTabs()}
-              current={controller().currentTab()!}
-              onOpenHref={(href) => {
-                controller().searchControls?.cancelPending();
-                void controller().openWorkspaceHref(href);
-              }}
-            />
-          </Show>
-        </Show>
+              <span
+                data-mail-status-lead
+                data-mail-queue-count={controller().data.draftsMode || controller().data.scheduledMode ? "" : undefined}
+              >
+                {statusLead()}
+              </span>
+            </>
+          }
+          facts={
+            controller().data.listMode === "conversations" &&
+            !controller().data.draftsMode &&
+            !controller().data.scheduledMode &&
+            controller().data.doneTodayCounts.doneToday > 0
+              ? [
+                  {
+                    value: controller().data.doneTodayCounts.doneToday,
+                    label: controller().listText().statusDoneToday,
+                  },
+                  ...(controller().data.doneTodayCounts.doneByAutomation > 0
+                    ? [
+                        {
+                          value: controller().data.doneTodayCounts.doneByAutomation,
+                          label: controller().listText().statusDoneAutomated,
+                        },
+                      ]
+                    : []),
+                ]
+              : []
+          }
+          state={
+            controller().liveUnavailable()
+              ? { label: controller().listText().updatesPaused, tone: "neutral", icon: "ti ti-cloud-off" }
+              : undefined
+          }
+        />
       </Show>
     </div>
+  );
+
+  /** The head names the list: its view tabs, or the list's title where it has none (drafts, outbox, a search). */
+  const headViews = () => (
+    <Show
+      when={controller().currentTab() !== null && !controller().data.draftsMode && !controller().data.scheduledMode}
+      fallback={
+        <span
+          data-mail-head-title
+          class={
+            controller().listNamedBy() === "sidebar" ? "mail-list-heading truncate text-sm font-semibold" : "truncate text-sm font-semibold"
+          }
+        >
+          {controller().data.listTitle}
+        </span>
+      }
+    >
+      <MailboxViewTabs
+        items={controller().viewTabs()}
+        current={controller().currentTab()!}
+        onOpenHref={(href) => {
+          controller().searchControls?.cancelPending();
+          void controller().openWorkspaceHref(href);
+        }}
+      />
+    </Show>
   );
 
   const searching = () => !controller().data.scheduledMode && !controller().data.draftsMode && !controller().data.eventsMode;
@@ -3530,39 +3739,32 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
   return (
     <>
       <AppWorkspace.Head
-        views={
-          searching() ? (
-            <MailSearchInput search={controller().searchControls} mailboxName={controller().data.mailbox.name}>
-              <MailSearchFilter
-                requestUrl={controller().requestPath()}
-                search={controller().data.search}
-                folderId={controller().data.folderId}
-                folders={controller().data.folders}
-                localTags={controller().data.localTags}
-                quickSearch={controller().searchControls}
-                onEditSearch={(state, source) => {
-                  controller().searchControls?.cancelPending();
-                  controller().searchControls?.edit(state, source);
-                }}
-                onOpenHref={(href) => {
-                  controller().searchControls?.cancelPending();
-                  void controller().openWorkspaceHref(href);
-                }}
-                hint={{
-                  open: !controller().hintSeen("filters-moved"),
-                  onDismiss: () => controller().markHintSeen("filters-moved"),
-                }}
-              />
-            </MailSearchInput>
-          ) : undefined
-        }
+        views={headViews()}
         actions={
           <>
-            <Show when={searching() && controller().liveUnavailable()}>
-              <span class="mail-head-live text-xs text-muted" title={controller().listText().updatesPaused}>
-                <i class="ti ti-cloud-off" aria-hidden="true" />
-                <span>{controller().listText().updatesPaused}</span>
-              </span>
+            <Show when={searching()}>
+              <MailSearchInput search={controller().searchControls} mailboxName={controller().data.mailbox.name}>
+                <MailSearchFilter
+                  requestUrl={controller().requestPath()}
+                  search={controller().data.search}
+                  folderId={controller().data.folderId}
+                  folders={controller().data.folders}
+                  localTags={controller().data.localTags}
+                  quickSearch={controller().searchControls}
+                  onEditSearch={(state, source) => {
+                    controller().searchControls?.cancelPending();
+                    controller().searchControls?.edit(state, source);
+                  }}
+                  onOpenHref={(href) => {
+                    controller().searchControls?.cancelPending();
+                    void controller().openWorkspaceHref(href);
+                  }}
+                  hint={{
+                    open: !controller().hintSeen("filters-moved"),
+                    onDismiss: () => controller().markHintSeen("filters-moved"),
+                  }}
+                />
+              </MailSearchInput>
             </Show>
             <MailboxMenuButton
               menu={controller().mailboxMenu}
@@ -3632,12 +3834,20 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
             data-reader={controller().readerOpen() && !controller().data.scheduledMode && !controller().data.draftsMode ? "open" : "closed"}
             data-list={controller().listOpen() ? "open" : "hidden"}
           >
-            {listBar()}
             <Show
               when={controller().data.scheduledMode || controller().data.draftsMode}
               fallback={
                 <div class="mail-split-panes">
+                  {/* S7: while a conversation is dragged, its targets cover list and reader; the sidebar stays free. */}
+                  <DropOverlay
+                    class="mail-drop-overlay"
+                    accept={[MAIL_CONVERSATION_DRAG]}
+                    level={controller().dropLevel}
+                    hint={controller().dropText().sidebarHint}
+                    onCancel={() => toast(controller().dropText().cancelled)}
+                  />
                   <section id="mail-conversation-list" class="mail-split-list" aria-label={controller().t().conversationList}>
+                    {listBar()}
                     {controller().data.eventsMode ? eventsFeed() : conversationList()}
                   </section>
                   <Show when={controller().readerOpen()}>
@@ -3740,6 +3950,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                 </div>
               }
             >
+              {listBar()}
               <Show
                 when={controller().data.draftsMode}
                 fallback={
