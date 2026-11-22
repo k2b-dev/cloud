@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { MessageSearchHit } from "./search";
-import { searchHitToListItem } from "./workspace";
+import { loadDropAssigneesOrNull, searchHitToListItem } from "./workspace";
 
 const messageId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
@@ -61,5 +62,22 @@ describe("Mail workspace search results", () => {
       conversationId: null,
       selectionKind: "message",
     });
+  });
+});
+
+describe("Mail workspace drag people", () => {
+  const people = { people: [{ id: "u1", uid: "ada", displayName: "Ada", avatarHash: null }], more: false };
+
+  test("a lookup that answers gives its people", async () => {
+    expect(await loadDropAssigneesOrNull(async () => ok(people), "box")).toEqual(people);
+  });
+
+  test("a refused or throwing lookup leaves the page working without them", async () => {
+    expect(await loadDropAssigneesOrNull(async () => fail(err.forbidden("Access denied")), "box")).toBeNull();
+    expect(
+      await loadDropAssigneesOrNull(async () => {
+        throw new Error("connection reset");
+      }, "box"),
+    ).toBeNull();
   });
 });

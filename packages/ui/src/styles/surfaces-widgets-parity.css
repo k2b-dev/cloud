@@ -29,12 +29,13 @@
  */
 
 /* ---------------------------------------------------------------- Paper -- */
-/* Paper is an island (layer 1, index.css): in the main content it carries the
-   island shadow and surface; in a flat layer (a column beside the main
-   content, a panel, a dialog, a dense collection) the same hooks are flat. */
+/* Paper is a frame on a full page (Cloud flat, K2-K4): a hairline and square
+   corners. Surface and shadow come from the island hooks, which the flat
+   tokens leave without a shadow (K3); a clickable Paper is a card (K17) with
+   the control radius. */
 .k2b-ui .k2b-paper {
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-flat);
   background: var(--k2b-island-surface);
   box-shadow: var(--k2b-island-shadow);
   transition:
@@ -56,14 +57,18 @@
   --k2b-surface-beneath: var(--k2b-island-surface);
 }
 
+/* A standalone page card sits on the canvas like the app card (K4): 14 px. */
 .k2b-ui .k2b-paper[data-elevated="true"] {
+  border-radius: var(--k2b-radius-card);
   box-shadow: var(--k2b-shadow-frame);
 }
 
-/* A clickable card is a content card: it keeps the island shadow and a light
-   1 px border in every state; hover darkens the fill only. */
+/* A clickable card (K17): flat, 8 px corners, and the one edge every
+   clickable card shares (interactive Paper, LinkCard, a ResourceCard that
+   opens): 1 px of the control tone in every state; hover darkens the fill. */
 .k2b-ui .k2b-paper[data-interactive="true"] {
   border-color: var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-control);
 }
 
 .k2b-ui .k2b-paper[data-interactive="true"]:hover {
@@ -131,6 +136,12 @@
 .k2b-ui .k2b-avatar[data-ring][data-size="xs"] { font-size: 0.5625rem; }
 
 /* -------------------------------------------------------------- LinkCard -- */
+/* A card (K17): one of several independent things side by side, flat, with a
+   border and 8 px corners. */
+.k2b-ui .k2b-paper.k2b-link-card {
+  border-radius: var(--k2b-radius-control);
+}
+
 .k2b-ui .k2b-link-card {
   display: flex;
   min-width: 0;
@@ -211,7 +222,7 @@
   align-items: start;
   gap: 0.75rem;
   height: 100%;
-  border-radius: 0.625rem;
+  border-radius: var(--k2b-radius-control);
 }
 .k2b-ui .k2b-link-card[data-layout="stacked"] > .k2b-link-card__aside { grid-column: 4; grid-row: 1; }
 .k2b-ui .k2b-link-card[data-layout="stacked"] > .k2b-link-card__body { grid-column: 1 / -1; grid-row: 2; }
@@ -266,7 +277,7 @@
   gap: 0.75rem;
   min-height: 3.5rem;
   padding: 0.5rem 0.625rem;
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-control);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 .k2b-ui .k2b-link-card[data-surface="plain"]:hover { background: var(--k2b-hover); }
@@ -324,8 +335,9 @@
   padding-block: 0;
   /* The 1 px frame belongs to the inset, so icon and text keep their place. */
   padding-inline: calc(0.625rem - 1px) calc(0.875rem - 1px);
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
+  /* A card (K17): flat, a 1 px border, 8 px corners, never nested. */
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
   background: var(--k2b-island-surface);
   box-shadow: var(--k2b-island-shadow);
@@ -337,7 +349,9 @@
   transition: background-color 120ms ease;
 }
 
+/* A card that opens carries the clickable cards' edge. */
 .k2b-ui :is(a, button).k2b-resource-card {
+  border-color: var(--k2b-border-strong);
   cursor: pointer;
 }
 
@@ -479,27 +493,29 @@
 .k2b-ui .k2b-not-found__copy p { margin: 0.25rem 0 0; color: var(--k2b-text-muted); font-size: 0.875rem; line-height: 1.25rem; }
 
 /* ------------------------------------------------------------ NoticeCard --
- * A calm notice: a light tone tint without a border carries the tone, and
- * the text stays in neutral ink at reading size. Only the optional meta pill
- * repeats the tone colour, so the words (title, pill, body) always say what
- * the tint means. The tint alone separates a notice from its host, so a
- * notice inside a framed section is not a second box. The neutral tint is
- * translucent so it stays visible on white and on muted hosts alike. The
- * transparent border keeps an outline in forced colours, where the tint
- * disappears. Markdown renderers emit the same classes without the content
- * wrapper, so spacing follows siblings rather than a flex gap.
+ * The alert cell (Cloud flat, K10, K14): when something needs a person, the
+ * whole square cell carries the tone's tint, where the thing stands. It holds
+ * a sign, a sentence, its consequence, and one button that names the deed.
+ * There is no rounded box inside the cell and no frame around it; the host
+ * places it from edge to edge of its column. The text stays in neutral ink;
+ * the tint and the sign carry the tone, and the words say what it means. The
+ * neutral tint is translucent so it stays visible on white and on muted hosts
+ * alike. The transparent border keeps an outline in forced colours, where the
+ * tint disappears. Markdown renderers emit the same classes without the
+ * content wrapper, so spacing follows siblings rather than a flex gap.
  */
 .k2b-ui .k2b-notice-card {
   --k2b-notice-ink: var(--k2b-text-secondary);
   --k2b-notice-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent);
   display: block;
-  padding: 1rem 1.125rem;
+  /* K1: a sentence and its consequence make a 52 px cell. */
+  padding: calc(0.5rem - 1px) calc(var(--k2b-gutter) - 1px);
   border: 1px solid transparent;
-  border-radius: calc(var(--k2b-radius-surface) + 0.25rem);
+  border-radius: var(--k2b-radius-flat);
   color: var(--k2b-text-secondary);
   background: var(--k2b-notice-surface);
-  font-size: 0.875rem;
-  line-height: 1.375rem;
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
 }
 /* A notice is never a control. A page moves focus to one (tabIndex -1) only to put a result where the person and
    their screen reader are; a focus ring would mark it as something to press. Its own controls keep their rings. */
@@ -508,11 +524,14 @@
 .k2b-ui .k2b-notice-card[data-tone="success"] { --k2b-notice-ink: var(--k2b-success-text); --k2b-notice-surface: var(--k2b-success-surface); }
 .k2b-ui .k2b-notice-card[data-tone="warning"] { --k2b-notice-ink: var(--k2b-warning-text); --k2b-notice-surface: var(--k2b-warning-surface); }
 .k2b-ui .k2b-notice-card[data-tone="danger"] { --k2b-notice-ink: var(--k2b-danger-text); --k2b-notice-surface: var(--k2b-danger-surface); }
+/* "Your turn": the action blue as a tint, never blue text. */
+.k2b-ui .k2b-notice-card[data-tone="yours"] { --k2b-notice-ink: var(--k2b-action); --k2b-notice-surface: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-surface)); }
 /* The dark tone surfaces are saturated; a notice uses a lighter share of them so it stays calm. */
 .k2b-ui[data-theme="dark"] .k2b-notice-card:not([data-tone="neutral"]),
 .k2b-ui.k2b-dark .k2b-notice-card:not([data-tone="neutral"]),
 .dark .k2b-ui .k2b-notice-card:not([data-tone="neutral"]) { background: color-mix(in srgb, var(--k2b-notice-surface) 60%, transparent); }
-.k2b-ui .k2b-notice-card__content { min-width: 0; }
+.k2b-ui .k2b-notice-card__content,
+.k2b-ui .k2b-notice-card__text { min-width: 0; }
 .k2b-ui .k2b-notice-card__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; }
 .k2b-ui .k2b-notice-card__title { min-width: 0; margin: 0; color: var(--k2b-text); font-weight: 600; }
 .k2b-ui .k2b-notice-card__meta {
@@ -526,11 +545,8 @@
   font-weight: 500;
   line-height: 1.125rem;
 }
-.k2b-ui .k2b-notice-card__description { margin: 0; }
+.k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-meta); line-height: 1rem; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
-/* Buttons in a notice take its line height instead of their own, so a card's
-   actions keep the height its 22px lines give them (32px for `sm`). */
-.k2b-ui .k2b-notice-card .k2b-button { line-height: inherit; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
    read as empty rows inside the card. `[data-tone]` lifts these rules above
@@ -541,54 +557,49 @@
 .k2b-ui .k2b-notice-card[data-tone] > .k2b-notice-card__body > :last-child {
   margin-block-end: 0;
 }
-.k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.25rem; }
-.k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.75rem; }
-/* An icon turns a notice into a compact status line above a form or list: an
-   18px tone icon on the first text line, text in the tone colour, the control
-   radius and tighter padding. */
-.k2b-ui .k2b-notice-card[data-icon] {
-  display: grid;
-  grid-template-columns: 1.125rem minmax(0, 1fr);
-  column-gap: 0.625rem;
-  align-items: start;
-  padding: 0.625rem 0.875rem;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-notice-ink);
-}
-.k2b-ui .k2b-notice-card[data-icon] .k2b-notice-card__title { color: inherit; }
-.k2b-ui .k2b-notice-card__icon { display: flex; height: 1.375rem; align-items: center; color: var(--k2b-notice-ink); font-size: 1.125rem; }
-/* `layout="card"` keeps the calm card and sets the icon beside its text: a
-   20px tone icon centred on the title line, then title, detail, body, and
-   actions on one text edge. Title and text keep their calm ink. */
-.k2b-ui .k2b-notice-card[data-card-icon] {
+.k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0; }
+.k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.5rem; }
+/* A sign (K10): a 20 px tone icon on the first text line, then the sentence
+   and its consequence on one text edge. `line` and `card` share the cell; the
+   sentence keeps neutral ink, so only the sign and the tint carry the tone. */
+.k2b-ui .k2b-notice-card:is([data-icon], [data-card-icon]) {
   display: grid;
   grid-template-columns: 1.25rem minmax(0, 1fr);
   column-gap: 0.75rem;
   align-items: start;
 }
-.k2b-ui .k2b-notice-card[data-card-icon] > .k2b-notice-card__icon { justify-content: center; font-size: 1.25rem; }
-/* Actions close the notice: one row of buttons below the text that wraps on
-   a narrow card. The content column fills the card, so in a NoticeCard.Grid
-   row of equal-height cards every card's actions share the bottom edge. */
-.k2b-ui .k2b-notice-card[data-actions]:not([data-icon], [data-card-icon]) { display: flex; flex-direction: column; }
-.k2b-ui .k2b-notice-card[data-actions] > .k2b-notice-card__content { display: flex; flex: 1 1 auto; flex-direction: column; align-self: stretch; }
-.k2b-ui .k2b-notice-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: auto; padding-top: 0.75rem; }
-.k2b-ui .k2b-notice-card__actions:first-child { padding-top: 0; }
+.k2b-ui .k2b-notice-card__icon { display: flex; height: 1.25rem; align-items: center; justify-content: center; color: var(--k2b-notice-ink); font-size: 1rem; }
+/* The deed (K10, K15): in a wide cell the button stands at the right of the
+   text; in a narrow cell it moves under the text. Text and button never
+   share a squeezed line. */
+.k2b-ui .k2b-notice-card[data-actions] > .k2b-notice-card__content { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.k2b-ui .k2b-notice-card[data-actions] > .k2b-notice-card__content > .k2b-notice-card__text { flex: 1 1 18rem; }
+.k2b-ui .k2b-notice-card__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+/* A button on the tint keeps the page surface, so it reads as a control and not as part of the cell. */
+.k2b-ui .k2b-notice-card__actions .k2b-button[data-variant="secondary"] { background: var(--k2b-surface); }
+/* Side by side in a NoticeCard.Grid the cells are narrow: the text fills the
+   cell, so the actions of all cells in a row share the bottom edge. */
+.k2b-ui .k2b-notice-grid .k2b-notice-card[data-actions]:not([data-icon], [data-card-icon]) { display: flex; flex-direction: column; }
+.k2b-ui .k2b-notice-grid .k2b-notice-card[data-actions] > .k2b-notice-card__content { flex: 1 1 auto; flex-direction: column; align-items: stretch; align-self: stretch; }
+.k2b-ui .k2b-notice-grid .k2b-notice-card[data-actions] > .k2b-notice-card__content > .k2b-notice-card__text { flex: 0 1 auto; }
+.k2b-ui .k2b-notice-grid .k2b-notice-card__actions { margin-top: auto; }
 /* A row notice owns the entire compact responsive form. Domain consumers supply words and public controls. */
 .k2b-ui .k2b-notice-card[data-tone="ai"] { --k2b-notice-ink: var(--k2b-ai-accent); --k2b-notice-surface: var(--k2b-ai-surface); }
 .k2b-ui .k2b-notice-card-container { container-type: inline-size; min-width: 0; }
 .k2b-ui .k2b-notice-card[data-row][data-detail] {
-  --k2b-notice-title-line: 1.3125rem;
-  --k2b-notice-detail-line: 1.1875rem;
+  --k2b-notice-title-line: 1.25rem;
+  --k2b-notice-detail-line: 1rem;
   display: grid;
-  grid-template-columns: 1.125rem minmax(0, 1fr);
+  grid-template-columns: 1.25rem minmax(0, 1fr);
   align-items: center;
-  gap: .125rem .625rem;
-  block-size: 4rem;
-  padding: .6875rem .875rem;
+  gap: .125rem .75rem;
+  block-size: var(--k2b-h-row-2);
+  padding: .5rem var(--k2b-gutter);
   border: 0;
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-flat);
 }
+/* The row's grid places the sentence and the consequence itself. */
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__text { display: contents; }
 .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] { grid-template-columns: 2rem minmax(0, 1fr); }
 .k2b-ui .k2b-notice-card[data-row][data-detail][data-tone="neutral"] { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__icon { font-size: 1.0625rem; color: var(--k2b-notice-ink); }
@@ -597,14 +608,14 @@
 .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) { grid-template-columns: minmax(0, 1fr); }
 .k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-self: center; gap: .125rem 0; }
 .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__head { grid-column: 1; grid-row: 1; min-width: 0; }
-.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__title { margin: 0; font-size: var(--k2b-type-14); line-height: var(--k2b-notice-title-line); font-weight: 400; }
-.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__description { grid-column: 1; grid-row: 2; min-width: 0; display: flex; align-items: baseline; gap: .25rem; min-block-size: 1lh; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-type-13); line-height: var(--k2b-notice-detail-line); }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__title { margin: 0; font-size: var(--k2b-type-13); line-height: var(--k2b-notice-title-line); font-weight: 600; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__description { grid-column: 1; grid-row: 2; min-width: 0; display: flex; align-items: baseline; gap: .25rem; min-block-size: 1lh; margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-type-12); line-height: var(--k2b-notice-detail-line); }
 .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 2; grid-row: 1 / 3; display: flex; align-items: stretch; flex-wrap: nowrap; gap: .75rem; margin: 0 0 0 .125rem; padding: 0; }
 .k2b-ui .k2b-notice-card__detail-text { flex: 0 1 auto; min-width: 0; }
 .k2b-ui .k2b-notice-card__detail-action { flex: 0 0 auto; white-space: nowrap; }
 @container (max-width: 35rem) {
-  .k2b-ui .k2b-notice-card[data-row][data-detail] { grid-template-columns: 1.125rem minmax(0, 1fr); grid-template-rows: auto auto minmax(.5rem, 1fr) auto; row-gap: .125rem; align-content: start; align-items: start; block-size: auto; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] { grid-template-columns: 1.25rem minmax(0, 1fr); grid-template-rows: auto auto minmax(.5rem, 1fr) auto; row-gap: .125rem; align-content: start; align-items: start; block-size: auto; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] { grid-template-columns: 1.75rem minmax(0, 1fr); }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] > .k2b-notice-card__icon { inline-size: 1.75rem; block-size: 1.75rem; }
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) { grid-template-columns: minmax(0, 1fr); }
@@ -614,30 +625,33 @@
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) :is(.k2b-notice-card__head, .k2b-notice-card__description) { grid-column: 1; }
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-actions], [data-reserve]) { grid-template-rows: auto auto; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-reserve] { /* Two title lines + two quiet lines + their gap + a 40px action area,
-       with 12px between text and controls and the row's two 11px insets. */
-    block-size: calc(2 * var(--k2b-notice-title-line) + 2 * var(--k2b-notice-detail-line) + .125rem + 2.5rem + .75rem + 1.375rem); }
+       with 12px between text and controls and the row's two 8px insets. */
+    block-size: calc(2 * var(--k2b-notice-title-line) + 2 * var(--k2b-notice-detail-line) + .125rem + 2.5rem + .75rem + 1rem); }
   .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
-  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; margin: 0; padding: 0; }
+  /* K15: the actions share the row below the text in equal columns; a label too long for its column wraps inside its
+     button, so nothing leaves the cell. The cell's text edge (K5) is wider than the old 11 px inset, so the columns
+     and the buttons' own padding give that room back: a two-word label still reads on one line at 390 px. */
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .375rem; margin: 0; padding: 0; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions > .k2b-button { padding-inline: .625rem; }
   /* A final row sizes to its contents, including stable controls. The empty third track belongs only to the
      transition reserve; keeping it here would leave 8px plus an extra row gap above a receipt's actions. */
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-reserve]) .k2b-notice-card__actions { grid-row: 3; }
 }
-/* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
-   then the action, all centred. The action never wraps below the text; the
-   text takes what is left. Phones get a 28px tile. The padding gives way to
-   the transparent forced-colours border, so a small button (32px) makes the
-   row exactly 48px. */
+/* `NoticeRow`: a notice as one square row of at least 52 px (K1): the 32px
+   tile, the text, then the action, all centred. The action never wraps below
+   the text; the text takes what is left. Phones get a 28px tile. The padding
+   gives way to the transparent forced-colours border, so a small button
+   (32px) makes the row exactly 52px. */
 .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) {
   display: flex;
-  min-height: 3rem;
+  min-height: var(--k2b-h-row-2);
   align-items: center;
   gap: 0.75rem;
-  padding: calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.875rem - 1px);
-  border-radius: var(--k2b-radius-control);
+  padding: calc(0.625rem - 1px) calc(var(--k2b-gutter) - 1px);
+  border-radius: var(--k2b-radius-flat);
 }
-.k2b-ui .k2b-notice-card[data-row]:not([data-detail]):has(> .k2b-notice-card__tile) { padding-left: calc(0.5rem - 1px); }
 .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) > .k2b-notice-card__content { flex: 1 1 auto; }
 .k2b-ui .k2b-notice-card__tile { width: 2rem; height: 2rem; color: var(--k2b-notice-ink); font-size: 1.125rem; }
 .k2b-ui .k2b-notice-card__action { display: flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
@@ -671,11 +685,10 @@
   font-size: 0.75rem;
   line-height: 1rem;
 }
-/* `surface="paper"` frames a standalone page area. Inside a surface that
-   already frames it, the placeholder keeps its layout but draws no second box.
-   The workspace's Main is one flat surface: empty and error states there stand
-   on it without a box (decision 16.10.2026). */
-.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel, .k2b-section, .k2b-app-workspace__main) .k2b-placeholder[data-surface="paper"] {
+/* Empty and unavailable (K10): no box, one round sign, one sentence, one way
+   out. `surface="paper"` keeps its place in a page but no longer draws a
+   frame anywhere. */
+.k2b-ui .k2b-placeholder[data-surface="paper"] {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -692,10 +705,10 @@
    padding and gap, so the line starts where the first row would. */
 .k2b-ui .k2b-placeholder[data-variant="inline"] { flex-direction: row; align-items: flex-start; gap: 0.5rem; padding: 0.375rem 0.5625rem; }
 .k2b-ui .k2b-placeholder[data-variant="inline"][data-align="center"] { justify-content: center; }
-/* The icon box is fixed per variant and the same in every state. An empty
-   state's icon is a `k2b-icon-tile` in the app accent hook; loading and error
-   keep their status colours on the same box without a fill, so switching
-   state moves nothing. Inline rows keep a plain glyph like the rows beside them. */
+/* The sign is round (K4, K10) and the same box in every state, so switching
+   state moves nothing: a quiet grey disc for empty, no results, and no
+   access, the danger tint for an error, the bare spinning glyph while
+   loading. Inline rows keep a plain glyph like the rows beside them. */
 .k2b-ui .k2b-placeholder__icon {
   display: flex;
   width: 2rem;
@@ -703,16 +716,19 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color: var(--k2b-neutral-400);
+  border-radius: var(--k2b-radius-round);
+  color: var(--k2b-text-muted);
   font-size: 1rem;
 }
-.k2b-ui[data-theme="dark"] .k2b-placeholder__icon,
-.k2b-ui.k2b-dark .k2b-placeholder__icon,
-.dark .k2b-ui .k2b-placeholder__icon { color: var(--k2b-neutral-500); }
-.k2b-ui .k2b-placeholder__icon.k2b-icon-tile,
-.k2b-ui[data-theme="dark"] .k2b-placeholder__icon.k2b-icon-tile,
-.k2b-ui.k2b-dark .k2b-placeholder__icon.k2b-icon-tile,
-.dark .k2b-ui .k2b-placeholder__icon.k2b-icon-tile { color: var(--k2b-app-workspace-active); }
+.k2b-ui .k2b-placeholder:not([data-variant="inline"]) .k2b-placeholder__icon[data-sign] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-placeholder:not([data-variant="inline"])[data-state="error"] .k2b-placeholder__icon[data-sign] { background: var(--k2b-danger-surface); }
+/* A toned sign (K8): the tone's tint and ink, such as a green check for "All done"; the words say it too. */
+.k2b-ui .k2b-placeholder[data-tone="success"] { --k2b-placeholder-tone-surface: var(--k2b-success-surface); --k2b-placeholder-tone: var(--k2b-success-text); }
+.k2b-ui .k2b-placeholder[data-tone="info"] { --k2b-placeholder-tone-surface: var(--k2b-info-surface); --k2b-placeholder-tone: var(--k2b-info-text); }
+.k2b-ui .k2b-placeholder[data-tone="warning"] { --k2b-placeholder-tone-surface: var(--k2b-warning-surface); --k2b-placeholder-tone: var(--k2b-warning-text); }
+.k2b-ui .k2b-placeholder[data-tone="danger"] { --k2b-placeholder-tone-surface: var(--k2b-danger-surface); --k2b-placeholder-tone: var(--k2b-danger-text); }
+.k2b-ui .k2b-placeholder[data-tone] .k2b-placeholder__icon[data-sign] { color: var(--k2b-placeholder-tone); }
+.k2b-ui .k2b-placeholder:not([data-variant="inline"])[data-tone] .k2b-placeholder__icon[data-sign] { background: var(--k2b-placeholder-tone-surface); }
 .k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__icon {
   width: 2.5rem;
   height: 2.5rem;
@@ -725,15 +741,12 @@
 }
 /* Loading animates the glyph without adding a decorative frame. */
 .k2b-ui .k2b-placeholder[data-state="loading"] .k2b-placeholder__icon i { display: inline-block; animation: k2b-parity-spin 900ms linear infinite; }
-.k2b-ui .k2b-placeholder[data-state="error"] .k2b-placeholder__icon { color: var(--k2b-danger-600); }
-.k2b-ui[data-theme="dark"] .k2b-placeholder[data-state="error"] .k2b-placeholder__icon,
-.k2b-ui.k2b-dark .k2b-placeholder[data-state="error"] .k2b-placeholder__icon,
-.dark .k2b-ui .k2b-placeholder[data-state="error"] .k2b-placeholder__icon { color: #f87171; }
+.k2b-ui .k2b-placeholder[data-state="error"] .k2b-placeholder__icon { color: var(--k2b-danger-text); }
 .k2b-ui .k2b-placeholder__title,
 .k2b-ui .k2b-placeholder__description { margin: 0; }
-.k2b-ui .k2b-placeholder__title { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 500; line-height: 1rem; }
-.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; letter-spacing: -0.018em; }
-.k2b-ui .k2b-placeholder__description { max-width: 24rem; font-size: 0.75rem; line-height: 1rem; }
+.k2b-ui .k2b-placeholder__title { color: var(--k2b-text); font-size: var(--k2b-font-size-row); font-weight: 600; line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: var(--k2b-font-size-body); line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder__description { max-width: 35rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); line-height: 1.25rem; }
 /* An action and "Try again" sit side by side and wrap with the button row gap. */
 .k2b-ui .k2b-placeholder__action { display: flex; flex-wrap: wrap; gap: 0.625rem 0.5rem; margin-top: 0.5rem; }
 .k2b-ui .k2b-placeholder[data-align="center"] .k2b-placeholder__action { justify-content: center; }
@@ -992,7 +1005,8 @@
   white-space: nowrap;
 }
 .k2b-ui .k2b-status-badge > i { flex: 0 0 auto; font-size: 0.6875rem; }
-.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.375rem; border-radius: 0.25rem; background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
+/* K4: a state is a round chip with a sign and a word. */
+.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.5rem; border-radius: var(--k2b-radius-round); background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
 .k2b-ui .k2b-status-badge[data-variant="text"] { padding: 0; border-radius: 0; background: transparent; }
 .k2b-ui .k2b-status-badge__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* With `labels`, every possible word shares one cell and the badge keeps the widest: the dot never moves. */
@@ -1009,6 +1023,7 @@
 .k2b-ui .k2b-status-badge[data-tone="info"],
 .k2b-ui .k2b-status-badge[data-tone="running"] { color: var(--k2b-info-text); }
 .k2b-ui .k2b-status-badge[data-tone="neutral"] { color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-status-badge[data-tone="yours"] { color: var(--k2b-action); }
 .k2b-ui .k2b-status-badge[data-variant="text"][data-tone="neutral"] { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-status-badge[data-variant="chip"]:not([data-tone="neutral"]) { background: color-mix(in srgb, currentColor 10%, transparent); }
 .k2b-ui[data-theme="dark"] .k2b-status-badge[data-tone="warning"],
@@ -1031,6 +1046,7 @@
 .k2b-ui .k2b-status-badge[data-tone="warning"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="degraded"] .k2b-status-badge__dot { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-status-badge[data-tone="error"] .k2b-status-badge__dot { background: var(--k2b-danger-500); }
+.k2b-ui .k2b-status-badge[data-tone="yours"] .k2b-status-badge__dot { background: var(--k2b-action); }
 .k2b-ui .k2b-status-badge[data-tone="info"] .k2b-status-badge__dot,
 .k2b-ui .k2b-status-badge[data-tone="running"] .k2b-status-badge__dot { background: var(--k2b-info-mark); }
 .k2b-ui .k2b-status-badge[data-tone="running"] i { display: inline-block; animation: k2b-parity-spin 800ms linear infinite; }

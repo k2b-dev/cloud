@@ -173,7 +173,8 @@ describe("v10 approval card in Chromium", () => {
             else expect({ state, card: measured.card, next: measured.next }).toEqual({ state, card: first.card, next: first.next });
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeLessThanOrEqual(4);
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeGreaterThanOrEqual(0);
-            if (width === 1440) expect(measured.card.height).toBe(64);
+            // K1: a row with a second text line is 52 px.
+            if (width === 1440) expect(measured.card.height).toBe(52);
             expect(await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").getAttribute("title")).toBe(
               await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").textContent(),
             );
@@ -199,7 +200,8 @@ describe("v10 approval card in Chromium", () => {
                 a.y - measured.quiet.y - measured.quiet.height,
                 `${state}: a buffer separates the text and decisions`,
               ).toBeGreaterThanOrEqual(12);
-              expect(measured.card.y + measured.card.height - a.y - a.height).toBeCloseTo(11, 0);
+              // The actions end on the row's 8 px inset (padding .5rem).
+              expect(measured.card.y + measured.card.height - a.y - a.height).toBeCloseTo(8, 0);
               const quietStyle = await card.locator(".k2b-notice-card__detail-text").evaluate((element) => {
                 const style = getComputedStyle(element);
                 return {
@@ -246,7 +248,8 @@ describe("v10 approval card in Chromium", () => {
         await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 1);
         await h.page.locator(".assistant-code-version-host[data-state=loading] .cloud-approval-frame").waitFor();
         const first = await stableBoxes(h.page);
-        expect(first.card.height).toBe(156);
+        // K1 phone reserve: 2×20 title + 2×16 detail + 2 gap + 40 actions + 12 + 2×8 inset = 142 px.
+        expect(first.card.height).toBe(142);
         await screenshot(h.page, "loading", theme, 390);
         await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("failed"));
         await h.page.locator(".assistant-code-version-host[data-state=load-failed] .cloud-approval-frame").waitFor();
@@ -383,7 +386,7 @@ describe("v10 approval card in Chromium", () => {
           });
           expect(withSpacer - first.height).toBe(10);
           console.info(`Replaced receipt at ${width}px: four tracks ${withSpacer}px; reserve=false ${first.height}px`);
-        } else expect(first.height).toBe(64);
+        } else expect(first.height).toBe(52); // K1: a row with a second text line.
         // The interaction controller replaces the server card without changing it.
         await h.page.waitForTimeout(300);
         expect(await measure()).toEqual(first);

@@ -278,8 +278,9 @@ export const inventoryCapabilities = defineCapabilities({
 ```
 
 Translation maps use stable local IDs, stable search-tag tokens, and dotted
-schema field paths such as `filters.tags[]`. Startup rejects unknown IDs and
-paths. A locale may override only the human presentation it owns; operation
+schema field paths such as `filters.tags[]`. Paths continue through shared
+`$defs` schemas, and each path keeps its own translation. Startup rejects
+unknown IDs and paths. A locale may override only the human presentation it owns; operation
 IDs, tag tokens and aliases, schemas, schema hashes, safety flags, and result
 data remain unchanged. Catalog requests resolve exact locale, ancestor, and
 base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
@@ -580,8 +581,15 @@ reader; the reader supplies `codeResourceTitle(tx, id)` for the read-only owner
 existence check. `pages` maps those owner Types to their shared Code page:
 a path on this Cloud that contains `{id}`; a pattern starting with `//` is
 refused.
-The manifest publishes only `owners` and optional `pages`. See
-[Code lifecycle](/en/docs/platform/code-lifecycle).
+The manifest publishes only `owners`, optional `pages` and optional
+`publicRoutes`. See [Code lifecycle](/en/docs/platform/code-lifecycle).
+
+`code: { publicRoutes: false }` keeps the app's data off public Code routes: a
+public route never calls one of its Queries, not even with
+`audience: "owner-data"`. The checker refuses such a version and Core refuses
+such an answer. An app without Code owners may declare it alone; `owners` then
+stays empty. See
+[Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
 
 Activation creates a version entry and switches versions. It never grants
 permissions, chooses a permission level from source, or restores access. The
@@ -1010,6 +1018,19 @@ application. It records that the Action is unavailable to resource-owned Code;
 personal Code retains its person's authority. Code consumers enforce this
 marker when offering operations. It does not change ordinary person calls or
 replace the Action's service authorization.
+
+A Query may declare `code: false` too: the Code SDK leaves it out and the bridge
+refuses it for every Code.
+
+An app-wide Query that takes the resource it reads in its input declares
+`inputRefs: { baseId: "base" }`: each named top-level string field holds the ID
+of a resource of that local Type. Code page hosting checks those resources for
+each visitor like a target
+([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
+The declaration grants nothing; the Query still authorizes its caller. Pulse
+declares it on `sql.run`, `source.list`, `alert.list`, `alert.read`,
+`saved_query.list` and `dashboard.list`, and offers target forms such as
+`base.sql.run` as well.
 
 Call the public client with explicit coordinates:
 
@@ -1717,6 +1738,11 @@ The capability registry separately caps each complete record at 512 KiB. The
 400 KiB manifest limit reserves 112 KiB for its app ID, presentation catalog
 and JSON envelope. That reserve does not exempt large translation catalogs
 from the complete-record limit.
+
+Projection inlines a repeated subschema at every use. Give an object that
+repeats across fields or operations `.meta({ id: "UniqueName" })`: its schema
+then appears once under `$defs`, and each use refers to it and keeps its own
+description. Choose an ID that is unique in the process.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
 JSON Schema `pattern` and `patternProperties` use Unicode regular-expression

@@ -298,6 +298,7 @@ describe("Mail workspace conversation open", () => {
       workspacePreference: { listShare: null, seenHints: [] },
       viewPreference: { large: "auto", phone: "compact" },
       doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
+      dropAssignees: null,
       receivingAddress: null,
       initialLiveCursor: "s6t.mail.4",
       folders: [

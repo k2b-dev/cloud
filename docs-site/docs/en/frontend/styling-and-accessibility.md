@@ -221,6 +221,15 @@ borders. They break dark mode, focus treatment, or application theming. Do not
 override a shared component to make one screen look different; fix a recurring
 gap in the owning primitive and update its UI context and showcase.
 
+An application page links the shared stylesheet first and the application's
+`app.css` after it. Both put their Tailwind utilities in the `utilities`
+layer, so on the application's own markup its utility wins at equal
+specificity: `-mt-1` beats a shared `m-0` on the same element. The
+`@k2b/cloud` build gives the application's `transition` utilities the shared
+default duration and easing. Shared UI scopes both sides of a responsive
+value, such as `max-sm:grid-cols-1 sm:grid-cols-2`, because an application's
+`grid-cols-1` would otherwise cancel the shared `sm:grid-cols-2` (UI-28).
+
 ### Mix semantic colors
 
 Applications built with the `@k2b/cloud` build or preload scripts can keep

@@ -20,12 +20,16 @@ where the first row would be.
 control layout independently. Name non-default layout choices in examples so
 different states are not mistaken for different component implementations.
 
-Use `surface="paper"` only when the placeholder stands alone in a page area,
-such as an empty list that replaces a table. Inside a surface that already
-frames it, such as a section, dialog, detail panel, or `Paper`, leave
-`surface` at its default. One frame per surface: a paper placeholder inside
-`Paper`, `SettingsSection`, `PanelDialog`, a prompt dialog, or `DetailPanel`
-keeps its layout but draws no border, background, or shadow of its own.
+An empty or unavailable area shows one round sign, one sentence, and one way
+out, without a box (Cloud flat, K10): a quiet grey disc for empty, no results,
+and no access, the danger tint for an error, and the bare spinning glyph while
+loading. `surface="paper"` keeps its place in existing pages but no longer
+draws a frame anywhere; leave `surface` at its default in new code.
+
+Pass `tone` (`success`, `info`, `warning`, or `danger`) when the sign itself
+carries a state, such as a green check for "All done" in an empty to-do list.
+The tone brings its own icon unless you pass `icon`, and the title still says
+the state in words (K8).
 
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
 a code such as `404` only when it accurately describes the result.
@@ -60,6 +64,7 @@ import {
 | `title` | `JSX.Element` | none | Names the state. |
 | `description` | `JSX.Element` | none | Explains the state or next step. |
 | `icon` | `string` | state-dependent | Overrides the Tabler icon class. `empty` has no default icon; `no-results` uses search-off and `no-access` uses lock. |
+| `tone` | `"success" \| "info" \| "warning" \| "danger"` | none | Colours the round sign in a state tone and brings that tone's icon. |
 | `action` | `JSX.Element` | none | Adds a recovery or creation action. |
 | `onRetry` | `() => void` | none | Appends a localized Try again button after `action` for errors. |
 | `state` | `"empty" \| "no-results" \| "no-access" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |

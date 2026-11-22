@@ -18,10 +18,9 @@ const scopedDisplay = (token: string): string | undefined => {
 
 /**
  * Shared UI (`@k2b/cloud`, `@k2b/ui`) renders next to an app's own Tailwind sheet, which repeats common utilities
- * such as `contents` or `hidden` in the same layer. Pages link the app sheet before `global.css`, but browser fixtures
- * and other hosts often append it after; then the app's `hidden` cancels a shared `md:flex`. A shared class list
- * therefore sets a responsive display only through breakpoint-scoped classes, such as `max-md:hidden md:flex`, and
- * looks the same in either order.
+ * such as `contents` or `hidden` in the same layer. Pages link the app sheet after `global.css` (#3921), so the app's
+ * `hidden` cancels a shared `md:flex`. A shared class list therefore sets a responsive display only through
+ * breakpoint-scoped classes, such as `max-md:hidden md:flex`, and looks the same in either order.
  */
 export const rule: Rule = {
   name: "breakpoint-display",

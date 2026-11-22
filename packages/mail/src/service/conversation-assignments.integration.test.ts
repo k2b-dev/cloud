@@ -1,14 +1,19 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { grantMailboxAccess, revokeMailboxAccess } from "./access";
+import { buildActorAssignmentIndex } from "../migrate";
+import { grantMailboxAccess, requireMailboxAccess, revokeMailboxAccess, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
   applyConversationCompletions,
+  dropAssigneeOrderQuery,
   listAssignableUsers,
+  listDropAssignees,
   loadConversationAssigneeIds,
+  MAIL_DROP_ASSIGNMENT_HISTORY,
   updateConversationCollaborationInTransaction,
   writeConversationAssignees,
 } from "./collaboration";
@@ -16,10 +21,21 @@ import { currentEligibleAssigneeIds, isUnassignedConversation, listLapsedAssigne
 import { assignConversation, assignConversations, updateConversationCollaboration } from "./conversation-assignments";
 import { mergeConversations } from "./conversations";
 import { createMailbox } from "./mailboxes";
+import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
 const suite = suiteFor("database", "nats");
 
 type TestUser = { id: string; uid: string; displayName: string };
+type Plan = {
+  "Node Type": string;
+  "Relation Name"?: string;
+  "Index Name"?: string;
+  "Actual Rows"?: number;
+  "Actual Loops"?: number;
+  "Rows Removed by Filter"?: number;
+  Plans?: Plan[];
+};
+const planNodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(planNodes)];
 
 const contextFor = (user: TestUser): MailRequestContext => ({
   actor: {
@@ -712,5 +728,160 @@ suite("mail conversation assignment", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.payload.d).toEqual({ conversationId: conversation.shortId });
     });
+  });
+
+  test("a drag's people list whom the person assigned most often first, then A–Z, and only for people who may assign", async () => {
+    const dropMailboxId = await createFixtureMailbox("Drop targets");
+    const zed = await createUser("zed");
+    const amy = await createUser("amy");
+    const assignedOnly = await createUser("drop-assigned");
+    for (const [user, permission, scope] of [
+      [zed, "write", "mailbox"],
+      [amy, "write", "mailbox"],
+      [writer, "write", "mailbox"],
+      [reader, "read", "mailbox"],
+      [assignedOnly, "write", "assigned"],
+    ] as const) {
+      const access = await grantMailboxAccess({
+        context: contextFor(owner),
+        mailboxId: dropMailboxId,
+        principal: { type: "user", userId: user.id },
+        permission,
+        ...(scope === "assigned" ? { scope } : {}),
+      });
+      if (!access.ok) throw new Error(access.error.message);
+    }
+    const first = await createConversation(dropMailboxId, "Drop first");
+    const second = await createConversation(dropMailboxId, "Drop second");
+    // The owner gave Zed two conversations and Amy one; Writer assigned no one.
+    for (const [conversation, user] of [
+      [first, zed],
+      [second, zed],
+      [first, amy],
+    ] as const) {
+      const assigned = await assignConversations({
+        context: contextFor(owner),
+        mailboxId: dropMailboxId,
+        conversationIds: [conversation.shortId],
+        assigneeUserIds: [user.id],
+        mode: "add",
+        locale: "en",
+      });
+      if (!assigned.ok) throw new Error(assigned.error.message);
+    }
+
+    const forOwner = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
+    if (!forOwner.ok) throw new Error(forOwner.error.message);
+    const names = (people: Array<{ displayName: string }>) => people.map((person) => person.displayName);
+    const alphabetical = [owner, writer, zed, amy, assignedOnly].map((user) => user.displayName).sort((a, b) => a.localeCompare(b));
+    expect(names(forOwner.data.people).slice(0, 2)).toEqual([zed.displayName, amy.displayName]);
+    expect(names(forOwner.data.people).slice(2)).toEqual(
+      alphabetical.filter((name) => name !== zed.displayName && name !== amy.displayName),
+    );
+    expect(forOwner.data.more).toBeFalse();
+    expect(names(forOwner.data.people)).not.toContain(reader.displayName);
+
+    const forWriter = await listDropAssignees({ context: contextFor(writer), mailboxId: dropMailboxId });
+    expect(forWriter.ok && names(forWriter.data.people)).toEqual(alphabetical);
+
+    for (const refused of [reader, assignedOnly]) {
+      const result = await listDropAssignees({ context: contextFor(refused), mailboxId: dropMailboxId });
+      expect(!result.ok && result.error.status).toBe(403);
+    }
+
+    // The order costs one statement on top of the assignee list the details panel already loads.
+    const meter = await meterSql();
+    try {
+      const list = await meter.during(() => listAssignableUsers({ context: contextFor(owner), mailboxId: dropMailboxId, limit: 200 }));
+      const drop = await meter.during(() => listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId }));
+      expect(drop).toHaveLength(list.length + 1);
+      expect(drop.filter((statement) => statement.includes("mail.activity_events"))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+
+    // Only the latest changes count: a window's worth of newer ones for Amy push Zed's two out of it.
+    const insertAssignments = (actorId: string, assigneeId: string, count: number) => sql`
+      INSERT INTO mail.activity_events (mailbox_id, conversation_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata)
+      SELECT ${dropMailboxId}::uuid, ${first.id}::uuid, 'user', ${actorId}::uuid, 'conversation.collaboration_updated', 'confirmed',
+        'conversation', ${first.id}::uuid,
+        jsonb_build_object('before', jsonb_build_object('assigneeUserIds', '[]'::jsonb),
+          'after', jsonb_build_object('assigneeUserIds', jsonb_build_array(${assigneeId}::text)))
+      FROM generate_series(1, ${count}::int)
+    `;
+    await insertAssignments(owner.id, amy.id, MAIL_DROP_ASSIGNMENT_HISTORY);
+    const windowed = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
+    expect(windowed.ok && names(windowed.data.people)).toEqual([
+      amy.displayName,
+      ...alphabetical.filter((name) => name !== amy.displayName),
+    ]);
+
+    // The hot read uses its index (DATA-13). As in a real mailbox, the person's own changes are a small part of its
+    // history: 5,000 newer changes by someone else. Then statistics, then a hard plan check, as the JMAP plan tests do:
+    // the index node, no sequential scan of the events, and about one window of rows read. A read in id order would
+    // have to pass all 5,000 first.
+    await insertAssignments(writer.id, zed.id, 5_000);
+    expect(["built", "ready"]).toContain(await buildActorAssignmentIndex());
+    await sql`ANALYZE mail.activity_events`;
+    const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan }] }[]>`
+      EXPLAIN (ANALYZE, FORMAT JSON) ${dropAssigneeOrderQuery(sql, { mailboxId: dropMailboxId, actor: { kind: "user", id: owner.id } })}
+    `;
+    const plan = JSON.stringify(explained!["QUERY PLAN"][0].Plan);
+    const nodes = planNodes(explained!["QUERY PLAN"][0].Plan);
+    expect(
+      nodes.some((node) => node["Index Name"] === "activity_events_actor_assignment_idx"),
+      `the actor assignment index: ${plan}`,
+    ).toBeTrue();
+    expect(
+      nodes.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "activity_events"),
+      `no sequential scan of the events: ${plan}`,
+    ).toBeFalse();
+    const rowsRead = nodes
+      .filter((node) => node["Relation Name"] === "activity_events")
+      .reduce((sum, node) => sum + ((node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)) * (node["Actual Loops"] ?? 1), 0);
+    expect(rowsRead, `about one window of rows read: ${plan}`).toBeLessThanOrEqual(2 * MAIL_DROP_ASSIGNMENT_HISTORY);
+    // The same bound holds in any plan: at most the window's rows reach the count.
+    const limits = nodes.filter((node) => node["Node Type"] === "Limit");
+    expect(limits).toHaveLength(1);
+    expect(limits[0]!["Actual Rows"]).toBeLessThanOrEqual(MAIL_DROP_ASSIGNMENT_HISTORY);
+    const [index] = await sql<{ valid: boolean; definition: string }[]>`
+      SELECT index.indisvalid AS valid, pg_get_indexdef(index.indexrelid) AS definition
+      FROM pg_index index
+      WHERE index.indexrelid = 'mail.activity_events_actor_assignment_idx'::regclass
+    `;
+    expect(index?.valid).toBeTrue();
+    expect(index?.definition).toContain("(mailbox_id, actor_id, id DESC)");
+  });
+
+  test("a workspace reload keeps the drag's people instead of loading them again", async () => {
+    const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    const request = await resolveWorkspaceRequest(new URL(`https://cloud.example.test/app/mail/${mailbox!.short_id}`), mailboxId);
+    if (!request) throw new Error("Workspace route not resolved");
+    const page = (dropAssignees: "load" | "keep") =>
+      loadMailboxPageData({ context: contextFor(owner), mailboxId, ...request, dropAssignees });
+    // Warm the cached counts, so both loads below read the same way.
+    expect((await page("load")).ok).toBeTrue();
+    const meter = await meterSql();
+    try {
+      let kept: Awaited<ReturnType<typeof page>> | undefined;
+      const reload = await meter.during(async () => {
+        kept = await page("keep");
+      });
+      const first = await meter.during(() => page("load"));
+      // A reload costs what it cost before the drag existed: none of the drag's statements, and its answer has none.
+      expect(kept?.ok && kept.data.dropAssignees).toBeNull();
+      expect(reload.filter((statement) => statement.includes("mail.activity_events activity WHERE activity.mailbox_id"))).toEqual([]);
+      expect(reload.filter((statement) => statement.includes("SELECT added.user_id"))).toEqual([]);
+      // The first load adds the drag's people: the one order query and the eligible people, no more than they cost alone.
+      expect(first.filter((statement) => statement.includes("SELECT added.user_id"))).toHaveLength(1);
+      const shared = withOneAccessRead(contextFor(owner));
+      expect((await requireMailboxAccess(shared, mailboxId, "read")).ok).toBeTrue();
+      const alone = await meter.during(() => listDropAssignees({ context: shared, mailboxId }));
+      expect(first.length - reload.length).toBeGreaterThan(0);
+      expect(first.length - reload.length).toBeLessThanOrEqual(alone.length);
+      console.info("MAIL_WORKSPACE_ROUTE_STATEMENTS", JSON.stringify({ reload: reload.length, first: first.length, drag: alone.length }));
+    } finally {
+      await meter.close();
+    }
   });
 });

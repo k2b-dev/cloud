@@ -114,25 +114,8 @@ packages/contacts/src/frontend/_components/ContactSearchPicker.tsx | class | rou
 packages/contacts/src/frontend/_components/ContactUpsertForm.tsx | class | rounded-md
 packages/core/src/code/PageTree.island.tsx | class | rounded-xl
 packages/core/src/notifications.ts | style | 10px
-packages/core/src/pages/admin/ai/AiClassDetail.island.tsx | class | rounded-xl
-packages/core/src/pages/admin/ai/AiModelDetail.island.tsx | class | rounded-md
-packages/core/src/pages/admin/ai/view.tsx | class | rounded-md
-packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | class | rounded-md
-packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | class | rounded-md
-packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | class | rounded-md
-packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | class | rounded-xl
-packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | class | rounded-xl
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 0 0 12px 12px
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 12px 12px 0 0
-packages/core/src/pages/auth/consent.page.tsx | class | rounded-2xl
-packages/core/src/pages/auth/new-password/page.tsx | class | rounded-2xl
-packages/core/src/pages/auth/new-password/page.tsx | class | rounded-md
-packages/core/src/pages/auth/page.tsx | class | rounded-2xl
-packages/core/src/pages/auth/password-reset/page.tsx | class | rounded-2xl
-packages/core/src/pages/auth/password-reset/page.tsx | class | rounded-md
-packages/core/src/styles/app.css | css | 0.625rem
-packages/core/src/styles/app.css | css | 0.625rem
-packages/core/src/styles/app.css | css | 1rem 1rem 0 0
 packages/core/src/styles/app.css | css | calc(var(--ui-radius-control) + 3px)
 packages/editor/src/markdown/lists.ts | style | 1px
 packages/editor/src/markdown/mark.ts | style | 2px
@@ -325,7 +308,6 @@ packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) + 3px)
 packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) - 0.0625rem)
 packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) + 0.125rem)
 packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) + 0.25rem)
-packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) - 1px)
 packages/ui/src/styles/layout-parity.css | css | 0.3125rem
 packages/ui/src/styles/layout-parity.css | css | 0.375rem
 packages/ui/src/styles/layout-parity.css | css | 0.4375rem
@@ -339,7 +321,6 @@ packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.2rem
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.375rem
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.375rem
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.3rem
-packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.625rem
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 1px
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 2.5px
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 28%
@@ -350,7 +331,6 @@ packages/ui/src/styles/surfaces-widgets-parity.css | css | 2px
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 2px
 packages/ui/src/styles/surfaces-widgets-parity.css | css | 3px
 packages/ui/src/styles/surfaces-widgets-parity.css | css | calc(var(--k2b-radius-control) * 0.6)
-packages/ui/src/styles/surfaces-widgets-parity.css | css | calc(var(--k2b-radius-surface) + 0.25rem)
 packages/ui/src/styles/text-editor.css | css | 10px
 packages/ui/src/styles/text-editor.css | css | 10px
 packages/ui/src/styles/text-editor.css | css | 12px

@@ -76,6 +76,15 @@ unfiltered inference turn index, so tool accounting never scans the full ledger
 under its shared admission lock.
 See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 
+## Pages with the owner's data
+
+Startup adds the `owner_data` policy row once and records a new policy
+revision. Its value follows the stored preset: `off` gets `never`, `open` gets
+`automatic`, and `admin` or a custom table gets `admin`. A Code version with an
+`{ audience: "owner-data" }` route needs this row, so under the Admin preset
+such a version waits for administrator approval. Existing rules remain
+unchanged on restart.
+
 ## Set execution budgets
 
 Code execution budgets are registered administrator settings for

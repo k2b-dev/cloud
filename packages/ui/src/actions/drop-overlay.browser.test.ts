@@ -337,6 +337,16 @@ describe(`drop overlay in ${browserName}`, () => {
       await start(page);
       expect(await page.locator(".k2b-drop-overlay__what").textContent()).toBe("3 conversations");
       expect(await page.locator(".k2b-drag-preview__count").textContent()).toBe("3");
+      // Over the overlay the preview is a 24 px badge at the pointer's tip, so it covers no tile's words.
+      await settled(page);
+      const badge = await page.evaluate(() => {
+        const box = document.querySelector(".k2b-drag-preview")!.getBoundingClientRect();
+        return { width: Math.round(box.width), height: Math.round(box.height), left: box.left, top: box.top };
+      });
+      const row = await center(page, ".row");
+      expect(badge).toMatchObject({ width: 24, height: 24 });
+      expect(Math.abs(badge.left - (row.x + 7))).toBeLessThanOrEqual(12);
+      expect(Math.abs(badge.top - row.y)).toBeLessThanOrEqual(12);
       const archive = await center(page, ".archive");
       await page.mouse.move(archive.x, archive.y, { steps: 3 });
       await page.mouse.up();

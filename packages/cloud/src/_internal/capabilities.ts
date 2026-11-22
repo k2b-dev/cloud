@@ -86,6 +86,7 @@ import {
   CAPABILITY_SENTENCE_MAX_CHARS,
   type CapabilityActionWording,
   capabilitySentenceFields,
+  localSchemaRef,
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
@@ -107,7 +108,7 @@ type JsonSchema = Record<string, unknown>;
  * leaving 45,945 B below the registry cap (112 KiB reserved for the whole envelope).
  * Presentation varies by app; Sync still enforces the complete-record cap independently.
  */
-const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
+export const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its
@@ -177,6 +178,8 @@ const QUERY_FIELDS = {
   stream: true,
   universalSearch: true,
   codeResourceTitle: true,
+  code: true,
+  inputRefs: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
@@ -349,26 +352,30 @@ const typeCount = (count: { one: string; other: string }, localId: string) => {
   return { one: count.one.trim(), other: count.other.trim() };
 };
 
-const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
+/** Field paths of a projected schema, following local `$ref`s once per path so shared `$defs` keep their paths. */
+const schemaFieldPaths = (schema: unknown, prefix = "", root: unknown = schema, refs: ReadonlySet<string> = new Set()): Set<string> => {
   const paths = new Set<string>();
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return paths;
   const value = schema as Record<string, unknown>;
+  if (typeof value.$ref === "string" && !refs.has(value.$ref)) {
+    for (const child of schemaFieldPaths(localSchemaRef(root, value.$ref), prefix, root, new Set([...refs, value.$ref]))) paths.add(child);
+  }
   const properties = value.properties;
   if (properties && typeof properties === "object" && !Array.isArray(properties)) {
     for (const [field, definition] of Object.entries(properties)) {
       const path = prefix ? `${prefix}.${field}` : field;
       paths.add(path);
-      for (const child of schemaFieldPaths(definition, path)) paths.add(child);
+      for (const child of schemaFieldPaths(definition, path, root, refs)) paths.add(child);
     }
   }
   if (value.items) {
     const arrayPrefix = `${prefix}[]`;
-    for (const child of schemaFieldPaths(value.items, arrayPrefix)) paths.add(child);
+    for (const child of schemaFieldPaths(value.items, arrayPrefix, root, refs)) paths.add(child);
   }
   for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
     if (!Array.isArray(value[keyword])) continue;
     for (const entry of value[keyword]) {
-      for (const child of schemaFieldPaths(entry, prefix)) paths.add(child);
+      for (const child of schemaFieldPaths(entry, prefix, root, refs)) paths.add(child);
     }
   }
   return paths;
@@ -1057,6 +1064,17 @@ export const compileCapabilities = (
       if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
         throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
     }
+    if (definition.inputRefs !== undefined && definition.target !== undefined)
+      throw new Error(`${label} declares a target; inputRefs are for app-wide Queries only`);
+    for (const [field, type] of Object.entries(definition.inputRefs ?? {})) {
+      // Required and without a default: a missing field would let the Query read a resource Cloud never checked.
+      const property = (schemas.inputSchema.properties as Record<string, { type?: unknown; default?: unknown }> | undefined)?.[field];
+      const required = Array.isArray(schemas.inputSchema.required) && schemas.inputSchema.required.includes(field);
+      if (!typeIds.has(qualifiedId(appId, type)) || property?.type !== "string" || !required || property.default !== undefined)
+        throw new Error(
+          `${label} inputRefs ${field} must be a required string input field without a default naming a declared type of the same app: ${type}`,
+        );
+    }
 
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
@@ -1078,6 +1096,7 @@ export const compileCapabilities = (
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...(definition.inputRefs !== undefined ? { inputRefs: { ...definition.inputRefs } } : {}),
       ...("unattended" in definition && definition.unattended !== undefined
         ? { unattended: z.literal(false).parse(definition.unattended) }
         : {}),
@@ -1313,6 +1332,7 @@ export const compileCapabilities = (
           code: {
             owners: [...(definitions.code?.owners ?? [])].sort(),
             ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
+            ...(definitions.code?.publicRoutes === false ? { publicRoutes: false as const } : {}),
           },
         }
       : {}),
@@ -1389,9 +1409,19 @@ export const compileCapabilities = (
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
   if (!descriptions || Object.keys(descriptions).length === 0) return schema;
   const localized = structuredClone(schema);
+  const paths = Object.keys(descriptions);
   const visit = (value: unknown, prefix = ""): void => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const node = value as Record<string, unknown>;
+    // A shared `$defs` entry serves several paths. Copy it into this place only when a localized field
+    // lies below it, so one path's wording never reaches the others; the registry record stays shared.
+    // Resolve against the unlocalized schema, so a copy never carries another path's translations.
+    const target = typeof node.$ref === "string" ? localSchemaRef(schema, node.$ref) : undefined;
+    if (target && paths.some((path) => !prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) {
+      const { $ref: _ref, ...siblings } = node;
+      delete node.$ref;
+      Object.assign(node, structuredClone(target), siblings);
+    }
     const properties = node.properties;
     if (properties && typeof properties === "object" && !Array.isArray(properties)) {
       for (const [field, definition] of Object.entries(properties)) {
@@ -1868,6 +1898,29 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
   return issues;
 };
 
+/**
+ * The schema with every local `$ref` written inline, so publishing a schema once under `$defs` is not a change.
+ * A recursive reference stays a `$ref` and compares by its text.
+ */
+const inlineLocalRefs = (root: JsonSchema): JsonSchema => {
+  const visit = (node: unknown, refs: ReadonlySet<string>): unknown => {
+    if (Array.isArray(node)) return node.map((entry) => visit(entry, refs));
+    if (!node || typeof node !== "object") return node;
+    const value = node as JsonSchema;
+    const target = typeof value.$ref === "string" && !refs.has(value.$ref) ? localSchemaRef(root, value.$ref) : undefined;
+    if (target) {
+      const { $ref, ...siblings } = value;
+      return visit({ ...target, ...siblings }, new Set([...refs, $ref as string]));
+    }
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, visit(entry, refs)]));
+  };
+  const { $defs: _definitions, ...schema } = visit(root, new Set()) as JsonSchema;
+  return schema;
+};
+
+const manifestSchemaIssues = (previous: JsonSchema, next: JsonSchema, path: string, direction: "input" | "data"): string[] =>
+  schemaEvolutionIssues(inlineLocalRefs(previous), inlineLocalRefs(next), path, direction);
+
 const searchTokens = (operation: CapabilityQueryManifest): Set<string> =>
   new Set(operation.universalSearch?.tags.flatMap((tag) => [tag.tag, ...(tag.aliases ?? [])]) ?? []);
 
@@ -1888,7 +1941,7 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
   for (const command of previous.commands) {
     const current = nextCommands.get(command.localId);
     if (!current) issues.push(`Command ${command.localId} was removed`);
-    else issues.push(...schemaEvolutionIssues(command.inputSchema, current.inputSchema, `Command ${command.localId} input`, "input"));
+    else issues.push(...manifestSchemaIssues(command.inputSchema, current.inputSchema, `Command ${command.localId} input`, "input"));
   }
   const nextQueries = new Map(next.queries.map((operation) => [operation.localId, operation]));
   const nextActions = new Map(next.actions.map((operation) => [operation.localId, operation]));
@@ -1905,10 +1958,10 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     for (const token of searchTokens(operation)) {
       if (!currentSearchTokens.has(token)) issues.push(`Query ${operation.localId} removed Universal Search token ${token}`);
     }
-    issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Query ${operation.localId} input`, "input"));
+    issues.push(...manifestSchemaIssues(operation.inputSchema, current.inputSchema, `Query ${operation.localId} input`, "input"));
     if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
       issues.push(`Query ${operation.localId} changed its target contract`);
-    issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Query ${operation.localId} data`, "data"));
+    issues.push(...manifestSchemaIssues(operation.dataSchema, current.dataSchema, `Query ${operation.localId} data`, "data"));
   }
   for (const operation of previous.actions) {
     const current = nextActions.get(operation.localId);
@@ -1922,12 +1975,12 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     if (operation.destructive !== current.destructive) issues.push(`Action ${operation.localId} destructive changed`);
     if (operation.idempotency !== current.idempotency) issues.push(`Action ${operation.localId} idempotency changed`);
     if (operation.review && !current.review) issues.push(`Action ${operation.localId} review was removed`);
-    issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Action ${operation.localId} input`, "input"));
+    issues.push(...manifestSchemaIssues(operation.inputSchema, current.inputSchema, `Action ${operation.localId} input`, "input"));
     if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
       issues.push(`Action ${operation.localId} changed its target contract`);
     if (operation.unattended !== current.unattended) issues.push(`Action ${operation.localId} changed unattended availability`);
     if (operation.code !== current.code) issues.push(`Action ${operation.localId} changed Code availability`);
-    issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Action ${operation.localId} data`, "data"));
+    issues.push(...manifestSchemaIssues(operation.dataSchema, current.dataSchema, `Action ${operation.localId} data`, "data"));
   }
   return issues;
 };

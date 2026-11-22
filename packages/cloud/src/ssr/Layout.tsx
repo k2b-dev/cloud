@@ -119,7 +119,7 @@ function ProfileWarnings({ user, locale }: { user: User; locale: string }) {
   if (!user.sn) missing.push(t.lastName);
   if (missing.length === 0) return null;
   return (
-    <a href="/me" class="block shrink-0 no-underline">
+    <a href="/me" class="cloud-shell-notice block shrink-0 no-underline">
       <NoticeCard tone="warning">{t.profileIncomplete({ fields: missing.join(", ") })}</NoticeCard>
     </a>
   );
@@ -152,7 +152,7 @@ function ExpiryWarnings({ user, dateConfig, locale }: { user: User; dateConfig: 
   }
   if (warnings.length === 0) return null;
   return (
-    <div class="flex shrink-0 flex-col gap-1">
+    <div class="cloud-shell-notice flex shrink-0 flex-col gap-1">
       {" "}
       {warnings.map((w) => (
         <NoticeCard tone={w.expired ? "danger" : "warning"}>{w.message}</NoticeCard>

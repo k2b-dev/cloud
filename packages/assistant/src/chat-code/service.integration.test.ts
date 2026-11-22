@@ -661,9 +661,31 @@ databaseSuite()("Assistant chat runner persistence", () => {
       const changed = request();
       await runtimeCapabilities.prepare(changed, owner, caller);
       review.mockResolvedValueOnce({ ok: true, data: { message: "A different consequence", approvalScope: "items:other" } });
-      await expect(runtimeCapabilities.resolve(changed.id, { approved: true }, owner, caller)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await runtimeCapabilities.resolve(changed.id, { approved: true }, owner, caller)).toEqual({ status: "changed" });
       expect(execute).not.toHaveBeenCalled();
-      await runtimeCapabilities.resolve(changed.id, { approved: false }, owner, caller);
+      // A changed consequence is withdrawn, not declined for the person: nothing runs, and the run asks again.
+      const [withdrawn] = await sql`SELECT status FROM assistant.code_capability_calls WHERE id=${changed.id}::uuid`;
+      expect(withdrawn).toMatchObject({ status: "abandoned" });
+      expect(await approvalFor(changed.id)).toMatchObject({ status: "cancelled" });
+      // An app update that changes the Action's schema while the person is asked is handled the same way.
+      const updated = request();
+      await runtimeCapabilities.prepare(updated, owner, caller);
+      catalog.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "",
+          appIcon: "ti ti-app-window",
+          manifest: {
+            ...manifest,
+            actions: manifest.actions.map((action) => (action.localId === "write" ? { ...action, schemaHash: "f".repeat(64) } : action)),
+          },
+        },
+      });
+      expect(await runtimeCapabilities.resolve(updated.id, { approved: true }, owner, caller)).toEqual({ status: "changed" });
+      expect(execute).not.toHaveBeenCalled();
+      expect(await approvalFor(updated.id)).toMatchObject({ status: "cancelled" });
       // Approving after a language switch is the same consequence: the review is repeated in the reviewed locale.
       const switched = request();
       await runtimeCapabilities.prepare(switched, owner, { ...caller, locale: "de" });
