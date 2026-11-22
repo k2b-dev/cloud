@@ -343,13 +343,15 @@ for (const width of [390, 768, 1100, 1440])
           await settled(view.page);
         }
         const sideways = await view.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        const problems = (
-          await view.page.evaluate(layoutProblems, {
-            root: "#root",
-            ignore: ".k2b-chat-timeline__latest, .k2b-sr-only, .sr-only",
-            slack: 8,
-          })
-        ).problems;
+        // The drawer floats over the chat, its head over the chat's head: it is checked as its own root, and the chat
+        // below it without it (layoutProblems does not see what a floating layer covers).
+        const drawer = '.assistant-context-boxcol[data-drawer="open"]';
+        const check = (root: string, ignore: string) =>
+          view.page.evaluate(layoutProblems, { root, ignore: `${ignore}.k2b-chat-timeline__latest, .k2b-sr-only, .sr-only`, slack: 8 });
+        const problems = [
+          ...(await check("#root", `${drawer}, `)).problems,
+          ...((await view.page.locator(drawer).count()) > 0 ? (await check(drawer, "")).problems : []),
+        ];
         const all = [...(sideways > 0 ? [`the page scrolls ${sideways} px sideways`] : []), ...problems];
         if (all.length > 0) found[id] = all;
         expect(view.errors).toEqual([]);
