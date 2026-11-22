@@ -1005,7 +1005,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             status,
             // A send whose quotes were refused cannot succeed again: it offers only Discard.
             ...(status === "failed"
-              ? { retry: send.refused ? undefined : () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) }
+              ? send.held
+                ? // Its quote's code did not load: try again, or send it without that quote on purpose.
+                  {
+                    retry: () => void retryQuotes(send.clientId),
+                    failure: {
+                      reason: t().quoteUnavailable,
+                      action: { label: t().sendWithoutQuote, onSelect: () => sendWithoutMissingQuotes(send.clientId) },
+                    },
+                  }
+                : { retry: send.refused ? undefined : () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) }
               : {}),
           }),
         );
@@ -2009,20 +2018,30 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [quotes, setQuotes] = createSignal<readonly DraftQuote[]>([]);
   const quoteDrafts = new Map<string, readonly DraftQuote[]>();
   // The focus is in the field before a quote's module has loaded, so a send waits for the quotes on their way: the
-  // message carries them instead of leaving them behind in the emptied field (#3702).
-  let quotesOnTheWay: Promise<void> | undefined;
+  // message carries them instead of leaving them behind in the emptied field (#3702). The chain resolves with the
+  // quotes whose code did not load. They stay with their draft until its next send or a later load, so that send never
+  // goes out without them unasked (#3999).
+  type QuoteRequest = { item: ChatFeedItem; text: string; draft: string | null };
+  let quotesOnTheWay: Promise<readonly QuoteRequest[]> | undefined;
+  const loadQuoteCode = () => importOnDemand(() => import("./chat-quote-selection"));
   const quote = (item: ChatFeedItem, text: string) => {
-    const landed = (quotesOnTheWay ?? Promise.resolve())
-      .then(() => importOnDemand(() => import("./chat-quote-selection")))
-      .then((module) => {
-        const next = module?.addQuote(quotes(), reply(), item, text, t().quotesReplaced);
-        if (!next) return;
+    const draft = draftId(route());
+    const landed = (quotesOnTheWay ?? Promise.resolve<readonly QuoteRequest[]>([])).then(async (missing) => {
+      const requests = [...missing.filter((request) => request.draft === draft), { item, text, draft }];
+      const module = await loadQuoteCode();
+      if (!module) return requests;
+      if (draftId(route()) !== draft) return [];
+      for (const request of requests) {
+        const next = module.addQuote(quotes(), reply(), request.item, request.text, t().quotesReplaced);
+        if (!next) continue;
         if (!next.keepReply) setReply(null);
         setQuotes(next.quotes);
-      });
+      }
+      return [];
+    });
     quotesOnTheWay = landed;
-    void landed.then(() => {
-      if (quotesOnTheWay === landed) quotesOnTheWay = undefined;
+    void landed.then((missing) => {
+      if (quotesOnTheWay === landed && missing.length === 0) quotesOnTheWay = undefined;
     });
   };
   // A quote whose message was deleted leaves the draft.
@@ -2060,6 +2079,40 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
     setReply(item);
   };
+  /** Sends that wait for quotes whose code did not load: the draft's reply and quotes at send time, and the missing ones. */
+  const heldForQuotes = new Map<
+    string,
+    {
+      answered: ChatFeedItem | null;
+      quoted: readonly DraftQuote[];
+      missing: readonly QuoteRequest[];
+      target: (answered: ChatFeedItem | null, quoted: readonly DraftQuote[]) => Parameters<Sends["release"]>[1];
+    }
+  >();
+  /** "Retry" loads the quote's code again and sends the message with its quotes; it stays "not sent" while it cannot. */
+  const retryQuotes = async (clientId: string) => {
+    const held = heldForQuotes.get(clientId);
+    if (!held || !outbox) return;
+    outbox.retry(clientId);
+    const module = await loadQuoteCode();
+    if (!module) return outbox?.fail(clientId);
+    let { answered, quoted } = held;
+    for (const request of held.missing) {
+      const next = module.addQuote(quoted, answered, request.item, request.text, t().quotesReplaced);
+      if (!next) continue;
+      if (!next.keepReply) answered = null;
+      quoted = next.quotes;
+    }
+    heldForQuotes.delete(clientId);
+    outbox?.release(clientId, held.target(answered, quoted));
+  };
+  /** The person's choice to send the message with the quotes it already has. */
+  const sendWithoutMissingQuotes = (clientId: string) => {
+    const held = heldForQuotes.get(clientId);
+    if (!held) return;
+    heldForQuotes.delete(clientId);
+    outbox?.release(clientId, held.target(held.answered, held.quoted));
+  };
   // A message that only shares Cloud elements has no text.
   const uploads = createAttachmentUpload();
   const forYouApi = createForYouApi();
@@ -2088,24 +2141,27 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     pendingSends++;
     try {
       if (current.hasNewer) await store?.loadLatest();
-      const target = () => {
-        const answered = reply();
-        const quoted = quotes();
-        return {
-          thread: answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view)),
-          replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
-          quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
-        };
-      };
+      const target = (answered: ChatFeedItem | null, quoted: readonly DraftQuote[]) => ({
+        thread: answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view)),
+        replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
+        quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
+      });
       // The message shows as pending at once; only its post waits for quotes still on their way (#3999).
       const waiting = quotesOnTheWay;
-      const sent = outbox.send(current.id, body, { ...target(), refs, attachments, mentions, hold: !!waiting });
+      const sent = outbox.send(current.id, body, { ...target(reply(), quotes()), refs, attachments, mentions, hold: !!waiting });
       if (waiting) {
-        // A quote that failed to load leaves the draft as it is; the message still goes out with what it has.
-        await waiting.catch(() => {});
-        outbox.release(sent.clientId, target());
+        // This send takes over the quotes of its draft that did not load; those of other drafts are dropped with it.
+        const missing = (await waiting).filter((request) => request.draft === id);
+        if (quotesOnTheWay === waiting) quotesOnTheWay = undefined;
+        const held = { answered: reply(), quoted: quotes(), missing, target };
+        // A quote whose code did not load keeps the message back as "not sent" until the person retries or sends it
+        // without that quote; it never goes out without it unasked.
+        if (missing.length) {
+          heldForQuotes.set(sent.clientId, held);
+          outbox.fail(sent.clientId);
+        } else outbox.release(sent.clientId, target(held.answered, held.quoted));
       }
-      if (id !== null && sent.quotes.length) sendDrafts.set(sent.clientId, id);
+      if (id !== null && (sent.quotes.length || heldForQuotes.has(sent.clientId))) sendDrafts.set(sent.clientId, id);
       setReply(null);
       setQuotes([]);
       feed?.scrollToEnd();

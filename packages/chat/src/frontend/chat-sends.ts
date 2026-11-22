@@ -148,16 +148,24 @@ export const createChatSends = (dependencies: {
       }
       return entry;
     },
-    /** Posts a held send with where it goes and what it quotes as known now. */
+    /** Posts a held send, also a failed one, with where it goes and what it quotes as known now. */
     release: (clientId: string, target: { thread: string; replyTo: ChatSendReply | null; quotes: readonly ChatSendQuote[] }) => {
       const entry = entries.get(clientId);
       if (disposed || !entry?.held) return;
       entry.held = false;
+      entry.status = "pending";
       entry.thread = target.thread;
       entry.replyTo = target.replyTo;
       entry.quotes = target.quotes;
       notify();
       next(entry.conversationId);
+    },
+    /** A held send that cannot go out as it is shows as failed; it stays held until `release`, and `retry` makes it pending. */
+    fail: (clientId: string) => {
+      const entry = entries.get(clientId);
+      if (disposed || !entry?.held) return;
+      entry.status = "failed";
+      notify();
     },
     retry: (clientId: string) => {
       const entry = entries.get(clientId);

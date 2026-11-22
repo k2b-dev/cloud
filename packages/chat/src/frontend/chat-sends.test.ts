@@ -445,6 +445,24 @@ test("a held send shows as pending at once, holds back the next one, and posts w
   expect(fake.calls.map((call) => call.input.body)).toEqual(["Agreed", "And one more thing"]);
 });
 
+test("a held send that fails stays held through retry and posts only on release", () => {
+  const fake = fakePost();
+  const controller = createChatSends({ post: fake.post, newClientId: () => "client-1", now: () => new Date(message.createdAt) });
+  const held = controller.send("abcdef", "Agreed", { hold: true });
+  controller.fail(held.clientId);
+  expect(controller.sends("abcdef")[0]).toMatchObject({ status: "failed", held: true });
+  controller.retry(held.clientId);
+  expect(controller.sends("abcdef")[0]).toMatchObject({ status: "pending", held: true });
+  controller.fail(held.clientId);
+  expect(fake.calls).toHaveLength(0);
+  controller.release(held.clientId, { thread: "general", replyTo: null, quotes: [] });
+  expect(controller.sends("abcdef")[0]).toMatchObject({ status: "pending", held: false });
+  expect(fake.calls.map((call) => call.input.body)).toEqual(["Agreed"]);
+  // A send that is not held is no longer the application's to fail.
+  controller.fail(held.clientId);
+  expect(controller.sends("abcdef")[0]!.status).toBe("pending");
+});
+
 test("a refused send without quotes, and a busy server, still wait for Try again", async () => {
   for (const [error, quotes] of [
     [new ChatSendError(400), []],

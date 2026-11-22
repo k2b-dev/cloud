@@ -107,7 +107,9 @@ collapsed again.
 - `"sent"`: a check;
 - `"failed"`: "Not sent" and, with `onRetry`, a "Retry" button; with
   `onDiscard`, a "Discard" button beside it, so both answers to the failure
-  sit where it shows, also on a touch screen.
+  sit where it shows, also on a touch screen. `failure` gives the reason
+  instead of "Not sent", ending in an ellipsis when it is too long, and with
+  `action` one more answer after "Retry", such as "Send without quote".
 
 `receipt` replaces the check with the application's text, such as "Read by
 Nora, Tobias"; it ends in an ellipsis when it is too long. The line exists

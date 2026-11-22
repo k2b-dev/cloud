@@ -76,6 +76,8 @@ export type ChatFeedItem = {
   retry?: () => void;
   /** Set on a failed send: removes it, so the sends after it go out. */
   discard?: () => void;
+  /** Set on a failed send that has its own reason, such as a quote whose code did not load. */
+  failure?: { reason: string; action?: { label: string; onSelect: () => void } };
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
@@ -676,6 +678,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               }
               onRetry={item.retry}
               onDiscard={item.discard}
+              failure={item.failure}
               reactions={reactionsOf(item)}
               onToggleReaction={
                 props.onReact && item.messageId
