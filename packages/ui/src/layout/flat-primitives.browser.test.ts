@@ -93,6 +93,9 @@ render(() => [
 render(() => [
   createComponent(TextInput, { label: "Name", value: "Mira" }),
   createComponent(DatePicker, { label: "Due", value: "2026-11-27" }),
+  // A plain picker whose value is a chip, as a record shows a date (Warenfluss).
+  createComponent(DatePicker, { label: "Contract", appearance: "plain", value: "2026-11-27",
+    renderValue: (value) => { const chip = document.createElement("span"); chip.className = "k2b-chip"; chip.id = "date-chip"; chip.textContent = value; return chip; } }),
 ], document.getElementById("fields"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
@@ -410,7 +413,7 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
         );
       expect(options).toEqual([true, true, true, true]);
       // The date field is exactly as wide as the text field beside it and as its own grid cell.
-      const cells = await page.locator("#fields > .k2b-field").evaluateAll((fields) =>
+      const cells = await page.locator("#fields > .k2b-field:has(.k2b-input-shell)").evaluateAll((fields) =>
         fields.map((field) => {
           const shell = field.querySelector(".k2b-input-shell")!.getBoundingClientRect();
           const own = field.getBoundingClientRect();
@@ -423,6 +426,9 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       );
       expect(cells[1]!.shell).toBe(cells[0]!.shell);
       expect(cells.map((cell) => cell.spill)).toEqual([0, 0]);
+      // A plain picker with a chip as its value: its hit area reaches 8 px past the trigger on purpose and is invisible,
+      // so the layout check reports nothing (a closed calendar's today mark once made it look drawn).
+      expect(await page.evaluate(layoutProblems, { root: "#fields" })).toMatchObject({ spill: [], cut: [] });
     } finally {
       await page.close();
     }

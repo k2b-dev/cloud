@@ -177,7 +177,9 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       reaches.push(range.getBoundingClientRect());
     }
     if (reaches.some((rect) => rect.width > 0 && (rect.left < left || rect.right > right))) return false;
-    return ![box, ...Array.from(box.querySelectorAll("*"))].some(drawsBeyond);
+    // Only what is rendered can draw: a closed popover (`display: none`) keeps its pseudo-elements' computed styles,
+    // such as a calendar's today mark, but paints none of them.
+    return ![box, ...Array.from(box.querySelectorAll("*"))].some((element) => element.getClientRects().length > 0 && drawsBeyond(element));
   };
   const found = { overlap: [] as string[], spill: [] as string[], cut: [] as string[] };
   for (const box of [root, ...Array.from(root.querySelectorAll("*"))]) {
