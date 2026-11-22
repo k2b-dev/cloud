@@ -4,7 +4,7 @@ import { type CreateThemeOptions, createTheme } from "@uiw/codemirror-themes";
 
 /**
  * Layout / chrome styles — shared between rich and raw modes. Deliberately
- * font-free so each mode can pick its own type system (rich = 14px sans
+ * font-free so each mode can pick its own type system (rich = 16px sans
  * with code-mark mono override, raw = 14px mono).
  */
 const baseEditorCSS = EditorView.theme({
@@ -64,16 +64,15 @@ const baseEditorCSS = EditorView.theme({
 });
 
 /**
- * Rich-mode type: prose in Sans at the Book's size and line height (14 px on
- * 22 px, the reading text of Cloud flach), so a paragraph breaks into the same
- * lines while writing and reading; code in Mono.
+ * Rich-mode type: prose in Sans at the Book's size and line height, so a
+ * paragraph breaks into the same lines while writing and reading; code in Mono.
  *
  * `.cm-md-code` is applied per-range by `codeFontExtension` against the
  * markdown syntax tree (FencedCode / InlineCode / CodeBlock nodes).
  */
 const richFontCSS = EditorView.theme({
-  "&": { fontFamily: "var(--font-sans)", fontSize: "14px" },
-  ".cm-scroller": { lineHeight: "22px" },
+  "&": { fontFamily: "var(--font-sans)", fontSize: "16px" },
+  ".cm-scroller": { lineHeight: "1.6" },
   ".cm-line": { fontFamily: "var(--font-sans)" },
   // The Book's code sizes (`.notebook-book-content pre` and inline `code`).
   ".cm-md-code": { fontFamily: "var(--font-mono)", fontSize: "0.9em" },
@@ -105,14 +104,15 @@ const darkText = "var(--color-zinc-100)";
 
 /**
  * The heading scale of the Book (`.notebook-book-content` in the app's
- * stylesheet): only running text has headings above the text size, 18 and
- * 16 px (K11); deeper levels keep the text size and its weight. Headings, bold
- * and italic keep the text color in both themes; only code is highlighted.
+ * stylesheet). Headings, bold and italic keep the text color in both themes;
+ * only code is highlighted.
  */
 const headingStyles: CreateThemeOptions["styles"] = [
-  { tag: t.heading1, fontSize: "18px", fontWeight: "600", lineHeight: "24px" },
-  { tag: t.heading2, fontSize: "16px", fontWeight: "600", lineHeight: "24px" },
-  { tag: [t.heading3, t.heading4, t.heading5, t.heading6], fontSize: "1em", fontWeight: "600" },
+  { tag: t.heading1, fontSize: "1.875em", fontWeight: "650", lineHeight: "1.25" },
+  { tag: t.heading2, fontSize: "1.5em", fontWeight: "650", lineHeight: "1.3" },
+  { tag: t.heading3, fontSize: "1.25em", fontWeight: "650", lineHeight: "1.4" },
+  { tag: t.heading4, fontSize: "1.125em", fontWeight: "650" },
+  { tag: [t.heading5, t.heading6], fontSize: "1em", fontWeight: "650" },
 ];
 
 const customLightStyle: CreateThemeOptions["styles"] = [
