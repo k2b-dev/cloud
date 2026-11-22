@@ -404,8 +404,7 @@ test("PDF preview waits for complete map PNGs, preserves sources and uploads ima
     expect(rendered.text).toContain("OpenMapTiles");
     expect(rendered.frameWidth).toBe(640);
     expect(rendered.headerText).toContain("PDF-Vorschau");
-    // The dialog draws one hairline between its header and body (K16).
-    expect(rendered.guidanceGap).toBe(15);
+    expect(rendered.guidanceGap).toBe(14);
     expect(rendered.printEnabled).toBe(true);
     expect(rendered.templateVisible).toBe(false);
     expect(rendered.guidanceText).toContain("Im PDF stehen Karte und Route als Bild.");

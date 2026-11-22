@@ -86,11 +86,9 @@ instant with reduced motion. The frame clips with `overflow: clip`, never
 `hidden`, because a hidden box still scrolls and focus scrolling it would
 cancel the slide. Pulled past its highest rest, the sheet gives like a rubber
 band and lifts off the edge by a few pixels; an apron in its own colour fills
-the gap, and the release returns it. Behind a sheet the page dims by 28 %,
-without blur, and the dim follows the sheet below its rest; a centred dialog
-dims the same way. The sheet has the app card's 14 px radius at its top, casts
-its shadow upwards (`--k2b-shadow-sheet`), and carries a round 32 × 5 px grip,
-since a finger can pull it. From 48rem an adaptive sheet is a dialog and moves like one: it rises
+the gap, and the release returns it. Behind a sheet the page only dims, without
+blur, and the dim follows the sheet below its rest; a centred dialog keeps its
+blur. From 48rem an adaptive sheet is a dialog and moves like one: it rises
 8 px and fades in, and sinks 4 px and fades out.
 
 ## Detents

@@ -287,12 +287,6 @@ const portableSections = [
         "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
       ),
       page(
-        "flat-criteria",
-        "Flat criteria",
-        "ti ti-ruler-2",
-        "The seventeen criteria of Cloud flach, each measured by a check or judged with one review question, and its tokens.",
-      ),
-      page(
         "elevation",
         "Layers and shadows",
         "ti ti-stack-2",
@@ -378,18 +372,7 @@ const portableSections = [
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
-      page(
-        "progress-path",
-        "ProgressPath",
-        "ti ti-route",
-        "The way of one thing through its stages: dots on a line, done, current, or open.",
-      ),
-      page(
-        "task-row",
-        "TaskRow",
-        "ti ti-checklist",
-        "A task that only has a date: symbol, count, one sentence, and the action word, as one row.",
-      ),
+      page("progress-path", "ProgressPath", "ti ti-route", "The stages of one thing in order, each with a word and a day."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("money", "Money", "ti ti-coin", "Amounts that show their direction, turquoise in and violet out, and balance rows."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),

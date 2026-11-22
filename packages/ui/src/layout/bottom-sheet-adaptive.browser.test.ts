@@ -119,8 +119,7 @@ describe("adaptive bottom sheet", () => {
           expect(padding).toBeGreaterThanOrEqual(16);
         } else {
           centered(box, view.viewport.width, view.viewport.height);
-          // K16: the foot is a band, 12 px above and below its buttons.
-          expect(padding).toBe(12);
+          expect(padding).toBe(20);
           const corners = await dialog.evaluate((el) => {
             const style = getComputedStyle(el);
             return [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius].map(

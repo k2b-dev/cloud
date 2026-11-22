@@ -2,16 +2,14 @@ import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
-import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch, DropdownSubmenu } from "./Dropdown";
+import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch } from "./Dropdown";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { filterDropdownItems, MenuSearch } from "./menu-search";
-import { useMenuSheetMessages } from "./menu-sheet-messages";
 
 // Kept apart so a control can check for phones without loading the sheet and its dialog imports.
 export { PHONE_SHEET_QUERY, prefersMenuSheet } from "./phone-sheet";
 
 type SheetEntry = DropdownAction | DropdownChoice;
-type SheetLevel = { label: string; items: readonly DropdownItem[]; index: number };
 type SheetItem = SheetEntry | { items: readonly SheetEntry[] };
 
 /**
@@ -34,8 +32,6 @@ const followLink = (href: string) => {
  */
 const afterClose = <T extends DropdownItem>(items: readonly T[], run: (action: () => void) => void): T[] => {
   const entry = (item: SheetEntry): SheetEntry => {
-    // A submenu's entries run after the sheet closed as well.
-    if ("submenu" in item) return { ...item, submenu: afterClose(item.submenu, run) };
     // A plain link would navigate while the sheet's history entry is still being removed, and that Back could
     // undo the navigation; a plain click instead follows it once the sheet is gone. Modified clicks and external
     // links keep the browser's own behavior.
@@ -69,30 +65,10 @@ function SheetMenu(props: {
   icons?: "plain" | "tile";
 }): JSX.Element {
   let menu!: HTMLDivElement;
-  const messages = useMenuSheetMessages();
-  // K16: on a phone a submenu takes the sheet's place, one level at a time, with Back at its top.
-  const [levels, setLevels] = createSignal<readonly SheetLevel[]>([]);
-  const current = () => levels().at(-1);
-  const focusRow = (index: number) => queueMicrotask(() => menuItems(menu)[index]?.focus());
-  const drill = (item: DropdownSubmenu, row: HTMLElement) => {
-    const index = menuItems(menu).indexOf(row);
-    setLevels((stack) => [...stack, { label: item.label, items: item.submenu, index }]);
-    // The back row comes first; the level's first entry takes the focus.
-    focusRow(1);
-  };
-  const back = () => {
-    const left = current();
-    if (!left) return;
-    setLevels((stack) => stack.slice(0, -1));
-    focusRow(left.index);
-  };
   const onKeyDown = (event: KeyboardEvent) => {
     const items = menuItems(menu);
-    if (focusMenuRow(items, event.key) || focusRowSegment(items, event.key)) return void event.preventDefault();
-    if (current() && (event.key === "ArrowLeft" || event.key === "Backspace")) {
-      event.preventDefault();
-      back();
-    }
+    if (!focusMenuRow(items, event.key) && !focusRowSegment(items, event.key)) return;
+    event.preventDefault();
   };
   // Keys pressed on the sheet itself, while it is the top level of the shared dialog.
   const onSheetKeyDown = (event: KeyboardEvent) => {
@@ -107,42 +83,18 @@ function SheetMenu(props: {
       ref={menu}
       class="k2b-gesture-menu__sheet-menu"
       role="menu"
-      aria-label={current()?.label ?? props.label}
+      aria-label={props.label}
       data-icons={props.icons === "tile" ? "tile" : undefined}
       onKeyDown={onKeyDown}
     >
-      <Show when={current()} keyed fallback={<props.Items items={props.items} close={() => props.close()} drill={drill} />}>
-        {(level) => (
-          <>
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              class="k2b-dropdown__item k2b-dropdown__back"
-              aria-label={messages().menuBack({ menu: level.label })}
-              onClick={back}
-            >
-              <i class="ti ti-chevron-left" aria-hidden="true" />
-              <span class="k2b-dropdown__copy">
-                <span>{level.label}</span>
-              </span>
-            </button>
-            <props.Items items={level.items} close={() => props.close()} drill={drill} depth={levels().length + 1} />
-          </>
-        )}
-      </Show>
+      <props.Items items={props.items} close={() => props.close()} />
     </div>
   );
 }
 
 export type MenuSheetOptions = {
   /** Renders the rows: the dropdown's own `DropdownItems`, passed in so this module does not import it back. */
-  Items: (props: {
-    items: readonly DropdownItem[];
-    close: (restoreFocus?: boolean) => void;
-    depth?: number;
-    drill?: (item: DropdownSubmenu, row: HTMLElement) => void;
-  }) => JSX.Element;
+  Items: (props: { items: readonly DropdownItem[]; close: (restoreFocus?: boolean) => void }) => JSX.Element;
   items: readonly DropdownItem[];
   /** Names the sheet and its menu. */
   label: string;

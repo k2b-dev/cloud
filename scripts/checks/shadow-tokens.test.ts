@@ -60,8 +60,6 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
     }
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
-      // K3: the island hook is a layer token that never floats; outside @k2b/ui it is a finding.
-      "packages/demo/src/app.css:1",
       "packages/demo/src/app.css:10",
       "packages/demo/src/app.css:11",
       "packages/demo/src/app.css:12",
@@ -75,41 +73,6 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
       "packages/demo/src/page.tsx:7",
       "packages/demo/src/page.tsx:9",
       "packages/ui/src/styles/index.css:1",
-    ]);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("layer tokens that never float stay inside @k2b/ui; known uses live in the baseline", async () => {
-  const root = await mkdtemp(join(tmpdir(), "cloud-shadow-tokens-layers-"));
-  try {
-    const files = {
-      "package.json": JSON.stringify({ workspaces: { packages: ["packages/demo", "packages/ui"] } }),
-      "packages/ui/src/styles/layout.css": ".k2b-ui .frame { box-shadow: var(--k2b-shadow-frame); }",
-      "packages/demo/src/app.css": [
-        ".menu { box-shadow: var(--k2b-shadow-overlay-sm); }",
-        ".dialog { box-shadow: 0 0 0 1px var(--k2b-border), var(--k2b-shadow-overlay-lg); }",
-        ".card { box-shadow: var(--k2b-shadow-raised); }",
-        ".shell { box-shadow: var(--k2b-shadow-frame); }",
-        ".tile { box-shadow: 0 0 0 1px var(--k2b-border), var(--k2b-shadow-surface); }",
-        ".column { background: linear-gradient(var(--k2b-shadow-column-mid), transparent); }",
-        "/* An old note: var(--k2b-shadow-raised) is gone. */",
-      ].join("\n"),
-      "packages/demo/src/page.tsx": 'const a = <div class="shadow-[var(--k2b-shadow-surface)]" />;',
-      "scripts/checks/shadow-tokens.baseline":
-        "# header\npackages/demo/src/app.css | --k2b-shadow-surface\npackages/demo/src/gone.css | --k2b-shadow-raised\n",
-    };
-    for (const [path, content] of Object.entries(files)) {
-      await mkdir(dirname(join(root, path)), { recursive: true });
-      await writeFile(join(root, path), content);
-    }
-    const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
-    expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line ?? ""}`).sort()).toEqual([
-      "packages/demo/src/app.css:3",
-      "packages/demo/src/app.css:6",
-      "packages/demo/src/page.tsx:1",
-      "scripts/checks/shadow-tokens.baseline:",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

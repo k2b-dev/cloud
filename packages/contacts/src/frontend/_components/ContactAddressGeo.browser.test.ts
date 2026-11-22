@@ -70,7 +70,7 @@ const expectFocus = async (locator: ReturnType<Page["locator"]>) => {
 };
 
 test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((theme) => ({ width, theme }))))(
-  "contact is a page with ordered flat sections at $width px in $theme",
+  "contact is a page with ordered island sections at $width px in $theme",
   async ({ width, theme }) => {
     const page = await open("reader-page", { view: "workspace", contact: jana(found), availability: availability.off }, width, "", theme);
     try {
@@ -97,10 +97,13 @@ test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((
         probe.remove();
         return { actual: getComputedStyle(element).boxShadow, expected };
       });
-      // Cloud flach (K3): a section never casts a shadow, in either theme.
       const transparentShadow = "rgba(0, 0, 0, 0) 0px 0px 0px 0px";
-      expect(depth.actual).toBe(depth.expected);
-      expect(depth.actual).toBe(transparentShadow);
+      if (theme === "dark") expect(depth.actual).toBe(transparentShadow);
+      else {
+        expect(depth.actual).toBe(depth.expected);
+        expect(depth.actual).not.toBe("none");
+        expect(depth.actual).not.toBe(transparentShadow);
+      }
     } finally {
       await page.close();
     }

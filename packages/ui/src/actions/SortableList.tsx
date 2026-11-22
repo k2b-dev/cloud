@@ -297,7 +297,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                 if (event.key !== "Tab") event.preventDefault();
                 return;
               }
-              // Without a lift, the arrow keys belong to the page, such as moving to the next card (K7).
+              // Without a lift, the arrow keys belong to the page, such as moving to the next card.
             };
             /** The part a pointer drags: the grip, or the whole row for cards. */
             const Grab = (grab: { class: string; children: JSX.Element }) => {

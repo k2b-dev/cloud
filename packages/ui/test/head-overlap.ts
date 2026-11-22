@@ -1,14 +1,4 @@
 /**
- * Overlap tests for browser tests, run in the page: pass a function to `page.evaluate`, so it closes over nothing.
- *
- * - `layoutProblems` is the general K15 self-check of Cloud flach. It is public as `@k2b/ui/layout-check`, so apps
- *   outside this repository import it from there; it is re-exported here for the tests of this package.
- * - `headOverlaps` checks the controls of a workspace head row in detail.
- */
-
-export { type LayoutProblemOptions, type LayoutProblems, layoutProblems } from "../src/layout-check";
-
-/**
  * Finds head row controls that draw over each other or outside the head, and a current view that is not shown whole.
  * Runs in the page: pass it to `page.evaluate`, so it closes over nothing. A control counts with the part of it that
  * a person sees: its box cut by every scrolling or clipping ancestor, so a tab scrolled out of the strip is no control

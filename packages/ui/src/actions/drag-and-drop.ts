@@ -18,7 +18,7 @@ export type DragPayload<Type extends string = string> = {
 
 const SLOP = 10;
 const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]";
-/** A finger held this long lifts the item; before that it scrolls. Sortable rows lift sooner (K7). */
+/** A finger held this long lifts the item; before that it scrolls. Sortable rows lift sooner. */
 const HOLD_MS = 500;
 const AUTOSCROLL_EDGE = 32;
 /**

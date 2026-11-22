@@ -510,8 +510,7 @@ for (const [name, options] of Object.entries(profiles))
         const heading = (await page.getByText("Sommerfest 2027").boundingBox())!;
         await page.mouse.move(heading.x + 5, heading.y + 5);
         await page.mouse.down();
-        // Along the heading, so the release never lands on the menu, whose 36 px rows (K1) reach further down.
-        await page.mouse.move(heading.x + 300, heading.y + 5);
+        await page.mouse.move(heading.x + 5, heading.y + 120);
         await page.mouse.up();
         expect(await openMenu.count()).toBe(0);
         await page.locator("#outside").focus();

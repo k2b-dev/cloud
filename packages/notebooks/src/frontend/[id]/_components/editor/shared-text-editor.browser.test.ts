@@ -782,8 +782,7 @@ describe("Notebook on the shared text editor", () => {
       });
       expect(menuGeometry.gaps.length).toBeGreaterThan(0);
       expect(menuGeometry.gaps.every((gap) => Math.abs(gap) < 0.5)).toBe(true);
-      // K1: a menu row is a 36 px control row.
-      expect(menuGeometry.height).toBe(36);
+      expect(menuGeometry.height).toBe(32);
       expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
       // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.

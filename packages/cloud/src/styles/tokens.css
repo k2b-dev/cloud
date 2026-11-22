@@ -60,8 +60,7 @@
   --ui-dialog-section: var(--ui-surface-subtle);
   --ui-dialog-section-border: transparent;
   --ui-dialog-section-icon: var(--ui-surface-muted);
-  /* A dialog is an overlay: 8 px (K16). */
-  --ui-dialog-radius: var(--ui-radius-control);
+  --ui-dialog-radius: var(--ui-radius-frame);
   /* Fallback for browsers without dynamic viewport units. The @supports
      override below also accounts for notches and mobile browser chrome. */
   --ui-dialog-available-height: calc(100vh - 1.5rem);
@@ -102,15 +101,9 @@
   --ui-pagination-current-surface: var(--ui-selected);
   --ui-pagination-current-border: transparent;
   --ui-pagination-current-text: var(--color-blue-700);
-  /* Radius roles of the shell follow @k2b/ui (K4): the frame is the app card
-     (`--k2b-radius-card`), a control is a button or field
-     (`--k2b-radius-control`). A surface keeps the 12 px of
-     `--k2b-radius-surface` until its users move to a role. The values are
-     literal because `:root` sits above the `.k2b-ui` scope that declares the
-     roles. */
-  --ui-radius-frame: 14px;
+  --ui-radius-frame: 0.875rem;
   --ui-radius-surface: 0.75rem;
-  --ui-radius-control: 8px;
+  --ui-radius-control: 0.5rem;
   --ui-control-sm: 2rem;
   --ui-control-md: 2.375rem;
   --ui-input-padding-x: 0.5rem;
@@ -199,7 +192,6 @@
    body of every Cloud page, so the aliases resolve there too; each element
    reads the token of its own theme. */
 .k2b-ui {
-  /* The app card never floats (K3): its frame is the hairline edge of @k2b/ui. */
   --ui-shadow-frame: var(--k2b-shadow-frame);
   --ui-shadow-float: var(--k2b-shadow-float);
   --ui-context-menu-shadow: var(--k2b-shadow-float);
@@ -209,7 +201,7 @@
 
 .dark .k2b-ui,
 .k2b-ui.dark {
-  --ui-shadow-frame: inset 0 0 0 1px var(--ui-border);
+  --ui-shadow-frame: inset 0 0 0 1px var(--ui-border), var(--k2b-shadow-frame);
 }
 
 /* Custom properties resolve where declared. Each app scope must re-read its

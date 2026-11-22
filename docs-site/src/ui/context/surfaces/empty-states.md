@@ -1,7 +1,5 @@
 # Empty States
 
-> **Being replaced.** Under the [flat criteria](/en/ui/surfaces/flat-criteria), an empty or failed region shows a round sign, one sentence, and a way out without a box (K10). This page is rewritten with that building block; `onRetry` stays as it is.
-
 `Placeholder` explains an empty, filtered, inaccessible, loading, or failed region inside a page.
 `NotFoundState` handles a whole-page dead end and can provide one route back.
 

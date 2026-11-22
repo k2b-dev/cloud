@@ -261,8 +261,7 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
           };
         });
         if (options.viewport.width < 768) expect(frame).toEqual({ edgeToEdge: true, radius: "0px", border: "none" });
-        // K16: a dialog frame has the 8 px of a control.
-        else expect(frame).toEqual({ edgeToEdge: false, radius: "8px", border: "solid" });
+        else expect(frame).toEqual({ edgeToEdge: false, radius: "14px", border: "solid" });
       } finally {
         await page.close();
       }
@@ -307,15 +306,14 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
       try {
         const fit = await page.evaluate(() => {
           const body = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__body")!;
-          // K5: the head band's text edge, where the title starts.
-          const header = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__header")!;
+          const panel = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__panel")!;
           const wrap = body.querySelector(".k2b-content-markdown__table")!.getBoundingClientRect();
           const left = body.getBoundingClientRect().left + body.clientLeft;
-          const edge = header.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(header).paddingLeft);
+          const edge = panel.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(panel).paddingLeft);
           return {
             sideways: body.scrollWidth - body.clientWidth,
             inside: wrap.left >= left - 0.5 && wrap.right <= left + body.clientWidth + 0.5,
-            // The text stays on the text edge, under the title.
+            // The text stays on the panel's content edge, under the title.
             text: Math.round(body.querySelector("p")!.getBoundingClientRect().left - edge),
           };
         });

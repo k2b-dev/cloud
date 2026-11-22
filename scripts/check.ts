@@ -17,7 +17,7 @@ import { runUnderHeavyLock } from "./heavy-lock";
 import { workspaceRoot } from "./workspace";
 
 const checksDir = join(import.meta.dir, "checks");
-const helpers = new Set(["rule.ts", "files.ts", "baseline.ts"]);
+const helpers = new Set(["rule.ts", "files.ts"]);
 
 const loadRules = async (): Promise<Rule[]> => {
   const files = readdirSync(checksDir)
