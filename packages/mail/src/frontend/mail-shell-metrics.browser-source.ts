@@ -1,13 +1,11 @@
-/** The view tabs live in the workspace head (K7); the list bar below holds the status row. */
-export const tabsSelector = ".mail-workspace .k2b-app-workspace__head-views";
+export const tabsSelector = ".mail-list-bar";
 export const measurements = [
   ".mail-sidebar",
   ".k2b-app-workspace__head",
   tabsSelector,
   ".k2b-app-workspace__head-filters",
   ".k2b-app-workspace__head-actions",
-  // A moved hint floats in the top layer from the filter button: its buttons take no room in the head.
-  ".k2b-app-workspace__head-actions button:not(.k2b-moved-hint button)",
+  ".k2b-app-workspace__head-actions button",
   "[data-workspace-primary]",
   ".k2b-app-workspace__main",
   ".k2b-view-tabs__item",

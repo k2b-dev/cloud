@@ -21,13 +21,6 @@ export const mailConversationListMessages = i18n.define({
       messageBody: "Message body",
       attachmentNames: "Attachment names",
       shown: ({ count }: { count: number }) => `${count} shown`,
-      columnPreview: "Preview",
-      statusUnread: ({ count }: { count: number }) => `${count} unread`,
-      statusDoneToday: "done today",
-      statusDoneAutomated: "of them automatically",
-      statusConversations: ({ count }: { count: number }) => (count === 1 ? "1 conversation" : `${count} conversations`),
-      columnMarks: "Tags and marks",
-      columnTime: "Time",
       hiddenDone: ({ count, formatted }: { count: number; formatted: string }) =>
         count === 1 ? `${formatted} done conversation` : `${formatted} done conversations`,
       hiddenDoneMore: ({ formatted }: { formatted: string }) => `More than ${formatted} done conversations`,
@@ -57,6 +50,9 @@ export const mailConversationListMessages = i18n.define({
       retry: "Retry",
       noMatchingMessages: "No matching messages",
       noConversations: "No conversations here",
+      doneToday: ({ count }: { count: number }) => `${count} done today`,
+      doneAutomated: ({ count }: { count: number }) => `${count} of them automatically`,
+      doneRing: ({ done, total }: { done: number; total: number }) => `${done} of ${total} conversations done today`,
       allDoneTitle: "All done.",
       allDoneText: ({ done, automated }: { done: number; automated: number }) =>
         automated > 0
@@ -97,13 +93,6 @@ export const mailConversationListMessages = i18n.define({
       messageBody: "Nachrichteninhalt",
       attachmentNames: "Anhangsnamen",
       shown: ({ count }) => `${count} angezeigt`,
-      columnPreview: "Vorschau",
-      statusUnread: ({ count }) => `${count} ungelesen`,
-      statusDoneToday: "heute erledigt",
-      statusDoneAutomated: "davon automatisch",
-      statusConversations: ({ count }) => (count === 1 ? "1 Unterhaltung" : `${count} Unterhaltungen`),
-      columnMarks: "Tags und Zeichen",
-      columnTime: "Zeit",
       hiddenDone: ({ count, formatted }) => (count === 1 ? `${formatted} erledigte Unterhaltung` : `${formatted} erledigte Unterhaltungen`),
       hiddenDoneMore: ({ formatted }) => `Mehr als ${formatted} erledigte Unterhaltungen`,
       showDone: "Erledigt anzeigen",
@@ -132,6 +121,9 @@ export const mailConversationListMessages = i18n.define({
       retry: "Erneut versuchen",
       noMatchingMessages: "Keine passenden Nachrichten",
       noConversations: "Keine Unterhaltungen in dieser Ansicht",
+      doneToday: ({ count }: { count: number }) => `Heute ${count} erledigt`,
+      doneAutomated: ({ count }: { count: number }) => `${count} davon automatisch`,
+      doneRing: ({ done, total }: { done: number; total: number }) => `${done} von ${total} Unterhaltungen heute erledigt`,
       allDoneTitle: "Alles erledigt.",
       allDoneText: ({ done, automated }: { done: number; automated: number }) =>
         automated > 0

@@ -102,16 +102,6 @@ Im Kopf der Unterhaltung entscheidest du nur, ob die Unterhaltung **Erledigt** i
 
 Wähle **In Ordner verschieben** in den Unterhaltungsaktionen, um das Ziel per Tastatur, Zeigegerät oder Berührung zu wählen. Auf dem Desktop kannst du eine Unterhaltungszeile auch auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail reiht die Verschiebung ein, und die Synchronisierung bestätigt das Ergebnis beim Anbieter.
 
-Mit der Maus kannst du eine Zeile auch ziehen. Sobald sie sich ein paar Pixel bewegt, legt sich eine Fläche mit Zielen über Liste und Leser:
-
-- **Mir zuweisen** und **Jemand anderem zuweisen** (nur in Team-Postfächern und nur, wenn du zuweisen darfst), **In Ordner verschieben**, **Als erledigt markieren** und **Tag hinzufügen**.
-- Verweile kurz auf einem Ziel mit Pfeil, dann öffnet sich die nächste Ebene, etwa die Personen oder die Ordner. **Zurück** führt eine Ebene zurück.
-- Lässt du direkt auf **Jemand anderem zuweisen** los, öffnet sich die Personensuche.
-- Ein gesperrtes Ziel sagt, warum, etwa „Liegt schon hier“.
-- **Hier loslassen: nichts passiert**, **Esc** oder Loslassen neben einem Ziel brechen ab. Die Ordner links in der Navigation bleiben Ziele.
-
-Nach dem Loslassen zeigt Mail eine Meldung mit **Rückgängig**. Schlägt die Änderung fehl, ändert Mail nichts und bietet **Erneut versuchen** an. Ziehst du eine ausgewählte Zeile, ziehst du die ganze Auswahl. Mit dem Finger ziehst du nicht: Langes Drücken öffnet das Menü der Zeile mit denselben Zielen. In einem Postfach, das du nur lesen darfst, kannst du nichts ziehen.
-
 Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halte **Umschalt** gedrückt und wähle ein weiteres Kontrollkästchen oder eine weitere Zeile aus, um den geladenen Bereich dazwischen auszuwählen. Eine Auswahl hat höchstens 50 Unterhaltungen, damit du die Arbeit beim Anbieter nachverfolgen kannst.
 
 :::reference
