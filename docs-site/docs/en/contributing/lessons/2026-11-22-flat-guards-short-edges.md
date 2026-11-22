@@ -16,7 +16,10 @@
   roles live once, in the `--k2b-type-roles` token of `@k2b/ui`. The kinds see
   lines drawn as box-shadows and pseudo-elements, which the flat columns use;
   the old double check reads only `border-*`. They found the sidebar, detail,
-  and pane grips half a pixel off their line and under it, now fixed.
+  and pane grips half a pixel off their line and under it, now fixed. Grips
+  and lines on half pixels blur, so `grip-off-center` also reports fractional
+  edges, and a standalone `ResizeSeparator` is now its 1 px line in the flow
+  with its hit area and grip over the neighbours.
   `layout-problems-flat.browser.test.ts` finds each defect and passes its clean
   form in Chromium and WebKit. `flat-shell-findings.browser.test.ts` records
   what today's shell shows, so each rebuilt building block removes its lines

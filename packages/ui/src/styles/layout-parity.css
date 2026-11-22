@@ -1264,8 +1264,6 @@ html {
   /* WebKit may resolve a selection gesture before the drag's pointerdown handler suppresses selection. */
   -webkit-user-select: none;
   user-select: none;
-  /* K13: a column line is the last pixel before its boundary, so the grip's middle lies half a pixel before it. */
-  transform: translateX(calc(-50% - 0.5px));
 }
 
 .k2b-ui .k2b-app-workspace[data-workspace-resizable="false"] .k2b-app-workspace__resize {
@@ -1273,7 +1271,12 @@ html {
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
-  left: var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px)));
+  /* K13: the sidebar's line is the last pixel of its track; the hit area is centred on that pixel, so line, area,
+     and grip lie on whole pixels. */
+  left: calc(
+    var(--k2b-workspace-sidebar-width, calc(13rem + var(--k2b-workspace-sidebar-wide, 0px))) -
+      (var(--k2b-workspace-resize-hit-size) + 1px) / 2
+  );
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
@@ -1314,24 +1317,29 @@ html {
    needs no border of its own. */
 .k2b-ui .k2b-resize-separator::before {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
+  inset: 0;
   content: "";
   pointer-events: none;
   background: var(--k2b-border);
-  transform: translateX(-50%);
 }
 
-.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
-  top: 50%;
+/* Its hit area lies over the neighbours, centred on the line: 13 px, 25 px for a coarse pointer. It draws nothing. */
+.k2b-ui .k2b-resize-separator::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((1px - var(--k2b-resize-hit-size)) / 2);
+  width: var(--k2b-resize-hit-size);
+  content: "";
+}
+
+.k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::after {
+  top: calc((1px - var(--k2b-resize-hit-size)) / 2);
   right: 0;
   bottom: auto;
   left: 0;
   width: auto;
-  height: 1px;
-  transform: translateY(-50%);
+  height: var(--k2b-resize-hit-size);
 }
 
 .k2b-ui :is(.k2b-resize-separator:focus-visible, .k2b-resize-separator[data-active="true"])::before {
@@ -1340,21 +1348,23 @@ html {
 
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) > span {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  /* Centred, rounded down to whole pixels: an odd 5 px grip on a 1 px line keeps its edges on whole pixels. */
+  top: round(down, calc(50% - 1rem), 1px);
+  left: round(down, calc(50% - 2.5px), 1px);
   width: 5px;
   height: 2rem;
   border-radius: var(--k2b-radius-round);
   background: var(--k2b-resize-grip);
   /* A ring of the surface keeps the grip apart from the line under it. */
   box-shadow: 0 0 0 2px var(--k2b-surface);
-  transform: translate(-50%, -50%);
   transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui
   :is(.k2b-app-workspace__resize[data-app-workspace-resize="drawer"], .k2b-resize-separator[data-orientation="horizontal"])
   > span {
+  top: round(down, calc(50% - 2.5px), 1px);
+  left: round(down, calc(50% - 1rem), 1px);
   width: 2rem;
   height: 5px;
 }
@@ -1697,8 +1707,8 @@ html {
     bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
     z-index: 21;
     grid-area: detail;
-    /* On the middle of Detail's line, the last pixel before its leading edge. */
-    transform: translateX(calc(50% - 0.5px));
+    /* Centred on Detail's line, the last pixel before its leading edge: whole pixels, no half-pixel shift. */
+    transform: translateX(calc((var(--k2b-workspace-resize-hit-size) - 1px) / 2));
   }
 }
 
@@ -6076,13 +6086,17 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
 }
 
-/* A standalone separator is an invisible hit area. It shows the drag cue of
-   the workspace's resize handles, defined with them. */
+/* K13: a standalone separator is its 1 px line in the flow between two
+   regions, so applications size their split by it and no gap opens beside the
+   line. Its hit area and grip lie over the neighbours, centred on the line on
+   whole pixels. It shows the drag cue of the workspace's resize handles,
+   defined with them. */
 .k2b-ui .k2b-resize-separator {
+  --k2b-resize-hit-size: 13px;
   position: relative;
+  z-index: 1;
   flex: none;
-  /* In the flow between two regions, so applications size their split by it; the grip and line sit centred. */
-  width: 12px;
+  width: 1px;
   align-self: stretch;
   cursor: col-resize;
   outline: 0;
@@ -6093,8 +6107,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
   width: auto;
-  height: 12px;
+  height: 1px;
   cursor: row-resize;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-resize-separator {
+    --k2b-resize-hit-size: 25px;
+  }
 }
 /* An app with separate visibility keeps one shared way to reopen its current
    object, including a closed column and a phone sheet. Selection-only panels

@@ -449,7 +449,11 @@ test("pointer and keyboard resize commit width and ARIA in rem", async () => {
       const box = grip.getBoundingClientRect();
       return {
         edge: handle.getAttribute("data-resize-edge"),
-        shadow: shadow.content !== "none" && shadow.content !== "normal",
+        // The `::after` is the separator's invisible hit area; a shadow would draw a fill or a shadow.
+        shadow:
+          shadow.content !== "none" &&
+          shadow.content !== "normal" &&
+          (!/^(transparent|rgba\(0, 0, 0, 0\))$/.test(shadow.backgroundColor) || shadow.boxShadow !== "none"),
         grip: `${Math.round(box.width)}x${Math.round(box.height)}`,
         blue: getComputedStyle(grip).backgroundColor === focus,
         line: line.content !== "none" && line.content !== "normal" && line.display !== "none",

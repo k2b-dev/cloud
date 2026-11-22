@@ -1719,9 +1719,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           try {
             const shown = await split(page);
             const panes = shown.panes!.width;
-            const expected = Math.min(Math.max(320, panes * 0.4), panes - 492);
+            const expected = Math.min(Math.max(320, panes * 0.4), panes - 481);
             expect(Math.abs(shown.list!.width - expected)).toBeLessThanOrEqual(1);
-            expect(shown.handle!.width).toBe(12);
+            // The handle is its 1 px line in the flow; its 13 px hit area lies over list and reader (K13).
+            expect(shown.handle!.width).toBe(1);
             expect(Math.abs(shown.reader!.x + shown.reader!.width - (shown.panes!.x + panes))).toBeLessThanOrEqual(1);
             // The reader's head and text use its whole width: nothing narrower stands centered in it.
             const text = await page.locator(".mail-reader-scroll").evaluate((element) => {
@@ -2403,7 +2404,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           return {
             list: pane ? pane.width : 0,
             pane,
-            // The reader's side holds the 12 px handle and the reader.
+            // The reader's side holds the 1 px handle and the reader.
             reader: box(".mail-workspace .mail-split-reader"),
             column: box(".mail-reading-column"),
             toolbar: box("[data-mail-reader-toolbar]"),
@@ -2697,7 +2698,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             try {
               const frame = await wide(page);
               const main = frame.pane!.width + frame.reader!.width;
-              const list = Math.min(Math.max(320, main * 0.4), main - 492);
+              const list = Math.min(Math.max(320, main * 0.4), main - 481);
               expect(Math.abs(frame.list - list), `${label}: list ${frame.list}`).toBeLessThanOrEqual(1);
               // Mail v5 has no Detail column; the reader keeps at least 480 px.
               expect(frame.reader!.width - 12, `${label}: reader`).toBeGreaterThanOrEqual(479.5);
