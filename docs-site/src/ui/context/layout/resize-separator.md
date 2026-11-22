@@ -3,9 +3,13 @@
 Use `ResizeSeparator` between two regions when the application owns their size.
 It renders a focusable separator with a label, orientation, current value,
 limits, and optional `controls` id. A vertical separator changes column width;
-a horizontal separator changes row height. Its 13 px hit area draws the
-hairline between the two regions and a 5 × 32 px round grey grip on it,
-visible at rest (K13): people see what they can resize without hovering. A
+a horizontal separator changes row height. In the flow it is only the 1 px
+hairline between the two regions, so they reach that line and nothing leaves a
+gap beside it. Its hit area (13 px, 25 px for a coarse pointer) and a
+5 × 32 px round grey grip lie over the neighbours, centred on the line on
+whole pixels, visible at rest (K13): people see what they can resize without
+hovering. Size a split by the 1 px line, and place the separator on a whole
+pixel so its line stays sharp. A
 hover darkens the grip; keyboard focus and dragging turn grip and line blue.
 It casts no shadow. These cues move no content; their transitions stop under
 reduced motion. Where the separator lies in a gap between two framed surfaces

@@ -79,15 +79,17 @@ The head follows these rules as well:
   sidebar lists, neither shows: the marked item is the way up.
 - Tabs, chips, and actions share one row while they fit. As the head narrows,
   the quiet count goes first, filters wrap, and views become compact with
-  “More +n” before scrolling sideways. The primary action then keeps only its
-  icon and accessible name. If the lead and actions still do not fit, they
+  “More +n” before scrolling sideways. The primary action keeps its word
+  while it fits, and below 36 rem of head only its icon and accessible name.
+  It stays a 36 px control with 8 px corners. If the lead and actions still do not fit, they
   use separate rows. The head measures its own width, including space lost
   to neighboring panels; controls never draw over each other.
 - Exactly one action is filled. On the phone it becomes a round button at
   the end of the head.
 - Files keeps its path in the head (exception D1 to "no title").
 
-The sidebar stays resizable; its handle shows on hover and focus. The minimal
+The sidebar stays resizable; its grip shows at rest, centred on the column
+line and drawn over it. The minimal
 Grids table is the reference for tables.
 
 ### Compose the head row

@@ -34,15 +34,16 @@ test("the sidebar shares the workspace surface and coarse pointers do not select
   }
 });
 
-test("K15: in a narrowing head the actions give way before the views", () => {
+test("K15: in a narrowing head the views give way before the primary's word", () => {
   const query = (selector: string) => {
     const index = css.indexOf(selector);
     const before = css.slice(0, index);
     const container = [...before.matchAll(/@container (k2b-head(?:-lead)?) \(width < ([\d.]+)rem\)/g)].at(-1);
     return container ? { name: container[1], rem: Number(container[2]) } : undefined;
   };
-  // The primary turns into its icon while the head is still 48 rem wide; the views compact only below 32 rem of lead.
-  expect(query(".k2b-ui .k2b-app-workspace__head-primary-label {\n    position: absolute;")).toEqual({ name: "k2b-head", rem: 48 });
+  // Rule 15: a label gives way only when it does not fit. The views compact below 32 rem of lead; the primary keeps its
+  // word down to 36 rem of head, then shows its icon.
+  expect(query(".k2b-ui .k2b-app-workspace__head-primary-label {\n    position: absolute;")).toEqual({ name: "k2b-head", rem: 36 });
   expect(query(".k2b-ui .k2b-app-workspace__head-lead .k2b-view-tabs__item[data-compact-hidden]")).toEqual({
     name: "k2b-head-lead",
     rem: 32,
