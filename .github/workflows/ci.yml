@@ -166,11 +166,12 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Keep release notes free of HTML-like markup
+      - uses: ./.github/actions/install
+      # Parses with the installed release-please devDependency; only the PR text comes from the API.
+      - name: Keep the squash message parseable and release notes free of HTML-like markup
         env:
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/check-release-pr-body.ts --message
-      - uses: ./.github/actions/install
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ui-dist
@@ -707,6 +708,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/install
       - run: bun scripts/check-release-pr-body.ts --self-test
       - name: Check the live release PR body
         if: needs.changes.outputs.release == 'true'

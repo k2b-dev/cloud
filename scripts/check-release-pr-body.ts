@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { releasePleasePins } from "./checks/release-please-version";
 import {
   bumpedComponents,
   markupSnippets,
@@ -43,12 +43,7 @@ async function config(): Promise<ReleaseConfig> {
 
 async function command(file: string, args: string[], cwd = root, timeout = 30_000): Promise<string> {
   try {
-    const result = await run(file, args, {
-      cwd,
-      timeout,
-      killSignal: "SIGKILL",
-      env: { ...process.env, npm_config_cache: join(tmpdir(), "release-please-npm-cache") },
-    });
+    const result = await run(file, args, { cwd, timeout, killSignal: "SIGKILL" });
     return result.stdout;
   } catch (cause) {
     const output = isRecord(cause) ? [cause.stdout, cause.stderr].filter((value) => typeof value === "string").join("\n") : "";
@@ -66,41 +61,24 @@ function collectingLogger(messages: string[]) {
   return { error: collect, warn: collect, info: collect, debug: collect, trace: collect };
 }
 
+// The root devDependency, kept at the version main.yml's action pin bundles by the
+// `release-please-version` check, so every mode parses offline after `bun install`.
 async function parser() {
-  const workflow = await readFile(join(root, ".github/workflows/main.yml"), "utf8");
-  const pins = new Set(
-    [...workflow.matchAll(/\buses:\s*googleapis\/release-please-action@([0-9a-f]{40})(?=\s|$)/gi)].map((match) => match[1]),
-  );
-  const [sha] = pins;
-  if (pins.size !== 1 || !sha) throw new Error("main.yml must pin exactly one distinct 40-hex release-please-action SHA");
-  const directory = join(tmpdir(), `release-please-action-${sha}`);
-  const modulePath = join(directory, "node_modules/release-please/build/src/util/pull-request-body.js");
-  if (!existsSync(modulePath)) {
-    console.log(`Installing the release-please parser from release-please-action@${sha}`);
-    await mkdir(directory, { recursive: true });
-    for (const file of ["package.json", "package-lock.json"]) {
-      const response = await fetch(`https://raw.githubusercontent.com/googleapis/release-please-action/${sha}/${file}`, {
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!response.ok) throw new Error(`Downloading ${file} failed: HTTP ${response.status} ${response.statusText}`);
-      await writeFile(join(directory, file), await response.text());
-    }
-    await command("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], directory, 300_000);
-  }
   const require = createRequire(import.meta.url);
-  const loaded: unknown = require(modulePath);
+  const directory = dirname(require.resolve("release-please/package.json"));
+  const loaded: unknown = require(join(directory, "build/src/util/pull-request-body.js"));
   if (!isRecord(loaded)) throw new Error("Invalid release-please parser module");
   const bodyClass = loaded.PullRequestBody;
   if ((typeof bodyClass !== "function" && !isRecord(bodyClass)) || !("parse" in bodyClass) || typeof bodyClass.parse !== "function") {
     throw new Error("release-please module does not export PullRequestBody.parse");
   }
   const parse = bodyClass.parse;
-  const commitModule: unknown = require(join(directory, "node_modules/release-please/build/src/commit.js"));
+  const commitModule: unknown = require(join(directory, "build/src/commit.js"));
   if (!isRecord(commitModule) || typeof commitModule.parseConventionalCommits !== "function") {
     throw new Error("release-please module does not export parseConventionalCommits");
   }
   const parseConventionalCommits = commitModule.parseConventionalCommits;
-  const filterModule: unknown = require(join(directory, "node_modules/release-please/build/src/util/filter-commits.js"));
+  const filterModule: unknown = require(join(directory, "build/src/util/filter-commits.js"));
   if (!isRecord(filterModule) || typeof filterModule.filterCommits !== "function") {
     throw new Error("release-please module does not export filterCommits");
   }
@@ -224,7 +202,6 @@ function messageFindings(parseCommits: CommitParser, title: string, number: stri
 }
 
 async function checkMessage(number: string): Promise<boolean> {
-  // Install first: the check must fetch the live title and body after this potentially slow step.
   const { parseCommits } = await parser();
   const pr = json(await command("gh", ["api", `repos/${repositoryName()}/pulls/${number}`]));
   if (!isRecord(pr) || typeof pr.title !== "string" || (pr.body !== null && typeof pr.body !== "string")) {
@@ -241,7 +218,6 @@ async function checkMessage(number: string): Promise<boolean> {
 }
 
 async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
-  // Install first: the check must fetch the live body after this potentially slow step.
   const { parseBody } = await parser();
   const repository = repositoryName();
   const pr = json(await command("gh", ["api", `repos/${repository}/pulls/${number}`]));
@@ -284,11 +260,35 @@ async function checkPr(number: string, bodyFile?: string): Promise<boolean> {
   return findings.length === 0;
 }
 
+/**
+ * The `release-please-version` check keeps the devDependency on the version main.yml's pin
+ * comment names. This proves the comment against the pinned action's own lock file, so a
+ * bumped SHA with a stale comment fails here; release-body runs whenever main.yml changes.
+ */
+async function bundledVersionMatches(): Promise<boolean> {
+  const [pin] = releasePleasePins(await readFile(join(root, ".github/workflows/main.yml"), "utf8"));
+  if (!pin) throw new Error("main.yml has no release-please-action pin");
+  const response = await fetch(`https://raw.githubusercontent.com/googleapis/release-please-action/${pin.sha}/package-lock.json`, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`Downloading the action's package-lock.json failed: HTTP ${response.status} ${response.statusText}`);
+  const lock = json(await response.text());
+  const packages = isRecord(lock) ? lock.packages : undefined;
+  const entry = isRecord(packages) ? packages["node_modules/release-please"] : undefined;
+  const bundled = isRecord(entry) && typeof entry.version === "string" ? entry.version : undefined;
+  const installed: unknown = createRequire(import.meta.url)("release-please/package.json").version;
+  const ok = bundled !== undefined && bundled === installed && bundled === pin.version;
+  console.log(
+    `${ok ? "PASS" : "FAIL"} release-please-action@${pin.sha.slice(0, 12)} bundles ${bundled ?? "(unknown)"}; main.yml names ${pin.version ?? "(none)"}, installed ${String(installed)}`,
+  );
+  return ok;
+}
+
 async function selfTest(): Promise<boolean> {
   const { parseBody, parseCommits } = await parser();
+  let passed = await bundledVersionMatches();
   const configuration = await config();
   const fixture = (name: string) => readFile(join(root, "scripts/fixtures/release-pr-body", name), "utf8");
-  let passed = true;
   for (const [name, manifests, missingCloud] of [
     ["1248-as-merged.md", "1248", true],
     ["1248-recovered.md", "1248", false],
@@ -406,7 +406,8 @@ async function main(): Promise<boolean> {
       pull_request.number or merge_group.head_ref from GITHUB_EVENT_PATH.
       With no event file or no PR in the event, there is no pull request to check.
       Both use gh auth locally or GH_TOKEN in CI; GITHUB_REPOSITORY defaults to k2b-dev/cloud.
-All modes but --help download and install the pinned parser into the OS temp directory.
+Every mode parses with the release-please root devDependency, offline after bun install.
+      --self-test also checks online that main.yml's action pin bundles that version.
 --help: print this usage and exit.`);
     return true;
   }
