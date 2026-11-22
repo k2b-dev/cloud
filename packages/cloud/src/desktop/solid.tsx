@@ -298,7 +298,7 @@ ContextMenu.Content = (props) => {
       <Portal>
         <div
           role="menu"
-          class={`fixed z-50 w-56 max-w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-zinc-300/60 bg-white py-1 text-sm text-zinc-900 shadow-[var(--k2b-shadow-float)] ring-1 ring-black/5 dark:border-zinc-600/50 dark:bg-zinc-950 dark:text-zinc-100 ${props.class ?? ""}`}
+          class={`fixed z-50 w-56 max-w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-lg border not-dark:border-zinc-300/60 not-dark:bg-white py-1 text-sm not-dark:text-zinc-900 shadow-[var(--k2b-shadow-float)] ring-1 ring-black/5 dark:border-zinc-600/50 dark:bg-zinc-950 dark:text-zinc-100 ${props.class ?? ""}`}
           style={{
             left: `${Math.min(menu.x(), window.innerWidth - 232)}px`,
             top: `${Math.min(menu.y(), window.innerHeight - 320)}px`,
@@ -320,7 +320,7 @@ ContextMenu.Item = (props) => {
       role="menuitem"
       disabled={props.disabled}
       class={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-zinc-900 ${
-        props.destructive ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-100"
+        props.destructive ? "not-dark:text-red-600 dark:text-red-400" : "not-dark:text-zinc-800 dark:text-zinc-100"
       }`}
       onClick={() => {
         props.onSelect?.();
@@ -689,13 +689,13 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
 
   return (
     <div
-      class={`desktop-workspace relative grid h-full min-h-0 gap-x-2 overflow-hidden bg-zinc-100 dark:bg-zinc-950 ${props.class ?? ""}`}
+      class={`desktop-workspace relative grid h-full min-h-0 gap-x-2 overflow-hidden not-dark:bg-zinc-100 dark:bg-zinc-950 ${props.class ?? ""}`}
       style={gridStyle()}
     >
       <Show when={sidebar()}>
         {(slot) => (
           <aside
-            class={`${sidebarOpen() ? "flex" : "hidden"} desktop-workspace-sidebar row-span-3 min-h-0 min-w-0 flex-col overflow-hidden bg-white dark:bg-zinc-950 ${slot().class ?? ""}`}
+            class={`${sidebarOpen() ? "flex" : "hidden"} desktop-workspace-sidebar row-span-3 min-h-0 min-w-0 flex-col overflow-hidden not-dark:bg-white dark:bg-zinc-950 ${slot().class ?? ""}`}
             style="grid-column:1;grid-row:1 / 4"
           >
             <Show when={slot().trafficLightsInset ?? true}>
@@ -713,7 +713,7 @@ export const DesktopWorkspace = ((props: DesktopWorkspaceProps) => {
       <Show when={sidebarRailOpen() ? sidebarRail() : undefined}>
         {(slot) => (
           <aside
-            class={`desktop-workspace-sidebar-rail min-h-0 min-w-0 overflow-hidden bg-white dark:bg-zinc-950 ${slot().class ?? ""}`}
+            class={`desktop-workspace-sidebar-rail min-h-0 min-w-0 overflow-hidden not-dark:bg-white dark:bg-zinc-950 ${slot().class ?? ""}`}
             style="grid-column:1;grid-row:2 / 4"
           >
             {slot().children}
@@ -903,7 +903,7 @@ DesktopWorkspace.NoDrag = (props: ParentProps<{ class?: string }>) => (
 
 export function TitleBar(props: ParentProps<{ title?: string; class?: string }>) {
   return (
-    <div class={`flex min-h-10 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800 ${props.class ?? ""}`}>
+    <div class={`flex min-h-10 items-center gap-2 border-b not-dark:border-zinc-200 px-3 dark:border-zinc-800 ${props.class ?? ""}`}>
       <WindowControls />
       <Show when={props.title}>
         <p class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{props.title}</p>

@@ -24,6 +24,6 @@ export const escapeHtml = (text: string): string => {
 export const IMAGE_STYLES = {
   wrapper: "md-image-widget my-2",
   figure: "flex flex-col items-center justify-center max-w-full",
-  img: "block max-h-[400px] rounded border border-gray-200 dark:border-gray-700",
-  caption: "text-sm text-gray-500 dark:text-gray-400 mt-2 italic",
+  img: "block max-h-[400px] rounded border not-dark:border-gray-200 dark:border-gray-700",
+  caption: "text-sm not-dark:text-gray-500 dark:text-gray-400 mt-2 italic",
 } as const;

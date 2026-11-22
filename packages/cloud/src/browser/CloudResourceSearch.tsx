@@ -802,7 +802,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 <div class="cloud-resource-search__status">
                   <Show when={pendingApps().length > 0}>
                     <p>
-                      <i class="ti ti-loader-2 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      <i class="ti ti-loader-2 motion-safe:animate-spin motion-reduce:animate-none" aria-hidden="true" />
                       {stillSearching()}
                     </p>
                   </Show>

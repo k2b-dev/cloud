@@ -29,7 +29,7 @@ export function AppAccessDeniedContent(props: {
       : t().deniedRoles({ name: props.app.name });
   };
   return (
-    <div class="mx-auto mt-8 w-full max-w-[460px] text-left sm:mt-[10vh]">
+    <div class="mx-auto max-sm:mt-8 w-full max-w-[460px] text-left sm:mt-[10vh]">
       <span
         class="app-accent-scope app-accent-text k2b-icon-tile mb-4 flex h-12 w-12 items-center justify-center rounded-xl text-[26px]"
         style={appAccentStyle(declaredIconColor(props.app.appearance))}
@@ -93,7 +93,7 @@ export function AppAccessDeniedFrame(props: { children: JSX.Element }) {
   return (
     <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-4 sm:p-6">{props.children}</AppWorkspace.Main>
+        <AppWorkspace.Main class="max-sm:p-4 sm:p-6">{props.children}</AppWorkspace.Main>
       </AppWorkspace.Content>
     </AppWorkspace>
   );

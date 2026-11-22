@@ -162,6 +162,13 @@ they never shrink (K7).
 Mark the name column with `primary`: it keeps at least 200 px and grows to at
 most 560 px, so on a wide screen a value stays beside its name.
 
+A table that is still too wide scrolls sideways and fades 24 px at each edge
+where more columns follow: only the end at the start, both edges in the middle,
+only the start at the end. The fade follows the scroll position without script,
+moves nothing, and shows in the server frame. A table that fits has no fade. The
+layout self-check still reports a table that scrolls sideways; give its columns
+a `priority` so it fits. Browsers without scroll timelines show the cut edge.
+
 ### List on a phone
 
 Give columns a `list` role to show the table as a list of two-line entries
@@ -184,7 +191,8 @@ const columns = [
 
 Show a file name in a cell with `FileName`: it stays on one line and shortens
 before its ending, so `Quarterly report 2026.pdf` reads `Quarterly rep….pdf`
-(K15). The whole name is its hint. `splitFileName(name)` returns `stem` and
+(K15). The whole name is its hint, and screen readers read it as one word, also
+in a heading's accessible name. `splitFileName(name)` returns `stem` and
 `ext` for a cell of your own.
 
 ## Add a header and controls

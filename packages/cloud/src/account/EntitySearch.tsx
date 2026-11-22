@@ -363,7 +363,7 @@ const ResultRow = (props: {
     <Show
       when={props.avatar}
       fallback={
-        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs text-secondary dark:bg-zinc-700">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full not-dark:bg-zinc-200 text-xs text-secondary dark:bg-zinc-700">
           <i class={`ti ${props.icon} text-sm`} />
         </div>
       }

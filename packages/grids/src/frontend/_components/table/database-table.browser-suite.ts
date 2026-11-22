@@ -141,14 +141,18 @@ describe("Grids table beside Detail", () => {
           expect(value.left).toBeGreaterThanOrEqual(value.contentLeft - 0.5);
           expect(value.right).toBeLessThanOrEqual(value.contentRight + 0.5);
         }
+        // K1, K15: long notes are an excerpt of one line that ends in an ellipsis; the row keeps its 40 px.
         const notes = await page.locator("tbody tr:first-child td:nth-child(11)").evaluate((cell) => {
-          const content = cell.firstElementChild!;
-          const range = document.createRange();
-          range.selectNodeContents(content);
-          return { nowrap: cell.hasAttribute("data-nowrap"), lines: range.getClientRects().length };
+          const content = cell.firstElementChild as HTMLElement;
+          const style = getComputedStyle(content);
+          return {
+            height: Math.round(cell.parentElement!.getBoundingClientRect().height),
+            overflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+            cut: content.scrollWidth > content.clientWidth,
+          };
         });
-        expect(notes.nowrap).toBe(false);
-        expect(notes.lines).toBeGreaterThan(1);
+        expect(notes).toEqual({ height: 40, overflow: "ellipsis", whiteSpace: "nowrap", cut: true });
       } finally {
         await page.close();
       }

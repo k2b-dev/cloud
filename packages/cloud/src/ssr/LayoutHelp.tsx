@@ -623,9 +623,9 @@ const HelpShell = (props: {
 
   const ReaderContent = (content: { children: JSX.Element }) =>
     props.surface === "page" ? (
-      <div class="p-4 sm:p-5">{content.children}</div>
+      <div class="max-sm:p-4 sm:p-5">{content.children}</div>
     ) : (
-      <ScrollArea ref={scrollArea} class="help-scroll min-h-0 flex-1 p-4 sm:p-5">
+      <ScrollArea ref={scrollArea} class="help-scroll min-h-0 flex-1 max-sm:p-4 sm:p-5">
         {content.children}
       </ScrollArea>
     );

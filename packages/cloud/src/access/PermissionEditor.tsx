@@ -455,8 +455,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     >
       <Show when={props.expanded && canEdit()}>
         {/* Every control in the row stretches to the 36px field height, including the selection that replaces the search. */}
-        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_176px_auto]">
-          <div ref={principalPickerHost} class="col-span-2 flex min-w-0 flex-col sm:col-span-1">
+        <div class="grid max-sm:grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_176px_auto]">
+          <div ref={principalPickerHost} class="max-sm:col-span-2 flex min-w-0 flex-col sm:col-span-1">
             <Show
               when={draft()}
               fallback={
@@ -679,7 +679,7 @@ function AccessEntryRow(props: {
       <div
         class={
           props.expanded
-            ? "group/access-row min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
+            ? "group/access-row min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] max-sm:py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
             : "group/access-row flex items-center gap-2 py-1.5"
         }
         aria-busy={saving() ? "true" : undefined}
@@ -688,7 +688,7 @@ function AccessEntryRow(props: {
           <Show
             when={props.entry.principal.type === "user" || props.entry.principal.type === "service_account"}
             fallback={
-              <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
+              <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full not-dark:bg-zinc-200 text-secondary dark:bg-zinc-700">
                 <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
               </div>
             }
@@ -838,7 +838,7 @@ function AccessEntryRow(props: {
             class={
               props.expanded
                 ? "col-start-3 row-start-1 shrink-0"
-                : "shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
+                : "shrink-0 max-sm:opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
             }
           >
             <IconButton
@@ -865,10 +865,10 @@ function AccessEntryRow(props: {
         <p class={props.expanded ? "pb-2 pl-11 text-[13px] text-dimmed" : "pb-1 pl-9 text-xs text-dimmed"}>{t().codeAccessAuthority}</p>
       </Show>
       <Show when={props.expanded && props.lastManager && props.canEdit}>
-        <p class="pb-2 pl-11 text-[13px] text-dimmed sm:pl-13">{t().lastManager({ level: manageLabel() })}</p>
+        <p class="pb-2 max-sm:pl-11 text-[13px] text-dimmed sm:pl-13">{t().lastManager({ level: manageLabel() })}</p>
       </Show>
       <Show when={props.expanded && props.canEdit && props.feedback?.retry}>
-        <div role="alert" class="pl-11 text-[13px] text-danger sm:pl-13">
+        <div role="alert" class="max-sm:pl-11 text-[13px] text-danger sm:pl-13">
           {props.feedback?.message}{" "}
           <Button variant="text" disabled={props.disabled} onClick={() => props.feedback?.retry?.()}>
             {t().retry}

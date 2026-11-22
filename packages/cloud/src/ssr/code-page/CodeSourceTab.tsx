@@ -247,11 +247,11 @@ export function CodeSourceTab(props: {
         />
       }
     >
-      <Paper as="section" aria-label={t().fieldLabel} class="flex min-w-0 flex-col gap-2.5 px-4 pt-3 pb-3 max-md:px-3">
+      <Paper as="section" aria-label={t().fieldLabel} class="flex min-w-0 flex-col gap-2.5 md:px-4 pt-3 pb-3 max-md:px-3">
         {/* The one place outside the admin review where source shows; the no-source check skips exactly this region. */}
         <div class="min-w-0" data-code-source-region="code-tab">
           <CodeDiff
-            class="[--k2b-code-diff-height:35rem] max-md:[--k2b-code-diff-height:26.25rem]"
+            class="md:[--k2b-code-diff-height:35rem] max-md:[--k2b-code-diff-height:26.25rem]"
             files={files()}
             file={selection().file ?? undefined}
             onFileChange={choose}

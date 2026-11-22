@@ -13,6 +13,9 @@ const workspacePages = new Hono<AuthContext>()
   .get("/dashboards/:dashboardId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sources/:sourceId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sources", auth.requireRole("user", ssr.access), ...basePage)
+  .get("/data", auth.requireRole("user", ssr.access), ...basePage)
+  .get("/usage", auth.requireRole("user", ssr.access), ...basePage)
+  .get("/overview", auth.requireRole("user", ssr.access), ...basePage)
   .get("/", auth.requireRole("user", ssr.access), ...basePage);
 
 // Source names and diagnostics are externally supplied text.

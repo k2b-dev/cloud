@@ -49,7 +49,6 @@ packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.behavior.
 packages/notebooks/src/frontend/lib/editor/late-parse.behavior.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/query-blocks.behavior.test.tsx | 1
 packages/oauth/src/device-grant.integration.test.ts | 1
-packages/pulse/src/frontend/PulseWorkspace.browser.test.ts | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1
 packages/spaces/test/assignee-picker.behavior.test.tsx | 1
 packages/spaces/test/detail-properties.behavior.test.tsx | 1

@@ -106,10 +106,10 @@ export function TurnNavigator(props: TurnNavigatorProps) {
                     loading()
                       ? "w-5 animate-pulse bg-[var(--k2b-ai-accent)]"
                       : active()
-                        ? "w-6 bg-zinc-700 dark:bg-zinc-100"
+                        ? "w-6 not-dark:bg-zinc-700 dark:bg-zinc-100"
                         : entry.isSteer
-                          ? "w-2 bg-zinc-300 group-hover/marker:w-4 group-hover/marker:bg-zinc-500 dark:bg-zinc-700 dark:group-hover/marker:bg-zinc-400"
-                          : "w-3 bg-zinc-300 group-hover/marker:w-5 group-hover/marker:bg-zinc-500 dark:bg-zinc-700 dark:group-hover/marker:bg-zinc-400"
+                          ? "w-2 not-dark:bg-zinc-300 group-hover/marker:w-4 group-hover/marker:bg-zinc-500 dark:bg-zinc-700 dark:group-hover/marker:bg-zinc-400"
+                          : "w-3 not-dark:bg-zinc-300 group-hover/marker:w-5 group-hover/marker:bg-zinc-500 dark:bg-zinc-700 dark:group-hover/marker:bg-zinc-400"
                   }`}
                 />
               </button>
@@ -121,7 +121,7 @@ export function TurnNavigator(props: TurnNavigatorProps) {
       <Show when={preview()}>
         {(entry) => (
           <div
-            class="pointer-events-none absolute left-10 z-30 w-80 max-w-[min(20rem,calc(100vw-6rem))] rounded-md border border-zinc-200 bg-white p-3 text-left shadow-[var(--k2b-shadow-float)] dark:border-zinc-700 dark:bg-zinc-900"
+            class="pointer-events-none absolute left-10 z-30 w-80 max-w-[min(20rem,calc(100vw-6rem))] rounded-md border not-dark:border-zinc-200 not-dark:bg-white p-3 text-left shadow-[var(--k2b-shadow-float)] dark:border-zinc-700 dark:bg-zinc-900"
             style={{ top: `${previewTop()}px` }}
           >
             <p class="line-clamp-2 text-sm font-medium leading-5 text-primary">{entry().userPreview}</p>

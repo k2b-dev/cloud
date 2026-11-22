@@ -31,17 +31,35 @@ Pulse uses the shared app administration list, with no separate sidebar section.
 The base switcher shows the number of configured members. Each person, group
 or agent counts once; general access rules do not count as individual members.
 
-A base opens on **Overview**. It shows source freshness, alert rules needing
-attention, up to four saved key numbers, and recent changes. Existing
+A base opens on **Sources**, `/app/pulse/:baseId`. The head has four tabs:
+**Sources**, **Data** (`/data?kind=`), **Usage** (`/usage`), and **SQL**
+(`/sql[/:queryId]`), then **Analyze with Gustav**, **…**, and **Create source**
+for people with edit access. The head keeps its height in every state.
+
+- **Sources** leads with one statement, such as "All 4 sources receiving" or
+  "2 sources need attention". Below it, sources with refused requests, errors,
+  throttling, or late data, and fired alerts, stand most urgent first; the
+  server renders them. A row opens the source or alert details on the right
+  (`/sources/:id`, `?alert=:ruleId`). Keys show only to people who manage the
+  base. A base without sources says since when it is empty and offers the three
+  ways to a first source. A lost data store becomes the statement; Pulse checks
+  again every 30 seconds while the page is visible.
+- **Data** reads `GET /api/pulse/bases/:baseId/schema`: kinds, fields with type,
+  example and fill rate, and the five newest entries of one kind.
+- **Usage** lists the Code pages and automations that read the base in the
+  last 30 days and that you may open, with kind, owner and last read; the
+  others appear only as a number. People who manage the base also see the
+  service accounts and source keys that reach it through the API.
+
+A person without access sees "No access" in the head and the base's managers
+who can give it. **…** holds the base settings and, until the next release,
+**Overview** (`/overview`) and **Dashboards**. Existing
 `/app/pulse/:baseId/sources` links still open the sources view.
 The workspace fills the available app height on desktop and phone. Longer
-content scrolls inside it; key numbers keep their natural size.
+content scrolls inside it.
 The overview refreshes every 60 seconds while visible. **View** on an alert
 opens its authorized SQL and parameter values in the console without running
 it. The URL stores the rule reference, so long SQL survives reload and Back.
-Number-only updates keep the headline and tiles in place. When attention rows
-appear or disappear, the list grows or shrinks naturally and following sections
-move with it. An action that remains in the list keeps keyboard focus.
 
 **Ask AI** opens an unsent Assistant draft asking what needs attention in this
 base and why. The draft carries the base resource and the Pulse skill. Data

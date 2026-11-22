@@ -29,7 +29,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.appName, href: "/app/pulse" },
-        { title: data.baseName, href: `/app/pulse/${workspaceProps.initialBaseId}` },
+        { title: data.baseName || t.noAccess, href: `/app/pulse/${workspaceProps.initialBaseId}` },
         ...(workspaceProps.initialRouteState.view === "dashboards"
           ? [{ title: workspaceProps.initialDashboards?.selected?.name ?? t.dashboards }]
           : []),

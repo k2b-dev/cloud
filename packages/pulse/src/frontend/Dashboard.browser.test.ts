@@ -437,8 +437,9 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
     try {
       await ready(tab);
       if (width === 1440) {
-        // The selected dashboard row shows its glyph without a tile, inset as far from the row's start as from its top.
-        const row = tab.locator(".k2b-app-workspace__sidebar-item.is-active", { hasText: "Server & Traefik" });
+        // The sidebar lists bases, not dashboards: the open base's row shows its glyph without a tile, inset as far
+        // from the row's start as from its top.
+        const row = tab.locator(".k2b-app-workspace__sidebar-item.is-active", { hasText: "Betrieb" });
         const icon = await row.evaluate((element) => {
           const outer = element.getBoundingClientRect();
           const box = element.querySelector(".k2b-app-workspace__sidebar-item-icon")!;
@@ -1079,40 +1080,31 @@ test("the actual SSR page and first client render preserve dashboard structure i
       );
       await tab.goto(`${origin}/app/pulse/Lad001/dashboards/Dash01?range=24h`);
       await tab.waitForFunction(() => document.fonts.status === "loaded");
-      const shellGeometry = () => tab.locator(".pulse-dashboard").evaluate((element) => element.getBoundingClientRect().left);
-      const mobileGeometry = async () => {
-        const header = tab.locator(".pulse-workspace__mobile-header");
-        const sidebar = tab.locator(".pulse-workspace > .k2b-app-workspace__sidebar");
-        const main = tab.locator(".pulse-workspace > .k2b-app-workspace__content");
-        const switcher = header.locator(".k2b-sidebar-switcher__trigger");
-        const [headBox, navBox, mainBox, switchBox] = await Promise.all([
-          header.boundingBox(),
-          sidebar.boundingBox(),
-          main.boundingBox(),
-          switcher.boundingBox(),
-        ]);
-        expect(headBox).not.toBeNull();
-        expect(switchBox!.y).toBeLessThan(navBox!.y);
-        expect(headBox!.y + headBox!.height).toBeLessThanOrEqual(navBox!.y + 1);
-        expect(navBox!.y + navBox!.height).toBeLessThanOrEqual(mainBox!.y + 1);
-        const chips = [
-          sidebar.getByRole("button", { name: "Übersicht", exact: true }),
-          sidebar.getByRole("button", { name: "SQL", exact: true }),
-          sidebar.getByRole("link", { name: dashboardTestDashboard.name, exact: true }),
-        ];
-        for (const chip of chips) {
-          const box = await chip.boundingBox();
-          expect(box!.x).toBeGreaterThanOrEqual(0);
-          expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-          expect(box!.y).toBeLessThan(mainBox!.y);
-        }
-        return { headerTop: headBox!.y, sidebarTop: navBox!.y, mainTop: mainBox!.y };
-      };
-      const serverMobileGeometry = width < 768 ? await mobileGeometry() : null;
-      const serverLeft = await shellGeometry();
+      // The base page's head and sidebar, the dashboard's origin and its heading: the server frame is the first client frame.
+      const geometry = () =>
+        tab.evaluate(() => {
+          const box = (selector: string) => {
+            const rect = document.querySelector(selector)?.getBoundingClientRect();
+            return rect && rect.width > 0 && rect.height > 0 ? [rect.left, rect.top, rect.width, rect.height] : null;
+          };
+          return {
+            head: box(".pulse-workspace .k2b-app-workspace__head"),
+            sidebar: box(".pulse-workspace > .k2b-app-workspace__sidebar"),
+            // Its height follows the panels' loaded values; the panel order below holds their slots.
+            dashboard: box(".pulse-dashboard")?.slice(0, 3) ?? null,
+            heading: box(".pulse-dashboard > .k2b-panel-header h1"),
+            toolbar: box(".pulse-dashboard__toolbar"),
+            band: box(".pulse-dashboard__band"),
+          };
+        });
+      const server = await geometry();
+      expect(server.head).not.toBeNull();
+      expect(server.dashboard).not.toBeNull();
+      // The head names no dashboard, so the dashboard's own heading is visible at every width.
+      expect(server.heading).not.toBeNull();
+      // The sidebar lists bases from 768 px on; on a phone the host's title switches the base.
+      expect(server.sidebar === null).toBe(width < 768);
       if (width === 1440) {
-        expect(Math.abs(serverLeft - 312)).toBeLessThanOrEqual(1);
-        expect(await tab.locator(".k2b-app-workspace__sidebar").evaluate((element) => element.getBoundingClientRect().width)).toBe(236);
         expect(await tab.locator('img[src="/branding/logo"]').count()).toBe(0);
         expect(await tab.locator('img[alt="Logo"]').evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
       }
@@ -1122,20 +1114,8 @@ test("the actual SSR page and first client render preserve dashboard structure i
       expect(await tab.getByRole("heading", { name: dashboardTestDashboard.name, exact: true }).count()).toBe(1);
       await tab.evaluate(() => (window as unknown as { __pulseMount: () => void }).__pulseMount());
       await ready(tab);
-      expect(await shellGeometry()).toBe(serverLeft);
-      if (serverMobileGeometry) expect(await mobileGeometry()).toEqual(serverMobileGeometry);
-      const header = tab.locator(".pulse-dashboard > .k2b-panel-header");
-      expect(await header.locator("h1").textContent()).toBe(dashboardTestDashboard.name);
-      expect(await header.evaluate((element) => element.getBoundingClientRect().height > 1)).toBe(false);
-      if (width < 768) {
-        const mobile = tab.locator(".pulse-workspace__mobile-header");
-        expect(await mobile.isVisible()).toBe(true);
-        expect(await mobile.textContent()).toContain(dashboardTestDashboard.name);
-      }
-      if (width === 1440)
-        expect(
-          Math.abs((await tab.locator(".pulse-dashboard").evaluate((element) => element.getBoundingClientRect().left)) - 312),
-        ).toBeLessThanOrEqual(1);
+      expect(await geometry()).toEqual(server);
+      expect(await tab.locator(".pulse-dashboard > .k2b-panel-header h1").textContent()).toBe(dashboardTestDashboard.name);
       expect(await panels.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label")))).toEqual(before);
       expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
     } finally {
@@ -1155,7 +1135,8 @@ test("metadata read failures remain visible with retry and metadata access loss 
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
     overviewReply({ status: 403, json: { code: "FORBIDDEN" } });
     await notice.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-    await tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
+    // Lost access to the base replaces the whole base page: the head says "Kein Zugriff".
+    await tab.getByRole("heading", { name: "Kein Zugriff", exact: true }).waitFor();
     expect(await tab.locator("[data-panel]").count()).toBe(0);
     expect(await tab.getByRole("button", { name: "Teilen", exact: true }).count()).toBe(0);
   } finally {
@@ -1199,7 +1180,7 @@ test("server admission waiting keeps a loading state until the shared result bec
   }
 }, 30_000);
 
-test("SQL keeps the same 236px sidebar and 312px content origin in SSR and the browser", async () => {
+test("SQL keeps the same sidebar and content origin in SSR and the browser", async () => {
   const props: PulseWorkspaceProps = {
     ...workspaceFixture,
     initialNow: dashboardTestNow,
@@ -1220,14 +1201,19 @@ test("SQL keeps the same 236px sidebar and 312px content origin in SSR and the b
     );
     await tab.goto(`${origin}/app/pulse/Lad001/sql`);
     await tab.waitForFunction(() => document.fonts.status === "loaded");
-    const contentLeft = () =>
-      tab
-        .locator(".k2b-app-workspace__main")
-        .evaluate((element) => element.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(element).paddingLeft));
-    expect(Math.abs((await contentLeft()) - 312)).toBeLessThanOrEqual(1);
+    // The flat shell sets the sidebar's width and the text edge; the server frame and the first client frame agree on both.
+    const origins = () =>
+      tab.evaluate(() => {
+        const sidebar = document.querySelector(".pulse-workspace > .k2b-app-workspace__sidebar")!.getBoundingClientRect();
+        const editor = document.querySelector('[data-sql-region="editor"]')!.getBoundingClientRect();
+        return { sidebar: sidebar.width, content: editor.left, top: editor.top };
+      });
+    const server = await origins();
+    expect(server.sidebar).toBeGreaterThan(0);
+    expect(server.content).toBeGreaterThan(server.sidebar);
     await tab.evaluate(() => (window as unknown as { __pulseMount: () => void }).__pulseMount());
     await tab.locator('#root[data-mounted="true"]').waitFor();
-    expect(Math.abs((await contentLeft()) - 312)).toBeLessThanOrEqual(1);
+    expect(await origins()).toEqual(server);
     expect(await tab.getByRole("heading", { name: "Neue Abfrage · Laden", exact: true }).count()).toBe(1);
   } finally {
     await tab.close();
@@ -1348,32 +1334,31 @@ test("republishing an existing dashboard warns in both the review and the final 
   }
 }, 30_000);
 
-test("sidebar list errors distinguish failure from emptiness and retry the first page", async () => {
+// The sidebar no longer lists dashboards; the dashboard collection behind "…" reads the same list and owns its failure.
+test("dashboard list errors distinguish failure from emptiness and retry the first page", async () => {
   for (const width of [1440, 390]) {
-    const { tab, requests, listReply } = await open({ width, listError: true });
+    const { tab, requests, listReply } = await open({ width, listError: true, empty: true, rootRoute: true });
     try {
-      await ready(tab);
-      if (width === 390) await tab.getByRole("button", { name: "Alle Betrieb", exact: true }).click();
-      const navigation = width === 390 ? tab.locator(".k2b-app-workspace__sidebar-sheet") : tab.locator(".k2b-app-workspace__sidebar");
-      expect(await navigation.getByText("Noch kein Dashboard", { exact: true }).count()).toBe(0);
-      expect(await navigation.getByRole("alert").count()).toBe(1);
+      const collection = tab.locator(".pulse-dashboard");
+      expect(await collection.getByText("Noch kein Dashboard", { exact: true }).count()).toBe(0);
+      expect(await collection.getByRole("alert").count()).toBe(1);
       listReply({ status: 503, json: { code: "REQUEST_FAILED" } });
       const listAnswer = () => tab.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/dashboards"));
       const failedRetry = listAnswer();
-      await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      await collection.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
       await failedRetry;
+      await collection.getByRole("alert").waitFor();
+      expect(await collection.getByText("Noch kein Dashboard", { exact: true }).count()).toBe(0);
       listReply({ json: { items: dashboardTestSnapshot.items, total: 2, nextOffset: null } });
-      await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-      // The selected dashboard is listed before the answer arrives; only the list's other entry and the
-      // alert's end show that the retry has finished. The old message stays while the request runs.
-      await navigation.getByRole("link", { name: dashboardTestKinds.name, exact: true }).waitFor();
-      await navigation.getByRole("alert").waitFor({ state: "detached" });
+      await collection.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      // The first dashboard of the first page opens; the alert ends with it.
+      await tab.getByRole("heading", { name: dashboardTestSnapshot.items[0]!.name, exact: true }).waitFor();
+      expect(await tab.locator(".pulse-dashboard").getByRole("alert").count()).toBe(0);
       expect(
         requests
           .filter((request) => new URL(request.path).pathname.endsWith("/dashboards"))
           .every((request) => new URL(request.path).searchParams.get("offset") === "0"),
       ).toBe(true);
-      if (width === 390) await tab.locator("dialog[open]").getByRole("button", { name: "Schließen", exact: true }).click();
     } finally {
       await tab.close();
     }
@@ -1435,7 +1420,9 @@ test("access loss closes an open sharing dialog and prevents publication", async
       if (cause === "metadata") overviewReply({ status: 403, json: { code: "FORBIDDEN" } });
       else panels.set("requests-now", { status: 403, json: { code: "FORBIDDEN" } });
       await tab.clock.runFor(60000);
-      await tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
+      // Lost base access replaces the base page ("Kein Zugriff"); a refused panel leaves the dashboard's own notice.
+      if (cause === "metadata") await tab.getByRole("heading", { name: "Kein Zugriff", exact: true }).waitFor();
+      else await tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
       await dialog.waitFor({ state: "detached" });
       expect(requests.filter((request) => request.path.includes("/publish"))).toHaveLength(0);
     } finally {
@@ -1444,35 +1431,23 @@ test("access loss closes an open sharing dialog and prevents publication", async
   }
 }, 30_000);
 
-test("selected dashboard stays in navigation outside the loaded page; phone keeps three chips and All", async () => {
-  for (const width of [1440, 390]) {
-    const { tab } = await open({ width, paginated: true });
-    try {
-      await ready(tab);
-      const sidebar = tab.locator(".pulse-workspace > .k2b-app-workspace__sidebar");
-      const selected = sidebar.getByRole("link", { name: dashboardTestDashboard.name, exact: true });
-      expect(await selected.isVisible()).toBe(true);
-      expect(await selected.getAttribute("aria-current")).toBe("page");
-      if (width === 390) {
-        expect(await sidebar.getByRole("button", { name: "Weitere Dashboards", exact: true }).isVisible()).toBe(false);
-        const visibleItems = await sidebar
-          .locator(".k2b-app-workspace__sidebar-item")
-          .evaluateAll((elements) => elements.filter((element) => element.getBoundingClientRect().height > 0).length);
-        expect(visibleItems).toBe(3);
-        const switcher = tab.locator(".pulse-workspace__mobile-header .k2b-sidebar-switcher__trigger");
-        await switcher.click();
-        const bases = tab.getByRole("dialog", { name: "Base wechseln", exact: true });
-        expect(await bases.getByRole("link", { name: "Betrieb", exact: true }).getAttribute("href")).toBe("/app/pulse/Lad001");
-        expect(await bases.getByRole("link", { name: "Deine Pulse-Basen", exact: true }).getAttribute("href")).toBe("/app/pulse");
-        await tab.keyboard.press("Escape");
-        await tab.getByRole("button", { name: "Alle Betrieb", exact: true }).click();
-        const sheet = tab.locator(".k2b-app-workspace__sidebar-sheet");
-        expect(await sheet.getByRole("button", { name: "Weitere Dashboards", exact: true }).isVisible()).toBe(true);
-        expect(await sheet.getByRole("button", { name: "Quellen 4", exact: true }).isVisible()).toBe(true);
-      }
-    } finally {
-      await tab.close();
-    }
+// The sidebar's dashboard entries and the phone's chips are gone with the old frame; a phone switches the base in the
+// host's title, which renders the switcher this page registers.
+test("on a phone the host's title switches between the bases and leads to all bases", async () => {
+  const { tab } = await open({ width: 390 });
+  try {
+    await ready(tab);
+    expect(await tab.locator(".pulse-workspace > .k2b-app-workspace__sidebar").isVisible()).toBe(false);
+    const switcher = await tab.evaluate(() => {
+      const value = window.__cloudWorkspaceNavigation?.navigation.switcher?.();
+      return value && { current: value.currentId, label: value.switchLabel, options: value.options, actions: value.actions };
+    });
+    expect(switcher?.current).toBe("Lad001");
+    expect(switcher?.label).toBe("Base wechseln");
+    expect(switcher?.options?.map((option) => [option.label, option.href])).toEqual([["Betrieb", "/app/pulse/Lad001"]]);
+    expect(switcher?.actions?.map((action) => [action.label, action.href])).toEqual([["Deine Pulse-Basen", "/app/pulse"]]);
+  } finally {
+    await tab.close();
   }
 }, 30_000);
 
@@ -1538,7 +1513,7 @@ test("metadata access recovery creates usable sharing actions again", async () =
     await ready(tab);
     overviewReply({ status: 403, json: { code: "FORBIDDEN" } });
     await tab.clock.runFor(60000);
-    await tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
+    await tab.getByRole("heading", { name: "Kein Zugriff", exact: true }).waitFor();
     overviewReply({ json: { ...baseOverviewFixture, attention: { items: [], total: 0, nextOffset: null } } });
     await tab.clock.runFor(60000);
     await ready(tab);
