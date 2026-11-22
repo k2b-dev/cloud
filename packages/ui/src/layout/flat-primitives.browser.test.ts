@@ -46,6 +46,7 @@ render(() => createComponent(Section, { id: "page-topic", size: "md", title: "De
     createComponent(NoticeCard, { id: "page-alert", tone: "warning", icon: true, title: "The receipt waits for a signature." }),
     (() => { const p = document.createElement("p"); p.id = "page-plain"; p.textContent = "Collect on Friday."; return p; })(),
   ]; } }), document.getElementById("page"));
+render(() => createComponent(Section, { id: "page-text", size: "md", title: "Notes", children: "Collect on Friday." }), document.getElementById("page-notes"));
 
 render(() => [
   createComponent(Area, { id: "area-1", name: "EL-2611-00021", href: "#el-21", marker: 1, state: createComponent(StatusBadge, { tone: "warning", label: "Receipt open" }),
@@ -94,6 +95,7 @@ const load = async (width: number) => {
       `<body class="k2b-ui" style="margin:0">` +
       `<aside id="detail" class="col" data-layout-area style="width:${columnWidth(width)}px;height:640px;display:flex;flex-direction:column"></aside>` +
       `<main id="page" class="col" data-layout-area style="width:${Math.min(720, width)}px"></main>` +
+      `<div id="page-notes" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="areas" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="tabs" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="path" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter)"></div>` +
@@ -229,6 +231,8 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       const alert = await box(page, "#page-alert");
       expect([alert.left, alert.right]).toEqual([topic.left, topic.right]);
       expect((await box(page, "#page-plain")).left - topic.left).toBe(gutter);
+      // Plain text right in the body stands on the text edge too.
+      expect((await textLeft(page, "#page-text .k2b-section__body")) - (await box(page, "#page-text")).left).toBe(gutter);
       // The meta line is never cut: beside the title when it fits, else on its own line on the title's text edge.
       const meta = await page.locator("#page-topic .k2b-section__meta").evaluate((element) => ({
         cut: element.scrollWidth > element.clientWidth,

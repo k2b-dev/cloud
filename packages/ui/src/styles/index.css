@@ -4126,19 +4126,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-top: var(--k2b-space-2);
 }
 
-/* The heading holds the text edge. The body adds none: its bands, such as a
-   table, a row list, or an alert cell, reach both edges and hold their own
-   text edge; plain content and nested topics stand on the text edge (K5, K14). */
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header {
+/* Heading and body stand on the text edge, so plain text and nested topics
+   do too. A band in the body, such as a table, a row list, or an alert cell,
+   steps out to both edges of the section and holds its own text edge (K5,
+   K10, K14). */
+.k2b-ui .k2b-section[data-frame="line"] > :is(.k2b-section__header, .k2b-section__body) {
   padding-inline: var(--k2b-section-inset-inline);
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__body > :not([data-k2b-band], dialog, [popover], template, script, style) {
-  margin-inline: var(--k2b-section-inset-inline);
-}
-
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__body > [data-k2b-band="topic"] {
-  padding-inline: var(--k2b-section-inset-inline);
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__body > [data-k2b-band]:not([data-k2b-band="topic"]) {
+  margin-inline: calc(-1 * var(--k2b-section-inset-inline));
 }
 
 /* A disclosure row is the button itself: the heading around it adds no inset. */
@@ -4355,11 +4352,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1;
 }
 
-.k2b-ui .k2b-section__toggle,
-.k2b-ui .k2b-section[data-collapsible="true"] > .k2b-section__header {
-  min-height: 1.75rem;
-}
-
 .k2b-ui .k2b-section__none,
 .k2b-ui .k2b-section__meta,
 .k2b-ui .k2b-section__restricted {
@@ -4490,6 +4482,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.75rem;
   height: 1.75rem;
   flex: 0 0 1.75rem;
+  /* Like a heading action, the 28 px chevron box overhangs the 20 px title line, so a disclosure row is exactly as
+     high as a plain heading; on touch its hit area grows to 44 px (above). */
+  margin-block: calc((var(--k2b-h-label) - 1.75rem) / 2);
   /* The chevron's mark ends on the trailing text edge, like a count or a time, and its box stays inside the row. */
   place-items: center end;
   color: var(--k2b-text-muted);
@@ -4528,6 +4523,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section__body {
   min-width: 0;
+  /* Text right in the body reads in the row role (13/20, K11). */
+  line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-section__body[hidden] {
