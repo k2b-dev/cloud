@@ -21,10 +21,6 @@ afterAll(async () => {
 const surfaces = ["--k2b-surface", "--ui-surface-muted", "--ui-app-selected"];
 const samples: { markup: string; size?: number }[] = [
   {
-    markup:
-      '<div class="k2b-placeholder" data-state="empty" data-variant="compact"><span class="k2b-placeholder__icon k2b-icon-tile"><i class="ti ti-notebook"></i></span></div>',
-  },
-  {
     markup: '<div class="k2b-widget__header"><span class="k2b-widget__icon k2b-icon-tile"><i class="ti ti-notebook"></i></span></div>',
   },
   {

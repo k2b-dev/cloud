@@ -211,9 +211,11 @@ describe("Spaces item detail panel", () => {
     // Editors always get the Assigned row to assign someone, but nobody leads it without a claim.
     expect(unclaimed).toContain(">Assigned</dt>");
     expect(unclaimed).not.toContain("data-spaces-claim-holder");
-    // The claim control sits in the header beside the main action.
+    // The claim control sits beside the main action in the panel's lead; "…" stays in the 56 px head bar (K9).
     const header = unclaimed.slice(0, unclaimed.indexOf("</header>"));
-    expect(header).toMatch(/spaces-details-done[\s\S]*data-spaces-claim-action="claim"[\s\S]*aria-label="More item actions"/);
+    expect(header).toContain('aria-label="More item actions"');
+    const lead = unclaimed.slice(unclaimed.indexOf('class="k2b-detail-panel__lead"'));
+    expect(lead).toMatch(/spaces-details-done[\s\S]*data-spaces-claim-action="claim"/);
 
     const own = renderPanel({ item: { ...task, claim: { ...claim, actor: { kind: "user", id: userId }, displayName: "Valentin Kolb" } } });
     expect(own).toContain('data-spaces-claim-action="release"');

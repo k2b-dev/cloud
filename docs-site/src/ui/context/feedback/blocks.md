@@ -7,8 +7,10 @@
 ## Use notices
 
 Use `neutral` (the default) for general notes and explanations, `info` for
-contextual information, `success` for a completed outcome, `warning` for
-reviewable risk, and `danger` for a real failure. Set a tone only when the
+contextual information, `yours` for "your turn" (a blue tint where the reader
+has to act, such as a receipt that waits for a signature), `success` for a
+completed outcome, `warning` for something to clarify or a reviewable risk,
+and `danger` for a real failure. Set a tone only when the
 notice means it; an explanation stays neutral.
 
 Write the notice so the words carry the meaning: a specific title, then what
@@ -48,18 +50,21 @@ keep anything longer in `detail`.
 `NoticeCard.Grid` receives an `items` array and a child renderer. It selects
 one, two, or three responsive columns from the item count.
 
-A notice is calm by design: a light tint of its tone, no border, a generous
-radius and padding, and no icon unless it receives one. The title is semibold in the primary text
-color; detail and body use the secondary text color at the normal 14 px
-reading size. Only the `meta` pill repeats the tone color. There is one
-appearance for every tone and every application; do not color the text to
-make a notice louder. If something needs more weight, say so in the title.
+A notice is the alert cell (Cloud flat, K10, K14): when something needs a
+person, the whole square cell carries the tint of its tone, where the thing
+stands. It holds a sign, a sentence, its consequence, and one button that
+names the deed, never "Try again". Place it from edge to edge of its column; it
+has square corners, no border, and the column's 20 px text edge. In a wide cell
+the button stands at the right of the text; in a narrow one it moves under the
+text. The title is semibold in the primary text color; detail and body use the
+secondary text color at 13 px. Only the sign and the `meta` pill repeat the
+tone color. There is one appearance for every tone and every application; do
+not color the text to make a notice louder. If something needs more weight,
+say so in the title.
 
-`icon` turns a notice into a compact status line directly above the form or
-list it is about, such as a repair hint over an access list or a load failure
-with its retry. It adds an 18 px Tabler icon on the first text line, sets the
-icon and the text in the tone color, and uses the control radius with tighter
-padding. A bold lead sentence in the children, such as
+`icon` adds the sign: a 20 px Tabler icon in the tone color on the first text
+line, with the sentence beside it on one text edge, for example a repair hint
+over an access list or a load failure. A bold lead sentence in the children, such as
 `<strong>No one manages access.</strong>`, takes the place of a separate
 title. Use one icon per tone meaning (`ti-info-circle`, `ti-alert-triangle`,
 `ti-alert-circle`) or a specific one when it names the subject, and keep the
@@ -79,10 +84,10 @@ to the control it is about, such as public access beside its link.
 </NoticeCard>
 ```
 
-The tint alone separates a notice from its host, so it does not read as a
-second box inside a section, panel, or dialog. Place it directly in the
-host's content flow instead of wrapping it in `Paper` or another card, and do
-not put a notice inside another notice. Tones use the shared
+The tint alone separates a notice from its host. Place it directly in the
+host's content flow; never wrap it in `Paper` or another bordered, rounded box,
+and do not put a notice inside another notice. The `notice-cards` check reports
+a frame whose only content is a notice. Tones use the shared
 `--k2b-<tone>-surface` and `--k2b-<tone>-text` tokens; dark mode uses a
 lighter share of the tone surface so notices stay calm. The neutral tone is a
 translucent tint that stays visible on white and muted surfaces. In
@@ -177,7 +182,7 @@ layouts.
 `NoticeRow` is the one-line form of a notice, for a state that sits directly
 above the content it is about and offers one next step, such as **Load
 images** or **Retry**. It uses the same tint and `tone` values as
-`NoticeCard`, with the control radius, and renders one row at least 48 px
+`NoticeCard`, square like the alert cell, and renders one row at least 52 px
 high: an optional tile, the text, then the optional `action`, all centred.
 The action never wraps below the text; the text takes the width that is
 left, so keep it to one short line and truncate it on narrow screens rather
@@ -191,7 +196,7 @@ The tile is decorative and hidden from assistive technology; the text names
 the state.
 
 When a notice changes state in place, such as blocked, loading, and failed,
-keep the same row: the height stays at 48 px, so the content below never
+keep the same row: the height stays at 52 px, so the content below never
 moves. Give the row an accessible name with `aria-label` when it is a region
 of its own. Use `NoticeCard` for findings with a title and more than one line.
 

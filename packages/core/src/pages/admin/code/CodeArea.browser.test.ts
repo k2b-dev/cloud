@@ -473,7 +473,8 @@ test("Code of an app shows its service account and refused call like any Code pa
       const detail = note?.parentElement?.querySelector<HTMLElement>(".k2b-notice-card__description");
       return note && detail ? { note: getComputedStyle(note).fontSize, detail: getComputedStyle(detail).fontSize } : null;
     });
-    expect(hint).toEqual({ note: "14px", detail: "14px" });
+    // K11: the notice's consequence line is 12 px meta now, and the hint follows it.
+    expect(hint).toEqual({ note: "12px", detail: "12px" });
     expect(await page.locator('a[href="/app/spaces/k7qm2x9a"]').count()).toBe(1);
     expect(await page.getByText("Der nächste Lauf versucht es erneut.", { exact: false }).isVisible()).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);

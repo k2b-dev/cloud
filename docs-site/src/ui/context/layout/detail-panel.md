@@ -86,11 +86,19 @@ title and subtitle do not tell apart, such as "Query" and "Action". Pass
 or another custom identity; they are mutually exclusive. Pass the resource's
 less frequent commands as `menu` (`DropdownItem[]`): the header shows one
 "…" button and opens a sheet on phones, so every panel opens its menu from the
-same place. With `primaryActions` it ends their row, next to the commands it
-extends; without them it sits before `actions`. An empty list shows no button; name it with
+same place: always in the 56 px bar before `actions` (K9), also when the panel
+has `primaryActions`. An empty list shows no button; name it with
 `menuLabel` when "More actions" is too vague. Pass `actions` for compact
 utilities such as close, and `primaryActions` for the small set of prominent
-commands below the identity row. On touch devices, primary
+commands below the identity row.
+
+The header follows the detail column of Cloud flat (K9): a 56 px bar with the
+identity tile (20 px), the 14 px title, "…", and close, closed by a hairline
+that runs from edge to edge. The state (`kind`), one meta line (`subtitle`,
+`meta`), and `primaryActions` follow as the panel's first section with its own
+hairline below. Keep `primaryActions` to at most two framed buttons in one row
+and one icon button; a label never wraps, so two buttons that do not fit side
+by side stand one under the other. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.
@@ -112,18 +120,18 @@ the host inset instead, so its content has the same margin on both sides. The
 pointer only stands in for the scrollbar style: a touch device with classic
 scrollbars shows the gutter next to the inset, and a desktop with overlay
 scrollbars keeps the panel at the trailing edge. Do not add a second
-full-height scroller inside it. The panel keeps a 0.5rem horizontal gutter;
-the `AppWorkspace.Detail` column adds its own 0.5rem inset.
+full-height scroller inside it. Every topic of the body stands borderless on
+the column's 20 px text edge, and one hairline separates each topic from the
+one before; a group's own sections stay together without lines.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
-item has a primary set of facts or controls. In other hosts, the summary keeps
-its own surface. Inside `AppWorkspace.Detail`, it shares the panel surface
+item has a primary set of facts or controls. It is a flat topic like the others
 and aligns with the header title. Do not repeat the summary for every group.
 
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. Text actions in section
-and summary headings fall back to the theme's action color instead, so they
-keep their contrast in dark mode. A host may map that hook to its own theme
+and summary headings are grey and turn dark on hover (K8): their place marks
+them, and blue stays for the one main action of the page. A host may map that hook to its own theme
 token; `DetailPanel` does not know how the host derives it.
 
 Every topic of a panel is a [`Section`](/en/ui/surfaces/section), the same

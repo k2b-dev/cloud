@@ -161,6 +161,24 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     await draftDocumentSnapshots.start();
     stopLive = await startLiveOutbox("mail");
   });
+  /**
+   * Opening and closing the SQL meter rebinds the platform's pool and cuts the connections of work in flight. A live
+   * outbox pass cut after its publish keeps its rows claimed for 30 s, and every later access change of the mailbox
+   * waits behind them (#3941). The outbox therefore stops around each rebind; its stop waits for the pass in flight.
+   */
+  const rebindWithoutLiveOutbox = async <T>(rebind: () => Promise<T>): Promise<T> => {
+    await stopLive?.();
+    try {
+      const result = await rebind();
+      // Nothing claims while the outbox is stopped: a claimed row here survived a cut pass and would hold the key.
+      const claimed = await sql<{ id: string }[]>`SELECT id FROM events.outbox
+        WHERE app_id = 'mail' AND kind = 'live' AND claimed_until > now()`;
+      expect(claimed.map((row) => row.id)).toEqual([]);
+      return result;
+    } finally {
+      stopLive = await startLiveOutbox("mail");
+    }
+  };
   afterEach(async () => {
     for (const socket of sockets) socket.close();
     sockets.clear();
@@ -523,7 +541,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
   });
 
   test("SQL budget: real room edits, delivery to another socket and cursor updates each cost zero", async () => {
-    const meter = await meterSql();
+    const meter = await rebindWithoutLiveOutbox(() => meterSql());
     const doc = new Y.Doc();
     const awareness = new Awareness(doc);
     try {
@@ -571,7 +589,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       await stopMailDraftConnections();
       awareness.destroy();
       doc.destroy();
-      await meter.close();
+      await rebindWithoutLiveOutbox(() => meter.close());
     }
   });
 

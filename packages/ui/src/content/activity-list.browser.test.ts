@@ -137,7 +137,10 @@ describe("ActivityList", () => {
           height: getComputedStyle(row).minHeight,
           // The rail pauses behind the icon (6 to 26 px) instead of a disc covering it, on any surface.
           gap: [rail.top, rail.height, below.top, below.width, below.left, getComputedStyle(iconElement).backgroundColor],
-          heading: document.querySelector(".k2b-section__header")!.getBoundingClientRect().left,
+          // The heading row holds the section's text edge as its own padding (K5): its content starts there.
+          heading:
+            document.querySelector(".k2b-section__header")!.getBoundingClientRect().left +
+            Number.parseFloat(getComputedStyle(document.querySelector(".k2b-section__header")!).paddingInlineStart),
           avatarLeft: icon.left,
           marker: [
             getComputedStyle(row.querySelector(".k2b-activity__icon")!).width,
