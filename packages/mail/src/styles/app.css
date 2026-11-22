@@ -2386,7 +2386,8 @@
 /* F8: list and reader share the full width, the list at the person's share (40 % by default), at least 320 px, and
    the reader at least 480 px. Without an open conversation the list takes it all; nothing is centered. */
 .mail-split-panes { display: flex; min-height: 0; flex: 1 1 auto; }
-.mail-split-list { display: flex; min-width: 0; min-height: 0; flex: 0 0 auto; flex-direction: column; width: clamp(20rem, var(--mail-list-share, 40) * 1%, 100% - 30.75rem); }
+/* The width is rounded to whole pixels, so the line between list and reader stays one sharp pixel at any share (K2). */
+.mail-split-list { display: flex; min-width: 0; min-height: 0; flex: 0 0 auto; flex-direction: column; width: round(down, clamp(20rem, var(--mail-list-share, 40) * 1%, 100% - 30.75rem), 1px); }
 .mail-split[data-reader="closed"] .mail-split-list { width: 100%; flex: 1 1 auto; }
 .mail-split-list > * { flex: 1 1 auto; min-height: 0; }
 .k2b-ui .mail-split-list > .mail-list-bar { flex: none; }

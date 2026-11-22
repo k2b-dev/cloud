@@ -1690,7 +1690,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       // Cloud flach (K2, K7, K11): lines and fills run from area edge to area edge, no line is doubled, and text uses
       // only the four sizes of the mockup: 12 meta, 13 rows and controls, 14 reading text and head titles, 18 lead.
       const states = [
-        ["split", `${boxPath}?conversation=Conv01&locale=de&shell=1&demo=1&identity=1&summary=ai&notes=1`, 1440, 900],
+        // Sidebar 248 px and list 432 px, the mockup's geometry, so built and mockup compare column by column.
+        ["split", `${boxPath}?conversation=Conv01&locale=de&shell=1&sidebar=248&share=0.3837&demo=1&identity=1&summary=ai&notes=1`, 1440, 900],
         ["list", `${boxPath}?locale=de&demo=1`, 390, 844],
         ["reader", `${boxPath}?conversation=Conv01&locale=de&demo=1&identity=1&summary=ai&notes=1`, 390, 844],
       ] as const;
@@ -1707,8 +1708,48 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               ["list", ".mail-split-list"],
               ["reader", ".mail-reader"],
             ] as [string, string][]);
-            if (screenshots) writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify(probe, null, 1));
+            if (screenshots) {
+              // The parity numbers of the review: boxes, paddings and type of the parts the mockup measures.
+              const parts = await page.evaluate(() => {
+                const pick = (selector: string) => {
+                  const element = Array.from(document.querySelectorAll<HTMLElement>(selector)).find((node) => node.getClientRects().length > 0);
+                  if (!element) return null;
+                  const rect = element.getBoundingClientRect();
+                  const style = getComputedStyle(element);
+                  return { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height), pad: style.padding, font: `${style.fontSize}/${style.lineHeight}/${style.fontWeight}` };
+                };
+                const selectors = {
+                  head: ".mail-workspace > .k2b-app-workspace__head",
+                  band: ".mail-list-bar",
+                  row: ".mail-list-rows > .mail-list-drag",
+                  entry: ".mail-list-entry",
+                  check: ".mail-row-check",
+                  sender: ".mail-row-sender",
+                  time: ".mail-row-time",
+                  subject: ".mail-row-subject",
+                  preview: ".mail-list-row > .mail-list-preview",
+                  readerHead: "[data-mail-reader-toolbar]",
+                  title: ".mail-reader-title",
+                  chips: ".mail-reader-chips",
+                  summary: ".mail-summary-row__toggle",
+                  composer: ".mail-reply-box-frame > .mail-inline-draft",
+                  messageName: ".mail-message-sender",
+                  messageMeta: ".mail-message-route",
+                  messageBody: ".mail-reader pre",
+                };
+                return Object.fromEntries(Object.entries(selectors).map(([name, selector]) => [name, pick(selector)]));
+              });
+              writeFileSync(join(screenshots, `flat-${state}-${width}.json`), JSON.stringify({ ...probe, parts }, null, 1));
+            }
             expect(probe.areas.length).toBeGreaterThan(0);
+            // The line between list and reader is one sharp pixel: it starts on a whole pixel and is not transformed.
+            const handleLine = await page.evaluate(() => {
+              const handle = document.querySelector(".mail-list-handle");
+              if (!handle || handle.getClientRects().length === 0) return null;
+              const line = getComputedStyle(handle, "::before");
+              return { x: handle.getBoundingClientRect().x + Number.parseFloat(line.left), width: line.width, transform: line.transform };
+            });
+            if (handleLine) expect({ ...handleLine, whole: Number.isInteger(handleLine.x) }).toEqual({ ...handleLine, whole: true, width: "1px", transform: "none" });
             for (const area of probe.areas) {
               expect(area.short, `${state} ${area.name}: lines and fills reach both edges`).toEqual([]);
               expect(area.double, `${state} ${area.name}: no doubled line`).toEqual([]);

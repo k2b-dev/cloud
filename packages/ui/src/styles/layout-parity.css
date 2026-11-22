@@ -1310,26 +1310,26 @@ html {
 
 /* A standalone separator draws the hairline it sits on, so a region beside it
    needs no border of its own. */
+/* The line stands on a whole pixel: the hit area is 13 px, 6 px on each side of the line, so no transform is needed
+   and the line never lands on a half pixel and blurs into two. */
 .k2b-ui .k2b-resize-separator::before {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
+  left: calc(50% - 0.5px);
   width: 1px;
   content: "";
   pointer-events: none;
   background: var(--k2b-border);
-  transform: translateX(-50%);
 }
 
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"]::before {
-  top: 50%;
+  top: calc(50% - 0.5px);
   right: 0;
   bottom: auto;
   left: 0;
   width: auto;
   height: 1px;
-  transform: translateY(-50%);
 }
 
 .k2b-ui :is(.k2b-resize-separator:focus-visible, .k2b-resize-separator[data-active="true"])::before {
