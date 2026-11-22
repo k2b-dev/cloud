@@ -97,7 +97,7 @@ for (const dark of [false, true]) {
   });
 }
 
-test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only during interaction", async () => {
+test("1440: panes have 12px of space; sidebar/pane grips show at rest and turn blue with their line on focus and drag", async () => {
   const page = await load(1440);
   try {
     await settled(page);
@@ -116,7 +116,7 @@ test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only
     expect(gap.space).toBeGreaterThanOrEqual(12);
     for (const kind of ["pane", "sidebar"]) {
       const handle = page.locator(`[data-app-workspace-resize="${kind}"]`).first();
-      // The handle paints no shadow of its own; it darkens the boundary's column shadow.
+      // The handle paints no line or shadow of its own; it sits on the boundary's hairline (K13).
       const cueOf = () =>
         handle.evaluate((element) => {
           const line = getComputedStyle(element, "::before");
@@ -131,20 +131,23 @@ test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only
             line: generated(line),
             shadow: generated(shadow),
             column: generated(boundary),
-            columnEdge: boundary.getPropertyValue("--k2b-workspace-shade-edge"),
+            columnEdge: boundary.backgroundColor,
             gripOpacity: getComputedStyle(element.querySelector("span")!).opacity,
+            gripColor: getComputedStyle(element.querySelector("span")!).backgroundColor,
           };
         });
       await page.mouse.move(0, 0);
       await settled(page);
       const rest = await cueOf();
-      const expectCue = async (visible: boolean) => {
+      // `blue`: focus and drag turn line and grip blue; hover only darkens the grip; the grip shows in every state.
+      const expectCue = async (blue: boolean) => {
         const cue = await cueOf();
         expect(cue.line).toBe(false);
         expect(cue.shadow).toBe(false);
         expect(cue.column).toBe(true);
-        expect(cue.columnEdge !== rest.columnEdge).toBe(visible);
-        expect(cue.gripOpacity).toBe(visible ? "1" : "0");
+        expect(cue.columnEdge !== rest.columnEdge).toBe(blue);
+        expect(cue.gripColor === cue.columnEdge).toBe(blue);
+        expect(cue.gripOpacity).toBe("1");
       };
       await page.mouse.move(0, 0);
       await settled(page);
@@ -154,7 +157,8 @@ test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only
 
       await hoverInPlace(handle);
       await settled(page);
-      await expectCue(true);
+      await expectCue(false);
+      expect((await cueOf()).gripColor).not.toBe(rest.gripColor);
       expect(await handle.boundingBox()).toEqual(box);
 
       await page.mouse.down();
