@@ -22,7 +22,7 @@ heights, lines, and radii follow from the tokens below.
 | **notice cell** | A square cell in the state colour where the thing is: sign, sentence, consequence, and a button that names the deed. Never a round box inside a cell. |
 | **section header** | The head of one topic: an icon in a 20 px tile in the area colour the app passes, a 14 px bold title (13 px in the detail column, K9), a count, at most two grey text buttons. |
 | **group** | Sorts the rows of a list by one property. 36 px head on the quiet page surface, 13 px bold name, count, at most one action. Disappears when empty. |
-| **area** | A thing the rows belong to, such as a stack with its lists. Its own square surface, 56 px head with two lines, a rail from head to last row, 8 px between areas. |
+| **area** | A thing the rows belong to, such as a stack with its lists. Marked by one hairline above its 56 px head with two lines; its content on the name's text edge, rows without lines between them, no rail. |
 | **facts group** | A group of labelled values in the facts column: quiet label, strong value, an icon, one pencil per group. |
 | **resize grip** | The 5 × 32 px round grey mark in the middle of a draggable edge. Only such an edge has it. |
 | **path header** | A head that shows a path instead of tabs; the view switch is a segment on the right. |
@@ -128,28 +128,30 @@ scrollers in Chromium and WebKit.
 
 ### Bands: who holds the text edge
 
-A column holds no text edge of its own. Its content is a stack of **bands**:
-each band reaches from edge to edge of its column, owns the line below or
-above it, and holds its own text edge (`var(--k2b-gutter)`, 20 px, 16 px below
-768 px) with its own padding (`.psec`, `.alert`, `.row`, `td` in the mockup).
-No wrapper between the column and a band has inline padding or margin.
+One model for every flat column: a **band host** keeps plain content on the
+text edge, and a **band** reaches both edges of its host.
 
-- `@k2b/ui` blocks that are bands say so with `data-k2b-band`: `Section`,
-  `DetailPanel.Group` and `Summary`, and `FactGroup` (`"topic"`: 16 px to their
-  lines, 8 px between heading and content), `NoticeCard` and `NoticeRow`
-  (`"cell"`: a tint from edge to edge, the sign on the text edge), and
-  `DataTable` (its first and last cell stand on the text edge).
-- `DetailPanel.Body` and the body of a page `Section` add nothing to a band.
-  Content without the attribute, such as a sentence of guidance or a button,
-  keeps the text edge there, so it stays readable. The host decides by the
-  attribute, never by class names.
-- An app's own edge-to-edge content (a page, a preview, an editor, a wrapper
-  around a notice) puts `data-k2b-band` on its outermost element and then holds
-  its own text edge with `var(--k2b-gutter)`. A wrapper without it keeps
-  everything inside it on the text edge, so a notice in it stays inset.
+- A host (`data-k2b-bands`) pads itself by the text edge (`var(--k2b-gutter)`,
+  20 px, 16 px below 768 px), so a sentence, a button, or a field in it stands
+  on that edge. `DetailPanel.Body`, the body of a `Section`, and the body of an
+  `Area` (on the name's text edge) are hosts; an app marks its own column the
+  same way.
+- A band (`data-k2b-band`) steps out of the host's padding to both edges: its
+  lines and fills run from edge to edge, and it holds its own text edge, with
+  its own padding (`NoticeCard`, `NoticeRow`, `DataTable`'s first and last
+  cell, `FactGroup`) or with `--k2b-band-edge`, which the host gives it
+  (`Section`, `DetailPanel.Group` and `Summary`, `Area`, line `Tabs`).
+- Plain content and a band keep 12 px between them.
+- An app's own edge-to-edge content (a page, a preview, a wrapper around a
+  notice) puts `data-k2b-band` on its outermost element and holds its own text
+  edge with `var(--k2b-gutter)`. Without the attribute it stays on the text
+  edge, and a notice inside it with it.
+- Every hairline has one tone and one width: 1 px `--k2b-border`. A frame
+  (a field, a button, a chip) is an object's edge, not a line of the page.
 
 **Measure:** `layoutProblems({ flat: true })` reports lines and fills that stop
 short of their column edge (`short-edge`); `flat-primitives.browser.test.ts`
+measures one line tone and
 holds the mockup's numbers for every band.
 
 ### Decisions of 21 November 2026
@@ -175,8 +177,8 @@ of its own; otherwise use a **group**. An area holds rows or one more area,
 never groups.
 
 A collapsed area is a row: 40 px high like a list row, with name, state, count,
-and a chevron, without the 8 px gap and without a surface of its own. Open, it
-is the full area with its 56 px head, its own square surface, and its rail.
+and a chevron, without a surface of its own. Open, it is the full area with its
+56 px head on the quiet ground and its content below.
 Only the person switches between the two; nothing else makes it jump.
 **Measure:** collapsed height equals the row height, in the browser test of the
 building block "area" (planned with the building block).

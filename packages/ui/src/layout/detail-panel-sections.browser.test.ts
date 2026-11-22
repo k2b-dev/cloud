@@ -315,7 +315,9 @@ const measure = () => {
     actionBackground,
     grouped,
     inSection: {
-      left: box(inSection).left - box(sectionBody).left,
+      // The body is a band host: its padding is the section's text edge after the icon column.
+      left: box(inSection).left - box(sectionBody).left - Number.parseFloat(style(sectionBody).paddingLeft),
+      indent: Number.parseFloat(style(sectionBody).paddingLeft),
       padding: style(inSection).paddingTop + " " + style(inSection).paddingLeft,
       background: style(inSection).backgroundColor,
       border: style(inSection).borderTopWidth,
@@ -382,14 +384,9 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
             const bodyRect = body.getBoundingClientRect();
             const left = bodyRect.left + body.clientLeft;
-            // Cloud flach K5a, K9: the body has no inset; every topic stands on the column's text edge, one
-            // `--k2b-gutter` (20 px, 16 px on a phone) inside the scrollport.
-            const gutterProbe = document.createElement("span");
-            gutterProbe.style.cssText = "display:block;width:var(--k2b-gutter)";
-            body.append(gutterProbe);
-            const gutter = gutterProbe.getBoundingClientRect().width;
-            gutterProbe.remove();
-            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft) + gutter;
+            // Cloud flach K5a, K9: the body is a band host; its padding is the column's text edge (`--k2b-gutter`,
+            // 20 px, 16 px on a phone), where every topic's text stands.
+            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft);
             const top = bodyRect.top + body.clientTop;
             const probe = document.createElement("span");
             probe.style.color = "var(--k2b-success-text)";
@@ -525,8 +522,16 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([0, 0, 0]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
           // Inside a section it starts on the section's text edge, after the icon column, and adds no inset of its own.
-          // Cloud flach K9 (`.psec.ind` in the mockup v10): a plain 16 px symbol plus the 8 px gap, so 24 px.
-          expect(result.inSection).toEqual({ left: 24, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+          // Cloud flach K9 (`.psec.ind` in the mockup v10): a plain 16 px symbol plus the 8 px gap, so 24 px after
+          // the text edge; the discussion adds no inset of its own.
+          expect(result.inSection.indent - (viewport.width >= 768 ? 20 : 16)).toBe(24);
+          expect({ ...result.inSection, indent: undefined }).toEqual({
+            indent: undefined,
+            left: 0,
+            padding: "0px 0px",
+            background: "rgba(0, 0, 0, 0)",
+            border: "0px",
+          });
 
           // Hosted in a tinted dialog group, the panel's topics stay flat (Cloud flach K9, K14: they paint no
           // surface of their own). Their fields are white with their own edge, as on every surface.
@@ -596,10 +601,12 @@ test("plain panels reuse the workspace rhythm in an independent host", async () 
         Array.from(document.querySelectorAll(`#${id} .k2b-detail-panel__group,#${id} .k2b-detail-panel__body > .k2b-section`)).map(
           (element) => {
             const style = getComputedStyle(element);
+            // A topic's text edge is its heading's inset (`--k2b-band-edge` from the body), not its own padding.
+            const head = element.querySelector(":scope > .k2b-section__header, :scope > .k2b-detail-panel__group-title");
             return {
               background: style.backgroundColor,
               radius: style.borderRadius,
-              padding: style.padding,
+              padding: `${style.paddingTop} ${Number.parseFloat(style.paddingLeft) + (head ? Number.parseFloat(getComputedStyle(head).paddingLeft) : 0)}px`,
               line: `${style.borderTopWidth} ${style.borderTopStyle}`,
             };
           },

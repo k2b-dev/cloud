@@ -33,17 +33,13 @@ export type AreaProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "titl
   onOpenChange?: (open: boolean) => void;
   /** Heading level of the name; defaults to 4. */
   level?: 3 | 4 | 5;
-  /**
-   * `false` sets the content on the column's text edge without the rail, and the area marks itself only by the line
-   * above its head; its rows draw no lines of their own. A band in it (a table, an alert cell) reaches both edges.
-   */
-  rail?: boolean;
 };
 
 /**
- * An area (K17 "Bereich"): a thing the rows hang on, such as a stack with its lists. Open, it is a square area of its
- * own with a 56 px head of two lines (tile, name in 14 px with its state beside it, actions at the right, a 12 px meta
- * line) and its rows on a rail that starts on the name's text edge; two areas share one line (`--k2b-gap-area`, 0 by default). Closed, it is one 40 px row like a list
+ * An area (K17 "Bereich"): a thing the rows hang on, such as a stack with its lists. It is marked by the one hairline
+ * above its head. Open, it has a 56 px head of two lines (tile, name in 14 px with its state beside it, actions at the
+ * right, a 12 px meta line) and its content on the name's text edge, rows without lines between them; a table or an
+ * alert cell in it reaches both edges (`--k2b-gap-area`, 0 by default, adds space after it). Closed, it is one 40 px row like a list
  * row: name, state, count, and the chevron, without a surface or a gap. Take an area over a `RowGroup` when it exists
  * also empty, has a state of its own, or two or more actions of its own.
  */
@@ -64,7 +60,6 @@ export function Area(props: AreaProps): JSX.Element {
     "defaultOpen",
     "onOpenChange",
     "level",
-    "rail",
     "class",
   ]);
   const t = useFlatBlockMessages();
@@ -89,7 +84,8 @@ export function Area(props: AreaProps): JSX.Element {
       class={local.class ? `k2b-area ${local.class}` : "k2b-area"}
       data-open={String(open())}
       data-collapsible={local.collapsible ? "true" : undefined}
-      data-rail={local.rail === false ? "false" : undefined}
+      // An area is a band (K14): in a band host it reaches both edges and holds its own text edge.
+      data-k2b-band=""
       aria-labelledby={`${id}-name`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the chevron button is the keyboard and screen-reader control; the head's free space is a larger pointer target for the same toggle. */}
@@ -139,7 +135,9 @@ export function Area(props: AreaProps): JSX.Element {
           <div class="k2b-area__meta">{local.meta}</div>
         </Show>
       </div>
-      <div class="k2b-area__body k2b-divided" id={`${id}-body`} hidden={!open()}>
+      {/* A band host on the name's text edge: plain rows stand there without lines between them, a band reaches both
+          edges. */}
+      <div class="k2b-area__body" data-k2b-bands="" id={`${id}-body`} hidden={!open()}>
         <Show when={hasRows()} fallback={<Show when={local.empty}>{(empty) => <p class="k2b-area__empty">{empty()}</p>}</Show>}>
           {rows()}
         </Show>

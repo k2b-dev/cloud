@@ -232,6 +232,8 @@ const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => {
       data-scroll-preserve={props.scrollPreserveKey}
       // K2: no scroll track; its bands reach the column edge, and the thumb stands over them.
       data-scrollbar="overlay"
+      // A band host: plain content stays on the text edge, bands reach both edges (K9, K14).
+      data-k2b-bands=""
     >
       {props.children}
       <OverlayScrollbar scroller={() => body} />

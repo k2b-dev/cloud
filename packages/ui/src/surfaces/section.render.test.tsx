@@ -127,7 +127,7 @@ describe("Section", () => {
     expect(html).toMatch(
       /<h3[^>]*class="k2b-section__header[^"]*"[^>]*><button type="button" class="k2b-section__toggle" aria-expanded="false" aria-controls="(k2b-section-[^"]+-body)"/,
     );
-    expect(html).toMatch(/<div id="k2b-section-[^"]+-body" class="k2b-section__body" hidden/);
+    expect(html).toMatch(/<div id="k2b-section-[^"]+-body" class="k2b-section__body" data-k2b-bands(="")? hidden/);
     expect(html).toContain('class="k2b-section__summary k2b-truncate-fade">Paul uploaded a new version');
     expect(html).toContain('data-open="false"');
   });

@@ -147,6 +147,8 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
       class={`k2b-tabs ${props.class ?? ""}`}
       data-orientation={props.orientation ?? "horizontal"}
       data-variant={props.variant ?? "line"}
+      // A band (K14): in a band host its line runs from edge to edge and the first tab stands on the text edge.
+      data-k2b-band=""
     >
       <div class="k2b-tabs__bar">
         <div

@@ -36,7 +36,7 @@ with first, context later.
 
 On a page a `size="md"` section is a band with a 52 px head band (8 px above
 its title line) and 8 px below its content. Its head holds the text edge; its
-body adds none. A table, a notice, or any element marked `data-k2b-band` in its
+body is a band host on the same edge. A table, a notice, or any element marked `data-k2b-band` in its
 body reaches both edges of the section and holds its own text edge; plain
 content stands on the text edge. A `meta` that does not fit beside the title
 moves to its own line on the title's text edge; it is never cut. Two sections
@@ -119,17 +119,14 @@ bold, its count, and at most one action. It disappears when it has no rows.
 
 `Area` is a thing the rows hang on, such as a stack with its lists. Take an
 area when it exists also empty, has a state of its own, or two or more actions
-of its own; otherwise take a group. Open, an area is a square area of its own
-with a 56 px head of two lines (a 20 px tile with its number, the name in 14 px
-bold with its state right after it, actions at the right, a 12 px meta line)
-and its rows on a rail that starts on the name's text edge. Two areas stand on
-one shared line; `--k2b-gap-area` (0 by default) adds space after an open
-area, and with space both lines show, so keep it 0 or at least 16 px. A meta line that does not fit wraps and grows
-the head. With `href` the name is a link to the thing's own page. With
-`rail={false}` the area has no rail: its content stands on the column's text
-edge, a band in it (a table, an alert cell) reaches both edges, its rows stand
-together without lines, and the area is marked only by the line above its
-head. With
+of its own; otherwise take a group. An area is marked by the one hairline
+above its head. Open, it has a 56 px head of two lines on the quiet ground (a
+20 px tile with its number, the name in 14 px bold with its state right after
+it, actions at the right, a 12 px meta line) and its content on the name's
+text edge: rows stand together without lines between them, and a table or an
+alert cell reaches both edges. `--k2b-gap-area` (0 by default) adds space
+after an open area. A meta line that does not fit wraps and grows the head.
+With `href` the name is a link to the thing's own page. With
 `collapsible`, a closed area is one 40 px row like a list row: name, state,
 count, and the chevron, without a surface or a gap. Only the person opens or
 closes it, and opening moves only what lies below its head. An area holds rows
@@ -216,7 +213,7 @@ import { Area, FactGroup, Field, FieldGrid, RowGroup, Section } from "@k2b/ui";
 
 `RowGroup` takes `title`, `count`, one `action`, `level` (3 to 5, default 4),
 and the rows as `children`. `Area` takes `name`, `href`, `marker` or `icon` for its tile,
-`state`, `count`, `actions`, `meta`, `empty`, `level`, `rail`, and the rows as
+`state`, `count`, `actions`, `meta`, `empty`, `level`, and the rows as
 `children`; `collapsible` with `defaultOpen` (default open) or `open` and
 `onOpenChange` lets the person close it. `FactGroup` takes `title`, `icon`,
 `items` (`label`, `value`, `detail`, `copy`), `onEdit` with an optional word

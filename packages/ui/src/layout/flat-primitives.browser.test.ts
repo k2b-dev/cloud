@@ -56,7 +56,7 @@ render(() => [
   createComponent(NoticeRow, { id: "row-plain", action: createComponent(Button, { size: "sm", variant: "secondary", children: "Show" }), children: "2 items go back." }),
 ], document.getElementById("rows"));
 render(() => [
-  createComponent(Area, { id: "area-flat", name: "EL-2611-00009", marker: 3, rail: false, get children() { return [
+  createComponent(Area, { id: "area-flat", name: "EL-2611-00009", marker: 3, get children() { return [
     (() => { const r = document.createElement("div"); r.className = "row"; r.id = "flat-row"; r.textContent = "10 items ended"; return r; })(),
     (() => { const r = document.createElement("div"); r.className = "row"; r.textContent = "8 items run until tomorrow"; return r; })(),
     createComponent(NoticeCard, { id: "flat-alert", tone: "warning", icon: true, title: "2 items go back." }),
@@ -114,7 +114,7 @@ const columnWidth = (width: number) => Math.min(380, width);
 const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 1400 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center;line-height:20px}#plain,#page-plain,#segments>span{line-height:20px;margin-block:0}.col{border-inline:1px solid #e4e4e7}</style></head>` +
+    `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center;line-height:20px}#plain,#page-plain,#segments>span{line-height:20px}#plain,#segments>span{margin-block:0}.col{border-inline:1px solid #e4e4e7}</style></head>` +
       `<body class="k2b-ui" style="margin:0">` +
       `<aside id="detail" class="col" data-layout-area style="width:${columnWidth(width)}px;height:640px;display:flex;flex-direction:column"></aside>` +
       `<main id="page" class="col" data-layout-area style="width:${Math.min(720, width)}px"></main>` +
@@ -123,7 +123,7 @@ const load = async (width: number) => {
       `<div id="areas-flat" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="info" class="col" data-layout-area style="width:${Math.min(400, width)}px"></div>` +
       `<div id="areas" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
-      `<div id="tabs" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
+      `<div id="tabs" class="col" data-layout-area data-k2b-bands style="width:${Math.min(720, width)}px"></div>` +
       `<div id="path" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter)"></div>` +
       `<div id="segments" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter);display:flex;align-items:center;gap:8px"></div>` +
       `<div id="fields" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px"></div>` +
@@ -168,7 +168,7 @@ const problems = async (page: Page): Promise<string[]> => (await page.evaluate(l
 describe.each([1440, 390])("flat primitives at %i px", (width) => {
   const gutter = width >= 768 ? 20 : 16;
 
-  test("the detail column adds no padding: its bands reach both edges and hold the text edge themselves", async () => {
+  test("the detail column is a band host: bands reach both edges and hold the text edge, plain content stands on it", async () => {
     const page = await load(width);
     try {
       const body = await page.locator("#detail .k2b-detail-panel__body").evaluate((element) => {
@@ -182,7 +182,8 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
           padding: [style.paddingTop, style.paddingBottom, style.paddingLeft],
         };
       });
-      expect(body.padding).toEqual(["0px", "0px", "0px"]);
+      // No block padding; the inline padding is the text edge of plain content, which bands step out of.
+      expect(body.padding).toEqual(["0px", "0px", `${gutter}px`]);
       // The alert cell (`.alert`): tint from edge to edge, sign on the text edge, text 32 px further (20 + 12).
       const alert = await box(page, "#alert");
       expect([alert.left, alert.right]).toEqual([body.left, body.right]);
@@ -248,6 +249,8 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       const alert = await box(page, "#page-alert");
       expect([alert.left, alert.right]).toEqual([topic.left, topic.right]);
       expect((await box(page, "#page-plain")).left - topic.left).toBe(gutter);
+      // Plain text under an alert cell keeps 12 px from it; it never sticks to the cell.
+      expect((await box(page, "#page-plain")).top - (await box(page, "#page-alert")).bottom).toBe(12);
       // Plain text right in the body stands on the text edge too.
       expect((await textLeft(page, "#page-text .k2b-section__body")) - (await box(page, "#page-text")).left).toBe(gutter);
       // The meta line is never cut: beside the title when it fits, else on its own line on the title's text edge.
@@ -301,21 +304,24 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
     }
   });
 
-  test("an area without its rail keeps its content on the text edge and is marked by the line above its head", async () => {
+  test("an area has no rail: its content stands on the name's text edge and the line above its head marks it", async () => {
     const page = await load(width);
     try {
       const area = await box(page, "#area-flat");
-      expect((await textLeft(page, "#flat-row")) - area.left).toBe(gutter);
+      // The name's text edge: the 20 px tile and 12 px after it.
+      expect((await textLeft(page, "#flat-row")) - area.left).toBe(gutter + 32);
+      expect((await textLeft(page, "#flat-row")) - (await textLeft(page, "#area-flat .k2b-area__name"))).toBe(0);
       const alert = await box(page, "#flat-alert");
       expect([alert.left, alert.right]).toEqual([area.left, area.right]);
       const look = await page.locator("#area-flat").evaluate((element) => ({
         lines: getComputedStyle(element).boxShadow,
         head: getComputedStyle(element.querySelector(".k2b-area__head")!).boxShadow,
-        rail: getComputedStyle(element.querySelector(".k2b-area__body")!, "::before").display,
+        rail: getComputedStyle(element.querySelector(".k2b-area__body")!, "::before").content,
         rowLine: getComputedStyle(element.querySelectorAll(".row")[1]!).borderTopWidth,
       }));
       expect(look.lines).toContain("0px 1px 0px 0px inset");
       expect(look.lines).not.toContain("-1px");
+      expect(look.lines.match(/inset/g)?.length).toBe(1);
       expect([look.head, look.rail, look.rowLine]).toEqual(["none", "none", "0px"]);
     } finally {
       await page.close();
@@ -349,6 +355,11 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
         "0px -1px 0px 0px inset",
       );
       expect(await page.locator("#tabs .k2b-tabs__list").evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none");
+      // In a band host the bar's line runs from edge to edge and the first tab stands on the text edge.
+      const column = await box(page, "#tabs");
+      expect([bar.left, bar.right]).toEqual([column.left + 1, column.right - 1]);
+      // Text runs measure to a thousandth of a pixel in WebKit.
+      expect((await textLeft(page, "#tabs [role=tab]")) - column.left - 1).toBeCloseTo(gutter, 1);
     } finally {
       await page.close();
     }
@@ -429,6 +440,46 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       // A plain picker with a chip as its value: its hit area reaches 8 px past the trigger on purpose and is invisible,
       // so the layout check reports nothing (a closed calendar's today mark once made it look drawn).
       expect(await page.evaluate(layoutProblems, { root: "#fields" })).toMatchObject({ spill: [], cut: [] });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("every hairline has one tone and one width (Valentin: so thin should all lines be)", async () => {
+    const page = await load(width);
+    try {
+      const tones = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-border)";
+        document.body.append(probe);
+        const border = getComputedStyle(probe).color;
+        probe.remove();
+        const found = new Set<string>();
+        for (const element of Array.from(document.querySelectorAll("[data-layout-area] *"))) {
+          const style = getComputedStyle(element);
+          if (!element.getClientRects().length) continue;
+          // A frame (a field, a button, a chip) is an object's edge, not a line of the page.
+          const round = ["top-left", "top-right", "bottom-right", "bottom-left"].some(
+            (corner) => Number.parseFloat(style.getPropertyValue(`border-${corner}-radius`)) > 0,
+          );
+          if (round) continue;
+          for (const side of ["top", "right", "bottom", "left"]) {
+            const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`));
+            if (width > 0 && style.getPropertyValue(`border-${side}-style`) !== "none") {
+              const color = style.getPropertyValue(`border-${side}-color`);
+              if (!/rgba\(.*, 0\)$/.test(color)) found.add(`${width}px ${color}`);
+            }
+          }
+          for (const shadow of style.boxShadow === "none" ? [] : style.boxShadow.split(/,(?![^(]*\))/)) {
+            const color = shadow.match(/rgba?\([^)]*\)/)?.[0] ?? "";
+            const [x, y, blur, spread] = shadow.replace(color, "").replace("inset", "").trim().split(/\s+/).map(Number.parseFloat);
+            if (!color || /, 0\)$/.test(color) || blur || spread || (x && y)) continue;
+            if (Math.abs(x || y || 0) === 1) found.add(`1px ${color}`);
+          }
+        }
+        return { border, found: [...found] };
+      });
+      expect(tones.found).toEqual([`1px ${tones.border}`]);
     } finally {
       await page.close();
     }

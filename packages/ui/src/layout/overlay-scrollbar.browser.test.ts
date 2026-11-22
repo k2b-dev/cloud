@@ -96,7 +96,8 @@ const measure = (page: Page) =>
           const row = document.querySelector(rowOf[name as keyof typeof rowOf]) as HTMLElement;
           const box = scroller.getBoundingClientRect();
           const style = getComputedStyle(scroller);
-          const inner = box.right - Number.parseFloat(style.borderRightWidth) - Number.parseFloat(style.paddingRight);
+          // The scrollport's own edge: a band host's padding is the text edge of plain content, which rows step out of.
+          const inner = box.left + scroller.clientLeft + scroller.clientWidth;
           const column = document.querySelector(columnOf[name as keyof typeof columnOf]) as HTMLElement;
           const columnBox = column.getBoundingClientRect();
           const columnEdge = columnBox.right - Number.parseFloat(getComputedStyle(column).borderRightWidth);

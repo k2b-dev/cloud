@@ -263,7 +263,7 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
         </Heading>
       </Show>
       <Show when={hasBody()}>
-        <div ref={body} id={bodyId} class="k2b-section__body" hidden={!open()}>
+        <div ref={body} id={bodyId} class="k2b-section__body" data-k2b-bands="" hidden={!open()}>
           <Show when={state() === "loading"}>
             {/* Placeholder rows at the height of loaded rows; their widths vary in CSS. */}
             <div role="status">

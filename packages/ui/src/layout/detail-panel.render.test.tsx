@@ -131,7 +131,9 @@ describe("DetailPanel", () => {
     // K2: no reserved track; its scrollbar is the overlay thumb, so its bands reach the column edge.
     expect(bodyRule).not.toContain("scrollbar-gutter");
     // No padding of its own: its bands reach the column's edges (K9, K14).
-    expect(bodyRule).toContain("padding: 0;");
+    // A band host: no block padding; plain content stands on the text edge, bands reach both edges (K9, K14).
+    expect(bodyRule).toContain("padding-block: 0;");
+    expect(css).toMatch(/\.k2b-ui \[data-k2b-bands\] \{\s*padding-inline: var\(--k2b-bands-start\) var\(--k2b-bands-end\);/);
   });
 
   test("keeps the workspace trailing inset beside its overlay scrollbar", async () => {
@@ -151,7 +153,7 @@ describe("DetailPanel", () => {
     expect(barRule).not.toContain("scrollbar-gutter");
     // As a sheet the body keeps the inset as end padding, so its content has the same margin on both sides; the
     // overlay thumb stands in that inset at the panel's edge.
-    expect(bodyRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
+    expect(css).toContain("padding-inline-end: calc(var(--k2b-bands-end) + var(--k2b-detail-panel-scroll-inset, 0rem));");
     expect(bodyRule).not.toContain("scrollbar-gutter");
   });
 
@@ -220,7 +222,8 @@ describe("DetailPanel", () => {
     // A group's own sections stay together without rules; the column's topics stand borderless on its text edge.
     expect(groupRule).not.toContain("gap: 1px");
     expect(groupRule).not.toContain("border");
-    expect(frame).toContain("padding: var(--k2b-space-4) var(--k2b-gutter)");
+    // 16 px to its lines; its text edge comes from the band host (--k2b-band-edge).
+    expect(frame).toContain("padding-block: var(--k2b-space-4)");
     expect(frame).toContain("border: 0;");
     expect(frame).toContain("background: transparent");
     expect(separator).toContain("border-top: 1px solid var(--k2b-border)");
