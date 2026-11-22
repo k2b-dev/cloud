@@ -6,7 +6,9 @@ describe("markdown code blocks", () => {
     const html = renderMarkdownSync("```ts\nconst a = 1;\n```");
 
     expect(html).toContain('<div class="md-code-block relative my-3">');
-    expect(html).toContain('<span class="absolute top-2 right-2 text-xs not-dark:text-gray-400 dark:text-gray-500 font-mono select-none">ts</span>');
+    expect(html).toContain(
+      '<span class="absolute top-2 right-2 text-xs not-dark:text-gray-400 dark:text-gray-500 font-mono select-none">ts</span>',
+    );
   });
 
   test("plain output keeps code source in a bare pre without the language label", () => {
