@@ -27,6 +27,8 @@ Keep the option set short. Each option should describe the same dimension, such 
 
 The options sit on a grey track (`--k2b-tray`), and with it the control is as tall as a field. Options have no edge until selected; the selected option is the thumb, with the 1 px selected edge, fill, and ink of the app (see [Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)). Keyboard focus turns the same 1 px edge blue and adds the soft focus ring outside it. Nothing casts a shadow, and font weight and geometry stay the same through selection, hover, and focus, so no option moves. In forced-color mode the selected option is underlined and focus takes the system outline. The same look applies to a row of choices in a menu.
 
+In a band the control is flat, so it is never a rounded box between the band's lines (K14). This applies when it stands straight in a band host (`data-k2b-bands`) as a band of its own, or in the `filters` of a `StatusRow`. Its options are then cells over the band's full height, separated by the hairline, without track, rounding, or padding of their own. The chosen cell has the light "your turn" tint, and text is 13 px. Cells that do not fit in one row wrap, and the hairline divides the rows too. Keyboard, focus ring, and ARIA stay the same. Standing free, such as in a head's toolbar, it keeps the track. The context decides; there is no option for it.
+
 ## API reference
 
 ```ts

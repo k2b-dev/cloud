@@ -15,7 +15,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "flat-primitives.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, FactGroup, NoticeCard, NoticeRow, ProgressPath, Section, SegmentedControl, StatusBadge, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, FactGroup, NoticeCard, NoticeRow, ProgressPath, Section, SegmentedControl, StatusBadge, StatusRow, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const facts = [
   { term: "Status", description: "In progress" },
@@ -90,6 +90,11 @@ render(() => [
     { value: "open", label: "Waiting for signature" }, { value: "signed", label: "Signed" }, { value: "void", label: "Cancelled" }, { value: "all", label: "All states" }] }),
 ], document.getElementById("segments"));
 
+// The same switcher in a band: as the filters of a status row, and as a band of its own in a band host.
+const states = () => createComponent(SegmentedControl, { ariaLabel: "State", value: "open", onValueChange: () => {}, options: [
+  { value: "open", label: "Waiting for signature" }, { value: "signed", label: "Signed" }, { value: "void", label: "Cancelled" }, { value: "all", label: "All states" }] });
+render(() => createComponent(StatusRow, { lead: "12 contracts", get filters() { return states(); } }), document.getElementById("seg-status"));
+render(() => states(), document.getElementById("seg-band"));
 render(() => [
   createComponent(TextInput, { label: "Name", value: "Mira" }),
   createComponent(DatePicker, { label: "Due", value: "2026-11-27" }),
@@ -114,7 +119,7 @@ const columnWidth = (width: number) => Math.min(380, width);
 const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 1400 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center;line-height:20px}#plain,#page-plain,#segments>span{line-height:20px}#plain,#segments>span{margin-block:0}.col{border-inline:1px solid #e4e4e7}</style></head>` +
+    `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center;line-height:20px}#plain,#page-plain,#segments>span{line-height:20px}#plain,#segments>span{margin-block:0}.col{border-inline:1px solid #e4e4e7}.band-lines{box-shadow:inset 0 1px 0 var(--k2b-border),inset 0 -1px 0 var(--k2b-border)}.band-end{box-shadow:inset 0 -1px 0 var(--k2b-border)}</style></head>` +
       `<body class="k2b-ui" style="margin:0">` +
       `<aside id="detail" class="col" data-layout-area style="width:${columnWidth(width)}px;height:640px;display:flex;flex-direction:column"></aside>` +
       `<main id="page" class="col" data-layout-area style="width:${Math.min(720, width)}px"></main>` +
@@ -126,6 +131,8 @@ const load = async (width: number) => {
       `<div id="tabs" class="col" data-layout-area data-k2b-bands style="width:${Math.min(720, width)}px"></div>` +
       `<div id="path" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter)"></div>` +
       `<div id="segments" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter);display:flex;align-items:center;gap:8px"></div>` +
+      `<div id="seg-status" class="col band-lines" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
+      `<div id="seg-band" class="col band-end" data-layout-area data-k2b-bands style="width:${Math.min(720, width)}px"></div>` +
       `<div id="fields" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px"></div>` +
       `</body></html>`,
   );
@@ -480,6 +487,53 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
         return { border, found: [...found] };
       });
       expect(tones.found).toEqual([`1px ${tones.border}`]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("in a band a switcher is flat cells over the band's height; standing free it keeps its form", async () => {
+    const page = await load(width);
+    try {
+      for (const band of ["#seg-status", "#seg-band"]) {
+        const result = await page.locator(band).evaluate((host) => {
+          const edge = host.getBoundingClientRect();
+          // No rounded box touches the band's lines (K14).
+          const touching = Array.from(host.querySelectorAll("*"))
+            .filter((element) => element.getClientRects().length)
+            .filter((element) => Number.parseFloat(getComputedStyle(element).borderTopLeftRadius) > 0)
+            .filter((element) => {
+              const rect = element.getBoundingClientRect();
+              return rect.top - edge.top <= 1 || edge.bottom - rect.bottom <= 1;
+            })
+            .map((element) => element.className);
+          const control = host.querySelector(".k2b-segmented-control")!;
+          const cells = Array.from(control.querySelectorAll(".k2b-segmented-control__option")).map((cell) => {
+            const style = getComputedStyle(cell);
+            return {
+              radius: style.borderTopLeftRadius,
+              height: cell.getBoundingClientRect().height,
+              background: style.backgroundColor,
+              size: style.fontSize,
+            };
+          });
+          return { touching, radius: getComputedStyle(control).borderTopLeftRadius, cells, height: edge.height };
+        });
+        expect({ band, touching: result.touching, radius: result.radius }).toEqual({ band, touching: [], radius: "0px" });
+        expect(result.cells.every((cell) => cell.radius === "0px" && cell.size === "13px")).toBe(true);
+        // The chosen cell is the light tint, the others the band's surface.
+        expect(new Set(result.cells.map((cell) => cell.background)).size).toBe(2);
+        // In a desktop status row the cells fill its height, so they meet its lines.
+        if (band === "#seg-status" && width >= 768) expect(result.cells.every((cell) => cell.height === result.height)).toBe(true);
+      }
+      // A band of its own reaches both edges of its host.
+      const host = await box(page, "#seg-band");
+      const control = await box(page, "#seg-band .k2b-segmented-control");
+      expect([control.left, control.right]).toEqual([host.left + 1, host.right - 1]);
+      // Standing free, as in a head's toolbar, it keeps its rounded track.
+      expect(
+        await page.locator("#segments .k2b-segmented-control").evaluate((element) => getComputedStyle(element).borderTopLeftRadius),
+      ).not.toBe("0px");
     } finally {
       await page.close();
     }

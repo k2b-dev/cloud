@@ -140,7 +140,8 @@ text edge, and a **band** reaches both edges of its host.
   lines and fills run from edge to edge, and it holds its own text edge, with
   its own padding (`NoticeCard`, `NoticeRow`, `DataTable`'s first and last
   cell, `FactGroup`) or with `--k2b-band-edge`, which the host gives it
-  (`Section`, `DetailPanel.Group` and `Summary`, `Area`, line `Tabs`).
+  (`Section`, `DetailPanel.Group` and `Summary`, `Area`, line `Tabs`). A
+  `SegmentedControl` in a band is flat cells over the band's height.
 - Plain content and a band keep 12 px between them.
 - An app's own edge-to-edge content (a page, a preview, a wrapper around a
   notice) puts `data-k2b-band` on its outermost element and holds its own text

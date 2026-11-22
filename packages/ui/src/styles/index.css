@@ -3097,6 +3097,67 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* K14: in a band, a switcher is no rounded box in a square area. As a band of
+   its own (straight in a band host) or as the filters of a status row, it is
+   flat: its options are cells over the band's full height, without track,
+   rounding, or padding; the chosen cell is the light "your turn" tint. Each
+   cell draws its hairline as a 1 px ring into the 1 px gap, where its
+   neighbour draws the same pixel, and the switcher clips the rings on its
+   outer edges: lines run between cells and between wrapped rows, never on the
+   band's edges. Standing free, such as in a head's toolbar, it keeps its form. */
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) {
+  height: 100%;
+  gap: 1px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* As a band of its own it reaches both edges of its host. */
+.k2b-ui [data-k2b-bands] > .k2b-segmented-control {
+  display: flex;
+  width: auto;
+  max-width: none;
+}
+
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) > .k2b-segmented-control__option {
+  min-height: var(--k2b-h-row);
+  padding-inline: var(--k2b-space-3);
+  border-radius: 0;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  box-shadow:
+    0 0 0 1px var(--k2b-border),
+    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
+    0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+}
+
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) > .k2b-segmented-control__option:not(:disabled, [aria-checked="true"], [data-selected="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
+}
+
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) > .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]) {
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-surface));
+}
+
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) > .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]):not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-action) 14%, var(--k2b-surface));
+}
+
+/* A chosen cell is a tint, not a box: it draws no edge unless it has focus. */
+.k2b-ui :is([data-k2b-bands] > .k2b-segmented-control, .k2b-status-row__end > .k2b-segmented-control) > .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]):not(:focus-visible) {
+  --k2b-edge-color: transparent;
+}
+
+/* In a status row the filters stretch to the row's height, so the cells meet its lines. */
+.k2b-ui .k2b-status-row__end:has(> .k2b-segmented-control) {
+  align-self: stretch;
+}
+
 .k2b-ui .k2b-field,
 .k2b-ui .k2b-check-field,
 .k2b-ui .k2b-switch-field {

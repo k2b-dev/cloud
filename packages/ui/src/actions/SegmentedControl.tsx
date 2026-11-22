@@ -58,6 +58,8 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
   return (
     <div
       class={`k2b-segmented-control ${props.class ?? ""}`}
+      // In a band host the switcher is a band of its own: flat cells from edge to edge (K14).
+      data-k2b-band=""
       data-size={props.size ?? "md"}
       role="radiogroup"
       aria-label={props.ariaLabel ?? props.label ?? messages().options}
