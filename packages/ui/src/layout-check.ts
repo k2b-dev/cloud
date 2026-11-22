@@ -57,8 +57,10 @@ export type LayoutProblemOptions = {
  *
  * - `short-edge`: a line (a border of at most 1 px or a 1 px box-shadow line) or a fill of a row, cell, selection, or
  *   notice in a flat area does not reach its area's inner edge within 0.5 px. A scrollbar gutter is no excuse.
- * - `near-double`: two parallel lines 0 to 8 px apart that run side by side over half of the shorter one or more.
- * - `grip-off-center`: a resize grip that is not centred on its edge within 1 px, or that lies behind something.
+ * - `near-double`: two parallel lines at most 8 px apart that run side by side over half of the shorter one or more,
+ *   also lines drawn as a shadow or a pseudo-element (the column lines), which `double` does not see.
+ * - `grip-off-center`: a resize grip that is not centred on the line under it within 0.25 px, sits off the middle of
+ *   that line by more than 1 px, or lies behind the line or anything else.
  * - `type-role`: text in a flat area whose size, line height, and weight are no type role of `--k2b-type-roles`.
  */
 export type FlatProblemKind = "short-edge" | "near-double" | "grip-off-center" | "type-role";
@@ -359,6 +361,26 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
       if (["absolute", "fixed"].includes(getComputedStyle(box).position)) return true;
     return false;
   };
+  // What a person sees of a box along x: cut by every ancestor up to its area that clips or scrolls. A pseudo-element
+  // is cut by its own box as well.
+  const clipped = (element: Element, area: Element, x0: number, x1: number, own = false) => {
+    let [from, to] = [x0, x1];
+    for (let box = own ? element : element.parentElement; box; box = box.parentElement) {
+      const style = getComputedStyle(box);
+      if (style.overflowX !== "visible") {
+        const rect = box.getBoundingClientRect();
+        from = Math.max(from, rect.left + Number.parseFloat(style.borderLeftWidth));
+        to = Math.min(to, rect.right - Number.parseFloat(style.borderRightWidth));
+      }
+      if (box === area) break;
+    }
+    return [from, to] as const;
+  };
+  // The layer a box paints in: the nearest fixed box around it, such as a sheet or a dialog over the page.
+  const layer = (element: Element) => {
+    for (let box: Element | null = element; box; box = box.parentElement) if (getComputedStyle(box).position === "fixed") return box;
+    return null;
+  };
   const backdrop = (element: Element) => {
     for (let box = element.parentElement; box; box = box.parentElement) {
       const color = getComputedStyle(box).backgroundColor;
@@ -367,35 +389,129 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     return "";
   };
 
+  // Every visible line on the page: borders, 1 px box-shadow lines, and thin pseudo-elements that draw a line, such
+  // as the column lines of a workspace. A frame's edges (a field, button, card) are kept apart from lines.
+  type Painter = { element: Element; pseudo?: "::before" | "::after" };
+  type Line = Band & Painter & { kind: "line" | "frame" | "drawn" };
+  const lines = { horizontal: [] as Line[], vertical: [] as Line[] };
+  // The box of an absolutely positioned pseudo-element: its resolved insets and size from its containing block (or the
+  // grid area it is placed in), moved by a translation.
+  const pseudoBox = (element: Element, style: CSSStyleDeclaration) => {
+    let block: Element | null = style.position === "fixed" ? null : element;
+    while (block) {
+      const own = getComputedStyle(block);
+      if (
+        own.position !== "static" ||
+        own.transform !== "none" ||
+        /layout|paint|strict|content/.test(own.contain) ||
+        own.containerType !== "normal"
+      )
+        break;
+      block = block.parentElement;
+    }
+    let base = { left: 0, top: 0 };
+    if (block) {
+      const rect = block.getBoundingClientRect();
+      base = { left: rect.left + block.clientLeft, top: rect.top + block.clientTop };
+      if (style.gridColumnStart !== "auto" && /grid/.test(getComputedStyle(block).display)) {
+        // The grid area is where the largest box placed in it lies, also one that is itself positioned in it.
+        const item = Array.from(block.querySelectorAll("*"))
+          .filter((child) => {
+            const own = getComputedStyle(child);
+            return own.gridColumnStart === style.gridColumnStart && own.gridRowStart === style.gridRowStart && seen(child);
+          })
+          .map((child) => ({ child, size: child.getBoundingClientRect().width * child.getBoundingClientRect().height }))
+          .sort((a, b) => b.size - a.size)[0]?.child;
+        if (item) {
+          const area = item.getBoundingClientRect();
+          base = { left: area.left, top: style.gridRowStart === "auto" ? base.top : area.top };
+        }
+      }
+    }
+    const matrix = /^matrix\(([^)]*)\)$/.exec(style.transform)?.[1]?.split(",").map(Number) ?? [1, 0, 0, 1, 0, 0];
+    const left = base.left + Number.parseFloat(style.left) + (matrix[4] ?? 0);
+    const top = base.top + Number.parseFloat(style.top) + (matrix[5] ?? 0);
+    return { left, top, right: left + Number.parseFloat(style.width), bottom: top + Number.parseFloat(style.height) };
+  };
+  if (on("short-edge") || on("near-double") || on("grip-off-center")) {
+    const push = (
+      line: Omit<Line, "across0" | "across1" | "along0" | "along1">,
+      side: string,
+      rect: DOMRect | ReturnType<typeof pseudoBox>,
+      width: number,
+      shift = 0,
+    ) => {
+      const horizontal = side.startsWith("top") || side.startsWith("bottom");
+      const at = { top: rect.top - shift, bottom: rect.bottom + shift - width, left: rect.left - shift, right: rect.right + shift - width }[
+        side.split(" ")[0] as "top" | "bottom" | "left" | "right"
+      ];
+      if (horizontal) lines.horizontal.push({ ...line, across0: at, across1: at + width, along0: rect.left, along1: rect.right });
+      else lines.vertical.push({ ...line, across0: at, across1: at + width, along0: rect.top, along1: rect.bottom });
+    };
+    for (const element of everything) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      const kind = framed(style) ? "frame" : "line";
+      for (const side of sides)
+        if (borderShown(style, side))
+          push({ element, side, kind }, side, rect, Number.parseFloat(style.getPropertyValue(`border-${side}-width`)));
+      // An outer shadow line lies beside its edge, an inset one inside it.
+      for (const line of shadowLines(style))
+        push({ element, side: `${line.side} shadow`, kind }, line.side, rect, line.width, line.inset ? 0 : line.width);
+    }
+    // A pseudo-element draws for a box without one of its own too, such as a `display: contents` wrapper.
+    for (const element of [root, ...Array.from(root.querySelectorAll("*"))]) {
+      if (getComputedStyle(element).display === "none" || (element.parentElement && !element.parentElement.checkVisibility())) continue;
+      for (const pseudo of ["::before", "::after"] as const) {
+        const style = getComputedStyle(element, pseudo);
+        if (style.content === "none" || style.content === "normal" || !["absolute", "fixed"].includes(style.position)) continue;
+        if (!visibleColor(style.backgroundColor) || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+        const box = pseudoBox(element, style);
+        const width = box.right - box.left;
+        const height = box.bottom - box.top;
+        if (!(width > 0 && height > 0)) continue;
+        if (width <= 1.5 && height > width) push({ element, pseudo, side: pseudo, kind: "drawn" }, "left", box, width);
+        else if (height <= 1.5) push({ element, pseudo, side: pseudo, kind: "drawn" }, "top", box, height);
+      }
+    }
+  }
+  const lineName = (line: Line) => `${name(line.element)}${line.pseudo ?? ` ${line.side}`}`;
+
   // short-edge: every horizontal line and every fill of a box in a flat area is a segment; segments of one area at the
-  // same height join into runs, and a run that spans at least half the area reaches both of its inner edges.
+  // same height join into runs, and a run that spans at least half the area reaches both of its edges.
   const shortEdge: string[] = [];
   if (on("short-edge")) {
-    type Segment = { area: Element; key: string; what: string; x0: number; x1: number; element: Element };
+    type Segment = { area: Element; key: string; what: string; x0: number; x1: number; label: string };
     const segments: Segment[] = [];
+    const rowLike = (element: Element) =>
+      !element.matches("input, select, textarea, [role='progressbar'], [role='meter'], [role='slider'], [role='separator']");
+    for (const line of lines.horizontal) {
+      if (line.kind === "frame" || line.across1 - line.across0 > 1) continue;
+      const area = line.pseudo && line.element.matches(areaSelector) ? line.element : owner(line.element);
+      if (!area || (!line.pseudo && line.element.matches(areaSelector)) || !rowLike(line.element)) continue;
+      if (!line.pseudo && (floats(line.element, area) || getComputedStyle(line.element).display === "inline")) continue;
+      const [x0, x1] = clipped(line.element, area, line.along0, line.along1, !!line.pseudo);
+      if (x1 > x0) segments.push({ area, key: `line ${Math.round(line.across0)}`, what: "line", x0, x1, label: name(line.element) });
+    }
     for (const element of everything) {
       if (!(element instanceof HTMLElement) || element.matches(areaSelector)) continue;
       const area = owner(element);
-      if (
-        !area ||
-        floats(element, area) ||
-        element.matches("input, select, textarea, [role='progressbar'], [role='meter'], [role='slider'], [role='separator']")
-      )
-        continue;
+      if (!area || floats(element, area) || !rowLike(element)) continue;
       const style = getComputedStyle(element);
       if (style.display === "inline") continue;
       const rect = element.getBoundingClientRect();
-      const add = (key: string, what: string) => segments.push({ area, key, what, x0: rect.left, x1: rect.right, element });
-      if (!framed(style)) {
-        for (const side of ["top", "bottom"] as const)
-          if (borderShown(style, side) && Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) <= 1)
-            add(`line ${Math.round(side === "top" ? rect.top : rect.bottom)}`, "line");
-        for (const line of shadowLines(style))
-          if (line.side === "top" || line.side === "bottom")
-            add(`line ${Math.round(line.side === "top" ? rect.top : rect.bottom)}`, "line");
+      if (!radius(style) && rect.height >= 12 && visibleColor(style.backgroundColor) && style.backgroundColor !== backdrop(element)) {
+        const [x0, x1] = clipped(element, area, rect.left, rect.right);
+        if (x1 > x0)
+          segments.push({
+            area,
+            key: `fill ${Math.round(rect.top)} ${Math.round(rect.bottom)} ${style.backgroundColor}`,
+            what: "fill",
+            x0,
+            x1,
+            label: name(element),
+          });
       }
-      if (!radius(style) && rect.height >= 12 && visibleColor(style.backgroundColor) && style.backgroundColor !== backdrop(element))
-        add(`fill ${Math.round(rect.top)} ${Math.round(rect.bottom)} ${style.backgroundColor}`, "fill");
     }
     const groups = new Map<Element, Map<string, Segment[]>>();
     for (const segment of segments) {
@@ -419,92 +535,96 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
           const last = run.reduce((a, b) => (b.x1 > a.x1 ? b : a));
           if (last.x1 - x0 < width / 2) continue;
           const gaps = [
-            [x0 - edge.left, run[0]!.element, "left"],
-            [edge.right - last.x1, last.element, "right"],
+            [x0 - edge.left, run[0]!.label, "left"],
+            [edge.right - last.x1, last.label, "right"],
           ] as const;
-          for (const [gap, element, side] of gaps)
+          for (const [gap, label, side] of gaps)
             if (Math.abs(gap) > 0.5)
               shortEdge.push(
-                `short-edge: the ${run[0]!.what} of ${name(element)} ${gap > 0 ? `stops ${px(gap)} px short of` : `runs ${px(-gap)} px past`} the ${side} edge of ${name(area)}`,
+                `short-edge: the ${run[0]!.what} of ${label} ${gap > 0 ? `stops ${px(gap)} px short of` : `runs ${px(-gap)} px past`} the ${side} edge of ${name(area)}`,
               );
         }
       }
     }
   }
 
-  // near-double: two parallel lines of different elements 0 to 8 px apart that run side by side over at least half of
-  // the shorter one read as one doubled line. The edge of a frame (a field, button, card) is no line.
+  // near-double: two parallel lines of different boxes at most 8 px apart that run side by side over at least half of
+  // the shorter one read as one doubled line. Touching pairs that `double` does not see (a shadow or a drawn line) count
+  // here too. A frame's edge counts only beside a drawn line, such as a card on a column line; two frames, or a frame
+  // and a row line, are separate objects.
   const nearDouble: string[] = [];
   if (on("near-double")) {
-    type Line = Band;
-    const lines = { horizontal: [] as Line[], vertical: [] as Line[] };
-    for (const element of everything) {
-      const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      if (framed(style)) continue;
-      // `shift` moves an outer shadow line out of the box: it lies beside its edge, an inset one inside it.
-      const push = (side: string, width: number, shift = 0, label = side) => {
-        const band = { element, side: label };
-        if (side === "top")
-          lines.horizontal.push({
-            ...band,
-            across0: rect.top - shift,
-            across1: rect.top - shift + width,
-            along0: rect.left,
-            along1: rect.right,
-          });
-        if (side === "bottom")
-          lines.horizontal.push({
-            ...band,
-            across0: rect.bottom + shift - width,
-            across1: rect.bottom + shift,
-            along0: rect.left,
-            along1: rect.right,
-          });
-        if (side === "left")
-          lines.vertical.push({
-            ...band,
-            across0: rect.left - shift,
-            across1: rect.left - shift + width,
-            along0: rect.top,
-            along1: rect.bottom,
-          });
-        if (side === "right")
-          lines.vertical.push({
-            ...band,
-            across0: rect.right + shift - width,
-            across1: rect.right + shift,
-            along0: rect.top,
-            along1: rect.bottom,
-          });
-      };
-      for (const side of sides) if (borderShown(style, side)) push(side, Number.parseFloat(style.getPropertyValue(`border-${side}-width`)));
-      for (const line of shadowLines(style)) push(line.side, line.width, line.inset ? 0 : line.width, `${line.side} shadow`);
-    }
     for (const list of [lines.horizontal, lines.vertical]) {
-      list.sort((a, b) => a.across0 - b.across0);
-      for (const [index, a] of list.entries())
-        for (const b of list.slice(index + 1)) {
+      const sorted = [...list].sort((a, b) => a.across0 - b.across0);
+      for (const [index, a] of sorted.entries())
+        for (const b of sorted.slice(index + 1)) {
           const gap = b.across0 - a.across1;
           if (gap > 8) break;
-          if (gap <= 0 || a.element === b.element || collapsedPair(a.element, b.element)) continue;
+          if (gap < -0.01 || a.element === b.element || collapsedPair(a.element, b.element) || layer(a.element) !== layer(b.element))
+            continue;
+          const kinds = [a.kind, b.kind];
+          if (kinds.includes("frame") && !kinds.includes("drawn")) continue;
           const pair = [`${key(a.element)}:${a.side}`, `${key(b.element)}:${b.side}`];
           if (doubled.has(pair.join("|")) || doubled.has(pair.reverse().join("|"))) continue;
           const shared = Math.min(a.along1, b.along1) - Math.max(a.along0, b.along0);
           const shorter = Math.min(a.along1 - a.along0, b.along1 - b.along0);
           if (shorter > 0 && shared >= shorter / 2)
             nearDouble.push(
-              `near-double: ${name(a.element)} ${a.side} and ${name(b.element)} ${b.side} lie ${px(gap)} px apart over ${Math.round(shared)} px`,
+              `near-double: ${lineName(a)} and ${lineName(b)} lie ${px(Math.max(gap, 0))} px apart over ${Math.round(shared)} px`,
             );
         }
     }
   }
 
-  // grip-off-center: a resize grip sits on the middle of its edge, across within 1 px and along within 1 px, and
-  // nothing lies over it. The edge is the start or end of the column the separator controls, else the line between
-  // the separator's neighbours, else the separator's own middle.
+  // grip-off-center: a resize grip sits on the middle of the line under it within 0.25 px, on the middle of its edge
+  // along the line within 1 px, and in front of the line and of everything else.
   const gripOffCenter: string[] = [];
   if (on("grip-off-center")) {
+    // Paint order: the stacking contexts from the root down, then tree order where they tie. A pseudo-element paints
+    // as the first (`::before`) or last (`::after`) child of its box.
+    const stacking = (style: CSSStyleDeclaration) =>
+      (style.position !== "static" && style.zIndex !== "auto") ||
+      style.position === "fixed" ||
+      style.position === "sticky" ||
+      Number(style.opacity) < 1 ||
+      style.transform !== "none" ||
+      style.filter !== "none" ||
+      style.isolation === "isolate";
+    const layers = (painter: Painter) => {
+      const path: Element[] = [];
+      for (let box: Element | null = painter.element; box; box = box.parentElement) path.unshift(box);
+      const chain: { painter: Painter; z: number }[] = [];
+      for (const box of path) {
+        const style = getComputedStyle(box);
+        if (stacking(style)) chain.push({ painter: { element: box }, z: style.zIndex === "auto" ? 0 : Number(style.zIndex) });
+      }
+      const style = painter.pseudo ? getComputedStyle(painter.element, painter.pseudo) : getComputedStyle(painter.element);
+      if (painter.pseudo || !stacking(style))
+        chain.push({ painter, z: style.position === "static" ? -1 : style.zIndex === "auto" ? 0 : Number(style.zIndex) });
+      return chain;
+    };
+    const rank = (pseudo?: string) => (pseudo === "::before" ? -1 : pseudo === "::after" ? 1 : 0);
+    const later = (a: Painter, b: Painter) => {
+      if (a.element === b.element) return rank(a.pseudo) > rank(b.pseudo);
+      const position = a.element.compareDocumentPosition(b.element);
+      if (position & Node.DOCUMENT_POSITION_CONTAINED_BY) return a.pseudo === "::after";
+      if (position & Node.DOCUMENT_POSITION_CONTAINS) return b.pseudo !== "::after";
+      return !!(position & Node.DOCUMENT_POSITION_PRECEDING);
+    };
+    const paintsAbove = (a: Painter, b: Painter) => {
+      const [one, two] = [layers(a), layers(b)];
+      let index = 0;
+      while (
+        index < one.length &&
+        index < two.length &&
+        one[index]!.painter.element === two[index]!.painter.element &&
+        one[index]!.painter.pseudo === two[index]!.painter.pseudo
+      )
+        index++;
+      const [x, y] = [one[index], two[index]];
+      if (!x || !y) return !y;
+      return x.z !== y.z ? x.z > y.z : later(x.painter, y.painter);
+    };
     // A separator may be 0 px wide: its grip and hit area reach past it.
     const separators = Array.from(root.querySelectorAll("[role='separator']")).filter(
       (element) => element.checkVisibility({ visibilityProperty: true }) && !visuallyHidden(element),
@@ -520,36 +640,38 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
         );
         if (!grip) continue;
         const vertical = separator.getAttribute("aria-orientation") !== "horizontal";
-        const own = separator.getBoundingClientRect();
         const box = grip.getBoundingClientRect();
         const middle = vertical ? (box.left + box.right) / 2 : (box.top + box.bottom) / 2;
         const along = vertical ? (box.top + box.bottom) / 2 : (box.left + box.right) / 2;
-        const controlled = document.getElementById(separator.getAttribute("aria-controls") ?? "");
-        const start = (separator.getAttribute("data-workspace-resize-edge") ?? separator.getAttribute("data-resize-edge")) === "start";
-        const neighbours = [separator.previousElementSibling, separator.nextElementSibling].map((sibling) =>
-          sibling && seen(sibling) ? sibling.getBoundingClientRect() : null,
-        );
-        let edge = vertical ? (own.left + own.right) / 2 : (own.top + own.bottom) / 2;
-        let extent = vertical ? [own.top, own.bottom] : [own.left, own.right];
-        if (controlled && seen(controlled)) {
-          const rect = controlled.getBoundingClientRect();
-          edge = vertical ? (start ? rect.left : rect.right) : start ? rect.top : rect.bottom;
-          extent = vertical
-            ? [Math.max(own.top, rect.top), Math.min(own.bottom, rect.bottom)]
-            : [Math.max(own.left, rect.left), Math.min(own.right, rect.right)];
-        } else if (neighbours[0] && neighbours[1])
-          edge = vertical ? (neighbours[0].right + neighbours[1].left) / 2 : (neighbours[0].bottom + neighbours[1].top) / 2;
-        // The part of the edge in the viewport is the line a person sees.
-        const [from, to] = [Math.max(extent[0]!, 0), Math.min(extent[1]!, vertical ? window.innerHeight : window.innerWidth)];
         const label = separator.getAttribute("aria-label") ?? name(separator);
-        if (Math.abs(middle - edge) > 1)
-          gripOffCenter.push(`grip-off-center: the grip of "${label}" sits ${px(middle - edge)} px off its edge at ${Math.round(edge)} px`);
+        const line = (vertical ? lines.vertical : lines.horizontal)
+          .filter(
+            (candidate) =>
+              candidate.kind !== "frame" &&
+              candidate.element !== grip &&
+              !grip.contains(candidate.element) &&
+              candidate.along0 <= along &&
+              candidate.along1 >= along &&
+              Math.abs((candidate.across0 + candidate.across1) / 2 - middle) <= 12,
+          )
+          .sort((a, b) => Math.abs((a.across0 + a.across1) / 2 - middle) - Math.abs((b.across0 + b.across1) / 2 - middle))[0];
+        if (!line) {
+          gripOffCenter.push(`grip-off-center: the grip of "${label}" has no line under it`);
+          continue;
+        }
+        const centre = (line.across0 + line.across1) / 2;
+        if (Math.abs(middle - centre) > 0.25)
+          gripOffCenter.push(`grip-off-center: the grip of "${label}" sits ${px(middle - centre)} px off the middle of ${lineName(line)}`);
+        // The part of the line in the viewport is what a person sees; the grip sits on its middle.
+        const [from, to] = [Math.max(line.along0, 0), Math.min(line.along1, vertical ? window.innerHeight : window.innerWidth)];
         if (to > from && Math.abs(along - (from + to) / 2) > 1)
           gripOffCenter.push(
-            `grip-off-center: the grip of "${label}" sits ${px(along - (from + to) / 2)} px off the middle of its ${Math.round(to - from)} px edge`,
+            `grip-off-center: the grip of "${label}" sits ${px(along - (from + to) / 2)} px off the middle of its ${Math.round(to - from)} px line`,
           );
+        if (!paintsAbove({ element: grip }, line))
+          gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${lineName(line)}`);
         const top = document.elementFromPoint(vertical ? middle : along, vertical ? along : middle);
-        if (top && top !== grip && !grip.contains(top))
+        if (top && top !== grip && !grip.contains(top) && top !== line.element)
           gripOffCenter.push(`grip-off-center: the grip of "${label}" lies behind ${name(top)}`);
       }
     } finally {

@@ -13,7 +13,10 @@
   error classes instead of mockup values.
 - **Guard:** `layoutProblems` has four flat kinds behind the `flat` option:
   `short-edge`, `near-double`, `grip-off-center`, and `type-role`. The type
-  roles live once, in the `--k2b-type-roles` token of `@k2b/ui`.
+  roles live once, in the `--k2b-type-roles` token of `@k2b/ui`. The kinds see
+  lines drawn as box-shadows and pseudo-elements, which the flat columns use;
+  the old double check reads only `border-*`. They found the sidebar and detail
+  grips half a pixel off their line and under it, now fixed.
   `layout-problems-flat.browser.test.ts` finds each defect and passes its clean
   form in Chromium and WebKit. `flat-shell-findings.browser.test.ts` records
   what today's shell shows, so each rebuilt building block removes its lines
