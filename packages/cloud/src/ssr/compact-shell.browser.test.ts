@@ -245,16 +245,19 @@ describe("signed-in shell", () => {
           expect(shape.detail?.background).toBe("rgba(0, 0, 0, 0)");
           expect(shape.detail?.shadow).toBe("none");
           expect(shape.detail?.surface).toBe(shape.pane?.surface);
-          // List and reader stay side by side; the detail spans the workspace.
-          expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
-          // K2, K5a: the detail column is flush with the workspace's top edge.
-          expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]!);
+          if (!compact(device)) {
+            // List and reader stay side by side; the detail spans the workspace.
+            expect(shape.pane!.box.right).toBeLessThanOrEqual(shape.detail!.box.left);
+            // K2, K5a: the detail column is flush with the workspace's top edge.
+            expect(shape.detail!.box.top).toBe(shape.workspace!.box.top + shape.workspace!.borders[0]!);
+          }
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
-            // The 320 px detail and its 8 px right inset still reserve a 328 px track.
-            expect(shape.detail!.box.width).toBe(320);
-            expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1 - (320 + 8), height: 46 });
+            // K12: on a tablet the detail waits as a drawer behind the head's Details, so the head spans the workspace.
+            expect(shape.detail!.box.width).toBe(0);
+            expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
+            expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1, height: 46 });
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(55);

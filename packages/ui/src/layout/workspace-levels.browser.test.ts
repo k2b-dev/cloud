@@ -207,8 +207,9 @@ for (const width of [390, 768, 1024, 1440, 1920])
       page.on("pageerror", (error) => errors.push(error.message));
       try {
         await page.goto(`${origin}/?level=${selected}&hydrate=0`);
+        // K12: a phone and a tablet (below 64 rem) show one level at a time.
         const expected =
-          width < 768
+          width < 1024
             ? [selected]
             : width < 1280
               ? selected === "item"
@@ -237,7 +238,7 @@ for (const width of [390, 768, 1024, 1440, 1920])
           ).toBe(6); // levels start flush at the top (K2), the 44 px target centred in the 56 px head (K1)
           await Promise.all([page.waitForURL("**/?level=items"), back.click()]);
           expect(new URL(page.url()).searchParams.get("level")).toBe("items");
-          expect(await visibleIds(page)).toEqual(width < 768 ? ["items"] : ["sections", "items"]);
+          expect(await visibleIds(page)).toEqual(width < 1024 ? ["items"] : ["sections", "items"]);
           await page.goBack();
           expect(new URL(page.url()).searchParams.get("level")).toBe("item");
           expect(await visibleIds(page)).toEqual(expected);

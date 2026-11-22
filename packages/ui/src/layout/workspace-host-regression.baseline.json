@@ -1188,16 +1188,16 @@
             "display": "none"
           },
           {
-            "x": 1,
-            "y": 47,
-            "width": 320,
-            "height": 852,
-            "display": "flex"
+            "x": -64,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "display": "none"
           },
           {
-            "x": 321,
+            "x": 1,
             "y": 47,
-            "width": 384,
+            "width": 704,
             "height": 852,
             "display": "flex"
           }
@@ -2904,16 +2904,16 @@
             "display": "none"
           },
           {
-            "x": 1,
-            "y": 47,
-            "width": 320,
-            "height": 852,
-            "display": "flex"
+            "x": -64,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "display": "none"
           },
           {
-            "x": 321,
+            "x": 1,
             "y": 47,
-            "width": 384,
+            "width": 704,
             "height": 852,
             "display": "flex"
           }
