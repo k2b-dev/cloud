@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { bumpedComponents, markupSnippets, releaseNoteMarkup, verifyReleaseData } from "./release-pr-body";
+import {
+  bumpedComponents,
+  hasCommitOverride,
+  markupSnippets,
+  releaseNoteMarkup,
+  squashBody,
+  squashCommitFindings,
+  squashMessage,
+  verifyReleaseData,
+} from "./release-pr-body";
 
 const config = { packages: { ".": { component: "cloud" }, "packages/ui": { component: "npm-ui" } } };
 const bumped = [{ path: ".", component: "cloud", version: "1.0.0" }];
@@ -188,5 +197,86 @@ describe("releaseNoteMarkup", () => {
 
   test("accepts a clean title and body, including ordinary body markup", () => {
     expect(releaseNoteMarkup("fix(cli): accept DIR", "Use <dir> here.\n\nBREAKING CHANGE: use {dir}.\n\nOutside <source>")).toEqual([]);
+  });
+});
+
+describe("squashMessage", () => {
+  const fixture = (name: string) => readFileSync(new URL(`./fixtures/release-pr-body/${name}`, import.meta.url), "utf8");
+
+  test("reproduces the squash commit of #3998 on main from its pull request body", () => {
+    const title = "fix(chat): a message sent right after Quote carries its quote instead of leaving it in the field";
+    expect(squashMessage(title, "3998", fixture("3998-pr-body.md"))).toBe(fixture("3998-squash-message.txt").trimEnd());
+  });
+
+  test("wraps a long line greedily at 72 columns and keeps shorter lines", () => {
+    const line = `${"word ".repeat(14)}call(x) and more`;
+    expect(squashBody(`short line\n${line}`)).toBe(`short line\n${"word ".repeat(14)}\ncall(x) and more`.replace(" \n", "\n"));
+    expect(squashBody("a".repeat(72))).toBe("a".repeat(72));
+  });
+
+  test("drops indentation and repeated spaces only of wrapped lines", () => {
+    const item = `   - ${"item ".repeat(15).trim()}`;
+    expect(squashBody(item)).toBe(`- ${"item ".repeat(14).trim()}\nitem`);
+    expect(squashBody("   - short  item")).toBe("   - short  item");
+  });
+
+  test("moves a word longer than 72 columns at a line start after an empty line", () => {
+    const path = `docs-site/${"x".repeat(70)}.md`;
+    expect(squashBody(path)).toBe(`\n${path}`);
+    expect(squashBody(`Lesson: ${path}`)).toBe(`Lesson:\n${path}`);
+  });
+
+  test("leaves fenced code blocks unwrapped", () => {
+    const code = `const value = ${"x".repeat(80)};`;
+    expect(squashBody(`\`\`\`ts\n${code}\n\`\`\`\n${"word ".repeat(16).trim()}`)).toBe(
+      `\`\`\`ts\n${code}\n\`\`\`\n${"word ".repeat(14).trim()}\nword word`,
+    );
+  });
+
+  test("normalizes CRLF line ends and writes a title without body alone", () => {
+    expect(squashMessage("fix: a", "1", "one\r\ntwo\r\n")).toBe("fix: a (#1)\n\none\ntwo");
+    expect(squashMessage("fix: a", "1", "")).toBe("fix: a (#1)");
+  });
+});
+
+describe("squashCommitFindings", () => {
+  const header = "fix(chat): keep the quote (#3998)";
+  const entry = (text: string, visible = true, breaking = false) => ({ header: text, visible, breaking });
+
+  test("accepts the title's entry and hidden extra entries", () => {
+    expect(squashCommitFindings(header, "Body", [entry(header)], ["some debug line"])).toEqual([]);
+    expect(squashCommitFindings(header, "Body", [entry("docs: n/a", false), entry(header), entry("https: //x", false)], [])).toEqual([]);
+  });
+
+  test("rejects a dropped commit and a missing title entry", () => {
+    const dropped = squashCommitFindings(
+      header,
+      "Body",
+      [],
+      [
+        "commit could not be parsed: 0 fix(chat): keep the quote (#3998)",
+        "error message: Error: unexpected token '(' at 15:17, valid tokens [)]",
+      ],
+    );
+    expect(dropped).toHaveLength(3);
+    expect(dropped[1]).toContain("unexpected token '(' at 15:17");
+    expect(dropped[2]).toContain("it reads no entry");
+  });
+
+  test("rejects an extra entry that reaches the changelog or the version", () => {
+    expect(squashCommitFindings(header, "Body", [entry(header), entry("fix: typo")], [])).toEqual([
+      'The squash commit yields an extra changelog entry "fix: typo"; put intended extra entries in a BEGIN_COMMIT_OVERRIDE block.',
+    ]);
+    expect(squashCommitFindings(header, "Body", [entry(header), entry("chore!: drop", false, true)], [])[0]).toContain(
+      "extra breaking entry",
+    );
+  });
+
+  test("with an override, accepts any parsed entries and rejects none", () => {
+    const body = "Body\n\nBEGIN_COMMIT_OVERRIDE\nfix(chat): keep the quote\nEND_COMMIT_OVERRIDE";
+    expect(hasCommitOverride(body)).toBe(true);
+    expect(hasCommitOverride("BEGIN_COMMIT_OVERRIDE\n \nEND_COMMIT_OVERRIDE")).toBe(false);
+    expect(squashCommitFindings(header, body, [entry("fix(chat): keep the quote"), entry("feat: more")], [])).toEqual([]);
+    expect(squashCommitFindings(header, body, [], [])).toEqual(["The BEGIN_COMMIT_OVERRIDE block yields no release-please entry."]);
   });
 });

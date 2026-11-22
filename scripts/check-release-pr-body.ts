@@ -8,9 +8,12 @@ import { promisify } from "node:util";
 import {
   bumpedComponents,
   markupSnippets,
+  type ParsedEntry,
   type ReleaseConfig,
   type ReleaseData,
   releaseNoteMarkup,
+  squashCommitFindings,
+  squashMessage,
   verifyReleaseData,
 } from "./release-pr-body";
 
@@ -97,6 +100,14 @@ async function parser() {
     throw new Error("release-please module does not export parseConventionalCommits");
   }
   const parseConventionalCommits = commitModule.parseConventionalCommits;
+  const filterModule: unknown = require(join(directory, "node_modules/release-please/build/src/util/filter-commits.js"));
+  if (!isRecord(filterModule) || typeof filterModule.filterCommits !== "function") {
+    throw new Error("release-please module does not export filterCommits");
+  }
+  const filterCommits = filterModule.filterCommits;
+  if ((await readFile(join(root, "release-please-config.json"), "utf8")).includes("changelog-sections")) {
+    throw new Error("release-please-config.json sets changelog-sections; pass them to filterCommits in parseCommits");
+  }
   const parseBody = (body: string) => {
     const messages: string[] = [];
     const result: unknown = parse(body, collectingLogger(messages));
@@ -116,16 +127,33 @@ async function parser() {
     }
     return { releases, messages };
   };
-  const parseCommits = (message: string) => {
+  // With a pull request body, the parser reads its BEGIN_COMMIT_OVERRIDE block as release-please does on main.
+  const parseCommits = (message: string, pullRequestBody?: string) => {
     const messages: string[] = [];
-    const result: unknown = parseConventionalCommits([{ sha: "0", message, files: [] }], collectingLogger(messages));
+    const pullRequest =
+      pullRequestBody === undefined
+        ? undefined
+        : { number: 0, title: "", body: pullRequestBody, headBranchName: "", baseBranchName: "main", labels: [], files: [] };
+    const result: unknown = parseConventionalCommits([{ sha: "0", message, files: [], pullRequest }], collectingLogger(messages));
     if (!Array.isArray(result)) throw new Error("Commit parser returned invalid commits");
     const commits: unknown[] = result;
+    // The repository configures no changelog-sections, so release-please's defaults decide visibility.
+    const filtered: unknown = filterCommits(commits);
+    if (!Array.isArray(filtered)) throw new Error("Commit filter returned invalid commits");
+    const visible: unknown[] = filtered;
     const texts: string[] = [];
+    const entries: ParsedEntry[] = [];
     for (const commit of commits) {
-      if (!isRecord(commit) || typeof commit.bareMessage !== "string" || !Array.isArray(commit.notes)) {
+      if (
+        !isRecord(commit) ||
+        typeof commit.bareMessage !== "string" ||
+        typeof commit.message !== "string" ||
+        typeof commit.breaking !== "boolean" ||
+        !Array.isArray(commit.notes)
+      ) {
         throw new Error("Commit parser returned an invalid commit");
       }
+      entries.push({ header: commit.message, visible: visible.includes(commit), breaking: commit.breaking });
       texts.push(commit.bareMessage);
       const notes: unknown[] = commit.notes;
       for (const note of notes) {
@@ -133,10 +161,12 @@ async function parser() {
         texts.push(note.text);
       }
     }
-    return { texts, messages };
+    return { texts, entries, messages };
   };
   return { parseBody, parseCommits };
 }
+
+type CommitParser = Awaited<ReturnType<typeof parser>>["parseCommits"];
 
 function report(body: string, findings: string[], messages: string[]): void {
   for (const finding of findings) console.error(finding);
@@ -179,14 +209,34 @@ function repositoryName(): string {
   return repository;
 }
 
+/** The markup lint plus release-please's own parse of the squash message that the merge will write. */
+function messageFindings(parseCommits: CommitParser, title: string, number: string, body: string): string[] {
+  const message = squashMessage(title, number, body);
+  const { entries, messages } = parseCommits(message, body);
+  const findings = squashCommitFindings(`${title} (#${number})`, body, entries, messages);
+  // The parser names line:column in the wrapped message; show that line as the squash merge writes it.
+  const lines = message.split("\n");
+  for (const [, line] of messages.join("\n").matchAll(/ at (\d+):\d+/g)) {
+    const text = lines[Number(line) - 1];
+    if (text !== undefined) findings.push(`Line ${line} of the squash message: ${JSON.stringify(text)}`);
+  }
+  return [...releaseNoteMarkup(title, body), ...findings];
+}
+
 async function checkMessage(number: string): Promise<boolean> {
+  // Install first: the check must fetch the live title and body after this potentially slow step.
+  const { parseCommits } = await parser();
   const pr = json(await command("gh", ["api", `repos/${repositoryName()}/pulls/${number}`]));
   if (!isRecord(pr) || typeof pr.title !== "string" || (pr.body !== null && typeof pr.body !== "string")) {
     throw new Error("Invalid pull request response: expected title and body");
   }
-  const findings = releaseNoteMarkup(pr.title, pr.body ?? "");
+  const findings = messageFindings(parseCommits, pr.title, number, pr.body ?? "");
   for (const finding of findings) console.error(finding);
-  if (!findings.length) console.log(`PR #${number}: title, body commit headers, and BREAKING CHANGE footers pass.`);
+  if (findings.length) {
+    console.error(
+      "The squash merge wraps the body at 72 columns. Reflow the sentence so that no line starts with a word followed by ( or :, or see docs-site/docs/en/contributing/release-process.md (#1592).",
+    );
+  } else console.log(`PR #${number}: the squash message parses as its title's entry, and the release notes carry no markup.`);
   return findings.length === 0;
 }
 
@@ -278,6 +328,38 @@ async function selfTest(): Promise<boolean> {
     if (!ok) report(message, findings, messages);
     passed &&= ok;
   }
+  // The squash merge wraps the body at 72 columns before release-please parses it (#1592).
+  const quoteTitle = "fix(chat): a message sent right after Quote carries its quote instead of leaving it in the field";
+  const quoteBody = await fixture("3998-pr-body.md");
+  const clockBody =
+    "The flowing clock replaces both calls that froze time in these tests, `.clock.setFixedTime(` and `.clock.setSystemTime(` on a page or context.";
+  for (const [name, title, number, body, expectRejection] of [
+    ["#3998 as merged: a call at a wrapped line start", quoteTitle, "3998", quoteBody, true],
+    [
+      "#3998 recovered with its override",
+      quoteTitle,
+      "3998",
+      `${quoteBody}\nBEGIN_COMMIT_OVERRIDE\n${quoteTitle} (#3998)\nEND_COMMIT_OVERRIDE\n`,
+      false,
+    ],
+    ["#1564: a code span with a call at a wrapped line start", "ci: balance the test shards", "1564", clockBody, true],
+    [
+      "#1578: a word and colon at a wrapped line start, a hidden extra entry",
+      "test(gateway-ops): add a browser test",
+      "1578",
+      "- Dev dependency: `packages/gateway-ops` now lists `playwright` and `bun-plugin-tailwind` for its first browser test. No operations note is needed: nothing changed in runtime configuration or deployment.",
+      false,
+    ],
+    ["a fix header in the body, a changelog entry", "feat(x): add y", "1", "Context.\n\nfix: an unrelated typo", true],
+    ["a breaking footer of the title's entry", "feat(x)!: add y", "1", "Context.\n\nBREAKING CHANGE: migrate to DIR", false],
+    ["wrapped prose that stays one entry", "fix(x): keep y", "1", `${"A plain sentence about the change. ".repeat(6)}\n\nCloses #2`, false],
+  ] as const) {
+    const findings = messageFindings(parseCommits, title, number, body);
+    const ok = expectRejection ? findings.length > 0 : findings.length === 0;
+    console.log(`${ok ? "PASS" : "FAIL"} ${name} (expected ${expectRejection ? "squash parse rejection" : "one entry"})`);
+    if (!ok || findings.length) for (const finding of findings) console.error(`  ${finding}`);
+    passed &&= ok;
+  }
   return passed;
 }
 
@@ -318,12 +400,13 @@ async function main(): Promise<boolean> {
 
 --pr: check a live release-please PR. --body checks an edited file.
 --self-test: check historical fixtures with the parser pinned in main.yml.
---message: fetch the live PR title and body and check markup copied into release notes.
+--message: fetch the live PR title and body, check markup copied into release notes, and parse
+      the squash message that the merge will write, wrapped at 72 columns, as release-please does.
 --pr and --message accept an optional positive PR number. Otherwise, read
       pull_request.number or merge_group.head_ref from GITHUB_EVENT_PATH.
       With no event file or no PR in the event, there is no pull request to check.
       Both use gh auth locally or GH_TOKEN in CI; GITHUB_REPOSITORY defaults to k2b-dev/cloud.
---pr and --self-test download and install the pinned parser into the OS temp directory.
+All modes but --help download and install the pinned parser into the OS temp directory.
 --help: print this usage and exit.`);
     return true;
   }
