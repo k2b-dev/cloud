@@ -617,6 +617,40 @@ describe("Files folder states", () => {
       }
     });
 
+  // K12, PR3: from 768 to 1023 px the detail is a drawer. A file opens it, Escape parks it and gives focus back to the
+  // list, and "Details" in the head opens it again.
+  test("768 px: a file opens the detail as a drawer, Escape parks it with focus back in the list, Details reopens it", async () => {
+    const { tab, errors } = await open({ viewport: { width: 768, height: 900 } }, "", "en", many());
+    try {
+      const detail = tab.locator(".k2b-app-workspace__detail");
+      await row(tab, "Beleg-2026-002").click();
+      await tab.locator(".k2b-detail-panel h2").first().waitFor();
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      if (shots) await tab.screenshot({ path: `${shots}/detail-many-light-768.png` });
+      expect((await problems(tab)).problems).toEqual([]);
+      await tab.keyboard.press("Escape");
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).not.toBe("open");
+      // Focus is back in the column it came from, neither lost on the page nor left in the parked drawer.
+      expect(
+        await tab.evaluate(
+          () =>
+            !!document.activeElement?.closest(".filesv2-browser, .k2b-app-workspace__head") &&
+            !document.activeElement.closest(".k2b-app-workspace__detail"),
+        ),
+      ).toBe(true);
+      const toggle = tab.locator("[data-app-workspace-detail-toggle]").first();
+      expect(await toggle.isVisible()).toBe(true);
+      await toggle.click();
+      await settled(tab);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
   test("an empty folder, a failed refresh and keyboard focus keep the column's lines and places", async () => {
     const { tab, errors } = await open(desktop, "?error", "en", []);
     try {
