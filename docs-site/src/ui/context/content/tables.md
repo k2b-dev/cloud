@@ -47,6 +47,9 @@ numbers, including bigint, and `Date` values stay on one line; strings wrap.
 `white-space` set by `cellContentClass` itself wins over `nowrap`.
 
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
+With `getRowId`, a refresh that passes new row objects keeps each row's element. A row whose content is equal
+(plain objects, arrays, dates, and primitives) also keeps its cells, so focus on a link or button in a cell stays;
+a row whose content changed renders its cells again.
 Selected rows take the row selection fill without changing text weight or row geometry; see [Colors and selection](/en/ui/surfaces/color).
 Keyboard focus draws a ring inside the row, including while it is hovered or
 selected. Links and controls inside a cell keep their own focus indicator.
