@@ -24,7 +24,8 @@
  *
  * Limits, as in the mockups: it does not see what runs out of the bottom of a scroll area, nor what a floating layer
  * covers; a review checks those. A box whose children overlap on purpose (an avatar stack) is listed in `ignore`, or
- * carries `data-layout-check="skip"`.
+ * carries `data-layout-check="skip"`. A touch hit area (an empty, invisible, positioned `::before` or `::after` that
+ * reaches past a small control) is no spill and no cut; it needs no exception.
  */
 
 export type LayoutProblemOptions = {
@@ -81,6 +82,34 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     const text = element.textContent?.trim().replace(/\s+/g, " ").slice(0, 24);
     return `${element.tagName.toLowerCase()}${classes.map((c) => `.${c}`).join("")}${text ? ` "${text}"` : ""}`;
   };
+  // A touch hit area is an empty, invisible, positioned pseudo-element that reaches past its control on purpose, such as
+  // the 44 px tap area of a small button on a coarse pointer. Overflow that only hit areas cause is no spill and no cut.
+  // Any other positioned pseudo-element that draws (text, a fill, a border, a shadow) still counts.
+  const transparent = (color: string) => color === "transparent" || /^rgba\(.*,\s*0\)$/.test(color);
+  const drawsBeyond = (element: Element) =>
+    (["::before", "::after"] as const).some((which) => {
+      const pseudo = getComputedStyle(element, which);
+      if (pseudo.content === "none" || pseudo.content === "normal" || !["absolute", "fixed"].includes(pseudo.position)) return false;
+      const drawn =
+        pseudo.content !== '""' ||
+        !transparent(pseudo.backgroundColor) ||
+        pseudo.backgroundImage !== "none" ||
+        pseudo.boxShadow !== "none" ||
+        ["Top", "Right", "Bottom", "Left"].some(
+          (side) => Number.parseFloat(pseudo.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0,
+        );
+      return drawn;
+    });
+  const onlyHitAreas = (box: HTMLElement) => {
+    const own = box.getBoundingClientRect();
+    const left = own.left + box.clientLeft - slack;
+    const right = own.left + box.clientLeft + box.clientWidth + slack;
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    const reaches = [range.getBoundingClientRect(), ...Array.from(box.querySelectorAll("*"), (element) => element.getBoundingClientRect())];
+    if (reaches.some((rect) => rect.width > 0 && (rect.left < left || rect.right > right))) return false;
+    return ![box, ...Array.from(box.querySelectorAll("*"))].some(drawsBeyond);
+  };
   const found = { overlap: [] as string[], spill: [] as string[], cut: [] as string[] };
   for (const box of [root, ...Array.from(root.querySelectorAll("*"))]) {
     if (!(box instanceof HTMLElement) || !seen(box) || box.closest(ignore)) continue;
@@ -100,7 +129,7 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
         }
     }
     // Text for screen readers only (a 1 px clipped box, such as `.k2b-sr-only`) is hidden on purpose, not cut.
-    if (box.clientWidth > 1 && box.clientHeight > 1 && box.scrollWidth > box.clientWidth + slack) {
+    if (box.clientWidth > 1 && box.clientHeight > 1 && box.scrollWidth > box.clientWidth + slack && !onlyHitAreas(box)) {
       const masked = style.maskImage !== "none" && style.maskImage !== "";
       // Only a sideways scroller lets a person reach content that is too wide. `overflow-y: auto` alone already
       // computes `overflow-x` to auto; an explicit `overflow-x: hidden` beside it cuts the content.

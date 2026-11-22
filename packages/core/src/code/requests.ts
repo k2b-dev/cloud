@@ -6,7 +6,13 @@ import {
   type CodeRouteResponse,
   CodeRouteResponseSchema,
 } from "@k2b/cloud/code";
-import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import {
+  CLOUD_RESOURCE_ID_MAX_LENGTH,
+  CloudResourceRefSchema,
+  type CodeCheckedVersionManifest,
+  CodeCheckedVersionManifestSchema,
+} from "@k2b/cloud/contracts";
+import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAdmissionLock } from "./admission";
 import type { CodeOwner } from "./contracts";
@@ -52,6 +58,50 @@ export async function codeRequestVersion(
     owner: owner.kind === "person" ? { ...owner, name: row.owner_name } : owner,
   };
 }
+/**
+ * One read of a finished route run (G1): the target or a ref of a succeeded Query, the short string input fields of a
+ * succeeded app-wide Query (hosting keeps those that name a resource: a type reader's `id`, declared `inputRefs`), and
+ * each succeeded Query itself, which a public route may call only with owner-data.
+ */
+export type CodeRouteRead =
+  | { kind: "target"; ref: { type: string; id: string } }
+  /** Top-level string input fields of an app-wide Query; hosting keeps those that name a resource (`inputRefs`). */
+  | { kind: "input"; capability: string; fields: Readonly<Record<string, string>> }
+  | { kind: "query"; capability: string };
+/** The route's answer and what it read on the way; hosting checks the reads for the visitor before it delivers. */
+export type CodeRouteAnswer = CodeRouteResponse & { reads: readonly CodeRouteRead[] };
+
+/**
+ * G1: what a run read, as one subquery for a larger statement. Every finished Query counts, failed ones too (an error text
+ * can carry data): its target, each ref, the string input fields of an app-wide Query, cut one character past the
+ * longest resource ID (so a longer value stays visible as unusable), and the Query itself. App Actions are writes and
+ * stay outside; every call on the Code's own database counts as a Query, because `db.exec` returns counts.
+ * The run's call budget bounds the rows.
+ */
+export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_agg(DISTINCT x.read),'[]'::jsonb) FROM code.calls c
+  CROSS JOIN LATERAL (
+    SELECT jsonb_build_object('kind','target','ref',c.call->'target') AS read WHERE jsonb_typeof(c.call->'target')='object'
+    UNION ALL SELECT jsonb_build_object('kind','target','ref',ref.value) FROM jsonb_each(
+      CASE WHEN jsonb_typeof(c.call->'refs')='object' THEN c.call->'refs' ELSE '{}'::jsonb END) ref
+    UNION ALL SELECT jsonb_build_object('kind','input','capability',c.call->>'capability','fields',COALESCE(f.fields,'{}'::jsonb))
+      FROM (SELECT jsonb_object_agg(e.key,to_jsonb(left(e.value#>>'{}',${CLOUD_RESOURCE_ID_MAX_LENGTH + 1}))) AS fields FROM jsonb_each(
+        CASE WHEN jsonb_typeof(c.call->'input')='object' THEN c.call->'input' ELSE '{}'::jsonb END) e
+        WHERE jsonb_typeof(e.value)='string') f
+      WHERE jsonb_typeof(c.call->'target')='null' AND left(c.call->>'capability',3)<>'db.'
+    UNION ALL SELECT jsonb_build_object('kind','query','capability',c.call->>'capability')
+  ) x
+  WHERE c.run_id=${runId}::uuid AND c.state IN ('succeeded','failed')
+    AND (c.kind='query' OR left(c.call->>'capability',3)='db.')`;
+export const parseCodeRouteReads = (value: unknown): CodeRouteRead[] => CodeRouteReadsSchema.parse(value ?? []);
+
+const CodeRouteReadsSchema = z.array(
+  z.union([
+    z.object({ kind: z.literal("target"), ref: CloudResourceRefSchema }),
+    z.object({ kind: z.literal("input"), capability: z.string().min(1), fields: z.record(z.string(), z.string()) }),
+    z.object({ kind: z.literal("query"), capability: z.string().min(1) }),
+  ]),
+);
+
 /** One bounded request/response job, backed by the normal run lease, mandate and audit trail.
  * No automatic retries: even a disconnected client must never cause an implicit second POST. */
 export async function requestCodeRoute(input: {
@@ -60,7 +110,7 @@ export async function requestCodeRoute(input: {
   entrypoint: string;
   request: CodeRouteRequest;
   signal: AbortSignal;
-}): Promise<CodeRouteResponse> {
+}): Promise<CodeRouteAnswer> {
   input.signal.throwIfAborted();
   const request = CodeRouteRequestSchema.parse(input.request);
   const started = Date.now();
@@ -105,8 +155,11 @@ export async function requestCodeRoute(input: {
   });
   try {
     while (!signal.aborted) {
-      const [row] = await sql<{ state: string; output: unknown }[]>`SELECT state,output FROM code.runs WHERE id=${runId}::uuid`;
-      if (row?.state === "succeeded") return CodeRouteResponseSchema.parse(row.output);
+      // The same statement reads what the run read once it succeeded (G1), so the check costs no statement of its own.
+      const [row] = await sql<{ state: string; output: unknown; reads: unknown }[]>`SELECT r.state,r.output,
+        CASE WHEN r.state='succeeded' THEN (${codeRunReadsQuery(runId)}) END AS reads
+        FROM code.runs r WHERE r.id=${runId}::uuid`;
+      if (row?.state === "succeeded") return { ...CodeRouteResponseSchema.parse(row.output), reads: parseCodeRouteReads(row.reads) };
       if (!row || !["queued", "running"].includes(row.state)) throw new CodeRequestError("code_request_failed", 503);
       await new Promise<void>((resolve) => {
         const done = () => {

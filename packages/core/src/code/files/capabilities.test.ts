@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { CODE_FILE_LIMITS, generateCodeSdk } from "@k2b/cloud/code";
+import { CODE_FILE_LIMITS, CodeChartDescriptionSchema, generateCodeSdk } from "@k2b/cloud/code";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import * as pdf from "@k2b/cloud/services";
+import { z } from "zod";
 import { codePolicyRow } from "../policy-contracts";
 import { createGeneratedFileQueries } from "./capabilities";
 import { testIdentity } from "./test-identity";
@@ -167,6 +168,34 @@ test("chart output is SVG drawn from a checked description", async () => {
       context,
     ),
   ).rejects.toMatchObject({ code: "BAD_INPUT", status: 400 });
+});
+test("the chart input publishes repeated option groups once and describes exactly the shared chart values", () => {
+  const manifest = compileCapabilityManifest("core", { protocolVersion: 2, queries: createGeneratedFileQueries() });
+  const input = manifest.queries.find((query) => query.localId === "file.chart.render.v1")!.inputSchema as Record<string, any>;
+  const defs: Record<string, Record<string, unknown>> = input.$defs;
+  expect(Object.keys(defs)).toContain("CoreChartFormat");
+  expect(JSON.stringify(input).length).toBeLessThan(40_000);
+  // Expanding every reference gives exactly the earlier inlined transport, descriptions included.
+  const expand = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(expand);
+    if (!value || typeof value !== "object") return value;
+    const { $ref, ...rest } = value as Record<string, unknown>;
+    const target = typeof $ref === "string" ? expand(defs[$ref.replace("#/$defs/", "")]) : {};
+    return { ...(target as object), ...Object.fromEntries(Object.entries(rest).map(([key, child]) => [key, expand(child)])) };
+  };
+  const inlined = z.fromJSONSchema(
+    z.toJSONSchema(CodeChartDescriptionSchema, {
+      io: "input",
+      override: ({ jsonSchema }) => {
+        if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
+        for (const [field, schema] of Object.entries(jsonSchema.properties ?? {})) {
+          if (typeof schema === "object" && schema && !schema.description) schema.description = `Chart ${field}.`;
+        }
+      },
+    }),
+  );
+  const { $schema: _schema, ...expected } = z.toJSONSchema(inlined.describe(input.properties.chart.description), { io: "input" });
+  expect(expand(input.properties.chart)).toEqual(expected);
 });
 test("oversized generator input fails before reserving resources", async () => {
   const f = fixture();

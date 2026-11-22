@@ -85,8 +85,9 @@ function usePdfBytes(baseId: string, files: readonly FileEntry[], fallback: stri
 }
 
 /**
- * Merge asks only for the order and the new name: each file shows its first pages, the grip or the arrow keys move it,
- * and the footer counts the pages of the result. Resolves with the request, or nothing when cancelled.
+ * Merge asks only for the order and the new name: each file shows its first pages, the grip moves it (or Space, then the
+ * arrow keys and Enter), and the footer counts the pages of the result. Resolves with the request, or nothing when
+ * cancelled.
  */
 export const openPdfMergeDialog = (options: { baseId: string; files: readonly FileEntry[]; title: string }) =>
   prompts.dialog<PdfDialogResult>((close) => <MergeDialog {...options} close={(value) => close(value)} />, {

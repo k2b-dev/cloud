@@ -137,7 +137,8 @@ export function createRuntimeCapabilities() {
       if (stream.size > LIMITS.inputFileBytes) throw new ArtifactError("INVALID_INPUT");
       return transferCapabilityStream(stream, verb, caller, verb === "write" ? (body ?? undefined) : undefined);
     },
-    async prepare(input: unknown, identity: RuntimeCapabilityIdentity, caller: CapabilityCaller) {
+    /** `changed` asks again for an Action that changed after the person was first asked; the card says so. */
+    async prepare(input: unknown, identity: RuntimeCapabilityIdentity, caller: CapabilityCaller, options: { changed?: true } = {}) {
       const request = RuntimeCapabilityRequest.parse(input),
         actor = user(identity);
       const { conversationId } = await authorizeWithChat(request, identity, request.name);
@@ -200,6 +201,7 @@ export function createRuntimeCapabilities() {
             : review,
         ...(wording?.sentences ? { sentences: wording.sentences } : {}),
         ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
+        ...(options.changed ? { changed: true as const } : {}),
       };
       await sql.begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:" + actor.id}))`;
@@ -280,7 +282,7 @@ export function createRuntimeCapabilities() {
       target.kind !== prepared.kind ||
       (target.action?.approval ?? null) !== prepared.approval
     )
-      throw new ArtifactError("CONFLICT");
+      return abandonChanged(row);
     const body = prepared.call ? capabilityInvocationBody(prepared.call) : { input: request.input };
     // Approval applies to the reviewed consequence, not a changed action.
     let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = null;
@@ -292,7 +294,7 @@ export function createRuntimeCapabilities() {
       if (!response.ok) throw new Error(response.error.message);
       currentReview = CapabilityActionReviewDataSchema.parse(response.data);
     }
-    if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) throw new ArtifactError("CONFLICT");
+    if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) return abandonChanged(row);
     if (decision.remember && !prepared.allowAlways) throw new ArtifactError("INVALID_INPUT");
     const updated = await claimExecution(row, decision, identity, currentReview, automatic, request.conversationId);
     if (!updated) throw new ArtifactError("CONFLICT");
@@ -361,6 +363,20 @@ export function createRuntimeCapabilities() {
       },
       db,
     );
+  }
+
+  /**
+   * The Action or its reviewed consequence changed after the person was asked, for example when the app was updated.
+   * Nothing runs and no decision is recorded: the call and its approval are withdrawn, and the run asks again.
+   */
+  async function abandonChanged(row: Row) {
+    await sql.begin(async (db) => {
+      const [withdrawn] = await db<{ approval_id: string | null }[]>`UPDATE assistant.code_capability_calls SET status='abandoned'
+      WHERE id=${row.id}::uuid AND status='pending' RETURNING approval_id`;
+      if (!withdrawn) throw new ArtifactError("CONFLICT");
+      if (withdrawn.approval_id) await approvals.cancel([withdrawn.approval_id], db);
+    });
+    return { status: "changed" as const };
   }
 
   async function claimExecution(

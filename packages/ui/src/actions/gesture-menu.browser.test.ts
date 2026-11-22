@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContext, BrowserContextOptions, CDPSession, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, touchTargetMin } from "../../test/browser";
 
 // Whether a finger scrolls the list or swipes a row, whether a long press survives the release, and whether anything
 // moves are decided by a real engine's touch handling and layout. Rows sit in a scrolling list; the conversation
@@ -351,7 +351,7 @@ describe(`GestureMenu in ${browserName}`, () => {
           .locator("[role='menuitem']")
           .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
         expect(heights).toHaveLength(3);
-        for (const height of heights) expect(height).toBeGreaterThanOrEqual(44);
+        for (const height of heights) expect(height).toBeGreaterThanOrEqual(touchTargetMin);
         // A connected keyboard reaches the items from the sheet, which holds focus after the long press.
         expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("DIALOG");
         await page.keyboard.press("ArrowDown");

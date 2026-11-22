@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, settled, touchTargetMin } from "../../test/browser";
 
 // The top layer, selection geometry, and whether a press keeps the selection are browser behavior, so a real engine
 // runs the shipped build against a text in a clipping scroll container below a sticky bar.
@@ -221,7 +221,7 @@ describe("SelectionToolbar", () => {
         expect(sizes.height, `touch ${touch}`).toBe(38);
         for (const button of sizes.buttons) {
           expect(button.height, `touch ${touch}`).toBe(30);
-          if (touch) expect(button.hitHeight).toBeGreaterThanOrEqual(44);
+          if (touch) expect(button.hitHeight).toBeGreaterThanOrEqual(touchTargetMin);
         }
       } finally {
         await page.context().close();

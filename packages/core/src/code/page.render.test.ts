@@ -172,7 +172,7 @@ test("Core hosts a complete page document and rejects invalid trees before rende
       "/",
       createCodeHostingRoutes({
         version: async () => ({ versionId: "version", manifest, owner: { kind: "app" as const, appId: "probe" } }),
-        request: async () => ({ kind: "page", status: 200, tree: returned }),
+        request: async () => ({ kind: "page", status: 200, tree: returned, reads: [] }),
       }),
     );
   try {
@@ -193,6 +193,32 @@ test("Core hosts a complete page document and rejects invalid trees before rende
     const invalid = await router.request("https://cloud.test/code/c_page/");
     expect(invalid.status).toBe(503);
     expect(await invalid.text()).not.toContain("<script>");
+    // G1: a person who opens a page that read data they may not read gets the shared no-access page, never the tree.
+    const refused = new Hono()
+      .use("*", async (c, next) => {
+        c.set("runtime" as never, { apps: [] } as never);
+        await next();
+      })
+      .route(
+        "/",
+        createCodeHostingRoutes({
+          version: async () => ({ versionId: "version", manifest, owner: { kind: "app" as const, appId: "probe" } }),
+          request: async () => ({
+            kind: "page",
+            status: 200,
+            tree: { ...tree, title: "Umsatz geheim" },
+            reads: [{ kind: "target", ref: { type: "pulse.base", id: "Base01" } }],
+          }),
+          checkReads: async () => "forbidden",
+        }),
+      );
+    const page = await refused.request("https://cloud.test/code/c_page/", { headers: { Accept: "text/html" } });
+    expect(page.status).toBe(403);
+    const body = await page.text();
+    expect(body).toContain("No access");
+    expect(body).not.toContain("Umsatz geheim");
+    expect(body).not.toContain("Base01");
+    expect(body).not.toContain("PageTree.island.tsx");
   } finally {
     rate.mockRestore();
   }
@@ -331,7 +357,7 @@ describe("Code pages in the Cloud layout", () => {
               owner: { kind: "person" as const, userId: "22222222-2222-4222-8222-222222222222", name: "owner-hidden" },
             };
           },
-          request: async () => ({ kind: "page", status: 200, tree }),
+          request: async () => ({ kind: "page", status: 200, tree, reads: [] }),
         }),
       );
   };

@@ -26,13 +26,7 @@ type Props = {
 
 function ActionRow(props: { icon: string; label: string; description: string; onClick: () => void; variant?: "danger" }) {
   return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      class={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-        props.variant === "danger" ? "hover:bg-red-50 dark:hover:bg-red-950/30" : "hover:bg-[var(--ui-hover)]"
-      }`}
-    >
+    <button type="button" onClick={props.onClick} class="group flex min-h-[var(--k2b-h-row-2)] w-full items-center gap-3 py-2 text-left">
       <i class={`ti ${props.icon} text-base shrink-0 ${props.variant === "danger" ? "text-red-500" : "text-dimmed"}`} />
       <div class="flex-1 min-w-0">
         <span class={`text-sm block ${props.variant === "danger" ? "text-red-600 dark:text-red-400" : "text-primary"}`}>{props.label}</span>
@@ -234,9 +228,9 @@ export default function ProfileSettings(props: Props) {
 
   return (
     <SettingsSection title={t().signInAndAccount} subtitle={t().signInAndAccountDescription}>
-      {/* The section body sets its children's margins; the inner list bleeds its row padding past the text edge. */}
+      {/* The section body sets its children's margins; the rows stand on its text edge, one hairline between them (K2, K5). */}
       <div>
-        <div class="-mx-3 flex flex-col gap-1">
+        <div class="k2b-divided flex flex-col">
           <Show when={isIpa}>
             <ActionRow icon="ti-lock" label={t().changePassword} description={t().changeFreeIpaPassword} onClick={handleChangePassword} />
           </Show>

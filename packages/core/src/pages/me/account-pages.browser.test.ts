@@ -18,6 +18,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
+import { layoutProblems } from "../../../../ui/src/layout-check";
 import { launchBrowser } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
@@ -262,6 +263,8 @@ afterEach(() => {
 });
 
 let browser: Browser;
+/** Chromium with classic scrollbars that take room in the layout, as on Windows and Linux desktops (Cloud flach QA). */
+let classic: Browser;
 let css: string;
 beforeAll(async () => {
   // As the page template does: the layer order first, then Core's stylesheet, then the global one.
@@ -273,9 +276,11 @@ beforeAll(async () => {
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
   browser = await launchBrowser();
+  classic = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
+  await classic?.close();
 });
 
 /** The server-rendered content of one account page. */
@@ -299,8 +304,8 @@ const phone: View = { width: 390, height: 844, touch: true };
 const narrowPhone: View = { width: 320, height: 640, touch: true };
 
 /** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
-const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
-  const tab = await browser.newPage({
+const open = async (view: View, path: Path, locale: "en" | "de", dark = false, engine = browser) => {
+  const tab = await engine.newPage({
     javaScriptEnabled: false,
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -315,7 +320,10 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
       `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
       `${await content(path, locale)}</main></div></div></body></html>`,
   );
+  // The page renders without JavaScript, so nothing moves once its fonts are in: the server-rendered main is the
+  // condition every caller reads after. settled() cannot run here, as its frame and observer waits need scripts.
   await tab.evaluate(() => document.fonts.ready);
+  await tab.locator("main").waitFor();
   return tab;
 };
 
@@ -428,7 +436,7 @@ describe("account pages in a browser", () => {
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
+  test("mark the current account section with the 2 px mark in Core's ink and no fill, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
         const tab = await open(desktop, path, "en", dark);
@@ -447,6 +455,10 @@ describe("account pages in a browser", () => {
             const platformFill = getComputedStyle(probe).backgroundColor;
             probe.style.background = "var(--k2b-tray)";
             const tray = getComputedStyle(probe).backgroundColor;
+            probe.style.background = "var(--k2b-app-workspace-active)";
+            const mark = getComputedStyle(probe).backgroundColor;
+            probe.style.color = "var(--k2b-text)";
+            const text = getComputedStyle(probe).color;
             probe.remove();
             // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
             const segment = canvas.querySelector(".account-tabs--segment");
@@ -456,6 +468,10 @@ describe("account pages in a browser", () => {
               href: current.getAttribute("href"),
               fill: getComputedStyle(current).backgroundColor,
               ink: getComputedStyle(current).color,
+              radius: getComputedStyle(current).borderRadius,
+              shadow: getComputedStyle(current).boxShadow,
+              mark,
+              text,
               appFill,
               appInk,
               platformFill,
@@ -473,9 +489,11 @@ describe("account pages in a browser", () => {
             };
           });
           expect(colors.href).toBe(path);
-          expect(colors.fill).toBe(colors.appFill);
-          expect(colors.ink).toBe(colors.appInk);
-          expect(colors.fill).not.toBe(colors.platformFill);
+          // Cloud flach (K2, K4, K6): the current section is the 2 px mark on its line and the text colour, like ViewTabs.
+          expect(colors.fill).toBe("rgba(0, 0, 0, 0)");
+          expect(colors.radius).toBe("0px");
+          expect(colors.ink).toBe(colors.text);
+          expect(colors.shadow).toBe(`${colors.mark} 0px -2px 0px 0px inset`);
           if (path === "/me/notifications") {
             expect(colors.segment?.track).toBe(colors.segment?.tray);
             expect(colors.segment?.thumb).toBe(colors.appFill);
@@ -488,6 +506,26 @@ describe("account pages in a browser", () => {
         }
       }
   }, 60_000);
+
+  test("keep the selected fill on a phone, where the account tabs wrap into rows", async () => {
+    const tab = await open(phone, "/me/developer", "en");
+    try {
+      const current = await tab.evaluate(() => {
+        const link = document.querySelector('.account-tabs [aria-current="page"]')!;
+        const probe = document.createElement("span");
+        probe.style.cssText =
+          "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
+        link.parentElement!.append(probe);
+        const appFill = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { fill: getComputedStyle(link).backgroundColor, appFill, shadow: getComputedStyle(link).boxShadow };
+      });
+      expect(current.fill).toBe(current.appFill);
+      expect(current.shadow).toBe("none");
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
 
   test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
     for (const view of [desktop, phone])
@@ -704,4 +742,49 @@ describe("account pages in a browser", () => {
     expect(result.pageHeading.width).toBeLessThanOrEqual(1);
     expect(result.pageHeading.height).toBeLessThanOrEqual(1);
   }, 30_000);
+  // Cloud flach (K2, K15): no overlap, spill, cut text or double line on any account tab, with classic scrollbars
+  // that take room in windows 390, 768, 1100 and 1440 px wide (a desktop window, not a phone: a mobile tab gets
+  // overlay scrollbars that take no room), and on a touch phone. CORE_ACCOUNT_SHOTS=<folder> also writes light
+  // screenshots of every tab for the design review.
+  const runs = [
+    ...[390, 768, 1100, 1440].map((width) => ({
+      name: `${width} px with classic scrollbars`,
+      view: { width, height: width < 768 ? 844 : 900, touch: false },
+      classic: true,
+    })),
+    { name: "390 px on a touch phone", view: phone, classic: false },
+  ];
+  for (const { name, view, classic: classicRun } of runs)
+    test(`every account tab is clean at ${name}`, async () => {
+      const shots = process.env.CORE_ACCOUNT_SHOTS;
+      const found: Record<string, string[]> = {};
+      for (const path of [...tabs, "/me/notifications/history"] as Path[]) {
+        const tab = await open(view, path, "de", false, classicRun ? classic : browser);
+        try {
+          // A classic run is only worth its name when a scrollbar really takes room.
+          const gutter = await tab.evaluate(() => {
+            const probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;width:100px;height:100px;overflow:scroll";
+            document.body.append(probe);
+            const width = probe.offsetWidth - probe.clientWidth;
+            probe.remove();
+            return width;
+          });
+          if (classicRun) expect(gutter).toBeGreaterThan(0);
+          // The page never scrolls sideways, measured against the room the vertical scrollbar leaves.
+          const sideways = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+          const pageProblems = sideways > 0 ? [`the page scrolls ${sideways} px sideways`] : [];
+          const problems = (await tab.evaluate(layoutProblems, { root: "main" })).problems;
+          if (problems.length + pageProblems.length > 0) found[path] = [...pageProblems, ...problems];
+          if (shots)
+            await tab.screenshot({
+              path: `${shots}/me${path.slice(3).replaceAll("/", "-") || "-profile"}${classicRun ? "" : "-touch"}-light-${view.width}.png`,
+              fullPage: true,
+            });
+        } finally {
+          await tab.close();
+        }
+      }
+      expect(found).toEqual({});
+    }, 60_000);
 });

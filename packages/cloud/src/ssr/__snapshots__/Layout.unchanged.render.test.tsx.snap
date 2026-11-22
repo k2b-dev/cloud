@@ -16,8 +16,8 @@ exports[`opt-out regular HTML is unchanged 1`] = `
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/unchanged/app.css">
     <link rel="stylesheet" href="/public/global.css">
+    <link rel="stylesheet" href="/public/unchanged/app.css">
     <script>!function(){var e=document.documentElement;if(e.hasAttribute("data-theme-fixed"))return;var m=matchMedia("(prefers-color-scheme: dark)");function r(n,s){var v;document.cookie.split(";").forEach(function(p){p=p.trim();var i=p.indexOf("=");if(i>0&&p.slice(0,i)===n){var t=p.slice(i+1);try{t=decodeURIComponent(t)}catch(e){}if(t==="light"||t==="dark"||s&&t==="system")v=t}});return v}function a(){var s=m.matches?"dark":"light";if(r("color-scheme")!==s)document.cookie="color-scheme="+s+"; path=/; max-age=31536000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");var p=r("theme",true)||"system";e.classList.remove("light","dark");e.classList.add(p==="system"?s:p)}a();m.addEventListener("change",function(){a();window.dispatchEvent(new Event("cloud:theme-preference"))})}();</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
@@ -45,8 +45,8 @@ exports[`opt-out fullPage HTML is unchanged 1`] = `
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/unchanged/app.css">
     <link rel="stylesheet" href="/public/global.css">
+    <link rel="stylesheet" href="/public/unchanged/app.css">
     <script>!function(){var e=document.documentElement;if(e.hasAttribute("data-theme-fixed"))return;var m=matchMedia("(prefers-color-scheme: dark)");function r(n,s){var v;document.cookie.split(";").forEach(function(p){p=p.trim();var i=p.indexOf("=");if(i>0&&p.slice(0,i)===n){var t=p.slice(i+1);try{t=decodeURIComponent(t)}catch(e){}if(t==="light"||t==="dark"||s&&t==="system")v=t}});return v}function a(){var s=m.matches?"dark":"light";if(r("color-scheme")!==s)document.cookie="color-scheme="+s+"; path=/; max-age=31536000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");var p=r("theme",true)||"system";e.classList.remove("light","dark");e.classList.add(p==="system"?s:p)}a();m.addEventListener("change",function(){a();window.dispatchEvent(new Event("cloud:theme-preference"))})}();</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
@@ -74,8 +74,8 @@ exports[`opt-out fullWidth HTML is unchanged 1`] = `
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/unchanged/app.css">
     <link rel="stylesheet" href="/public/global.css">
+    <link rel="stylesheet" href="/public/unchanged/app.css">
     <script>!function(){var e=document.documentElement;if(e.hasAttribute("data-theme-fixed"))return;var m=matchMedia("(prefers-color-scheme: dark)");function r(n,s){var v;document.cookie.split(";").forEach(function(p){p=p.trim();var i=p.indexOf("=");if(i>0&&p.slice(0,i)===n){var t=p.slice(i+1);try{t=decodeURIComponent(t)}catch(e){}if(t==="light"||t==="dark"||s&&t==="system")v=t}});return v}function a(){var s=m.matches?"dark":"light";if(r("color-scheme")!==s)document.cookie="color-scheme="+s+"; path=/; max-age=31536000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");var p=r("theme",true)||"system";e.classList.remove("light","dark");e.classList.add(p==="system"?s:p)}a();m.addEventListener("change",function(){a();window.dispatchEvent(new Event("cloud:theme-preference"))})}();</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
@@ -103,8 +103,8 @@ exports[`opt-out focusMode HTML is unchanged 1`] = `
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/unchanged/app.css">
     <link rel="stylesheet" href="/public/global.css">
+    <link rel="stylesheet" href="/public/unchanged/app.css">
     <script>!function(){var e=document.documentElement;if(e.hasAttribute("data-theme-fixed"))return;var m=matchMedia("(prefers-color-scheme: dark)");function r(n,s){var v;document.cookie.split(";").forEach(function(p){p=p.trim();var i=p.indexOf("=");if(i>0&&p.slice(0,i)===n){var t=p.slice(i+1);try{t=decodeURIComponent(t)}catch(e){}if(t==="light"||t==="dark"||s&&t==="system")v=t}});return v}function a(){var s=m.matches?"dark":"light";if(r("color-scheme")!==s)document.cookie="color-scheme="+s+"; path=/; max-age=31536000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");var p=r("theme",true)||"system";e.classList.remove("light","dark");e.classList.add(p==="system"?s:p)}a();m.addEventListener("change",function(){a();window.dispatchEvent(new Event("cloud:theme-preference"))})}();</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
@@ -132,8 +132,8 @@ exports[`opt-out anonymous HTML is unchanged 1`] = `
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/unchanged/app.css">
     <link rel="stylesheet" href="/public/global.css">
+    <link rel="stylesheet" href="/public/unchanged/app.css">
     <script>!function(){var e=document.documentElement;if(e.hasAttribute("data-theme-fixed"))return;var m=matchMedia("(prefers-color-scheme: dark)");function r(n,s){var v;document.cookie.split(";").forEach(function(p){p=p.trim();var i=p.indexOf("=");if(i>0&&p.slice(0,i)===n){var t=p.slice(i+1);try{t=decodeURIComponent(t)}catch(e){}if(t==="light"||t==="dark"||s&&t==="system")v=t}});return v}function a(){var s=m.matches?"dark":"light";if(r("color-scheme")!==s)document.cookie="color-scheme="+s+"; path=/; max-age=31536000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");var p=r("theme",true)||"system";e.classList.remove("light","dark");e.classList.add(p==="system"?s:p)}a();m.addEventListener("change",function(){a();window.dispatchEvent(new Event("cloud:theme-preference"))})}();</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">

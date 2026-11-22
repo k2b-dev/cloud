@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, type Signal } from "solid-js";
 import { getK2bPortalRoot } from "../internal/portal";
 import { suppressTextSelection } from "../internal/text-selection";
 import type { DragAndDropMessages } from "./drag-and-drop-messages";
@@ -18,40 +18,88 @@ export type DragPayload<Type extends string = string> = {
 
 const SLOP = 10;
 const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]";
+/** A finger held this long lifts the item; before that it scrolls. Sortable rows lift sooner (K7). */
 const HOLD_MS = 500;
 const AUTOSCROLL_EDGE = 32;
-const [readActiveDrag, setActiveDrag] = createSignal<DragPayload>();
+/**
+ * Signals are made on first use, so the module has no side effects and a bundle that imports `@k2b/ui` without drag and
+ * drop drops it.
+ */
+let signals: { drag: Signal<DragPayload | undefined>; status: Signal<DragStatus | undefined> } | undefined;
+const shared = () => (signals ??= { drag: createSignal<DragPayload>(), status: createSignal<DragStatus>() });
+const readActiveDrag = () => shared().drag[0]();
+export const setActiveDrag = (payload: DragPayload | undefined) => shared().drag[1](payload);
 /** Reactive payload of the drag in progress, or undefined. */
 export const activeDrag = (): DragPayload | undefined => readActiveDrag();
+
+/**
+ * What the drag in progress moves and where it goes, in words a status line can show; the same words reach screen
+ * readers through the live region. `lead` names what moves, `detail` where it goes and how to cancel.
+ */
+export type DragStatus = { lead: string; detail: string };
+const readDragStatus = () => shared().status[0]();
+export const writeDragStatus = (status: DragStatus | undefined) => shared().status[1](status);
+/** Reactive status of the drag in progress, for a status line; undefined while nothing is dragged. */
+export const dragStatus = (): DragStatus | undefined => readDragStatus();
+/** Internal: SortableList states the exact place, which a plain target cannot. */
+export const setDragStatus = (status: DragStatus | undefined) => writeDragStatus(status);
 const dragStartListeners = new Set<(pointerId: number) => void>();
 /** Internal hand-over to the gesture menu that owns this press. */
+const endListeners = new Set<(payload: DragPayload, dropped: boolean) => void>();
+/** Internal: told when a drag or keyboard pickup ends, and whether something took it; for a host's "nothing changed" note. */
+export const onDragEnd = (listener: (payload: DragPayload, dropped: boolean) => void): (() => void) => {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
+};
+export const notifyDragEnd = (payload: DragPayload, dropped: boolean) => {
+  for (const listener of endListeners) listener(payload, dropped);
+};
+/** S7: a finger held this long on a source that does not drag by touch opens its menu; moving further cancels. */
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP = 8;
+let shownPreview: HTMLElement | undefined;
+/** Internal: the preview of the pointer drag in progress, such as for a drop overlay that shows it compact. */
+export const currentPreview = (): HTMLElement | undefined => shownPreview;
+const pressListeners = new Set<() => void>();
+/** Internal: told about every press on a drag source, before any drag, so code a drag needs can load in time. */
+export const onPointerPress = (listener: () => void): (() => void) => {
+  pressListeners.add(listener);
+  return () => pressListeners.delete(listener);
+};
 export const onPointerDragStart = (listener: (pointerId: number) => void): (() => void) => {
   dragStartListeners.add(listener);
   return () => dragStartListeners.delete(listener);
 };
 
-type Target = {
+export type Target = {
   element: HTMLElement;
   accept: readonly string[];
   label: string;
   messages: DragAndDropMessages;
   disabled?: boolean;
   drop: (payload: DragPayload) => void;
+  /**
+   * Internal: told where the pointer is while it rests over this target, and `undefined` when it leaves. It may
+   * return the viewport y of a line it shows, which the preview then keeps clear of.
+   */
+  hover?: (point: { x: number; y: number } | undefined) => number | undefined;
+  /** Internal: letting go here changes nothing, like letting go outside every target; for a "Drop here: nothing happens" area. */
+  cancels?: boolean;
 };
-type Session = {
+export type Session = {
   payload: DragPayload;
   origin: HTMLElement;
   cancel: () => void;
   targetsChanged?: () => void;
 };
-type Engine = {
+export type Engine = {
   targets: Set<Target>;
   byElement: WeakMap<Element, Target>;
   session?: Session;
   abandonPress?: () => void;
 };
 const engines = new WeakMap<Document, Engine>();
-const engineFor = (doc: Document): Engine => {
+export const engineFor = (doc: Document): Engine => {
   let engine = engines.get(doc);
   if (!engine) {
     engine = { targets: new Set(), byElement: new WeakMap() };
@@ -59,35 +107,9 @@ const engineFor = (doc: Document): Engine => {
   }
   return engine;
 };
-const accepts = (target: Target, payload: DragPayload) =>
+export const accepts = (target: Target, payload: DragPayload) =>
   target.element.isConnected && !target.disabled && target.accept.includes(payload.type);
-const isModal = (dialog: Element) => {
-  try {
-    return dialog.matches(":modal");
-  } catch {
-    return dialog.matches("dialog[open]");
-  }
-};
-/** The modal dialog around an element; while one is open, everything outside of it is inert. */
-const modalOf = (element: Element): Element | undefined => {
-  for (let dialog = element.closest("dialog"); dialog; dialog = dialog.parentElement?.closest("dialog") ?? null)
-    if (isModal(dialog)) return dialog;
-  return undefined;
-};
-const visible = (element: Element) =>
-  typeof element.checkVisibility === "function"
-    ? element.checkVisibility({ checkVisibilityCSS: true })
-    : element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
-/**
- * A keyboard destination must be one a pointer could reach from where the pickup started: shown and visible, not
- * inert, and in the same modal dialog as the origin.
- */
-const reachable = (target: Target, origin: HTMLElement) => {
-  const element = target.element;
-  if (element.closest("[inert]") || modalOf(element) !== modalOf(origin)) return false;
-  return visible(element);
-};
-const mark = (target: Target, payload?: DragPayload) => {
+export const mark = (target: Target, payload?: DragPayload) => {
   if (payload && accepts(target, payload)) target.element.dataset.drop = "ok";
   else delete target.element.dataset.drop;
 };
@@ -161,19 +183,67 @@ export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "
     },
     dispose() {
       engine.targets.delete(entry);
-      engine.byElement.delete(element);
+      if (engine.byElement.get(element) === entry) engine.byElement.delete(element);
       delete element.dataset.drop;
       engine.session?.targetsChanged?.();
     },
   };
 };
 
-const clearSession = (engine: Engine, session: Session, source?: HTMLElement) => {
+export const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: Target): DragStatus => ({
+  lead: messages.statusLead({ label: payload.label, count: payload.count ?? 1 }),
+  detail: over && !over.cancels ? messages.statusOver({ target: over.label }) : messages.statusIdle,
+});
+
+/** Attributes that mark the dragged row itself; its copy in the preview shows the row as it was. */
+const DRAG_MARKS = [
+  "data-dragging",
+  "data-held",
+  "data-pressing",
+  "data-sortable-dragging",
+  "data-sortable-line",
+  "data-sortable-handle",
+  "data-sortable-path",
+  "id",
+  // A copied radio with the same name would uncheck the original; a copied field would join a form.
+  "name",
+  "form",
+];
+/**
+ * A copy of `shown` for the preview, inside a shallow copy of its parent, so the parent's class and attribute
+ * selectors still style it. Canvases keep their picture.
+ */
+const copyOf = (shown: HTMLElement): HTMLElement => {
+  const copy = shown.cloneNode(true) as HTMLElement;
+  const frame = shown.parentElement?.cloneNode(false) as HTMLElement | undefined;
+  for (const element of [copy, ...copy.querySelectorAll("*")]) for (const name of DRAG_MARKS) element.removeAttribute(name);
+  // Frames and media would load or play again; an empty box of the same size stands in.
+  const MEDIA = "iframe, video, audio, object, embed";
+  const originals = shown.querySelectorAll<HTMLElement>(MEDIA);
+  copy.querySelectorAll(MEDIA).forEach((media, index) => {
+    const box = media.ownerDocument.createElement("div");
+    box.style.cssText = `width:${originals[index]?.offsetWidth ?? 0}px;height:${originals[index]?.offsetHeight ?? 0}px`;
+    media.replaceWith(box);
+  });
+  const canvases = shown.querySelectorAll("canvas");
+  copy.querySelectorAll("canvas").forEach((canvas, index) => {
+    const original = canvases[index]!;
+    if (original.width && original.height) canvas.getContext("2d")?.drawImage(original, 0, 0);
+  });
+  if (!frame) return copy;
+  for (const name of [...DRAG_MARKS, "aria-label", "aria-labelledby", "aria-describedby", "role", "style"]) frame.removeAttribute(name);
+  frame.style.display = "contents";
+  frame.append(copy);
+  return frame;
+};
+
+export const clearSession = (engine: Engine, session: Session, source?: HTMLElement) => {
   if (engine.session !== session) return;
   engine.session = undefined;
   if (source) delete source.dataset.dragging;
   for (const target of engine.targets) mark(target);
   setActiveDrag(undefined);
+  writeDragStatus(undefined);
 };
 
 /**
@@ -279,7 +349,21 @@ const scrollAt = (doc: Document, hit: Element | null, x: number, y: number, cach
 
 export const bindDragSource = (
   source: HTMLElement,
-  read: () => { payload: DragPayload; disabled?: boolean; messages: DragAndDropMessages },
+  read: () => {
+    payload: DragPayload;
+    disabled?: boolean;
+    messages: DragAndDropMessages;
+    /** Internal: the element the preview shows a copy of, such as a sortable row; else the preview is a label. */
+    preview?: HTMLElement;
+    /** Internal: how long a finger holds before it lifts, in ms; `HOLD_MS` by default. */
+    hold?: number;
+    /** How far the mouse or pen moves before the drag starts, in px; `SLOP` by default. */
+    threshold?: number;
+    /** "none": a finger never drags this source; its press stays with the host, such as a long-press menu. */
+    touch?: "drag" | "none";
+    /** With `touch: "none"`: a finger held 500 ms, moving at most 8 px, calls this instead of dragging (S7). */
+    onLongPress?: (point: { x: number; y: number }) => void;
+  },
 ): (() => void) => {
   const doc = source.ownerDocument;
   const win = doc.defaultView!;
@@ -309,15 +393,29 @@ export const bindDragSource = (
   const nativeDrag = (event: Event) => {
     if (!ignored(event.target)) event.preventDefault();
   };
+  /** A mouse that moved sideways before the threshold may have begun selecting the source's text; a drag ends that. */
+  const clearStartedSelection = () => {
+    const selection = doc.getSelection();
+    if (selection && !selection.isCollapsed && selection.anchorNode && source.contains(selection.anchorNode)) selection.removeAllRanges();
+  };
   const down = (event: PointerEvent) => {
     if (!event.isPrimary || event.button !== 0 || engine.session || read().disabled) return;
     if (!(event.target instanceof Element) || event.target.closest(".k2b-drag-source") !== source) return;
     if (ignored(event.target)) return;
+    if (event.pointerType === "touch" && read().touch === "none") {
+      const longPress = read().onLongPress;
+      if (longPress) pressLong(event, longPress);
+      return;
+    }
+    for (const listener of pressListeners) listener();
+    const slop = read().threshold ?? SLOP;
     engine.abandonPress?.();
     // Ready before the drag starts, so its first announcement is read.
     announcerFor(source);
     const id = event.pointerId;
     const mouse = event.pointerType === "mouse";
+    // A pen drags like the mouse where a finger does not drag at all (S7); elsewhere it holds first, like a finger.
+    const fine = mouse || (event.pointerType === "pen" && read().touch === "none");
     const start = { x: event.clientX, y: event.clientY };
     let point = start;
     let held = false;
@@ -369,10 +467,13 @@ export const bindDragSource = (
       delete source.dataset.held;
       delete source.dataset.pressing;
       preview?.remove();
+      if (shownPreview === preview) shownPreview = undefined;
       releaseSelection?.();
       if (engine.abandonPress === cancel) engine.abandonPress = undefined;
       if (abandon === cancel) abandon = undefined;
       if (session) {
+        // The browser may have extended that selection during the drag; nothing of it stays.
+        clearStartedSelection();
         clearSession(engine, session, source);
         swallowRelease(doc, released ? undefined : id);
       } else if (held) swallowRelease(doc, released ? undefined : id);
@@ -380,8 +481,13 @@ export const bindDragSource = (
     const cancel = () => {
       if (finished) return;
       const payload = session?.payload;
+      // The target forgets the place it showed, so nothing of a cancelled drag can land later.
+      over?.hover?.(undefined);
       clean();
-      if (payload) announce(source, messages.cancelled(payload));
+      if (payload) {
+        announce(source, messages.cancelled(payload));
+        notifyDragEnd(payload, false);
+      }
     };
     const hitTest = () => {
       const payload = session!.payload;
@@ -399,29 +505,55 @@ export const bindDragSource = (
           break;
         }
       }
+      // A target that takes nothing inside an area where letting go changes nothing, such as a disabled tile on a
+      // drop overlay, refuses: it says why, instead of the area around it.
+      if (next?.cancels && inner && inner !== next) next = undefined;
       const rejected = next ? undefined : inner;
       if (next !== over || rejected !== refused) {
+        if (next !== over) over?.hover?.(undefined);
         if (over) mark(over, engine.targets.has(over) ? payload : undefined);
         if (refused) mark(refused, engine.targets.has(refused) ? payload : undefined);
         over = next;
         refused = rejected;
         if (over) {
           over.element.dataset.drop = "over";
-          announce(source, over.messages.over({ target: over.label }));
+          if (!over.hover) announce(source, over.messages.over({ target: over.label }));
         } else if (refused) {
           refused.element.dataset.drop = "refused";
           announce(source, refused.messages.refused({ target: refused.label, label: payload.label }));
         }
+        if (!over?.hover) writeDragStatus(statusFor(messages, payload, over));
       }
+      lineY = over?.hover?.(point);
       if (over) over.element.dataset.drop = "over";
       if (refused) refused.element.dataset.drop = "refused";
       return hit;
     };
+    let previewWidth = 0;
+    let previewHeight = 0;
+    /** The line the target shows, such as a sorted list's place far below the pointer. */
+    let lineY: number | undefined;
+    /**
+     * Follows the pointer. Its CSS `translate` hangs it 16 px left of and below this point, so it starts below the
+     * pointer and below the target's line, which it never covers. Near the viewport's right edge a wide preview
+     * shifts left so it stays whole.
+     */
+    const place = () => {
+      const x = previewWidth ? Math.max(24, Math.min(point.x, win.innerWidth - previewWidth + 8)) : point.x;
+      let y = lineY === undefined ? point.y : Math.max(point.y, lineY - 8);
+      // Near the viewport's lower edge the preview would leave the window: it flips above the pointer and above the
+      // line, so it stays in view and still never covers the line. The CSS translate adds 16 px.
+      if (previewHeight && y + 16 + previewHeight > win.innerHeight - 8) {
+        const above = lineY === undefined ? point.y : Math.min(point.y, lineY - 4);
+        y = Math.max(-8, above - 8 - previewHeight - 16);
+      }
+      preview!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    };
     const renderFrame = () => {
       frame = 0;
       if (finished || !session) return;
-      preview!.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       const hit = hitTest();
+      place();
       if (scrollAt(doc, hit, point.x, point.y, overflowCache)) frame = win.requestAnimationFrame(renderFrame);
     };
     const begin = () => {
@@ -447,6 +579,7 @@ export const bindDragSource = (
       source.dataset.dragging = "";
       win.addEventListener("contextmenu", preventContext, true);
       releaseSelection = suppressTextSelection(id);
+      clearStartedSelection();
       // Captured, the mouse's moves and release reach this drag also over an iframe, such as a PDF preview. A finger
       // or pen is captured by the browser already.
       if (mouse)
@@ -457,17 +590,27 @@ export const bindDragSource = (
           // The pointer is already gone; its pointerup or pointercancel ends the drag.
         }
       preview = doc.createElement("div");
+      shownPreview = preview;
       // Inside the source's own .k2b-ui scope the preview inherits its theme, also a scoped dark one; a second
       // .k2b-ui would reset the tokens to light.
       const scope = source.parentElement?.closest<HTMLElement>(".k2b-ui");
       preview.className = scope ? "k2b-drag-preview" : "k2b-ui k2b-drag-preview";
       preview.setAttribute("aria-hidden", "true");
-      const icon = doc.createElement("i");
-      icon.className = payload.icon ?? "ti ti-file";
-      const label = doc.createElement("span");
-      label.className = "k2b-drag-preview__label";
-      label.textContent = payload.label;
-      preview.append(icon, label);
+      const shown = current.preview;
+      if (shown?.isConnected) {
+        // The row itself floats, at its own width, so its text wraps as it did in place.
+        preview.dataset.preview = "row";
+        preview.style.width = `${Math.round(shown.getBoundingClientRect().width)}px`;
+        preview.setAttribute("inert", "");
+        preview.append(copyOf(shown));
+      } else {
+        const icon = doc.createElement("i");
+        icon.className = payload.icon ?? "ti ti-file";
+        const label = doc.createElement("span");
+        label.className = "k2b-drag-preview__label";
+        label.textContent = payload.label;
+        preview.append(icon, label);
+      }
       if (payload.count && payload.count > 1) {
         const count = doc.createElement("span");
         count.className = "k2b-drag-preview__count";
@@ -478,8 +621,11 @@ export const bindDragSource = (
       preview.setAttribute("popover", "manual");
       getK2bPortalRoot(scope ?? doc.body, source, doc).append(preview);
       preview.showPopover?.();
-      preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
+      previewWidth = preview.offsetWidth;
+      previewHeight = preview.offsetHeight;
+      place();
       for (const target of engine.targets) mark(target, payload);
+      writeDragStatus(statusFor(messages, payload));
       setActiveDrag(payload);
       if (finished) return;
       announce(source, messages.pickedUp(payload));
@@ -488,8 +634,8 @@ export const bindDragSource = (
     const move = (event: PointerEvent) => {
       if (event.pointerId !== id || finished) return;
       point = { x: event.clientX, y: event.clientY };
-      if (!session && Math.hypot(point.x - start.x, point.y - start.y) >= SLOP) {
-        if (event.pointerType !== "mouse" && !held) {
+      if (!session && Math.hypot(point.x - start.x, point.y - start.y) >= slop) {
+        if (!fine && !held) {
           cancel();
           return;
         }
@@ -506,13 +652,15 @@ export const bindDragSource = (
       }
       point = { x: event.clientX, y: event.clientY };
       hitTest();
-      const target = over;
+      // A target that means "nothing happens" ends the drag like letting go outside.
+      const target = over?.cancels ? undefined : over;
       const payload = session.payload;
       const result = target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload);
       const drop = target?.drop;
       clean();
       announce(source, result);
       drop?.(payload);
+      notifyDragEnd(payload, target !== undefined);
     };
     // Capture ends without a release only when the browser takes the pointer away.
     const lostCapture = (event: PointerEvent) => {
@@ -544,12 +692,44 @@ export const bindDragSource = (
     win.addEventListener("pointercancel", cancelPointer, true);
     win.addEventListener("pointerdown", other, true);
     win.addEventListener("blur", cancel);
-    if (event.pointerType !== "mouse") {
+    if (!fine) {
       // A held finger drags: it selects no text, and Android's long-press menu does not open, also before the hold fires.
       source.dataset.pressing = "";
       win.addEventListener("contextmenu", preventContext, true);
-      timer = win.setTimeout(hold, HOLD_MS);
+      timer = win.setTimeout(hold, read().hold ?? HOLD_MS);
     }
+  };
+  /**
+   * A finger on a source that does not drag by touch: held still, it calls `open` at the point; moving, lifting,
+   * or another pointer ends the wait. The release after it never clicks the row.
+   */
+  const pressLong = (event: PointerEvent, open: (point: { x: number; y: number }) => void) => {
+    const id = event.pointerId;
+    const start = { x: event.clientX, y: event.clientY };
+    const stop = () => {
+      win.clearTimeout(timer);
+      win.removeEventListener("pointermove", move, true);
+      win.removeEventListener("pointerup", end, true);
+      win.removeEventListener("pointercancel", end, true);
+      win.removeEventListener("contextmenu", menu, true);
+    };
+    const move = (next: PointerEvent) => {
+      if (next.pointerId === id && Math.hypot(next.clientX - start.x, next.clientY - start.y) > LONG_PRESS_SLOP) stop();
+    };
+    const end = (next: PointerEvent) => {
+      if (next.pointerId === id) stop();
+    };
+    // The platform's own long-press menu would cover the host's.
+    const menu = (next: Event) => next.preventDefault();
+    const timer = win.setTimeout(() => {
+      stop();
+      swallowRelease(doc, id);
+      open(start);
+    }, LONG_PRESS_MS);
+    win.addEventListener("pointermove", move, true);
+    win.addEventListener("pointerup", end, true);
+    win.addEventListener("pointercancel", end, true);
+    win.addEventListener("contextmenu", menu, true);
   };
   announcerFor(source);
   source.addEventListener("pointerdown", down);
@@ -562,142 +742,4 @@ export const bindDragSource = (
     source.removeEventListener("dragstart", nativeDrag);
     source.removeEventListener("touchmove", preventScroll);
   };
-};
-
-const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
-/** The origin itself when it takes focus, else the nearest ancestor that does, such as a menu's group. */
-const focusTarget = (origin: HTMLElement): HTMLElement =>
-  (origin.matches(FOCUSABLE) ? origin : origin.closest<HTMLElement>(FOCUSABLE)) ?? origin;
-
-export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messages: DragAndDropMessages): (() => void) => {
-  const doc = origin.ownerDocument;
-  const win = doc.defaultView!;
-  const engine = engineFor(doc);
-  engine.session?.cancel();
-  engine.abandonPress?.();
-  const payload = { ...input };
-  const choices = () =>
-    [...engine.targets]
-      .filter((target) => accepts(target, payload) && reachable(target, origin))
-      .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-  let targets: Target[] = [];
-  let current: Target | undefined;
-  /** Listening for keys: the first destination is chosen. */
-  let ready = false;
-  let finished = false;
-  let frame = 0;
-  const source = origin.closest<HTMLElement>(".k2b-drag-source") ?? undefined;
-  const end = (target?: Target, text?: string) => {
-    if (finished) return;
-    finished = true;
-    win.cancelAnimationFrame(frame);
-    doc.removeEventListener("keydown", key, true);
-    doc.removeEventListener("pointerdown", cancel, true);
-    win.removeEventListener("blur", cancel);
-    const result = text ?? (target ? target.messages.dropped({ label: payload.label, target: target.label }) : messages.cancelled(payload));
-    const drop = target?.drop;
-    clearSession(engine, session, source);
-    announce(origin, result);
-    // Focus scrolls the origin back into view when choosing a destination scrolled it away.
-    if (origin.isConnected) focusTarget(origin).focus();
-    drop?.(payload);
-  };
-  const cancel = () => end();
-  const pickupModal = modalOf(origin);
-  /**
-   * Whether a modal dialog opened over the pickup, leaving the origin inert: the key comes from inside another modal,
-   * or a modal opened over a pickup that started outside of every modal.
-   */
-  const behindModal = (event: KeyboardEvent) => {
-    const keyModal = event.target instanceof Element ? modalOf(event.target) : undefined;
-    if (keyModal && keyModal !== pickupModal && !keyModal.contains(origin)) return true;
-    // A dialog stack that shares one native dialog hides the level below, the origin's, when the next one opens.
-    if (pickupModal && (!origin.isConnected || !visible(origin))) return true;
-    return !pickupModal && Array.from(doc.querySelectorAll("dialog[open]")).some(isModal);
-  };
-  const describe = (target: Target) =>
-    target.messages.choice({ target: target.label, index: targets.indexOf(target) + 1, count: targets.length });
-  const choose = (target: Target, text = describe(target)) => {
-    if (current) mark(current, engine.targets.has(current) ? payload : undefined);
-    current = target;
-    current.element.dataset.drop = "over";
-    current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
-    announce(origin, text);
-  };
-  const key = (event: KeyboardEvent) => {
-    const backward = event.key === "ArrowUp" || event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey);
-    const forward = !backward && (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "Tab");
-    if (!backward && !forward && !["Home", "End", "Enter", " ", "Escape"].includes(event.key)) return;
-    // A modal dialog opened since the pickup: its keys are its own, and the pickup behind it ends.
-    if (behindModal(event)) {
-      cancel();
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") {
-      cancel();
-      return;
-    }
-    // Destinations may have been hidden or shown since the last key, for example by a layout change.
-    targets = choices();
-    if (!targets.length) {
-      end(undefined, messages.noTarget(payload));
-      return;
-    }
-    const index = current ? targets.indexOf(current) : -1;
-    const count = targets.length;
-    if (forward) choose(targets[index < 0 ? 0 : (index + 1) % count]!);
-    else if (backward) choose(targets[index < 0 ? count - 1 : (index - 1 + count) % count]!);
-    else if (event.key === "Home") choose(targets[0]!);
-    else if (event.key === "End") choose(targets[count - 1]!);
-    else end(index >= 0 ? current : undefined);
-  };
-  /** Chooses the first destination and starts listening; without one, the sequence ends at once. */
-  const settle = () => {
-    targets = choices();
-    if (!targets.length) {
-      end(undefined, messages.noTarget(payload));
-      return;
-    }
-    ready = true;
-    // One announcement, so a screen reader does not drop the instructions for the first choice.
-    choose(targets[0]!, `${messages.pickedUpKeyboard({ label: payload.label, count: targets.length })} ${describe(targets[0]!)}`);
-    // A menu's activating key has already traversed capture. Defer the listener until that dispatch has ended.
-    queueMicrotask(() => {
-      if (finished) return;
-      doc.addEventListener("keydown", key, true);
-      doc.addEventListener("pointerdown", cancel, true);
-      win.addEventListener("blur", cancel);
-    });
-  };
-  const session: Session = {
-    payload,
-    origin,
-    cancel,
-    // Settled a frame later, so a target that a re-render replaces has registered again before none counts as left.
-    targetsChanged() {
-      if (!ready || finished || frame) return;
-      frame = win.requestAnimationFrame(() => {
-        frame = 0;
-        if (finished) return;
-        targets = choices();
-        if (!targets.length) cancel();
-        else choose(current && targets.includes(current) ? current : targets[0]!);
-      });
-    },
-  };
-  // The drag is active before destinations are counted, so a host can mount the ones it shows only while dragging.
-  engine.session = session;
-  for (const target of engine.targets) mark(target, payload);
-  if (source) source.dataset.dragging = "";
-  setActiveDrag(payload);
-  if (finished) return cancel;
-  if (choices().length) settle();
-  else
-    frame = win.requestAnimationFrame(() => {
-      frame = 0;
-      if (!finished) settle();
-    });
-  return cancel;
 };

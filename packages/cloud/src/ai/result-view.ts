@@ -5,7 +5,7 @@ import { BlockPathSchema, type BoundBlockView } from "../blocks/schema";
 import { blocksSummary } from "../blocks/text";
 import { validateBlockLink } from "../blocks/validate";
 
-// Read migration only. No producer or live result parser accepts presentation after the contract cut.
+// Read migration, and Core's acceptance of older apps until 0.86 (api/legacy-presentation.ts). No producer writes it.
 const legacyTable = z.strictObject({
   kind: z.literal("table"),
   rowsPath: BlockPathSchema,
@@ -28,7 +28,19 @@ export function capabilityResultView(result: unknown): BoundBlockView | null {
     const view = blockDataAtPath(result, ["view"]);
     const data = blockDataAtPath(result, ["data"]);
     if (view !== undefined) return bindView(view, data);
-    const old = legacyTable.safeParse(blockDataAtPath(result, ["presentation"]));
+    return legacyTableView(blockDataAtPath(result, ["presentation"]), data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The view of a table `presentation` from before 0.83: for stored results, and in Core until 0.86 for older apps
+ * that still return one. The view carries its rows, so it binds without the result's data.
+ */
+export function legacyTableView(presentation: unknown, data: unknown, title = "Results"): BoundBlockView | null {
+  try {
+    const old = legacyTable.safeParse(presentation);
     if (!old.success) return null;
     const rows = blockDataAtPath(data, old.data.rowsPath);
     if (!Array.isArray(rows)) return null;
@@ -54,7 +66,7 @@ export function capabilityResultView(result: unknown): BoundBlockView | null {
     for (let offset = 0; offset < old.data.columns.length; offset += 20) {
       blocks.push({
         kind: "Table",
-        title: "Results",
+        title: title.trim().slice(0, 160) || "Results",
         rows: visible,
         columns: old.data.columns.slice(offset, offset + 20).map((column, index) => ({
           path: [`c${offset + index}`],

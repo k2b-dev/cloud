@@ -163,6 +163,13 @@ export const SourceStatusSchema = z.object({
   skippedSummaries: z.number().int().nonnegative(),
   lastError: z.string().nullable(),
   lastErrorAt: z.string().nullable(),
+  rejected: z
+    .object({
+      last24h: z.number().int().nonnegative(),
+      lastReason: z.string().max(300).nullable(),
+      lastAt: z.string().nullable(),
+    })
+    .optional(),
 });
 
 export const CreateSourceSchema = z.strictObject({

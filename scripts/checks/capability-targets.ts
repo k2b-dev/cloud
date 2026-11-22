@@ -19,15 +19,25 @@ const reviewedInputIds: Record<string, readonly string[]> = {
 
 /** ID-like inputs require a target unless a reviewed domain field is explicitly exempt. */
 export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => {
-  const idPaths = (schema: unknown, prefix = ""): string[] => {
+  // Shared `$defs` entries hide no fields: a local `$ref` is followed once per path.
+  const idPaths = (schema: unknown, prefix: string, root: unknown, refs: ReadonlySet<string>): string[] => {
     if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
     return Object.entries(schema).flatMap(([key, value]) => {
-      if (key === "items") return idPaths(value, `${prefix}[]`);
-      if (["anyOf", "oneOf", "allOf"].includes(key) && Array.isArray(value)) return value.flatMap((part) => idPaths(part, prefix));
+      if (key === "$ref" && typeof value === "string" && value.startsWith("#") && !refs.has(value)) {
+        const target = value
+          .slice(2)
+          .split("/")
+          .filter(Boolean)
+          .reduce<unknown>((node, part) => (node && typeof node === "object" ? (node as Record<string, unknown>)[part] : undefined), root);
+        return idPaths(target, prefix, root, new Set([...refs, value]));
+      }
+      if (key === "items") return idPaths(value, `${prefix}[]`, root, refs);
+      if (["anyOf", "oneOf", "allOf"].includes(key) && Array.isArray(value))
+        return value.flatMap((part) => idPaths(part, prefix, root, refs));
       if (key !== "properties" || !value || typeof value !== "object" || Array.isArray(value)) return [];
       return Object.entries(value).flatMap(([name, field]) => {
         const path = prefix ? `${prefix}.${name}` : name;
-        return /^(id|ids)$|(?:Id|Ids|_id|_ids)$/.test(name) ? [path] : idPaths(field, path);
+        return /^(id|ids)$|(?:Id|Ids|_id|_ids)$/.test(name) ? [path] : idPaths(field, path, root, refs);
       });
     });
   };
@@ -37,7 +47,9 @@ export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => 
       const operation = `${manifest.appId}.${action.localId}`;
       const exempt =
         operation === "core.ai.chat.create" ? ["project.id"] : action.code === false ? (reviewedInputIds[operation] ?? []) : [];
-      const fields = [...new Set(idPaths(action.inputSchema))].filter((field) => !exempt.includes(field));
+      const fields = [...new Set(idPaths(action.inputSchema, "", action.inputSchema, new Set()))].filter(
+        (field) => !exempt.includes(field),
+      );
       return fields.length ? [`${manifest.appId}.${action.localId}: ${fields.join(", ")}`] : [];
     });
 };

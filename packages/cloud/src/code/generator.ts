@@ -272,8 +272,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   cause?: { requestId: string }; data: Data;
 };`,
       `export type CodeEvents = { ${events.join("; ")} };`,
-      `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
-export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
+      `/** \`public\` admits visitors without sign-in; \`layout: "plain"\` renders pages alone; \`audience: "owner-data"\` skips the read check. */
+export type CodeRouteOptions = { public?: boolean; layout?: "plain"; audience?: "owner-data" };`,
       `export type CodeApp<Variables extends object = {}> = {
   /** Applies to later HTTP routes, optionally within a literal path prefix. Capture the return to type variables. */
   use<Added extends object = {}>(middleware: CodeMiddleware<Variables & Added>): CodeApp<Variables & Added>;

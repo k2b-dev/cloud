@@ -9,6 +9,8 @@ import { scrapeMetricsSource } from "./index";
 import { ingestQuota } from "./ingest-quota";
 import { runHourlyRollup } from "./metric-rollups";
 import { runRetentionBatch } from "./retention";
+import { rejectionRecorder } from "./source-rejection-recorder";
+import { flushSourceRejections } from "./source-rejections";
 import { notificationOutbox } from "./store-health";
 
 export { runRetentionBatch } from "./retention";
@@ -206,6 +208,25 @@ export const pulseRuntime = {
         await retentionJob().submit({ key: `slot:${context.slot.getTime()}`, input: { after: null } });
       },
     });
+    await pulseScheduler().create({
+      id: "pulse:sources:rejections",
+      cron: "*/5 * * * *",
+      misfire: "latest",
+      meta: { appId: "pulse", family: "pulse:sources", label: "Pulse source rejection flush", source: "pulse:sources:rejections" },
+      process: async (context) => {
+        await trace.withSpan(
+          {
+            spanKey: trace.syncSpanKey("scheduler", "pulse", context.runId),
+            name: "Pulse source rejection flush",
+            source: "pulse:sources:rejections",
+            appId: "pulse",
+            category: "schedule",
+          },
+          () => flushSourceRejections(),
+          { summarize: (result) => result },
+        );
+      },
+    });
     await registerAlertSchedules(pulseScheduler(), alertStop.signal);
     // The three bounded alert scans must not hold up each other or the existing
     // scrape/maintenance dispatch lane. Each schedule remains serial fleet-wide.
@@ -223,6 +244,7 @@ export const pulseRuntime = {
     await stopBaseMaintenance();
     await notificationOutbox.stop();
     ingestQuota.close();
+    rejectionRecorder.close();
     started = false;
   },
 };

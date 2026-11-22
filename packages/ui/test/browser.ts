@@ -661,6 +661,14 @@ export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: (
 };
 
 /**
+ * The least size a touch target may measure: 44 px, less a hundredth of a pixel. Engines lay boxes out at sub-pixel
+ * precision (WebKit in 1/64 px units, and a box inside a scaled or animated layer reads back as a float), so a target
+ * that is 44 px by its CSS can measure 43.9999 px (#3917). The rule stays 44 px; the tolerance only absorbs that
+ * rounding and is far below one device pixel.
+ */
+export const touchTargetMin = 44 - 0.01;
+
+/**
  * Moves the pointer onto `position` inside `target` without scrolling, after checking that the target is the
  * element there, as `hover()` does. Use it where a test compares boxes in viewport coordinates around a hover:
  * `Locator.hover()` retries a failed actionability check with its own `scrollIntoView` (`block: "end"`, then
