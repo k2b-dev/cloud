@@ -98,6 +98,7 @@ import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { createNotePrintCopy } from "./note-print-copy";
+import { ReadingPills } from "./page-pill";
 import { isBlankNoteText } from "./page-templates";
 import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
@@ -418,7 +419,7 @@ export default function NoteEditor(props: Props) {
       </Show>
       <Show when={showRouteLoading()}>
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
-          <div class="inline-flex items-center gap-2 rounded-md bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-[var(--k2b-shadow-toolbar)] ring-1 ring-zinc-950/10 dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
+          <div class="inline-flex items-center gap-2 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-[var(--k2b-shadow-toolbar)] ring-1 ring-zinc-950/10 dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
             <i class="ti ti-loader-2 animate-spin text-blue-600 dark:text-blue-400" aria-hidden="true" />
             <span>{t().loadingNote}</span>
           </div>
@@ -1439,11 +1440,9 @@ function EditorInstance(
   });
 
   return (
-    // While the note is writable, the formatting and page pills float over its bottom edge (layers and shadows).
-    <div
-      class="notebook-editor-frame relative flex-1 min-w-0 flex flex-col overflow-hidden"
-      data-notebook-pills={props.readOnly ? undefined : ""}
-    >
+    // The note has no head (K6): the page pill, and while the note is writable the formatting pill, float over its
+    // bottom edge (layers and shadows).
+    <div class="notebook-editor-frame relative flex-1 min-w-0 flex flex-col overflow-hidden" data-notebook-pills="">
       <article ref={printArticle} class="notebook-book-content notebook-note-print" />
       {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
       <Show when={storageExhausted() && !syncEnded.ended()}>
@@ -1669,6 +1668,16 @@ function EditorInstance(
             />
           )}
         </Show>
+      </Show>
+      {/* Read has only the page pill; the red pill of an ended sync takes its place as it takes the writing pills'. */}
+      <Show when={props.readOnly && !(syncEnded.ended() && (device().failed || device().recovery))}>
+        <ReadingPills
+          notebookId={props.notebookId}
+          noteId={props.noteId}
+          canWrite={props.canWrite}
+          lockedAt={props.noteLockedAt}
+          comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
+        />
       </Show>
     </div>
   );

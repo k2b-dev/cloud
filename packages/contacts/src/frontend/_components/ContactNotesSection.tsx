@@ -209,6 +209,8 @@ export default function ContactNotesSection(props: Props) {
       size="md"
       class="k2b-discussion"
       icon="ti ti-message-circle"
+      // K17: the history's area colour, only in the symbol tile.
+      iconColor="#52525b"
       title={t().notes}
       count={notesPage().total}
       actions={

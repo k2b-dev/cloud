@@ -79,10 +79,10 @@ mode the border takes the system colour and focus adds the system outline.
 
 Large writing surfaces with their own frame are not fields and keep a 2 px
 frame (`--k2b-frame-width`): the assistant prompt of `Chat.Composer`, which
-takes the AI colour with a soft glow outside (`--k2b-ai-glow`) on focus, a
+takes the AI colour with the field ring outside (`--k2b-ai-glow`, no blur) on focus, a
 mail draft in the reader, and a toned dialog frame. Editor surfaces such as
 the Notebooks and CodeMirror composers keep their own frames too. Do not
-extend the glow or the frame width to other controls. The `field-edges` rule
+extend the frame width to other controls. The `field-edges` rule
 rejects a 2 px line in a field-edge colour and any width token set outside
 `@k2b/ui`.
 

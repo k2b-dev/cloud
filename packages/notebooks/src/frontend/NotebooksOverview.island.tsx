@@ -13,12 +13,9 @@ import {
   IconButton,
   LoadMore,
   PanelDialog,
-  PanelHeader,
-  Paper,
   Placeholder,
   panelDialogOptions,
   prompts,
-  Tag,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
@@ -308,6 +305,35 @@ export default function NotebooksOverview(props: Props) {
   return (
     <AppWorkspace mobileSurface="flush" flat class="notebooks-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">{t().notebooks}</h1>
+      {/* K6: the head names the place and holds Search and the one filled action, which opens the menu of ways to start. */}
+      <AppWorkspace.Head
+        views={<h2 class="notebooks-overview-title">{t().recentlyEdited}</h2>}
+        actions={
+          <>
+            <Button type="button" variant="ghost" size="sm" class="notebooks-overview-head-action" onClick={() => void openSearch()}>
+              <i class="ti ti-search" aria-hidden="true" /> <span class="notebooks-overview-head-label">{t().search}</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="notebooks-overview-head-action notebooks-overview-mobile-activity"
+              onClick={openMobileActivity}
+            >
+              <i class="ti ti-history" aria-hidden="true" /> <span class="notebooks-overview-head-label">{t().activity}</span>
+            </Button>
+          </>
+        }
+        primary={{ label: t().newNotebook, icon: "ti ti-plus", popup: "menu" }}
+      />
+      <Dropdown.Root
+        items={createMenuItems()}
+        align="end"
+        width="min(38rem, calc(100vw - 1rem))"
+        label={t().newNotebook}
+        disabled={notebookCreation.loading() || createFromTemplateMutation.loading()}
+        attach={() => document.querySelector<HTMLElement>(".notebooks-overview-workspace [data-workspace-primary]")}
+      />
       <AppWorkspace.Sidebar label={t().notebooks} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={false}>
@@ -368,77 +394,41 @@ export default function NotebooksOverview(props: Props) {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="notebooks-overview-main" width="content">
-          <div class="notebooks-overview-page">
-            <PanelHeader
-              as="h2"
-              size="lg"
-              title={t().recentlyEdited}
-              subtitle={t().recentNotesDescription}
-              actions={
-                <Dropdown.Root
-                  items={createMenuItems()}
-                  position="bottom-right"
-                  width="min(38rem, calc(100vw - 1rem))"
-                  label={t().newNotebook}
-                >
-                  <Dropdown.Trigger variant="primary" disabled={notebookCreation.loading() || createFromTemplateMutation.loading()}>
-                    <i class="ti ti-plus" aria-hidden="true" /> {t().newNotebook}
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              }
-            />
-            <div class="notebooks-overview-toolbar">
-              <Tag icon="ti ti-notebook" size="lg" class="notebooks-overview-scope">
-                {t().allNotebooks}
-              </Tag>
-              <div class="notebooks-overview-actions">
-                <Button type="button" variant="secondary" size="sm" onClick={() => void openSearch()}>
-                  <i class="ti ti-search" aria-hidden="true" /> {t().search}
-                </Button>
-                <Button type="button" variant="secondary" size="sm" class="notebooks-overview-mobile-activity" onClick={openMobileActivity}>
-                  <i class="ti ti-history" aria-hidden="true" /> {t().activity}
-                </Button>
-              </div>
-            </div>
-            <Paper class="notebooks-overview-list">
-              <Show
-                when={props.recentNotes.length > 0}
-                fallback={
-                  <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-56" />
-                }
-              >
-                <ol class="notebooks-overview-notes" aria-label={t().recentlyEdited}>
-                  <For each={props.recentNotes}>
-                    {(note) => (
-                      <li>
-                        <a href={`/app/notebooks/${note.notebookId}/notes/${note.id}`} class="notebooks-overview-note focus-ui">
-                          <span class="notebooks-overview-note-icon k2b-icon-tile app-accent-text" aria-hidden="true">
-                            <i class={note.notebookIcon || "ti ti-note"} />
-                          </span>
-                          <span class="notebooks-overview-note-copy">
-                            <span class="notebooks-overview-note-title">{note.title}</span>
-                            <span class="notebooks-overview-note-meta">
-                              <i class="ti ti-notebook" aria-hidden="true" /> {note.notebookName}
-                            </span>
-                          </span>
-                          <time
-                            class="notebooks-overview-note-time"
-                            datetime={note.updatedAt}
-                            title={dates.formatDateTime(note.updatedAt, props.dateConfig)}
-                          >
-                            {dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}
-                          </time>
-                          <i class="ti ti-chevron-right notebooks-overview-note-chevron" aria-hidden="true" />
-                        </a>
-                      </li>
-                    )}
-                  </For>
-                </ol>
-              </Show>
-            </Paper>
-          </div>
+        <AppWorkspace.Main class="notebooks-overview-main">
+          <Show
+            when={props.recentNotes.length > 0}
+            fallback={
+              <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-56" />
+            }
+          >
+            <ol class="notebooks-overview-notes k2b-divided" aria-label={t().recentlyEdited}>
+              <For each={props.recentNotes}>
+                {(note) => (
+                  <li>
+                    <a href={`/app/notebooks/${note.notebookId}/notes/${note.id}`} class="notebooks-overview-note focus-ui">
+                      <span class="notebooks-overview-note-icon k2b-icon-tile app-accent-text" aria-hidden="true">
+                        <i class={note.notebookIcon || "ti ti-note"} />
+                      </span>
+                      <span class="notebooks-overview-note-copy">
+                        <span class="notebooks-overview-note-title">{note.title}</span>
+                        <span class="notebooks-overview-note-meta">
+                          <i class="ti ti-notebook" aria-hidden="true" /> {note.notebookName}
+                        </span>
+                      </span>
+                      <time
+                        class="notebooks-overview-note-time"
+                        datetime={note.updatedAt}
+                        title={dates.formatDateTime(note.updatedAt, props.dateConfig)}
+                      >
+                        {dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}
+                      </time>
+                      <i class="ti ti-chevron-right notebooks-overview-note-chevron" aria-hidden="true" />
+                    </a>
+                  </li>
+                )}
+              </For>
+            </ol>
+          </Show>
         </AppWorkspace.Main>
 
         <AppWorkspace.Detail id="notebooks-overview-activity" open width="md" resizable={false} class="notebooks-overview-activity">

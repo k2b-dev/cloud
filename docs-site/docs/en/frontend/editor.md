@@ -256,7 +256,10 @@ with the application.
 `customLightInit`, `customDarkInit`, `rawLightInit`, and `rawDarkInit` use
 `--editor-measure` for the content width, defaulting to the available width.
 Set this variable on the editor or an ancestor to match the host's reading
-column. The themes retain their CodeMirror selectors, so host styles for
+column. The formatted themes set running text at 14 px on 22 px lines, the
+first heading level at 18 px, the second at 16 px, and deeper levels at the
+text size, all at weight 600; Markdown source stays 14 px mono. The themes
+retain their CodeMirror selectors, so host styles for
 comments and document layout can still target the editor.
 
 Source parsers also have direct `@k2b/editor/markdown/lib/*` entry points,

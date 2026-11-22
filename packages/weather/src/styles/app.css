@@ -4,3 +4,75 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Cloud flach: the place's page is one column of flat topics. The column draws the hairline between them
+   (`k2b-divided`); the two side-by-side topics share one line between them, drawn by their row (K2, one line, one
+   owner). */
+.weather-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--k2b-space-3);
+  padding: var(--k2b-space-6) var(--k2b-gutter);
+  text-align: center;
+}
+
+.weather-now__facts {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: var(--k2b-space-1) var(--k2b-space-6);
+  font-size: var(--k2b-font-size-row);
+  line-height: var(--k2b-h-label);
+}
+
+.weather-now__facts > div {
+  display: flex;
+  gap: var(--k2b-space-1);
+  color: var(--ui-text-dimmed);
+}
+
+.weather-now__facts dd {
+  color: var(--ui-text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 40rem) {
+  .weather-now__facts {
+    grid-template-columns: repeat(4, auto);
+  }
+}
+
+.weather-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.weather-columns > :not([hidden]) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
+}
+
+@media (min-width: 48rem) {
+  .weather-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weather-columns > :not([hidden]) ~ :not([hidden]) {
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--k2b-border);
+  }
+}
+
+/* The week is a list: one 40 px row per day with the hairline under each row but the last (K1, K7). */
+.weather-week [role="list"] {
+  gap: 0;
+}
+
+.weather-week [role="listitem"] {
+  min-height: var(--k2b-h-row);
+  padding-block: 0;
+}
+
+.weather-week [role="listitem"] + [role="listitem"] {
+  border-block-start: 1px solid var(--k2b-border);
+}

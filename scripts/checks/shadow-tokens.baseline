@@ -1,8 +1,6 @@
 # Known uses of layer shadow tokens that never float (K3) outside @k2b/ui, one per occurrence: <file> | <token>.
 # Lanes remove lines as they make a surface flat; the rule never adds lines.
 # `bun scripts/check.ts shadow-tokens --fix` removes lines whose finding is gone.
-packages/assistant/src/styles/app.css | --k2b-island-shadow
-packages/assistant/src/styles/app.css | --k2b-island-shadow
 packages/cloud/src/styles/blocks.css | --k2b-shadow-surface
 packages/cloud/src/styles/blocks.css | --k2b-shadow-surface
 packages/cloud/src/styles/code-page.css | --k2b-island-shadow
@@ -12,6 +10,4 @@ packages/cloud/src/styles/resource-search.css | --k2b-shadow-column-mid
 packages/cloud/src/styles/utilities-layout.css | --k2b-island-shadow
 packages/cloud/src/styles/utilities-markdown-table.css | --k2b-island-shadow
 packages/grids/src/styles/app.css | --k2b-island-shadow
-packages/notebooks/src/styles/app.css | --k2b-shadow-raised
-packages/notebooks/src/styles/app.css | --k2b-shadow-raised
 pwas/notes/src/styles.css | --k2b-island-shadow
