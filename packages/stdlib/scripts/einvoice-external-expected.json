@@ -1,0 +1,793 @@
+{
+  "standard-S": {
+    "number": "12115118",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [
+      "30",
+      "30"
+    ],
+    "totals": {
+      "net": "229.6",
+      "basis": "229.6",
+      "tax": "20.73",
+      "gross": "250.33",
+      "due": "250.33",
+      "prepaid": null,
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "S",
+        "rate": "6",
+        "reason": null,
+        "code": null,
+        "net": "183.23",
+        "tax": "10.99"
+      },
+      {
+        "category": "S",
+        "rate": "21",
+        "reason": null,
+        "code": null,
+        "net": "46.37",
+        "tax": "9.74"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "9.95",
+        "basis": null,
+        "net": "19.9",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "2",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "9.85",
+        "basis": null,
+        "net": "9.85",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "3",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "8.29",
+        "basis": null,
+        "net": "8.29",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "4",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "7.23",
+        "basis": null,
+        "net": "14.46",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "5",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "35",
+        "basis": null,
+        "net": "35",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "6",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "35",
+        "basis": null,
+        "net": "35",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "7",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "10.65",
+        "basis": null,
+        "net": "10.65",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "8",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "1.55",
+        "basis": null,
+        "net": "1.55",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "9",
+        "quantity": "3",
+        "unit": "H87",
+        "price": "4.79",
+        "basis": null,
+        "net": "14.37",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "10",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "8.29",
+        "basis": null,
+        "net": "8.29",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "11",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "8.29",
+        "basis": null,
+        "net": "16.58",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "12",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "9.95",
+        "basis": null,
+        "net": "9.95",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "13",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "1.65",
+        "basis": null,
+        "net": "3.3",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "14",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "10.8",
+        "basis": null,
+        "net": "10.8",
+        "category": "S",
+        "rate": "21"
+      },
+      {
+        "id": "15",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "3.9",
+        "basis": null,
+        "net": "3.9",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "16",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "3.8",
+        "basis": null,
+        "net": "7.6",
+        "category": "S",
+        "rate": "21"
+      },
+      {
+        "id": "17",
+        "quantity": "2",
+        "unit": "H87",
+        "price": "4.67",
+        "basis": null,
+        "net": "9.34",
+        "category": "S",
+        "rate": "21"
+      },
+      {
+        "id": "18",
+        "quantity": "1",
+        "unit": "H87",
+        "price": "18.63",
+        "basis": null,
+        "net": "18.63",
+        "category": "S",
+        "rate": "21"
+      },
+      {
+        "id": "19",
+        "quantity": "6",
+        "unit": "H87",
+        "price": "17.02",
+        "basis": null,
+        "net": "102.12",
+        "category": "S",
+        "rate": "6"
+      },
+      {
+        "id": "20",
+        "quantity": "6",
+        "unit": "H87",
+        "price": "18.33",
+        "basis": null,
+        "net": "-109.98",
+        "category": "S",
+        "rate": "6"
+      }
+    ]
+  },
+  "mixed-S-E": {
+    "number": "TOSL108",
+    "typeCode": "380",
+    "currency": "NOK",
+    "paymentCodes": [
+      "30",
+      "30"
+    ],
+    "totals": {
+      "net": "1436.5",
+      "basis": "1436.5",
+      "tax": "365.28",
+      "gross": "1801.78",
+      "due": "801.78",
+      "prepaid": "1000",
+      "allowances": "100",
+      "charges": "100"
+    },
+    "groups": [
+      {
+        "category": "S",
+        "rate": "25",
+        "reason": null,
+        "code": null,
+        "net": "1460.5",
+        "tax": "365.13"
+      },
+      {
+        "category": "S",
+        "rate": "15",
+        "reason": null,
+        "code": null,
+        "net": "1",
+        "tax": "0.15"
+      },
+      {
+        "category": "E",
+        "rate": "0",
+        "reason": "Exempt New Means of Transport",
+        "code": null,
+        "net": "-25",
+        "tax": "0"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "1",
+        "unit": "NAR",
+        "price": "1273",
+        "basis": "1273",
+        "net": "1273",
+        "category": "S",
+        "rate": "25"
+      },
+      {
+        "id": "2",
+        "quantity": "-1",
+        "unit": "NAR",
+        "price": "3.96",
+        "basis": "3.96",
+        "net": "-3.96",
+        "category": "S",
+        "rate": "15"
+      },
+      {
+        "id": "3",
+        "quantity": "2",
+        "unit": "NAR",
+        "price": "2.48",
+        "basis": "2.48",
+        "net": "4.96",
+        "category": "S",
+        "rate": "15"
+      },
+      {
+        "id": "4",
+        "quantity": "-1",
+        "unit": "NAR",
+        "price": "25",
+        "basis": "25",
+        "net": "-25",
+        "category": "E",
+        "rate": "0"
+      },
+      {
+        "id": "5",
+        "quantity": "250",
+        "unit": "MTR",
+        "price": "0.75",
+        "basis": "0.75",
+        "net": "187.5",
+        "category": "S",
+        "rate": "25"
+      }
+    ]
+  },
+  "outside-scope-O": {
+    "number": "INVOICE_test_7",
+    "typeCode": "380",
+    "currency": "SEK",
+    "paymentCodes": [
+      "30",
+      "30"
+    ],
+    "totals": {
+      "net": "3200",
+      "basis": "3200",
+      "tax": null,
+      "gross": "3200",
+      "due": "3200",
+      "prepaid": null,
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "O",
+        "rate": null,
+        "reason": "Tax",
+        "code": null,
+        "net": "3200",
+        "tax": "0"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "1",
+        "unit": "C62",
+        "price": "2500",
+        "basis": null,
+        "net": "2500",
+        "category": "O",
+        "rate": null
+      },
+      {
+        "id": "2",
+        "quantity": "1",
+        "unit": "C62",
+        "price": "700",
+        "basis": null,
+        "net": "700",
+        "category": "O",
+        "rate": null
+      }
+    ]
+  },
+  "reverse-charge-AE": {
+    "number": "inv-4711",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [
+      "30"
+    ],
+    "totals": {
+      "net": "12.44",
+      "basis": "12.44",
+      "tax": "0.00",
+      "gross": "12.44",
+      "due": "12.44",
+      "prepaid": "0.00",
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "AE",
+        "rate": "0.00",
+        "reason": "Reverse charge",
+        "code": null,
+        "net": "12.44",
+        "tax": "0.00"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "1024",
+        "unit": "E34",
+        "price": "0.01",
+        "basis": null,
+        "net": "12.44",
+        "category": "AE",
+        "rate": "0.00"
+      }
+    ]
+  },
+  "export-G": {
+    "number": "9876/54/321",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [
+      "57"
+    ],
+    "totals": {
+      "net": "150",
+      "basis": "150",
+      "tax": "0",
+      "gross": "150",
+      "due": "150",
+      "prepaid": null,
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "G",
+        "rate": "0",
+        "reason": "non-profit",
+        "code": null,
+        "net": "150",
+        "tax": "0"
+      }
+    ],
+    "lines": [
+      {
+        "id": "Service Fee",
+        "quantity": "1",
+        "unit": "XPP",
+        "price": "150",
+        "basis": null,
+        "net": "150",
+        "category": "G",
+        "rate": "0"
+      }
+    ]
+  },
+  "intra-community-K": {
+    "number": "47110818",
+    "typeCode": "389",
+    "currency": "EUR",
+    "paymentCodes": [
+      "58"
+    ],
+    "totals": {
+      "net": "2000.00",
+      "basis": "2000.00",
+      "tax": "0.00",
+      "gross": "2000.00",
+      "due": "2000.00",
+      "prepaid": null,
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "K",
+        "rate": "0",
+        "reason": "Mehrwertsteuerbefreiung für die innergemeinschaftliche Lieferung von Waren und Dienstleistungen in der EU",
+        "code": null,
+        "net": "2000",
+        "tax": "0"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "10",
+        "unit": "H87",
+        "price": "100",
+        "basis": "1",
+        "net": "1000",
+        "category": "K",
+        "rate": "0"
+      },
+      {
+        "id": "2",
+        "quantity": "10",
+        "unit": "H87",
+        "price": "100",
+        "basis": "1",
+        "net": "1000",
+        "category": "K",
+        "rate": "0"
+      }
+    ]
+  },
+  "exempt-E": {
+    "number": "123",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [
+      "58"
+    ],
+    "totals": {
+      "net": "1.00",
+      "basis": "1.00",
+      "tax": "0.00",
+      "gross": "1.00",
+      "due": "1.00",
+      "prepaid": "0.00",
+      "allowances": "0.00",
+      "charges": "0.00"
+    },
+    "groups": [
+      {
+        "category": "E",
+        "rate": "0.00",
+        "reason": "Kein Ausweis von Umsatzsteuer, da Kleinunternehmer gemäß § 19 UStG",
+        "code": null,
+        "net": "1.00",
+        "tax": "0.00"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "1.0000",
+        "unit": "H87",
+        "price": "1.0000",
+        "basis": "1.0000",
+        "net": "1.00",
+        "category": "E",
+        "rate": "0.00"
+      }
+    ]
+  },
+  "zero-rated-Z": {
+    "number": "471102",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [],
+    "totals": {
+      "net": "3273.00",
+      "basis": "3273.00",
+      "tax": "0.00",
+      "gross": "3273.00",
+      "due": "3273.00",
+      "prepaid": "0.00",
+      "allowances": "0.00",
+      "charges": "0.00"
+    },
+    "groups": [
+      {
+        "category": "Z",
+        "rate": "0.00",
+        "reason": null,
+        "code": null,
+        "net": "3273.00",
+        "tax": "0.00"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "1.0000",
+        "unit": "H87",
+        "price": "205.0000",
+        "basis": null,
+        "net": "205.00",
+        "category": "Z",
+        "rate": "0.00"
+      },
+      {
+        "id": "2",
+        "quantity": "52.0000",
+        "unit": "H87",
+        "price": "59.0000",
+        "basis": null,
+        "net": "3068.00",
+        "category": "Z",
+        "rate": "0.00"
+      }
+    ]
+  },
+  "price-basis-HUF": {
+    "number": "21/001003559/996",
+    "typeCode": "380",
+    "currency": "HUF",
+    "paymentCodes": [
+      "70"
+    ],
+    "totals": {
+      "net": "69180.00",
+      "basis": "69180.00",
+      "tax": "18679.00",
+      "gross": "87859.00",
+      "due": "87859.00",
+      "prepaid": "0.00",
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "S",
+        "rate": "27.00",
+        "reason": null,
+        "code": null,
+        "net": "69180.00",
+        "tax": "18679.00"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "64.",
+        "unit": "LTR",
+        "price": "36109.00",
+        "basis": "100.",
+        "net": "23440.00",
+        "category": "S",
+        "rate": "27.00"
+      },
+      {
+        "id": "2",
+        "quantity": "56.81",
+        "unit": "LTR",
+        "price": "37134.00",
+        "basis": "100.",
+        "net": "21389.00",
+        "category": "S",
+        "rate": "27.00"
+      },
+      {
+        "id": "3",
+        "quantity": "63.97",
+        "unit": "LTR",
+        "price": "37550.00",
+        "basis": "100.",
+        "net": "24351.00",
+        "category": "S",
+        "rate": "27.00"
+      }
+    ]
+  },
+  "optional-empty-text": {
+    "number": "471102",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [],
+    "totals": {
+      "net": "202.70",
+      "basis": "193.77",
+      "tax": "21.30",
+      "gross": "215.07",
+      "due": "165.07",
+      "prepaid": "50.00",
+      "allowances": "14.73",
+      "charges": "5.80"
+    },
+    "groups": [
+      {
+        "category": "S",
+        "rate": "7.00",
+        "reason": null,
+        "code": null,
+        "net": "129.37",
+        "tax": "9.06"
+      },
+      {
+        "category": "S",
+        "rate": "19.00",
+        "reason": null,
+        "code": null,
+        "net": "64.40",
+        "tax": "12.24"
+      }
+    ],
+    "lines": [
+      {
+        "id": "1",
+        "quantity": "3.0000",
+        "unit": "MTK",
+        "price": "3.3333",
+        "basis": null,
+        "net": "10.00",
+        "category": "S",
+        "rate": "19.00"
+      },
+      {
+        "id": "2",
+        "quantity": "5.0000",
+        "unit": "KGM",
+        "price": "5.5000",
+        "basis": null,
+        "net": "27.50",
+        "category": "S",
+        "rate": "7.00"
+      },
+      {
+        "id": "3",
+        "quantity": "20.0000",
+        "unit": "H87",
+        "price": "5.4900",
+        "basis": null,
+        "net": "109.80",
+        "category": "S",
+        "rate": "7.00"
+      },
+      {
+        "id": "4",
+        "quantity": "20.0000",
+        "unit": "C62",
+        "price": "2.7700",
+        "basis": null,
+        "net": "55.40",
+        "category": "S",
+        "rate": "19.00"
+      }
+    ]
+  },
+  "xrechnung-2.3": {
+    "number": "123456XX",
+    "typeCode": "380",
+    "currency": "EUR",
+    "paymentCodes": [
+      "58"
+    ],
+    "totals": {
+      "net": "314.86",
+      "basis": "314.86",
+      "tax": "22.04",
+      "gross": "336.9",
+      "due": "336.9",
+      "prepaid": null,
+      "allowances": null,
+      "charges": null
+    },
+    "groups": [
+      {
+        "category": "S",
+        "rate": "7",
+        "reason": null,
+        "code": null,
+        "net": "314.86",
+        "tax": "22.04"
+      }
+    ],
+    "lines": [
+      {
+        "id": "Zeitschrift [...]",
+        "quantity": "1",
+        "unit": "XPP",
+        "price": "288.79",
+        "basis": null,
+        "net": "288.79",
+        "category": "S",
+        "rate": "7"
+      },
+      {
+        "id": "Porto + Versandkosten",
+        "quantity": "1",
+        "unit": "XPP",
+        "price": "26.07",
+        "basis": null,
+        "net": "26.07",
+        "category": "S",
+        "rate": "7"
+      }
+    ]
+  }
+}

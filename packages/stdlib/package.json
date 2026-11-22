@@ -1,0 +1,81 @@
+{
+  "name": "@k2b/stdlib",
+  "version": "0.36.0",
+  "description": "Generic headless utility library -- crypto, encoding, dates, files, images, SolidJS primitives",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k2b-dev/stdlib.git"
+  },
+  "license": "ISC",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/_test-helpers.ts"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "test:finance-conformance": "bun scripts/finance-conformance.ts",
+    "datev:fixtures": "bun scripts/datev-xml-fixtures.ts",
+    "test:einvoice-external": "bun scripts/einvoice-external.ts",
+    "bench:dates": "bun benchmarks/dates.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./qr": "./src/qr.ts",
+    "./browser": "./src/browser/index.ts",
+    "./solid": "./src/solid/index.ts",
+    "./bun": "./src/bun/index.ts",
+    "./finance": "./src/finance/index.ts",
+    "./finance/validate": "./src/finance/validate.ts"
+  },
+  "dependencies": {
+    "@types/big.js": "^7.0.0",
+    "big.js": "^7.0.1",
+    "dayjs": "^1.11.0"
+  },
+  "peerDependencies": {
+    "solid-js": "",
+    "lean-qr": "",
+    "zod": "^4.4.3",
+    "ibantools": "^4.5.4",
+    "libxml2-wasm": "0.6.0",
+    "saxes": "^6.0.0",
+    "pdf-lib": "1.17.1"
+  },
+  "peerDependenciesMeta": {
+    "solid-js": {
+      "optional": true
+    },
+    "lean-qr": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "ibantools": {
+      "optional": true
+    },
+    "libxml2-wasm": {
+      "optional": true
+    },
+    "saxes": {
+      "optional": true
+    },
+    "pdf-lib": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "ibantools": "4.5.4",
+    "lean-qr": "^2.0.0",
+    "libxml2-wasm": "0.6.0",
+    "saxes": "6.0.0",
+    "solid-js": "^1.9.0",
+    "typescript": "^5.0.0",
+    "zod": "4.4.3",
+    "pdf-lib": "1.17.1"
+  }
+}

@@ -1,0 +1,91 @@
+[
+  {
+    "name": "standard-S",
+    "categories": [
+      "S"
+    ],
+    "url": "https://raw.githubusercontent.com/ConnectingEurope/eInvoicing-EN16931/a519ba02a59e2775436428f57ee96899feb1da8c/cii/examples/CII_example1.xml",
+    "sha256": "0c12e3ca9aab58299e6271b89d061274694c62159510ca2d848f13d287ee4f99"
+  },
+  {
+    "name": "mixed-S-E",
+    "categories": [
+      "E",
+      "S"
+    ],
+    "url": "https://raw.githubusercontent.com/ConnectingEurope/eInvoicing-EN16931/a519ba02a59e2775436428f57ee96899feb1da8c/cii/examples/CII_business_example_01.xml",
+    "sha256": "2ce8286333f4c2019166c505642963e1222f54c18558ae4210fd41fd5d526b2f"
+  },
+  {
+    "name": "outside-scope-O",
+    "categories": [
+      "O"
+    ],
+    "url": "https://raw.githubusercontent.com/ConnectingEurope/eInvoicing-EN16931/a519ba02a59e2775436428f57ee96899feb1da8c/cii/examples/CII_example7.xml",
+    "sha256": "0f3ccc7dd0f96e871099f6bab84d6c80cb39e7cd87512d09a76b670338a9fd7f"
+  },
+  {
+    "name": "reverse-charge-AE",
+    "categories": [
+      "AE"
+    ],
+    "url": "https://raw.githubusercontent.com/ZUGFeRD/mustangproject/7869b59a0ff17636355e4ed44a4518d190683155/library/src/test/resources/XRechnung_internalRecalcBug.xml",
+    "sha256": "037a0e3510d560ee9f254dec09166d027c38a30e34365a00edef5204292b8815"
+  },
+  {
+    "name": "export-G",
+    "categories": [
+      "G"
+    ],
+    "url": "https://raw.githubusercontent.com/ZUGFeRD/mustangproject/7869b59a0ff17636355e4ed44a4518d190683155/library/src/test/resources/test_invoice_contract.xml",
+    "sha256": "3ab6ddef498b60d87c91dd18984cc615871b2bf16dcb229042975c80e8decd82"
+  },
+  {
+    "name": "intra-community-K",
+    "categories": [
+      "K"
+    ],
+    "url": "https://raw.githubusercontent.com/stephanstapel/ZUGFeRD-csharp/743807b2752636a867ee8eae7a00696d45dbf33e/documentation/zugferd240de/Beispiele/3.%20EN16931/EN16931_Innergemeinschaftliche_Lieferungen/EN16931_Innergemeinschaftliche_Lieferungen.xml",
+    "sha256": "887c67159f78c8294dd13ad97c14e343a163a285cce5ed790187b45b88f8e4ad"
+  },
+  {
+    "name": "exempt-E",
+    "categories": [
+      "E"
+    ],
+    "url": "https://raw.githubusercontent.com/stephanstapel/ZUGFeRD-csharp/743807b2752636a867ee8eae7a00696d45dbf33e/documentation/zugferd240de/Beispiele/3.%20EN16931/EN16931_Kleinunternehmer_ohne_USt_ID/EN16931_Kleinunternehmer_ohneUStId.xml",
+    "sha256": "f9420b47682091731acd71929cb20cb33c2349c8239e606172e32d7e2277aeb0"
+  },
+  {
+    "name": "zero-rated-Z",
+    "categories": [
+      "Z"
+    ],
+    "url": "https://raw.githubusercontent.com/stephanstapel/ZUGFeRD-csharp/743807b2752636a867ee8eae7a00696d45dbf33e/documentation/zugferd240de/Beispiele/3.%20EN16931/EN16931_Photovoltaik/EN16931_Photovoltaik.xml",
+    "sha256": "78d7d51e5684feaeca0d474eaba50fae0f73e8e6c3cb8fb531839acb38b23d14"
+  },
+  {
+    "name": "price-basis-HUF",
+    "categories": [
+      "S"
+    ],
+    "url": "https://raw.githubusercontent.com/ConnectingEurope/eInvoicing-EN16931/a519ba02a59e2775436428f57ee96899feb1da8c/cii/examples/huf_example_cii.xml",
+    "sha256": "fad73604fc1ff6ac4c762687bdf394d1f4fe14b5b8830d607abf1c1cdfc68758"
+  },
+  {
+    "name": "optional-empty-text",
+    "categories": [
+      "S"
+    ],
+    "url": "https://raw.githubusercontent.com/horstoeko/zugferd/b6daabd92d35357f1f6e1c0603d32c3e10dfc51f/tests/assets/xml_en16931_2.xml",
+    "sha256": "eb202ecd7b1f6eae1d83e7b667fb1fb01e22a91e2a01ed491acc6046cd2e638d"
+  },
+  {
+    "name": "xrechnung-2.3",
+    "categories": [
+      "S"
+    ],
+    "url": "https://raw.githubusercontent.com/ZUGFeRD/mustangproject/7869b59a0ff17636355e4ed44a4518d190683155/validator/src/test/resources/validXRV23.xml",
+    "sha256": "3ea06614b7d26325231abe1832b3b81541462b41eef1ee52d12815abe8985c55"
+  }
+]
