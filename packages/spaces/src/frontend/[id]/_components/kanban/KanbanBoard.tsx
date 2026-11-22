@@ -764,7 +764,7 @@ export default function KanbanBoard(props: Props) {
     // After a keyboard drop the card's grip takes the focus back once the board shows the card in its place, or the
     // strip of the folded column it went into; unless the person moved on meanwhile.
     if (focusIn) {
-      // The redraw can come frames later, inside a view transition; watch for a while and stop at the next move.
+      // The redraw can come frames later; watch for a while and stop at the next move.
       const restore = (attempt = 0) => {
         if (attempt > 30) return;
         if (!document.activeElement || document.activeElement === document.body) {
@@ -996,30 +996,17 @@ export default function KanbanBoard(props: Props) {
       );
   });
 
-  /**
-   * On a card's grip, the arrow keys walk the board as on the card, until Space lifts the card: the engine's quick step,
-   * which moves a row at once, would move a card for someone who only wants to go to the next one.
-   */
-  const handleGripKeyDown = (event: KeyboardEvent) => {
-    const grip = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-sortable-handle]") : null;
-    if (!grip || dragStatus() || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    const direction = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" }[event.key] as
-      | "up"
-      | "down"
-      | "left"
-      | "right"
-      | undefined;
-    if (!direction && event.key !== "Home" && event.key !== "End") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!direction) return;
-    grip.closest("article")?.querySelector<HTMLElement>("[data-spaces-kanban-card]")?.focus({ preventScroll: true });
-    navigateCards(direction);
-  };
   const handleBoardKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], button')) return;
+    // A card's grip passes the arrows on while no lift holds the card (K7); they walk the board as on the card.
+    const grip = target?.closest<HTMLElement>("[data-sortable-handle]");
+    if (
+      target?.closest(
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], button:not([data-sortable-handle])',
+      )
+    )
+      return;
 
     const key = event.key.toLowerCase();
     const direction = {
@@ -1031,6 +1018,7 @@ export default function KanbanBoard(props: Props) {
     if (direction) {
       event.preventDefault();
       event.stopPropagation();
+      grip?.closest("article")?.querySelector<HTMLElement>("[data-spaces-kanban-card]")?.focus({ preventScroll: true });
       navigateCards(direction);
     }
   };
@@ -1133,7 +1121,6 @@ export default function KanbanBoard(props: Props) {
         aria-label={t.kanban}
         aria-describedby={`spaces-kanban-shortcuts-${props.spaceId}`}
         onKeyDown={handleBoardKeyDown}
-        on:keydown={{ handleEvent: handleGripKeyDown, capture: true }}
         onFocusIn={(event) => {
           setFocusedItemId(event.target.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId);
           setFocusedGrip(event.target.closest<HTMLElement>("[data-sortable-handle]")?.dataset.sortableHandle ?? null);
@@ -1328,8 +1315,7 @@ export default function KanbanBoard(props: Props) {
                           />
                         </span>
                         <Show when={props.canWrite}>
-                          {/* On touch, the buttons' hit areas reach past this box on purpose; the layout self-check skips it. */}
-                          <span class="spaces-kanban-card__tools" data-layout-check="skip">
+                          <span class="spaces-kanban-card__tools">
                             <Show when={isMovingThis()}>
                               <i class="ti ti-loader-2 animate-spin spaces-kanban-card__busy" aria-hidden="true" />
                             </Show>
@@ -1430,7 +1416,7 @@ export default function KanbanBoard(props: Props) {
                       <Show when={listDisabled() && draggedItemId()}>
                         <span class="spaces-kanban-lane__refuse">{t.virtualColumnNoDrop}</span>
                       </Show>
-                      <span class="spaces-kanban-lane__tools" data-layout-check="skip">
+                      <span class="spaces-kanban-lane__tools">
                         <Dropdown.Root
                           position="bottom-left"
                           items={[
