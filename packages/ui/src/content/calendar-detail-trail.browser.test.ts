@@ -384,6 +384,21 @@ describe("dayHours calendar beside the workspace detail", () => {
     });
   }
 
+  // Beside the flat md Detail (380 px, no inset) the whole week fits at 1280 px: no strip scrolls, Sunday's event lies
+  // whole before the panel and takes the pointer. The scroll cases above therefore use the lg Detail.
+  test("1280×800: beside the md panel the whole dayHours week fits, with Sunday before the panel", async () => {
+    const { page } = await load(1280, 800, "week", {}, "md", true);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(shape.overflow).toBe(0);
+      expect(shape.scrollLeft).toBe(0);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft + 0.5);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
   // A smooth reveal starts a frame before the strip reads it; a resize or settle on the way must not stop or undo it.
   test("1280×800 with motion: the dayHours week scrolls Sunday out beside the panel", async () => {
     const { page } = await load(1280, 800, "week", motion, "lg", true);
