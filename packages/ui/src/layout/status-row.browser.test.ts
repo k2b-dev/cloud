@@ -232,15 +232,11 @@ for (const width of [1440, 768, 390])
 // sign and the time do not fit (1100 px with Detail) does the time wait in the hint, whole. At 441 px the time sits on
 // the edge of fitting and depends on the engine's text metrics (WebKit fits it, Chromium does not): there it is whole
 // or wholly away.
-// Rule 15: what is wrong shows at least about a word (4.5 em, or all of it if shorter) or not at all; a letter and an
-// ellipsis help nobody, so then the sign carries the state and the hint keeps the words. At 520 px the label sits on
-// the edge of a word and depends on the engine's text metrics (WebKit keeps a word, Chromium does not): there it is a
-// word or wholly away, never cut.
-for (const [viewport, width, time, words, label] of [
-  [390, 390, "shown", false, "word"],
-  [1440, 441, "whole or away", false, "away"],
-  [1440, 520, "shown", false, "word or away"],
-  [1440, 760, "shown", true, "word"],
+for (const [viewport, width, time, words] of [
+  [390, 390, "shown", false],
+  [1440, 441, "whole or away", false],
+  [1440, 520, "shown", false],
+  [1440, 760, "shown", true],
 ] as const)
   test(`a ${width} px row with a disturbance keeps its filters and the whole time of the next attempt`, async () => {
     const html = renderToString(() =>
@@ -284,31 +280,16 @@ for (const [viewport, width, time, words, label] of [
             time.getBoundingClientRect().top >= middle.top - 0.5 &&
             time.getBoundingClientRect().bottom <= middle.bottom + 0.5,
           timeAway: time.getBoundingClientRect().top >= middle.bottom - 0.5,
-          // Shown means wider than the 1 px of a visually hidden box, on the row's line.
-          words: (() => {
-            const box = document.querySelector(".k2b-status-row__next-label")!.getBoundingClientRect();
-            return (
-              box.width > 1 && box.top >= middle.top - 0.5 && box.bottom <= middle.bottom + 0.5 && inside(".k2b-status-row__next-label")
-            );
-          })(),
-          label: (() => {
-            const element = document.querySelector<HTMLElement>(".k2b-status-row__state > b")!;
-            const box = element.getBoundingClientRect();
-            const shown = box.width > 1 && box.top >= middle.top - 0.5 && box.bottom <= middle.bottom + 0.5;
-            const word = Math.min(4.5 * Number.parseFloat(getComputedStyle(element).fontSize), element.scrollWidth);
-            return shown ? (box.width >= word - 0.5 && box.right <= middle.right + 0.5 ? "word" : "cut") : "away";
-          })(),
+          words:
+            document.querySelector(".k2b-status-row__next-label")!.getClientRects().length > 0 && inside(".k2b-status-row__next-label"),
           sign: inside(".k2b-status-row__sign") && inside(".k2b-status-row__state"),
           hint: document.querySelector(".k2b-status-row__state")!.getAttribute("title"),
         };
       });
-      const { timeShown, timeAway, words: wordsShown, label: labelState, ...rest } = shape;
-      // The time is whole on the row's line or wholly away, never cut; the label is at least a word or away.
-      expect(wordsShown).toBe(words);
-      if (label === "word or away") expect(["word", "away"]).toContain(labelState);
-      else expect(labelState).toBe(label);
-      if (time === "whole or away") expect(timeShown !== timeAway).toBe(true);
-      else expect({ timeShown, timeAway }).toEqual({ timeShown: true, timeAway: false });
+      const { timeShown, timeAway, words: wordsShown, ...rest } = shape;
+      // The time is whole on the row's line or wholly away, never cut.
+      if (time === "whole or away") expect({ either: timeShown !== timeAway, words: wordsShown }).toEqual({ either: true, words });
+      else expect({ timeShown, timeAway, words: wordsShown }).toEqual({ timeShown: true, timeAway: false, words });
       expect(rest).toEqual({
         filters: true,
         time: "14:05",

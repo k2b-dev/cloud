@@ -6388,12 +6388,8 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   overflow: hidden;
 }
 
-/* What is wrong shortens with an ellipsis, but never below about a word (rule
-   15): a label cut to a letter helps nobody. Below that it waits on the
-   clipped line, and a narrow state hides it (below), so the sign carries the
-   state and the hint and assistive technology keep the words. */
 .k2b-ui .k2b-status-row__state > b {
-  min-width: min(4.5em, max-content);
+  min-width: 0;
   max-width: max-content;
   flex: 1 1 0;
   overflow: hidden;
@@ -6423,28 +6419,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   container: k2b-status-state / inline-size;
 }
 
-/* Hidden for the eye only: screen readers still read the whole state. */
 @container k2b-status-state (width < 15rem) {
   .k2b-ui .k2b-status-row__next-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
-/* Too narrow for the sign, about a word, and the time: the label goes whole. */
-@container k2b-status-state (width < 8.5rem) {
-  .k2b-ui .k2b-status-row__state > b {
-    position: absolute;
-    width: 1px;
-    min-width: 0;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+    display: none;
   }
 }
 

@@ -165,13 +165,6 @@ The lead statement keeps its place and size in every state. The status row
 draws no line above itself, because the head line is there; `line` adds a
 hairline below it only where the list below has no column head.
 
-When room runs short, the filters keep their width and a disturbance gives way
-in steps (K15). First the words "next attempt" go, and the time stays. What is
-wrong shortens with an ellipsis, but never below about a word: a label it
-would cut to a letter goes whole, and the sign carries the state. Only where
-even the sign and the time do not fit does the time go, whole. Text that
-leaves the row stays in the state's hint and for screen readers.
-
 ### Reading column
 
 A column of running text, such as a note, has neither head nor status row
