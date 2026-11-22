@@ -65,10 +65,10 @@ test("the list names every app by name with its state in words and its most impo
   expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
   expect(await row("tools").innerText()).toContain("Zugriff: niemand verwaltet ihn");
   // Without an open app the list is the whole page, with version and address.
-  expect(await page.locator("thead th").allInnerTexts()).toEqual(["App", "Zustand", "Version", "Adresse", "Problem"]);
+  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Version", "Adresse", "Problem"]);
   // Status keeps one place: every row's dot starts at the same x, whatever the word ("Läuft", "Nicht gestartet").
   const dots = await page
-    .locator("tbody tr")
+    .locator("tbody tr:not(.k2b-data-table__details)")
     .evaluateAll((elements) =>
       elements.map((element) => Math.round(element.querySelector(".k2b-status-badge__dot")!.getBoundingClientRect().left)),
     );
@@ -123,6 +123,15 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
         return {
           gutter,
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          // A state word is never cut (K15).
+          cutStates: Array.from(document.querySelectorAll("[data-apps-list] tbody .k2b-status-badge"))
+            .flatMap((badge) => [badge, ...Array.from(badge.querySelectorAll("*"))])
+            .filter((element) => element.scrollWidth > element.clientWidth + 0.5 && element.clientWidth > 0).length,
+          // The primary list never scrolls sideways; columns it cannot show move into the row's details.
+          listSideways: (() => {
+            const wrap = document.querySelector("[data-apps-list] .k2b-table-wrap");
+            return wrap ? wrap.scrollWidth - wrap.clientWidth : null;
+          })(),
           figures,
           date:
             dateRect && cellRect && address
@@ -137,6 +146,9 @@ test("with classic scrollbars, key figures leave whole behind +n and an added da
       const label = `${width} px ${query}`;
       expect(result.gutter, label).toBeGreaterThan(0);
       expect(result.sideways, label).toBeLessThanOrEqual(0);
+      expect(result.listSideways, label).not.toBeNull();
+      expect(result.listSideways!, label).toBeLessThanOrEqual(0);
+      expect(result.cutStates, label).toBe(0);
       const states = result.figures.map((figure) => figure.state);
       expect(states[0], label).toBe("whole");
       expect(states, label).not.toContain("cut");
@@ -545,11 +557,17 @@ test("a search that finds nothing says so in place and leads back to every app",
   expect(new URL(page.url()).search).toBe("");
 }, 20_000);
 
-test("on a phone the list keeps name and state, with the problem under the name", async () => {
+test("on a phone the list keeps name and state, with the problem under the name and the rest in its details", async () => {
   await open("", 390);
-  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand"]);
+  // Version, address and problem wait in the row's details (priority 3) instead of widening the list.
+  expect(await page.locator("thead th:visible").allInnerTexts()).toEqual(["App", "Zustand", "Details"]);
   expect(await row("pulse").innerText()).toContain("Start abgelehnt");
   expect(await row("chat").innerText()).toContain("/chat");
+  await row("pulse").locator(".k2b-data-table__details-button").click();
+  const details = page.locator("tr.k2b-data-table__details:visible");
+  await details.first().waitFor();
+  const text = await details.first().innerText();
+  for (const value of ["0.52.1", "/pulse", "Start abgelehnt"]) expect(text).toContain(value);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }, 20_000);
 
