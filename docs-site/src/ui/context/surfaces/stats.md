@@ -89,7 +89,7 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of at least 136 px.
+`size="lg"` is the dashboard tile, at least 136 px high. Its figure is the lead role (18 px), the same as `md`: the type roles have no larger size (K11), so `lg` differs from `md` only in the tile's height and room.
 When the grid is 600 px wide or less, or a tile is narrower than 200 px, the
 change badge moves under the figure in every size and its slot is kept free in
 every state; the `lg` tile is then at least 172 px.
@@ -117,8 +117,8 @@ same; only the grid chooses the form, and a cell outside a grid stays a tile.
 - **Columns:** equal columns with a 1 px line in `--k2b-border` between them;
   the first figure of a row has none. `columns` sets the count (4 by default).
   In a container of 34rem or less every grid with two or more columns shows two.
-- **Three rows:** label (13 px), figure (28 px; `size="lg"` 36 px for a main
-  figure, `sm` 20 px) and a third line (13 px). The third line is always
+- **Three rows:** label (13 px), figure (the lead role, 18/24 px, for `md` and
+  `lg` alike; `sm` the body role, 14/20 px) and a third line (13 px). The third line is always
   reserved, also when a figure has nothing there, so all figures stand on one
   line. It holds `sub`, the change and the comparison, or an `accent`, each as
   words with an icon, no pill.

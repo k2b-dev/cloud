@@ -1,35 +1,46 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { TYPE_LINE_HEIGHTS, TYPE_SIZES, TYPE_WEIGHTS } from "../fixtures/type-roles";
 import { workspacePackages } from "../workspace";
 import { compareBaseline, type KeyedFinding } from "./baseline";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
- * K11 of Cloud flach: four type roles are the only text sizes in the controls — meta 12, row 13, body 14, lead 18 px —
- * and the weights are 400, 500, and 600. In CSS a `font-size` reads a role token (`var(--k2b-font-size-meta|row|body|
- * lead)`), a keyword such as `inherit`, or `1em`; a custom property named `*font-size*` follows the same rule. Two
- * places keep their own sizes by kind, recognised from the selector: reading text (Markdown and the editors, which
- * may set headings in em) and signs (icons, avatar initials, emoji), which size with their box. Anything else names its
- * reason in a comment on its line or the line above: `type-scale: allow <reason>`. In TSX, Tailwind sizes follow the
- * scale: `text-meta|row|body|lead`, `text-xs` (12/16) and `text-sm` (14/20), or an arbitrary value that passes;
- * `font-bold` and lighter or heavier weights fail. `@k2b/ui` has no known findings; the applications' known findings
- * live in `type-scale.baseline`, which only shrinks.
+ * K11 of Cloud flach: text uses the four type roles of `scripts/fixtures/type-roles.ts`, which reads them from their
+ * tokens in `packages/ui/src/styles/index.css`. One rule per property:
+ *
+ * - `font-size` is a role token (`var(--k2b-font-size-*)`), `inherit`, `1em`, or `0`; outside @k2b/ui also a role size;
+ * - `line-height` is a role token (`var(--k2b-line-height-*)`), `inherit`, or one of the roles' line heights;
+ * - `font-weight` is 400, 500, 600, `normal`, or a weight token.
+ *
+ * A custom property named after its property (`*font-size*`, `*line-height*`, `*weight*`) follows the same rule, and a
+ * `var()` of another name fails. Signs (`i`, `svg`, `.ti`, avatars, emoji) and print output are not text; reading text
+ * (`.k2b-content-markdown`, `.k2b-ste-formatted`, `.ProseMirror`) adds 16 px headings and em or unitless leading; a
+ * focused field under `pointer: coarse` keeps the 16 px that stops iOS zooming. Anything else names its reason on its
+ * line or the line above, `type-scale: allow <reason>`, and every such allowance is a line in the baseline, so a new one
+ * is a reviewed change. In TSX the same holds for Tailwind (`text-*`, `leading-*`, `font-*`) and style objects.
+ * @k2b/ui has no findings; the apps' findings are baseline lines that only shrink.
  */
 const RULE = "type-scale";
 const HEADER = [
-  "Known text sizes and weights outside the four type roles (K11), one per occurrence:",
-  "<file> | <size|weight> | <value>. App lanes remove lines as they migrate; the rule never adds lines.",
-  "`bun scripts/check.ts type-scale --fix` removes lines whose finding is gone. @k2b/ui never appears here.",
+  "Known text sizes, line heights, and weights outside the four type roles (K11), and every `type-scale: allow`, one",
+  "per occurrence: <file> | <size|line|weight|allow> | <value>. Lanes remove lines as they migrate; the rule never adds",
+  "lines. `bun scripts/check.ts type-scale --fix` removes lines whose finding is gone. Only allowances name @k2b/ui.",
 ];
 const sizeMessage =
   "use a type role: var(--k2b-font-size-meta|row|body|lead) in CSS, text-meta|row|body|lead in classes (12, 13, 14, 18 px); see /en/ui/surfaces/utilities#type-roles (K11)";
 const weightMessage =
   "use weight 400, 500, or 600 (font-normal, font-medium, font-semibold); see /en/ui/surfaces/utilities#type-roles (K11)";
+const lineMessage =
+  "use a role line height: var(--k2b-line-height-meta|row|body|lead) in CSS, leading-4|5|6 in classes; see /en/ui/surfaces/utilities#type-roles (K11)";
+type Kind = "size" | "line" | "weight" | "allow";
+const messages: Record<Kind, string> = { size: sizeMessage, line: lineMessage, weight: weightMessage, allow: "" };
 
 const UI_SOURCE = "packages/ui/src/";
 const keyword = /^(?:inherit|initial|unset|revert|revert-layer)$/i;
 const roleToken = /^var\(\s*--k2b-font-size-(?:meta|row|body|lead)\s*\)$/;
+const lineToken = /^var\(\s*--k2b-line-height-(?:meta|row|body|lead)\s*\)$/;
 
 /** A length in px; `rem` counts 16 px. Undefined when the value is not a plain length. */
 const pixels = (value: string): number | undefined => {
@@ -37,7 +48,7 @@ const pixels = (value: string): number | undefined => {
   if (!match) return undefined;
   return Number.parseFloat(match[1]!) * (match[2] === "rem" ? 16 : 1);
 };
-const ROLE_PIXELS = [12, 13, 14, 18];
+const ROLE_PIXELS = TYPE_SIZES;
 
 /** True when a font size is a role (a role token, `1em`, a keyword, or a length of 12, 13, 14, or 18 px outside @k2b/ui). */
 export const sizeOnScale = (raw: string, { literals }: { literals: boolean }): boolean => {
@@ -51,6 +62,18 @@ export const sizeOnScale = (raw: string, { literals }: { literals: boolean }): b
 
 /** Reading text adds headings in 16 px and sizes relative to its text (em, %). */
 const READING_PIXELS = [...ROLE_PIXELS, 16];
+
+/** True when a line height is a role's: a token, `inherit`, or a length the roles take (16, 20, 22, 24 px). */
+export const lineOnScale = (raw: string): boolean => {
+  const value = raw.replace(/!important/gi, "").trim();
+  if (keyword.test(value) || lineToken.test(value)) return true;
+  const variable = value.match(/^var\(\s*(--[\w-]+)\s*(?:,(.*))?\)$/s);
+  if (variable) return /line-height/.test(variable[1]!) && (variable[2] === undefined || lineOnScale(variable[2]));
+  const px = pixels(value);
+  return px !== undefined && TYPE_LINE_HEIGHTS.includes(px);
+};
+/** Reading text sets its leading relative to its text, too. */
+const readingLine = (raw: string) => lineOnScale(raw) || /^\d*\.?\d+(?:em|%)?$/.test(raw.replace(/!important/gi, "").trim());
 export const readingSize = (raw: string): boolean => {
   const value = raw.replace(/!important/gi, "").trim();
   if (/^\d*\.?\d+(?:em|%)$/.test(value) || sizeOnScale(value, { literals: true })) return true;
@@ -60,17 +83,19 @@ export const readingSize = (raw: string): boolean => {
 
 export const weightOnScale = (raw: string): boolean => {
   const value = raw.replace(/!important/gi, "").trim();
-  if (keyword.test(value) || /^(?:normal|400|500|600)$/.test(value)) return true;
+  if (keyword.test(value) || value === "normal" || TYPE_WEIGHTS.includes(Number(value))) return true;
   const variable = value.match(/^var\(\s*(--[\w-]+)\s*(?:,(.*))?\)$/s);
-  return variable !== null && (variable[2] === undefined || weightOnScale(variable[2]));
+  return variable !== null && /weight/.test(variable[1]!) && (variable[2] === undefined || weightOnScale(variable[2]));
 };
 
-/** Reading text: Markdown, the rich-text and code editors. Its headings and code may size in em. */
-const readingSelector =
-  /k2b-content-markdown|k2b-content-doc-|ProseMirror|k2b-text-editor|k2b-ste-|k2b-markdown|k2b-prose|\.cm-|\.prose\b|data-reading/;
-/** The last compound of a selector names a sign: an icon, an avatar or its initials, an emoji, a logo. */
-const signCompound =
-  /^(?:i|svg)(?![\w-])|\.ti(?![\w-])|icon|glyph|avatar|initials|monogram|emoji|logo|spinner|chevron|caret|checkbox|check__control|[_-]mark(?![\w-])|__arrow(?![\w-])|__tile(?![\w-])|__check(?![\w-])|__marker|__handle|__visual|__info(?![\w-])|media-play|__sign(?![\w-])/;
+/**
+ * Reading text is the content of three containers only: rendered Markdown (`.k2b-content-markdown`), the shared text
+ * editor's formatted text (`.k2b-ste-formatted`), and a ProseMirror document. It adds headings in 16 px and sizes in em
+ * or % of its text; an editor's toolbars, menus, and labels are controls and use the roles.
+ */
+const readingSelector = /\.k2b-content-markdown\b|\.k2b-ste-formatted\b|\.ProseMirror\b/;
+/** A sign is an `i` or `svg` element, a Tabler `.ti`, an avatar, or an emoji; any other sign names itself with `type-scale: allow`. */
+const signCompound = /^(?:i|svg)(?![\w-])|\.ti(?![\w-])|avatar|emoji/;
 
 /** Splits at top-level commas or combinators; brackets and parentheses stay whole. */
 const splitTop = (text: string, separators: RegExp): string[] => {
@@ -102,22 +127,46 @@ export const signsOnly = (selectorList: string): boolean => {
 export const isReading = (selectors: readonly string[]): boolean => selectors.some((selector) => readingSelector.test(selector));
 
 const allowMarker = /type-scale:\s*allow\s+\S/;
+const allowReason = /type-scale:\s*allow\s+(.+?)\s*(?:\*\/|$)/;
+
+/** Every `type-scale: allow <reason>` in a file, as baseline findings, so each allowance is pinned and reviewed. */
+const allowFindings = (workspaceRoot: string, file: string, original: string): TypeFinding[] => {
+  const path = relative(workspaceRoot, file);
+  return original.split("\n").flatMap((text, index) => {
+    const reason = text.match(allowReason)?.[1];
+    if (!reason) return [];
+    return [
+      {
+        file,
+        line: index + 1,
+        kind: "allow" as const,
+        value: reason,
+        key: `${path} | allow | ${reason}`,
+        message: `type-scale: allow ${reason}: a new allowance is a baseline line; prefer a type role`,
+      },
+    ];
+  });
+};
 const allowedAt = (lines: readonly string[], line: number): boolean =>
   allowMarker.test(lines[line - 1] ?? "") || allowMarker.test(lines[line - 2] ?? "");
 
 const blankComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
-export type TypeFinding = KeyedFinding & { kind: "size" | "weight"; value: string; selector?: string };
+export type TypeFinding = KeyedFinding & { kind: Kind; value: string; selector?: string };
 
-/** The size in a `font` shorthand: the length before an optional `/line-height`. */
-const shorthandSize = (value: string): string | undefined => {
-  if (keyword.test(value.trim()) || /^var\(/.test(value.trim())) return undefined;
-  const match = value.match(/(?:^|\s)((?:\d*\.?\d+)(?:px|rem|em|%)|var\([^)]*\))(?:\s*\/\s*\S+)?\s+["'\w-]/);
-  return match?.[1];
+/** The size and line height in a `font` shorthand: the length before an optional `/line-height`. */
+const shorthand = (value: string): { size?: string; line?: string } => {
+  if (keyword.test(value.trim()) || /^var\(/.test(value.trim())) return {};
+  const match = value.match(/(?:^|\s)((?:\d*\.?\d+)(?:px|rem|em|%)|var\([^)]*\))(?:\s*\/\s*((?:var\([^)]*\))|[^\s/]+))?\s+["'\w-]/);
+  return { size: match?.[1], line: match?.[2] };
 };
 
 const tailwindSizes = /^(?:meta|row|body|lead|xs|sm)$/;
+/** `leading-4|5|6` are 16, 20, 24 px; `leading-[…]` passes when its length does. */
+const leadingUtility = /(?<![\w-])(?:[\w-]+(?:\/[\w-]+)?:)*!?leading-(\[[^\]\s]+\]|[\w.]+)(?![\w-])/g;
+const leadingOk = (value: string) =>
+  value.startsWith("[") ? lineOnScale(value.slice(1, -1).replace(/^length:/, "")) : /^(?:4|5|6)$/.test(value);
 const tailwindWeights = /^(?:normal|medium|semibold)$/;
 /** A Tailwind size or weight utility with any variants: `md:text-[11px]`, `!font-bold`. */
 const textUtility =
@@ -133,8 +182,8 @@ const arbitrarySize = (inner: string): string | undefined => {
 };
 
 /** Off-role size and weight utilities in one class list, with their offset in it. */
-const utilityFindings = (text: string, inUi: boolean, reading = false): { kind: "size" | "weight"; utility: string; index: number }[] => {
-  const out: { kind: "size" | "weight"; utility: string; index: number }[] = [];
+const utilityFindings = (text: string, inUi: boolean, reading = false): { kind: Kind; utility: string; index: number }[] => {
+  const out: { kind: Kind; utility: string; index: number }[] = [];
   for (const utility of text.matchAll(textUtility)) {
     const size = utility[1]!;
     const index = utility.index ?? 0;
@@ -146,6 +195,9 @@ const utilityFindings = (text: string, inUi: boolean, reading = false): { kind: 
   }
   for (const utility of text.matchAll(weightUtility))
     if (!tailwindWeights.test(utility[1]!)) out.push({ kind: "weight", utility: utility[0], index: utility.index ?? 0 });
+  if (!reading)
+    for (const utility of text.matchAll(leadingUtility))
+      if (!leadingOk(utility[1]!)) out.push({ kind: "line", utility: utility[0], index: utility.index ?? 0 });
   return out;
 };
 
@@ -174,7 +226,7 @@ export const cssFindings = (workspaceRoot: string, file: string, original: strin
           value: shown,
           selector: stack.at(-1),
           key: `${path} | ${finding.kind} | ${shown}`,
-          message: `@apply ${shown}: ${finding.kind === "size" ? sizeMessage : weightMessage}`,
+          message: `@apply ${shown}: ${messages[finding.kind]}`,
         });
       }
       return;
@@ -192,7 +244,7 @@ export const cssFindings = (workspaceRoot: string, file: string, original: strin
       stack.some((part) => /^@media\b.*pointer:\s*coarse/.test(part)) &&
       /^(?:max\(1rem, ?16px\)|16px|1rem)$/.test(value.replace(/!important/gi, "").trim());
     const exempt = () => printed || touchFloor || signsOnly(selector) || allowedAt(lines, line);
-    const add = (kind: "size" | "weight", shown: string) =>
+    const add = (kind: Kind, shown: string) =>
       findings.push({
         file,
         line,
@@ -200,7 +252,7 @@ export const cssFindings = (workspaceRoot: string, file: string, original: strin
         value: shown,
         selector,
         key: `${path} | ${kind} | ${shown}`,
-        message: `font-${kind} ${shown} in ${selector || "a custom property"}: ${kind === "size" ? sizeMessage : weightMessage}`,
+        message: `${kind === "line" ? "line-height" : `font-${kind}`} ${shown} in ${selector || "a custom property"}: ${messages[kind]}`,
       });
     const reading = isReading(stack);
     const sizeOk = (size: string) => sizeOnScale(size, { literals: !inUi }) || (reading && readingSize(size));
@@ -208,12 +260,16 @@ export const cssFindings = (workspaceRoot: string, file: string, original: strin
       if (property.startsWith("--k2b-font-size-") && /^--k2b-font-size-(?:meta|row|body|lead)$/.test(property) && inUi) return;
       if (!sizeOk(value) && !exempt()) add("size", value);
     } else if (property === "font") {
-      const size = shorthandSize(value);
+      const { size, line: lineHeight } = shorthand(value);
       if (size !== undefined && !sizeOk(size) && !exempt()) add("size", size);
+      if (lineHeight !== undefined && !(reading ? readingLine(lineHeight) : lineOnScale(lineHeight)) && !exempt()) add("line", lineHeight);
       const weight = value.match(/(?:^|\s)(bold|bolder|lighter|[1-9]00)(?=\s)/)?.[1];
       if (weight && !weightOnScale(weight) && !exempt()) add("weight", weight);
-    } else if (property === "font-weight" || (property.startsWith("--") && /font-weight/.test(property))) {
-      if (property.startsWith("--k2b-font-weight-") && inUi) return;
+    } else if (property === "line-height" || (property.startsWith("--") && /line-height/.test(property))) {
+      if (/^--k2b-line-height-(?:meta|row|body|lead)$/.test(property) && inUi) return;
+      if (!(reading ? readingLine(value) : lineOnScale(value)) && !exempt()) add("line", value);
+    } else if (property === "font-weight" || (property.startsWith("--") && /weight/.test(property))) {
+      if (/^--k2b-font-weight-(?:meta|row|body|lead)$/.test(property) && inUi) return;
       if (!weightOnScale(value) && !exempt()) add("weight", value);
     }
   };
@@ -243,17 +299,10 @@ export const tsxFindings = (workspaceRoot: string, file: string, original: strin
   const findings: TypeFinding[] = [];
   const lines = original.split("\n");
   const source = original.replace(/^[ \t]*(?:\/\/|\/\*|\*).*$/gm, (line) => " ".repeat(line.length));
-  const add = (index: number, kind: "size" | "weight", value: string) => {
+  const add = (index: number, kind: Kind, value: string) => {
     const line = lineOf(original, index);
     if (allowedAt(lines, line)) return;
-    findings.push({
-      file,
-      line,
-      kind,
-      value,
-      key: `${path} | ${kind} | ${value}`,
-      message: `${kind === "size" ? "text size" : "font weight"} ${value}: ${kind === "size" ? sizeMessage : weightMessage}`,
-    });
+    findings.push({ file, line, kind, value, key: `${path} | ${kind} | ${value}`, message: `${kind} ${value}: ${messages[kind]}` });
   };
   for (const literal of source.matchAll(/(["'])((?:(?!\1)[^\\\n]|\\.)*)\1|`((?:[^\\`]|\\.)*)`/g)) {
     const text = literal[2] ?? literal[3] ?? "";
@@ -261,10 +310,18 @@ export const tsxFindings = (workspaceRoot: string, file: string, original: strin
     for (const finding of utilityFindings(text, inUi)) add(offset + finding.index, finding.kind, finding.utility);
     for (const style of text.matchAll(/font-size\s*:\s*([^;}\n"'`]+)/g))
       if (!sizeOnScale(style[1]!.trim(), { literals: !inUi })) add(offset + (style.index ?? 0), "size", style[1]!.trim());
+    for (const style of text.matchAll(/line-height\s*:\s*([^;}\n"'`]+)/g))
+      if (!lineOnScale(style[1]!.trim())) add(offset + (style.index ?? 0), "line", style[1]!.trim());
   }
-  // Style objects: `fontSize: "11px"` and Solid's `"font-size": "11px"`.
-  for (const style of source.matchAll(/(?:\bfontSize|(["'])font-size\1)\s*:\s*(["'`])([^"'`]*)\2/g))
-    if (!sizeOnScale(style[3]!.trim(), { literals: !inUi })) add(style.index ?? 0, "size", style[3]!.trim());
+  // Style objects: `fontSize: "11px"`, `fontSize: 11` (px), and Solid's `"font-size": "11px"`.
+  for (const style of source.matchAll(/(?:\bfontSize|(["'])font-size\1)\s*:\s*(?:(["'`])([^"'`]*)\2|(\d+(?:\.\d+)?)\b)/g)) {
+    const value = style[3] !== undefined ? style[3].trim() : `${style[4]}px`;
+    if (!sizeOnScale(value, { literals: !inUi })) add(style.index ?? 0, "size", value);
+  }
+  for (const style of source.matchAll(/(?:\blineHeight|(["'])line-height\1)\s*:\s*(?:(["'`])([^"'`]*)\2|(\d+(?:\.\d+)?)\b)/g)) {
+    const value = style[3] !== undefined ? style[3].trim() : (style[4] ?? "");
+    if (!lineOnScale(value)) add(style.index ?? 0, "line", value);
+  }
   for (const style of source.matchAll(/(?:\bfontWeight|(["'])font-weight\1)\s*:\s*(?:(["'`])([^"'`]*)\2|(\d+))/g)) {
     const value = (style[3] ?? style[4] ?? "").trim();
     if (!weightOnScale(value)) add(style.index ?? 0, "weight", value);
@@ -279,17 +336,22 @@ export const collectTypeFindings = (workspaceRoot: string): TypeFinding[] =>
     .sort()
     .flatMap((file) => {
       const source = readFileSync(file, "utf8");
-      return file.endsWith(".css") ? cssFindings(workspaceRoot, file, source) : tsxFindings(workspaceRoot, file, source);
+      return [
+        ...(file.endsWith(".css") ? cssFindings(workspaceRoot, file, source) : tsxFindings(workspaceRoot, file, source)),
+        ...allowFindings(workspaceRoot, file, source),
+      ];
     });
 
 export const rule: Rule = {
   name: RULE,
-  description: "Text uses the four type roles (12, 13, 14, 18 px) and weights 400–600 (K11); @k2b/ui strictly, apps with a baseline",
+  description:
+    "Text uses the four type roles: size, line height, and weight (K11); @k2b/ui strictly, apps and every allowance in a baseline",
   run: async ({ workspaceRoot, fix }) => {
     const findings = collectTypeFindings(workspaceRoot);
-    // @k2b/ui is the owner of the roles: none of its findings can be known debt.
-    const ui = findings.filter((finding) => relative(workspaceRoot, finding.file).startsWith(UI_SOURCE));
-    const apps = findings.filter((finding) => !relative(workspaceRoot, finding.file).startsWith(UI_SOURCE));
+    // @k2b/ui is the owner of the roles: none of its findings can be known debt, only its named allowances.
+    const strictUi = (finding: TypeFinding) => relative(workspaceRoot, finding.file).startsWith(UI_SOURCE) && finding.kind !== "allow";
+    const ui = findings.filter(strictUi);
+    const apps = findings.filter((finding) => !strictUi(finding));
     const strict: Finding[] = ui.map(({ file, line, message }) => ({ file, line, message }));
     return [...strict, ...compareBaseline(workspaceRoot, RULE, HEADER, apps, fix)];
   },

@@ -1,8 +1,10 @@
-# Known text sizes and weights outside the four type roles (K11), one per occurrence:
-# <file> | <size|weight> | <value>. App lanes remove lines as they migrate; the rule never adds lines.
-# `bun scripts/check.ts type-scale --fix` removes lines whose finding is gone. @k2b/ui never appears here.
+# Known text sizes, line heights, and weights outside the four type roles (K11), and every `type-scale: allow`, one
+# per occurrence: <file> | <size|line|weight|allow> | <value>. Lanes remove lines as they migrate; the rule never adds
+# lines. `bun scripts/check.ts type-scale --fix` removes lines whose finding is gone. Only allowances name @k2b/ui.
 docs-site/src/ui/cloud-ui.css | size | 8px
+docs-site/src/ui/demo-sections/actions.tsx | line | 1.7
 docs-site/src/ui/demo-sections/actions.tsx | size | 0.625rem
+docs-site/src/ui/demo-sections/cloud.tsx | line | leading-relaxed
 docs-site/src/ui/demo-sections/input.tsx | size | text-base
 fixtures/ui-ssr/src/Demo.island.tsx | size | 24px
 packages/accounts/src/frontend/agents/detail.page.tsx | size | text-xl
@@ -23,25 +25,48 @@ packages/accounts/src/frontend/users/detail/page.tsx | size | text-base
 packages/accounts/src/frontend/users/detail/page.tsx | size | text-base
 packages/accounts/src/frontend/users/detail/page.tsx | size | text-base
 packages/accounts/src/frontend/users/detail/page.tsx | size | text-xl
+packages/accounts/src/frontend/users/detail/user-actions/credential-dialog.tsx | line | leading-relaxed
 packages/accounts/src/frontend/users/new/page.tsx | size | text-xl
 packages/accounts/src/frontend/users/new/page.tsx | weight | font-bold
 packages/accounts/src/frontend/users/page.tsx | size | text-base
 packages/assistant/src/frontend/AssistantContextContent.tsx | size | 1rem
 packages/assistant/src/frontend/AssistantContextContent.tsx | size | text-[0.625rem]
 packages/assistant/src/frontend/AssistantConversationEditor.tsx | size | text-[11px]
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | line | leading-relaxed
 packages/assistant/src/frontend/AssistantPrefsModals.tsx | size | text-[11px]
 packages/assistant/src/frontend/AssistantProjectView.tsx | size | text-xl
 packages/assistant/src/frontend/conversation-status.tsx | size | text-[11px]
+packages/assistant/src/styles/app.css | line | 1
+packages/assistant/src/styles/app.css | line | 1
+packages/assistant/src/styles/app.css | line | 1.1875rem
+packages/assistant/src/styles/app.css | line | 1.3
+packages/assistant/src/styles/app.css | line | 1.3
+packages/assistant/src/styles/app.css | line | 1.3
+packages/assistant/src/styles/app.css | line | 1.4
+packages/assistant/src/styles/app.css | line | 1.4
+packages/assistant/src/styles/app.css | line | 1.45
+packages/assistant/src/styles/app.css | line | 1.45
+packages/assistant/src/styles/app.css | line | 1.45
+packages/assistant/src/styles/app.css | line | 1.5
+packages/assistant/src/styles/app.css | line | 1.6
+packages/assistant/src/styles/app.css | line | 1.6
 packages/assistant/src/styles/app.css | size | .6875rem
+packages/assistant/src/styles/app.css | size | .9375rem
 packages/assistant/src/styles/app.css | size | .9375rem
 packages/assistant/src/styles/app.css | size | 0.625rem
 packages/assistant/src/styles/app.css | size | 0.84375rem
 packages/assistant/src/styles/app.css | size | 0.9375rem
+packages/assistant/src/styles/app.css | size | 0.9375rem
+packages/assistant/src/styles/app.css | size | 1rem
+packages/assistant/src/styles/app.css | size | 1rem
+packages/assistant/src/styles/app.css | size | 1rem
 packages/assistant/src/styles/pwa.css | size | 0.9375rem
 packages/assistant/src/styles/pwa.css | size | 0.9375rem
 packages/assistant/src/styles/pwa.css | size | 0.9375rem
 packages/assistant/src/styles/pwa.css | size | 0.9375rem
+packages/assistant/src/styles/pwa.css | size | 1.75rem
 packages/assistant/src/styles/pwa.css | weight | 650
+packages/capabilities/src/frontend/CapabilityResultView.tsx | line | leading-relaxed
 packages/capabilities/src/frontend/CapabilityResultView.tsx | size | text-[10px]
 packages/capabilities/src/frontend/CapabilityResultView.tsx | size | text-[10px]
 packages/capabilities/src/frontend/CapabilityResultView.tsx | size | text-[11px]
@@ -50,6 +75,9 @@ packages/capabilities/src/frontend/CapabilityResultView.tsx | size | text-base
 packages/chat/src/frontend/DiscoverChannels.tsx | size | text-lg
 packages/chat/src/frontend/ForYou.tsx | size | text-lg
 packages/chat/src/frontend/admin.tsx | size | text-base
+packages/chat/src/styles/app.css | line | 1.125rem
+packages/chat/src/styles/app.css | line | 1.35
+packages/chat/src/styles/app.css | line | 1.35
 packages/chat/src/styles/app.css | size | 0.6875rem
 packages/chat/src/styles/app.css | size | 0.6875rem
 packages/chat/src/styles/app.css | size | 0.78125rem
@@ -57,6 +85,8 @@ packages/chat/src/styles/app.css | size | 0.9375rem
 packages/chat/src/styles/app.css | size | 0.9375rem
 packages/chat/src/styles/app.css | size | 0.9375rem
 packages/chat/src/styles/app.css | size | 0.9375rem
+packages/chat/src/styles/app.css | size | 1.0625rem
+packages/chat/src/styles/app.css | size | 1.375rem
 packages/chat/src/styles/app.css | size | 1rem
 packages/cloud/src/access/AccessDialog.tsx | size | sm:text-[15px]
 packages/cloud/src/access/AccessDialog.tsx | size | text-lg
@@ -91,13 +121,20 @@ packages/cloud/src/ai/chat/builtin-tools.tsx | size | text-[11px]
 packages/cloud/src/ai/chat/builtin-tools.tsx | size | text-[11px]
 packages/cloud/src/ai/chat/chart-block.tsx | size | text-base
 packages/cloud/src/ai/chat/chart-lazy.tsx | size | text-base
+packages/cloud/src/ai/chat/file-tools.tsx | line | leading-none
+packages/cloud/src/ai/chat/file-tools.tsx | line | leading-none
+packages/cloud/src/ai/chat/file-tools.tsx | line | leading-none
 packages/cloud/src/ai/chat/file-tools.tsx | size | text-base
+packages/cloud/src/ai/chat/map-widget.css | line | 1.7
 packages/cloud/src/ai/chat/map-widget.css | size | 12.5px
 packages/cloud/src/ai/chat/map-widget.css | size | 12.5px
 packages/cloud/src/ai/chat/map-widget.css | size | 13.5px
 packages/cloud/src/ai/chat/map-widget.css | size | 13.5px
 packages/cloud/src/ai/chat/map-widget.css | size | 15px
 packages/cloud/src/ai/chat/turn-navigator.tsx | size | text-[11px]
+packages/cloud/src/ai/chat/visual-tools.tsx | line | leading-none
+packages/cloud/src/ai/chat/visual-tools.tsx | line | leading-none
+packages/cloud/src/ai/chat/visual-tools.tsx | line | leading-none
 packages/cloud/src/ai/chat/visual-tools.tsx | size | text-[10px]
 packages/cloud/src/ai/chat/visual-tools.tsx | size | text-base
 packages/cloud/src/ai/chat/visual-tools.tsx | size | text-base
@@ -106,11 +143,13 @@ packages/cloud/src/ai/chat/web-tools.tsx | size | text-[11px]
 packages/cloud/src/ai/chat/web-tools.tsx | size | text-[11px]
 packages/cloud/src/ai/chat/web-tools.tsx | size | text-[11px]
 packages/cloud/src/ai/chat/web-tools.tsx | size | text-[11px]
+packages/cloud/src/ai/model-card.tsx | line | leading-snug
 packages/cloud/src/ai/model-card.tsx | size | text-[0.84375rem]
 packages/cloud/src/ai/model-card.tsx | size | text-[1.0625rem]
 packages/cloud/src/ai/model-card.tsx | size | text-[1.1875rem]
 packages/cloud/src/ai/model-card.tsx | size | text-[1.375rem]
 packages/cloud/src/ai/model-chooser.tsx | size | text-[13.5px]
+packages/cloud/src/ai/model-icon.tsx | line | leading-none
 packages/cloud/src/ai/model-icon.tsx | size | text-[1.15em]
 packages/cloud/src/ai/model-icon.tsx | size | text-[10px]
 packages/cloud/src/ai/model-icon.tsx | size | text-[9px]
@@ -135,12 +174,42 @@ packages/cloud/src/ssr/app-launchpad.tsx | size | text-lg
 packages/cloud/src/ssr/app-launchpad.tsx | size | text-xl
 packages/cloud/src/ssr/code-page/CodeAccountHandle.tsx | size | text-[0.92em]
 packages/cloud/src/ssr/code-page/CodeSourceTab.tsx | size | text-[15px]
+packages/cloud/src/styles/blocks.css | line | 1.35
+packages/cloud/src/styles/blocks.css | line | 1.4
 packages/cloud/src/styles/blocks.css | size | 0.78125rem
 packages/cloud/src/styles/blocks.css | size | 0.78125rem
 packages/cloud/src/styles/blocks.css | size | 0.78125rem
 packages/cloud/src/styles/blocks.css | size | 0.9375rem
 packages/cloud/src/styles/blocks.css | size | 0.9375rem
 packages/cloud/src/styles/blocks.css | size | 1.5rem
+packages/cloud/src/styles/code-page.css | line | 1.125rem
+packages/cloud/src/styles/code-page.css | line | 17px
+packages/cloud/src/styles/code-page.css | line | 17px
+packages/cloud/src/styles/code-page.css | line | 18px
+packages/cloud/src/styles/code-page.css | line | 18px
+packages/cloud/src/styles/code-page.css | line | 18px
+packages/cloud/src/styles/code-page.css | line | 18px
+packages/cloud/src/styles/code-page.css | line | 18px
+packages/cloud/src/styles/code-page.css | size | 15px
+packages/cloud/src/styles/effects.css | line | 1.125rem
+packages/cloud/src/styles/effects.css | line | 1.125rem
+packages/cloud/src/styles/effects.css | line | 1.2
+packages/cloud/src/styles/effects.css | line | 1.25
+packages/cloud/src/styles/effects.css | line | 1.3
+packages/cloud/src/styles/effects.css | line | 1.3
+packages/cloud/src/styles/effects.css | line | 1.35
+packages/cloud/src/styles/effects.css | line | 1.35
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.45
+packages/cloud/src/styles/effects.css | line | 1.55
+packages/cloud/src/styles/effects.css | line | 1.55
+packages/cloud/src/styles/effects.css | line | 1.6
+packages/cloud/src/styles/effects.css | line | 1.625rem
 packages/cloud/src/styles/effects.css | size | 0.6875rem
 packages/cloud/src/styles/effects.css | size | 0.82em
 packages/cloud/src/styles/effects.css | size | 0.8em
@@ -149,12 +218,16 @@ packages/cloud/src/styles/effects.css | size | 0.9375rem
 packages/cloud/src/styles/effects.css | size | 0.9375rem
 packages/cloud/src/styles/effects.css | size | 0.9375rem
 packages/cloud/src/styles/effects.css | size | 1.0625rem
+packages/cloud/src/styles/effects.css | size | 1.0625rem
 packages/cloud/src/styles/effects.css | size | 1.25rem
 packages/cloud/src/styles/effects.css | size | 1.25rem
 packages/cloud/src/styles/effects.css | size | 1.25rem
+packages/cloud/src/styles/effects.css | size | 1.375rem
+packages/cloud/src/styles/effects.css | size | 1.375rem
 packages/cloud/src/styles/effects.css | size | 1.75rem
 packages/cloud/src/styles/effects.css | size | 1rem
 packages/cloud/src/styles/effects.css | size | 1rem
+packages/cloud/src/styles/effects.css | size | 2.25rem
 packages/cloud/src/styles/effects.css | size | text-[0.85em]
 packages/cloud/src/styles/effects.css | weight | 550
 packages/cloud/src/styles/effects.css | weight | 650
@@ -167,13 +240,29 @@ packages/cloud/src/styles/effects.css | weight | 650
 packages/cloud/src/styles/effects.css | weight | 650
 packages/cloud/src/styles/effects.css | weight | 650
 packages/cloud/src/styles/effects.css | weight | 650
+packages/cloud/src/styles/feat-code.css | line | 1
+packages/cloud/src/styles/file-chooser.css | line | 1
+packages/cloud/src/styles/file-chooser.css | line | 1
+packages/cloud/src/styles/file-chooser.css | line | 1
+packages/cloud/src/styles/file-chooser.css | line | 1.125rem
 packages/cloud/src/styles/file-chooser.css | size | 1.0625rem
 packages/cloud/src/styles/file-chooser.css | size | 1rem
 packages/cloud/src/styles/file-chooser.css | size | 1rem
+packages/cloud/src/styles/file-chooser.css | size | 1rem
+packages/cloud/src/styles/file-chooser.css | size | 2rem
+packages/cloud/src/styles/global.css | line | 1.3
+packages/cloud/src/styles/global.css | size | 1.75rem
+packages/cloud/src/styles/input.css | line | leading-none
+packages/cloud/src/styles/privacy-screen.css | line | 1.45
 packages/cloud/src/styles/privacy-screen.css | size | 0.65625rem
+packages/cloud/src/styles/privacy-screen.css | size | 1.1875rem
+packages/cloud/src/styles/privacy-screen.css | size | 1.3125rem
 packages/cloud/src/styles/privacy-screen.css | size | 1rem
+packages/cloud/src/styles/profile-picture.css | line | 0
 packages/cloud/src/styles/profile-picture.css | size | 0.65625rem
 packages/cloud/src/styles/profile-picture.css | weight | 550
+packages/cloud/src/styles/resource-search.css | line | 1.45
+packages/cloud/src/styles/resource-search.css | line | 1.85
 packages/cloud/src/styles/resource-search.css | size | 0.625rem
 packages/cloud/src/styles/resource-search.css | size | 0.6875rem
 packages/cloud/src/styles/resource-search.css | size | 0.6875rem
@@ -189,13 +278,22 @@ packages/cloud/src/styles/utilities-feedback.css | size | 0.625rem
 packages/cloud/src/styles/utilities-feedback.css | size | text-[0.6875rem]
 packages/cloud/src/styles/utilities-feedback.css | size | text-[11px]
 packages/cloud/src/styles/utilities-feedback.css | size | text-[11px]
+packages/cloud/src/styles/utilities-layout.css | line | leading-7
+packages/cloud/src/styles/utilities-layout.css | line | leading-7
 packages/cloud/src/styles/utilities-layout.css | size | text-2xl
 packages/cloud/src/styles/utilities-layout.css | size | text-3xl
 packages/cloud/src/styles/utilities-layout.css | size | text-xl
 packages/cloud/src/styles/utilities-layout.css | weight | font-bold
 packages/cloud/src/styles/utilities-layout.css | weight | font-bold
+packages/cloud/src/styles/utilities-markdown-editor.css | line | 1.55 !important
+packages/cloud/src/styles/utilities-markdown-editor.css | line | 1.55 !important
 packages/cloud/src/styles/utilities-markdown-editor.css | size | 0.95rem
 packages/cloud/src/styles/utilities-markdown-editor.css | size | text-[10px]
+packages/cloud/src/styles/utilities-markdown-table.css | size | 0.85em
+packages/cloud/src/styles/utilities-navigation.css | line | 0.875rem
+packages/cloud/src/styles/utilities-navigation.css | line | leading-none
+packages/cloud/src/styles/utilities-navigation.css | line | leading-tight
+packages/cloud/src/styles/utilities-navigation.css | line | leading-tight
 packages/cloud/src/styles/utilities-navigation.css | size | 0.625rem
 packages/cloud/src/styles/utilities-navigation.css | size | 0.625rem
 packages/cloud/src/styles/utilities-navigation.css | size | 0.6875rem
@@ -208,6 +306,9 @@ packages/cloud/src/styles/utilities-navigation.css | size | text-[10px]
 packages/cloud/src/styles/utilities-navigation.css | weight | 650
 packages/cloud/src/styles/utilities-navigation.css | weight | 650
 packages/contacts/src/frontend/_components/BookActions.tsx | size | text-2xl
+packages/contacts/src/frontend/_components/ContactDetailPanel.tsx | line | leading-snug
+packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | line | leading-tight
+packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | line | leading-tight
 packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | size | text-[10px]
 packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | size | text-[11px]
 packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | size | text-[11px]
@@ -221,6 +322,7 @@ packages/contacts/src/frontend/_components/ContactsList.tsx | size | text-[11px]
 packages/contacts/src/frontend/admin.tsx | size | text-[10px]
 packages/contacts/src/frontend/admin.tsx | size | text-[10px]
 packages/contacts/src/frontend/admin.tsx | size | text-base
+packages/contacts/src/styles/app.css | line | 18px
 packages/contacts/src/styles/app.css | size | 12.5px
 packages/contacts/src/styles/app.css | size | 15px
 packages/contacts/src/styles/app.css | size | 20px
@@ -286,6 +388,9 @@ packages/core/src/pages/admin/page.tsx | size | text-[10px]
 packages/core/src/pages/admin/page.tsx | size | text-base
 packages/core/src/pages/admin/page.tsx | size | text-lg
 packages/core/src/pages/admin/page.tsx | size | text-lg
+packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | line | leading-[1.6]
+packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | line | leading-[18px]
+packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | line | leading-none
 packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | size | text-[12.5px]
 packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | size | text-[12.5px]
 packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.island.tsx | size | text-[12.5px]
@@ -307,6 +412,8 @@ packages/core/src/pages/admin/settings/_components/AiQuotaDetail.tsx | size | te
 packages/core/src/pages/admin/settings/_components/AiQuotaIdentity.tsx | size | text-lg
 packages/core/src/pages/admin/settings/_components/AiSkillsAdminPanel.tsx | size | text-[10px]
 packages/core/src/pages/admin/settings/_components/AiUsageExplorer.island.tsx | size | text-base
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | line | leading-relaxed
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | line | leading-relaxed
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | size | text-[10px]
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | size | text-[10px]
 packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | size | text-[10px]
@@ -320,6 +427,7 @@ packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | s
 packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | size | text-[10px]
 packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | size | text-[10px]
 packages/core/src/pages/admin/settings/_components/SignInLocations.tsx | size | text-base
+packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | line | 1.6
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | size | 11px
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | size | 11px
 packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | size | 16px
@@ -341,34 +449,54 @@ packages/core/src/pages/auth/password-reset/page.tsx | size | text-lg
 packages/core/src/pages/legal/page-handler.tsx | size | text-xl
 packages/core/src/pages/legal/page-handler.tsx | weight | font-bold
 packages/core/src/pages/me/AccountActivity.island.tsx | size | text-lg
+packages/core/src/pages/me/AccountHub.tsx | line | leading-tight
 packages/core/src/pages/me/AccountHub.tsx | size | text-xl
 packages/core/src/pages/me/ApiKeysSettings.island.tsx | size | text-[11px]
 packages/core/src/pages/me/AppDevices.island.tsx | size | text-3xl
 packages/core/src/pages/me/AppDevices.island.tsx | size | text-lg
+packages/core/src/pages/me/NotificationPreferences.island.tsx | line | leading-relaxed
 packages/core/src/pages/me/PasskeysSettings.island.tsx | size | text-[11px]
 packages/core/src/pages/me/ProfileActions.island.tsx | size | text-[10px]
 packages/core/src/pages/me/ProfileSettings.island.tsx | size | text-base
+packages/core/src/pages/me/WithdrawAccountRequest.island.tsx | line | leading-none
 packages/core/src/pages/me/access.page.tsx | size | text-[10px]
+packages/core/src/pages/me/notification-history.page.tsx | line | leading-snug
 packages/core/src/pages/me/notification-history.page.tsx | size | text-[11px]
 packages/core/src/pages/me/notification-history.page.tsx | size | text-[11px]
 packages/core/src/pages/me/notification-history.page.tsx | size | text-[11px]
+packages/core/src/styles/app.css | line | 1.125rem
+packages/core/src/styles/app.css | line | 1.1875rem
+packages/core/src/styles/app.css | line | 1.1875rem
+packages/core/src/styles/app.css | line | 1.5
+packages/core/src/styles/app.css | line | 1.5
+packages/dashboard/src/styles/app.css | line | 1.2
+packages/dashboard/src/styles/app.css | line | 1.35
 packages/dashboard/src/styles/app.css | size | 0.6875rem
 packages/dashboard/src/styles/app.css | size | 0.6875rem
 packages/dashboard/src/styles/app.css | size | 1.375rem
 packages/dashboard/src/styles/app.css | size | 1.75rem
 packages/editor/src/markdown/mermaid-preview.tsx | size | text-2xl
+packages/editor/src/styles.css | line | 1.125rem
+packages/editor/src/styles.css | line | 1.3
+packages/editor/src/styles.css | line | 1.5
 packages/editor/src/styles.css | size | 0.625rem
 packages/editor/src/styles.css | size | 1rem
 packages/faq/src/frontend/_components/FaqAdmin.tsx | size | text-[10px]
 packages/faq/src/frontend/_components/FaqAdmin.tsx | size | text-base
 packages/faq/src/frontend/_components/FaqPage.tsx | size | text-lg
+packages/faq/src/styles/app.css | line | var(--k2b-h-label)
 packages/filesv2/src/frontend/Browser.tsx | size | text-3xl
 packages/filesv2/src/frontend/PublicShare.island.tsx | size | text-lg
 packages/filesv2/src/frontend/TrashView.tsx | size | text-base
+packages/filesv2/src/frontend/admin-actions.tsx | line | leading-snug
 packages/filesv2/src/frontend/admin-actions.tsx | size | text-lg
 packages/filesv2/src/frontend/public-pages.tsx | size | text-lg
 packages/filesv2/src/frontend/public-pages.tsx | size | text-lg
 packages/filesv2/src/frontend/public-pages.tsx | size | text-xl
+packages/filesv2/src/styles/app.css | line | 1.125rem
+packages/filesv2/src/styles/app.css | line | 1.125rem
+packages/filesv2/src/styles/app.css | line | 1.35
+packages/filesv2/src/styles/app.css | size | 0.6875rem
 packages/filesv2/src/styles/app.css | size | 0.78125rem
 packages/filesv2/src/styles/app.css | size | 1.5px
 packages/filesv2/src/styles/app.css | size | 1.5rem
@@ -377,6 +505,11 @@ packages/filesv2/src/styles/app.css | size | 3px
 packages/filesv2/src/styles/app.css | size | 3rem
 packages/filesv2/src/styles/app.css | size | 3rem
 packages/filesv2/src/styles/app.css | size | 7px
+packages/filesv2/src/styles/history.css | line | 1
+packages/filesv2/src/styles/history.css | line | 1.38
+packages/filesv2/src/styles/history.css | line | 1.4
+packages/filesv2/src/styles/history.css | line | 1.6
+packages/filesv2/src/styles/history.css | line | 2rem
 packages/filesv2/src/styles/history.css | size | 0.78125rem
 packages/filesv2/src/styles/history.css | size | 0.78125rem
 packages/filesv2/src/styles/history.css | size | 0.78125rem
@@ -399,6 +532,7 @@ packages/filesv2/src/styles/history.css | size | 1.25rem
 packages/filesv2/src/styles/history.css | size | 1.5rem
 packages/filesv2/src/styles/history.css | size | 1.5rem
 packages/filesv2/src/styles/history.css | size | 15px
+packages/filesv2/src/styles/history.css | size | 22px
 packages/gateway-ops/src/frontend/AppIcon.tsx | size | text-[10px]
 packages/gateway-ops/src/frontend/OperationalCharts.island.tsx | size | text-[10px]
 packages/gateway-ops/src/frontend/RangeTabs.tsx | size | text-[10px]
@@ -445,6 +579,7 @@ packages/gateway-ops/src/observability/metrics/page.tsx | size | text-[10px]
 packages/gateway-ops/src/observability/nats/page.tsx | size | text-[10px]
 packages/gateway-ops/src/observability/nats/page.tsx | size | text-[10px]
 packages/gateway-ops/src/observability/nats/page.tsx | size | text-[10px]
+packages/gateway-ops/src/observability/notifications/_components/NotificationActions.island.tsx | line | leading-relaxed
 packages/gateway-ops/src/observability/notifications/_components/NotificationActions.island.tsx | size | text-[11px]
 packages/gateway-ops/src/observability/notifications/page.tsx | size | text-[10px]
 packages/gateway-ops/src/observability/notifications/page.tsx | size | text-[10px]
@@ -518,20 +653,29 @@ packages/gateway-ops/src/observability/workflows/_components/WorkflowRunDetail.t
 packages/gateway-ops/src/observability/workflows/_components/WorkflowRunDetail.tsx | size | text-[11px]
 packages/gateway-ops/src/observability/workflows/page.tsx | size | text-[10px]
 packages/gateway-ops/src/observability/workflows/page.tsx | size | text-[10px]
+packages/grids/src/frontend/_components/custom-apps/CustomAppBuilder.tsx | line | leading-snug
 packages/grids/src/frontend/_components/custom-apps/CustomAppBuilder.tsx | size | text-[9px]
 packages/grids/src/frontend/_components/custom-apps/CustomAppBuilder.tsx | size | text-base
+packages/grids/src/frontend/_components/dialogs/DocumentTemplatePreviewData.tsx | line | leading-relaxed
 packages/grids/src/frontend/_components/dialogs/DocumentTemplatePreviewData.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/dialogs/DocumentTemplatePreviewData.tsx | size | text-[11px]
+packages/grids/src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.tsx | line | leading-snug
+packages/grids/src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.tsx | line | leading-snug
 packages/grids/src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.tsx | size | text-lg
 packages/grids/src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.tsx | size | text-lg
 packages/grids/src/frontend/_components/dialogs/MutationPolicyDialog.tsx | size | text-base
+packages/grids/src/frontend/_components/dialogs/TableAdminDialogs.tsx | line | leading-snug
 packages/grids/src/frontend/_components/dialogs/TableAdminDialogs.tsx | size | text-base
 packages/grids/src/frontend/_components/dialogs/TableAdminDialogs.tsx | size | text-lg
 packages/grids/src/frontend/_components/dialogs/TableAdminDialogs.tsx | size | text-lg
+packages/grids/src/frontend/_components/dialogs/ViewColumnSettingsDialog.tsx | line | leading-snug
 packages/grids/src/frontend/_components/documents/DocumentBrowserToolbar.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/documents/DocumentsWorkspace.tsx | size | text-base
+packages/grids/src/frontend/_components/fields/FieldEditorDialog.tsx | line | leading-snug
 packages/grids/src/frontend/_components/fields/FieldEditorDialog.tsx | size | text-[11px]
+packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | line | leading-snug
+packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | line | leading-snug
 packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | size | text-[11px]
@@ -539,6 +683,7 @@ packages/grids/src/frontend/_components/fields/FormulaExpressionEditor.tsx | siz
 packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx | size | text-2xl
 packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/fields/FormulaReferenceWindow.island.tsx | size | text-[11px]
+packages/grids/src/frontend/_components/fields/field-config-editor.tsx | line | leading-snug
 packages/grids/src/frontend/_components/fields/field-config-editor.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/FormFieldSettings.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/FormFieldSettings.tsx | size | text-[11px]
@@ -547,12 +692,21 @@ packages/grids/src/frontend/_components/forms/FormFieldsEditor.tsx | size | text
 packages/grids/src/frontend/_components/forms/FormFieldsEditor.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/FormsManager.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/forms/FormsManager.tsx | size | text-[10px]
+packages/grids/src/frontend/_components/forms/ObjectListInput.tsx | line | leading-snug
+packages/grids/src/frontend/_components/forms/form-fields.tsx | line | leading-snug
 packages/grids/src/frontend/_components/forms/form-fields.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/form-fields.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/form-fields.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/forms/form-fields.tsx | size | text-[11px]
+packages/grids/src/frontend/_components/overview/BasesOverview.island.tsx | line | leading-snug
+packages/grids/src/frontend/_components/overview/BasesOverview.island.tsx | line | leading-snug
+packages/grids/src/frontend/_components/overview/BasesOverview.island.tsx | line | leading-snug
 packages/grids/src/frontend/_components/overview/BasesOverview.island.tsx | size | text-lg
 packages/grids/src/frontend/_components/overview/BasesOverview.island.tsx | size | text-lg
+packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | line | leading-relaxed
+packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | line | leading-relaxed
+packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | line | leading-relaxed
+packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | line | leading-relaxed
 packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/query/QueryReferenceWindow.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/query/QueryWorkspace.tsx | size | text-[10px]
@@ -562,12 +716,18 @@ packages/grids/src/frontend/_components/query/QueryWorkspace.tsx | size | text-[
 packages/grids/src/frontend/_components/query/QueryWorkspace.tsx | size | text-lg
 packages/grids/src/frontend/_components/query/QueryWorkspace.tsx | size | text-lg
 packages/grids/src/frontend/_components/query/QueryWorkspace.tsx | size | text-lg
+packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | line | leading-snug
+packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | line | leading-snug
+packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | line | leading-tight
 packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | size | text-[10px]
+packages/grids/src/frontend/_components/records-view/RecordMetadataDialog.tsx | line | leading-tight
 packages/grids/src/frontend/_components/records-view/RecordMetadataDialog.tsx | size | text-[8px]
 packages/grids/src/frontend/_components/records-view/RecordsAdminToolbar.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/records/FormSubmitModal.tsx | size | text-2xl
+packages/grids/src/frontend/_components/records/RecordReadView.tsx | line | leading-relaxed
 packages/grids/src/frontend/_components/sidebar/SidebarTableMeta.tsx | size | text-[9px]
 packages/grids/src/frontend/_components/table/BarcodeCell.tsx | size | text-base
+packages/grids/src/frontend/_components/table/DatabaseTable.tsx | line | leading-tight
 packages/grids/src/frontend/_components/table/DatabaseTable.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/table/DatabaseTable.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/table/FieldValue.tsx | size | text-[10px]
@@ -575,8 +735,10 @@ packages/grids/src/frontend/_components/table/GroupedTable.tsx | size | text-[11
 packages/grids/src/frontend/_components/table/RecordLink.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/toolbar/GridCreateActions.tsx | size | text-[10px]
 packages/grids/src/frontend/_components/workflows/FinancialExportDialog.tsx | size | text-lg
+packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | line | 1.6
 packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | size | 11px
 packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | size | 16px
+packages/grids/src/frontend/_components/workflows/WorkflowRevisionHistory.tsx | line | leading-relaxed
 packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx | size | text-2xl
 packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx | size | text-[11px]
 packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx | size | text-[11px]
@@ -595,15 +757,23 @@ packages/grids/src/frontend/custom-app/Chart.tsx | size | text-[10px]
 packages/grids/src/frontend/custom-app/Chart.tsx | size | text-[11px]
 packages/grids/src/frontend/custom-app/Chart.tsx | size | text-[11px]
 packages/grids/src/frontend/custom-app/RecordsTable.tsx | size | text-[10px]
+packages/grids/src/frontend/public/documents/[token]/page.tsx | line | leading-snug
 packages/grids/src/frontend/public/documents/[token]/page.tsx | size | sm:text-lg
 packages/grids/src/frontend/public/documents/[token]/page.tsx | size | text-base
 packages/grids/src/frontend/public/documents/[token]/page.tsx | size | text-lg
 packages/grids/src/frontend/public/forms/[token]/page.tsx | size | text-base
 packages/grids/src/frontend/record-event-failures.tsx | size | text-base
+packages/grids/src/styles/app.css | line | 1
+packages/grids/src/styles/app.css | line | 1.2
+packages/grids/src/styles/app.css | line | 1.3
+packages/grids/src/styles/app.css | line | 1.4
+packages/grids/src/styles/app.css | line | 1.5
+packages/grids/src/styles/app.css | line | 2.25rem
 packages/grids/src/styles/app.css | size | 0.6875rem
 packages/grids/src/styles/app.css | size | 0.6875rem
 packages/grids/src/styles/app.css | size | 0.9375rem
 packages/grids/src/styles/app.css | size | 1.75rem
+packages/grids/src/styles/app.css | size | 1rem
 packages/grids/src/styles/app.css | size | 1rem
 packages/grids/src/styles/app.css | size | clamp(1.25rem, 2vw, 1.625rem)
 packages/grids/src/styles/app.css | weight | 700
@@ -641,6 +811,16 @@ packages/mail/src/frontend/admin-security.tsx | size | text-base
 packages/mail/src/frontend/admin.tsx | size | text-[10px]
 packages/mail/src/frontend/admin.tsx | size | text-[10px]
 packages/mail/src/frontend/admin.tsx | size | text-base
+packages/mail/src/styles/app.css | line | 0.875rem
+packages/mail/src/styles/app.css | line | 1.125rem
+packages/mail/src/styles/app.css | line | 1.125rem
+packages/mail/src/styles/app.css | line | 1.125rem
+packages/mail/src/styles/app.css | line | 1.1875rem
+packages/mail/src/styles/app.css | line | 1.5
+packages/mail/src/styles/app.css | line | 1.5
+packages/mail/src/styles/app.css | line | var(--mail-row-line)
+packages/mail/src/styles/app.css | line | var(--mail-row-line)
+packages/mail/src/styles/app.css | line | var(--mail-row-line)
 packages/mail/src/styles/app.css | size | 0.5625rem
 packages/mail/src/styles/app.css | size | 0.625rem
 packages/mail/src/styles/app.css | size | 0.6875rem
@@ -649,8 +829,14 @@ packages/mail/src/styles/app.css | size | 0.6875rem
 packages/mail/src/styles/app.css | size | 0.6875rem
 packages/mail/src/styles/app.css | size | 0.78125rem
 packages/mail/src/styles/app.css | size | 0.9375rem
+packages/mail/src/styles/app.css | size | 0.9375rem
 packages/mail/src/styles/app.css | size | 1.375rem
+packages/mail/src/styles/app.css | size | 2.25rem
+packages/mail/src/styles/reader.css | line | 1
+packages/mail/src/styles/reader.css | line | normal
 packages/mail/src/styles/reader.css | size | 0.6875rem
+packages/mail/src/styles/reader.css | size | 1.25rem
+packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | line | leading-tight
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | size | text-2xl
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | size | text-[10px]
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | size | text-[11px]
@@ -670,6 +856,24 @@ packages/notebooks/src/frontend/[id]/tags/[tag]/page.tsx | size | text-[10px]
 packages/notebooks/src/frontend/[id]/tags/[tag]/page.tsx | size | text-[11px]
 packages/notebooks/src/frontend/_components/AdminNotebooksAppSettings.island.tsx | size | text-[11px]
 packages/notebooks/src/frontend/admin.tsx | size | text-base
+packages/notebooks/src/styles/app.css | line | 1.125rem
+packages/notebooks/src/styles/app.css | line | 1.25
+packages/notebooks/src/styles/app.css | line | 1.3
+packages/notebooks/src/styles/app.css | line | 1.4
+packages/notebooks/src/styles/app.css | line | 1.4
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.45
+packages/notebooks/src/styles/app.css | line | 1.5
+packages/notebooks/src/styles/app.css | line | 1.5
+packages/notebooks/src/styles/app.css | line | 1.6
+packages/notebooks/src/styles/app.css | line | 1.75rem
+packages/notebooks/src/styles/app.css | size | 0.625rem
 packages/notebooks/src/styles/app.css | size | 0.6875rem
 packages/notebooks/src/styles/app.css | size | 0.6875rem
 packages/notebooks/src/styles/app.css | size | 0.6875rem
@@ -702,6 +906,7 @@ packages/notebooks/src/styles/app.css | size | 15px
 packages/notebooks/src/styles/app.css | size | 16px
 packages/notebooks/src/styles/app.css | size | 19px
 packages/notebooks/src/styles/app.css | size | 1rem
+packages/notebooks/src/styles/app.css | size | 1rem
 packages/notebooks/src/styles/app.css | size | 20px
 packages/notebooks/src/styles/app.css | size | 28px
 packages/notebooks/src/styles/app.css | size | 9.5px
@@ -713,6 +918,8 @@ packages/notebooks/src/styles/app.css | weight | 700
 packages/notebooks/src/styles/app.css | weight | 700
 packages/notebooks/src/styles/app.css | weight | 700
 packages/notebooks/src/styles/app.css | weight | 700
+packages/oauth/src/frontend/_components/AuthorizationParts.tsx | line | leading-snug
+packages/oauth/src/frontend/_components/AuthorizationParts.tsx | line | leading-snug
 packages/oauth/src/frontend/_components/AuthorizationParts.tsx | size | text-4xl
 packages/oauth/src/frontend/_components/AuthorizationParts.tsx | size | text-xl
 packages/oauth/src/frontend/_components/AuthorizationParts.tsx | size | text-xl
@@ -731,6 +938,7 @@ packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | size | text-[12.5px
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | size | text-[14.5px]
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | size | text-lg
 packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | size | text-lg
+packages/pulse/src/frontend/workspace/SourceDetailView.tsx | line | leading-relaxed
 packages/pulse/src/frontend/workspace/SourceDetailView.tsx | size | text-[11px]
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | size | text-[11px]
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | size | text-[12.5px]
@@ -744,7 +952,12 @@ packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | size | text-base
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | size | text-base
 packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | size | text-base
 packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | size | text-lg
+packages/pulse/src/styles/app.css | size | 16px
 packages/pwa/src/styles/app.css | size | 2.5rem
+packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | line | leading-[1.35]
+packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | line | leading-none
+packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | line | leading-none
+packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | line | leading-none
 packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | size | text-[0.625rem]
 packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | size | text-[0.625rem]
 packages/spaces/src/frontend/[id]/_components/calendar/ItemContent.tsx | size | text-[0.625rem]
@@ -769,8 +982,13 @@ packages/spaces/src/frontend/[id]/_components/shared/AssigneeAvatars.tsx | size 
 packages/spaces/src/frontend/[id]/_components/shared/AssigneeAvatars.tsx | size | text-xl
 packages/spaces/src/frontend/[id]/_components/sidebar/CreateItemButton.tsx | size | text-[11px]
 packages/spaces/src/frontend/[id]/_components/sidebar/CreateMenu.tsx | size | text-[0.9375rem]
+packages/spaces/src/frontend/[id]/_components/workspace/SpacesWorkspace.tsx | line | leading-relaxed
 packages/spaces/src/frontend/admin.tsx | size | text-[10px]
 packages/spaces/src/frontend/admin.tsx | size | text-base
+packages/spaces/src/styles/app.css | line | 1.3
+packages/spaces/src/styles/app.css | line | 1.4
+packages/spaces/src/styles/app.css | line | 1.45
+packages/spaces/src/styles/app.css | line | 1.625rem
 packages/spaces/src/styles/app.css | size | .625rem
 packages/spaces/src/styles/app.css | size | .6875rem
 packages/spaces/src/styles/app.css | size | .6875rem
@@ -780,6 +998,7 @@ packages/spaces/src/styles/app.css | size | .78125rem
 packages/spaces/src/styles/app.css | size | .84375rem
 packages/spaces/src/styles/app.css | size | .9375rem
 packages/spaces/src/styles/app.css | size | .9375rem
+packages/spaces/src/styles/app.css | size | .9375rem
 packages/spaces/src/styles/app.css | size | 1.25rem
 packages/spaces/src/styles/app.css | size | 1rem
 packages/spaces/src/styles/app.css | size | 1rem
@@ -787,8 +1006,13 @@ packages/spaces/src/styles/app.css | size | 1rem
 packages/spaces/src/styles/app.css | size | 1rem
 packages/spaces/src/styles/app.css | size | 1rem
 packages/spaces/src/styles/app.css | size | 1rem
+packages/speedtest/src/site/styles.css | line | 1.2
+packages/speedtest/src/site/styles.css | line | 1.5
 packages/speedtest/src/site/styles.css | size | clamp(1.75rem, 3vw, 2.25rem)
 packages/speedtest/src/site/styles.css | weight | 650
+packages/speedtest/src/ui/styles.css | line | 1.3rem
+packages/speedtest/src/ui/styles.css | line | 1.5
+packages/speedtest/src/ui/styles.css | line | 1.7
 packages/speedtest/src/ui/styles.css | size | 17px
 packages/speedtest/src/ui/styles.css | size | 72px
 packages/speedtest/src/ui/styles.css | weight | 650
@@ -796,17 +1020,24 @@ packages/tools/src/frontend/ToolCatalog.island.tsx | size | text-base
 packages/tools/src/frontend/ToolsWorkspace.tsx | size | text-[10px]
 packages/tools/src/frontend/[tool]/page.tsx | size | text-xl
 packages/tools/src/frontend/[tool]/page.tsx | size | text-xl
+packages/tools/src/frontend/tools/DocumentMarkdown.island.tsx | line | leading-relaxed
+packages/tools/src/frontend/tools/DocumentMarkdown.island.tsx | line | leading-relaxed
 packages/tools/src/frontend/tools/DocumentMarkdown.island.tsx | size | text-3xl
 packages/tools/src/frontend/tools/ImageConverter.island.tsx | size | text-2xl
 packages/tools/src/frontend/tools/ImageConverter.island.tsx | size | text-base
 packages/tools/src/frontend/tools/ImageProcessor.island.tsx | size | text-2xl
 packages/tools/src/frontend/tools/ImageProcessor.island.tsx | size | text-4xl
 packages/tools/src/frontend/tools/ImageProcessor.island.tsx | size | text-[10px]
+packages/tools/src/frontend/tools/LoremIpsumGenerator.island.tsx | line | leading-relaxed
+packages/tools/src/frontend/tools/MarkdownPdf.island.tsx | line | leading-relaxed
 packages/tools/src/frontend/tools/MarkdownPdf.island.tsx | size | text-4xl
+packages/tools/src/frontend/tools/PasswordGenerator.island.tsx | line | leading-[1.15]
 packages/tools/src/frontend/tools/PasswordGenerator.island.tsx | size | sm:text-3xl
 packages/tools/src/frontend/tools/PasswordGenerator.island.tsx | size | text-2xl
 packages/tools/src/frontend/tools/PasswordGenerator.island.tsx | size | text-base
 packages/tools/src/frontend/tools/QrCodeGenerator.island.tsx | size | text-lg
+packages/tools/src/frontend/tools/ToolOutput.tsx | line | leading-relaxed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | line | leading-relaxed
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-[10px]
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-[10px]
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-[11px]
@@ -816,6 +1047,154 @@ packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-[11px]
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-[11px]
 packages/tools/src/frontend/tools/WebhookTester.island.tsx | size | text-base
 packages/tools/src/styles/app.css | size | 0.6875rem
+packages/tools/src/styles/app.css | size | 1.25rem
+packages/ui/src/styles/content-parity.css | allow | a sign: .ti-chevron-down)
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-activity__icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-calendar-detail__icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-calendar-event__icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-calendar-time-grid__badge-icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-content-doc-icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-lightbox__notice-icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-map-dialog__empty-icon
+packages/ui/src/styles/content-parity.css | allow | a sign: k2b-run-log__head-icon
+packages/ui/src/styles/content-parity.css | allow | a sign: the activity icon
+packages/ui/src/styles/content-parity.css | allow | a sign: the arrow of the lightbox edge button
+packages/ui/src/styles/content-parity.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/content-parity.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/content-parity.css | allow | a sign: the direction arrow
+packages/ui/src/styles/content-parity.css | allow | a sign: the direction arrow
+packages/ui/src/styles/content-parity.css | allow | a sign: the event icon
+packages/ui/src/styles/content-parity.css | allow | a sign: the external-link arrow sizes with its text
+packages/ui/src/styles/content-parity.css | allow | a sign: the leading mark of the row (aria-hidden)
+packages/ui/src/styles/content-parity.css | allow | a sign: the map pin
+packages/ui/src/styles/content-parity.css | allow | code lines leave room for their annotation chips
+packages/ui/src/styles/content-parity.css | allow | pdf.js text layer, as above
+packages/ui/src/styles/content-parity.css | allow | pdf.js text layer: transparent text that matches the page's own glyphs
+packages/ui/src/styles/content-parity.css | allow | pdf.js text layer: transparent text that matches the page's own glyphs
+packages/ui/src/styles/content-parity.css | allow | pdf.js text layer: transparent text that matches the page's own glyphs
+packages/ui/src/styles/content-parity.css | allow | the label centres on its hour row
+packages/ui/src/styles/content-parity.css | allow | the label centres on its hour row
+packages/ui/src/styles/content-parity.css | allow | the label centres on its hour row
+packages/ui/src/styles/content-parity.css | allow | the name centres in its pill
+packages/ui/src/styles/feedback-parity.css | allow | a sign: k2b-inline-guidance__icon
+packages/ui/src/styles/feedback-parity.css | allow | a sign: k2b-toast__icon
+packages/ui/src/styles/feedback-parity.css | allow | a sign: the toast icon
+packages/ui/src/styles/flat-content.css | allow | a sign: k2b-task-row__icon
+packages/ui/src/styles/flat-content.css | allow | a sign: the step mark
+packages/ui/src/styles/flat-content.css | allow | a sign: the step mark (aria-hidden)
+packages/ui/src/styles/flat-content.css | allow | a sign: the task icon
+packages/ui/src/styles/index.css | allow | 16 px keeps iOS from zooming into the focused search field of a touch sheet
+packages/ui/src/styles/index.css | allow | a drawing: the typed name rendered as a signature
+packages/ui/src/styles/index.css | allow | a sign: k2b-ai-suggestion-group__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-app-workspace__sidebar-item-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-app-workspace__sidebar-section-chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-change-list__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-chart-explorer__state-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-chat-activity__chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-chat-decision__kind-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-chat-line__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-choice-list__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-data-table__group-chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-data-table__sort-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-detail-panel__header-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-drop-overlay__chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-drop-overlay__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-fact-group__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-file-type-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-file-type-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-file-type-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-filter-chip__chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-icon-choices__option
+packages/ui/src/styles/index.css | allow | a sign: k2b-message-row__file-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-panel-dialog__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-panes__icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-reaction-bar__add-button
+packages/ui/src/styles/index.css | allow | a sign: k2b-reaction-bar__add-button
+packages/ui/src/styles/index.css | allow | a sign: k2b-rich-select__state-icon
+packages/ui/src/styles/index.css | allow | a sign: k2b-section__chevron
+packages/ui/src/styles/index.css | allow | a sign: k2b-section__icon
+packages/ui/src/styles/index.css | allow | a sign: the arrows of the period buttons
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the check mark of a control
+packages/ui/src/styles/index.css | allow | a sign: the drag grip
+packages/ui/src/styles/index.css | allow | a sign: the emoji of a picker group
+packages/ui/src/styles/index.css | allow | a sign: the emoji of a reaction
+packages/ui/src/styles/index.css | allow | a sign: the empty-state mark
+packages/ui/src/styles/index.css | allow | a sign: the icon of the row details button
+packages/ui/src/styles/index.css | allow | a sign: the icons of the message action buttons
+packages/ui/src/styles/index.css | allow | a sign: the image placeholder icon of an attachment
+packages/ui/src/styles/index.css | allow | a sign: the info icon button
+packages/ui/src/styles/index.css | allow | a sign: the info icon button
+packages/ui/src/styles/index.css | allow | a sign: the item's visual (icon or emoji)
+packages/ui/src/styles/index.css | allow | a sign: the leading icon of an activity row
+packages/ui/src/styles/index.css | allow | a sign: the leading mark of the row (aria-hidden)
+packages/ui/src/styles/index.css | allow | a sign: the leading mark of the row (aria-hidden)
+packages/ui/src/styles/index.css | allow | a sign: the mention mark
+packages/ui/src/styles/index.css | allow | a sign: the meta icon
+packages/ui/src/styles/index.css | allow | a sign: the option visual
+packages/ui/src/styles/index.css | allow | a sign: the pane grip
+packages/ui/src/styles/index.css | allow | a sign: the pane icon
+packages/ui/src/styles/index.css | allow | a sign: the play icon
+packages/ui/src/styles/index.css | allow | a sign: the progress dots
+packages/ui/src/styles/index.css | allow | a sign: the refresh arrow in its round indicator
+packages/ui/src/styles/index.css | allow | a sign: the row action icon
+packages/ui/src/styles/index.css | allow | a sign: the row action icon
+packages/ui/src/styles/index.css | allow | a sign: the row action icons
+packages/ui/src/styles/index.css | allow | a sign: the row action icons
+packages/ui/src/styles/index.css | allow | a sign: the streaming dots
+packages/ui/src/styles/index.css | allow | a sign: the tile visual
+packages/ui/src/styles/index.css | allow | the count centres in its chip
+packages/ui/src/styles/layout-parity.css | allow | 16 px keeps iOS from zooming into a focused field in the mobile shell
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-app-overview__icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-app-workspace__head-primary-chevron
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-app-workspace__level-switch-chevron
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-app-workspace__sidebar-item-icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-icon-button
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-install-guide__step-icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-settings-collection__item-icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-sidebar-switcher__chevron
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-sidebar-switcher__icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-sidebar-switcher__icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-sidebar-switcher__option-icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: k2b-sidebar-switcher__option-icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: the back arrow of the mobile shell
+packages/ui/src/styles/layout-parity.css | allow | a sign: the object icon
+packages/ui/src/styles/layout-parity.css | allow | a sign: the status sign (aria-hidden)
+packages/ui/src/styles/layout-parity.css | allow | the count centres on the head line
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-change-list__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-change-list__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-dashboard-section__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-link-card__glyph
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-link-card__glyph
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-link-card__glyph
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-not-found__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-notice-card__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-notice-card__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-placeholder__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-placeholder__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-placeholder__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-resource-card__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-stat-cell__accent-icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-stat-cell__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-stat-cell__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-stat-cell__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-stat-cell__link-icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-hero__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-hero__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-list__chevron
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-list__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-stat__accent-icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget-status__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget__chevron
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: k2b-widget__icon
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the icon in a notice tile
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the icon in a notice tile
+packages/ui/src/styles/surfaces-widgets-parity.css | allow | a sign: the section icon
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-2xl
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-3xl
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | size | text-base
@@ -844,11 +1223,16 @@ packages/venue/src/frontend/_components/public-page-view.tsx | size | text-base
 packages/venue/src/frontend/_components/public-page-view.tsx | size | text-base
 packages/venue/src/frontend/_components/public-page-view.tsx | size | text-xl
 packages/venue/src/frontend/_components/public-section-view.tsx | size | text-base
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | line | leading-relaxed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | line | leading-relaxed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | line | leading-relaxed
 packages/venue/src/frontend/_components/venue-workspace/public-page-editor.tsx | size | text-base
 packages/venue/src/frontend/_components/venue-workspace/schedule.tsx | size | text-[11px]
+packages/venue/src/frontend/public/[slug]/PublicVenuePage.island.tsx | line | leading-relaxed
 packages/venue/src/frontend/public/[slug]/PublicVenuePage.island.tsx | size | text-2xl
 packages/venue/src/frontend/public/[slug]/PublicVenuePage.island.tsx | size | text-5xl
 packages/venue/src/frontend/public/[slug]/PublicVenuePage.island.tsx | size | text-lg
+packages/venue/src/frontend/public/[slug]/feedback/page.tsx | line | leading-relaxed
 packages/venue/src/frontend/public/[slug]/feedback/page.tsx | size | text-2xl
 packages/venue/src/frontend/public/[slug]/feedback/page.tsx | size | text-2xl
 packages/venue/src/frontend/public/[slug]/feedback/page.tsx | size | text-5xl
@@ -875,6 +1259,7 @@ packages/weather/src/frontend/_components/HourlyForecast.tsx | size | text-[8px]
 packages/weather/src/frontend/_components/HourlyForecast.tsx | size | text-base
 packages/weather/src/frontend/_components/HourlyForecast.tsx | size | text-base
 packages/weather/src/frontend/_components/HourlyForecast.tsx | size | text-lg
+packages/weather/src/frontend/_components/LocationSidebar.tsx | line | leading-tight
 packages/weather/src/frontend/_components/LocationSidebar.tsx | size | text-[0.6875rem]
 packages/weather/src/frontend/_components/RadarCard.tsx | size | text-[10px]
 packages/weather/src/frontend/_components/RadarCard.tsx | size | text-[10px]
@@ -922,6 +1307,30 @@ packages/weather/src/frontend/display/DisplayViews.tsx | weight | font-light
 packages/weather/src/frontend/display/DisplayViews.tsx | weight | font-light
 packages/weather/src/frontend/display/page.tsx | size | text-4xl
 packages/weather/src/frontend/display/page.tsx | size | text-lg
+packages/weather/src/styles/app.css | line | var(--k2b-h-label)
+pwas/notes/src/styles.css | line | 1.12
+pwas/notes/src/styles.css | line | 1.15
+pwas/notes/src/styles.css | line | 1.2
+pwas/notes/src/styles.css | line | 1.3
+pwas/notes/src/styles.css | line | 1.3
+pwas/notes/src/styles.css | line | 1.35
+pwas/notes/src/styles.css | line | 1.4
+pwas/notes/src/styles.css | line | 1.45
+pwas/notes/src/styles.css | line | 1.45
+pwas/notes/src/styles.css | line | 1.45
+pwas/notes/src/styles.css | line | 1.45
+pwas/notes/src/styles.css | line | 1.45
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.5
+pwas/notes/src/styles.css | line | 1.55
+pwas/notes/src/styles.css | line | 1.6
+pwas/notes/src/styles.css | line | 1.6
 pwas/notes/src/styles.css | size | 0.6875rem
 pwas/notes/src/styles.css | size | 0.6875rem
 pwas/notes/src/styles.css | size | 0.9375rem
@@ -953,6 +1362,8 @@ pwas/notes/src/styles.css | size | 1.375rem
 pwas/notes/src/styles.css | size | 1.375rem
 pwas/notes/src/styles.css | size | 1.75rem
 pwas/notes/src/styles.css | size | 1.75rem
+pwas/notes/src/styles.css | size | 16px
+pwas/notes/src/styles.css | size | 16px
 pwas/notes/src/styles.css | size | 1rem
 pwas/notes/src/styles.css | size | 22px
 pwas/notes/src/styles.css | size | 24px
@@ -960,6 +1371,22 @@ pwas/notes/src/styles.css | size | 26px
 pwas/notes/src/styles.css | size | 2rem
 pwas/notes/src/styles.css | size | 2rem
 pwas/notes/src/styles.css | size | var(--notes-title-size)
+pwas/pwa-auth/src/styles.css | line | 1.1
+pwas/pwa-auth/src/styles.css | line | 1.3
+pwas/pwa-auth/src/styles.css | line | 1.35
+pwas/pwa-auth/src/styles.css | line | 1.4
+pwas/pwa-auth/src/styles.css | line | 1.45
+pwas/pwa-auth/src/styles.css | line | 1.45
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
+pwas/pwa-auth/src/styles.css | line | 1.5
 pwas/pwa-auth/src/styles.css | size | 0.9375rem
 pwas/pwa-auth/src/styles.css | size | 0.9375rem
 pwas/pwa-auth/src/styles.css | size | 0.9375rem
@@ -971,8 +1398,12 @@ pwas/pwa-auth/src/styles.css | size | 1.1875rem
 pwas/pwa-auth/src/styles.css | size | 1.25rem
 pwas/pwa-auth/src/styles.css | size | 1.25rem
 pwas/pwa-auth/src/styles.css | size | 1.3125rem
+pwas/pwa-auth/src/styles.css | size | 1.5rem
+pwas/pwa-auth/src/styles.css | size | 1.5rem
+pwas/pwa-auth/src/styles.css | size | 1.5rem
 pwas/pwa-auth/src/styles.css | size | 1rem
 pwas/pwa-auth/src/styles.css | size | 1rem
 pwas/pwa-auth/src/styles.css | size | 2.75rem
+pwas/pwa-auth/src/styles.css | size | 2rem
 pwas/pwa-auth/src/styles.css | size | 4rem
 pwas/pwa-auth/src/styles.css | weight | 650

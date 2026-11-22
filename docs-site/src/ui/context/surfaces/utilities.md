@@ -89,12 +89,41 @@ size, a line height, and its usual weight; weights are 400, 500, or 600.
 | body | `--k2b-font-size-body`, `--k2b-line-height-body`, `--k2b-font-weight-body` | 14/20, 400 | the head title, reading text |
 | lead | `--k2b-font-size-lead`, `--k2b-line-height-lead`, `--k2b-font-weight-lead` | 18/24, 600 | the statement of a status row or an empty state |
 
-In Tailwind classes, `text-meta`, `text-row`, `text-body`, and `text-lead` set a
-role's size and line height. Reading text (Markdown and the editors) sets a 22 px
-leading and may add headings in 16 and 18 px. Icons and avatar initials are
-signs, not text, and size with their box. The `type-scale` rule holds `@k2b/ui`
-to the roles; an app's remaining fixed sizes are known findings in
-`scripts/checks/type-scale.baseline` that only shrink.
+Besides its own line height a role takes the ones the mockup measures:
+meta inline in a 20 px row, 22 px reading text, and the 20 px phone title
+line; `--k2b-type-roles` lists them for the layout check. In Cloud apps'
+Tailwind classes, `text-meta`, `text-row`, `text-body`, and `text-lead` set a
+role's size and line height, and `leading-4`, `-5`, and `-6` its line heights.
+
+Reading text is the content of rendered Markdown, the shared text editor, and
+a ProseMirror document: 14 px on 22 px, with headings in 18 and 16 px. An
+editor's toolbars and menus are controls and use the roles. Signs are not
+text: `i` and `svg` elements, Tabler `.ti` icons, avatars, and emoji size with
+their box. Any other exception names its reason in a `type-scale: allow
+<reason>` comment.
+
+The `type-scale` rule holds `@k2b/ui` to the roles for size, line height, and
+weight. Every allowance, and each remaining fixed size of an app, is a line in
+`scripts/checks/type-scale.baseline` that only shrinks.
+
+### Breaking for @k2b/ui consumers
+
+The type roles replace the former type steps. There are no aliases; replace
+each old name:
+
+| Before | Now |
+| --- | --- |
+| `--k2b-type-12` | `--k2b-font-size-meta` |
+| `--k2b-type-13` | `--k2b-font-size-row` |
+| `--k2b-type-14` | `--k2b-font-size-body` |
+| `--k2b-type-18` | `--k2b-font-size-lead` |
+| `--k2b-chat-decision-size` | `--k2b-font-size-lead` |
+| `--k2b-message-line`, `--k2b-notice-title-line`, `--k2b-notice-detail-line`, `--k2b-sidebar-switcher-line` | the same name with `-height` (`--k2b-message-line-height`, …) |
+| `.k2b-ui` root text 15 px | 13 px, the row role; set a role on text that relied on the larger root |
+
+Building blocks also changed their own sizes and line heights to the roles,
+for example `StatusBadge` 10/600 → 12/500, `Tag` 11 → 12, sidebar rows
+13/18 → 13/20, and Markdown headings 24/20/18 → 18/16/14.
 
 The calm surfaces (the working plan, approvals, comment threads, and the
 surfaces built on them) use the same roles. A box or section uses at most two text styles,

@@ -1,3 +1,5 @@
+import { TYPE_SIZES } from "./type-roles";
+
 /**
  * Measures the type of one surface in a browser test, so a test can hold it to
  * the type rule of calm surfaces: at most two text styles (title, entry) plus one
@@ -38,7 +40,8 @@ export type TypeMeterOptions = {
   leadWithin?: number;
 };
 
-export const TYPE_STEPS = [12, 13, 14, 18] as const;
+/** The four type role sizes in px, read from the tokens (`type-roles.ts`). */
+export const TYPE_STEPS: readonly number[] = TYPE_SIZES;
 
 const defaultIgnore = "[aria-hidden='true'], .k2b-sr-only, kbd, code, pre, .k2b-avatar, [data-type-meter='ignore']";
 const rowSelector = "li, a, button, p, dd, dt, tr, h1, h2, h3, h4, h5, h6, [role='row']";
@@ -86,7 +89,7 @@ export const meterType = async (page: EvaluatingPage, selector: string, options:
   const sizes = [...new Set(styles.map((style) => Number.parseFloat(style)))];
   return {
     styles,
-    offSizes: sizes.filter((size) => !(TYPE_STEPS as readonly number[]).includes(size)),
+    offSizes: sizes.filter((size) => !TYPE_STEPS.includes(size)),
     axes: measured.axes.sort((a, b) => a - b),
     samples: measured.samples,
   };

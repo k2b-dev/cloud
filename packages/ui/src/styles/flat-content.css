@@ -60,7 +60,9 @@
 .k2b-ui .k2b-task-row__icon {
   justify-self: center;
   color: var(--k2b-text-muted);
+  /* type-scale: allow a sign: k2b-task-row__icon */
   font-size: 1rem;
+  /* type-scale: allow a sign: the task icon */
   line-height: 1;
 }
 
@@ -203,7 +205,9 @@
   border-radius: var(--k2b-radius-round);
   color: var(--k2b-text-muted);
   background: var(--k2b-surface);
+  /* type-scale: allow a sign: the step mark (aria-hidden) */
   font-size: 0.75rem;
+  /* type-scale: allow a sign: the step mark */
   line-height: 1;
 }
 
