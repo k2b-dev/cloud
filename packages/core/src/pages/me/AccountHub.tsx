@@ -52,7 +52,7 @@ export default function AccountHub(props: {
             name={props.user.displayName || props.user.uid}
             src={avatarSrc}
             size="lg"
-            class="shrink-0 bg-zinc-100 dark:bg-zinc-800"
+            class="shrink-0 bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
             style="view-transition-name: user-avatar"
           />
         )}
@@ -74,40 +74,35 @@ export default function AccountHub(props: {
         </div>
       </header>
 
-      {/* From 768 px the tabs stand on the frame: the current tab's mark lies on the page frame's top line, which the
-          frame owns (K2, K6). Below, the tabs wrap into rows, where a mark would float between them, so a phone keeps
-          the selected fill. */}
-      <div class="flex min-w-0 flex-col">
-        <nav class="account-tabs mb-4 flex max-w-full flex-wrap gap-1 md:mb-0 md:gap-x-6 md:px-3" aria-label={t().accountSections}>
-          {(
-            [
-              { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
-              { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
-              { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
-              { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
-              { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "ti ti-shield-check" },
-              { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
-              ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
-            ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
-          ).map((section) => {
-            const active = section.id === props.active;
-            return (
-              <a
-                href={section.href}
-                aria-current={active ? "page" : undefined}
-                class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors md:rounded-none md:px-0 md:text-[0.8125rem] ${
-                  active ? "" : "text-secondary hover:text-primary max-md:hover:bg-[var(--ui-hover)]"
-                }`}
-              >
-                <i class={section.icon} aria-hidden="true" />
-                {section.label}
-              </a>
-            );
-          })}
-        </nav>
+      <nav class="account-tabs flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
+        {(
+          [
+            { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
+            { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
+            { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
+            { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
+            { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "ti ti-shield-check" },
+            { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
+            ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
+          ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
+        ).map((section) => {
+          const active = section.id === props.active;
+          return (
+            <a
+              href={section.href}
+              aria-current={active ? "page" : undefined}
+              class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
+                active ? "" : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
+              }`}
+            >
+              <i class={section.icon} aria-hidden="true" />
+              {section.label}
+            </a>
+          );
+        })}
+      </nav>
 
-        <div class="min-w-0">{props.children}</div>
-      </div>
+      <div class="min-w-0">{props.children}</div>
     </div>
   );
 }
@@ -120,7 +115,7 @@ export default function AccountHub(props: {
 export function AccountPage(props: { title: string; description: string; actions?: JSXElement; children: JSXElement }) {
   const headingId = `account-page-${createUniqueId()}`;
   return (
-    <Paper as="section" aria-labelledby={headingId} class="account-page flex flex-col gap-8 p-[var(--k2b-gutter)]">
+    <Paper as="section" aria-labelledby={headingId} class="account-page flex flex-col gap-8 p-4 sm:p-6">
       <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
           <h2 id={headingId} class="sr-only">

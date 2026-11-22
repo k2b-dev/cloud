@@ -11,11 +11,16 @@ export const appsPageMessages = i18n.define({
     en: {
       apps: "Apps",
       addApp: "Add app",
-      appCount: ({ count }: N) => i18n.plural(count, "en", { one: "1 app", other: `${count} apps` }),
-      figureRunning: ({ count }: N) => `${count} running`,
-      figureDisturbed: ({ count }: N) => `${count} disturbed`,
-      figureNotRunning: ({ count }: N) => `${count} not running`,
-      figureNotStarted: ({ count }: N) => `${count} not started`,
+      summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
+        [
+          i18n.plural(total, "en", { one: "1 app", other: `${total} apps` }),
+          ok ? `${ok} running` : "",
+          warn ? `${warn} disturbed` : "",
+          error ? `${error} not running` : "",
+          idle ? `${idle} not started` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
       unchecked: ({ count }: N) => `Error rates not checked for ${count} more apps.`,
       search: "Search apps",
       problems: ({ count }: N) => `Problems ${count}`,
@@ -33,7 +38,7 @@ export const appsPageMessages = i18n.define({
       statusError: "Not running",
       statusIdle: "Not started",
       noRoutes: "no routes",
-      addedOn: "added on",
+      addedOn: ({ date }: { date: string }) => `added on ${date}`,
       moreHints: ({ count }: N) => `+${count}`,
       open: "Open",
       adminOf: ({ name }: { name: string }) => `${name} administration`,
@@ -263,11 +268,16 @@ export const appsPageMessages = i18n.define({
     de: {
       apps: "Apps",
       addApp: "App hinzufügen",
-      appCount: ({ count }: N) => (count === 1 ? "1 App" : `${count} Apps`),
-      figureRunning: ({ count }: N) => `${count} ${count === 1 ? "läuft" : "laufen"}`,
-      figureDisturbed: ({ count }: N) => `${count} gestört`,
-      figureNotRunning: ({ count }: N) => `${count} ${count === 1 ? "läuft" : "laufen"} nicht`,
-      figureNotStarted: ({ count }: N) => `${count} nicht gestartet`,
+      summary: ({ total, ok, warn, error, idle }: { total: number; ok: number; warn: number; error: number; idle: number }) =>
+        [
+          total === 1 ? "1 App" : `${total} Apps`,
+          ok ? `${ok} ${ok === 1 ? "läuft" : "laufen"}` : "",
+          warn ? `${warn} gestört` : "",
+          error ? `${error} ${error === 1 ? "läuft" : "laufen"} nicht` : "",
+          idle ? `${idle} nicht gestartet` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
       unchecked: ({ count }: N) => `Fehlerquoten für ${count} weitere Apps nicht geprüft.`,
       search: "App suchen",
       problems: ({ count }: N) => `Probleme ${count}`,
@@ -285,7 +295,7 @@ export const appsPageMessages = i18n.define({
       statusError: "Läuft nicht",
       statusIdle: "Nicht gestartet",
       noRoutes: "keine Routen",
-      addedOn: "hinzugefügt am",
+      addedOn: ({ date }: { date: string }) => `hinzugefügt am ${date}`,
       moreHints: ({ count }: N) => `+${count}`,
       open: "Öffnen",
       adminOf: ({ name }: { name: string }) => `Verwaltung von ${name}`,
