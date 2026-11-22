@@ -75,7 +75,10 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     if (known !== undefined) return known;
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
-    const clipped = (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)") && (rect.width <= 1 || rect.height <= 1);
+    // A clipped or overflow-hidden box of at most 1 px, such as `.k2b-sr-only` or the primary action's label in a head.
+    const clipped =
+      (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)" || ["hidden", "clip"].includes(style.overflowX)) &&
+      (rect.width <= 1 || rect.height <= 1);
     const result = clipped || visuallyHidden(element.parentElement);
     hidden.set(element, result);
     return result;
@@ -123,9 +126,18 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     const own = box.getBoundingClientRect();
     const left = own.left + box.clientLeft - slack;
     const right = own.left + box.clientLeft + box.clientWidth + slack;
-    const range = document.createRange();
-    range.selectNodeContents(box);
-    const reaches = [range.getBoundingClientRect(), ...Array.from(box.querySelectorAll("*"), (element) => element.getBoundingClientRect())];
+    // What a person sees: every element and every run of text, except what a visually hidden box keeps for screen
+    // readers (its text runs on unclipped in the layout, but nobody sees it, so it is no reason to report a hit area).
+    const reaches = Array.from(box.querySelectorAll("*"))
+      .filter((element) => !visuallyHidden(element))
+      .map((element) => element.getBoundingClientRect());
+    const texts = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let text = texts.nextNode(); text; text = texts.nextNode()) {
+      if (!text.textContent?.trim() || visuallyHidden(text.parentElement)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      reaches.push(range.getBoundingClientRect());
+    }
     if (reaches.some((rect) => rect.width > 0 && (rect.left < left || rect.right > right))) return false;
     return ![box, ...Array.from(box.querySelectorAll("*"))].some(drawsBeyond);
   };
