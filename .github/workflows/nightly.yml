@@ -30,8 +30,16 @@ jobs:
         include:
           - postgres: 15
             image: ghcr.io/k2b-dev/mirror/postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+            data: /var/lib/postgresql/data
           - postgres: 17
             image: ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+            data: /var/lib/postgresql/data
+          # Production runs 18; the documented range follows once this entry is green.
+          - postgres: 18
+            image: ghcr.io/k2b-dev/mirror/postgres:18-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+            # From 18 the image keeps its data in /var/lib/postgresql/18/docker and
+            # refuses to start with a mount at the old /var/lib/postgresql/data.
+            data: /var/lib/postgresql
     services:
       clickhouse:
         image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
@@ -51,7 +59,7 @@ jobs:
           POSTGRES_DB: cloud_nightly_test
         ports: ["5432:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:rw,size=4g
+          --tmpfs ${{ matrix.data }}:rw,size=4g
           --health-cmd "pg_isready -h 127.0.0.1 -U cloud -d cloud_nightly_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
       valkey:
@@ -88,7 +96,7 @@ jobs:
       CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       CLOUD_TEST_S3_REGION: garage
     steps:
-      # PostgreSQL 15 initdb has no -c option. Configure both matrix versions
+      # PostgreSQL 15 initdb has no -c option. Configure every matrix version
       # after startup; reload finishes long before the integration step.
       - name: Configure disposable Postgres
         env:
