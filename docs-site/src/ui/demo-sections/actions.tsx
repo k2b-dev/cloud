@@ -10,7 +10,6 @@ import {
   Disclosure,
   DragSource,
   Dropdown,
-  type DropdownItem,
   DropOverlay,
   type DropOverlayLevel,
   DropTarget,
@@ -501,32 +500,6 @@ const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atSt
   );
 };
 
-/** Invented folders of invented templates, three levels deep, for the submenu examples. */
-const submenuItems: DropdownItem[] = [
-  { label: "Upload", icon: "ti ti-upload", action: () => {} },
-  { label: "New folder", icon: "ti ti-folder-plus", action: () => {} },
-  {
-    items: [
-      {
-        label: "From template",
-        icon: "ti ti-template",
-        submenu: [
-          {
-            label: "Office",
-            icon: "ti ti-folder",
-            submenu: ["Offer", "Invoice", "Letter"].map((label) => ({ label, icon: "ti ti-file-text", action: () => {} })),
-          },
-          {
-            label: "Workshop",
-            icon: "ti ti-folder",
-            submenu: ["Repair order", "Parts list"].map((label) => ({ label, icon: "ti ti-file-text", action: () => {} })),
-          },
-        ],
-      },
-    ],
-  },
-];
-
 const MenusDemo = () => (
   <DemoCard
     id="menus"
@@ -553,17 +526,6 @@ const MenusDemo = () => (
 {/* A search field above many entries */}
 <Dropdown.Root items={templates} label="New task" icons="tile" search={{ label: "Find template" }}>
   <Dropdown.Trigger variant="secondary">New task</Dropdown.Trigger>
-</Dropdown.Root>
-
-{/* A row with \`submenu\` opens a menu beside it; on a phone the sheet shows one level at a time */}
-<Dropdown.Root items={[
-  { label: "Upload", icon: "ti ti-upload", action: upload },
-  { label: "From template", icon: "ti ti-template", submenu: [
-    { label: "Office", icon: "ti ti-folder", submenu: officeTemplates },
-    { label: "Workshop", icon: "ti ti-folder", submenu: workshopTemplates },
-  ] },
-]} phone="sheet">
-  <Dropdown.Trigger variant="secondary">New</Dropdown.Trigger>
 </Dropdown.Root>
 
 <ContextMenu label="Record actions" items={items}>
@@ -643,15 +605,6 @@ const MenusDemo = () => (
       >
         <div class="ui-demo-context-target">Right click or press Shift+F10</div>
       </ContextMenu>
-      <Dropdown.Root label="New" phone="sheet" items={submenuItems}>
-        <Dropdown.Trigger variant="secondary">With submenus</Dropdown.Trigger>
-      </Dropdown.Root>
-      {/* At the right edge the submenus turn to the left. */}
-      <span style={{ "margin-inline-start": "auto" }}>
-        <Dropdown.Root label="New" phone="sheet" align="end" items={submenuItems}>
-          <Dropdown.Trigger variant="secondary">Submenus at the edge</Dropdown.Trigger>
-        </Dropdown.Root>
-      </span>
     </div>
   </DemoCard>
 );

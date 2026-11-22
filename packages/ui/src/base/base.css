@@ -77,7 +77,6 @@
     --k2b-danger-text: light-dark(#b91c1c, #fca5a5);
     /* light-dark() only takes colors, so the shadow switches with the theme attribute. */
     --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
-    --k2b-shadow-overlay-sm: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
     --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
     /* What an inspected mark's color mixes with: darker in light, lighter in dark. */
     --k2b-chart-highlight-mix: light-dark(black, white);
@@ -86,7 +85,6 @@
   :root[data-theme="dark"] {
     color-scheme: dark;
     --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
-    --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
     --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   }
 
@@ -1210,9 +1208,8 @@
     border-radius: 0.5rem;
     background: var(--k2b-surface-elevated);
     color: var(--k2b-text);
-    /* K16, K11: as the component's tooltip, the small overlay shadow and 12 px. */
-    box-shadow: var(--k2b-shadow-overlay-sm);
-    font-size: 0.75rem;
+    box-shadow: var(--k2b-shadow-float);
+    font-size: 0.6875rem;
     line-height: 1rem;
     white-space: normal;
     overflow-wrap: anywhere;

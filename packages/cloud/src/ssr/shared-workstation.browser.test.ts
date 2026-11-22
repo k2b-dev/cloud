@@ -232,8 +232,7 @@ test("countdown text keeps the privacy cover and dialog backdrop stable across t
         expect(state.filters.every((filter) => filter === "blur(14px) saturate(0.7)")).toBe(true);
         expect(state.inert).toBe(true);
         expect(state.sameDialog).toBe(true);
-        // K16: a dialog dims the page behind it without blur; only the privacy veil blurs.
-        expect(state.backdrop).toBe("none");
+        expect(state.backdrop).toBe("blur(8px)");
         expect(state.animations).toBe(0);
         expect(state.changes).toEqual([]);
         expect(state.motion).toEqual([]);

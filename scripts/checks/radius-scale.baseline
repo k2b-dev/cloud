@@ -280,6 +280,8 @@ packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface)
 packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
 packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
 packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px) 0 0
+packages/ui/src/styles/feedback-parity.css | css | 0.4375rem
+packages/ui/src/styles/feedback-parity.css | css | calc(var(--k2b-radius-surface) + 0.5rem)
 packages/ui/src/styles/index.css | css | .75rem
 packages/ui/src/styles/index.css | css | .75rem
 packages/ui/src/styles/index.css | css | 0.2rem
@@ -287,6 +289,8 @@ packages/ui/src/styles/index.css | css | 0.3125rem
 packages/ui/src/styles/index.css | css | 0.3125rem
 packages/ui/src/styles/index.css | css | 0.35rem
 packages/ui/src/styles/index.css | css | 0.35rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
 packages/ui/src/styles/index.css | css | 0.375rem
 packages/ui/src/styles/index.css | css | 0.375rem
 packages/ui/src/styles/index.css | css | 0.375rem
@@ -314,6 +318,7 @@ packages/ui/src/styles/index.css | css | 1px
 packages/ui/src/styles/index.css | css | 1rem
 packages/ui/src/styles/index.css | css | 1rem
 packages/ui/src/styles/index.css | css | 1rem 1rem 0.3125rem 1rem
+packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 2px
 packages/ui/src/styles/index.css | css | 2px

@@ -12,14 +12,6 @@ Use a toast for non-blocking feedback. Use `PanelDialog` for a persistent editor
 
 Use `prompts.error` only when the user must read a failure and decide how to continue. A failed one-click action gets an error toast with Retry, and invalid input stays inline next to its field; [Toast](/en/ui/feedback/toast#use-toast) lists the whole rule. Validate a `prompts.form` field with `validate`, so the form stays open with the message under the field instead of closing and opening an error dialog. A field shows its errors from the first submit on and then updates them with every change, so a check that fails mid-input, such as a URL still being typed, does not interrupt the user.
 
-## Look
-
-A prompt is a dialog of variant B: 8 px radius, the large overlay shadow, and
-the page behind it dimmed by 28 % without blur. Inside it is flat: a 56 px head
-band with the title in 14 px and one hairline below, the body on the 20 px text
-edge, and a foot band with the actions and one hairline above. Below 48rem the
-sheet has 14 px at its top and a grip. See [Overlays](/en/ui/surfaces/elevation#overlays).
-
 ## On a phone
 
 Below 48rem a prompt rises from the bottom edge as a sheet, within thumb reach. It has the sheet's handle and motion: it slides in and follows the handle, and the handle or a drag down slides it out and dismisses it the way Escape does, instantly with reduced motion. A dismiss handler that decides later keeps the sheet out until it answers; a prompt with `cancelBehavior: "ignore"` keeps its sheet and shows no handle bar. On a phone the title wraps to up to three lines instead of ending in an ellipsis. A form focuses its first field. From 48rem every prompt stays the dialog in the middle. A `size: "full"` prompt keeps its edge-to-edge frame, and a `surface: "bare"` prompt or a `prompts.dialog` without its header keeps its own chrome. The choice is made when the prompt opens and needs no option.

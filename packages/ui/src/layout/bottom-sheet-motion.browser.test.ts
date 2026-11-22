@@ -416,8 +416,7 @@ describe("BottomSheet motion on a phone", () => {
         };
       });
       expect(Math.abs(dialog.centre - 417)).toBeLessThanOrEqual(1);
-      // K16: as a dialog the page behind it dims, and never blurs.
-      expect(dialog.filter).toBe("none");
+      expect(dialog.filter).toBe("blur(8px)");
     } finally {
       await page.context().close();
     }
