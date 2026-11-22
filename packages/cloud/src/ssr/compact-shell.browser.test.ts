@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dropdownPosition } from "@k2b/ui";
 import type { Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
 import {
   attach,
   cardInset,
@@ -258,6 +258,22 @@ describe("signed-in shell", () => {
             expect(shape.detail!.box.width).toBe(0);
             expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
             expect(shape.bar?.box).toMatchObject({ left: 77, top: 9, right: device.width - 8 - 1, height: 46 });
+            // Details opens the waiting detail as a drawer over the list; Escape closes it and focus returns to Details.
+            const toggle = page.locator("[data-app-workspace-detail-toggle]");
+            await toggle.click();
+            await settled(page);
+            const drawer = await page.locator(".k2b-app-workspace__detail").evaluate((detail) => ({
+              state: detail.getAttribute("data-workspace-detail-drawer"),
+              width: detail.getBoundingClientRect().width,
+              text: detail.textContent?.trim(),
+            }));
+            expect(drawer).toMatchObject({ state: "open", text: "Sender details" });
+            expect(drawer.width).toBeGreaterThanOrEqual(320);
+            expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+            await page.keyboard.press("Escape");
+            await settled(page);
+            expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+            expect(await toggle.evaluate((button) => document.activeElement === button)).toBe(true);
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(55);
