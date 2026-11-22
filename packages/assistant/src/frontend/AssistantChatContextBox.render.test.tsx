@@ -31,7 +31,7 @@ const renderBox = (snapshot: AssistantChatContextSnapshot | null, options: { loc
       locale: options.locale ?? "de",
       get children() {
         return createComponent(AssistantChatContextBox, {
-          variant: "island",
+          variant: "column",
           headingId: "assistant-chat-context-title",
           state: { snapshot: () => snapshot, projectContext: () => null, error: () => options.error, refresh: async () => undefined },
           actions,
@@ -62,9 +62,9 @@ const automations: AssistantChatContextGroup = {
 };
 
 describe('Box "In this chat", server render', () => {
-  test("a labelled island: head with a reserved place for news and Open as tab, results, then sources and context", () => {
+  test("a labelled column: head with a reserved place for news and Open as tab, results, then sources and context", () => {
     const html = renderBox(sidebarSnapshot());
-    expect(html).toContain('data-variant="island"');
+    expect(html).toContain('data-variant="column"');
     expect(html).toContain('aria-labelledby="assistant-chat-context-title"');
     expect(html).toMatch(/<h2 id="assistant-chat-context-title"[^>]*>In diesem Chat<\/h2>/);
     expect(html).toContain('aria-label="Als Tab öffnen"');
@@ -149,7 +149,9 @@ describe('Box "In this chat", server render', () => {
     const failed = renderBox(null, { error: new Error("offline") });
     expect(failed).toContain("„In diesem Chat“ konnte nicht geladen werden.");
     expect(failed).toContain("Der Chat selbst ist davon nicht betroffen.");
-    expect(failed).toContain(">Erneut versuchen<");
+    // K10: a tinted cell whose button names the deed.
+    expect(failed).toContain('data-tone="danger"');
+    expect(failed).toContain(">Neu laden<");
   });
 
   test("renders English copy for an English reader", () => {
