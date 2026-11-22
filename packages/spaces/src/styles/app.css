@@ -311,7 +311,9 @@
 /* Only the cards scroll; their space stays reserved, so a scrollbar moves nothing. */
 /* A column scrolls down only; nothing in it may scroll it sideways, so a card brought into view moves the board. */
 .spaces-kanban-lane__body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
-.spaces-kanban-lane__body > * { flex: none; }
+.spaces-kanban-lane__body > * { min-width: 0; max-width: 100%; flex: none; }
+.spaces-kanban-lane__add { overflow: hidden; }
+.k2b-ui .spaces-kanban-lane__add > * { display: block; width: 100%; max-width: 100%; }
 .spaces-kanban-cards { --k2b-sortable-gap: 0px; --k2b-sortable-line-inset: var(--k2b-gutter); }
 .spaces-kanban-cards > li:last-child { border-bottom: 1px solid var(--k2b-border); }
 .spaces-kanban-lane__empty { margin: 0; padding: var(--k2b-space-3) var(--k2b-gutter); color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); line-height: 1.25rem; }

@@ -410,7 +410,11 @@ const drag = async (page: Page, from: { x: number; y: number; width: number; hei
       from.y + from.height / 2 + ((to.y - from.y - from.height / 2) * step) / 12,
     );
   }
-  // The drag engine finds the place under the pointer in the next frames; a release before that changes nothing.
+  // The drag engine finds the place under the pointer a moment later; a release before that changes nothing. A column
+  // that refuses the card never becomes the target, so the wait ends quietly then.
+  await page
+    .waitForFunction(() => document.querySelector("[data-sortable-target], [data-spaces-kanban-no-drop]"), undefined, { timeout: 5_000 })
+    .catch(() => undefined);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 };
 const center = async (locator: ReturnType<Page["locator"]>) => {
@@ -1467,7 +1471,8 @@ describePart("cards", "Spaces Kanban reactions", () => {
       ).toBe(true);
       expect(await page.locator(".k2b-reaction-bar__add").count()).toBe(0);
       // A card is a row of its column: 56 px with one title line, also without reactions (K7).
-      expect(Math.round((await reactionCard(page, "React03").locator("xpath=ancestor::li[1]").boundingBox())!.height)).toBe(56);
+      // Measured on a card between two others: the last one also carries the line under the column's cards.
+      expect(Math.round((await reactionCard(page, "React02").locator("xpath=ancestor::li[1]").boundingBox())!.height)).toBe(56);
       const link = reactionCard(page).locator("a[data-spaces-kanban-card]");
       await link.focus();
       await page.keyboard.press("Tab");
