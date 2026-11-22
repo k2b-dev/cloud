@@ -14,6 +14,8 @@ export type AppsTableRow = {
   release: string | null;
   /** "/mail, /api/mail +2", or the reason the app has none. */
   routes: string;
+  /** When an app that never started was added; a date is never cut, so the address cell wraps it whole (K15). */
+  added: string | null;
   /** The most important hint in one line, with "+n" for more. */
   problem: string | null;
   problemTone: "neutral" | "warning" | "danger" | null;
@@ -98,7 +100,8 @@ export default function AppsTable(props: {
       { id: "app", header: t().columnApp, value: "name" },
       { id: "status", header: t().columnStatus, value: "status", nowrap: true, class: "w-36 min-w-36" },
       { id: "version", header: t().columnVersion, value: "release", align: "right", nowrap: true, class: `w-24 ${wide}` },
-      { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] ${wide}` },
+      // At least as wide as a whole date ("29. Okt. 2026"), which never breaks or gets cut (K15); the problem gives way.
+      { id: "address", header: t().columnAddress, value: "routes", class: `w-[24%] min-w-32 ${wide}` },
       // The problem takes the rest of the row and truncates, so the table never scrolls sideways beside the detail.
       { id: "problem", header: t().columnProblem, value: "problem", class: `w-full ${wide}` },
     ];
@@ -191,7 +194,16 @@ export default function AppsTable(props: {
             );
           if (col.id === "version") return <span class="tabular-nums">{row.release ?? "–"}</span>;
           // Width 0 with a full minimum: long text never widens its column, it truncates in whatever room is left.
-          if (col.id === "address") return <span class="block w-0 min-w-full truncate text-dimmed">{row.routes}</span>;
+          if (col.id === "address")
+            return row.added ? (
+              <span class="block w-0 min-w-full whitespace-normal text-dimmed">
+                {t().addedOn} <span class="whitespace-nowrap">{row.added}</span>
+              </span>
+            ) : (
+              <span class="block w-0 min-w-full truncate text-dimmed" title={row.routes}>
+                {row.routes}
+              </span>
+            );
           return (
             <Show when={row.problem} fallback={<span class="text-dimmed">–</span>}>
               {(problem) => (
