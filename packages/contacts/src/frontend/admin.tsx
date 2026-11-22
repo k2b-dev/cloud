@@ -71,8 +71,9 @@ export default ssr<AuthContext>(async (c) => {
           <StatCell label={t.statContacts} value={summary.totalContacts} sub={search ? t.statInSearch : t.statAllContacts} />
         </StatGrid>
 
-        <section class="paper overflow-hidden" style="view-transition-name: admin-contacts-table">
-          <div class="flex flex-col gap-2 px-3 py-3">
+        {/* Flat (K2, K7): the table draws no frame; its heading and search stand on the table's text edge. */}
+        <section style="view-transition-name: admin-contacts-table">
+          <div class="flex flex-col gap-2 px-[var(--k2b-gutter)] py-3">
             <div>
               <h2 class="text-xs font-semibold text-primary">{t.booksHeading}</h2>
               <p class="text-[10px] text-dimmed">{t.booksCount({ count: publicBooks.length, total: books.total })}</p>
@@ -84,6 +85,7 @@ export default ssr<AuthContext>(async (c) => {
             columns={columns}
             getRowId={(book) => book.id}
             hoverRows
+            surface="plain"
             class="overflow-x-auto"
             empty={search ? t.emptyFiltered({ search }) : t.emptyAll}
             renderCell={({ row: book, col }) => {
