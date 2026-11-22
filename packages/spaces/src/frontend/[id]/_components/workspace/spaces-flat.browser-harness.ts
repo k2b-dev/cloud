@@ -370,7 +370,9 @@ export const startHarness = async (): Promise<Harness> => {
         : new Response("Not found", { status: 404 });
     },
   });
-  const browser: Browser = await launchBrowser();
+  // Classic scrollbars that take room, as on a desktop without overlay scrollbars: a column that scrolls sideways or a
+  // head that wraps because of one shows in the layout self-check (K15).
+  const browser: Browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
   let counter = 0;
   const pageHtml = (scenario: Scenario, theme: "light" | "dark") =>
     `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +

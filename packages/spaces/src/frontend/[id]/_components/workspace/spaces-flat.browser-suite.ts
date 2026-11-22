@@ -29,18 +29,21 @@ const until = async <T>(read: () => T, expected: Awaited<T>, timeout = 4000) => 
 const ignored = ".k2b-avatar-stack, [data-layout-check='skip'], .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label";
 
 const desktop: View = { width: 1440, height: 900, touch: false };
+const laptop: View = { width: 1100, height: 800, touch: false };
+const tablet: View = { width: 768, height: 1024, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
-const views = [desktop, phone];
 const card = (page: Page, title: string) => page.locator("[data-sortable-column] li", { hasText: title });
 const boxOf = (page: Page, title: string) => card(page, title).boundingBox();
 
 // K15 and "one line, one owner": nothing overlaps, spills, is cut, or draws a double line, with few tasks (no
-// scrollbar) and with many (every column and the list scroll).
-for (const view of views)
+// scrollbar) and with many (every column and the list scroll), with classic scrollbars that take room (harness). At
+// 1100 px a task is open beside the list or the board.
+for (const view of [phone, tablet, laptop, desktop])
   for (const name of ["list", "kanban"] as const)
-    for (const many of [false, true])
-      test(`${view.width} px ${name}, ${many ? "many tasks" : "few tasks"}: no overlap, spill, cut, double line, or scrollbar break`, async () => {
-        const page = await harness.open(view, { view: name, many });
+    for (const many of [false, true]) {
+      const detail = view === laptop;
+      test(`${view.width} px ${name}, ${many ? "many tasks" : "few tasks"}${detail ? ", a task open" : ""}: no overlap, spill, cut, double line, or scrollbar break`, async () => {
+        const page = await harness.open(view, { view: name, many, detail });
         try {
           const result = await page.evaluate(layoutProblems, { root: "body", ignore: ignored });
           expect(result.problems).toEqual([]);
@@ -48,6 +51,7 @@ for (const view of views)
           await page.context().close();
         }
       }, 30_000);
+    }
 
 test("1440 px kanban: a card is a row of its column, 56 px with one title line, without frame, tint, or shadow", async () => {
   const page = await harness.open(desktop, { view: "kanban" });
