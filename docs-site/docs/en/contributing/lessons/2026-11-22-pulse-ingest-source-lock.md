@@ -1,0 +1,6 @@
+### Pulse ingests to one source queued behind each other's ClickHouse write
+
+- **What happened:** In production, bursts of 250 to 540 ingest requests per hour to one HTTP ingest source took up to 10 s. The sender gave up after 10 s (status 499) and reported failed deliveries. `pg_stat_statements` showed that the source row lock (`SELECT … FROM pulse.sources … FOR NO KEY UPDATE`) waited up to 17.8 s (#4031).
+- **Root cause:** The second ingest transaction took the exclusive source row lock first and held it through the synchronous ClickHouse inserts. Each request for the same source therefore waited for every earlier request's store write.
+- **Error class:** A row lock is held across external I/O, so the slowest remote call sets the throughput of everything that needs the same row.
+- **Guard:** `packages/pulse/src/service/ingest-source-lock.integration.test.ts` holds every event insert until all concurrent writers of one source are inside one. Under an exclusive lock the gate never opens. The test also pins the statements of one keyed event with `scripts/fixtures/sql-meter.ts`, and the order of the source locks. The second transaction now takes `FOR KEY SHARE` during the inserts and the exclusive lock only for the SQL bookkeeping after them.

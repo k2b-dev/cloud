@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { SQL } from "bun";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
@@ -13,6 +14,23 @@ import { tryMirrorSource } from "./source-mirror";
 import { EMPTY_SOURCE_REJECTIONS, sourceRejectionSummaries } from "./source-rejections";
 import { SourceExpectationSchema } from "./source-staleness";
 import { iso, isoNullable } from "./telemetry-values";
+
+/**
+ * A source update or removal locks the source FOR UPDATE and waits for running ingest writes (KEY SHARE). New ingest
+ * lockers do not queue behind it, so under sustained ingest it gets the ingest transactions' lock budget, then a
+ * retryable error instead of an open-ended wait.
+ */
+const changeSource = <T>(run: (tx: typeof sql) => Promise<Result<T>>): Promise<Result<T>> =>
+  sql
+    .begin(async (tx) => {
+      await tx`SET LOCAL lock_timeout='30s'`.simple();
+      return run(tx);
+    })
+    .catch((error: unknown) => {
+      if (error instanceof SQL.PostgresError && error.errno === "55P03")
+        return fail(err.unavailable("The Pulse source is busy receiving data. Retry the change in a moment."));
+      throw error;
+    });
 
 export const PULSE_APP_ID = "pulse";
 export const PULSE_SOURCE_RESOURCE_TYPE = "pulse_source";
@@ -337,9 +355,11 @@ export const removeSource = async (params: {
 }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const result = await sql.begin(async (tx): Promise<Result<number>> => {
+  const result = await changeSource(async (tx): Promise<Result<number>> => {
     const active = await requireBaseActive(params.baseId, tx);
     if (!active.ok) return active;
+    // Ingest holds KEY SHARE while it writes; removal waits for those writes as updates do.
+    await tx`SELECT 1 FROM pulse.sources WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid FOR UPDATE`;
     await tx`
       DELETE FROM auth.service_accounts account
       USING pulse.sources source
@@ -439,7 +459,7 @@ export const updateSource = async (params: UpdateSourceParams): Promise<Result<P
   }
   const access = await requireBaseAccess(params.baseId, params.user, "write");
   if (!access.ok) return fail(access.error);
-  const result = await sql.begin(async (db) => {
+  const result = await changeSource(async (db) => {
     const active = await requireBaseActive(params.baseId, db);
     if (!active.ok) return fail(active.error);
     const [existing] = await db<SourceRow[]>`
