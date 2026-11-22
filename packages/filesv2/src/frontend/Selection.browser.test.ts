@@ -516,6 +516,13 @@ const many = (): Item[] =>
   }));
 
 /**
+ * The layout self-check (K15, "one line, one owner", "a scrollbar moves nothing") on the harness root. Only the drop
+ * surface is left out: it lies over the column on purpose while files are dragged in.
+ */
+const problems = (tab: Page) =>
+  tab.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target" });
+
+/**
  * A narrow desktop window for the layout self-check, without `isMobile` and touch: with them Chromium draws overlay
  * scrollbars that take no room, also without `--hide-scrollbars`, and every button grows an invisible 44 px hit area
  * (`::after`) that the check would count as content spilling out of its box.
@@ -524,14 +531,6 @@ const phoneLayout: BrowserContextOptions = { viewport: { width: 390, height: 844
 
 describe("Files folder is flat (K1–K15)", () => {
   // Valentin 21.11.: no two borders on one edge, nothing overlaps or is cut, and a scrollbar moves no line.
-  const problems = (tab: Page) =>
-    tab.evaluate(layoutProblems, {
-      root: "#root",
-      // Text for screen readers only (a 1 px clipped box) is hidden on purpose, also the phone's New label beside its sign.
-      // The path's "…" and a detail section's toggle reach past their boxes on touch; reported to their blocks (PR3, PR2).
-      ignore:
-        ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target, .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-breadcrumbs__more, .k2b-section__header",
-    });
   for (const [options, width] of [
     [desktop, 1440],
     [phoneLayout, 390],
@@ -596,12 +595,6 @@ describe("Files folder is flat (K1–K15)", () => {
 });
 
 describe("Files folder states", () => {
-  const problems = (tab: Page) =>
-    tab.evaluate(layoutProblems, {
-      root: "#root",
-      ignore:
-        ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target, .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-breadcrumbs__more, .k2b-section__header",
-    });
   // K12: the tablet and the very wide screen keep one head row, the name column's cap and every line once.
   for (const width of [768, 1100, 1920])
     test(`${width} px with many files${width === 1100 ? " and the detail column open" : ""}: nothing overlaps, spills, is cut, or draws a double line`, async () => {
