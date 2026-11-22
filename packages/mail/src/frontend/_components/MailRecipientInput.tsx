@@ -536,7 +536,7 @@ export default function MailRecipientInput(props: {
                     <span class="block truncate text-xs text-dimmed">{suggestion.address}</span>
                   </Show>
                   <Show when={suggestion.context}>
-                    {(context) => <span class="block truncate text-[10px] text-dimmed">{context()}</span>}
+                    {(context) => <span class="block truncate text-xs text-dimmed">{context()}</span>}
                   </Show>
                 </span>
               </button>
