@@ -27,13 +27,18 @@ render(() => createComponent(AppWorkspace, { resizable: false, get children() { 
       return createComponent(AppWorkspace.SidebarBody, { sidebarMode: "expanded", get children() { return rows("side"); } });
     } });
   } }),
-  createComponent(AppWorkspace.Content, { get children() { return createComponent(AppWorkspace.Main, { get children() { return rows("main"); } }); } }),
+  // The detail column NEXT TO the list (Valentin's mark in a record page): both columns scroll or neither does.
+  createComponent(AppWorkspace.Content, { get children() { return [
+    createComponent(AppWorkspace.Main, { get children() { return rows("main"); } }),
+    createComponent(AppWorkspace.Detail, { id: "record", open: true, get children() {
+      return createComponent(DetailPanel, { get children() {
+        return createComponent(DetailPanel.Body, { get children() {
+          return rows("detail").map((row) => { row.setAttribute("data-k2b-band", ""); return row; });
+        } });
+      } });
+    } }),
+  ]; } }),
 ]; } }), document.getElementById("workspace"));
-render(() => createComponent(DetailPanel, { get children() {
-  return createComponent(DetailPanel.Body, { get children() {
-    return rows("detail").map((row) => { row.setAttribute("data-k2b-band", ""); return row; });
-  } });
-} }), document.getElementById("detail"));
 render(() => createComponent(ScrollArea, { scrollbar: "overlay", get children() { return rows("area"); } }), document.getElementById("area"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
@@ -53,9 +58,9 @@ const load = async (rows: "few" | "many"): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 700 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>` +
-      ".row{height:40px;box-shadow:inset 0 -1px 0 #e4e4e7;line-height:20px;padding:10px 0}" +
-      "#workspace{height:400px;display:flex}#detail{width:380px;height:300px;display:flex;flex-direction:column}#area .k2b-scroll-area{height:200px;width:400px}" +
-      `</style></head><body class="k2b-ui" style="margin:0"><div id="workspace"></div><div id="detail"></div><div id="area"></div></body></html>`,
+      ".row{height:40px;box-shadow:inset 0 -1px 0 #e4e4e7;line-height:20px;padding:10px 0}.row:first-child{background:#eff6ff}" +
+      "#workspace{height:400px;display:flex}#area .k2b-scroll-area{height:200px;width:400px}" +
+      `</style></head><body class="k2b-ui" style="margin:0"><div id="workspace"></div><div id="area"></div></body></html>`,
   );
   await page.addScriptTag({ content: `window.overlayRows = ${JSON.stringify(rows)};` });
   await page.addScriptTag({ content: script });
@@ -67,17 +72,24 @@ const load = async (rows: "few" | "many"): Promise<Page> => {
 const scrollers = {
   sidebar: ".k2b-app-workspace__sidebar-body",
   main: ".k2b-app-workspace__main",
-  detail: ".k2b-detail-panel__body",
+  detail: ".k2b-app-workspace__detail .k2b-detail-panel__body",
   area: "#area .k2b-scroll-area",
 } as const;
 const rowOf = { sidebar: ".row.side", main: ".row.main", detail: ".row.detail", area: ".row.area" } as const;
+/** The column each scroller fills; its inner edge is where a person sees the line end. */
+const columnOf = {
+  sidebar: ".k2b-app-workspace__sidebar-body",
+  main: ".k2b-app-workspace__main",
+  detail: ".k2b-app-workspace__detail",
+  area: "#area .k2b-scroll-area",
+} as const;
 /** Where a row ends before the scroller's inner edge: the sidebar's rows are inset items, 8 px from both edges. */
 const rowGap = { sidebar: 8, main: 0, detail: 0, area: 0 } as const;
 
 /** For each scroller: whether it overflows, its width without a track, and where its first row ends. */
 const measure = (page: Page) =>
   page.evaluate(
-    ({ scrollers, rowOf }) =>
+    ({ scrollers, rowOf, columnOf }) =>
       Object.fromEntries(
         Object.entries(scrollers).map(([name, selector]) => {
           const scroller = document.querySelector(selector) as HTMLElement;
@@ -85,6 +97,9 @@ const measure = (page: Page) =>
           const box = scroller.getBoundingClientRect();
           const style = getComputedStyle(scroller);
           const inner = box.right - Number.parseFloat(style.borderRightWidth) - Number.parseFloat(style.paddingRight);
+          const column = document.querySelector(columnOf[name as keyof typeof columnOf]) as HTMLElement;
+          const columnBox = column.getBoundingClientRect();
+          const columnEdge = columnBox.right - Number.parseFloat(getComputedStyle(column).borderRightWidth);
           return [
             name,
             {
@@ -97,12 +112,15 @@ const measure = (page: Page) =>
               sideways: scroller.scrollWidth > scroller.clientWidth,
               rowRight: row.getBoundingClientRect().right,
               rowGap: Math.round((inner - row.getBoundingClientRect().right) * 100) / 100,
+              // The line and the fill of the first row against the column's own edge, and the column's width.
+              columnGap: Math.round((columnEdge - row.getBoundingClientRect().right) * 100) / 100,
+              columnWidth: Math.round(columnBox.width * 100) / 100,
               thumb: scroller.querySelector(":scope > .k2b-overlay-scrollbar")?.getAttribute("data-overflow") === "true",
             },
           ];
         }),
       ),
-    { scrollers, rowOf },
+    { scrollers, rowOf, columnOf },
   );
 
 describe("overlay scrollbar of the flat scrollers", () => {
@@ -120,12 +138,35 @@ describe("overlay scrollbar of the flat scrollers", () => {
         expect({ name, gap: before[name]!.rowGap }).toEqual({ name, gap: rowGap[name] });
         expect({ name, gap: after[name]!.rowGap }).toEqual({ name, gap: rowGap[name] });
         expect({ name, right: after[name]!.rowRight }).toEqual({ name, right: before[name]!.rowRight });
+        // The visible gap to the column's edge and the column's width: the same with and without overflow (no width jump).
+        expect({ name, gap: after[name]!.columnGap, width: after[name]!.columnWidth }).toEqual({
+          name,
+          gap: before[name]!.columnGap,
+          width: before[name]!.columnWidth,
+        });
         // The thumb is there only when there is something to scroll.
         expect({ name, thumbs: [before[name]!.thumb, after[name]!.thumb] }).toEqual({ name, thumbs: [false, true] });
       }
     } finally {
       await few.close();
       await many.close();
+    }
+  });
+
+  test("the detail column next to the list: lines and fills reach the edge of both columns", async () => {
+    for (const rows of ["few", "many"] as const) {
+      const page = await load(rows);
+      try {
+        const columns = await measure(page);
+        expect({ rows, main: columns.main!.columnGap, detail: columns.detail!.columnGap }).toEqual({ rows, main: 0, detail: 0 });
+        // The selected (tinted) first row fills its column to the edge in both columns.
+        const fills = await page.evaluate(() =>
+          [".row.main", ".row.detail"].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor),
+        );
+        expect(fills).toEqual(["rgb(239, 246, 255)", "rgb(239, 246, 255)"]);
+      } finally {
+        await page.close();
+      }
     }
   });
 
