@@ -146,7 +146,7 @@ export default function ContactQuickEdit(props: Props) {
           >
             {(parent) => (
               <div class="flex flex-wrap items-center gap-1.5">
-                <span class="text-xs text-primary">{resolveContactName(parent())}</span>
+                <span class="rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-primary">{resolveContactName(parent())}</span>
                 <Button variant="ghost" size="sm" onClick={openParentPicker}>
                   {t().change}
                 </Button>

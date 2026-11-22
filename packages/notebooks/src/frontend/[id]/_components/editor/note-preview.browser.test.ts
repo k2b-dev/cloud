@@ -356,7 +356,7 @@ for (const fixture of [
       if (fixture.mode === "rich") expect(await preview.textContent()).not.toContain("a list item");
       await settle(page);
       const before = await measure(page, ".notebook-note-preview__line", count);
-      // The paragraph fills the note beside the 288px navigation instead of the 45rem (720px) column.
+      // The paragraph fills the note beside the 288px navigation instead of the 44rem (704px) column.
       if ("fullWidth" in fixture) expect(before[2]!.box.width).toBeGreaterThan(900);
       release?.();
       await page.waitForSelector(".cm-content");

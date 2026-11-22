@@ -32,43 +32,23 @@ render(() => {
   void listing().then(setDirectory);
   return (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
-      {/* Browser brings its head and columns, as in the workspace; a small sidebar stands beside them. */}
-      <AppWorkspace mobileSurface="flush" class="filesv2-workspace">
-        <AppWorkspace.Sidebar label="Storage" collapsible defaultSize={248}>
-          <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarBody>
-              <AppWorkspace.SidebarSection>
-                <AppWorkspace.SidebarItem icon="ti ti-upload">Upload</AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarItem icon="ti ti-layout-grid">All storage</AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarItem icon="ti ti-history">Activity</AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarItem icon="ti ti-star">Favorites</AppWorkspace.SidebarItem>
-              </AppWorkspace.SidebarSection>
-              <AppWorkspace.SidebarSection title="Storage">
-                <AppWorkspace.SidebarItem icon="ti ti-home">Personal</AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarItem icon="ti ti-users" active>
-                  Office
-                </AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarItem icon="ti ti-users">Workshop</AppWorkspace.SidebarItem>
-              </AppWorkspace.SidebarSection>
-            </AppWorkspace.SidebarBody>
-          </AppWorkspace.SidebarDesktop>
-        </AppWorkspace.Sidebar>
-        {directory() && (
-          <Browser
-            directory={directory()!}
-            bases={[base]}
-            source="/app/filesv2"
-            uploads={uploads}
-            selectionHint={new URLSearchParams(location.search).has("hint")}
-            error={new URLSearchParams(location.search).has("error") ? "The folder could not be loaded again." : undefined}
-            onRetry={() => host.setAttribute("data-retried", "true")}
-            onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
-            onChanged={async () => {
-              setDirectory(await listing());
-            }}
-            onNavigate={async () => {}}
-          />
-        )}
+      <AppWorkspace mobileSurface="flush">
+        <AppWorkspace.Content>
+          {directory() && (
+            <Browser
+              directory={directory()!}
+              bases={[base]}
+              source="/app/filesv2"
+              uploads={uploads}
+              selectionPillHint={new URLSearchParams(location.search).has("hint")}
+              onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
+              onChanged={async () => {
+                setDirectory(await listing());
+              }}
+              onNavigate={async () => {}}
+            />
+          )}
+        </AppWorkspace.Content>
       </AppWorkspace>
     </LocaleProvider>
   );

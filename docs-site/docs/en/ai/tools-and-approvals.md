@@ -751,8 +751,7 @@ the place.
   drafts and further details open through **See everything**. Capability sends
   keep **Send** and **Don't send** directly on the card; the quiet
   **See everything** link never replaces rejection.
-- The card uses the quiet AI surface with a thin edge in its hue and the 8 px
-  radius of a control, without a nested box, rule or shadow.
+- The card uses the quiet AI surface, without a nested box, rule or shadow.
   Code versions and administrator reviews use the same `ApprovalFrame`.
   Only the main action is filled when it commits or opens the result.
 - Waiting, running, done, declined, expired, failed and unclear share one

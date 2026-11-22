@@ -12,8 +12,7 @@ const WORKSPACE_SURFACES = {
   empty: "inset",
   // Query panes own their full workbench gutters.
   query: "edge-to-edge",
-  // The records page stands on the column's text edge (K5): head, status row, and table share one gutter.
-  records: "edge-to-edge",
+  records: "inset",
   workflows: "inset",
 } satisfies Record<WorkspaceRouteKind, WorkspaceSurface>;
 

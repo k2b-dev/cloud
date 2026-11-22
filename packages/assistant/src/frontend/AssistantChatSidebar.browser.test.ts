@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
@@ -180,10 +180,9 @@ const layout = (page: Page) =>
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
     };
     return {
-      // The column itself: its start edge draws the line to the chat.
-      island: box(document.querySelector(".assistant-context-boxcol")),
+      island: box(document.querySelector(".assistant-context-boxcol > .assistant-context-box")),
       button: box(document.querySelector(".assistant-context-button")),
-      drawer: box(document.querySelector('.assistant-context-boxcol[data-drawer="open"]')),
+      popover: box(document.querySelector(".assistant-context-popover")),
       timeline: box(document.querySelector(".harness-timeline")),
       composer: box(document.querySelector(".assistant-chat-composer")),
       firstRow: box(document.querySelector(".assistant-context-boxcol .assistant-context-box__row")),
@@ -558,7 +557,7 @@ const typeOf = (page: Page, selector: string) =>
   });
 
 describe(`Box "In this chat" in ${browserName}`, () => {
-  test("the server's first frame is final: a column docked beside the chat when there is room, otherwise the button", async () => {
+  test("the server's first frame is final: an island beside the chat when there is room, otherwise the button", async () => {
     for (const [width, tabs] of [
       [1440, false],
       [1280, false],
@@ -573,11 +572,11 @@ describe(`Box "In this chat" in ${browserName}`, () => {
         await frames(client);
         expect(await layout(client)).toEqual(first);
         if (width >= 1280 && !tabs) {
-          // Gustav flat: 320 px docked at the right edge, from top to bottom; the chat column ends before it, no button.
-          expect(first.island).toMatchObject({ x: width - 320, y: 0, width: 320, height: 800 });
-          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(width - 320);
+          // About 300 px at the top right, 12 px from the edges; the chat column ends before it, no button.
+          expect(first.island).toMatchObject({ x: width - 12 - 300, y: 12, width: 300 });
+          expect(first.timeline!.x + first.timeline!.width).toBeLessThanOrEqual(width - 312);
           expect(first.button).toBeNull();
-          expect(first.firstRow!.height).toBe(36);
+          expect(first.firstRow!.height).toBe(28);
         } else {
           expect(first.island).toBeNull();
           expect(first.button).not.toBeNull();
@@ -589,55 +588,24 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("a flat column: no shadow, no corners, a 56 px head, sections between hairlines, rows of 36 and 52 px, signs on one axis", async () => {
+  test("an island with the island shadow and 12 px corners, rows of 28 px, signs on one axis, and three text styles", async () => {
     const page = await boxPage(1440, sidebarSnapshot({ groups: [automationsGroup()] }));
     try {
-      const paint = await page.locator(".assistant-context-boxcol").evaluate((column) => {
-        const element = column.querySelector(".assistant-context-box")!;
-        const style = getComputedStyle(column);
+      const paint = await page.locator(".assistant-context-boxcol > .assistant-context-box").evaluate((element) => {
+        const style = getComputedStyle(element);
         const rows = Array.from(element.querySelectorAll(".assistant-context-box__row")).map((row) => row.getBoundingClientRect().height);
         const sign = element.querySelector(".assistant-context-box__icon")!.getBoundingClientRect();
         const trailing = getComputedStyle(element.querySelector(".assistant-context-box__trailing")!);
-        const head = element.querySelector(".assistant-context-box__head")!;
-        const sections = Array.from(element.querySelectorAll(".assistant-context-box__body > *")).map(
-          (section) => getComputedStyle(section).borderTopWidth,
-        );
-        const grip = column.querySelector(".assistant-context-grip")!.getBoundingClientRect();
-        return {
-          radius: style.borderRadius,
-          shadow: style.boxShadow,
-          border: style.borderLeftWidth,
-          head: head.getBoundingClientRect().height,
-          headLine: getComputedStyle(head).borderBottomWidth,
-          sections,
-          // The grip stands on the column's start edge.
-          grip: Math.round(grip.left + grip.width / 2 - column.getBoundingClientRect().left),
-          rows,
-          signWidth: sign.width,
-          trailing: trailing.fontSize,
-        };
+        return { radius: style.borderRadius, shadow: style.boxShadow, rows, signWidth: sign.width, trailing: trailing.fontSize };
       });
-      expect(paint.radius).toBe("0px");
-      expect(paint.shadow).toBe("none");
-      // One line, one owner: the column's start edge is the line to the chat, a border on a whole pixel; the grip sits on it.
-      expect(paint.border).toBe("1px");
-      expect(paint.head).toBe(56);
-      expect(paint.headLine).toBe("1px");
-      // One line, one owner: the body draws a hairline above every section after the first.
-      expect(paint.sections[0]).toBe("0px");
-      expect(paint.sections.slice(1).every((width) => width === "1px")).toBe(true);
-      expect(Math.abs(paint.grip)).toBeLessThanOrEqual(1);
-      // A result is one line of 36 px; an automation two lines of 52 px, its state as a dot and a word (K7).
-      expect(new Set(paint.rows)).toEqual(new Set([36, 52]));
+      expect(paint.radius).toBe("12px");
+      expect(paint.shadow).not.toBe("none");
+      expect(new Set(paint.rows)).toEqual(new Set([28]));
       expect(paint.rows.length).toBeLessThanOrEqual(10);
       expect(paint.signWidth).toBe(18);
       expect(paint.trailing).toBe("12px");
-      const dot = await page
-        .locator('[data-group="automations"] .assistant-context-box__trailing[data-tone="ok"]')
-        .evaluate((element) => getComputedStyle(element, "::before").backgroundColor);
-      expect(dot).not.toBe("rgba(0, 0, 0, 0)");
       const type = await typeOf(page, ".assistant-context-boxcol > .assistant-context-box");
-      expect(type.styles).toEqual(["12/400", "13/400", "13/500", "13/600", "14/600"]);
+      expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
       expect(type.axes).toHaveLength(1);
       // A state word is in colour, not bold; the thing that waits for the person has a ring on its tile.
       const word = await page
@@ -712,75 +680,26 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("with tabs open or without room, the button opens the column as a drawer over the chat; Escape closes it", async () => {
-    for (const [width, tabs] of [
-      [1280, true],
-      [820, false],
-    ] as const) {
-      const page = await boxPage(width, sidebarSnapshot(), { tabs });
-      try {
-        const before = await layout(page);
-        expect(before.drawer).toBeNull();
-        await page.getByRole("button", { name: "In diesem Chat" }).click();
-        const drawer = page.locator('.assistant-context-boxcol[data-drawer="open"]');
-        await drawer.getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
-        const open = await layout(page);
-        // Over the chat at its right edge, from top to bottom; the chat behind it does not move.
-        expect(open.timeline).toEqual(before.timeline);
-        expect(open.composer).toEqual(before.composer);
-        expect(open.button).toEqual(before.button);
-        expect(open.drawer).toMatchObject({ x: width - 320, y: 0, width: 320, height: 800 });
-        expect(await drawer.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
-        await page.waitForFunction(() => document.activeElement?.id === "assistant-chat-context-title");
-        await page.keyboard.press("Escape");
-        await drawer.waitFor({ state: "detached" });
-        await page.waitForFunction(() => document.activeElement?.classList.contains("assistant-context-button"));
-        // "Open as tab" leaves the drawer for the tab.
-        await page.getByRole("button", { name: "In diesem Chat" }).click();
-        await drawer.getByRole("button", { name: "Als Tab öffnen", exact: true }).click();
-        await drawer.waitFor({ state: "detached" });
-        expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([
-          { name: "all", sheetOpen: false },
-        ]);
-        // A press outside closes it too.
-        await page.getByRole("button", { name: "In diesem Chat" }).click();
-        await drawer.waitFor();
-        await page.mouse.click(40, 400);
-        await drawer.waitFor({ state: "detached" });
-      } finally {
-        await page.close();
-      }
-    }
-  }, 30_000);
-
-  test("the docked column closes to the button in the chat's head and comes back; its grip resizes it, the chat keeps 400 px", async () => {
-    const page = await boxPage(1440);
+  test("with tabs open, the button opens the box below it without moving the chat; Escape closes it", async () => {
+    const page = await boxPage(1280, sidebarSnapshot(), { tabs: true });
     try {
-      const docked = await layout(page);
-      expect(docked.button).toBeNull();
-      await page.getByRole("button", { name: "„In diesem Chat“ schließen" }).click();
-      const button = page.getByRole("button", { name: "In diesem Chat" });
-      await button.waitFor();
-      await page.waitForFunction(() => document.activeElement?.classList.contains("assistant-context-button"));
-      const closed = await layout(page);
-      expect(closed.island).toBeNull();
-      // The chat takes the room.
-      const chatWidth = () => page.evaluate(() => document.querySelector(".assistant-chat-messages")!.getBoundingClientRect().width);
-      expect(await chatWidth()).toBe(1440);
-      await button.click();
-      await page.locator(".assistant-context-boxcol .assistant-context-box__row").first().waitFor();
-      await page.waitForFunction(() => document.activeElement?.id === "assistant-chat-context-title");
-      expect(await layout(page)).toEqual(docked);
-      // The grip: a separator with its value; arrows move it in 16 px steps, toward the chat to grow.
-      const grip = page.getByRole("separator", { name: "Breite von „In diesem Chat“" });
-      await grip.focus();
-      await page.keyboard.press("ArrowLeft");
-      await settled(page);
-      expect((await layout(page)).island!.width).toBe(336);
-      await page.keyboard.press("End");
-      await settled(page);
-      expect((await layout(page)).island!.width).toBe(480);
-      expect(await chatWidth()).toBeGreaterThanOrEqual(400);
+      const before = await layout(page);
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
+      const popover = page.locator(".assistant-context-popover");
+      await popover.getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
+      const open = await layout(page);
+      expect(open.timeline).toEqual(before.timeline);
+      expect(open.composer).toEqual(before.composer);
+      expect(open.button).toEqual(before.button);
+      expect(open.popover!.y).toBeGreaterThanOrEqual(before.button!.y + before.button!.height);
+      await page.keyboard.press("Escape");
+      await popover.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("assistant-context-button"))).toBe(true);
+      // "Open as tab" leaves the popover for the tab.
+      await page.getByRole("button", { name: "In diesem Chat" }).click();
+      await popover.getByRole("button", { name: "Als Tab öffnen", exact: true }).click();
+      await popover.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([{ name: "all", sheetOpen: false }]);
     } finally {
       await page.close();
     }
@@ -803,8 +722,8 @@ describe(`Box "In this chat" in ${browserName}`, () => {
         });
         expect(box.buttonHeight).toBeGreaterThan(0);
         expect(box.top).toBeGreaterThanOrEqual(box.buttonBottom);
-        // The head names the chat at every width (Gustav flat).
-        expect(await page.locator(".assistant-context-head__title").isVisible()).toBe(true);
+        // On a phone the head names the chat; wider, the chat's place names it.
+        expect(await page.locator(".assistant-context-head__title").isVisible()).toBe(width < 768);
       } finally {
         await page.close();
       }
@@ -819,9 +738,8 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       await sheet.locator(".assistant-context-sheet").getByText("Umsatzbericht Q1-Q3.pdf").waitFor();
       expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
       const type = await typeOf(page, ".assistant-context-sheet .assistant-context-box");
-      expect(type.styles).toEqual(["12/400", "13/400", "13/500", "13/600"]);
-      expect(await sheet.getByRole("button", { name: "„In diesem Chat“ schließen" }).count()).toBe(1);
-      // As high as the box, over the chat behind the shared scrim without blur (Gustav flat v3, K16).
+      expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
+      // As high as the box, and the chat behind it stays as bright as before (v12, picture 66).
       const fit = await page.evaluate(() => {
         const frame = document.querySelector(".k2b-bottom-sheet-frame")!;
         const box = document.querySelector(".assistant-context-sheet")!.getBoundingClientRect();
@@ -834,7 +752,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
         };
       });
       expect(fit.frame - fit.box).toBeLessThan(96);
-      expect(fit.dim).not.toBe("rgba(0, 0, 0, 0)");
+      expect(fit.dim).toBe("rgba(0, 0, 0, 0)");
       expect(fit.blur).toBe("none");
       await sheet.getByRole("button", { name: /^Kontext/ }).click();
       await sheet.waitFor({ state: "detached" });
@@ -851,11 +769,11 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("dark: the column stands on the surface", async () => {
+  test("dark: the island lifts as a lighter surface", async () => {
     const page = await boxPage(1440);
     try {
       await page.evaluate(() => document.documentElement.classList.add("dark"));
-      const paint = await page.locator(".assistant-context-boxcol").evaluate((element) => {
+      const paint = await page.locator(".assistant-context-boxcol > .assistant-context-box").evaluate((element) => {
         const chat = getComputedStyle(document.querySelector(".assistant-chat-pane")!).backgroundColor;
         return { island: getComputedStyle(element).backgroundColor, chat };
       });
@@ -923,7 +841,7 @@ test.skipIf(!shots)(
         { tabs: true },
         async (page) => {
           await page.getByRole("button", { name: "In diesem Chat" }).click();
-          await page.locator('.assistant-context-boxcol[data-drawer="open"] .assistant-context-box__row').first().waitFor();
+          await page.locator(".assistant-context-popover .assistant-context-box__row").first().waitFor();
         },
       ],
       ["kasten-telefon", 390, sidebarSnapshot(), {}],

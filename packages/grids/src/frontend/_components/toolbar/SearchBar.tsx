@@ -91,7 +91,7 @@ export default function SearchBar(props: Props) {
         />
       </div>
       <Show when={props.fields.length > 0}>
-        <div class="grids-search-scope min-w-40 flex-[0_1_16rem]">
+        <div class="min-w-40 flex-[0_1_16rem]">
           <MultiSelectInput
             aria-label={t().searchColumns}
             icon="ti ti-columns"

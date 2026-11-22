@@ -4,7 +4,7 @@ import { weatherMessages } from "../../messages";
 import AddLocationButton from "../AddLocation.island";
 import WeatherNavigation from "../WeatherNavigation.island";
 
-export type SidebarLocation = {
+type Location = {
   id: string;
   name: string;
   state: string | null;
@@ -13,7 +13,7 @@ export type SidebarLocation = {
 };
 
 type Props = {
-  locations: SidebarLocation[];
+  locations: Location[];
   activeId: string | null;
   weatherMap: Map<string, WeatherData | null>;
 };
@@ -24,7 +24,7 @@ export default function LocationSidebar(props: Props) {
   const temperature = (value: number) => `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value)}°`;
   const activeLocation = props.locations.find((location) => location.id === props.activeId);
 
-  const renderLocation = (loc: SidebarLocation, mode: "desktop" | "mobile") => {
+  const renderLocation = (loc: Location, mode: "desktop" | "mobile") => {
     const data = props.weatherMap.get(loc.id);
     const isActive = loc.id === props.activeId;
     const tempClass = data?.current ? weatherService.ui.getTempColorClass(data.current.temperature) : "";
@@ -39,9 +39,9 @@ export default function LocationSidebar(props: Props) {
           />
         </AppWorkspace.SidebarItemIcon>
         <AppWorkspace.SidebarItemLabel>
-          <span class="flex min-w-0 flex-col leading-tight">
-            <span class="truncate">{loc.name}</span>
-            <span class="mt-0.5 truncate text-[0.6875rem] font-normal text-dimmed">
+          <span class="flex flex-col leading-tight">
+            <span>{loc.name}</span>
+            <span class="mt-0.5 text-[0.6875rem] font-normal text-dimmed">
               {data?.current ? <span class={tempClass}>{temperature(data.current.temperature)}</span> : t().noForecast}
               {mode === "desktop" && loc.state ? <span class="ml-1">· {loc.state}</span> : null}
             </span>
@@ -69,13 +69,14 @@ export default function LocationSidebar(props: Props) {
       />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey="weather-locations">
-            {/* The main action waits as the quiet first row of the sidebar (Cloud flach, decision 21.11.). */}
-            <AddLocationButton variant="sidebar" />
-            <AppWorkspace.SidebarSection title={t().locations}>
-              {props.locations.map((loc) => renderLocation(loc, "desktop"))}
-            </AppWorkspace.SidebarSection>
-          </AppWorkspace.SidebarBody>
+          <div class="flex min-h-0 flex-1 flex-col gap-3">
+            <AddLocationButton />
+            <AppWorkspace.SidebarBody scrollPreserveKey="weather-locations">
+              <AppWorkspace.SidebarSection title={t().locations}>
+                {props.locations.map((loc) => renderLocation(loc, "desktop"))}
+              </AppWorkspace.SidebarSection>
+            </AppWorkspace.SidebarBody>
+          </div>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
     </>

@@ -6,9 +6,6 @@ import { createDomTestHarness } from "../../ui/test/dom";
 import type { BrowseOptions, DirectoryResult } from "../src/contracts";
 import { browserWithUploads } from "./browser-with-uploads";
 
-/** The name as a screen reader reads it: `FileName` (@k2b/ui) keeps the whole name as screen-reader text beside its visible parts. */
-const nameText = (node: Element | null | undefined) => node?.querySelector(".k2b-sr-only")?.textContent ?? node?.textContent;
-
 const browseChanges: BrowseOptions[] = [];
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
 if (!isServer) {
@@ -101,7 +98,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
   };
   const names = (dom: ReturnType<typeof createDomTestHarness>) =>
     [...dom.root.querySelectorAll(".filesv2-list__row:not(.filesv2-list__row--virtual) .filesv2-list__name")].map((node) =>
-      nameText(node)?.trim(),
+      node.textContent?.trim(),
     );
 
   for (const [lang, path, detail, label] of [
@@ -171,7 +168,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
     await mount(dom, [], { directory: { ...directory, path: "", items: [] }, onOpenOverview: () => opened.push("overview") });
     const up = dom.root.querySelector<HTMLElement>(".filesv2-list__row--up")!;
     expect(up).not.toBeNull();
-    expect(nameText(up.querySelector(".filesv2-list__name"))).toBe("All storage");
+    expect(up.querySelector(".filesv2-list__name")!.textContent).toBe("All storage");
     expect(up.querySelector(".filesv2-list__detail")).toBeNull();
     expect(up.getAttribute("aria-label")).toBe("Up to all storage");
     expect(up.querySelector(".ti-layout-grid")).not.toBeNull();
@@ -292,9 +289,9 @@ describe("Filesv2 ordering and drag-and-drop", () => {
     const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Sort and filter"]')!;
     expect(button.getAttribute("data-variant")).toBe("input");
     expect(button.classList.contains("k2b-icon-button")).toBe(true);
-    expect(button.closest(".k2b-app-workspace__head")?.querySelector('input[type="search"]')).not.toBeNull();
+    expect(button.closest(".filesv2-browser__header")?.querySelector('input[type="search"]')).not.toBeNull();
     expect(button.textContent?.trim()).toBe("");
-    const firstRow = () => nameText(dom.root.querySelector(".filesv2-list__row .filesv2-list__name"));
+    const firstRow = () => dom.root.querySelector(".filesv2-list__row .filesv2-list__name")?.textContent;
     expect(firstRow()).toBe("Parent folder");
     button.click();
     await flush();
