@@ -707,8 +707,6 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           aria-busy={props.loading ? "true" : undefined}
           tabIndex={0}
           class={`k2b-table-wrap${props.scrollClass ? ` ${props.scrollClass}` : ""}`}
-          // The table owns its sideways scroll viewport; it says so to the layout self-check.
-          data-layout-check="scroll-x"
           data-density={props.density === "compact" ? "compact" : undefined}
           data-has-footer={props.footer ? "true" : undefined}
           data-surface={surface()}
