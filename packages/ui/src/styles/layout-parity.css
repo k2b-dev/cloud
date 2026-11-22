@@ -1058,7 +1058,11 @@ html {
     "drawer";
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  /* Clipped, not a scroll box: below 64 rem Main's minimum lies in the end
+     padding (the tracks reach into it), and a scroll box would count that
+     padding as width it hides. Nothing can scroll it sideways either, not
+     even a focused part beyond its edge. */
+  overflow: clip;
   border: 1px solid transparent;
   border-radius: var(--k2b-workspace-radius);
   background: var(--k2b-surface);
@@ -6388,8 +6392,12 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   overflow: hidden;
 }
 
+/* What is wrong shortens with an ellipsis, but never below about a word (rule
+   15): a label cut to a letter helps nobody. Below that it waits on the
+   clipped line, and a narrow state hides it (below), so the sign carries the
+   state and the hint and assistive technology keep the words. */
 .k2b-ui .k2b-status-row__state > b {
-  min-width: 0;
+  min-width: min(4.5em, max-content);
   max-width: max-content;
   flex: 1 1 0;
   overflow: hidden;
@@ -6419,9 +6427,28 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   container: k2b-status-state / inline-size;
 }
 
+/* Hidden for the eye only: screen readers still read the whole state. */
 @container k2b-status-state (width < 15rem) {
   .k2b-ui .k2b-status-row__next-label {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Too narrow for the sign, about a word, and the time: the label goes whole. */
+@container k2b-status-state (width < 8.5rem) {
+  .k2b-ui .k2b-status-row__state > b {
+    position: absolute;
+    width: 1px;
+    min-width: 0;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

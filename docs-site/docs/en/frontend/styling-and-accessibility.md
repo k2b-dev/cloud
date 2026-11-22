@@ -226,9 +226,11 @@ An application page links the shared stylesheet first and the application's
 layer, so on the application's own markup its utility wins at equal
 specificity: `-mt-1` beats a shared `m-0` on the same element. The
 `@k2b/cloud` build gives the application's `transition` utilities the shared
-default duration and easing. Shared UI scopes both sides of a responsive
-value, such as `max-sm:grid-cols-1 sm:grid-cols-2`, because an application's
-`grid-cols-1` would otherwise cancel the shared `sm:grid-cols-2` (UI-28).
+default duration and easing. Shared UI scopes both sides of a value that a
+breakpoint, container, `dark:` or motion variant changes, such as
+`max-sm:grid-cols-1 sm:grid-cols-2` or `not-dark:bg-white dark:bg-zinc-900`,
+because an application's own `grid-cols-1` or `bg-white` would otherwise
+cancel the shared variant (UI-28).
 
 ### Mix semantic colors
 

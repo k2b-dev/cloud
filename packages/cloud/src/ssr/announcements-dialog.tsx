@@ -36,7 +36,9 @@ function AnnouncementsPanel(props: { entries: AnnouncementDisplayEntry[]; close:
                     })}
                   </p>
                 </div>
-                <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-dimmed dark:bg-zinc-800">v{entry.version}</span>
+                <span class="rounded not-dark:bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-dimmed dark:bg-zinc-800">
+                  v{entry.version}
+                </span>
               </div>
               <MarkdownView trustedHtml={entry.bodyHtml} />
             </article>

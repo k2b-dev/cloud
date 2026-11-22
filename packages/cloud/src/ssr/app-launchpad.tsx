@@ -135,7 +135,7 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
   return (
     <button
       type="button"
-      class="flex w-full items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-white/30 dark:hover:bg-white/10 text-zinc-700 dark:text-zinc-300"
+      class="flex w-full items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-white/30 dark:hover:bg-white/10 not-dark:text-zinc-700 dark:text-zinc-300"
       onClick={open}
       aria-busy={action.busy() ? "true" : undefined}
     >

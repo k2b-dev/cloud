@@ -600,10 +600,10 @@ export const tablesExtension = (presentation: PrettyTableOptions = {}): Extensio
       marginBottom: "0 !important",
       overflowX: "auto",
     },
-    // The Book's table type: a step below the text.
+    // The Book's table type: 14 px, as `estimatedHeight` counts it, whatever the note's text size.
     ".cm-table-widget .md-table": {
       wordBreak: "normal",
-      fontSize: "0.875em",
+      fontSize: "14px",
       lineHeight: "1.5",
     },
   });

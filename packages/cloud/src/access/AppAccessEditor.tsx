@@ -307,7 +307,7 @@ export default function AppAccessEditor(props: AppAccessEditorProps) {
                   <For each={[0, 1, 2, 3]}>
                     {() => (
                       // The same grid as a loaded row, so the list keeps its place when the entries arrive.
-                      <div class="min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5">
+                      <div class="min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 max-sm:py-2 max-sm:grid sm:flex sm:px-2 sm:py-1.5">
                         <span class="h-8 w-8 animate-pulse rounded-full bg-[var(--k2b-surface-muted)]" />
                         <span class="flex min-w-0 flex-1 flex-col gap-1.5">
                           <span class="h-3.5 w-2/5 animate-pulse rounded bg-[var(--k2b-surface-muted)]" />
@@ -370,7 +370,7 @@ export default function AppAccessEditor(props: AppAccessEditorProps) {
         </div>
         <dl class="mt-6 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
           <dt class="font-medium">{t().use}</dt>
-          <dd class="mb-2 text-secondary sm:mb-0">{t().useDescription}</dd>
+          <dd class="max-sm:mb-2 text-secondary sm:mb-0">{t().useDescription}</dd>
           <dt class="font-medium">{t().manage}</dt>
           <dd class="text-secondary">{t().manageDescription}</dd>
         </dl>

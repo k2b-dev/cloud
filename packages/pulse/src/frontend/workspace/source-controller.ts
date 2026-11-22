@@ -164,9 +164,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     }
   };
 
-  const addSource = () => {
+  const addSource = (kind?: "metrics" | "http_ingest") => {
     if (!requireWritable()) return;
     return openSourceCreateDialog({
+      kind,
       loading: deps.loading,
       baseName: deps.selectedBaseName?.(),
       createSource,

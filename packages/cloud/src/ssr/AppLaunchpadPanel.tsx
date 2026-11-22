@@ -79,7 +79,7 @@ export const AppLaunchpadPanel = (
       class={
         props.surface === "sheet"
           ? "cloud-mobile-apps"
-          : "launchpad-panel mx-auto max-h-[min(86vh,var(--ui-dialog-available-height))] w-[var(--ui-dialog-available-width)] max-w-[var(--ui-dialog-available-width)] overscroll-contain p-4 text-primary sm:w-fit sm:p-6 md:p-7 dark:text-white"
+          : "launchpad-panel mx-auto max-h-[min(86vh,var(--ui-dialog-available-height))] max-sm:w-[var(--ui-dialog-available-width)] max-w-[var(--ui-dialog-available-width)] overscroll-contain max-sm:p-4 not-dark:text-primary sm:w-fit sm:p-6 md:p-7 dark:text-white"
       }
     >
       <div class="launchpad-tools">
@@ -121,7 +121,7 @@ export const AppLaunchpadPanel = (
           </div>
         </Show>
       </div>
-      <div class="launchpad-apps-grid flex flex-wrap justify-center gap-x-4 gap-y-4 sm:gap-x-7 sm:gap-y-6">
+      <div class="launchpad-apps-grid flex flex-wrap justify-center max-sm:gap-x-4 max-sm:gap-y-4 sm:gap-x-7 sm:gap-y-6">
         <For each={tiles()}>
           {(tile) => {
             const badge = useAppBadgeDescription(() => ({ endpoint: tile.badge, appId: tile.appId }));
@@ -130,16 +130,16 @@ export const AppLaunchpadPanel = (
                 onClick={follow}
                 href={tile.href}
                 data-cloud-launchpad-start={tile.start ? "" : undefined}
-                class="launchpad-app group flex w-[4.75rem] min-w-0 flex-col items-center gap-1.5 rounded-2xl p-1 text-center focus-ui sm:w-[6.25rem] sm:gap-2 sm:p-2"
+                class="launchpad-app group flex max-sm:w-[4.75rem] min-w-0 flex-col items-center max-sm:gap-1.5 rounded-2xl max-sm:p-1 text-center focus-ui sm:w-[6.25rem] sm:gap-2 sm:p-2"
               >
                 <span
-                  class="app-icon relative grid h-12 w-12 place-items-center rounded-[0.95rem] text-[1.25rem] sm:h-16 sm:w-16 sm:rounded-[1.25rem] sm:text-[1.7rem]"
+                  class="app-icon relative grid max-sm:h-12 max-sm:w-12 place-items-center max-sm:rounded-[0.95rem] max-sm:text-[1.25rem] sm:h-16 sm:w-16 sm:rounded-[1.25rem] sm:text-[1.7rem]"
                   style={appIconStyle(tile)}
                 >
                   <i class={tile.iconClass} aria-hidden="true" />
                   <AppBadge endpoint={tile.badge} appId={tile.appId} />
                 </span>
-                <span class="max-w-full k2b-truncate-fade max-sm:text-[11px] font-medium text-primary sm:text-xs dark:text-white">
+                <span class="max-w-full k2b-truncate-fade max-sm:text-[11px] font-medium not-dark:text-primary sm:text-xs dark:text-white">
                   {tile.label}
                   <Show when={badge()}>
                     <span class="sr-only">, {badge()}</span>
@@ -157,7 +157,7 @@ export const AppLaunchpadPanel = (
         <MobileProfileActions profile={props.profile!} beforeSelect={props.beforeSelect!} />
       </Show>
       <Show when={props.legalLinks.length > 0}>
-        <div class="mt-7 flex flex-wrap justify-center text-[11px] text-dimmed dark:text-white/56">
+        <div class="mt-7 flex flex-wrap justify-center text-[11px] not-dark:text-dimmed dark:text-white/56">
           <For each={props.legalLinks.filter((link) => !(props.surface === "sheet" && props.profile && link.href === "/me"))}>
             {(link) => (
               <a

@@ -84,7 +84,7 @@ export function codeExtension(): MarkedExtension {
         // Special rendering for mermaid blocks with fixed height container
         if (isMermaid) {
           return (
-            `<div class="md-mermaid-block my-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" style="height: 400px;">` +
+            `<div class="md-mermaid-block my-3 rounded-md border not-dark:border-gray-200 dark:border-gray-700 not-dark:bg-white dark:bg-gray-800" style="height: 400px;">` +
             `<div class="h-full w-full flex items-center justify-center p-4">` +
             `<pre class="hidden"><code class="language-mermaid">${renderedCode}</code></pre>` +
             `<div class="md-mermaid-loading text-dimmed text-sm flex items-center gap-2">` +
@@ -97,14 +97,14 @@ export function codeExtension(): MarkedExtension {
 
         // Language badge if specified
         const langBadge = lang
-          ? `<span class="absolute top-2 right-2 text-xs text-gray-400 dark:text-gray-500 font-mono select-none">${escapeHtml(lang)}</span>`
+          ? `<span class="absolute top-2 right-2 text-xs not-dark:text-gray-400 dark:text-gray-500 font-mono select-none">${escapeHtml(lang)}</span>`
           : "";
 
         return (
           `<div class="md-code-block relative my-3">` +
           langBadge +
-          `<pre class="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md p-4 overflow-x-auto">` +
-          `<code class="text-sm font-mono text-gray-800 dark:text-gray-200 whitespace-pre${langClass}">${renderedCode}</code>` +
+          `<pre class="not-dark:bg-gray-50 dark:bg-gray-900 border not-dark:border-gray-200 dark:border-gray-700 rounded-md p-4 overflow-x-auto">` +
+          `<code class="text-sm font-mono not-dark:text-gray-800 dark:text-gray-200 whitespace-pre${langClass}">${renderedCode}</code>` +
           `</pre>` +
           `</div>`
         );
@@ -112,7 +112,7 @@ export function codeExtension(): MarkedExtension {
 
       codespan(token: Tokens.Codespan): string {
         const escapedCode = escapeHtml(token.text);
-        return `<code class="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`;
+        return `<code class="not-dark:bg-gray-100 dark:bg-gray-800 not-dark:text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`;
       },
     },
   };

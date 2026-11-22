@@ -79,7 +79,7 @@ export function WebSearchToolBlock(props: { block: ToolBlock }) {
         description={`${results().length} result${results().length === 1 ? "" : "s"}`}
         bodyInset={false}
       >
-        <ScrollArea class="max-h-56 w-full min-w-0 rounded-md bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <ScrollArea class="max-h-56 w-full min-w-0 rounded-md not-dark:bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <Show when={results().length > 0} fallback={<p class="px-2 py-1.5 text-dimmed">No results.</p>}>
             <For each={results()}>{(result) => <WebLinkRow url={result.url} title={result.title} />}</For>
           </Show>
@@ -114,7 +114,7 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
         label={title() || domainOf(url())}
         bodyInset={false}
       >
-        <div class="flex w-full min-w-0 flex-col gap-0.5 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <div class="flex w-full min-w-0 flex-col gap-0.5 rounded-md not-dark:bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <a
             href={url()}
             target="_blank"
@@ -196,7 +196,7 @@ export function FetchFileToolBlock(props: { block: ToolBlock }) {
           description={description()}
           bodyInset={false}
         >
-          <dl class="grid w-full min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+          <dl class="grid w-full min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md not-dark:bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
             <dt class="font-medium text-dimmed">{t().fetchSource}</dt>
             <dd class="min-w-0 truncate">
               <a href={file().url} target="_blank" rel="noreferrer noopener" class="text-secondary hover:text-primary">
@@ -296,7 +296,7 @@ export function WebsiteReceipts(props: { block: ToolBlock }) {
               </Show>
             }
           >
-            <ul class="flex w-full min-w-0 flex-col gap-0.5 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+            <ul class="flex w-full min-w-0 flex-col gap-0.5 rounded-md not-dark:bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
               <For each={group.receipts}>
                 {(receipt) => (
                   <li class="min-w-0 break-all font-mono text-[11px] text-secondary">

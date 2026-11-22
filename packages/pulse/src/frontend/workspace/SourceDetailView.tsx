@@ -8,6 +8,7 @@ import {
   DetailPanel,
   type DropdownItem,
   IconButton,
+  NoticeRow,
   Section,
   StatusBadge,
   Tooltip,
@@ -16,7 +17,9 @@ import { For, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import { usePulseMessages } from "../use-messages";
+import { sourceProblem } from "./flat-state";
 import { compactDateWithDelta, type PulseDateContext } from "./helpers";
+import { absoluteTime, ago, interval } from "./SourcesTab";
 
 type Props = {
   source: PulseSource;
@@ -25,6 +28,7 @@ type Props = {
   loading: boolean;
   scrapes: PulseSourceScrape[];
   apiKeys: ResourceApiKey[];
+  canManageKeys: boolean;
   scrapeColumns: DataTableColumn<PulseSourceScrape>[];
   renderScrapeCell: (scrape: PulseSourceScrape, col: DataTableColumn<PulseSourceScrape>) => JSX.Element;
   copySetupText: (text: string, label: string) => void;
@@ -87,6 +91,7 @@ export default function SourceDetailView(props: Props) {
   const cloudId = useCloudIdCopy();
   const httpExample = () => httpIngestExample(props.source, props.origin);
   const status = () => props.source.status;
+  const problem = () => sourceProblem(props.source);
   /** The target leads the properties: where Pulse reads from, or where the source sends to. */
   const statusItems = () => [
     {
@@ -97,10 +102,6 @@ export default function SourceDetailView(props: Props) {
         ) : (
           <span class="break-all font-mono text-xs">{`POST ${props.origin}/api/pulse/ingest`}</span>
         ),
-    },
-    {
-      term: t().newestData,
-      description: status().newestDataAt ? compactDateWithDelta(status().newestDataAt!, props.dateContext) : t().noDataYet,
     },
     {
       term: t().lastSeen,
@@ -152,11 +153,12 @@ export default function SourceDetailView(props: Props) {
         ]
       : []),
     ...(status().skippedSummaries ? [{ term: t().skipped, description: t().skippedSummaries({ count: status().skippedSummaries }) }] : []),
-    ...(status().lastError
+    // An error while the source is paused; a current one leads the panel under "What does not arrive".
+    ...(status().lastError && problem() !== "error"
       ? [
           {
             term: t().error,
-            description: <span class="break-all text-red-600 dark:text-red-300">{localizedSourceError(status().lastError, t())}</span>,
+            description: <span class="break-all text-(--k2b-danger-text)">{localizedSourceError(status().lastError, t())}</span>,
           },
         ]
       : []),
@@ -198,9 +200,22 @@ export default function SourceDetailView(props: Props) {
       <DetailPanel.Header
         kind={
           <StatusBadge
-            tone={props.source.enabled ? "ok" : "neutral"}
-            icon={props.source.enabled ? "ti ti-circle-check" : "ti ti-player-pause"}
-            label={props.source.enabled ? t().enabled : t().paused}
+            tone={
+              !props.source.enabled ? "neutral" : problem() === "rejected" || problem() === "error" ? "error" : problem() ? "warning" : "ok"
+            }
+            label={
+              !props.source.enabled
+                ? t().paused
+                : problem() === "rejected"
+                  ? t().stateRefused
+                  : problem() === "error"
+                    ? t().error
+                    : problem() === "throttled"
+                      ? t().throttled
+                      : problem() === "stale"
+                        ? t().stale
+                        : t().enabled
+            }
           />
         }
         title={props.source.name}
@@ -229,11 +244,89 @@ export default function SourceDetailView(props: Props) {
       />
 
       <DetailPanel.Body>
-        <Section title={t().properties}>
+        {/* Something that needs a person is a tinted cell where the thing stands (K10): the source's detail. */}
+        <Show when={problem() === "rejected" || problem() === "error"}>
+          <div class="pulse-not-arriving" role="group" aria-label={t().whatNotArrives}>
+            <Show
+              when={problem() === "rejected" && status().rejected}
+              fallback={
+                <NoticeRow
+                  tone="danger"
+                  icon
+                  reserve={false}
+                  detailTitle={localizedSourceError(status().lastError, t()) ?? undefined}
+                  detail={localizedSourceError(status().lastError, t())}
+                  action={
+                    props.source.kind === "metrics" ? (
+                      <Button variant="secondary" size="sm" disabled={props.loading} onClick={() => void props.scrape(props.source)}>
+                        {t().scrape}
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  {t().fetchFailsSince({
+                    since: absoluteTime(status().lastErrorAt ?? props.source.lastErrorAt ?? props.source.updatedAt, props.dateContext),
+                  })}
+                </NoticeRow>
+              }
+            >
+              {(rejected) => (
+                <NoticeRow
+                  tone="danger"
+                  icon
+                  reserve={false}
+                  detailLines={2}
+                  detailTitle={[t().refusedExplain, rejected().lastReason ? t().lastReason({ reason: rejected().lastReason! }) : null]
+                    .filter(Boolean)
+                    .join(" ")}
+                  detail={[t().refusedExplain, rejected().lastReason ? t().lastReason({ reason: rejected().lastReason! }) : null]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {t().refusedSince({
+                    count: rejected().last24h,
+                    since: rejected().lastAt ? ago(rejected().lastAt!, props.dateContext) : "—",
+                  })}
+                </NoticeRow>
+              )}
+            </Show>
+          </div>
+        </Show>
+        <Section title={t().arrivalTitle} icon="ti ti-inbox">
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            items={[
+              {
+                term: t().newestData,
+                description: status().newestDataAt ? absoluteTime(status().newestDataAt!, props.dateContext) : t().noDataYet,
+              },
+              ...(props.source.todayCount == null
+                ? []
+                : [{ term: t().columnToday, description: props.source.todayCount.toLocaleString(props.dateContext.locale) }]),
+              {
+                term: t().expectation,
+                description: props.source.expectEverySeconds
+                  ? t().expectedEvery({ every: interval(props.source.expectEverySeconds) })
+                  : props.source.expectDailyBy
+                    ? t().expectedDaily({ time: props.source.expectDailyBy })
+                    : props.source.kind === "metrics"
+                      ? t().scrapeEvery({ seconds: props.source.scrapeIntervalSeconds ?? 60 })
+                      : t().expectationNone,
+              },
+            ]}
+          />
+        </Section>
+        <Section title={t().properties} icon="ti ti-list-details">
           <DescriptionList items={statusItems()} layout="rows" size="sm" />
         </Section>
 
-        <Show when={props.source.kind === "http_ingest"}>
+        <Show when={props.source.kind === "http_ingest" && !props.canManageKeys}>
+          <Section title={t().keysTitle} icon="ti ti-key">
+            <p class="pulse-detail-text">{t().keysNeedManage}</p>
+          </Section>
+        </Show>
+        <Show when={props.source.kind === "http_ingest" && props.canManageKeys}>
           <ResourceApiKeys
             title={t().apiKeys}
             description={`${t().apiKeysDescription} ${t().bearerTokenHint}`}
@@ -264,6 +357,7 @@ export default function SourceDetailView(props: Props) {
               }
             >
               <DataTable
+                surface="plain"
                 rows={props.scrapes}
                 columns={props.scrapeColumns}
                 getRowId={(scrape) => scrape.id}

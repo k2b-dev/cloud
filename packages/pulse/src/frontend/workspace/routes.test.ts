@@ -1,15 +1,31 @@
 import { expect, test } from "bun:test";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 
-test("base pages default to overview and source URLs restore selection", () => {
-  expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "overview", sourceId: "" });
+test("base pages open Sources, and the tab URLs restore their state", () => {
+  expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "sources", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/sources", "Base01")).toEqual({ view: "sources", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
-  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("overview");
+  expect(readWorkspacePathState("/app/pulse/Base01?alert=Alt001", "Base01")).toEqual({ view: "sources", sourceId: "", alertId: "Alt001" });
+  expect(readWorkspacePathState("/app/pulse/Base01/data?kind=page_view", "Base01")).toEqual({
+    view: "data",
+    sourceId: "",
+    kind: "page_view",
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01/usage", "Base01")).toEqual({ view: "usage", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/overview", "Base01")).toEqual({ view: "overview", sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("sources");
 });
 
 test("navigation exposes sources and dashboards", () => {
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "dashboards" } })).toBe("/app/pulse/Base01/dashboards?range=24h");
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01/sources");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", alertId: "Alt001" } })).toBe(
+    "/app/pulse/Base01?alert=Alt001",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "data", kind: "page view" } })).toBe(
+    "/app/pulse/Base01/data?kind=page+view",
+  );
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "usage" } })).toBe("/app/pulse/Base01/usage");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
   );
@@ -76,7 +92,7 @@ test("settings tabs preserve underlying source/SQL URL state", () => {
 });
 
 test("overview and authorized alert references survive settings, reload and oversized SQL", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "overview" } })).toBe("/app/pulse/Base01");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "overview" } })).toBe("/app/pulse/Base01/overview");
   const href = buildPulseWorkspaceHref({
     baseId: "Base01",
     state: { view: "sql", alertId: "Alt001", sql: "SELECT '" + "ä".repeat(5000) + "'", params: { host: "web-01" }, settings: "general" },

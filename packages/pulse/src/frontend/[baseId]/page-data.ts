@@ -40,29 +40,59 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
   const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
-  const [base, bases, sources, appUrl] = await Promise.all([
+  // The tab count and the Usage tab need the sources on every tab of the base; the views behind "…" do not.
+  const needsSources = route.view !== "overview" && route.view !== "dashboards";
+  const [base, bases, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
-    route.view === "sources"
-      ? pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
-      : Promise.resolve({ ok: true as const, data: [] }),
     getSetting<string>("app.url").catch(() => ""),
   ]);
+  const managersOf = () =>
+    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
+      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
+      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
+      ORDER BY a.created_at LIMIT 3`;
+  // Not shared: the page says so in its head and names who gives access, as decided on 17.10.; nothing of the base shows.
+  if (!base.ok && base.error.status === 403) {
+    const managers = await managersOf();
+    return {
+      kind: "ok",
+      baseName: "",
+      workspaceProps: {
+        initialAccess: { denied: true, managers: managers.map((manager) => manager.name) },
+        initialPermissions: { write: false, admin: false },
+        initialBases: bases.ok ? await projectBases(bases.data) : [],
+        initialBaseId: publicBaseId,
+        initialRouteState: { view: "sources", sourceId: "" },
+        initialSources: [],
+        initialSourceScrapes: {},
+        initialSourceApiKeys: {},
+        initialQueryCoverage: { bases: bases.ok, baseData: false, sourceDetail: false },
+        initialDateConfig: getDateConfig(c),
+        initialNow: new Date().toISOString(),
+        initialOrigin: publicOrigin(appUrl, url.origin),
+      },
+    };
+  }
   if (!base.ok) return { kind: "error", status: base.error.status };
+  const sources = needsSources
+    ? await pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
+    : { ok: true as const, data: [] };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
   const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
   const [write, admin] = scope.ok
     ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
     : [null, null];
-  const [policy, managers] = await Promise.all([
+  const [policy, managers, creator] = await Promise.all([
     readBasePolicy(),
-    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
-      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
-      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
-      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
-      ORDER BY a.created_at LIMIT 3`,
+    managersOf(),
+    base.data.createdBy && sources.data.length === 0
+      ? sql<{ name: string }[]>`SELECT COALESCE(display_name,uid) AS name FROM auth.users WHERE id::text=${base.data.createdBy}`
+      : Promise.resolve([]),
   ]);
   const props: PulseWorkspaceProps = {
+    initialCreator: creator[0]?.name ?? null,
     initialSettings: { maxRawRetentionDays: policy.maxRawRetentionDays, admins: managers.map((manager) => manager.name) },
     initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
     initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
@@ -71,7 +101,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: route.view === "sources", sourceDetail: true },
+    initialQueryCoverage: { bases: bases.ok, baseData: needsSources, sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
@@ -101,7 +131,8 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
           ? null
           : { code: dashboardPage.error.code, message: dashboardPage.error.message },
   };
-  if (route.view === "overview" || route.view === "dashboards") {
+  // Sources renders the alerts that fired and the store state on the server, from the same read as the overview.
+  if (route.view === "sources" || route.view === "overview" || route.view === "dashboards") {
     const overview = await readOverview({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId, signal: c.req.raw.signal });
     if (!overview.ok && [403, 404].includes(overview.error.status)) return { kind: "error", status: overview.error.status };
     props.initialOverview = overview.ok

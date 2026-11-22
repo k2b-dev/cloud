@@ -12,9 +12,80 @@
   color: var(--ui-app-accent-text);
 }
 
-.contacts-reader > .k2b-detail-panel__header h2 {
-  font-size: 1.5rem;
-  line-height: 1.25;
+/* Cloud flach K17: the contact record. The name is the page's lead (18 px); the bar and the first section draw their
+   own hairlines. Below the header the topics and the facts stand one below the other, topics first, and from 50rem
+   of reader width side by side, the facts as a quiet column of at most 400 px on the right. The record draws the one
+   line between the two; the topics' column divides its topics (K2, one line, one owner). */
+.contacts-reader {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  container: contacts-reader / inline-size;
+}
+
+.k2b-ui .contacts-reader > .k2b-detail-panel__header h2 {
+  font-size: var(--k2b-font-size-lead);
+  line-height: 1.5rem;
+}
+
+.contacts-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.contacts-record > :not([hidden]) ~ :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
+}
+
+/* Each fact group stands on the text edge itself; only the column's heading needs it. */
+.contacts-record__facts {
+  padding-block: var(--k2b-space-4) var(--k2b-space-6);
+}
+
+.contacts-record__facts > .k2b-section > .k2b-section__header {
+  padding-inline: var(--k2b-gutter);
+}
+
+/* A fact group brings its own 12 px above and 4 px below; with the gap, groups stand 24 px apart (K17: space, no line). */
+.contacts-record__groups {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--k2b-space-2);
+}
+
+@container contacts-reader (min-width: 50rem) {
+  .contacts-record {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 25rem);
+    min-height: 100%;
+    align-items: stretch;
+  }
+
+  .contacts-record > :not([hidden]) ~ :not([hidden]) {
+    border-block-start: 0;
+  }
+
+  .contacts-record > .contacts-record__facts {
+    border-inline-start: 1px solid var(--k2b-border);
+  }
+}
+
+/* A value people act on is a link in the text colour, underlined in the app colour on hover and focus (K8). */
+.contacts-fact-link {
+  color: inherit;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.contacts-fact-link:hover,
+.contacts-fact-link:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--ui-app-accent-text);
+  text-underline-offset: 2px;
 }
 
 .k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable) .contacts-list__contact-points {
@@ -313,14 +384,8 @@
 
 }
 
-/* Contact details in the shared outline: the first way to reach the contact
-   is the one main action, in a quiet tint of the app colour. */
-.k2b-ui .k2b-button.contacts-details-main {
-  color: var(--k2b-detail-panel-accent, var(--k2b-action));
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
-  /* The tint is its edge: no grey subtle-button border around it. */
-  border-color: transparent;
-}
-.k2b-ui .k2b-button.contacts-details-main:not(:disabled, [aria-disabled="true"]):hover {
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+/* The list's controls end on the line the list draws at its top; the rows run from edge to edge and the list
+   divides them (K2, K7). */
+.contacts-results__scroll {
+  border-block-start: 1px solid var(--k2b-border);
 }

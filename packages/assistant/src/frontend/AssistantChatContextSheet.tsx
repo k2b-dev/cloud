@@ -33,10 +33,10 @@ export const openAssistantContextBoxSheet = async (props: {
       };
       const dismiss = () => void context.requestDismiss();
       const content = () => (
-        // As high as the box (at most ten rows), over the chat without dimming it (concept v12, picture 66).
+        // As high as the box (at most ten rows), over the dimmed chat (Gustav flat v3, K16).
         <BottomSheet onDismiss={dismiss}>
           <BottomSheet.Body>
-            {/* The box brings its own head with "New · n" and "Open as tab"; the handle closes the sheet. */}
+            {/* The box brings its own head with "New · n", "Open as tab", and "Close"; the handle closes the sheet too. */}
             <div class="assistant-context-sheet">
               <AssistantChatContextBox
                 state={props.state}
@@ -45,6 +45,7 @@ export const openAssistantContextBoxSheet = async (props: {
                 frozen={() => true}
                 variant="sheet"
                 headingId="assistant-context-sheet-title"
+                onClose={dismiss}
               />
             </div>
           </BottomSheet.Body>

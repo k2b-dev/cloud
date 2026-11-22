@@ -45,9 +45,20 @@ export const launchPulseSqlAssistant = (input: PulseAssistantLaunchInput): Promi
   });
 };
 
-export const launchPulseOverviewAssistant = (input: { base: { id: string; name: string }; locale?: string }): Promise<AssistantLaunch> => {
+/** A chat about one base; `goal` asks for a page from its data or for a new source instead of a general analysis. */
+export const launchPulseOverviewAssistant = (input: {
+  base: { id: string; name: string };
+  locale?: string;
+  goal?: "page" | "connect";
+}): Promise<AssistantLaunch> => {
   const locale = input.locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang);
   const t = pulseMessages.resolve([locale]).t;
+  const text =
+    input.goal === "page"
+      ? t.assistantPagePrompt({ base: input.base.name })
+      : input.goal === "connect"
+        ? t.assistantConnectPrompt({ base: input.base.name })
+        : t.overviewAssistantPrompt({ base: input.base.name });
   return launchAssistant({
     launchedByAppId: "pulse",
     title: t.overviewAssistantTitle({ base: input.base.name }),
@@ -59,7 +70,7 @@ export const launchPulseOverviewAssistant = (input: { base: { id: string; name: 
     ],
     draft: {
       content: [
-        { type: "text", text: t.overviewAssistantPrompt({ base: input.base.name }) },
+        { type: "text", text },
         {
           type: "resource",
           ref: { type: "pulse.base", id: input.base.id },

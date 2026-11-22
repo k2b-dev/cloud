@@ -15,16 +15,18 @@ type SourceCreateDialogOptions = {
   assistantError?: Accessor<string | null>;
   createSource: (input: CreateSourceInput) => Promise<boolean>;
   inspectSources: () => void;
+  /** A way the person already chose (the empty base's rows): the dialog opens on that form without the chooser. */
+  kind?: SourceCreateKind;
 };
 
 export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
   dialogCore.open<void>((close) => {
     const t = usePulseMessages();
-    const [choosing, setChoosing] = createSignal(true);
+    const [choosing, setChoosing] = createSignal(!options.kind);
     const [failure, setFailure] = createSignal(false);
     const [uncertain, setUncertain] = createSignal(false);
     const expectation = createSourceExpectationForm({});
-    const [kind, setKind] = createSignal<SourceCreateKind>("http_ingest");
+    const [kind, setKind] = createSignal<SourceCreateKind>(options.kind ?? "http_ingest");
     const [name, setName] = createSignal("");
     const [endpointUrl, setEndpointUrl] = createSignal("");
     const [metricFilters, setMetricFilters] = createSignal("");

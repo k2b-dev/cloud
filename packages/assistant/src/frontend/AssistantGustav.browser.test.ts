@@ -997,14 +997,15 @@ describe("Gustav", () => {
           const shown = await card.innerText();
           for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/])
             expect(shown).not.toMatch(pattern);
-          // The card has no frame and no shadow; details stay on the Code page.
+          // The card has no drop shadow; details stay on the Code page.
           await settled(h.page);
           const look = await card.evaluate((element) => {
             const style = getComputedStyle(element);
             return { shadow: style.boxShadow, radius: style.borderTopLeftRadius };
           });
-          expect(look.shadow).toBe("none");
-          expect(look.radius).toBe("0px"); // K4/K10: a square tinted cell.
+          // Gustav flat (F2): no drop shadow, only the thin edge as a 1 px ring inside, and the 8 px of a card.
+          expect(look.shadow).toMatch(/^(?:rgba?|color)\(.*\) 0px 0px 0px 1px inset$/);
+          expect(look.radius).toBe("8px");
           expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
           expect(h.errors).toEqual([]);
           await shot(h.page, `f-karte-${state.name}-${view.name}-light`);

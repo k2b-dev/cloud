@@ -66,7 +66,7 @@ export function MermaidEditorPreview(props: {
             <span class="text-sm font-mono">{t().invalidMermaid}</span>
             <details class="text-xs text-gray-500 max-w-full">
               <summary class="cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">{t().showErrorDetails}</summary>
-              <pre class="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-left overflow-x-auto">{message()}</pre>
+              <pre class="mt-2 p-2 not-dark:bg-gray-100 dark:bg-gray-800 rounded text-left overflow-x-auto">{message()}</pre>
             </details>
           </div>
         )}
