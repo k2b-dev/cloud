@@ -35,8 +35,8 @@ const sizeClasses = {
     time: "text-xs",
     icon: "text-base",
     temp: "text-sm",
-    rain: "text-[10px]",
-    rainIcon: "text-[8px]",
+    rain: "text-xs",
+    rainIcon: "text-[10px]",
     minWidth: "min-w-14",
   },
   lg: {
@@ -80,8 +80,8 @@ export default function HourlyForecast({ hourly, limit, size = "md", showNow = t
             <span class={`${s.temp} font-medium ${weatherUiService.getTempColorClass(h.temperature)}`}>{number(h.temperature, 1)}°</span>
           </div>
           {h.precipitationProbability != null && h.precipitationProbability > 0 ? (
-            <span class={`${s.rain} text-blue-500`}>
-              <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {percent(h.precipitationProbability)}
+            <span class={`${s.rain} text-dimmed`}>
+              <i class={`ti ti-droplet ${s.rainIcon} text-blue-500`} aria-hidden="true" /> {percent(h.precipitationProbability)}
             </span>
           ) : (
             <span class={`${s.rain} text-transparent`} aria-hidden="true">
