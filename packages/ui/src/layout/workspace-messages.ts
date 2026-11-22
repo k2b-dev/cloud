@@ -26,6 +26,7 @@ const workspaceMessages = i18n.define({
       pathLevelsAbove: "Levels above",
       statusNextAttempt: "next attempt",
       statusSelected: ({ count }: { count: number }) => `${count} selected`,
+      statusFilters: "Filters",
     },
     de: {
       rowAction: "Zeilenaktion",
@@ -49,6 +50,7 @@ const workspaceMessages = i18n.define({
       pathLevelsAbove: "Ebenen darüber",
       statusNextAttempt: "nächster Versuch",
       statusSelected: ({ count }) => `${count} ausgewählt`,
+      statusFilters: "Filter",
     },
   },
 });

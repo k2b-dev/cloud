@@ -6474,7 +6474,70 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
 }
 
-/* A phone stacks the filters under the lead statement; they scroll sideways. */
+/* K15: from 768 px the filters never scroll. They keep their width while the
+   key figures or the state give way; then they wrap inside one line's height,
+   and what wraps folds behind "Filters +n" (the row's script hides it and
+   counts it). At least the widest filter stays. The end keeps one line's
+   height, so the open panel grows below the row and moves nothing. */
+.k2b-ui .k2b-status-row__end[data-filters] {
+  height: 2.25rem;
+  flex: 0 1 auto;
+  align-items: flex-start;
+  overflow: visible;
+}
+
+.k2b-ui .k2b-status-row__filters {
+  display: flex;
+  min-width: min-content;
+  height: 2.25rem;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-status-row__filters > * {
+  flex: none;
+}
+
+/* A folded filter takes no focus and is not read while it waits. */
+.k2b-ui .k2b-status-row__filters:not([data-open]) > [data-fit-hidden] {
+  visibility: hidden;
+}
+
+/* Open, the group is a panel: the first line stays where it was, the folded
+   filters follow below it, each with its own state and menu. The padding
+   that a negative margin returns gives the panel its edge without moving a
+   filter. */
+.k2b-ui .k2b-status-row__filters[data-open] {
+  position: relative;
+  z-index: 4;
+  height: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-overlay);
+  margin: calc(-0.5rem - 1px);
+  overflow: visible;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-overlay-sm);
+}
+
+.k2b-ui .k2b-status-row__more {
+  display: flex;
+  height: 2.25rem;
+  flex: none;
+  align-items: center;
+}
+
+.k2b-ui .k2b-status-row__more[hidden] {
+  display: none;
+}
+
+/* A phone stacks the filters under the lead statement; they scroll sideways
+   and fade at the edge where they continue, as a table does. Nothing folds. */
 @media not all and (min-width: 48rem) {
   .k2b-ui .k2b-status-row {
     flex-wrap: wrap;
@@ -6486,6 +6549,56 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     justify-content: flex-start;
     overflow: auto hidden;
     scrollbar-width: none;
+  }
+
+  .k2b-ui .k2b-status-row__end[data-filters] {
+    height: auto;
+    overflow: visible;
+  }
+
+  .k2b-ui .k2b-status-row__filters {
+    min-width: 0;
+    height: auto;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow: auto hidden;
+    scrollbar-width: none;
+  }
+
+  .k2b-ui .k2b-status-row__filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .k2b-ui .k2b-status-row__more {
+    display: none;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .k2b-ui .k2b-status-row__filters {
+      animation: k2b-table-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+
+    .k2b-ui .k2b-status-row__filters:is(:dir(rtl), [dir="rtl"], [dir="rtl"] *):not([dir="ltr"], [dir="rtl"] [dir="ltr"] *) {
+      animation-name: k2b-table-fade-rtl;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .k2b-ui .k2b-status-row__filters {
+        animation-duration: auto !important;
+      }
+    }
+  }
+}
+
+html[data-k2b-motion="reduced"] .k2b-ui .k2b-status-row__filters {
+  animation-duration: auto !important;
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-status-row__filters {
+    animation: none;
   }
 }
 
