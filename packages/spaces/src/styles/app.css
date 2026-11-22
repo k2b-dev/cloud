@@ -309,7 +309,8 @@
 .spaces-kanban-lane__refuse { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spaces-kanban-lane__tools { display: flex; margin-inline-start: auto; align-items: center; }
 /* Only the cards scroll; their space stays reserved, so a scrollbar moves nothing. */
-.spaces-kanban-lane__body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
+/* A column scrolls down only; nothing in it may scroll it sideways, so a card brought into view moves the board. */
+.spaces-kanban-lane__body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
 .spaces-kanban-lane__body > * { flex: none; }
 .spaces-kanban-cards { --k2b-sortable-gap: 0px; --k2b-sortable-line-inset: var(--k2b-gutter); }
 .spaces-kanban-cards > li:last-child { border-bottom: 1px solid var(--k2b-border); }
@@ -322,7 +323,7 @@
 .k2b-ui .spaces-kanban-lane__row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
 /* "Add task" is a quiet row of the column, on its text edge. */
 .k2b-ui .spaces-kanban-lane__add .k2b-button[data-size] {
-  width: 100%; height: var(--k2b-h-row); justify-content: flex-start; padding: 0 var(--k2b-gutter); border-radius: var(--k2b-radius-flat);
+  box-sizing: border-box; width: 100%; height: var(--k2b-h-row); justify-content: flex-start; padding: 0 var(--k2b-gutter); border-radius: var(--k2b-radius-flat);
   color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-row); font-weight: 400;
 }
 .k2b-ui .spaces-kanban-lane__add .k2b-button i { font-size: .875rem; }
@@ -575,7 +576,7 @@
 .spaces-list-group__meta { color: var(--k2b-text-subtle); font-size: var(--k2b-font-size-meta); font-weight: 400; }
 /* Chips in a card's meta line keep to its 20 px (K1). */
 .k2b-ui .spaces-kanban-card__meta :is(.k2b-tag, .k2b-status-badge) { height: 1.25rem; font-size: var(--k2b-font-size-meta); }
-.k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar { --k2b-reaction-height: 1.25rem; }
+.k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar[data-density] { --k2b-reaction-height: 1.25rem; }
 /* People on a card take the 20 px of its meta line, as in the mockup (K1). */
 .k2b-ui .spaces-kanban-card__people .k2b-avatar.k2b-avatar { width: 1.25rem; height: 1.25rem; font-size: 9px; }
 .k2b-ui .spaces-kanban-card__meta .k2b-reaction-bar__add-button.k2b-reaction-bar__add-button { width: 1.25rem; height: 1.25rem; min-height: 0; }

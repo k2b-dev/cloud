@@ -22,18 +22,10 @@ test.skipIf(isServer)("list filters retain rapid choices while displayed results
     },
   }));
   const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
-  const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceFilters");
   const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
   const dispose = render(
     () => [
-      createComponent(SpaceHeadFilters, {
-        spaceId: "Space1",
-        columns: [],
-        tags: [],
-        currentView: "list",
-        initialSource: base,
-        initialTotal: 7,
-      }),
+      // The route draws its filters in its status row.
       createComponent(SpacesListRoute, {
         spaceId: "Space1",
         currentView: "list",

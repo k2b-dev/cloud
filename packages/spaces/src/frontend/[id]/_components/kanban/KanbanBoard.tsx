@@ -1233,7 +1233,7 @@ export default function KanbanBoard(props: Props) {
                     let cardLink: HTMLAnchorElement | undefined;
                     return (
                       <article
-                        class="spaces-kanban-card"
+                        class="spaces-kanban-card k2b-progressive-row"
                         data-selected={isSelected() ? "" : undefined}
                         data-moving={isMovingThis() ? "" : undefined}
                         data-done={item().completedAt ? "" : undefined}

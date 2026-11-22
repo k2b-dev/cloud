@@ -237,18 +237,10 @@ describe("Spaces list search", () => {
       loadSpacesViewSnapshot: () => pending.promise,
     }));
     const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
-    const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceFilters");
     const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
     const dispose = render(
       () => [
-        createComponent(SpaceHeadFilters, {
-          spaceId: "Space1",
-          columns: [],
-          tags: [],
-          currentView,
-          initialSource: base,
-          initialTotal: 120,
-        }),
+        // The route draws its filters, the search among them, in its status row.
         createComponent(SpacesListRoute, {
           spaceId: "Space1",
           currentView,

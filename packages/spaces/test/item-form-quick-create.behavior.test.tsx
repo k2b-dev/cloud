@@ -197,6 +197,9 @@ describe("Spaces item quick create", () => {
       expect(attempts).toHaveLength(2);
       expect(attempts[0]?.requestKey).toBeString();
       expect(attempts[1]?.requestKey).toBe(attempts[0]?.requestKey);
+      // The reason stands in the cell above the footer, which the dialog draws once it has measured its foot.
+      for (let attempt = 0; attempt < 20 && !dom.root.textContent?.includes("Response lost"); attempt++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
       expect(dom.root.textContent).toContain("Response lost");
       type("Prepare another launch");
       await submit();

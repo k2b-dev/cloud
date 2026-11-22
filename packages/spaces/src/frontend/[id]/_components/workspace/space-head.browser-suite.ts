@@ -509,7 +509,12 @@ const expectKanbanAppearance = async (page: Page) => {
   const cards = await page.locator("article .spaces-kanban-card__title").evaluateAll((titles) =>
     titles.map((title) => {
       const card = getComputedStyle(title.closest("article")!);
-      return { size: getComputedStyle(title).fontSize, border: card.borderTopWidth, radius: card.borderTopLeftRadius, shadow: card.boxShadow };
+      return {
+        size: getComputedStyle(title).fontSize,
+        border: card.borderTopWidth,
+        radius: card.borderTopLeftRadius,
+        shadow: card.boxShadow,
+      };
     }),
   );
   expect(cards.length).toBe(11);
