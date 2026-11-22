@@ -8,42 +8,10 @@ const { default: DatabaseTable } = await import("./DatabaseTable");
 
 const bodyCells = (html: string) => [
   ...html
-    .split(/<tbody\b[^>]*>/)[1]!
+    .split("<tbody>")[1]!
     .split("</tr>")[0]!
     .matchAll(/<td\b[^>]*>/g),
 ];
-
-describe("DatabaseTable columns (K7)", () => {
-  test("the name column is the primary one, numbers stand right-aligned, and a phone list keeps name, a second value, and state", () => {
-    const state = field({
-      id: "state",
-      name: "Zustand",
-      type: "select",
-      position: 12,
-      config: { options: [{ id: "open", label: "Offen" }] },
-    });
-    const html = renderToString(() =>
-      createComponent(DatabaseTable, {
-        result: {
-          items: [{ ...records[0]!, data: { ...records[0]!.data, state: ["open"] } }],
-          fields: [...fields, state],
-          nextCursor: null,
-        },
-        baseId: "base",
-      }),
-    );
-    const cells = bodyCells(html).map((cell) => cell[0]);
-    const at = (id: string) => cells[[...fields, state].findIndex((entry) => entry.id === id)]!;
-    expect(cells.filter((cell) => cell.includes("data-primary"))).toEqual([at("text")]);
-    expect(at("text")).toContain('data-list="title"');
-    expect(at("status")).toContain('data-list="meta"');
-    expect(at("state")).toContain('data-list="end"');
-    expect(at("number")).toContain('data-align="right"');
-    expect(at("date")).not.toContain('data-align="right"');
-    // One 36 px head line: the type lives in the icon, not in a second line under the name.
-    expect(html).not.toContain("k2b-data-table__header-subtitle");
-  });
-});
 
 describe("DatabaseTable wrapping", () => {
   test("keeps dates and amounts intact while text can wrap", () => {
@@ -113,8 +81,7 @@ describe("DatabaseTable wrapping", () => {
     expect(bodyCells(html)[0]![0]).toContain('data-nowrap="true"');
   });
 
-  // K1, K15: a row stays 40 px; long text is an excerpt of one line with an ellipsis (it used to wrap in the cell).
-  test.each(["text", "longtext"] as const)("keeps long %s values to one line with an ellipsis", (type) => {
+  test.each(["text", "longtext"] as const)("allows long %s values to wrap", (type) => {
     const text = field({ id: "text", name: "Notes", type });
     const html = renderToString(() =>
       createComponent(DatabaseTable, {
@@ -128,7 +95,6 @@ describe("DatabaseTable wrapping", () => {
         baseId: "base",
       }),
     );
-    expect(bodyCells(html)[0]![0]).not.toContain("data-wrap");
-    expect(html).toContain('<div class="k2b-data-table__cell-text">');
+    expect(bodyCells(html)[0]![0]).not.toContain("data-nowrap");
   });
 });

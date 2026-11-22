@@ -333,6 +333,7 @@ export default function RecordFileField(props: {
       <Show when={props.canWrite}>
         <DetailPanel.Action
           type="button"
+          class="grids-details-add"
           leading={<i aria-hidden="true" class={uploading() ? "ti ti-loader-2 animate-spin" : "ti ti-upload"} />}
           title={t().upload}
           disabled={uploading()}

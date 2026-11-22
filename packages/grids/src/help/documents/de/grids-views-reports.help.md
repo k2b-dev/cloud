@@ -51,7 +51,7 @@ Eine gruppierte oder nur aggregierte Abfrage liefert Ergebniszeilen, keine bearb
 6. Teile sie nur mit den Personen, die ihr Ergebnis sehen dürfen.
 :::
 
-Die Ansichten einer Tabelle stehen als Tabs im Kopf der Tabelle, nach **Alle Datensätze**. Personen mit Zugriff **Ansehen** auf die Base sehen eine geteilte Ansicht. Eine persönliche Ansicht gehört der Person, die sie erstellt hat. Um ein gespeichertes Ergebnis bereitzustellen, ohne die Base zu öffnen, nimm es in den Capability-Snapshot einer Grids App auf.
+Personen mit Zugriff **Ansehen** auf die Base sehen eine geteilte Ansicht. Eine persönliche Ansicht gehört der Person, die sie erstellt hat. Um ein gespeichertes Ergebnis bereitzustellen, ohne die Base zu öffnen, nimm es in den Capability-Snapshot einer Grids App auf.
 
 ## Berichte erstellen und Ergebnisse durchblättern {icon="point"}
 

@@ -12,7 +12,7 @@ export function SelectValueBadges(props: { items: SelectBadgeItem[]; empty?: JSX
         ? (props.empty ?? "")
         : props.items.map((item) => (
             <Tooltip.Anchor content={t().unknownOption({ id: item.id })} disabled={item.known}>
-              <Tag size="lg" color={item.color} class={`max-w-full shrink-0 ${item.known ? "" : "opacity-75"}`}>
+              <Tag size="sm" color={item.color} class={`max-w-full shrink-0 ${item.known ? "" : "opacity-75"}`}>
                 {item.label}
               </Tag>
             </Tooltip.Anchor>

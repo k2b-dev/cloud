@@ -51,7 +51,7 @@ A grouped query or an aggregate-only query returns summary rows, not editable re
 6. Share it only with the people who are allowed to see its result.
 :::
 
-The table's views stand as tabs in the head of the table, after **All records**. People with **View** access to the base can see a shared view. A personal view belongs to its owner. To publish a saved result without opening the base, add it to the capability snapshot of a Grids App.
+People with **View** access to the base can see a shared view. A personal view belongs to its owner. To publish a saved result without opening the base, add it to the capability snapshot of a Grids App.
 
 ## Build reports and page through results {icon="point"}
 
