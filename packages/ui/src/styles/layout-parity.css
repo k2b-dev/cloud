@@ -6344,17 +6344,9 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   gap: 0.5rem;
 }
 
-/* K6, K15: a disturbance takes its room before the filters, which give way
-   first and scroll sideways; the next attempt shortens before what is wrong,
-   and both end in an ellipsis, never cut. */
-.k2b-ui .k2b-status-row[data-mode="state"] > .k2b-status-row__middle {
-  flex: 1 1 auto;
-}
-
-.k2b-ui .k2b-status-row[data-mode="state"] > .k2b-status-row__end {
-  flex-shrink: 1000;
-}
-
+/* K6, K15: the filters keep their width and the state takes the rest. What
+   is wrong shortens with an ellipsis, then the words "next attempt" do; the
+   sign and the time are never cut (the state's hint carries all of it). */
 .k2b-ui .k2b-status-row__state > b {
   min-width: 0;
   overflow: hidden;
@@ -6362,10 +6354,21 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 
 .k2b-ui .k2b-status-row__next {
+  display: inline-flex;
   min-width: 0;
-  flex-shrink: 1000;
+  flex: 0 1000 auto;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-status-row__next-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-status-row__time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The round sign of a disturbance: 20 px, tinted by its tone. */
@@ -6394,7 +6397,8 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-status-row__end {
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  /* The filters keep their width; the key figures or the state give way before them. */
+  flex: none;
   align-items: center;
   gap: 0.5rem;
   margin-inline-start: auto;

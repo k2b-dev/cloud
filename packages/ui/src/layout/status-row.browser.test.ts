@@ -117,7 +117,7 @@ for (const width of [1440, 768, 390])
       expect(await page.locator(".k2b-status-row").nth(0).locator(".k2b-status-row__fact").count()).toBe(3);
       expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__lead").innerText()).toContain("3 selected");
       expect(await page.locator(".k2b-status-row").nth(1).locator(".k2b-status-row__end").innerText()).toBe("Move");
-      expect(await page.locator(".k2b-status-row").nth(2).locator(".k2b-status-row__middle").innerText()).toContain("next attempt 14:05");
+      expect(await page.locator(".k2b-status-row").nth(2).locator(".k2b-status-row__middle").innerText()).toMatch(/next attempt\s*14:05/);
       expect(await page.locator(".k2b-status-row").nth(3).locator("[aria-live=polite]").innerText()).toBe("Moving “Invoice 12” to Done");
     } finally {
       await page.close();
@@ -214,6 +214,55 @@ for (const width of [1440, 768, 390])
         cut: 0,
         fill: "rgba(0, 0, 0, 0)",
         edge: width >= 768 ? 20 : 16,
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+// B4 (flat QA): beside an open Detail the row is narrow. The filters keep their width, the time of the next attempt is
+// never shortened, and only what is wrong ends in an ellipsis; `layoutProblems` sees neither a 0 px filter group nor
+// a shortened time.
+for (const width of [420, 520])
+  test(`a ${width} px row with a disturbance keeps its filters and the whole time of the next attempt`, async () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        children: el("div", {
+          style: `width:${width}px`,
+          get children() {
+            return createComponent(StatusRow, {
+              lead: "12 Aufgaben offen",
+              facts,
+              filters: filters(),
+              state: { label: "Abgleich pausiert, der Server antwortet nicht", tone: "warning", icon: "ti ti-refresh", next: "14:05" },
+            });
+          },
+        }),
+      }),
+    );
+    const page = await open(1440, html);
+    try {
+      const shape = await page.evaluate(() => {
+        const end = document.querySelector<HTMLElement>(".k2b-status-row__end")!;
+        const time = document.querySelector<HTMLElement>(".k2b-status-row__time")!;
+        const sign = document.querySelector<HTMLElement>(".k2b-status-row__sign")!.getBoundingClientRect();
+        const middle = document.querySelector<HTMLElement>(".k2b-status-row__middle")!.getBoundingClientRect();
+        const timeBox = time.getBoundingClientRect();
+        return {
+          filters: end.clientWidth > 0 && end.scrollWidth <= end.clientWidth + 0.5,
+          time: time.textContent,
+          timeWhole: time.scrollWidth <= time.clientWidth + 0.5 && timeBox.right <= middle.right + 0.5,
+          sign: sign.width > 0 && sign.right <= middle.right + 0.5,
+          hint: document.querySelector(".k2b-status-row__state")!.getAttribute("title"),
+        };
+      });
+      expect(shape).toEqual({
+        filters: true,
+        time: "14:05",
+        timeWhole: true,
+        sign: true,
+        hint: "Abgleich pausiert, der Server antwortet nicht · nächster Versuch 14:05",
       });
     } finally {
       await page.close();

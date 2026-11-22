@@ -49,6 +49,15 @@ export type StatusRowProps = {
 
 const present = (value: unknown) => value !== undefined && value !== null && value !== false && value !== "";
 
+/** The state's hint in words, when its label and time are plain text: what is wrong and the next attempt. */
+const stateHint = (state: StatusRowState, nextAttempt: string): string | undefined => {
+  const label = state.label;
+  const next = state.next;
+  if (typeof label !== "string") return undefined;
+  if (!present(next)) return label;
+  return typeof next === "string" ? `${label} · ${nextAttempt} ${next}` : undefined;
+};
+
 /**
  * The status row (K6, K10): the first line under a column's head, 52 px tall. The lead statement on the left keeps
  * its place and size in every state. Up to three key figures follow it; on the right stand the filters. A selection
@@ -86,14 +95,19 @@ export function StatusRow(props: StatusRowProps): JSX.Element {
         </Show>
         <Show when={mode() === "state" && props.state}>
           {(state) => (
-            <span class="k2b-status-row__state">
+            <span
+              class="k2b-status-row__state"
+              // The whole state stays readable when its label shortens (K15): the hint carries it with its time.
+              title={stateHint(state(), messages().statusNextAttempt)}
+            >
               <span class="k2b-status-row__sign" aria-hidden="true">
                 <i class={state().icon ?? "ti ti-alert-triangle"} />
               </span>
               <b>{state().label}</b>
               <Show when={present(state().next)}>
                 <span class="k2b-status-row__next">
-                  {messages().statusNextAttempt} {state().next}
+                  <span class="k2b-status-row__next-label">{messages().statusNextAttempt}</span>
+                  <time class="k2b-status-row__time">{state().next}</time>
                 </span>
               </Show>
             </span>
