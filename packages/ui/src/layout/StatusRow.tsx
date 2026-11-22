@@ -58,10 +58,11 @@ const present = (value: unknown) => value !== undefined && value !== null && val
 type WatchedFilters = HTMLElement & { __k2bStatusFilters?: { schedule: () => void; dispose: () => void } };
 
 /**
- * Self-contained: the server embeds it right after the filters, so it runs before hydration and on pages that never
- * hydrate them; the component calls it again on mount. The filters wrap inside one line's height; whatever wraps
- * past the first line folds: it hides, and "Filters +n" counts it. It folds again whenever the row or a filter
- * changes size, never while the folded filters are open. On a phone the filters do not wrap, so nothing folds.
+ * Self-contained: the server embeds it right after the filters, so the fold runs before hydration and the first frame
+ * is final; the component calls it again on mount. (Opening the folded filters needs the hydrated row, as the filters
+ * themselves do.) The filters wrap inside one line's height; whatever starts below the first line folds: it hides,
+ * and "Filters +n" counts it. Island wrappers draw no box, so their filters count one by one. It folds again whenever
+ * the row or a filter changes, never while the folded filters are open. On a phone the filters do not wrap.
  */
 function watchStatusFilters(element: Element | null) {
   if (!(element instanceof HTMLElement) || typeof ResizeObserver === "undefined") return;
@@ -73,26 +74,34 @@ function watchStatusFilters(element: Element | null) {
   const group = end.querySelector<HTMLElement>(":scope > .k2b-status-row__filters");
   const more = end.querySelector<HTMLElement>(":scope > .k2b-status-row__more");
   if (!group || !more) return;
-  // The box a filter draws: an island wrapper draws none, its first element does.
-  const box = (item: Element): Element =>
-    getComputedStyle(item).display === "contents" && item.firstElementChild ? box(item.firstElementChild) : item;
+  // The filters as they draw: an island wrapper draws no box, so its children count, however deep.
+  const flat = (item: Element): HTMLElement[] =>
+    item instanceof HTMLElement ? (getComputedStyle(item).display === "contents" ? Array.from(item.children).flatMap(flat) : [item]) : [];
+  const filters = () => Array.from(group.children).flatMap(flat);
   const settle = () => {
     if (group.hasAttribute("data-open")) return;
-    const items = Array.from(group.children);
-    for (const item of items) item.removeAttribute("data-fit-hidden");
+    for (const item of Array.from(group.querySelectorAll("[data-fit-hidden]"))) item.removeAttribute("data-fit-hidden");
     more.hidden = true;
+    const items = filters().filter((item) => item.getClientRects().length > 0);
     if (items.length === 0 || getComputedStyle(group).flexWrap !== "wrap") return;
+    // Every filter on the first line starts above the first one's bottom, whatever their heights; a wrapped one below.
     const wrapped = () => {
-      const top = box(items[0]!).getBoundingClientRect().top;
-      return items.filter((item) => box(item).getBoundingClientRect().top > top + 1);
+      const bottom = items[0]!.getBoundingClientRect().bottom;
+      return items.filter((item) => item.getBoundingClientRect().top >= bottom - 0.5);
     };
-    if (wrapped().length === 0) return;
-    // The button takes room from the line, so more may wrap once it shows.
+    let folded = wrapped();
+    if (folded.length === 0) return;
+    // The button and its count take room from the line: measure again until the count holds.
     more.hidden = false;
-    const folded = wrapped();
-    for (const item of folded) item.setAttribute("data-fit-hidden", "");
     const count = more.querySelector(".k2b-status-row__more-count");
+    for (let pass = 0; pass < 3; pass += 1) {
+      if (count) count.textContent = `+${folded.length}`;
+      const next = wrapped();
+      if (next.length === folded.length) break;
+      folded = next;
+    }
     if (count) count.textContent = `+${folded.length}`;
+    for (const item of folded) item.setAttribute("data-fit-hidden", "");
   };
   let frame = 0;
   const schedule = () => {
@@ -103,12 +112,12 @@ function watchStatusFilters(element: Element | null) {
   const observe = () => {
     resize.disconnect();
     if (end.parentElement) resize.observe(end.parentElement);
-    for (const item of Array.from(group.children)) resize.observe(box(item));
+    for (const item of filters()) resize.observe(item);
     schedule();
   };
-  // A filter that comes or goes changes the line.
+  // A filter that comes or goes, also inside an island that renders later, changes the line.
   const children = new MutationObserver(observe);
-  children.observe(group, { childList: true });
+  children.observe(group, { childList: true, subtree: true });
   const watch = {
     schedule,
     dispose: () => {
@@ -143,6 +152,8 @@ function StatusRowFilters(props: { children: JSX.Element }): JSX.Element {
     onCleanup(() => watch?.dispose());
   });
   const close = (returnFocus: boolean) => {
+    // A filter's own menu closes with the panel, so it never stays open unseen.
+    for (const menu of Array.from(group?.querySelectorAll<HTMLElement>(":popover-open") ?? [])) menu.hidePopover();
     setOpen(false);
     if (returnFocus) button?.focus();
     (end as WatchedFilters | undefined)?.__k2bStatusFilters?.schedule();
@@ -151,17 +162,14 @@ function StatusRowFilters(props: { children: JSX.Element }): JSX.Element {
     if (!open() || !end) return;
     const root = end;
     // The first filter that waited takes focus, so the keyboard continues where the eye goes.
-    root
-      .querySelector<HTMLElement>(
-        `.k2b-status-row__filters > [data-fit-hidden] :is(${FOCUSABLE}), .k2b-status-row__filters > [data-fit-hidden]:is(${FOCUSABLE})`,
-      )
-      ?.focus();
+    const first = root.querySelector<HTMLElement>(".k2b-status-row__filters [data-fit-hidden]");
+    (first?.matches(FOCUSABLE) ? first : first?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
     const press = (event: PointerEvent) => {
       if (event.target instanceof Node && !root.contains(event.target)) close(false);
     };
     const key = (event: KeyboardEvent) => {
       // A filter's own open menu closes first.
-      if (event.key !== "Escape" || event.defaultPrevented || group?.querySelector(":popover-open")) return;
+      if (event.key !== "Escape" || event.defaultPrevented || group?.querySelector('[popover="auto"]:popover-open')) return;
       event.preventDefault();
       close(true);
     };

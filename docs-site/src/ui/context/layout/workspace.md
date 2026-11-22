@@ -180,7 +180,10 @@ row moves nothing. Escape, a press outside, or focus leaving the panel closes
 it, and Escape returns focus to the button. The fold is measured before the
 page paints, so the server frame is the final frame. On a phone the filters
 take their own line and scroll sideways with a fade at the edge where they
-continue. Pass filters up to 36 px tall, such as `FilterChip`.
+continue. Pass filters up to 36 px tall, such as `FilterChip`. The button opens
+the panel once the row has hydrated, as the filters themselves need. A
+selection's actions keep their width too; where they still do not fit, they
+scroll sideways inside the row's end with the same fade.
 
 ### Reading column
 

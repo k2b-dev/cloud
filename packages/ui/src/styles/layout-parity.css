@@ -6527,26 +6527,29 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
 }
 
-/* A folded filter takes no focus and is not read while it waits. */
-.k2b-ui .k2b-status-row__filters:not([data-open]) > [data-fit-hidden] {
+/* A folded filter takes no focus and is not read while it waits, inside an
+   island wrapper too. */
+.k2b-ui .k2b-status-row__filters:not([data-open]) [data-fit-hidden] {
   visibility: hidden;
 }
 
 /* Open, the group is a panel: the first line stays where it was, the folded
    filters follow below it, each with its own state and menu. The padding
    that a negative margin returns gives the panel its edge without moving a
-   filter. */
-.k2b-ui .k2b-status-row__filters[data-open] {
-  position: relative;
-  z-index: 4;
-  height: auto;
-  padding: 0.5rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-overlay);
-  margin: calc(-0.5rem - 1px);
-  overflow: visible;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-overlay-sm);
+   filter; it stays inside the gap before the button. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-status-row__filters[data-open] {
+    position: relative;
+    z-index: 4;
+    height: auto;
+    padding: 0.5rem 0.375rem;
+    border: 1px solid var(--k2b-border);
+    border-radius: var(--k2b-radius-overlay);
+    margin: calc(-0.5rem - 1px) calc(-0.375rem - 1px);
+    overflow: visible;
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-overlay-sm);
+  }
 }
 
 .k2b-ui .k2b-status-row__more {
@@ -6558,6 +6561,11 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 
 .k2b-ui .k2b-status-row__more[hidden] {
   display: none;
+}
+
+/* The count keeps its width as it changes, so the line does not move. */
+.k2b-ui .k2b-status-row__more-count {
+  font-variant-numeric: tabular-nums;
 }
 
 /* A phone stacks the filters under the lead statement; they scroll sideways

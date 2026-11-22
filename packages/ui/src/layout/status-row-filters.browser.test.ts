@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { Dynamic, renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { workspaceCss } from "../../test/workspace-host-fixture";
@@ -25,6 +25,7 @@ const { LocaleProvider } = await import("../intl/locale");
 const { Button } = await import("../actions/Button");
 
 const ui = resolve(import.meta.dir, "../..");
+const el = (component: string, props: Record<string, unknown>) => createComponent(Dynamic, { component, ...props });
 const css = workspaceCss();
 const labels = ["Tags", "Assigned to", "Due date", "Priority", "Created by", "Space", "Board column", "Attachments"];
 // The same row for the server and for the client, so both frames can be compared.
@@ -116,7 +117,7 @@ const open = async (viewport: number, host: number, body: "server" | "client") =
       }),
     );
   });
-  const html = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:${host}px">${body === "server" ? serverHtml : ""}</div></body></html>`;
+  const html = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:${host}px">${body === "server" ? serverHtml : ""}</div><button id="after">After</button></body></html>`;
   // A navigation, so the init script sees the page load as a browser does.
   await page.route("http://status-row.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
   await page.goto("http://status-row.test/");
@@ -154,6 +155,14 @@ const shape = (page: Page) =>
       hidden: chips.filter((chip) => !chip.shown).length,
       button: more.hidden ? null : more.textContent!.replace(/\s+/g, " ").trim(),
       buttonWhole: more.hidden || more.getBoundingClientRect().right <= box.right + 0.5,
+      // Nothing folds that would still fit: the first folded filter is wider than the room left on the first line.
+      overFolded: (() => {
+        const shown = [...group.children].filter((item) => getComputedStyle(item).visibility !== "hidden");
+        const folded = [...group.children].find((item) => getComputedStyle(item).visibility === "hidden");
+        if (!folded || shown.length === 0) return false;
+        const room = shown[0]!.getBoundingClientRect().left - group.getBoundingClientRect().left;
+        return folded.getBoundingClientRect().width + Number.parseFloat(getComputedStyle(group).columnGap) <= room;
+      })(),
     };
   });
 
@@ -174,6 +183,7 @@ for (const [viewport, host] of [
       for (const chip of frame.chips) expect(chip.shown ? chip.whole : true).toBe(true);
       expect(frame.button).toBe(frame.hidden > 0 ? `Filters +${frame.hidden}` : null);
       expect(frame.buttonWhole).toBe(true);
+      expect(frame.overFolded).toBe(false);
       expect((await server.evaluate(layoutProblems, { root: ".k2b-status-row" })).problems).toEqual([]);
       // The first painted frame already folded, and a client render folds the same filters.
       expect(await server.evaluate(() => (window as unknown as { firstFrame: boolean[] }).firstFrame)).toEqual(
@@ -243,6 +253,12 @@ test("the keyboard opens the folded filters below the row, reaches each one and 
     await page.mouse.click(5, 600);
     await settled(page);
     expect(await button.getAttribute("aria-expanded")).toBe("false");
+    // So does focus leaving the filters and their button.
+    await button.click();
+    await settled(page);
+    await page.locator("#after").focus();
+    await settled(page);
+    expect(await button.getAttribute("aria-expanded")).toBe("false");
   } finally {
     await page.close();
   }
@@ -284,9 +300,15 @@ test("768 px: a selection's many actions scroll inside the end; the row never ru
             count: 3,
             facts: [{ value: "2", label: "overdue" }],
             get actions() {
-              return ["Move to board", "Assign to someone", "Set a due date", "Add tags", "Duplicate", "Archive"].map((label) =>
-                createComponent(Button, { size: "sm", variant: "secondary", children: label }),
-              );
+              return [
+                "Move to another board",
+                "Assign to someone",
+                "Set a due date",
+                "Add tags",
+                "Duplicate",
+                "Archive",
+                "Export as CSV",
+              ].map((label) => createComponent(Button, { size: "sm", variant: "secondary", children: label }));
             },
           },
         });
@@ -310,6 +332,84 @@ test("768 px: a selection's many actions scroll inside the end; the row never ru
       };
     });
     expect(band).toEqual({ rowSideways: 0, rowInside: true, endScrolls: true, height: 52 });
+  } finally {
+    await page.close();
+  }
+});
+
+// Opus review: filters of mixed heights (a 36 px chip before 28 px buttons) and several filters inside one island
+// wrapper (`display: contents`) count one by one; a shorter filter on the first line never folds, and none is cut.
+test("768 px: filters of mixed heights and inside an island wrapper fold one by one, and none is cut", async () => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(StatusRow, {
+          lead: "128 tasks",
+          get filters() {
+            const chip = (label: string) =>
+              createComponent(FilterChip, {
+                label,
+                icon: "ti ti-filter",
+                value: [],
+                onValueChange: () => {},
+                options: [{ options: [{ value: "a", label: "A" }] }],
+              });
+            const button = (label: string) => createComponent(Button, { size: "sm", variant: "secondary", children: label });
+            return [
+              chip("Tags"),
+              button("Mine"),
+              button("Today"),
+              // An island wrapper draws no box; its filters count one by one.
+              el("solid-island", {
+                style: "display:contents",
+                get children() {
+                  return [button("Overdue"), button("Waiting"), button("Blocked")];
+                },
+              }),
+              chip("Assigned to"),
+              chip("Created by"),
+              chip("Board column"),
+            ];
+          },
+        });
+      },
+    }),
+  );
+  const page = await browser.newPage({ viewport: { width: 768, height: 700 }, reducedMotion: "reduce" });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="width:768px">${html}</div></body></html>`,
+    );
+    await settled(page);
+    const result = await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>(".k2b-status-row")!.getBoundingClientRect();
+      const group = document.querySelector<HTMLElement>(".k2b-status-row__filters")!;
+      const line = group.getBoundingClientRect();
+      const flat = (item: Element): Element[] =>
+        getComputedStyle(item).display === "contents" ? [...item.children].flatMap(flat) : [item];
+      const items = [...group.children].flatMap(flat);
+      const shown = items.filter((item) => getComputedStyle(item).visibility !== "hidden");
+      return {
+        items: items.length,
+        hidden: items.length - shown.length,
+        cut: shown.filter((item) => {
+          const rect = item.getBoundingClientRect();
+          return rect.left < row.left - 0.5 || rect.right > row.right + 0.5 || rect.top < line.top - 0.5 || rect.bottom > line.bottom + 0.5;
+        }).length,
+        // The two short buttons right after the tall first chip stay on the first line.
+        shortKept: shown.length >= 3,
+        button: document.querySelector<HTMLElement>(".k2b-status-row__more")!.hidden
+          ? null
+          : document.querySelector(".k2b-status-row__more")!.textContent!.replace(/\s+/g, " ").trim(),
+      };
+    });
+    expect(result.items).toBe(9);
+    expect(result.cut).toBe(0);
+    expect(result.shortKept).toBe(true);
+    expect(result.hidden).toBeGreaterThan(0);
+    expect(result.button).toBe(`Filters +${result.hidden}`);
+    expect((await page.evaluate(layoutProblems, { root: ".k2b-status-row" })).problems).toEqual([]);
   } finally {
     await page.close();
   }
