@@ -189,6 +189,11 @@ left, so keep it to one short line and truncate it on narrow screens rather
 than letting the row grow. A `SplitButton` with `size="sm"` fits the row, so
 related alternatives wait one click behind the main action.
 
+A row in the `neutral` tone has no tint: it reads like the rows around it, and
+only a tone that asks someone to act now tints its row (K10). `action` always
+renders, also together with `icon`, `detail`, or `actions`; it then stands
+after those controls.
+
 `tile` adds a Tabler icon on a soft square tile at the start of the row, 32 px
 (28 px on phones), for the subject the notice is about. The glyph takes
 `tileColor`, a CSS colour such as a subject token, or else the tone's ink.

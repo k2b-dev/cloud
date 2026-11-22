@@ -15,7 +15,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "flat-primitives.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, NoticeCard, ProgressPath, Section, SegmentedControl, StatusBadge, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Area, Button, DataTable, DatePicker, DescriptionList, DetailPanel, NoticeCard, NoticeRow, ProgressPath, Section, SegmentedControl, StatusBadge, Tabs, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const facts = [
   { term: "Status", description: "In progress" },
@@ -46,7 +46,15 @@ render(() => createComponent(Section, { id: "page-topic", size: "md", title: "De
     createComponent(NoticeCard, { id: "page-alert", tone: "warning", icon: true, title: "The receipt waits for a signature." }),
     (() => { const p = document.createElement("p"); p.id = "page-plain"; p.textContent = "Collect on Friday."; return p; })(),
   ]; } }), document.getElementById("page"));
-render(() => createComponent(Section, { id: "page-text", size: "md", title: "Notes", children: "Collect on Friday." }), document.getElementById("page-notes"));
+render(() => [
+  createComponent(Section, { id: "page-text", size: "md", title: "Notes", children: "Collect on Friday." }),
+  createComponent(Section, { id: "page-next", size: "md", title: "History", children: "Signed on Monday." }),
+], document.getElementById("page-notes"));
+render(() => [
+  createComponent(NoticeRow, { id: "row-icon", icon: true, action: createComponent(Button, { id: "row-icon-action", size: "sm", variant: "secondary", children: "Open receipt" }),
+    children: "The receipt waits for a signature." }),
+  createComponent(NoticeRow, { id: "row-plain", action: createComponent(Button, { size: "sm", variant: "secondary", children: "Show" }), children: "2 items go back." }),
+], document.getElementById("rows"));
 
 render(() => [
   createComponent(Area, { id: "area-1", name: "EL-2611-00021", href: "#el-21", marker: 1, state: createComponent(StatusBadge, { tone: "warning", label: "Receipt open" }),
@@ -96,6 +104,7 @@ const load = async (width: number) => {
       `<aside id="detail" class="col" data-layout-area style="width:${columnWidth(width)}px;height:640px;display:flex;flex-direction:column"></aside>` +
       `<main id="page" class="col" data-layout-area style="width:${Math.min(720, width)}px"></main>` +
       `<div id="page-notes" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
+      `<div id="rows" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="areas" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="tabs" class="col" data-layout-area style="width:${Math.min(720, width)}px"></div>` +
       `<div id="path" class="col" data-layout-area style="width:${Math.min(720, width)}px;padding-inline:var(--k2b-gutter)"></div>` +
@@ -231,6 +240,24 @@ describe.each([1440, 390])("flat primitives at %i px", (width) => {
       }));
       expect(meta.cut).toBe(false);
       expect(meta.right).toBeLessThanOrEqual(topic.right - gutter);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("two page topics share one line, and a neutral notice row keeps its action and has no tint", async () => {
+    const page = await load(width);
+    try {
+      // `.sec` owns the line between two topics; without a dividing host the second draws it above itself.
+      expect(await page.locator("#page-text").evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("0px");
+      expect(await page.locator("#page-next").evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("1px");
+      // An icon never drops the row's one action.
+      expect(await page.locator("#row-icon-action").isVisible()).toBe(true);
+      // K10: a neutral row is a row like the others, without a tint; only a tone that asks to act now tints it.
+      const tints = await page
+        .locator("#rows .k2b-notice-card")
+        .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).backgroundColor));
+      expect(tints).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
     } finally {
       await page.close();
     }

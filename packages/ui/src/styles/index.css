@@ -4160,6 +4160,26 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
+/* One line between two topics (`.sec` and `.psec` in the mockup each own the
+   line that separates them): a section right after a section draws it above
+   itself. A host that divides its children (k2b-divided) sets the same line
+   on the same edge, so it is never doubled. Inside another frame sections
+   stand together without lines. */
+.k2b-ui
+  :not(
+    .k2b-section__body,
+    .k2b-detail-panel__group,
+    .k2b-detail-panel__summary,
+    .k2b-paper,
+    .k2b-panel-dialog,
+    .k2b-settings-section,
+    .k2b-dialog
+  )
+  > .k2b-section[data-frame="line"]:not([hidden])
+  + .k2b-section[data-frame="line"] {
+  border-top: 1px solid var(--k2b-border);
+}
+
 /* A page topic standing flat in another frame keeps its title line, not the 52 px head band. */
 .k2b-ui
   :is(

@@ -165,7 +165,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
         action: "Load images",
       }),
     );
-    expect(html).toMatch(/^<article aria-label="External images" class="k2b-notice-card\s*" data-tone="danger" data-row="">/);
+    expect(html).toMatch(
+      /^<article aria-label="External images" class="k2b-notice-card\s*" data-tone="danger" data-k2b-band="cell" data-row="">/,
+    );
     expect(html).toContain(
       '<span class="k2b-notice-card__tile k2b-icon-tile" style="color:var(--k2b-reference-image)" aria-hidden="true"><i class="ti ti-photo-shield"></i></span><div class="k2b-notice-card__content">External images blocked</div><div class="k2b-notice-card__action">Load images</div></article>',
     );

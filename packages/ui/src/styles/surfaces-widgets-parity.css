@@ -601,7 +601,6 @@
 /* The row's grid places the sentence and the consequence itself. */
 .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__text { display: contents; }
 .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] { grid-template-columns: 2rem minmax(0, 1fr); }
-.k2b-ui .k2b-notice-card[data-row][data-detail][data-tone="neutral"] { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__icon { font-size: 1.0625rem; color: var(--k2b-notice-ink); }
 .k2b-ui .k2b-notice-card[data-row][data-detail][data-tone="neutral"] > .k2b-notice-card__icon { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] > .k2b-notice-card__icon { inline-size: 2rem; block-size: 2rem; border-radius: 28%; color: var(--k2b-notice-tile-color, var(--k2b-notice-ink)); background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent); }
@@ -639,6 +638,9 @@
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }
   .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-reserve]) .k2b-notice-card__actions { grid-row: 3; }
 }
+/* K10: a neutral notice row is a row like the rows around it, without a tint; only a tone that asks someone to act
+   now tints its row (`.arow` and `.alert` in the mockup). */
+.k2b-ui .k2b-notice-card[data-row][data-tone="neutral"] { --k2b-notice-surface: transparent; }
 /* `NoticeRow`: a notice as one square row of at least 52 px (K1): the 32px
    tile, the text, then the action, all centred. The action never wraps below
    the text; the text takes what is left. Phones get a 28px tile. The padding

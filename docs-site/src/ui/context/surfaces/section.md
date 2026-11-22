@@ -39,7 +39,10 @@ its title line) and 8 px below its content. Its head holds the text edge; its
 body adds none. A table, a notice, or any element marked `data-k2b-band` in its
 body reaches both edges of the section and holds its own text edge; plain
 content stands on the text edge. A `meta` that does not fit beside the title
-moves to its own line on the title's text edge; it is never cut.
+moves to its own line on the title's text edge; it is never cut. Two sections
+in a row are separated by one hairline that the second draws above itself; a
+host that divides its children (`k2b-divided`) draws the same line, never a
+second one. Inside another frame sections stand together without lines.
 
 A section never holds a frame. A section inside another section, a
 `DetailPanel.Group`, a summary, `Paper`, a dialog, a panel dialog, or a settings
