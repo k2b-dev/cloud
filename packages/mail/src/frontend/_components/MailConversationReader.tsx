@@ -1255,11 +1255,19 @@ export default function MailConversationReader(props: {
   );
 
   return (
-    <div
+    // The reader is its own context-menu host: a right-click anywhere in the conversation opens its "…" menu; a message
+    // opens its own. Links, fields, the message bodies, and selected text keep the browser's menu. No wrapper between
+    // the reader and its head, timeline and reply (Cloud flach).
+    <ContextMenu
       class="mail-reader flex h-full min-h-0 flex-col overflow-hidden"
       data-layout-area="mail-reader"
-      data-mail-print-root
+      data-mail-print-root=""
       data-print-region={printing() ? "" : undefined}
+      disabled={props.messages.length === 0}
+      tabIndex={-1}
+      items={overflowActions()}
+      label={t().moreConversationActions}
+      keepNativeMenu
     >
       <Show when={props.error}>
         {(error) => {
@@ -1292,218 +1300,208 @@ export default function MailConversationReader(props: {
           </div>
         }
       >
-        {/* A right-click anywhere in the conversation opens its "…" menu; a message opens its own. Links, fields, the
-            message bodies, and selected text keep the browser's menu. */}
-        <ContextMenu
-          class="flex min-h-0 flex-1 flex-col"
-          tabIndex={-1}
-          items={overflowActions()}
-          label={t().moreConversationActions}
-          keepNativeMenu
-        >
-          <MailReaderHead
-            subject={props.subject}
-            noSubject={t().noSubject}
-            flagged={props.flagged}
-            flaggedLabel={t().flaggedConversation}
-            closeHref={closeHref()}
-            onClose={props.onClose}
-            canWrite={props.canWrite}
-            dateConfig={props.dateConfig}
-            workStatus={props.workStatus}
-            completionPending={props.completionPending}
-            onToggleCompletion={toggleCompletion}
-            actionPending={props.actionPending}
-            deleteBlocked={keptBlocks("trash")}
-            onArchive={() => void props.onAction("archive")}
-            onDelete={() => void props.onAction("trash")}
-            snoozedUntil={snoozedUntil()}
-            reminderDueAt={conversationState.reminderDueAt()}
-            assignees={props.assignment ? (conversationState.state()?.assignees ?? []) : null}
-            onAssign={() => void props.onAssignConversation()}
-            keep={props.keep}
-            keptTitle={keptLabel()}
-            onStopKeeping={props.keep?.canLift ? () => void props.onStopKeeping() : null}
-            tags={props.tags}
-            onManageTags={props.canWrite ? () => void props.onManageTags() : null}
-            linked={{ items: links.items(), state: links.state(), retry: () => void links.retry(), enabled: props.mailboxWide }}
-            senderLabel={senderLabel()}
-            messageCount={Math.max(props.totalMessageCount, props.messages.length)}
-            presence={props.presence}
-            currentUserId={props.currentUserId}
-            laterItems={laterItems}
-            menuItems={overflowActions}
-            menuLabel={t().moreConversationActions}
-            hint={readerHint()}
-            onHintSeen={props.onHintSeen}
-          />
+        <MailReaderHead
+          subject={props.subject}
+          noSubject={t().noSubject}
+          flagged={props.flagged}
+          flaggedLabel={t().flaggedConversation}
+          closeHref={closeHref()}
+          onClose={props.onClose}
+          canWrite={props.canWrite}
+          dateConfig={props.dateConfig}
+          workStatus={props.workStatus}
+          completionPending={props.completionPending}
+          onToggleCompletion={toggleCompletion}
+          actionPending={props.actionPending}
+          deleteBlocked={keptBlocks("trash")}
+          onArchive={() => void props.onAction("archive")}
+          onDelete={() => void props.onAction("trash")}
+          snoozedUntil={snoozedUntil()}
+          reminderDueAt={conversationState.reminderDueAt()}
+          assignees={props.assignment ? (conversationState.state()?.assignees ?? []) : null}
+          onAssign={() => void props.onAssignConversation()}
+          keep={props.keep}
+          keptTitle={keptLabel()}
+          onStopKeeping={props.keep?.canLift ? () => void props.onStopKeeping() : null}
+          tags={props.tags}
+          onManageTags={props.canWrite ? () => void props.onManageTags() : null}
+          linked={{ items: links.items(), state: links.state(), retry: () => void links.retry(), enabled: props.mailboxWide }}
+          senderLabel={senderLabel()}
+          messageCount={Math.max(props.totalMessageCount, props.messages.length)}
+          presence={props.presence}
+          currentUserId={props.currentUserId}
+          laterItems={laterItems}
+          menuItems={overflowActions}
+          menuLabel={t().moreConversationActions}
+          hint={readerHint()}
+          onHintSeen={props.onHintSeen}
+        />
 
-          <div class="relative min-h-0 flex-1 overflow-hidden">
-            <ScrollArea
-              ref={historyScroller}
-              class="mail-reader-scroll absolute inset-0"
-              scrollbar="overlay"
-              scrollPreserveKey={`mail-reader-${props.selectionKey}`}
-              onScroll={handleReaderScroll}
-            >
-              <div class="mail-reading-column k2b-divided" data-mail-reading-column data-reply-position={props.replyPosition}>
-                <Show when={showsConversationSummary(props.conversationSummary) && props.conversationSummary}>
-                  {(state) => (
-                    <MailConversationSummaryCard
-                      state={state()}
-                      canEdit={props.canWrite}
-                      editDisabled={summarySaving()}
-                      onEdit={() => void editConversationSummary()}
-                      onGenerate={generateSummary}
-                      onRemind={(due) => conversationState.setReminder(due)}
-                      generating={summaryGenerate().loading()}
-                    />
-                  )}
+        <div class="relative min-h-0 flex-1 overflow-hidden">
+          <ScrollArea
+            ref={historyScroller}
+            class="mail-reader-scroll absolute inset-0"
+            scrollbar="overlay"
+            scrollPreserveKey={`mail-reader-${props.selectionKey}`}
+            onScroll={handleReaderScroll}
+          >
+            <div class="mail-reading-column k2b-divided" data-mail-reading-column data-reply-position={props.replyPosition}>
+              <Show when={showsConversationSummary(props.conversationSummary) && props.conversationSummary}>
+                {(state) => (
+                  <MailConversationSummaryCard
+                    state={state()}
+                    canEdit={props.canWrite}
+                    editDisabled={summarySaving()}
+                    onEdit={() => void editConversationSummary()}
+                    onGenerate={generateSummary}
+                    onRemind={(due) => conversationState.setReminder(due)}
+                    generating={summaryGenerate().loading()}
+                  />
+                )}
+              </Show>
+              <Show when={describeUnavailableMailDetails({ ...props.detailErrors, comments: null, activity: null }, locale())}>
+                {(description) => (
+                  <Placeholder
+                    state="error"
+                    variant="compact"
+                    align="left"
+                    title={description()}
+                    onRetry={() => void props.onReconcile()}
+                  />
+                )}
+              </Show>
+              <Show when={newestFirst()}>{replyBoxSlot()}</Show>
+              <div class="mail-timeline k2b-divided" data-mail-conversation-messages>
+                <Show when={!newestFirst()}>
+                  {olderRow()}
+                  {earlierNotesRow()}
                 </Show>
-                <Show when={describeUnavailableMailDetails({ ...props.detailErrors, comments: null, activity: null }, locale())}>
-                  {(description) => (
-                    <Placeholder
-                      state="error"
-                      variant="compact"
-                      align="left"
-                      title={description()}
-                      onRetry={() => void props.onReconcile()}
-                    />
-                  )}
+                <Show when={Boolean(props.detailErrors.comments)}>
+                  <p class="mail-timeline-unavailable" role="status">
+                    <i class="ti ti-note-off" aria-hidden="true" />
+                    {readerText().notesUnavailable}
+                    <Button type="button" size="xs" variant="ghost" onClick={() => void props.onReconcile()}>
+                      {t().retry}
+                    </Button>
+                  </p>
                 </Show>
-                <Show when={newestFirst()}>{replyBoxSlot()}</Show>
-                <div class="mail-timeline k2b-divided" data-mail-conversation-messages>
-                  <Show when={!newestFirst()}>
-                    {olderRow()}
-                    {earlierNotesRow()}
-                  </Show>
-                  <Show when={Boolean(props.detailErrors.comments)}>
-                    <p class="mail-timeline-unavailable" role="status">
-                      <i class="ti ti-note-off" aria-hidden="true" />
-                      {readerText().notesUnavailable}
-                      <Button type="button" size="xs" variant="ghost" onClick={() => void props.onReconcile()}>
-                        {t().retry}
-                      </Button>
-                    </p>
-                  </Show>
-                  <For each={visibleTimelineIds()}>
-                    {(id) => {
-                      const item = () => timelineItems().get(id);
-                      const noteItem = () => {
-                        const current = item();
-                        return current?.kind === "note" ? current.note : undefined;
-                      };
-                      const messageItem = () => {
-                        const current = item();
-                        return current?.kind === "message" ? current.message : undefined;
-                      };
-                      return (
-                        <>
-                          <Show when={noteItem()}>
-                            {(note) => (
-                              <MailConversationNote
-                                note={note()}
-                                dateConfig={props.dateConfig}
-                                saving={notes.saving()}
-                                onSave={notes.save}
-                                onDelete={notes.remove}
-                              />
-                            )}
-                          </Show>
-                          <Show when={messageItem()}>
-                            {(message) => (
-                              <MailMessageCard
-                                message={message()}
-                                expanded={expandedMessages().has(message().id)}
-                                isLatest={props.messages.at(-1)?.id === message().id}
-                                selectionAvailable={Boolean(messageSelections()[message().id])}
-                                context={{
-                                  mailboxId: props.mailboxId,
-                                  requestUrl: props.requestUrl,
-                                  canWrite: props.canWrite,
-                                  canAdmin: props.canAdmin,
-                                  mailboxWide: props.mailboxWide,
-                                  selectionKey: props.selectionKey,
-                                  selectedConversationId: props.selectedConversationId,
-                                  totalMessageCount: props.totalMessageCount,
-                                  identities: props.identities,
-                                  dateConfig: props.dateConfig,
-                                  readingFormat: props.readingFormat,
-                                  theme: printing() ? "light" : props.theme,
-                                  calendarIntegrationAvailable: props.calendarIntegrationAvailable,
-                                  composerBusy: composerBusy(),
-                                  subject: props.subject,
-                                  messages: props.messages,
-                                }}
-                                actions={{
-                                  toggle: toggleMessage,
-                                  selectionChange: (messageId, value) =>
-                                    setMessageSelections((current) => {
-                                      if (value)
-                                        return current[messageId] === value && Object.keys(current).length === 1
-                                          ? current
-                                          : { [messageId]: value };
-                                      if (!(messageId in current)) return current;
-                                      const next = { ...current };
-                                      delete next[messageId];
-                                      return next;
-                                    }),
-                                  compose: startComposer,
-                                  quoteReply: startQuoteReply,
-                                  derive: (kind, selectedMessage) => {
-                                    void deriveMessage(kind, selectedMessage);
-                                  },
-                                  reconcile: props.onReconcileAfterWrite,
-                                  refresh: props.onReconcile,
-                                  reassign: props.onReassignMessage,
-                                  split: props.onSplitMessage,
-                                  openDraft: (draftId) => {
-                                    replyBox?.openDraft(draftId);
-                                    scrollToReplyBox();
-                                  },
-                                  openAttachment,
-                                }}
-                              />
-                            )}
-                          </Show>
-                        </>
-                      );
-                    }}
-                  </For>
-                  <Show when={newestFirst()}>
-                    {olderRow()}
-                    {earlierNotesRow()}
-                  </Show>
-                </div>
-                <Show when={!newestFirst()}>{replyBoxSlot()}</Show>
+                <For each={visibleTimelineIds()}>
+                  {(id) => {
+                    const item = () => timelineItems().get(id);
+                    const noteItem = () => {
+                      const current = item();
+                      return current?.kind === "note" ? current.note : undefined;
+                    };
+                    const messageItem = () => {
+                      const current = item();
+                      return current?.kind === "message" ? current.message : undefined;
+                    };
+                    return (
+                      <>
+                        <Show when={noteItem()}>
+                          {(note) => (
+                            <MailConversationNote
+                              note={note()}
+                              dateConfig={props.dateConfig}
+                              saving={notes.saving()}
+                              onSave={notes.save}
+                              onDelete={notes.remove}
+                            />
+                          )}
+                        </Show>
+                        <Show when={messageItem()}>
+                          {(message) => (
+                            <MailMessageCard
+                              message={message()}
+                              expanded={expandedMessages().has(message().id)}
+                              isLatest={props.messages.at(-1)?.id === message().id}
+                              selectionAvailable={Boolean(messageSelections()[message().id])}
+                              context={{
+                                mailboxId: props.mailboxId,
+                                requestUrl: props.requestUrl,
+                                canWrite: props.canWrite,
+                                canAdmin: props.canAdmin,
+                                mailboxWide: props.mailboxWide,
+                                selectionKey: props.selectionKey,
+                                selectedConversationId: props.selectedConversationId,
+                                totalMessageCount: props.totalMessageCount,
+                                identities: props.identities,
+                                dateConfig: props.dateConfig,
+                                readingFormat: props.readingFormat,
+                                theme: printing() ? "light" : props.theme,
+                                calendarIntegrationAvailable: props.calendarIntegrationAvailable,
+                                composerBusy: composerBusy(),
+                                subject: props.subject,
+                                messages: props.messages,
+                              }}
+                              actions={{
+                                toggle: toggleMessage,
+                                selectionChange: (messageId, value) =>
+                                  setMessageSelections((current) => {
+                                    if (value)
+                                      return current[messageId] === value && Object.keys(current).length === 1
+                                        ? current
+                                        : { [messageId]: value };
+                                    if (!(messageId in current)) return current;
+                                    const next = { ...current };
+                                    delete next[messageId];
+                                    return next;
+                                  }),
+                                compose: startComposer,
+                                quoteReply: startQuoteReply,
+                                derive: (kind, selectedMessage) => {
+                                  void deriveMessage(kind, selectedMessage);
+                                },
+                                reconcile: props.onReconcileAfterWrite,
+                                refresh: props.onReconcile,
+                                reassign: props.onReassignMessage,
+                                split: props.onSplitMessage,
+                                openDraft: (draftId) => {
+                                  replyBox?.openDraft(draftId);
+                                  scrollToReplyBox();
+                                },
+                                openAttachment,
+                              }}
+                            />
+                          )}
+                        </Show>
+                      </>
+                    );
+                  }}
+                </For>
+                <Show when={newestFirst()}>
+                  {olderRow()}
+                  {earlierNotesRow()}
+                </Show>
               </div>
-            </ScrollArea>
-            <Show when={pendingNewMessages()}>
-              {(count) => (
-                <Button
-                  size="sm"
-                  type="button"
-                  class="mail-reader-new-below"
-                  data-reply-position={props.replyPosition}
-                  aria-live="polite"
-                  onClick={jumpToNewest}
-                >
-                  {readerText().newBelow({ count: count() })}
-                  <i class={newestFirst() ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
-                </Button>
-              )}
-            </Show>
-          </div>
-          <Show when={shownAttachment() !== null && lightboxItems().length > 0}>
-            <AttachmentLightbox
-              items={lightboxItems()}
-              index={shownAttachment() ?? 0}
-              onIndexChange={setShownAttachment}
-              onClose={() => setShownAttachment(null)}
-            />
+              <Show when={!newestFirst()}>{replyBoxSlot()}</Show>
+            </div>
+          </ScrollArea>
+          <Show when={pendingNewMessages()}>
+            {(count) => (
+              <Button
+                size="sm"
+                type="button"
+                class="mail-reader-new-below"
+                data-reply-position={props.replyPosition}
+                aria-live="polite"
+                onClick={jumpToNewest}
+              >
+                {readerText().newBelow({ count: count() })}
+                <i class={newestFirst() ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
+              </Button>
+            )}
           </Show>
-        </ContextMenu>
+        </div>
+        <Show when={shownAttachment() !== null && lightboxItems().length > 0}>
+          <AttachmentLightbox
+            items={lightboxItems()}
+            index={shownAttachment() ?? 0}
+            onIndexChange={setShownAttachment}
+            onClose={() => setShownAttachment(null)}
+          />
+        </Show>
       </Show>
-    </div>
+    </ContextMenu>
   );
 }

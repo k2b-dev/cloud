@@ -1787,8 +1787,29 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 })),
             );
             expect(flow.filter((area) => area.sideways)).toEqual([]);
-            if (state === "split" || state === "few")
+            if (state === "split" || state === "few") {
               expect(flow.find((area) => area.area === "list")?.scrolls, `${state}: the list scrolls`).toBe(state === "split");
+              // Scrolling or not, no scrollbar takes room: the text edge and the end of the time stand at the same place
+              // (20 + 16 + 8 px in, 20 px from the end), in Chromium and WebKit with classic scrollbars alike.
+              const edges = await page.evaluate(() => {
+                const list = document.querySelector(".mail-split-list")!.getBoundingClientRect();
+                const sender = document.querySelector(".mail-list-entry .mail-row-sender")!.getBoundingClientRect();
+                const time = document.querySelector(".mail-list-entry .mail-row-time")!.getBoundingClientRect();
+                return { text: sender.left - list.left, end: list.right - time.right };
+              });
+              expect(Math.abs(edges.text - 44), `${state}: text edge ${edges.text}`).toBeLessThanOrEqual(0.5);
+              expect(Math.abs(edges.end - 20), `${state}: time end ${edges.end}`).toBeLessThanOrEqual(0.5);
+              // With a mouse the list shows its own thumb over the rows, only when it scrolls; pointing at it moves nothing.
+              await hoverInPlace(page.locator(".mail-list-entry").first());
+              await settled(page);
+              const thumb = await page.evaluate(() => {
+                const overlay = document.querySelector(".mail-list-scroll > .k2b-overlay-scrollbar");
+                const sender = document.querySelector(".mail-list-entry .mail-row-sender")!.getBoundingClientRect();
+                const list = document.querySelector(".mail-split-list")!.getBoundingClientRect();
+                return { overflow: overlay?.getAttribute("data-overflow") === "true", text: sender.left - list.left };
+              });
+              expect(thumb, `${state}: thumb after hover`).toEqual({ overflow: state === "split", text: edges.text });
+            }
             expect((await page.evaluate(layoutProblems, { root: "main" })).problems).toEqual([]);
             // The flat kinds of the shared check (short edge, near-double line, grip off centre, type role) on Mail's own
             // areas, list and reader (data-layout-area). The sidebar's @k2b/ui rows still have off-role line heights
@@ -1808,6 +1829,41 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 width: "1px",
                 transform: "none",
               });
+            const structure = await page.evaluate(() => {
+              // Every grip starts and ends on a whole pixel, like the line it sits on, so it is sharp (K13).
+              const grips = Array.from(document.querySelectorAll(".k2b-app-workspace__resize > span, .k2b-resize-separator > span"))
+                .map((grip) => grip.getBoundingClientRect())
+                .filter((box) => box.width > 0)
+                .filter((box) => !Number.isInteger(box.left) || !Number.isInteger(box.right))
+                .map((box) => `${box.left}–${box.right}`);
+              // The reader is flat like the mockup: from the reader to a message's text there is no wrapper of its own.
+              const body = document.querySelector(".mail-message-body");
+              const chain: string[] = [];
+              for (let node = body; node && !node.classList.contains("mail-reader"); node = node.parentElement)
+                chain.unshift(node.classList[0] ?? node.tagName);
+              // The sidebar's folder heading and counts are meta (12 px), the counts plain numbers.
+              const sidebarType = Array.from(
+                document.querySelectorAll(
+                  ".mail-sidebar-folders-heading, .k2b-app-workspace__sidebar-status, .k2b-app-workspace__sidebar-item-meta",
+                ),
+              )
+                .filter((element) => element.getClientRects().length > 0)
+                .map((element) => getComputedStyle(element).fontSize)
+                .filter((size) => size !== "12px");
+              return { grips, chain: body ? chain : null, sidebarType };
+            });
+            expect(structure.grips, `${state}: grips on half pixels`).toEqual([]);
+            expect(structure.sidebarType, `${state}: sidebar type`).toEqual([]);
+            if (structure.chain)
+              expect(structure.chain, `${state}: reader nesting`).toEqual([
+                "relative",
+                "k2b-scroll-area",
+                "mail-reading-column",
+                "mail-timeline",
+                "mail-message",
+                "mail-message-content",
+                "mail-message-body",
+              ]);
           } finally {
             await close(page);
           }

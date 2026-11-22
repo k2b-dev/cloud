@@ -404,277 +404,276 @@ export default function MailMessageCard(props: {
   );
 
   return (
-    <article
+    // The message is its own context-menu host: a right-click on it opens its "…" menu, and it takes focus back when
+    // Escape closes the menu. No wrapper in between (Cloud flach: head and body stand right in the message).
+    <ContextMenu
+      as="article"
       ref={article}
       class="mail-message group min-w-0 scroll-mt-3"
       data-mail-message-id={props.message.id}
       data-mail-direction={outgoing() ? "outgoing" : "incoming"}
       data-expanded={props.expanded ? "" : undefined}
+      tabIndex={-1}
+      items={messageMenu.items()}
+      label={messageMenu.label()}
+      keepNativeMenu
     >
-      {/* A right-click on the message opens its "…" menu. A block host takes focus back when Escape closes it. */}
-      <ContextMenu class="block" tabIndex={-1} items={messageMenu.items()} label={messageMenu.label()} keepNativeMenu>
-        <Show
-          when={props.expanded}
-          fallback={
-            // An older message is one line: who, the start of the text, its attachments and when. A click opens it.
-            <button type="button" class="mail-message-row" aria-expanded="false" data-mail-message-header onClick={toggle}>
-              <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
-              <span
-                class="mail-message-row-sender"
-                title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}
-              >
-                {senderLabel()}
-              </span>
-              <span class="mail-message-row-preview" data-mail-message-preview>
-                {preview() || routeLabel()}
-              </span>
-              <Show when={deliveryBadge()}>
-                {(status) => <StatusBadge tone={status().tone} label={status().label} icon={status().icon} class="shrink-0" />}
-              </Show>
-              {paperclip()}
-              {date()}
-            </button>
-          }
-        >
-          <div class="mail-message-head">
+      <Show
+        when={props.expanded}
+        fallback={
+          // An older message is one line: who, the start of the text, its attachments and when. A click opens it.
+          <button type="button" class="mail-message-row" aria-expanded="false" data-mail-message-header onClick={toggle}>
             <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
-            <div class="mail-message-head-who">
-              <Show
-                when={!outgoing() && sender()}
-                fallback={
-                  <span class="mail-message-sender" title={senderLabel()}>
-                    <span class="mail-message-sender-name">{senderLabel()}</span>
-                  </span>
-                }
-              >
-                <button
-                  type="button"
-                  class="mail-message-sender"
-                  data-mail-sender-trigger
-                  aria-haspopup="dialog"
-                  aria-expanded={senderAnchor() !== null}
-                  title={props.message.from.map(formatMailAddress).join(", ")}
-                  onClick={(event) => setSenderAnchor(senderAnchor() ? null : event.currentTarget)}
-                >
-                  <span class="mail-message-sender-name">{senderLabel()}</span>
-                  <i class="ti ti-chevron-down" aria-hidden="true" />
-                </button>
-              </Show>
-              <span class="mail-message-route">{routeLabel()}</span>
-            </div>
+            <span class="mail-message-row-sender" title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}>
+              {senderLabel()}
+            </span>
+            <span class="mail-message-row-preview" data-mail-message-preview>
+              {preview() || routeLabel()}
+            </span>
             <Show when={deliveryBadge()}>
-              {(status) => (
-                <StatusBadge
-                  tone={status().tone}
-                  label={status().label}
-                  icon={status().icon}
-                  title={props.message.delivery?.lastErrorMessage ?? undefined}
-                />
-              )}
+              {(status) => <StatusBadge tone={status().tone} label={status().label} icon={status().icon} class="shrink-0" />}
             </Show>
-            {/* The date and the free space of the head close the message again; buttons keep their own meaning. */}
-            <button
-              type="button"
-              class="mail-message-collapse"
-              aria-expanded="true"
-              aria-label={reader().collapseMessage}
-              data-mail-message-header
-              onClick={toggle}
+            {paperclip()}
+            {date()}
+          </button>
+        }
+      >
+        <div class="mail-message-head">
+          <Avatar name={senderName()} size="sm" class="mail-message-avatar" />
+          <div class="mail-message-head-who">
+            <Show
+              when={!outgoing() && sender()}
+              fallback={
+                <span class="mail-message-sender" title={senderLabel()}>
+                  <span class="mail-message-sender-name">{senderLabel()}</span>
+                </span>
+              }
             >
-              {paperclip()}
-              {date()}
-            </button>
-            <Show when={responseAllowed()}>
-              <Tooltip.Anchor content={messages().reply}>
-                <IconButton
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  label={messages().reply}
-                  data-mail-message-reply
-                  disabled={props.context.composerBusy}
-                  onClick={() => props.actions.compose("reply", props.message)}
-                >
-                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
+              <button
+                type="button"
+                class="mail-message-sender"
+                data-mail-sender-trigger
+                aria-haspopup="dialog"
+                aria-expanded={senderAnchor() !== null}
+                title={props.message.from.map(formatMailAddress).join(", ")}
+                onClick={(event) => setSenderAnchor(senderAnchor() ? null : event.currentTarget)}
+              >
+                <span class="mail-message-sender-name">{senderLabel()}</span>
+                <i class="ti ti-chevron-down" aria-hidden="true" />
+              </button>
             </Show>
-            <MailMessageMenuTrigger menu={messageMenu} />
+            <span class="mail-message-route">{routeLabel()}</span>
           </div>
-          <Show when={sender()}>
-            {(from) => (
-              <MailSenderPopover
-                anchor={senderAnchor()}
-                onClose={() => setSenderAnchor(null)}
-                mailboxId={props.context.mailboxId}
-                conversationId={props.context.selectedConversationId}
-                sender={{ name: from().name, address: from().address }}
-                dateConfig={props.context.dateConfig}
-                actions={messageMenu.senderActions()}
-                showHistory={props.context.mailboxWide}
-                canWrite={props.context.canWrite}
+          <Show when={deliveryBadge()}>
+            {(status) => (
+              <StatusBadge
+                tone={status().tone}
+                label={status().label}
+                icon={status().icon}
+                title={props.message.delivery?.lastErrorMessage ?? undefined}
               />
             )}
           </Show>
-        </Show>
-        <Show when={props.message.deletedOnServer}>
-          {/* Full width and wrapping, so the notice stays readable on a phone; the hint explains it on hover. */}
-          <p
-            class="flex items-start gap-1.5 px-3 pb-1 text-xs text-secondary"
-            title={messages().deletedOnServerHint}
-            data-mail-deleted-on-server
+          {/* The date and the free space of the head close the message again; buttons keep their own meaning. */}
+          <button
+            type="button"
+            class="mail-message-collapse"
+            aria-expanded="true"
+            aria-label={reader().collapseMessage}
+            data-mail-message-header
+            onClick={toggle}
           >
-            <i class="ti ti-lock mt-0.5 shrink-0" aria-hidden="true" />
-            <span>{messages().deletedOnServer}</span>
-          </p>
-        </Show>
-        <Show when={controllableDelivery()}>
-          {(delivery) => (
-            <MailMessageDeliveryControl
+            {paperclip()}
+            {date()}
+          </button>
+          <Show when={responseAllowed()}>
+            <Tooltip.Anchor content={messages().reply}>
+              <IconButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                label={messages().reply}
+                data-mail-message-reply
+                disabled={props.context.composerBusy}
+                onClick={() => props.actions.compose("reply", props.message)}
+              >
+                <i class="ti ti-arrow-back-up" aria-hidden="true" />
+              </IconButton>
+            </Tooltip.Anchor>
+          </Show>
+          <MailMessageMenuTrigger menu={messageMenu} />
+        </div>
+        <Show when={sender()}>
+          {(from) => (
+            <MailSenderPopover
+              anchor={senderAnchor()}
+              onClose={() => setSenderAnchor(null)}
               mailboxId={props.context.mailboxId}
-              requestUrl={props.context.requestUrl}
-              delivery={delivery()}
-              canWrite={props.context.canWrite}
+              conversationId={props.context.selectedConversationId}
+              sender={{ name: from().name, address: from().address }}
               dateConfig={props.context.dateConfig}
-              onReconcile={props.actions.reconcile}
-              onOpenDraft={props.actions.openDraft}
+              actions={messageMenu.senderActions()}
+              showHistory={props.context.mailboxWide}
+              canWrite={props.context.canWrite}
             />
           )}
         </Show>
-        <Show when={props.expanded}>
-          <div class="mail-message-content">
-            <Show when={security().risk !== "none"}>
-              <div
-                class={`mb-3 flex gap-2 rounded-[var(--ui-radius-control)] border px-3 py-2 text-xs ${
-                  security().risk === "danger"
-                    ? "border-red-300/70 bg-red-50/70 text-red-950 dark:border-red-900 dark:bg-red-950/25 dark:text-red-100"
-                    : "border-amber-300/70 bg-amber-50/70 text-amber-950 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-100"
-                }`}
-                role="status"
-              >
-                <i
-                  class={`ti ${security().risk === "danger" ? "ti-shield-x" : "ti-shield-exclamation"} mt-0.5 shrink-0`}
-                  aria-hidden="true"
-                />
-                <div class="min-w-0">
-                  <p class="font-semibold">
-                    {security().verdict === "quarantined" ? messages().blockedInReader : messages().checkCarefully}
-                  </p>
-                  <ul class="mt-1 list-disc space-y-0.5 pl-4 text-current/80">
-                    {security().findings.map((finding) => {
-                      const presentation = findingPresentation(finding);
-                      return <li title={presentation.explanation}>{presentation.title}</li>;
-                    })}
-                  </ul>
-                  <Show when={security().linksDisabled}>
-                    <p class="mt-1 text-current/80">{messages().linksDisabled}</p>
-                  </Show>
-                  <a class="mt-1 inline-block font-medium underline underline-offset-2" href="/app/mail/help/mail-security">
-                    {messages().securityHelp}
-                  </a>
-                </div>
+      </Show>
+      <Show when={props.message.deletedOnServer}>
+        {/* Full width and wrapping, so the notice stays readable on a phone; the hint explains it on hover. */}
+        <p
+          class="flex items-start gap-1.5 px-3 pb-1 text-xs text-secondary"
+          title={messages().deletedOnServerHint}
+          data-mail-deleted-on-server
+        >
+          <i class="ti ti-lock mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{messages().deletedOnServer}</span>
+        </p>
+      </Show>
+      <Show when={controllableDelivery()}>
+        {(delivery) => (
+          <MailMessageDeliveryControl
+            mailboxId={props.context.mailboxId}
+            requestUrl={props.context.requestUrl}
+            delivery={delivery()}
+            canWrite={props.context.canWrite}
+            dateConfig={props.context.dateConfig}
+            onReconcile={props.actions.reconcile}
+            onOpenDraft={props.actions.openDraft}
+          />
+        )}
+      </Show>
+      <Show when={props.expanded}>
+        <div class="mail-message-content">
+          <Show when={security().risk !== "none"}>
+            <div
+              class={`mb-3 flex gap-2 rounded-[var(--ui-radius-control)] border px-3 py-2 text-xs ${
+                security().risk === "danger"
+                  ? "border-red-300/70 bg-red-50/70 text-red-950 dark:border-red-900 dark:bg-red-950/25 dark:text-red-100"
+                  : "border-amber-300/70 bg-amber-50/70 text-amber-950 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-100"
+              }`}
+              role="status"
+            >
+              <i
+                class={`ti ${security().risk === "danger" ? "ti-shield-x" : "ti-shield-exclamation"} mt-0.5 shrink-0`}
+                aria-hidden="true"
+              />
+              <div class="min-w-0">
+                <p class="font-semibold">{security().verdict === "quarantined" ? messages().blockedInReader : messages().checkCarefully}</p>
+                <ul class="mt-1 list-disc space-y-0.5 pl-4 text-current/80">
+                  {security().findings.map((finding) => {
+                    const presentation = findingPresentation(finding);
+                    return <li title={presentation.explanation}>{presentation.title}</li>;
+                  })}
+                </ul>
+                <Show when={security().linksDisabled}>
+                  <p class="mt-1 text-current/80">{messages().linksDisabled}</p>
+                </Show>
+                <a class="mt-1 inline-block font-medium underline underline-offset-2" href="/app/mail/help/mail-security">
+                  {messages().securityHelp}
+                </a>
               </div>
-            </Show>
-            <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
-              <Show
-                when={bodyFormat()}
-                keyed
-                fallback={
-                  props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
-                    <Placeholder state="empty" variant="compact" title={messages().noBody} />
-                  ) : (
-                    // Every pending state has an icon, a title, one hint and one action in a reserved
-                    // height, so switching between them moves nothing below the body. The placeholder text is
-                    // 13px/20px (K11), so on a phone the title and the hint may each take two lines:
-                    // 24 + 32 sign + 4 + 40 + 4 + 40 + 4 + 8 + 28 button + 24 = 208px (13rem).
-                    <div class="min-h-44 max-md:min-h-52" data-mail-body-state>
-                      {props.message.hydrationStatus === "failed" ? (
+            </div>
+          </Show>
+          <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
+            <Show
+              when={bodyFormat()}
+              keyed
+              fallback={
+                props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
+                  <Placeholder state="empty" variant="compact" title={messages().noBody} />
+                ) : (
+                  // Every pending state has an icon, a title, one hint and one action in a reserved
+                  // height, so switching between them moves nothing below the body. The placeholder text is
+                  // 13px/20px (K11), so on a phone the title and the hint may each take two lines:
+                  // 24 + 32 sign + 4 + 40 + 4 + 40 + 4 + 8 + 28 button + 24 = 208px (13rem).
+                  <div class="min-h-44 max-md:min-h-52" data-mail-body-state>
+                    {props.message.hydrationStatus === "failed" ? (
+                      <Placeholder
+                        state="error"
+                        title={messages().bodySyncFailed}
+                        description={bodyUnavailable() ? messages().bodyUnavailable : messages().bodySyncFailedRetry}
+                        action={
+                          <Show when={!bodyUnavailable()}>
+                            <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void retryFailedBody()}>
+                              {messages().retryBody}
+                            </Button>
+                          </Show>
+                        }
+                      />
+                    ) : waitingForMailbox() ? (
+                      <div role="status" data-mail-body-waiting>
                         <Placeholder
-                          state="error"
-                          title={messages().bodySyncFailed}
-                          description={bodyUnavailable() ? messages().bodyUnavailable : messages().bodySyncFailedRetry}
-                          action={
-                            <Show when={!bodyUnavailable()}>
-                              <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void retryFailedBody()}>
-                                {messages().retryBody}
-                              </Button>
-                            </Show>
-                          }
-                        />
-                      ) : waitingForMailbox() ? (
-                        <div role="status" data-mail-body-waiting>
-                          <Placeholder
-                            icon="ti ti-hourglass"
-                            title={messages().bodyWaitsForMailbox}
-                            description={bodyUnavailable() ? messages().bodyUnavailable : messages().bodyWaitsForMailboxHint}
-                            action={
-                              <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
-                                {messages().requestBodyAgain}
-                              </Button>
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <Placeholder
-                          state="loading"
-                          title={messages().bodySyncing}
-                          description={messages().bodyLoadsFirst}
+                          icon="ti ti-hourglass"
+                          title={messages().bodyWaitsForMailbox}
+                          description={bodyUnavailable() ? messages().bodyUnavailable : messages().bodyWaitsForMailboxHint}
                           action={
                             <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
-                              {messages().refreshMessage}
+                              {messages().requestBodyAgain}
                             </Button>
                           }
                         />
-                      )}
-                    </div>
-                  )
-                }
-              >
-                {(format) => (
-                  <div class="contents" data-mail-body-format={format}>
-                    <MailMessageBody
-                      mailboxId={props.context.mailboxId}
-                      messageId={props.message.id}
-                      format={format}
-                      theme={props.context.theme}
-                      colors={colors()}
-                      html={props.message.sanitizedHtml}
-                      plainText={props.message.plainText}
-                      attachments={props.message.attachments}
-                      remoteContent={props.message.remoteContent}
-                      linksDisabled={security().linksDisabled}
-                      onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
-                    />
+                      </div>
+                    ) : (
+                      <Placeholder
+                        state="loading"
+                        title={messages().bodySyncing}
+                        description={messages().bodyLoadsFirst}
+                        action={
+                          <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
+                            {messages().refreshMessage}
+                          </Button>
+                        }
+                      />
+                    )}
                   </div>
-                )}
-              </Show>
-            </div>
-            <Show when={listedAttachments().length > 0 && !security().linksDisabled}>
-              <MailMessageAttachments
-                mailboxId={props.context.mailboxId}
-                messageId={props.message.id}
-                attachments={listedAttachments()}
-                canShare={props.context.canAdmin}
-                archiveName={props.context.subject}
-                onOpen={
-                  props.actions.openAttachment
-                    ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) ?? Promise.resolve()
-                    : undefined
-                }
-              />
-            </Show>
-            <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
-              <MailCalendarInvitation
-                mailboxId={props.context.mailboxId}
-                messageId={props.message.id}
-                requestUrl={props.context.requestUrl}
-                canWrite={props.context.canWrite}
-                dateConfig={props.context.dateConfig}
-              />
+                )
+              }
+            >
+              {(format) => (
+                <div class="contents" data-mail-body-format={format}>
+                  <MailMessageBody
+                    mailboxId={props.context.mailboxId}
+                    messageId={props.message.id}
+                    format={format}
+                    theme={props.context.theme}
+                    colors={colors()}
+                    html={props.message.sanitizedHtml}
+                    plainText={props.message.plainText}
+                    attachments={props.message.attachments}
+                    remoteContent={props.message.remoteContent}
+                    linksDisabled={security().linksDisabled}
+                    onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
+                  />
+                </div>
+              )}
             </Show>
           </div>
-        </Show>
-      </ContextMenu>
-    </article>
+          <Show when={listedAttachments().length > 0 && !security().linksDisabled}>
+            <MailMessageAttachments
+              mailboxId={props.context.mailboxId}
+              messageId={props.message.id}
+              attachments={listedAttachments()}
+              canShare={props.context.canAdmin}
+              archiveName={props.context.subject}
+              onOpen={
+                props.actions.openAttachment
+                  ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) ?? Promise.resolve()
+                  : undefined
+              }
+            />
+          </Show>
+          <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
+            <MailCalendarInvitation
+              mailboxId={props.context.mailboxId}
+              messageId={props.message.id}
+              requestUrl={props.context.requestUrl}
+              canWrite={props.context.canWrite}
+              dateConfig={props.context.dateConfig}
+            />
+          </Show>
+        </div>
+      </Show>
+    </ContextMenu>
   );
 }
