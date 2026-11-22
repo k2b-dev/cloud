@@ -70,38 +70,56 @@ export default function ItemsTable(props: Props) {
   const priorityLabel: Record<string, string> = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low };
   const columnsById = new Map(props.columns.map((column) => [column.id, column]));
   const tableColumns: DataTableColumn<SpaceItem>[] = [
-    // On a phone the table is a list (K7, K12): the title, its schedule below in quiet text, and the status at the right.
-    { id: "title", header: t.title, value: (item) => item.title, cellClass: "max-w-[24rem]", list: "title" },
-    { id: "status", header: t.status, value: (item) => columnsById.get(item.columnId)?.name, list: "end" },
+    // A narrow table keeps title, status, and schedule; the other columns leave for the row's details below 560 px
+    // instead of squeezing (K12). On a phone the table is a list (K7): the title, its schedule below in quiet text, and
+    // the status at the right.
+    {
+      id: "title",
+      header: t.title,
+      value: (item) => item.title,
+      cellClass: "max-w-[24rem]",
+      list: "title",
+    },
+    {
+      id: "status",
+      header: t.status,
+      value: (item) => columnsById.get(item.columnId)?.name,
+      class: "spaces-items-table__status",
+      list: "end",
+    },
     {
       id: "kind",
+      priority: 3,
       header: t.kind,
       value: (item) => (Boolean(item.startsAt && item.endsAt) ? t.event : t.task),
       nowrap: true,
     },
-    { id: "priority", header: t.priority, value: (item) => item.priority, nowrap: true },
+    { id: "priority", priority: 3, header: t.priority, value: (item) => item.priority, nowrap: true },
     {
       id: "schedule",
       header: t.schedule,
       value: (item) => formatSchedule(item, props.dateConfig),
       cellClass: "max-w-[18rem]",
+      class: "spaces-items-table__schedule",
       list: "meta",
     },
     {
       id: "assignees",
+      priority: 3,
       header: t.assignees,
       value: (item) => item.assignees?.map((assignee) => assignee.displayName).join(", "),
       cellClass: "max-w-[14rem]",
     },
     {
       id: "tags",
+      priority: 3,
       header: t.tags,
       value: (item) => item.tags?.map((tag) => tag.name).join(", "),
       cellClass: "max-w-[12rem]",
     },
-    { id: "updated", header: t.updated, value: (item) => item.updatedAt, nowrap: true },
-    { id: "activity", header: t.activityState, value: itemLastActivityAt, nowrap: true },
-    { id: "created", header: t.created, value: (item) => item.createdAt, nowrap: true },
+    { id: "updated", priority: 3, header: t.updated, value: (item) => item.updatedAt, nowrap: true },
+    { id: "activity", priority: 3, header: t.activityState, value: itemLastActivityAt, nowrap: true },
+    { id: "created", priority: 3, header: t.created, value: (item) => item.createdAt, nowrap: true },
   ];
 
   return (

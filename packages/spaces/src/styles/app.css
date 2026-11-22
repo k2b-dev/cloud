@@ -607,8 +607,21 @@
 }
 .k2b-ui .k2b-status-row__end > .spaces-head-filters::-webkit-scrollbar { display: none; }
 
-/* The table view keeps all its columns from a table width of 480 px and scrolls sideways there; below that the
-   table is a list of two-line entries that never scrolls sideways (K7, K12). */
-@container k2b-data-table (min-width: 480px) {
+/* The table view keeps all its columns above a table width of 560 px and scrolls sideways there. Below that, the
+   columns of priority 3 leave for the row's details, so title, status, and schedule fit without scrolling; below
+   480 px the table is a list of two-line entries (K7, K12). */
+@container k2b-data-table (width > 560px) {
   .k2b-ui .spaces-items-table { min-width: 72rem; }
+}
+/* Beside an open task the table takes the width it has, not its width without the task (shared `k2b-detail-trail`
+   rule), so its columns of priority 3 leave for the row's details instead of scrolling sideways (K12). Under a
+   drawer it keeps the drawer's space at its end. */
+.k2b-ui .k2b-detail-trail > .spaces-items-table.k2b-data-table { width: calc(100% + var(--k2b-detail-space, 0px)); }
+/* Narrow but not yet a list, such as beside an open task: the table keeps its width with fixed columns for status,
+   schedule and the details toggle, and the title takes the room that is left and truncates (K12). */
+@container k2b-data-table (480px <= width <= 560px) {
+  .k2b-ui .spaces-items-table { table-layout: fixed; }
+  .k2b-ui .spaces-items-table th.spaces-items-table__status { width: 7.5rem; }
+  .k2b-ui .spaces-items-table th.spaces-items-table__schedule { width: 9.5rem; }
+  .k2b-ui .spaces-items-table th.k2b-data-table__details-toggle { width: 2.75rem; }
 }

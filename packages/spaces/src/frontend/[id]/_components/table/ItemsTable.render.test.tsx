@@ -102,20 +102,24 @@ const renderTable = (item: SpaceItem) =>
 
 test("shows the working assignee once, first, with one green ring", () => {
   const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
-  const html = renderTable(
-    task({
-      assignees: [
-        { id: "33333333-3333-4333-8333-333333333333", kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null },
-        mira,
-      ],
-      claim: {
-        id: "55555555-5555-4555-8555-555555555555",
-        actor: { kind: "user", id: mira.id },
-        displayName: mira.displayName,
-        avatarHash: null,
-        claimedAt: "2026-10-02T07:12:00.000Z",
-      },
-    }),
+  // The row itself; its details repeat the columns a narrow table hides (K12).
+  const row = (html: string) => html.slice(0, html.indexOf('class="k2b-data-table__details"'));
+  const html = row(
+    renderTable(
+      task({
+        assignees: [
+          { id: "33333333-3333-4333-8333-333333333333", kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null },
+          mira,
+        ],
+        claim: {
+          id: "55555555-5555-4555-8555-555555555555",
+          actor: { kind: "user", id: mira.id },
+          displayName: mira.displayName,
+          avatarHash: null,
+          claimedAt: "2026-10-02T07:12:00.000Z",
+        },
+      }),
+    ),
   );
   expect(html.match(/data-ring="success"/g)).toHaveLength(1);
   expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);

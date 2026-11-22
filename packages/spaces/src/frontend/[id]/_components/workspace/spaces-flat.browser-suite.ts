@@ -27,6 +27,11 @@ const until = async <T>(read: () => T, expected: Awaited<T>, timeout = 4000) => 
  * shell (L3), which hides it on a phone. Touch hit areas are known to the self-check itself (#3923).
  */
 const ignored = ".k2b-avatar-stack, [data-layout-check='skip'], .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label";
+/**
+ * With a task open, the detail column's plain fields reach 0.5rem past their row on purpose (PR2, `index.css`, "plain"
+ * controls), which the self-check reports as a spill; reported to the driver for L2/L6. The column beside it is checked.
+ */
+const ignoredWithDetail = `${ignored}, .k2b-app-workspace__detail`;
 
 const desktop: View = { width: 1440, height: 900, touch: false };
 const laptop: View = { width: 1100, height: 800, touch: false };
@@ -45,7 +50,7 @@ for (const view of [phone, tablet, laptop, desktop])
       test(`${view.width} px ${name}, ${many ? "many tasks" : "few tasks"}${detail ? ", a task open" : ""}: no overlap, spill, cut, double line, or scrollbar break`, async () => {
         const page = await harness.open(view, { view: name, many, detail });
         try {
-          const result = await page.evaluate(layoutProblems, { root: "body", ignore: ignored });
+          const result = await page.evaluate(layoutProblems, { root: "body", ignore: detail ? ignoredWithDetail : ignored });
           expect(result.problems).toEqual([]);
         } finally {
           await page.context().close();
@@ -75,6 +80,30 @@ test("390 px table: a list of two-line entries without a head that never scrolls
     expect(look.head).toBe("none");
     expect(look.rowHeight).toBeGreaterThanOrEqual(60);
     expect(look.shown).toEqual(["title", "end", "meta"]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("1100 px table with a task open: no sideways scroll, title and schedule show, the other columns wait in the details (K12)", async () => {
+  const page = await harness.open(laptop, { view: "table", many: true, detail: true });
+  try {
+    const result = await page.evaluate(layoutProblems, { root: "body", ignore: ignoredWithDetail });
+    expect(result.problems).toEqual([]);
+    const look = await page.evaluate(() => {
+      const wrap = document.querySelector<HTMLElement>(".k2b-table-wrap")!;
+      const edge = wrap.getBoundingClientRect();
+      const head = [...wrap.querySelectorAll<HTMLElement>("thead th")].filter((cell) => cell.checkVisibility());
+      return {
+        width: Math.round(edge.width),
+        sideways: wrap.scrollWidth > wrap.clientWidth,
+        // Every column head that shows stands inside the wrap, by its text.
+        heads: head.map((cell) => cell.textContent?.trim() ?? ""),
+        cut: head.filter((cell) => cell.getBoundingClientRect().right > edge.right + 0.5).map((cell) => cell.textContent?.trim()),
+      };
+    });
+    expect({ sideways: look.sideways, cut: look.cut, width: look.width }).toEqual({ sideways: false, cut: [], width: look.width });
+    expect(look.heads).toEqual(expect.arrayContaining(["Titel", "Zeitplan"]));
   } finally {
     await page.context().close();
   }
