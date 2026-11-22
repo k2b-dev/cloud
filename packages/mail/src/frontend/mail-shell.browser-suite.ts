@@ -594,7 +594,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(Object.keys(heights).length, "the six state cases above ran first").toBe(6);
           // Every state is the same one row, so the messages below stay where they are.
           expect(new Set(Object.values(heights).map((height) => Math.round(height))).size).toBe(1);
-          expect(Math.round(heights.writing!)).toBe(36);
+          // One flat row (K7, --k2b-h-row).
+          expect(Math.round(heights.writing!)).toBe(40);
         });
       }
 
@@ -617,7 +618,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   clipped: element.scrollWidth > element.clientWidth,
                 };
               });
-              expect(metrics.font).toBe("17px");
+              // The flat reader head's subject takes the lead size (K7, --k2b-font-size-lead).
+              expect(metrics.font).toBe("18px");
               expect(metrics.height).toBeLessThanOrEqual(metrics.line + 0.5);
               expect(metrics).toMatchObject({ ellipsis: "ellipsis", clipped: true });
               expect(await toolbar.locator(".mail-reader-meta").textContent()).toContain("· 6 messages");
@@ -2610,7 +2612,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 page.evaluate(() =>
                   Array.from(
                     document.querySelectorAll(
-                      ".mail-workspace :is(.k2b-app-workspace__head [data-mail-head-search], .mail-list-bar :is(.k2b-view-tabs__item, .k2b-view-tabs__more))",
+                      ".mail-workspace .k2b-app-workspace__head :is([data-mail-head-search], .k2b-view-tabs__item, .k2b-view-tabs__more)",
                     ),
                   )
                     .filter((element) => element.getClientRects().length > 0)
