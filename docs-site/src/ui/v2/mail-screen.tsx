@@ -20,7 +20,7 @@ import {
   Tiles,
   Workspace,
 } from "@k2b/ui/v2";
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { ComposerDrawing } from "./drawings";
 
 // Mail, list with reader, as in the approved mockup (mail.html). Only primitives and layer-2 components of
@@ -153,7 +153,12 @@ const message = [
   "Freundliche Grüße\\\nHenrik Brandt",
 ].join("\n\n");
 
-export const MailScreen = () => (
+// What is open is in the address, as in the app: the screen "mail" opens Brandt's message (the list beside it on a wide
+// screen; on the phone the message is the page, with the way back), "mail-list" opens nothing (the phone's first page).
+// Only Brandt's row opens, since the demo has one message to read.
+const screen = "/en/ui/v2/screen";
+
+export const MailScreen = (props: { open?: boolean }) => (
   <Workspace
     sidebarLabel="Breite der Seitenleiste"
     primary={{ label: "Neu", icon: "pencil" }}
@@ -229,89 +234,93 @@ export const MailScreen = () => (
                 meta={mail.count}
                 time={mail.at}
                 unread={mail.unread}
-                selected={mail.selected}
+                selected={mail.selected && props.open !== false}
+                href={mail.selected ? `${screen}/mail` : undefined}
                 marks={mail.marks?.()}
               />
             )}
           </For>
         </List>
       </Pane>
-      <Pane
-        detail
-        label="Nachricht"
-        head={
+      <Show when={props.open !== false}>
+        <Pane
+          detail
+          back={{ label: "Posteingang", href: `${screen}/mail-list` }}
+          label="Nachricht"
+          head={
+            <Bar
+              start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
+              end={
+                <>
+                  <Button icon="check">Erledigt</Button>
+                  <Button variant="ghost" icon="archive" label="Archivieren" />
+                  <Button variant="ghost" icon="trash" label="Löschen" />
+                  <Button variant="ghost" icon="clock" label="Später" />
+                  <Button variant="ghost" avatar={{ name: "Mira Solberg", color: teal }} label="Zugewiesen an Mira Solberg" />
+                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+                  <Button variant="ghost" icon="x" label="Schließen" />
+                </>
+              }
+            />
+          }
+        >
           <Bar
-            start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
+            start={
+              <Inline>
+                <Text type="meta">3 Nachrichten</Text>
+                <Chip status="warn">Wartet auf Antwort</Chip>
+                <Chip tag color={teal}>
+                  Angebot
+                </Chip>
+                <Chip icon="link" href="#verknuepft">
+                  1 verknüpft
+                </Chip>
+                <Chip icon="plus" onClick={() => undefined}>
+                  Tag
+                </Chip>
+              </Inline>
+            }
             end={
               <>
-                <Button icon="check">Erledigt</Button>
-                <Button variant="ghost" icon="archive" label="Archivieren" />
-                <Button variant="ghost" icon="trash" label="Löschen" />
-                <Button variant="ghost" icon="clock" label="Später" />
-                <Button variant="ghost" avatar={{ name: "Mira Solberg", color: teal }} label="Zugewiesen an Mira Solberg" />
-                <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-                <Button variant="ghost" icon="x" label="Schließen" />
+                <Avatar name="Ada Renz" color="#be123c" />
+                <Text type="meta">Ada Renz liest mit</Text>
               </>
             }
           />
-        }
-      >
-        <Bar
-          start={
-            <Inline>
-              <Text type="meta">3 Nachrichten</Text>
-              <Chip status="warn">Wartet auf Antwort</Chip>
-              <Chip tag color={teal}>
-                Angebot
-              </Chip>
-              <Chip icon="link" href="#verknuepft">
-                1 verknüpft
-              </Chip>
-              <Chip icon="plus" onClick={() => undefined}>
-                Tag
-              </Chip>
-            </Inline>
-          }
-          end={
-            <>
-              <Avatar name="Ada Renz" color="#be123c" />
-              <Text type="meta">Ada Renz liest mit</Text>
-            </>
-          }
-        />
-        <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
-          Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.
-        </Notice>
-        <Canvas label="Antwort an Holzwerk Brandt">
-          <ComposerDrawing />
-        </Canvas>
-        <Band>
-          <Row
-            avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
-            strong
-            lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
-            meta="einkauf@holzwerk-brandt.example"
-            end={
-              <>
-                <Button variant="ghost" icon="arrow-back-up" label="Antworten" />
-                <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
-              </>
-            }
-          />
-          <Prose markdown={message} />
-          <Tiles
-            label="Anhänge"
-            items={[
-              { icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" },
-              { icon: "file-type-pdf", title: "Lieferbedingungen.pdf", meta: "96 KB" },
-            ]}
-            more={{ label: "Alle herunterladen" }}
-          />
-        </Band>
-        <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
-          Brandt war bei der letzten Lieferung zwei Tage zu spät. Bitte Termin schriftlich bestätigen lassen.
-        </Notice>
-      </Pane>
+          <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
+            Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.
+          </Notice>
+          <Canvas label="Antwort an Holzwerk Brandt">
+            <ComposerDrawing />
+          </Canvas>
+          <Band>
+            <Row
+              avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
+              strong
+              lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
+              meta="einkauf@holzwerk-brandt.example"
+              end={
+                <>
+                  <Button variant="ghost" icon="arrow-back-up" label="Antworten" />
+                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+                </>
+              }
+            />
+            <Prose markdown={message} />
+            <Tiles
+              label="Anhänge"
+              items={[
+                { icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" },
+                { icon: "file-type-pdf", title: "Lieferbedingungen.pdf", meta: "96 KB" },
+              ]}
+              more={{ label: "Alle herunterladen" }}
+            />
+          </Band>
+          <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
+            Brandt war bei der letzten Lieferung zwei Tage zu spät. Bitte Termin schriftlich bestätigen lassen.
+          </Notice>
+        </Pane>
+      </Show>
     </Pane.Split>
   </Workspace>
 );
