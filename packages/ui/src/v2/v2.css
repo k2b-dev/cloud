@@ -1,0 +1,202 @@
+/* @k2b/ui v2: tokens and foundation. Provisional until the maintainer approves v2.
+   Values come from the approved mockup (v2.css, draft 16); src/v2/tokens.ts holds the same numbers for code and tests.
+
+   Everything stays below the v2 root `.k2-ui`, in its own namespace: classes start with `k2-`, custom properties
+   with `--k2-`. A page can load this sheet beside the v1 sheet (`.k2b-ui`, `--k2b-*`) without either touching the
+   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own. */
+
+.k2-ui {
+  /* neutral scale */
+  --k2-n50: #fafafa;
+  --k2-n100: #f4f4f5;
+  --k2-n200: #e4e4e7;
+  --k2-n300: #d4d4d8;
+  --k2-n400: #a1a1aa;
+  --k2-n500: #71717a;
+  --k2-n600: #52525b;
+  --k2-n800: #27272a;
+  --k2-n950: #09090b;
+
+  /* surfaces and ink */
+  --k2-canvas: var(--k2-n50);
+  --k2-surface: #ffffff;
+  --k2-text: var(--k2-n950);
+  --k2-text-2: var(--k2-n800);
+  --k2-muted: #4b4b55;
+  --k2-subtle: #6b6b74;
+
+  /* the one hairline, the edge of a control, a grip at rest */
+  --k2-line: var(--k2-n200);
+  --k2-hairline: 1px solid var(--k2-line);
+  --k2-line-control: var(--k2-n300);
+  --k2-grip: #8a8a94;
+
+  /* action and selection */
+  --k2-blue: #2563eb;
+  --k2-blue-ink: #1d4ed8;
+  --k2-blue-tint: #eff6ff;
+  --k2-blue-ring: rgb(37 99 235 / 0.18);
+  /* the colour of the app; a host may map it to its accent */
+  --k2-app: var(--k2-blue);
+  --k2-app-ink: var(--k2-blue-ink);
+  --k2-app-tint: var(--k2-blue-tint);
+
+  /* tones by meaning */
+  --k2-ok-tint: #ecfdf5;
+  --k2-ok: #047857;
+  --k2-ok-dot: #10b981;
+  --k2-warn-tint: #fffbeb;
+  --k2-warn: #92400e;
+  --k2-warn-dot: #f59e0b;
+  --k2-bad-tint: #fef2f2;
+  --k2-bad: #b91c1c;
+  --k2-bad-dot: #ef4444;
+  --k2-ai: #8e1b6f;
+  --k2-ai-tint: #fcf3f8;
+  --k2-note: #fef9c3;
+  --k2-note-tint: #fefce8;
+  --k2-note-ink: #713f12;
+  --k2-draft: #c2410c;
+
+  /* text edge: 20 px from 768 px, 16 px below; after an icon 24 px further in */
+  --k2-edge: 20px;
+  --k2-edge-icon: calc(var(--k2-edge) + 24px);
+
+  /* heights by place */
+  --k2-h-head: 56px;
+  --k2-h-status: 52px;
+  --k2-h-tabs: 44px;
+  --k2-h-bar: 40px;
+  --k2-h-columns: 36px;
+  --k2-h-row: 40px;
+  --k2-h-row2: 52px;
+  --k2-h-row3: 72px;
+  --k2-h-dense: 32px;
+  --k2-h-control: 36px;
+  --k2-h-control-small: 28px;
+
+  /* default column widths */
+  --k2-w-side: 248px;
+  --k2-w-detail: 380px;
+  --k2-w-list: 432px;
+  --k2-w-info: 360px;
+
+  /* radii by role: marks, controls and overlays, the app card; structure stays square */
+  --k2-r-mark: 4px;
+  --k2-r-control: 8px;
+  --k2-r-overlay: 8px;
+  --k2-r-round: 999px;
+  --k2-r-card: 14px;
+
+  /* the one shadow, for things that float */
+  --k2-float: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
+  --k2-float-large: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
+
+  /* the four type roles and three weights */
+  --k2-font: "IBM Plex Sans", system-ui, sans-serif;
+  --k2-t-meta: 400 12px/16px var(--k2-font);
+  --k2-t-row: 400 13px/20px var(--k2-font);
+  --k2-t-body: 400 14px/20px var(--k2-font);
+  --k2-t-lead: 600 18px/24px var(--k2-font);
+
+  font: var(--k2-t-row);
+  color: var(--k2-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dark: the mockup is light only; the dark values follow the dark surfaces and inks of @k2b/ui v1. The neutral scale
+   turns around, so a fill of n100 stays a step off the surface and n950 stays the strongest ink.
+   Three ways in, as in v1: a `.dark` page, `.dark` on the scope itself, or `data-theme="dark"` on the scope. A scope
+   with `data-theme="light"` stays light inside a dark page. */
+.dark .k2-ui:not([data-theme="light"]),
+.k2-ui.dark,
+.k2-ui[data-theme="dark"] {
+  --k2-n50: #161a20;
+  --k2-n100: #20242a;
+  --k2-n200: #29313a;
+  --k2-n300: #3a4552;
+  --k2-n400: #6b7280;
+  --k2-n500: #8d8d98;
+  --k2-n600: #bdbdc6;
+  --k2-n800: #f1f1f3;
+  --k2-n950: #fafafa;
+
+  --k2-canvas: #090d12;
+  --k2-surface: #11151b;
+  --k2-muted: #bdbdc6;
+  --k2-subtle: #8d8d98;
+  --k2-grip: #6b7280;
+
+  --k2-blue: #2563eb;
+  --k2-blue-ink: #93c5fd;
+  --k2-blue-tint: #172554;
+  --k2-blue-ring: rgb(96 165 250 / 0.35);
+
+  --k2-ok-tint: #052e26;
+  --k2-ok: #6ee7b7;
+  --k2-ok-dot: #10b981;
+  --k2-warn-tint: #422006;
+  --k2-warn: #fcd34d;
+  --k2-warn-dot: #f59e0b;
+  --k2-bad-tint: #450a0a;
+  --k2-bad: #fca5a5;
+  --k2-bad-dot: #ef4444;
+  --k2-ai: #f0abdc;
+  --k2-ai-tint: #3a0f2e;
+  --k2-note: #3f3a0c;
+  --k2-note-tint: #2a2709;
+  --k2-note-ink: #fde68a;
+  --k2-draft: #fb923c;
+
+  --k2-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.7);
+  --k2-float-large: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.75);
+}
+
+@media (max-width: 767px) {
+  .k2-ui {
+    --k2-edge: 16px;
+  }
+}
+
+/* Type: four roles, three weights. Meta is quiet by itself. */
+.k2-ui .k2-t-meta {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-t-row {
+  font: var(--k2-t-row);
+}
+.k2-ui .k2-t-body {
+  font: var(--k2-t-body);
+}
+.k2-ui .k2-t-lead {
+  font: var(--k2-t-lead);
+}
+.k2-ui .k2-strong {
+  font-weight: 600;
+}
+.k2-ui .k2-medium {
+  font-weight: 500;
+}
+.k2-ui .k2-muted {
+  color: var(--k2-muted);
+}
+
+/* Flow text carries the text edge itself; edge primitives (bar, band, row, table) carry it inside. */
+.k2-ui .k2-text {
+  padding-inline: var(--k2-edge);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* One line, cut with "…"; cut text never widens its column. */
+.k2-ui .k2-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
