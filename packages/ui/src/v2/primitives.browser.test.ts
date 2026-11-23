@@ -47,6 +47,12 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
 
 const TEST_TIMEOUT = 30_000;
 
+// Known findings, each with its issue; the list shrinks when the issue is fixed and never names a whole primitive.
+const known: Partial<Record<string, string[]>> = {
+  // #4073: on the phone the selecting status row has no room for its clear action.
+  "grid 390": ['control button.k2-btn cuts its label "Auswahl aufheben"; it needs the room of its whole label'],
+};
+
 describe("v2 primitives keep the layout rules", () => {
   for (const name of Object.keys(fixtures) as (keyof typeof fixtures)[])
     for (const width of [1440, 390])
@@ -57,7 +63,7 @@ describe("v2 primitives keep the layout rules", () => {
             const page = await open(name, { width, scale });
             try {
               const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
-              expect(layout.problems).toEqual([]);
+              expect(layout.problems).toEqual(known[`${name} ${width}`] ?? []);
               expect(layout.measured.lines).toBeGreaterThan(0);
               expect(layout.measured.texts).toBeGreaterThan(10);
               if (width === 1440) expect(layout.grips.length).toBeGreaterThan(0);

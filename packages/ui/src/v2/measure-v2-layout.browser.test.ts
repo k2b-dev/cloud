@@ -478,6 +478,96 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: v2's own Band with a Canvas in it; the band's line closes both",
+    async () => {
+      const page = await open(
+        columns(
+          '<section class="k2-band" data-k2-part="Band"><div class="k2-canvas" data-k2-canvas style="height:80px"></div><span class="k2-text k2-t-row">Karte</span></section>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a line a Canvas draws with a pseudo-element counts like its border",
+    async () => {
+      const page = await open(
+        '<style>.cv::before { content: ""; display: block; height: 1px; background: var(--k2-line); }</style>' +
+          columns('<div class="band">Band</div><div class="cv" data-k2-canvas data-probe="canvas" style="height:80px"></div>'),
+      );
+      try {
+        expect((await measureV2Layout(page)).double).toEqual([
+          expect.stringMatching(/^double line: div\.band border-bottom and \[data-probe="canvas"\]::before box at \d+ px over 1191 px$/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green at 390 px: v2's three-line row cuts a long title with …",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="k2-row" data-lines="3"><span class="k2-row-l1"><span class="k2-row-title">Architekturbüro Winter und Partner, Hamburg</span></span><span class="k2-row-l2">Re: Treppe Haus am Hang</span><span class="k2-row-l3">Danke für die Zeichnung</span></div>',
+        ),
+        { width: 390 },
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a label cut by a parent that hides what overflows; a scroller does not cut",
+    async () => {
+      const page = await open(
+        columns(
+          '<div style="width:80px;overflow:hidden"><button type="button" class="k2-btn" data-probe="hidden" style="white-space:nowrap">Mahnung senden</button></div>' +
+            '<div style="width:80px;overflow-x:auto"><button type="button" class="k2-btn" data-probe="scroller" style="white-space:nowrap">Mahnung senden</button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="hidden"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a button in a one-line cell makes the cell taller, not a second line",
+    async () => {
+      const page = await open(
+        columns(
+          '<table class="k2-table" data-sized><tbody><tr><td><span class="k2-cell-line">RE-2611-0042 <button type="button" class="k2-btn">Mahnung</button></span></td></tr></tbody></table>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "free drawing in Canvas is never measured",
     async () => {
       const page = await open(

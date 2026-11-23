@@ -260,8 +260,12 @@ function measureInPage(options: InPage): DomResult {
       return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     };
     const elements = [root, ...Array.from(root.querySelectorAll("*"))].filter(
-      // A skipped surface (a Canvas) is free inside, but the line it draws itself is a divider like any other.
-      (element) => !element.parentElement?.closest(options.skip) && visible(element),
+      // A skipped surface (a Canvas) is free inside, but the line it draws itself is a divider like any other, also
+      // when a pseudo-element draws it (its stand-in stands inside the surface and counts as the surface).
+      (element) => {
+        const host = element.localName === "k2-stand-in" ? element.parentElement : element;
+        return !host?.parentElement?.closest(options.skip) && visible(element);
+      },
     );
     // What a person sees of an element: the viewport, cut by every ancestor that clips (a scrolled column, the card).
     const clips = new Map<Element, { left: number; right: number; top: number; bottom: number }>();
@@ -296,16 +300,28 @@ function measureInPage(options: InPage): DomResult {
       along1: number;
       frame: boolean;
       round: boolean;
+      /** Drawn by a box that also has a vertical side: a frame around something, never a line between parts. */
+      boxed: boolean;
     };
     const horizontal: Line[] = [];
     const vertical: Line[] = [];
-    const add = (element: Element, how: string, x0: number, x1: number, y0: number, y1: number, frame: boolean, round: boolean) => {
+    const add = (
+      element: Element,
+      how: string,
+      x0: number,
+      x1: number,
+      y0: number,
+      y1: number,
+      frame: boolean,
+      round: boolean,
+      boxed = frame,
+    ) => {
       // Lines inside a figure (the track of steps, a progress bar) are marks, not dividers.
       if (element.closest(options.figure)) return;
       const clip = clipOf(element);
       const [cx0, cx1, cy0, cy1] = [Math.max(x0, clip.left), Math.min(x1, clip.right), Math.max(y0, clip.top), Math.min(y1, clip.bottom)];
       if (cx1 - cx0 <= 0.25 || cy1 - cy0 <= 0.25) return;
-      const line = { element, how, frame: frame || round, round };
+      const line = { element, how, frame: frame || round, round, boxed: boxed || round };
       if (x1 - x0 >= y1 - y0) horizontal.push({ ...line, across0: cy0, across1: cy1, along0: cx0, along1: cx1 });
       else vertical.push({ ...line, across0: cx0, across1: cx1, along0: cy0, along1: cy1 });
     };
@@ -321,10 +337,12 @@ function measureInPage(options: InPage): DomResult {
       );
       const round = Number.parseFloat(style.borderTopLeftRadius) > 0;
       const framed = sides.length > 1;
+      // `border-block` draws two lines, both between parts; a box with a side left or right frames something.
+      const boxed = sides.includes("left") || sides.includes("right");
       for (const side of sides) {
         const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`));
-        if (side === "top") add(element, "border-top", r.left, r.right, r.top, r.top + width, framed, round);
-        if (side === "bottom") add(element, "border-bottom", r.left, r.right, r.bottom - width, r.bottom, framed, round);
+        if (side === "top") add(element, "border-top", r.left, r.right, r.top, r.top + width, framed, round, boxed);
+        if (side === "bottom") add(element, "border-bottom", r.left, r.right, r.bottom - width, r.bottom, framed, round, boxed);
         if (side === "left") add(element, "border-left", r.left, r.left + width, r.top, r.bottom, framed, round);
         if (side === "right") add(element, "border-right", r.right - width, r.right, r.top, r.bottom, framed, round);
       }
@@ -470,11 +488,15 @@ function measureInPage(options: InPage): DomResult {
     // 4b. Lines inside one thing: a hairline drawn inside a band or a group, not on its own edge (rule 9).
     const inside: string[] = [];
     for (const line of hairlines(horizontal)) {
-      if (line.frame || line.round) continue;
+      if (line.boxed || line.round) continue;
       const owner = line.element.parentElement?.closest(options.unbroken);
       if (!owner || !root.contains(owner)) continue;
+      // Inside the owner's own border: a line on its edge lies on the owner's line, which the double rule reports.
       const box = owner.getBoundingClientRect();
-      if (line.across0 <= box.top + 0.5 || line.across1 >= box.bottom - 0.5) continue;
+      const ownerStyle = getComputedStyle(owner);
+      const top = box.top + Number.parseFloat(ownerStyle.borderTopWidth);
+      const bottom = box.bottom - Number.parseFloat(ownerStyle.borderBottomWidth);
+      if (line.across0 < top + 0.5 || line.across1 > bottom - 0.5) continue;
       inside.push(
         `line inside ${name(owner)}: ${name(line.element)} ${line.how} at y ${round(line.across0)} separates parts of one thing; spacing alone separates them`,
       );
@@ -482,7 +504,37 @@ function measureInPage(options: InPage): DomResult {
 
     // 4c. Cut text: a control's label that leaves its box or is clipped, a one-line text that wraps.
     const cut: string[] = [];
-    const textOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+    const labelOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+    // The boxes of the visible text in an element, one per line box of each text node.
+    const textBoxes = (element: Element) => {
+      const boxes: DOMRect[] = [];
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const box of Array.from(range.getClientRects())) if (box.width > 0 && box.height > 0) boxes.push(box);
+      }
+      return boxes;
+    };
+    // What cuts sideways for good: the element and every ancestor with overflow hidden or clip. A scroller (auto,
+    // scroll) is left out: what it hides, a person scrolls to, such as tabs in a scrolling bar.
+    const hardClipX = (element: Element) => {
+      let left = Number.NEGATIVE_INFINITY;
+      let right = Number.POSITIVE_INFINITY;
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowX;
+        // Inside a scroller everything can be scrolled into view; what lies beyond it is no cut of this control.
+        if (node !== element && ["auto", "scroll"].includes(overflow)) break;
+        if (["hidden", "clip"].includes(overflow)) {
+          const r = node.getBoundingClientRect();
+          left = Math.max(left, r.left);
+          right = Math.min(right, r.right);
+        }
+        if (node === root) break;
+      }
+      return { left, right };
+    };
     for (const control of Array.from(root.querySelectorAll(options.controls))) {
       if (!visible(control) || control.parentElement?.closest(options.skip)) continue;
       const box = control.getBoundingClientRect();
@@ -491,23 +543,22 @@ function measureInPage(options: InPage): DomResult {
         const style = getComputedStyle(part);
         if (style.overflowX !== "visible" && part.scrollWidth > part.clientWidth + 1) clipped = true;
       }
-      const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node && !clipped; node = walker.nextNode()) {
-        if (!node.textContent?.trim()) continue;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        const r = range.getBoundingClientRect();
-        if (r.width > 0 && (r.left < box.left - 0.5 || r.right > box.right + 0.5)) clipped = true;
-      }
-      if (clipped) cut.push(`control ${name(control)} cuts its label "${textOf(control)}"; it needs the room of its whole label`);
+      const clip = hardClipX(control);
+      for (const r of textBoxes(control))
+        if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
+      if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
     for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
-      if (!visible(element) || element.parentElement?.closest(options.skip) || !element.textContent?.trim()) continue;
-      const style = getComputedStyle(element);
-      const lineHeight = Number.parseFloat(style.lineHeight);
-      const lines = Number.isFinite(lineHeight) && lineHeight > 0 ? element.getBoundingClientRect().height / lineHeight : 1;
-      if (lines > 1.5)
-        cut.push(`${name(element)} "${textOf(element)}" wraps to ${Math.round(lines)} lines; it stays on one line and ends with "…"`);
+      if (!visible(element) || element.parentElement?.closest(options.skip)) continue;
+      // Count line boxes, not the element's height: a control in the line makes it taller without a second line.
+      const boxes = textBoxes(element).sort((a, b) => a.top - b.top);
+      let lines = 0;
+      let bottom = Number.NEGATIVE_INFINITY;
+      for (const box of boxes) {
+        if (box.top >= bottom - 1) lines += 1;
+        bottom = Math.max(bottom, box.bottom);
+      }
+      if (lines > 1) cut.push(`${name(element)} "${labelOf(element)}" wraps to ${lines} lines; it stays on one line and ends with "…"`);
     }
 
     // 5. Type roles: every run of text that a person sees.
