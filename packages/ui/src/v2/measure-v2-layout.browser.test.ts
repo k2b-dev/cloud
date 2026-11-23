@@ -463,6 +463,23 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: words that gave way to their symbol and stay only as a visually hidden name are no cut label",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row"><button type="button" class="k2-btn" style="width:28px;padding:0"><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">Auswahl aufheben</span></button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: a label that runs out of its control without being clipped",
     async () => {
       const page = await open(cutPage("width:64px;white-space:nowrap", ""));

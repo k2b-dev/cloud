@@ -507,11 +507,23 @@ function measureInPage(options: InPage): DomResult {
     const cut: string[] = [];
     const labelOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
     // The boxes of the visible text in an element, one per line box of each text node.
+    // Text kept only as a name (a visually hidden label of 1 px, such as the words of a button that gave way to its
+    // symbol in a narrow place) shows nothing to cut.
+    const hiddenName = (element: Element | null) => {
+      for (let node = element; node; node = node.parentElement) {
+        // A box of `display: contents` has no size of its own and hides nothing.
+        if (getComputedStyle(node).display === "contents") continue;
+        const r = node.getBoundingClientRect();
+        if (r.width <= 1 || r.height <= 1) return true;
+        if (node === root) break;
+      }
+      return false;
+    };
     const textBoxes = (element: Element) => {
       const boxes: DOMRect[] = [];
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (!node.textContent?.trim()) continue;
+        if (!node.textContent?.trim() || hiddenName(node.parentElement)) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
         for (const box of Array.from(range.getClientRects())) if (box.width > 0 && box.height > 0) boxes.push(box);
@@ -541,6 +553,7 @@ function measureInPage(options: InPage): DomResult {
       const box = control.getBoundingClientRect();
       let clipped = false;
       for (const part of [control, ...Array.from(control.querySelectorAll("*"))]) {
+        if (part !== control && hiddenName(part)) continue;
         const style = getComputedStyle(part);
         if (style.overflowX !== "visible" && part.scrollWidth > part.clientWidth + 1) clipped = true;
       }
