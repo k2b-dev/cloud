@@ -82,7 +82,9 @@ export function Demo() {
                 >
                   ⠿
                 </button>
-                {mail.from} – {mail.subject}
+                {/* One text node: the server joins interpolated text into one node, the client keeps three, and the
+                    shaping across node boundaries differs by subpixels (the reload contract caught it). */}
+                {`${mail.from} – ${mail.subject}`}
               </li>
             )}
           </For>

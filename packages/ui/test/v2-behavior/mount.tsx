@@ -6,6 +6,8 @@ declare global {
   interface Window {
     __checkPattern: (root: Element, name: Pattern) => Promise<void>;
     __mounted: boolean;
+    /** Layout shift summed by the reload contract's observer. */
+    __shifts?: number;
   }
 }
 

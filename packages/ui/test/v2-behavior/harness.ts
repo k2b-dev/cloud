@@ -54,7 +54,16 @@ export const serverMarkup = async (name: string): Promise<string> => {
     process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   }
   const demo: { Demo: Component } = await import(resolve(here, `${name}.demo.tsx`));
-  return renderToString(() => createComponent(demo.Demo, {}));
+  // The server's locale comes from a provider; the island reads <html lang> (see intl/locale.tsx). Both are "de" here.
+  const { LocaleProvider }: typeof import("../../src/intl/locale") = await import("../../src/intl/locale");
+  return renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(demo.Demo, {});
+      },
+    }),
+  );
 };
 
 export const contractCss = (): Promise<string> => Bun.file(resolve(here, "contract.css")).text();
