@@ -3,6 +3,7 @@ import { apiClient } from "../../../api/client";
 import type { MailboxController } from "../../mail-workspace";
 import { readApiError } from "../api-response";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
+import { mailV2Messages } from "./mail-v2-messages";
 
 /**
  * "Bearbeiten" at the short summary of the v2 reader: the same form, request and update as v1's summary card, so a
@@ -39,7 +40,7 @@ export const editMailV2Summary = async (controller: MailboxController, locale: s
     json: { expectedSummaryRevision: current.summaryRevision, summary: String(values.summary ?? "") },
   });
   if (!response.ok) {
-    toast.error(await readApiError(response, t.updateSummaryFailed));
+    toast.error(await readApiError(response, t.updateSummaryFailed), { title: mailV2Messages.resolve([locale]).t.summaryNotSaved });
     return;
   }
   await controller.applySavedConversationSummary(conversationId, await response.json());

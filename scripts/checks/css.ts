@@ -228,8 +228,9 @@ export const rule: Rule = {
 
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.
+    // @k2b/ui v2 keeps its tokens beside its primitives (`src/v2/v2.css`); they are UI-owned like v1's.
     const uiCustomProperties = new Set(
-      readCssFiles(uiStylesRoot).flatMap((file) =>
+      [...readCssFiles(uiStylesRoot), ...readCssFiles(join(packagesRoot, "ui", "src", "v2"))].flatMap((file) =>
         [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
       ),
     );

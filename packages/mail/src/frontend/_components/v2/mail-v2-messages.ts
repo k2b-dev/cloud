@@ -53,6 +53,7 @@ export const mailV2Messages = i18n.define({
       signature: "Signature",
       send: "Send",
       edit: "Edit",
+      summaryNotSaved: "Summary not saved",
     },
     de: {
       mailboxes: "Postfächer",
@@ -103,6 +104,7 @@ export const mailV2Messages = i18n.define({
       signature: "Signatur",
       send: "Senden",
       edit: "Bearbeiten",
+      summaryNotSaved: "Nicht gespeichert",
     },
   },
 });

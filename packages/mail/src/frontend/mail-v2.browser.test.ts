@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { measureV2Layout } from "../../../ui/test/measure-v2-layout";
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
 
@@ -147,9 +147,11 @@ describe("Mail on the v2 pilot", () => {
       });
       expect(await list.evaluate((element) => element.scrollTop)).toBe(120);
       await row(page, "Lackfabrik Nordhaus").focus();
+      await settled(page);
       const before = await row(page, "Lackfabrik Nordhaus").boundingBox();
       server.arrive();
       await row(page, "Neue Sendung 1").waitFor();
+      await settled(page);
       expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toContain("Lackfabrik Nordhaus");
       // The new row above pushes nothing out of place: the focused row stays where the person looks.
       const after = await row(page, "Lackfabrik Nordhaus").boundingBox();
