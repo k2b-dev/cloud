@@ -1,9 +1,10 @@
-import { For, type JSX, Show } from "solid-js";
+import { createMemo, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
+import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import type { Action, Person, Status } from "./types";
+import type { Action, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -36,7 +37,8 @@ export type NavProps = {
 
 const NavEntry = (props: { item: NavItem }) => (
   <Dynamic
-    component={props.item.href || !props.item.onClick ? "a" : "button"}
+    component={props.item.href !== undefined ? "a" : "button"}
+    type={props.item.href !== undefined ? undefined : "button"}
     href={props.item.href}
     onClick={() => props.item.onClick?.()}
     class="k2-ni"
@@ -83,7 +85,17 @@ export const Nav = (props: NavProps) => (
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Tab = { label: string; icon?: string; count?: number | string; href?: string; current?: boolean; menu?: boolean };
+export type Tab = {
+  label: string;
+  icon?: string;
+  count?: number | string;
+  /** The tab leads to this page … */
+  href?: string;
+  /** … or switches the view in place. */
+  onClick?: () => void;
+  current?: boolean;
+  menu?: boolean;
+};
 
 export type TabsProps = { items: readonly Tab[]; label: string };
 
@@ -97,7 +109,14 @@ export const Tabs = (props: TabsProps) => (
     <div class="k2-tabs">
       <For each={props.items}>
         {(tab) => (
-          <a class="k2-tab" href={tab.href} aria-current={tab.current ? "page" : undefined}>
+          <Dynamic
+            component={tab.href !== undefined ? "a" : "button"}
+            type={tab.href !== undefined ? undefined : "button"}
+            class="k2-tab"
+            href={tab.href}
+            onClick={() => tab.onClick?.()}
+            aria-current={tab.current ? "page" : undefined}
+          >
             <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
             {tab.label}
             <Show when={tab.count !== undefined}>
@@ -106,7 +125,7 @@ export const Tabs = (props: TabsProps) => (
             <Show when={tab.menu}>
               <Icon name="chevron-down" />
             </Show>
-          </a>
+          </Dynamic>
         )}
       </For>
     </div>
@@ -119,7 +138,9 @@ export const Tabs = (props: TabsProps) => (
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
  * On the phone the head with a path gives way to the phone bar of the shell, which names the page.
  */
-export const Path = (props: { items: readonly { label: string; href?: string }[]; label: string }) => (
+export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
+
+export const Path = (props: PathProps) => (
   <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
     <For each={props.items}>
       {(item, index) => (
@@ -130,9 +151,11 @@ export const Path = (props: { items: readonly { label: string; href?: string }[]
           <Show
             when={index() === props.items.length - 1}
             fallback={
-              <a class="k2-path-step" href={item.href}>
-                {item.label}
-              </a>
+              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
+                <a class="k2-path-step" href={item.href}>
+                  {item.label}
+                </a>
+              </Show>
             }
           >
             <b aria-current="page">{item.label}</b>
@@ -165,51 +188,54 @@ export type StatusRowProps = {
 };
 
 /** The status row of a pane (52 px): the one lead statement, key figures, filters on the right. */
-export const StatusRow = (props: StatusRowProps) => (
-  <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
-    <Show
-      when={props.selection}
-      fallback={
-        <>
+export const StatusRow = (props: StatusRowProps) => {
+  const filters = resolveChildren(() => props.filters);
+  return (
+    <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+      <Show
+        when={props.selection}
+        fallback={
+          <>
+            <div class="k2-bar-start">
+              <Show when={props.select}>
+                {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+              </Show>
+              <span class="k2-status-lead">{props.lead}</span>
+              <For each={props.facts}>
+                {(fact) => (
+                  <span class="k2-fact">
+                    {fact.before ?? ""}
+                    {fact.before && fact.value !== undefined ? " " : ""}
+                    <Show when={fact.value !== undefined}>
+                      <b>{fact.value}</b>
+                    </Show>
+                    {fact.after ? ` ${fact.after}` : ""}
+                  </span>
+                )}
+              </For>
+            </div>
+            <Show when={filters() !== undefined}>
+              <div class="k2-bar-end">{filters()}</div>
+            </Show>
+          </>
+        }
+      >
+        {(selection) => (
           <div class="k2-bar-start">
             <Show when={props.select}>
               {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
             </Show>
-            <span class="k2-status-lead">{props.lead}</span>
-            <For each={props.facts}>
-              {(fact) => (
-                <span class="k2-fact">
-                  {fact.before ?? ""}
-                  {fact.before && fact.value !== undefined ? " " : ""}
-                  <Show when={fact.value !== undefined}>
-                    <b>{fact.value}</b>
-                  </Show>
-                  {fact.after ? ` ${fact.after}` : ""}
-                </span>
-              )}
-            </For>
+            <span class="k2-status-lead" aria-live="polite">
+              {selection().count}
+            </span>
+            <For each={selection().actions}>{(action) => <ActionButton action={action} />}</For>
+            <ActionButton action={selection().clear} variant="text" />
           </div>
-          <Show when={props.filters !== undefined}>
-            <div class="k2-bar-end">{props.filters}</div>
-          </Show>
-        </>
-      }
-    >
-      {(selection) => (
-        <div class="k2-bar-start">
-          <Show when={props.select}>
-            {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
-          </Show>
-          <span class="k2-status-lead" aria-live="polite">
-            {selection().count}
-          </span>
-          <For each={selection().actions}>{(action) => <ActionButton action={action} />}</For>
-          <ActionButton action={selection().clear} variant="text" />
-        </div>
-      )}
-    </Show>
-  </div>
-);
+        )}
+      </Show>
+    </div>
+  );
+};
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -223,7 +249,7 @@ export type NoticeProps = {
   /** Quiet words after the title: who and when. */
   meta?: string;
   /** Text buttons at the end; at most two. */
-  actions?: readonly Action[];
+  actions?: TwoActions;
   children: JSX.Element;
 };
 
@@ -251,7 +277,7 @@ export const Notice = (props: NoticeProps) => (
     <span class="k2-notice-text">{props.children}</span>
     <Show when={props.actions?.length}>
       <span class="k2-notice-end">
-        <For each={props.actions?.slice(0, 2)}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
       </span>
     </Show>
   </div>
@@ -268,7 +294,7 @@ export type DigestEntry = {
   title: string;
   /** Its state: a symbol and a word. */
   state: { icon: string; label: string; tone?: Status };
-  /** One sentence about it; `<Text strong>` stresses a word. */
+  /** One sentence about it; `<Text weight="strong">` stresses a word. */
   text: JSX.Element;
   href?: string;
 };
@@ -281,41 +307,46 @@ export type DigestProps =
  * The newest few on a first page, without lines (decided 22.11.): dated entries in a grid of date, number with state
  * and sentence, or plain rows whose second line is a sentence.
  */
-export const Digest = (props: DigestProps) => (
-  <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
-    <Show when={props.items} fallback={props.children}>
-      {(items) => (
-        <For each={items()}>
-          {(entry) => (
-            <Dynamic
-              component={entry.href ? "a" : "div"}
-              href={entry.href}
-              class="k2-row"
-              data-k2-part="Digest.Entry"
-              data-digest=""
-              role="listitem"
-              style={custom({ "--k2-c": entry.color })}
-            >
-              <>
+export const Digest = (props: DigestProps) => {
+  // the entries hold JSX (their sentence): made once, here
+  const items = createMemo(() => props.items);
+  return (
+    <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
+      <Show when={items()} fallback={props.children}>
+        {(list) => (
+          <For each={list()}>
+            {(entry) => (
+              <div
+                class="k2-row"
+                data-k2-part="Digest.Entry"
+                data-digest=""
+                data-open={entry.href !== undefined ? "" : undefined}
+                role="listitem"
+                style={custom({ "--k2-c": entry.color })}
+              >
                 <span class="k2-row-lead">
                   <Icon name={entry.icon} />
                 </span>
                 <span class="k2-digest-date">{entry.date}</span>
-                <span class="k2-row-l1">{entry.title}</span>
+                <span class="k2-row-l1">
+                  <RowOpen href={entry.href}>{entry.title}</RowOpen>
+                </span>
                 <span class="k2-digest-state">
                   <Icon name={entry.state.icon} tone={entry.state.tone} />
                   {entry.state.label}
                 </span>
                 <span class="k2-digest-text">{entry.text}</span>
-                <i class="ti ti-chevron-right k2-icon k2-digest-go" aria-hidden="true" />
-              </>
-            </Dynamic>
-          )}
-        </For>
-      )}
-    </Show>
-  </div>
-);
+                <Show when={entry.href !== undefined}>
+                  <i class="ti ti-chevron-right k2-icon k2-digest-go" aria-hidden="true" />
+                </Show>
+              </div>
+            )}
+          </For>
+        )}
+      </Show>
+    </div>
+  );
+};
 
 // ── Steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -328,7 +359,9 @@ export type Step = {
 };
 
 /** A way of a few steps: done ones grey with a tick, the running one a blue ring, the coming ones empty. */
-export const Steps = (props: { items: readonly Step[]; label: string }) => (
+export type StepsProps = { items: readonly Step[]; label: string };
+
+export const Steps = (props: StepsProps) => (
   <ol
     class="k2-steps"
     data-k2-part="Steps"

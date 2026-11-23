@@ -1,5 +1,7 @@
-import { createContext, For, type JSX, Show, useContext } from "solid-js";
+import { createContext, createMemo, createUniqueId, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { renderSafeMarkdown } from "../content/MarkdownView";
+import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { Avatar, custom, Dot, Icon } from "./marks";
@@ -14,10 +16,11 @@ export type TextProps = {
    * sentence it stands in). (Named `type`, not `role`, so it never reads as an ARIA role.)
    */
   type?: TypeRole;
-  /** 600: the one way to stress a word. Emphasis is a weight, never a size. */
-  strong?: boolean;
-  /** 500: a state or an amount that stands out a little, such as "Quittung offen". */
-  medium?: boolean;
+  /**
+   * Emphasis is a weight, never a size: `strong` (600) stresses a word, `medium` (500) lets a state or an amount stand
+   * out a little, such as "Quittung offen".
+   */
+  weight?: "medium" | "strong";
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
   /** A colour of meaning, never decoration. */
@@ -28,6 +31,7 @@ export type TextProps = {
 };
 
 const typeClass = { meta: "k2-t-meta", row: "k2-t-row", body: "k2-t-body", lead: "k2-t-lead" } as const;
+const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
 
 /**
  * Text in one of the four type roles. Standing in the flow of a column (a pane, a band, a section, a group) it is a
@@ -38,7 +42,7 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
-    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.strong ? " k2-strong" : props.medium ? " k2-medium" : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
@@ -47,21 +51,41 @@ export const Text = (props: TextProps) => (
   </Dynamic>
 );
 
-export type ProseProps = { html: string; children?: never } | { html?: never; children: JSX.Element };
+/** The links reading text may carry; any other target shows as text. */
+const proseLinks = ["https:", "http:", "mailto:"] as const;
+
+export type ProseProps =
+  | {
+      /**
+       * Text in Markdown, such as a message. Raw HTML in it shows as text; links lead only to web pages and mail
+       * addresses; images show their words, they load nothing.
+       */
+      markdown: string;
+      children?: never;
+    }
+  | { markdown?: never; children: JSX.Element };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
-export const Prose = (props: ProseProps) => (
-  <Show
-    when={props.html !== undefined}
-    fallback={
-      <div class="k2-prose" data-k2-part="Prose" data-k2-prose="">
-        {props.children}
-      </div>
-    }
-  >
-    <div class="k2-prose" data-k2-part="Prose" data-k2-prose="" innerHTML={props.html} />
-  </Show>
-);
+export const Prose = (props: ProseProps) => {
+  const locale = useLocale();
+  return (
+    <Show
+      when={props.markdown !== undefined}
+      fallback={
+        <div class="k2-prose" data-k2-part="Prose" data-k2-prose="">
+          {props.children}
+        </div>
+      }
+    >
+      <div
+        class="k2-prose"
+        data-k2-part="Prose"
+        data-k2-prose=""
+        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale(), allowImages: false, linkProtocols: proseLinks })}
+      />
+    </Show>
+  );
+};
 
 export type InlineProps = { children: JSX.Element };
 
@@ -92,27 +116,38 @@ export type FactsProps = {
 };
 
 /** Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. */
-export const Facts = (props: FactsProps) => (
-  <dl class="k2-facts" data-k2-part="Facts" data-inline={props.inline ? "" : undefined}>
-    <For each={props.items}>
-      {(item) => (
-        <>
-          <dt>{item.label}</dt>
-          <dd data-wide={!props.inline && !item.copy ? "" : undefined}>
-            {item.value}
-            <Show when={item.hint}>
-              <small>{item.hint}</small>
-            </Show>
-          </dd>
-          <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
-        </>
-      )}
-    </For>
-    <Show when={props.inline && props.end}>
-      <span class="k2-facts-end">{props.end}</span>
+export const Facts = (props: FactsProps) => {
+  // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
+  const list = (part?: string) => (
+    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined}>
+      <For each={props.items}>
+        {(item) => (
+          <div class="k2-fact-pair">
+            <dt>{item.label}</dt>
+            <dd>
+              <span class="k2-fact-value">
+                {item.value}
+                <Show when={item.hint}>
+                  <small>{item.hint}</small>
+                </Show>
+              </span>
+              <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
+            </dd>
+          </div>
+        )}
+      </For>
+    </dl>
+  );
+  const end = resolveChildren(() => props.end);
+  return (
+    <Show when={props.inline && end() !== undefined} fallback={list("Facts")}>
+      <div class="k2-facts-line" data-k2-part="Facts">
+        {list()}
+        <div class="k2-facts-end">{end()}</div>
+      </div>
     </Show>
-  </dl>
-);
+  );
+};
 
 // ── Row and List ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -165,85 +200,122 @@ export type RowProps = {
   onOpen?: () => void;
 };
 
+/**
+ * What opens an entry: the title becomes a link or a button, stretched over the whole entry. It is never the entry
+ * itself, so buttons and links inside the entry stay buttons and links of their own (no control inside a control).
+ */
+export const RowOpen = (props: { href?: string; onOpen?: () => void; children: JSX.Element }) => (
+  <Show when={props.href !== undefined || props.onOpen} fallback={props.children}>
+    <Show
+      when={props.href !== undefined}
+      fallback={
+        <button type="button" class="k2-row-open" onClick={() => props.onOpen?.()}>
+          {props.children}
+        </button>
+      }
+    >
+      <a class="k2-row-open" href={props.href} onClick={() => props.onOpen?.()}>
+        {props.children}
+      </a>
+    </Show>
+  </Show>
+);
+
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
-  const rest = props;
-  const lines = () => rest.lines.length;
+  // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
+  const text = createMemo(() => props.lines);
+  const lines = () => text().length;
+  const meta = resolveChildren(() => props.meta);
+  const time = resolveChildren(() => props.time);
+  const end = resolveChildren(() => props.end);
+  const marks = resolveChildren(() => props.marks);
+  const title = createUniqueId();
   return (
-    <Dynamic
-      component={rest.href ? "a" : rest.onOpen ? "button" : "div"}
-      href={rest.href}
-      type={rest.onOpen && !rest.href ? "button" : undefined}
-      onClick={rest.onOpen}
+    <div
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
-      data-open={rest.href || rest.onOpen ? "" : undefined}
+      data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
-      data-unread={rest.unread ? "" : undefined}
-      data-strong={rest.strong ? "" : undefined}
-      data-selected={rest.selected ? "" : undefined}
-      aria-current={rest.selected ? "true" : undefined}
-      data-yours={rest.yours ? "" : undefined}
-      data-avatar={rest.avatar ? "" : undefined}
-      data-time={rest.time !== undefined ? "" : undefined}
-      data-action={rest.action ? "" : undefined}
-      style={custom({ "--k2-c": rest.color })}
+      data-unread={props.unread ? "" : undefined}
+      data-strong={props.strong ? "" : undefined}
+      data-selected={props.selected ? "" : undefined}
+      aria-current={props.selected ? "true" : undefined}
+      data-yours={props.yours ? "" : undefined}
+      data-avatar={props.avatar ? "" : undefined}
+      data-time={time() !== undefined ? "" : undefined}
+      data-action={props.action ? "" : undefined}
+      style={custom({ "--k2-c": props.color })}
     >
-      <>
-        <span class="k2-row-lead">
-          <Show
-            when={rest.avatar}
-            fallback={
-              <Show
-                when={rest.icon}
-                fallback={
-                  <Show when={rest.unread}>
-                    <Dot status="ok" />
-                  </Show>
-                }
-              >
-                {(name) => <Icon name={name()} />}
-              </Show>
-            }
-          >
-            {(person) => <Avatar {...person()} />}
-          </Show>
+      {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
+          the title stays a link of its own (no link inside a link). */}
+      <Show when={props.href !== undefined || props.onOpen}>
+        <Show
+          when={props.href !== undefined}
+          fallback={<button type="button" class="k2-row-open" aria-labelledby={title} onClick={() => props.onOpen?.()} />}
+        >
+          {/* biome-ignore lint/a11y/useAnchorContent: the row's title names it through aria-labelledby; holding the title would put a link of the title inside this one. */}
+          <a class="k2-row-open" href={props.href} aria-labelledby={title} onClick={() => props.onOpen?.()} />
+        </Show>
+      </Show>
+      <span class="k2-row-lead">
+        <Show
+          when={props.avatar}
+          fallback={
+            <Show
+              when={props.icon}
+              fallback={
+                <Show when={props.unread}>
+                  <Dot status="ok" />
+                </Show>
+              }
+            >
+              {(name) => <Icon name={name()} />}
+            </Show>
+          }
+        >
+          {(person) => <Avatar {...person()} />}
+        </Show>
+      </span>
+      <span class="k2-row-l1">
+        <span class="k2-row-title" id={title}>
+          {text()[0]}
         </span>
-        <span class="k2-row-l1">
-          <span class="k2-row-title">{rest.lines[0]}</span>
-          <Show when={rest.meta !== undefined}>
-            <span class="k2-row-meta">{rest.meta}</span>
-          </Show>
+        <Show when={meta() !== undefined}>
+          <span class="k2-row-meta">{meta()}</span>
+        </Show>
+      </span>
+      <Show when={lines() > 1}>
+        <span class="k2-row-l2">{text()[1]}</span>
+      </Show>
+      <Show when={lines() > 2}>
+        <span class="k2-row-l3">{text()[2]}</span>
+      </Show>
+      <Show when={time() !== undefined}>
+        <span class="k2-row-time">{time()}</span>
+      </Show>
+      <Show when={end() !== undefined || props.action}>
+        <span class="k2-row-end">
+          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {end()}
         </span>
-        <Show when={lines() > 1}>
-          <span class="k2-row-l2">{rest.lines[1]}</span>
-        </Show>
-        <Show when={lines() > 2}>
-          <span class="k2-row-l3">{rest.lines[2]}</span>
-        </Show>
-        <Show when={rest.time !== undefined}>
-          <span class="k2-row-time">{rest.time}</span>
-        </Show>
-        <Show when={rest.end !== undefined || rest.action}>
-          <span class="k2-row-end">
-            <Show when={rest.action}>{(action) => <ActionButton action={action()} />}</Show>
-            {rest.end}
-          </span>
-        </Show>
-        <Show when={rest.marks !== undefined}>
-          <span class="k2-row-marks">{rest.marks}</span>
-        </Show>
-      </>
-    </Dynamic>
+      </Show>
+      <Show when={marks() !== undefined}>
+        <span class="k2-row-marks">{marks()}</span>
+      </Show>
+    </div>
   );
 };
 
 // ── Table ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** What a cell shows: one line, or a line and a quiet second line. */
-export type CellValue = JSX.Element | readonly [JSX.Element, JSX.Element];
+/** Two lines of a cell: the line itself and a quiet second line under it. */
+export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
+
+/** What a cell shows: one line, or two lines named as such (`{ lines: [first, second] }`). */
+export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
   title: string;
@@ -261,13 +333,28 @@ export type Column<T> = {
   drop?: boolean;
 };
 
-export type TableProps<T> = {
+/** Where an entry leads: a page (a real link, also before the page is live) or a deed in place. */
+export type OpenTarget = { href: string; onOpen?: () => void } | { href?: undefined; onOpen: () => void };
+
+type TableBase<T> = {
   columns: readonly Column<T>[];
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
-  /** The stable key of a row; needed for `select`, `current` and `group`. */
-  rowKey?: (row: T) => string;
+  /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
+  sticky?: boolean;
+  /** The column the rows are sorted by: an arrow in its head. */
+  sort?: { column: number; direction: "ascending" | "descending" };
+  /** What a row opens, on the desktop and on the phone: its first cell is the link or button. */
+  open?: (row: T) => OpenTarget;
+  /** On the phone each row becomes a row of two lines instead (rule 7). */
+  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element };
+};
+
+/** A table whose rows are told apart: selection, the open row and groups need the stable key of a row. */
+type KeyedTable<T> = {
+  /** The stable key of a row. */
+  rowKey: (row: T) => string;
   /**
    * A large table (Grids): a box column to select rows. The status row shows what can be done with them
    * (`StatusRow selection`).
@@ -281,22 +368,29 @@ export type TableProps<T> = {
   };
   /** The key of the open row, in the tint of the app. */
   current?: string;
-  /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
-  sticky?: boolean;
   /** Rows of a group follow one another under a tinted group row of 36 px (no frame: it would cut the columns). */
   group?: (row: T) => TableGroup;
-  /** The column the rows are sorted by: an arrow in its head. */
-  sort?: { column: number; direction: "ascending" | "descending" };
-  /** On the phone each row becomes a row of two lines instead (rule 7). */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element };
 };
 
-const isPair = (value: CellValue): value is readonly [JSX.Element, JSX.Element] => Array.isArray(value) && value.length === 2;
+type PlainTable = { rowKey?: undefined; select?: undefined; current?: undefined; group?: undefined };
 
-/** A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone. */
-export type TableGroup = { key: string; head: JSX.Element; meta?: string; count?: string };
+export type TableProps<T> = TableBase<T> & (KeyedTable<T> | PlainTable);
 
-type TableItem<T> = { group: TableGroup } | { row: T };
+/** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
+const isPair = (value: CellValue): value is CellLines =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !(typeof Node !== "undefined" && value instanceof Node) &&
+  "lines" in value;
+
+/**
+ * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
+ * The head is made where it stands (the table and the phone list each make their own), so it is a function.
+ */
+export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; count?: string };
+
+type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 
 /**
  * Many like things in columns: head 36, a line under every row, none between columns. Long text stays on one line
@@ -307,20 +401,27 @@ type TableItem<T> = { group: TableGroup } | { row: T };
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);
-  const lines = () => (props.rows.some((row) => props.columns.some((column) => isPair(column.cell(row)))) ? "2" : "1");
+  // Every cell is made once: what `cell` returns is placed, never rendered a second time.
+  const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
+  const lines = () => (values().some((row) => row.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
-  const items = (): TableItem<T>[] => {
+  const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
     let last: string | undefined;
-    for (const row of props.rows) {
+    props.rows.forEach((row, index) => {
       const group = props.group?.(row);
       if (group && group.key !== last) out.push({ group });
       last = group?.key;
-      out.push({ row });
-    }
+      out.push({ row, index });
+    });
     return out;
-  };
+  });
   const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
+  // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
+  const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
+    if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
+    event.currentTarget.querySelector<HTMLElement>(".k2-row-open")?.click();
+  };
   const all = (): boolean | "mixed" => {
     const count = props.select?.selected.length ?? 0;
     return count === 0 ? false : count === props.rows.length ? true : "mixed";
@@ -335,15 +436,24 @@ export const Table = <T,>(props: TableProps<T>) => {
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-  const cell = (column: Column<T>, row: T) => {
-    const value = column.cell(row);
+  const cell = (column: Column<T>, value: CellValue, target?: OpenTarget) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
         {content}
       </span>
     );
-    return isPair(value) ? [line(value[0]), line(value[1], true)] : line(value as JSX.Element);
+    const first = (content: JSX.Element) =>
+      line(
+        target ? (
+          <RowOpen href={target.href} onOpen={target.onOpen}>
+            {content}
+          </RowOpen>
+        ) : (
+          content
+        ),
+      );
+    return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
   };
 
   return (
@@ -419,12 +529,12 @@ export const Table = <T,>(props: TableProps<T>) => {
           </thead>
           <tbody>
             <For each={items()}>
-              {(item, index) =>
+              {(item) =>
                 "group" in item ? (
                   <tr data-group="">
                     <td colSpan={span()}>
                       <span class="k2-group-row">
-                        {item.group.head}
+                        {item.group.head()}
                         <Show when={item.group.meta}>
                           <span class="k2-group-row-meta">{item.group.meta}</span>
                         </Show>
@@ -432,34 +542,41 @@ export const Table = <T,>(props: TableProps<T>) => {
                     </td>
                   </tr>
                 ) : (
-                  <tr
-                    aria-selected={props.select ? (selected(item.row, index()) ? "true" : "false") : undefined}
-                    aria-current={props.current !== undefined && props.current === key(item.row, index()) ? "true" : undefined}
-                  >
-                    <Show when={props.select}>
-                      {(select) => (
-                        <td data-select="" data-sticky={props.sticky ? "" : undefined}>
-                          <MarkCheck
-                            label={select().row(item.row)}
-                            checked={selected(item.row, index())}
-                            onChange={(on) => toggle(key(item.row, index()), on)}
-                          />
-                        </td>
-                      )}
-                    </Show>
-                    <For each={props.columns}>
-                      {(column, columnIndex) => (
-                        <td
-                          data-align={column.align}
-                          data-drop={column.drop ? "" : undefined}
-                          data-sticky={firstSticky(columnIndex())}
-                          style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
-                        >
-                          {cell(column, item.row)}
-                        </td>
-                      )}
-                    </For>
-                  </tr>
+                  (() => {
+                    const target = props.open?.(item.row);
+                    return (
+                      <tr
+                        data-open={target ? "" : undefined}
+                        data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
+                        aria-current={props.current !== undefined && props.current === key(item.row, item.index) ? "true" : undefined}
+                        onClick={target ? openRow : undefined}
+                      >
+                        <Show when={props.select}>
+                          {(select) => (
+                            <td data-select="" data-sticky={props.sticky ? "" : undefined}>
+                              <MarkCheck
+                                label={select().row(item.row)}
+                                checked={selected(item.row, item.index)}
+                                onChange={(on) => toggle(key(item.row, item.index), on)}
+                              />
+                            </td>
+                          )}
+                        </Show>
+                        <For each={props.columns}>
+                          {(column, columnIndex) => (
+                            <td
+                              data-align={column.align}
+                              data-drop={column.drop ? "" : undefined}
+                              data-sticky={firstSticky(columnIndex())}
+                              style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                            >
+                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                            </td>
+                          )}
+                        </For>
+                      </tr>
+                    );
+                  })()
                 )
               }
             </For>
@@ -475,7 +592,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   "group" in item ? (
                     <div class="k2-bar" role="presentation">
                       <div class="k2-bar-start">
-                        {item.group.head}
+                        {item.group.head()}
                         <Show when={item.group.count ?? item.group.meta}>
                           <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
                         </Show>
@@ -484,7 +601,18 @@ export const Table = <T,>(props: TableProps<T>) => {
                   ) : (
                     (() => {
                       const form = phone()(item.row);
-                      return <Row lines={form.lines} avatar={form.avatar} time={form.time} strong />;
+                      const target = props.open?.(item.row);
+                      return (
+                        <Row
+                          lines={form.lines}
+                          avatar={form.avatar}
+                          time={form.time}
+                          strong
+                          href={target?.href}
+                          onOpen={target?.onOpen}
+                          selected={props.current !== undefined && props.current === key(item.row, item.index)}
+                        />
+                      );
                     })()
                   )
                 }

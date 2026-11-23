@@ -387,7 +387,7 @@ but are deprecated for new keys. Existing keys are unchanged, including empty
 scope lists. Replace a limited key by issuing a new one and revoking the old
 one. New OAuth clients created with `cld admin agents create` include `admin`;
 existing clients are unchanged. No data migration is required. See
-[Standalone service accounts and agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).
+[Agents](/en/docs/identity/service-accounts#use-an-agent-from-the-cli).
 
 ## Event-only live channels
 

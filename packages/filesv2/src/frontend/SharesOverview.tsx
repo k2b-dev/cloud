@@ -132,7 +132,7 @@ export default function SharesOverview(props: {
                   <span class="truncate text-xs text-dimmed">
                     {row.kind === "inbox" ? `/${row.scope}` : b().shareItems(row.items.length)} · {b().createdBy} {row.createdBy}{" "}
                     <Show when={row.createdByKind}>
-                      <StatusBadge tone="neutral" label={row.createdByKind === "agent" ? machines().agent : machines().standalone} />
+                      <StatusBadge tone="neutral" label={machines().agent} />
                     </Show>{" "}
                     · {b().shareAccess(row.accessCount)}
                   </span>

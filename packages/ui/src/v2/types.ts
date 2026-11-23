@@ -17,6 +17,9 @@ export type Action = {
   forward?: boolean;
 };
 
+/** At most two actions, such as the text buttons in the head of a section; a third does not fit by type. */
+export type TwoActions = readonly [Action] | readonly [Action, Action];
+
 /** The colours of meaning. A tone is never decoration: it says ok, wait, wrong, AI or "yours". */
 export type Status = "ok" | "warn" | "bad";
 

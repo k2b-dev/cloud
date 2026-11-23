@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { gripTolerance, heights, textEdge } from "./tokens";
+import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
 // measureV2Layout (edges, double lines, type roles, grips at DPR 1 and 2), and the numbers of the mockup (heights by
@@ -168,8 +168,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
-            expect(numbers.rows).toEqual([heights.row, heights.row2 + 1, heights.row3 + 1, 61]);
-          } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + 1, heights.row3 + 1]);
+            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
+          } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
         } finally {
@@ -236,6 +236,39 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  for (const width of [1440, 390])
+    test(
+      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v16), none after the last`,
+      async () => {
+        const page = await open("structure", { width });
+        try {
+          const steps = await page.$$eval(".k2-step", (items) =>
+            items.map((step) => {
+              const line = getComputedStyle(step, "::before");
+              const box = step.getBoundingClientRect();
+              const px = (value: string) => Math.round(Number.parseFloat(value));
+              return {
+                shown: line.display !== "none",
+                line: [px(line.left), px(line.top), px(line.width), px(line.height)],
+                step: [Math.round(box.width), Math.round(box.height)] as const,
+              };
+            }),
+          );
+          expect(steps.at(-1)!.shown).toBe(false);
+          for (const { shown, line, step } of steps.slice(0, -1)) {
+            expect(shown).toBe(true);
+            // desktop: from the circle (20 px) to the end of the step, 9 px down; phone: 9 px in, from below the circle
+            // (20 px) 8 px into the next step
+            if (width >= textEdge.phoneBelow) expect(line).toEqual([20, 9, step[0] - 20, 1]);
+            else expect(line).toEqual([9, 20, 1, step[1] - 20 + 8]);
+          }
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   test(
     "K5: the controls of a field row stand on one line, with a hint, an error or a note in the label line",
     async () => {
@@ -246,6 +279,38 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         );
         expect(rows.length).toBeGreaterThan(1);
         for (const tops of rows) expect(new Set(tops).size).toBe(1);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "rule 9: a canvas inside a band draws no line; the band owns its one line below, so two bands in a row show one",
+    async () => {
+      const page = await open("layout");
+      try {
+        const found = await page.evaluate(() => {
+          const band = document.querySelector(".k2-band:has(> .k2-canvas)")!;
+          const lines = (element: Element) => {
+            const style = getComputedStyle(element);
+            return [Number.parseFloat(style.borderTopWidth), Number.parseFloat(style.borderBottomWidth)];
+          };
+          const next = band.nextElementSibling!;
+          return {
+            canvas: lines(band.querySelector(":scope > .k2-canvas")!),
+            band: lines(band),
+            next: [next.className, lines(next)[0]],
+            gap: next.getBoundingClientRect().top - band.getBoundingClientRect().bottom,
+          };
+        });
+        expect(found.canvas).toEqual([0, 0]);
+        expect(found.band).toEqual([0, 1]);
+        // the band after it draws no line on top and touches it: one line between them
+        expect(found.next).toEqual(["k2-band", 0]);
+        expect(found.gap).toBe(0);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).double).toEqual([]);
       } finally {
         await page.close();
       }

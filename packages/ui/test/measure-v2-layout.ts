@@ -21,7 +21,7 @@
  *
  * The DOM contract of v2 marks what the rules need: `data-k2-column` (a column), `data-k2-grip` (a grip whose box is
  * its pill), `data-k2-prose` (reading text), `data-k2-figure` (a drawn mark such as the track of steps; its lines are
- * no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and `data-k2-avatar` (initials, no type role). The
+ * no dividers), `data-k2-canvas` (free drawing, never measured) and `data-k2-avatar` (initials, no type role). The
  * options take other selectors, for the mockup's classes for example.
  *
  * ```ts
@@ -233,8 +233,7 @@ function measureInPage(options: InPage): DomResult {
       return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     };
     const elements = [root, ...Array.from(root.querySelectorAll("*"))].filter(
-      // A skipped surface (a Canvas) is free inside, but the line it draws itself is a divider like any other.
-      (element) => !element.parentElement?.closest(options.skip) && visible(element),
+      (element) => !element.closest(options.skip) && visible(element),
     );
     // What a person sees of an element: the viewport, cut by every ancestor that clips (a scrolled column, the card).
     const clips = new Map<Element, { left: number; right: number; top: number; bottom: number }>();

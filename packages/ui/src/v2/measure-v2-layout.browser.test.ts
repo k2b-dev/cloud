@@ -266,7 +266,7 @@ describe("measureV2Layout", () => {
   // A head with tabs: the active tab's 2 px mark reaches 1 px below the tab box onto the head line and covers it.
   const head = (overflow: string) =>
     `<style>.head { display: flex; height: var(--k2-h-tabs); padding: 0 var(--k2-edge); border-bottom: var(--k2-hairline); font: var(--k2-t-row); }` +
-    ` .tabs { display: flex; overflow: ${overflow}; } .tab { display: flex; align-items: center; border-bottom: 2px solid var(--k2-app); margin-bottom: -1px; }</style>` +
+    ` .tabs { display: flex; overflow: ${overflow}; } .tab { display: flex; align-items: center; border-bottom: 2px solid var(--k2-app, var(--k2-blue)); margin-bottom: -1px; }</style>` +
     columns('<div class="head"><div class="tabs"><span class="tab">Inbox</span></div></div>');
 
   test(

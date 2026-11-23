@@ -500,7 +500,7 @@ describe("Filesv2 admin workspace", () => {
     const detailsPanel = dom.document.querySelector(".k2b-dialog__panel")!;
     expect(detailsPanel.textContent).toContain("This directory has not been created yet");
     expect(detailsPanel.textContent).toContain("Directory details");
-    expect(detailsPanel.textContent).toContain("Filegate service account");
+    expect(detailsPanel.textContent).toContain("Filegate system user");
     expect(detailsPanel.textContent).not.toContain("Unknown / Unknown");
     [...detailsPanel.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Close")!.click();
     await details;

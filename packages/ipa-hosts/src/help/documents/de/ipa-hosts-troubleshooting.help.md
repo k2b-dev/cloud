@@ -16,7 +16,7 @@ Hosts zeigt einen lokalen Spiegel, während FreeIPA die maßgebliche Quelle blei
 - **Ein Host bleibt nicht gruppiert:** Öffne das Aktionsmenü des Hosts, füge mindestens eine Hostgruppe hinzu und prüfe, ob die nächste Synchronisierung abgeschlossen wird.
 - **Eine MAC-Adresse wird abgelehnt:** Verwende das erwartete hexadezimale Adressformat und entferne Duplikate.
 - **Eine Hostgruppe lässt sich nicht löschen:** Entferne oder verschiebe abhängige Mitgliedschaften und versuche es nur erneut, wenn das Verzeichnis die Löschung zulässt.
-- **Die geplante Synchronisierung läuft nicht:** Prüfe den fünfteiligen Cron-Ausdruck, die konfigurierte Zeitzone, die Zugangsdaten des Dienstkontos und den letzten Synchronisierungsfehler.
+- **Die geplante Synchronisierung läuft nicht:** Prüfe den fünfteiligen Cron-Ausdruck, die konfigurierte Zeitzone, die Zugangsdaten des FreeIPA-Benutzers und den letzten Synchronisierungsfehler.
 :::
 
 ## Sicherer Wiederherstellungsweg {icon="lifebuoy"}
