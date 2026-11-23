@@ -22,6 +22,7 @@ export {
   type NavProps,
   Notice,
   type NoticeProps,
+  Path,
   RecordHead,
   type RecordHeadProps,
   type RecordId,

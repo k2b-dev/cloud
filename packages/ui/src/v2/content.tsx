@@ -1,6 +1,7 @@
 import { createContext, For, type JSX, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton, CopyButton } from "./button";
+import { MarkCheck } from "./controls";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import type { TypeRole } from "./tokens";
 import type { Action, Person, Status } from "./types";
@@ -263,86 +264,235 @@ export type TableProps<T> = {
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
+  /** The stable key of a row; needed for `select`, `current` and `group`. */
+  rowKey?: (row: T) => string;
+  /**
+   * A large table (Grids): a box column to select rows. The status row shows what can be done with them
+   * (`StatusRow selection`).
+   */
+  select?: {
+    selected: readonly string[];
+    onChange: (keys: readonly string[]) => void;
+    /** The name of the box of all rows and of one row, such as "Alle Aufträge" and the row's title. */
+    all: string;
+    row: (row: T) => string;
+  };
+  /** The key of the open row, in the tint of the app. */
+  current?: string;
+  /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
+  sticky?: boolean;
+  /** Rows of a group follow one another under a tinted group row of 36 px (no frame: it would cut the columns). */
+  group?: (row: T) => { key: string; head: JSX.Element; meta?: string };
+  /** The column the rows are sorted by: an arrow in its head. */
+  sort?: { column: number; direction: "ascending" | "descending" };
+  /** On the phone each row becomes a row of two lines instead (rule 7). */
+  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element };
 };
 
 const isPair = (value: CellValue): value is readonly [JSX.Element, JSX.Element] => Array.isArray(value) && value.length === 2;
 
+type TableItem<T> = { group: { key: string; head: JSX.Element; meta?: string } } | { row: T };
+
 /**
  * Many like things in columns: head 36, a line under every row, none between columns. Long text stays on one line
- * with "…" and a fixed row height (variant a, decided 22.11.); `wrap` lets one text column take three lines.
+ * with "…" and a fixed row height (variant a, decided 22.11.); `wrap` lets one text column take three lines. With
+ * `select` or `sticky` it is the large table of Grids: one scroller for head and rows, a sticky head and first column,
+ * rows and cells under the pointer, groups as tinted rows.
  */
-export const Table = <T,>(props: TableProps<T>) => <TableInPlace {...props} />;
+export const Table = <T,>(props: TableProps<T>) => {
+  const grid = () => props.select !== undefined || props.sticky === true;
+  const sized = () => grid() || props.columns.some((column) => column.width);
+  const lines = () => (props.rows.some((row) => props.columns.some((column) => isPair(column.cell(row)))) ? "2" : "1");
+  const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
+  const items = (): TableItem<T>[] => {
+    const out: TableItem<T>[] = [];
+    let last: string | undefined;
+    for (const row of props.rows) {
+      const group = props.group?.(row);
+      if (group && group.key !== last) out.push({ group });
+      last = group?.key;
+      out.push({ row });
+    }
+    return out;
+  };
+  const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
+  const all = (): boolean | "mixed" => {
+    const count = props.select?.selected.length ?? 0;
+    return count === 0 ? false : count === props.rows.length ? true : "mixed";
+  };
+  const toggle = (rowKey: string, on: boolean) => {
+    const select = props.select;
+    if (!select) return;
+    select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
+  };
+  const span = () => props.columns.length + (props.select ? 1 : 0);
+  // The sticky first data column stands after the box column (44 px).
+  const stickyLeft = () => (props.select ? "44px" : "0px");
+  const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
 
-/** The cells render once, inside the inline place, so text in a cell runs inline. */
-const TableInPlace = <T,>(props: TableProps<T>) => {
-  const cells = props.rows.map((row) => props.columns.map((column) => column.cell(row)));
-  const lines = () => (cells.some((row) => row.some(isPair)) ? "2" : "1");
-  const sized = () => props.columns.some((column) => column.width);
+  const cell = (column: Column<T>, row: T) => {
+    const value = column.cell(row);
+    // A line of text in its own block (cut or wrapped); a single mark such as a chip stands as it is.
+    const line = (content: JSX.Element, second = false) => (
+      <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
+        {content}
+      </span>
+    );
+    const single = value as JSX.Element;
+    return isPair(value)
+      ? [line(value[0]), line(value[1], true)]
+      : typeof single === "string" || typeof single === "number"
+        ? line(single)
+        : single;
+  };
+
   return (
-    <div class="k2-table-scroll" data-k2-part="Table" data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}>
-      <table class="k2-table" data-lines={lines()} data-sized={sized() ? "" : undefined} aria-label={props.label}>
-        <Show when={sized()}>
-          <colgroup>
-            {/* every column is its default wide; the last one takes the rest of the row, so the lines reach the edge */}
-            <For each={props.columns}>
-              {(column, index) => (
-                <col style={column.width && index() < props.columns.length - 1 ? { width: `${column.width.default}px` } : undefined} />
-              )}
-            </For>
-          </colgroup>
-        </Show>
-        <thead>
-          <tr>
-            <For each={props.columns}>
-              {(column, index) => (
-                <th scope="col" data-align={column.align} data-drop={column.drop ? "" : undefined}>
-                  <Show when={index() > 0 && props.columns[index() - 1]?.width}>
-                    <span
-                      class="k2-cgrip"
-                      role="separator"
-                      aria-orientation="vertical"
-                      aria-label={props.columns[index() - 1]!.title}
-                      aria-valuemin={props.columns[index() - 1]!.width!.min}
-                      aria-valuenow={props.columns[index() - 1]!.width!.default}
-                      tabindex="0"
-                    />
-                  </Show>
-                  {column.title}
-                </th>
-              )}
-            </For>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={cells}>
-            {(row) => (
-              <tr>
-                <For each={row}>
-                  {(value, index) => {
-                    const column = props.columns[index()]!;
-                    // A line of text in its own block (cut or wrapped); a single mark such as a chip stands as it is.
-                    const line = (content: JSX.Element, second = false) => (
-                      <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
-                        {content}
+    <>
+      <div
+        class="k2-table-scroll"
+        data-k2-part="Table"
+        data-grid={grid() ? "" : undefined}
+        data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
+      >
+        <table
+          class="k2-table"
+          data-lines={lines()}
+          data-sized={sized() ? "" : undefined}
+          data-grid={grid() ? "" : undefined}
+          aria-label={props.label}
+        >
+          <Show when={sized()}>
+            <colgroup>
+              <Show when={props.select}>
+                <col style={{ width: "44px" }} />
+              </Show>
+              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
+              <For each={props.columns}>
+                {(column, index) => (
+                  <col
+                    style={
+                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
+                    }
+                  />
+                )}
+              </For>
+            </colgroup>
+          </Show>
+          <thead>
+            <tr>
+              <Show when={props.select}>
+                {(select) => (
+                  <th scope="col" data-select="" data-sticky={props.sticky ? "" : undefined}>
+                    <MarkCheck label={select().all} checked={all()} onChange={(on) => select().onChange(on ? props.rows.map(key) : [])} />
+                  </th>
+                )}
+              </Show>
+              <For each={props.columns}>
+                {(column, index) => (
+                  <th
+                    scope="col"
+                    data-align={column.align}
+                    data-drop={column.drop ? "" : undefined}
+                    data-sticky={firstSticky(index())}
+                    style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                    aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
+                  >
+                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                      <span
+                        class="k2-cgrip"
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={props.columns[index() - 1]!.title}
+                        aria-valuemin={props.columns[index() - 1]!.width!.min}
+                        aria-valuenow={props.columns[index() - 1]!.width!.default}
+                        tabindex="0"
+                      />
+                    </Show>
+                    {column.title}
+                    <Show when={props.sort?.column === index()}>
+                      <Icon name={props.sort?.direction === "descending" ? "arrow-down" : "arrow-up"} />
+                    </Show>
+                  </th>
+                )}
+              </For>
+            </tr>
+          </thead>
+          <tbody>
+            <For each={items()}>
+              {(item, index) =>
+                "group" in item ? (
+                  <tr data-group="">
+                    <td colSpan={span()}>
+                      <span class="k2-group-row">
+                        {item.group.head}
+                        <Show when={item.group.meta}>
+                          <span class="k2-group-row-meta">{item.group.meta}</span>
+                        </Show>
                       </span>
-                    );
-                    const single = value as JSX.Element;
-                    return (
-                      <td data-align={column.align} data-drop={column.drop ? "" : undefined}>
-                        {isPair(value)
-                          ? [line(value[0]), line(value[1], true)]
-                          : typeof single === "string" || typeof single === "number"
-                            ? line(single)
-                            : single}
-                      </td>
-                    );
-                  }}
-                </For>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr
+                    aria-selected={props.select ? (selected(item.row, index()) ? "true" : "false") : undefined}
+                    aria-current={props.current !== undefined && props.current === key(item.row, index()) ? "true" : undefined}
+                  >
+                    <Show when={props.select}>
+                      {(select) => (
+                        <td data-select="" data-sticky={props.sticky ? "" : undefined}>
+                          <MarkCheck
+                            label={select().row(item.row)}
+                            checked={selected(item.row, index())}
+                            onChange={(on) => toggle(key(item.row, index()), on)}
+                          />
+                        </td>
+                      )}
+                    </Show>
+                    <For each={props.columns}>
+                      {(column, columnIndex) => (
+                        <td
+                          data-align={column.align}
+                          data-drop={column.drop ? "" : undefined}
+                          data-sticky={firstSticky(columnIndex())}
+                          style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                        >
+                          {cell(column, item.row)}
+                        </td>
+                      )}
+                    </For>
+                  </tr>
+                )
+              }
+            </For>
+          </tbody>
+        </table>
+      </div>
+      <Show when={props.phone}>
+        {(phone) => (
+          <div class="k2-table-phone">
+            <List label={props.label}>
+              <For each={items()}>
+                {(item) =>
+                  "group" in item ? (
+                    <div class="k2-bar" role="presentation">
+                      <div class="k2-bar-start">
+                        {item.group.head}
+                        <Show when={item.group.meta}>
+                          <span class="k2-t-meta">{item.group.meta}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  ) : (
+                    (() => {
+                      const form = phone()(item.row);
+                      return <Row lines={form.lines} avatar={form.avatar} time={form.time} strong />;
+                    })()
+                  )
+                }
+              </For>
+            </List>
+          </div>
+        )}
+      </Show>
+    </>
   );
 };

@@ -1,6 +1,7 @@
 import { For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
+import { MarkCheck } from "./controls";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import type { Action, Person, Status } from "./types";
 
@@ -112,9 +113,40 @@ export const Tabs = (props: TabsProps) => (
   </nav>
 );
 
+// ── Path ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
+ * On the phone the head with a path gives way to the phone bar of the shell, which names the page.
+ */
+export const Path = (props: { items: readonly { label: string; href?: string }[]; label: string }) => (
+  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
+    <For each={props.items}>
+      {(item, index) => (
+        <>
+          <Show when={index() > 0}>
+            <Icon name="chevron-right" />
+          </Show>
+          <Show
+            when={index() === props.items.length - 1}
+            fallback={
+              <a class="k2-path-step" href={item.href}>
+                {item.label}
+              </a>
+            }
+          >
+            <b aria-current="page">{item.label}</b>
+          </Show>
+        </>
+      )}
+    </For>
+  </nav>
+);
+
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type StatusFact = { before?: string; value: string | number; after?: string };
+/** A key figure: words before and after, the value itself in 600 (leave it out for words alone, such as "12 offen"). */
+export type StatusFact = { before?: string; value?: string | number; after?: string };
 
 export type StatusRowProps = {
   /** The one main statement, such as "7 unread". */
@@ -122,46 +154,59 @@ export type StatusRowProps = {
   /** Key figures after it; they leave on the phone. */
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
-  select?: { label: string; checked?: boolean | "mixed" };
-  /** Filters or a segment at the end. */
+  select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
+  /** Filters or a segment at the end; they leave on the phone. */
   filters?: JSX.Element;
+  /**
+   * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
+   * actions, and the way out.
+   */
+  selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
 /** The status row of a pane (52 px): the one lead statement, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => (
-  <div class="k2-bar" data-k2-part="StatusRow" data-status-row="">
-    <div class="k2-bar-start">
-      <Show when={props.select}>
-        {(select) => (
-          <span class="k2-mark">
-            <input
-              class="k2-mark-input"
-              type="checkbox"
-              aria-label={select().label}
-              checked={select().checked === true}
-              aria-checked={select().checked === "mixed" ? "mixed" : undefined}
-            />
-            <span class="k2-check" data-checked={select().checked ? "" : undefined} data-k2-mark="">
-              <Show when={select().checked}>
-                <Icon name={select().checked === "mixed" ? "minus" : "check"} />
-              </Show>
-            </span>
+  <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
+    <Show
+      when={props.selection}
+      fallback={
+        <>
+          <div class="k2-bar-start">
+            <Show when={props.select}>
+              {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+            </Show>
+            <span class="k2-status-lead">{props.lead}</span>
+            <For each={props.facts}>
+              {(fact) => (
+                <span class="k2-fact">
+                  {fact.before ?? ""}
+                  {fact.before && fact.value !== undefined ? " " : ""}
+                  <Show when={fact.value !== undefined}>
+                    <b>{fact.value}</b>
+                  </Show>
+                  {fact.after ? ` ${fact.after}` : ""}
+                </span>
+              )}
+            </For>
+          </div>
+          <Show when={props.filters !== undefined}>
+            <div class="k2-bar-end">{props.filters}</div>
+          </Show>
+        </>
+      }
+    >
+      {(selection) => (
+        <div class="k2-bar-start">
+          <Show when={props.select}>
+            {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
+          </Show>
+          <span class="k2-status-lead" aria-live="polite">
+            {selection().count}
           </span>
-        )}
-      </Show>
-      <span class="k2-status-lead">{props.lead}</span>
-      <For each={props.facts}>
-        {(fact) => (
-          <span class="k2-fact">
-            {fact.before ? `${fact.before} ` : ""}
-            <b>{fact.value}</b>
-            {fact.after ? ` ${fact.after}` : ""}
-          </span>
-        )}
-      </For>
-    </div>
-    <Show when={props.filters !== undefined}>
-      <div class="k2-bar-end">{props.filters}</div>
+          <For each={selection().actions}>{(action) => <ActionButton action={action} />}</For>
+          <ActionButton action={selection().clear} variant="text" />
+        </div>
+      )}
     </Show>
   </div>
 );
