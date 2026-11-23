@@ -3,7 +3,7 @@ import { type AuthContext, getDateConfig, getLocale, REQUEST_IDLE_TIMEOUT_SECOND
 import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
-import { app, ssr } from "../../config";
+import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
 import { type MailRequestContext, mailboxAccess } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
@@ -16,7 +16,7 @@ import { readMailWorkspacePreferences } from "../_components/mail-workspace-pref
 import MailWorkspace from "../MailWorkspace.island";
 import MailWorkspacePilot from "../MailWorkspaceV2.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
-import { showsMailV2 } from "../mail-v2-pilot";
+import { readMailV2Pilot, showsMailV2 } from "../mail-v2-pilot";
 import { mailPageMessages } from "../pages-messages";
 import { pageReadStatus, projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
@@ -55,7 +55,7 @@ export default ssr<AuthContext>(async (c) => {
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
       getLiveDictationStatus(c.get("accessSubject")),
-      app.settings.get("mail.ui_v2_pilot"),
+      readMailV2Pilot(),
     ]);
     // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
     const ui = showsMailV2(pilot, user.mail) ? "v2" : undefined;

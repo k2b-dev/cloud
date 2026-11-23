@@ -21,6 +21,7 @@ import { CountRefreshBusy } from "../service/view-count-cache";
 import type { MailboxPageData } from "../service/workspace";
 import * as workspace from "../service/workspace";
 import * as sidebarData from "./mail-sidebar-data";
+import * as pilot from "./mail-v2-pilot";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-page-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -57,6 +58,8 @@ afterEach(() => {
 });
 beforeEach(() => {
   spies.push(stubRailSnapshot());
+  // Nobody is in the v2 pilot unless a test lists them.
+  spies.push(spyOn(pilot, "readMailV2Pilot").mockResolvedValue([]));
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } }));
   spies.push(
     spyOn(sidebarData, "loadMailSidebarData").mockResolvedValue({
@@ -257,90 +260,92 @@ test.each([
   );
 });
 
-test("mailbox scope uses the public ID and Mail's page without a mailbox has no mailbox scope (#1471)", async () => {
-  const snapshot: MailboxPageData = {
-    workspacePreference: { listShare: null, seenHints: [] },
-    viewPreference: { large: "auto", phone: "compact" },
-    doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
-    receivingAddress: null,
-    mailbox: {
-      id: mailboxId,
-      name: "Support",
-      description: null,
-      health: "active",
-      healthReason: null,
-      syncEnabled: true,
-      searchBackend: "postgres",
-      automaticReplyManagementPermission: "admin",
-      accessScope: "mailbox",
-      draftEditMode: "lock",
-      composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
-      createdAt: "2026-10-01T00:00:00.000Z",
-      updatedAt: "2026-10-01T00:00:00.000Z",
-    },
-    permission: "read",
-    access: { scope: "mailbox", permission: "read" },
-    initialLiveCursor: null,
-    folders: [],
-    identities: [],
-    scheduledMode: false,
-    scheduledCount: 0,
-    scheduledPage: null,
-    scheduledError: null,
-    draftsMode: false,
-    draftsPage: null,
-    draftsError: null,
-    eventsMode: false,
-    eventsPage: null,
-    eventsError: null,
-    activeView: "needs_action",
-    savedViewId: null,
-    savedViews: [],
-    listMode: "conversations",
-    folderId: null,
-    viewCounts: { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0, kept: 0 },
-    query: "",
-    search: { query: "", expression: null, sort: "relevance", error: null },
-    selectedConversationId: null,
-    selectedMessageId: null,
-    listItems: [],
-    listCursor: null,
-    nextListCursor: null,
-    listError: null,
-    hiddenDone: null,
-    assignedGroups: null,
-    listTitle: "Needs action",
-    conversationRowState: null,
-    detailMessages: [],
-    conversationSummary: null,
-    conversationDrafts: [],
-    detailError: null,
-    collaborationState: null,
-    localTags: [],
-    conversationLocalTags: null,
-    comments: [],
-    commentsCursor: null,
-    assignableUsers: [],
-    dropAssignees: null,
-    activity: [],
+const mailboxSnapshot = (): MailboxPageData => ({
+  workspacePreference: { listShare: null, seenHints: [] },
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
+  receivingAddress: null,
+  mailbox: {
+    id: mailboxId,
+    name: "Support",
+    description: null,
+    health: "active",
+    healthReason: null,
+    syncEnabled: true,
+    searchBackend: "postgres",
+    automaticReplyManagementPermission: "admin",
+    accessScope: "mailbox",
+    draftEditMode: "lock",
+    composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  },
+  permission: "read",
+  access: { scope: "mailbox", permission: "read" },
+  initialLiveCursor: null,
+  folders: [],
+  identities: [],
+  scheduledMode: false,
+  scheduledCount: 0,
+  scheduledPage: null,
+  scheduledError: null,
+  draftsMode: false,
+  draftsPage: null,
+  draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
+  activeView: "needs_action",
+  savedViewId: null,
+  savedViews: [],
+  listMode: "conversations",
+  folderId: null,
+  viewCounts: { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0, kept: 0 },
+  query: "",
+  search: { query: "", expression: null, sort: "relevance", error: null },
+  selectedConversationId: null,
+  selectedMessageId: null,
+  listItems: [],
+  listCursor: null,
+  nextListCursor: null,
+  listError: null,
+  hiddenDone: null,
+  assignedGroups: null,
+  listTitle: "Needs action",
+  conversationRowState: null,
+  detailMessages: [],
+  conversationSummary: null,
+  conversationDrafts: [],
+  detailError: null,
+  collaborationState: null,
+  localTags: [],
+  conversationLocalTags: null,
+  comments: [],
+  commentsCursor: null,
+  assignableUsers: [],
+  dropAssignees: null,
+  activity: [],
+  reminder: null,
+  keep: null,
+  collaborationError: null,
+  detailErrors: {
+    collaboration: null,
+    tags: null,
+    comments: null,
+    assignableUsers: null,
+    activity: null,
     reminder: null,
     keep: null,
-    collaborationError: null,
-    detailErrors: {
-      collaboration: null,
-      tags: null,
-      comments: null,
-      assignableUsers: null,
-      activity: null,
-      reminder: null,
-      keep: null,
-      reference: null,
-      summary: null,
-      drafts: null,
-    },
-    selectedSubject: "",
-    selectedReference: null,
-  };
+    reference: null,
+    summary: null,
+    drafts: null,
+  },
+  selectedSubject: "",
+  selectedReference: null,
+});
+
+test("mailbox scope uses the public ID and Mail's page without a mailbox has no mailbox scope (#1471)", async () => {
+  const snapshot = mailboxSnapshot();
   spies.push(
     spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId),
     spyOn(publicResources, "publicIds").mockResolvedValue(new Map([[mailboxId, mailboxShortId]])),
@@ -373,4 +378,31 @@ test("mailbox scope uses the public ID and Mail's page without a mailbox has no 
   const landingHtml = await landingResponse.text();
   const landingShell = JSON.parse(landingHtml.match(/id="cloud-shell-data" type="application\/json">([^<]*)/)![1]!);
   expect(landingShell.panel.context?.scope).toBeUndefined();
+});
+
+test("only a person in the v2 pilot gets the mailbox on @k2b/ui v2; everyone else keeps v1", async () => {
+  spies.push(
+    spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId),
+    spyOn(publicResources, "publicIds").mockResolvedValue(new Map([[mailboxId, mailboxShortId]])),
+    spyOn(workspace, "loadMailboxPageData").mockResolvedValue({ ok: true, data: mailboxSnapshot() }),
+    spyOn(integrations, "getSpacesMailIntegrationAvailability").mockResolvedValue({
+      invitations: false,
+      settings: false,
+      composer: false,
+      context: false,
+    }),
+  );
+  const listed = spyOn(pilot, "readMailV2Pilot");
+  spies.push(listed);
+  for (const [list, v2] of [
+    [[], false],
+    [["someone@example.test"], false],
+    [[" Reader@Example.test "], true],
+    [["*"], true],
+  ] as const) {
+    listed.mockResolvedValue(list);
+    const html = await (await request()).text();
+    expect({ list, v1: (await selectHtml(html, ".mail-workspace")).length }).toEqual({ list, v1: v2 ? 0 : 1 });
+    expect({ list, v2: (await selectHtml(html, "main.k2-ui [data-k2-workspace]")).length }).toEqual({ list, v2: v2 ? 1 : 0 });
+  }
 });
