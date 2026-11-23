@@ -1217,6 +1217,12 @@
 }
 .k2-ui .k2-facts[data-inline] > .k2-facts-end {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+/* an icon button at the end stands with its icon on the text edge */
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:last-child {
+  margin-right: -10px;
 }
 
 /* ── Prose: reading text, 14/22, measure 720 ────────────────────────────────────────────────────────────────── */
@@ -1392,20 +1398,19 @@
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 16%, var(--k2-surface));
   color: var(--k2-c, var(--k2-n600));
 }
+/* the bar sits in the line of its words, on their middle; the words may wrap under it on a narrow column */
 .k2-ui .k2-progress {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  display: inline;
 }
 .k2-ui .k2-progress-track {
   display: inline-block;
+  vertical-align: middle;
   width: 96px;
   height: 4px;
+  margin-right: 8px;
   border-radius: var(--k2-r-round);
   background: var(--k2-n200);
   overflow: hidden;
-  flex: none;
 }
 .k2-ui .k2-progress-track > i {
   display: block;
@@ -1473,14 +1478,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }
@@ -1718,8 +1723,8 @@
 .k2-ui .k2-facts > .k2-btn > .k2-icon {
   font-size: 14px;
 }
+/* two lines in a group: 52 px like a two-line row, 6 px above the text (as in the mockup) */
 .k2-ui .k2-group .k2-table[data-lines="2"] td {
-  height: auto;
   padding-block: 6px;
 }
 
