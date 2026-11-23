@@ -157,12 +157,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
     if (name === "Check") {
       const input = element.querySelector("input");
-      const state =
-        input?.getAttribute("aria-checked") === "mixed"
-          ? "mixed"
-          : (input as HTMLInputElement | null)?.checked || input?.hasAttribute("checked")
-            ? "on"
-            : "off";
+      // Mixed is the input's `indeterminate` in a browser; in server markup only the mark's minus says so.
+      const mixed =
+        input?.getAttribute("aria-checked") === "mixed" ||
+        (input as HTMLInputElement | null)?.indeterminate === true ||
+        !!element.querySelector("[data-k2-mark] [data-name='minus']");
+      const state = mixed ? "mixed" : (input as HTMLInputElement | null)?.checked || input?.hasAttribute("checked") ? "on" : "off";
       return `${element.hasAttribute("data-switch") ? "Switch" : "Check"} ${quote(element.textContent)} ${state}`;
     }
     if (name === "Choice") {
