@@ -1,6 +1,6 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { initialsOf, type Person, type Status } from "./types";
+import { initialsOf, navigate, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
@@ -52,6 +52,8 @@ export type ChipProps = {
    */
   onClick?: () => void;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   /** A pressable chip that is on, such as an active filter: in the tint of the app. */
   pressed?: boolean;
 } & (
@@ -115,7 +117,10 @@ export const Chip = (props: ChipProps) => {
       component={props.href ? "a" : props.onClick ? "button" : "span"}
       href={props.href}
       type={props.onClick && !props.href ? "button" : undefined}
-      onClick={() => props.onClick?.()}
+      onClick={(event: MouseEvent) => {
+        props.onClick?.();
+        if (props.href) navigate(props.onNavigate, event);
+      }}
       class="k2-chip"
       data-k2-part="Chip"
       data-status={props.status}

@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { custom, Icon } from "./marks";
-import type { Action, Width } from "./types";
+import { type Action, navigate, type Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,10 @@ export const Workspace = (props: WorkspaceProps) => {
             class="k2-btn k2-fab"
             data-variant="primary"
             href={action().href}
-            onClick={() => action().onClick?.()}
+            onClick={(event: MouseEvent) => {
+              action().onClick?.();
+              if (action().href !== undefined) navigate(action().onNavigate, event);
+            }}
           >
             <Show when={action().icon}>{(name) => <Icon name={name()} />}</Show>
             {action().label}

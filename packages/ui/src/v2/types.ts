@@ -1,3 +1,26 @@
+/**
+ * Opens a link's page in place, beside the real link (`href`): it is called on a plain click of the link (the main
+ * button without a modifier key, also Enter on the focused link) and opens the page in place when it calls
+ * `event.preventDefault()`; without that call the browser follows the link. A click with a modifier key or the middle
+ * button, a link with another target, and "open in new tab" never reach it, and before the page is live the link
+ * works on its own.
+ */
+export type OnNavigate = (event: MouseEvent) => void;
+
+/** A click that the page may take over: the main button, no modifier key, not taken yet, no other target (internal). */
+const isPlainClick = (event: MouseEvent) => {
+  const link = event.currentTarget;
+  const elsewhere = link instanceof HTMLAnchorElement && ((link.target !== "" && link.target !== "_self") || link.hasAttribute("download"));
+  return (
+    !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && !elsewhere
+  );
+};
+
+/** Hands a click of a link to its `onNavigate` when it is a plain click (internal to the primitives). */
+export const navigate = (onNavigate: OnNavigate | undefined, event: MouseEvent) => {
+  if (onNavigate && isPlainClick(event)) onNavigate(event);
+};
+
 /** The width of a column that can be dragged: its minimum and its default, in CSS px. Nothing else. */
 export type Width = { min: number; default: number };
 
@@ -10,6 +33,8 @@ export type Action = {
   /** A Tabler icon name without the `ti-` prefix, such as `plus`. */
   icon?: string;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   onClick?: () => void;
   /** A quiet summary after the label where the place shows one, such as "Bank, Person, Portal". */
   meta?: string;

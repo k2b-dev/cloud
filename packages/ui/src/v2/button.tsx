@@ -2,7 +2,7 @@ import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { Avatar, Icon } from "./marks";
-import type { Action, Person } from "./types";
+import { type Action, navigate, type OnNavigate, type Person } from "./types";
 
 type ButtonBase = {
   /**
@@ -16,6 +16,8 @@ type ButtonBase = {
   avatar?: Person;
   /** A link that looks like a button. */
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   /** The button opens a menu: a chevron after the label. */
   menu?: boolean;
@@ -52,7 +54,10 @@ export const Button = (props: ButtonProps) => {
       aria-label={iconOnly() ? props.label : undefined}
       title={iconOnly() ? props.label : undefined}
       aria-haspopup={props.menu ? "menu" : undefined}
-      onClick={props.onClick}
+      onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
+        props.onClick?.(event);
+        if (props.href !== undefined) navigate(props.onNavigate, event);
+      }}
       class="k2-btn"
       data-k2-part="Button"
       data-variant={props.variant && props.variant !== "secondary" ? props.variant : undefined}
@@ -88,6 +93,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         icon={props.action.icon}
         forward={props.action.forward}
         href={props.action.href}
+        onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
       >
         {props.action.label}
@@ -100,6 +106,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         icon={icon()}
         label={props.action.label}
         href={props.action.href}
+        onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
       />
     )}

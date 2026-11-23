@@ -4,7 +4,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import type { Action, Person, Status, TwoActions } from "./types";
+import { type Action, navigate, type OnNavigate, type Person, type Status, type TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -14,6 +14,8 @@ export type NavItem = {
   label: string;
   icon: string;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   onClick?: () => void;
   count?: number | string;
   /** The open one. */
@@ -40,7 +42,10 @@ const NavEntry = (props: { item: NavItem }) => (
     component={props.item.href !== undefined ? "a" : "button"}
     type={props.item.href !== undefined ? undefined : "button"}
     href={props.item.href}
-    onClick={() => props.item.onClick?.()}
+    onClick={(event: MouseEvent) => {
+      props.item.onClick?.();
+      if (props.item.href !== undefined) navigate(props.item.onNavigate, event);
+    }}
     class="k2-ni"
     data-k2-part="Nav.Item"
     aria-current={props.item.current ? "page" : undefined}
@@ -91,6 +96,8 @@ export type Tab = {
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
+  /** … opens it in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
+  onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
   current?: boolean;
@@ -114,7 +121,10 @@ export const Tabs = (props: TabsProps) => (
             type={tab.href !== undefined ? undefined : "button"}
             class="k2-tab"
             href={tab.href}
-            onClick={() => tab.onClick?.()}
+            onClick={(event: MouseEvent) => {
+              tab.onClick?.();
+              if (tab.href !== undefined) navigate(tab.onNavigate, event);
+            }}
             aria-current={tab.current ? "page" : undefined}
           >
             <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
