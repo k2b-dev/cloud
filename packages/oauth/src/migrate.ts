@@ -465,9 +465,9 @@ export const migrate = async (): Promise<void> => {
     WHERE client_id = (SELECT id FROM oauth.clients WHERE client_id = 'cloud-cli')
   `.simple();
   console.log("  ✓ oauth first-party CLI client");
-  await sql`ALTER TABLE oauth.codes DROP COLUMN IF EXISTS authority_nonce`.simple();
-  await sql`ALTER TABLE oauth.refresh_tokens DROP COLUMN IF EXISTS authority_nonce`.simple();
-  await sql`ALTER TABLE oauth.device_authorizations DROP COLUMN IF EXISTS authority_nonce`.simple();
+  // The previous OAuth release re-adds authority_nonce on codes and refresh tokens, but expects it on device
+  // authorizations. Keep that unused column for one release so device login survives a rollback.
+  await sql`ALTER TABLE oauth.device_authorizations ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
   await sql`DROP TABLE IF EXISTS oauth.client_credentials_authority_grants`.simple();
 
   // Local signing storage is obsolete; retain client registrations and grant state.

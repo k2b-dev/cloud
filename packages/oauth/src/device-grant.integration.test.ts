@@ -176,6 +176,12 @@ const expectTokensEndBy = (tokens: Record<string, unknown>, endsAt: Date) => {
 
 suite("OAuth device authorization grant", () => {
   useTestSettings({ "app.url": ISSUER });
+  test("the migration keeps the columns the previous release needs for device login after a rollback", async () => {
+    // The previous release re-adds this column on codes and refresh tokens itself, but not on device authorizations.
+    const columns = await sql<{ table_name: string }[]>`SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'oauth' AND table_name = 'device_authorizations' AND column_name = 'authority_nonce'`;
+    expect(columns).toHaveLength(1);
+  });
   test("the first-party CLI can explicitly request short-lived admin consent without widening normal logins", () =>
     withFrozenTime(async () => {
       const who = await person("CLI step-up");

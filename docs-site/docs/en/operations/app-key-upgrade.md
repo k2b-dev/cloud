@@ -141,7 +141,8 @@ replay tables when it starts. Removed tokens do not come back; that release
 issues new runtime tokens to apps without a key on its own. Roll back Core and
 OAuth together, as in step 5, because both sides of OAuth issuance changed.
 Clients registered in `auth.oauth_clients` stay; the previous release ignores
-that table.
+that table. This release keeps the OAuth columns the previous release still
+writes, so device login keeps working after a rollback.
 
 This upgrade does not rotate the encryption root. Keep `APP_SECRET` and the
 Core identity encryption keys stable. An incompatible encryption-format change
