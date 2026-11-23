@@ -1,0 +1,50 @@
+/* Just enough look for the v2 behaviour contract tests. Not v2's CSS: lane A owns tokens and `.k2-` styles.
+   It carries the styling contracts the behaviour relies on, which v2's CSS must keep:
+   - a modal is placed by the stylesheet (fixed, centred by inset + margin), as ui-sdk's own web.css does;
+   - draggable items are opaque and `user-select: none`, and the drag copy (a clone that also carries
+     data-grabbed) stays opaque. */
+:root { --bg: #fff; --surface: #fff; --line: #e2e2de; --text: #1d1d1b; --hover: #efefec; --over: #e8eefc; --accent: #2f5bd3; color-scheme: light; }
+:root[data-theme="dark"] { --bg: #161615; --surface: #1d1d1c; --line: #353532; --text: #ededea; --hover: #2a2a28; --over: #263252; --accent: #7f9ff0; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/20px system-ui, sans-serif; }
+button, input { font: inherit; color: inherit; }
+.bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 52px; padding: 0 16px; }
+.status { flex: 1; }
+.btn { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); white-space: nowrap; }
+.btn--primary { background: var(--accent); color: #fff; }
+.veil { position: fixed; inset: 0; background: rgb(0 0 0 / 0.32); border: 0; margin: 0; padding: 0; }
+.dialog { position: fixed; inset: 0; height: fit-content; max-height: calc(100dvh - 32px); width: min(520px, calc(100vw - 32px)); margin: auto; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); }
+.dialog__title { margin: 0 0 12px; font-size: 16px; }
+.dialog__body { display: grid; gap: 12px; }
+.dialog__foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.field { display: grid; gap: 4px; }
+.input { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.menu, .popover, .listbox { margin: 0; padding: 4px 0; min-width: 200px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.menu__item, .option { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; outline: none; }
+.menu__item[data-highlighted], .option[data-highlighted] { background: var(--hover); }
+.option[hidden] { display: none; }
+.menu__sep { height: 1px; margin: 4px 0; background: var(--line); }
+.popover { padding: 12px; display: grid; gap: 8px; }
+.popover__title { margin: 0; font-size: 14px; }
+.check { display: flex; gap: 8px; align-items: center; }
+.form { display: grid; gap: 16px; padding: 16px; max-width: 420px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 32px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; }
+.chip { display: inline-flex; gap: 4px; align-items: center; padding: 0 6px; border-radius: 12px; background: var(--hover); }
+.chips .input { border: 0; flex: 1; min-width: 80px; }
+.page { display: grid; grid-template-columns: 240px 1fr; gap: 16px; padding: 16px; }
+.sortable { list-style: none; margin: 0; padding: 0; min-height: 120px; }
+.sortable__item { display: flex; align-items: center; height: 36px; padding: 0 8px; border-radius: 6px; background: var(--surface); touch-action: none; user-select: none; -webkit-user-select: none; }
+.sortable__item[data-grabbed] { opacity: 0.4; }
+[data-drag-preview] { opacity: 1 !important; background-color: var(--surface) !important; box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
+.target { display: flex; align-items: center; height: 36px; padding: 0 8px; border-radius: 6px; }
+.target[data-over] { background: var(--over); }
+.mail { display: flex; align-items: center; height: 40px; padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--surface); touch-action: none; user-select: none; -webkit-user-select: none; }
+.transfer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px; }
+.transfer__col { border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
+.columns { display: flex; height: 300px; border: 1px solid var(--line); margin: 16px; overflow: hidden; }
+.column { flex: none; min-width: 0; overflow: hidden; border-right: 1px solid var(--line); }
+.column:last-child { flex: 1; border-right: 0; }
+.grip { flex: none; width: 13px; margin: 0 -6px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; }
+.grip:focus-visible { outline: 2px solid var(--accent); }
+@media (max-width: 720px) { .transfer { grid-template-columns: 1fr; } .page { grid-template-columns: 1fr; } }
