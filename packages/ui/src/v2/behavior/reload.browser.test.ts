@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, serverMarkup } from "../../../test/v2-behavior/harness";
 
-const demos = ["overlays", "select", "board", "transfer", "resize", "controls"] as const;
+const demos = ["overlays", "select", "board", "transfer", "resize", "controls", "lists", "toast"] as const;
 let browser: Browser;
 let css: string;
 const bundles = new Map<string, string>();
@@ -34,13 +34,21 @@ const normalized = (page: Page, html?: string) =>
     else root.innerHTML = source;
     const references = new Set(["id", "for", "aria-describedby", "aria-activedescendant"]);
     // Core writes a few attributes only once elements bind, because they depend on the page: `aria-labelledby` on a
-    // combobox's chips once its label binds, `aria-controls` on a tab once its panel binds, and a tab stop on a panel
-    // without focusable content. None is painted, so none can flash; they are the only attributes left out here.
-    const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls"]);
+    // combobox's chips once its label binds, `aria-controls` on a tab once its panel binds, a tree item's place among
+    // its siblings once the rows bind (`aria-posinset`, `aria-setsize`), and a tab stop on a panel without focusable
+    // content. None is painted, so none can flash; they are the only attributes left out here.
+    const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls", "aria-posinset", "aria-setsize"]);
     const boundTabStop = (node: Element, name: string) => name === "tabindex" && node.getAttribute("role") === "tabpanel";
+    // Core puts the toast region in the top layer (`popover`) and measures the viewport into custom properties once
+    // it binds; an empty region shows nothing either way, which the pixel check below proves.
+    const toastRegion = (node: Element) => node.getAttribute("data-slot") === "toast-region";
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
+      if (toastRegion(node) && node instanceof HTMLElement) {
+        node.removeAttribute("popover");
+        for (const name of [...node.style].filter((property) => property.startsWith("--"))) node.style.removeProperty(name);
+      }
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]
