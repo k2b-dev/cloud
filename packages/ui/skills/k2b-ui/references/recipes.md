@@ -58,9 +58,9 @@ statements. Below them a `Pane.Split`: the main column with
 ![record groups at 390 px](../images/record-groups-390.png)
 
 One `Section` for the area with a `summary`; one `Group` per delivery with
-`meta`, a `state` chip and actions. Inside a group: a strong sentence, a
-`Table` with two-line cells and `Progress`, `Facts inline` with a print
-button. A finished group is `folded`.
+`meta`, a `state` chip and actions. Inside a group: a strong sentence, its
+way as `Steps`, a `Table` with two-line cells and `Progress`, `Facts inline`
+with a print button. A finished group is `folded`.
 
 - Never a `Group` inside a `Group`, never a line inside one.
 - "You are next" is `Chip yours`, not a red badge.

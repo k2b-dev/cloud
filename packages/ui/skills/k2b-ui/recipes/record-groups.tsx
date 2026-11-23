@@ -1,6 +1,7 @@
 // Recipe: a record tab with groups. One Section for the area; one Group per thing that belongs together (here a
-// delivery). A finished one is folded to its head. Inside a group: a sentence, a table, facts; no lines, no nesting.
-import { Bar, Button, Chip, Facts, Group, Pane, Progress, RecordHead, Section, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+// delivery). A finished one is folded to its head. Inside a group: a sentence, its way, a table, facts; no lines, no
+// nesting.
+import { Bar, Button, Chip, Facts, Group, Pane, Progress, RecordHead, Section, Steps, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
 
 type Settlement = { day: string; items: string; when: string; workday: number; amount: string; estimate: boolean };
 
@@ -61,6 +62,15 @@ export default function CustomerDeliveries() {
             <Text type="body" strong>
               10 Artikel sind ausgelaufen.
             </Text>
+            <Steps
+              label="Weg der Einlieferung"
+              items={[
+                { label: "Angekommen", meta: "3. Nov.", state: "done" },
+                { label: "Läuft", meta: "10 von 18 ausgelaufen", state: "now" },
+                { label: "Abgerechnet", state: "next" },
+                { label: "Ausgezahlt", state: "next" },
+              ]}
+            />
             <Table
               label="Abrechnung"
               rows={settlements}

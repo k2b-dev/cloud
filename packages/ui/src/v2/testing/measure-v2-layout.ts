@@ -1,5 +1,5 @@
 /**
- * A test helper, not part of the package: measures the layout rules of @k2b/ui v2 on a Playwright page, as numbers
+ * A test helper, shipped as `@k2b/ui/v2/testing`: measures the layout rules of @k2b/ui v2 on a Playwright page, as numbers
  * against the mockup instead of a count of error classes (the lesson of the flat audit, 22.11.).
  *
  * - **edge:** a horizontal hairline or a tinted band reaches both edges of its column (within 1.5 px). A column edge
@@ -25,7 +25,7 @@
  * options take other selectors, for the mockup's classes for example.
  *
  * ```ts
- * import { measureV2Layout } from "../../test/measure-v2-layout";
+ * import { measureV2Layout } from "@k2b/ui/v2/testing";
  *
  * for (const deviceScaleFactor of [1, 2])
  *   test(`DPR ${deviceScaleFactor}: the layout keeps the v2 rules`, async () => {
@@ -36,8 +36,8 @@
  * ```
  */
 import type { Page } from "playwright";
-import { fontWeights, gripTolerance, hairline, typeRoles } from "../src/v2/tokens";
-import { settled } from "./browser";
+import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
+import { settled } from "./settled";
 
 export type V2LayoutOptions = {
   /** The element to measure; the whole body by default. */

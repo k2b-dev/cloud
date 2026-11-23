@@ -6,9 +6,8 @@ import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { describeV2 } from "./describe";
+import { describeV2Page, measureV2Layout } from "./testing";
 
 // The recipes of the k2b-ui skill are what agents copy. Each one must keep the v2 rules and show no outline problem at
 // 1440 and 390 px, so a recipe and its picture never teach a mistake.
@@ -53,7 +52,7 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
             `<!doctype html><html lang="de"><head><style>${css}</style><style>${testCss}</style></head>` +
               `<body class="k2-ui"><div class="frame">${markup.get(name)}</div></body></html>`,
           );
-          const outline = (await page.evaluate(`(${describeV2})(document.querySelector(".frame"), { layout: true })`)) as string;
+          const outline = await describeV2Page(page, ".frame");
           expect(outline).not.toContain("Problems");
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
           expect(layout.problems).toEqual([]);

@@ -61,14 +61,18 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
+| where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
+| a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
+| the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
+| "done, undo?" after an action | `toast(message, { action })` | – |
 | the newest few on a first page | `Digest` | `record.tsx` |
 | labels with values | `Facts` (`inline` for one line) | `record.tsx` |
 | something wrong, waiting, a note, an AI summary | `Notice` with `tone` | `list-detail.tsx` |
@@ -104,7 +108,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    `Group`.
 
 One primary action per page: the filled `Button variant="primary"` in the
-head, mirrored as `Workspace primary` so the phone shows it.
+head, mirrored as `Workspace primary` so the phone shows it. A form page
+without a head action has its "Save" as the one primary in its footer
+`Bar`; a form shown beside a page that has a head primary saves with a
+default (framed) button.
 
 ## Primitives in one line each
 
@@ -113,17 +120,24 @@ head, mirrored as `Workspace primary` so the phone shows it.
   (`tone`), `Cells`, `Tiles`, `Canvas`.
 - **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
+  `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
-- **Components:** `Nav`, `Tabs`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`.
-- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`).
+- **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
+  `RecordHead`, `toast()`.
+- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
+  and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-`Dialog`, `Menu`, `Popover`, `Toast`, `Empty`, `Steps`, search and filter
-components, a `Head` with path. Dialog, menu and popover behaviour exists
-inside `@k2b/ui` but has no public v2 component yet.
+`Dialog`, `Menu`, `Popover`, `Tooltip` (their behaviour exists inside
+`@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
+error states of a whole pane, a search field and filter components, a
+`required` mark on `Field`, the mail composer (comes from `@k2b/editor`).
+How to stand in until then: a dialog is a `Pane detail` (see
+[primitives](references/primitives.md), "Pane.Split"); an empty state is a
+`Band` with `<Text muted>`; filters are a `Button variant="ghost" menu` or
+pressed `Chip`s in `StatusRow filters`.
 
 ## See what you built
 
@@ -160,6 +174,7 @@ Details, the outline format and use outside the monorepo:
 | `Button … stands alone in Pane` | move it into a `Bar end`, `Row action`, `Section actions` or `Notice actions` |
 | `2 primary buttons` | keep one `primary`; the others are default or `ghost` |
 | `primary action is hidden at this width` | add `Workspace primary` |
+| `floating main action … covers …` | the form leaves on the phone: put it in a `Pane detail` or its own route |
 | `Group … stands in another Group` | flatten: one `Section`, several `Group`s |
 | a line under a section head | remove your own divider; `Section` draws the one line |
 | icon button without a name (type error) | give `label="…"` |

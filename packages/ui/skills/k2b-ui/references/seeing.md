@@ -66,19 +66,24 @@ columns dropped.
 
 ## Outside the monorepo
 
-`describeV2` is exported from `@k2b/ui/v2` and needs only a DOM. In a
-Playwright test of your app:
+`@k2b/ui/v2/testing` brings the same checks to a Playwright test of your
+app (Playwright is an optional peer dependency of `@k2b/ui`):
 
 ```ts
-import { describeV2 } from "@k2b/ui/v2";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 
-const outline = await page.evaluate(`(${describeV2})(document.body, { layout: true })`);
-expect(outline).not.toContain("Problems");
+for (const width of [1440, 390])
+  test(`the sources screen at ${width} px`, async () => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(url);
+    expect(await describeV2Page(page)).not.toContain("Problems");
+    expect((await measureV2Layout(page)).problems).toEqual([]);
+  });
 ```
 
-With server markup and no browser (happy-dom, linkedom), call
-`describeV2(element)` without `layout`. `measureV2Layout` is a test helper
-of the monorepo and not part of the package yet.
+Print the outline (`console.log(await describeV2Page(page))`) when you
+need to see the screen. With server markup and no browser (happy-dom,
+linkedom), call `describeV2(element)` from `@k2b/ui/v2` without `layout`.
 
 ## Screenshots
 

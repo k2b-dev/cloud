@@ -164,8 +164,8 @@ if (textOnly) {
 }
 
 // 4. Measure in Chromium at each width.
-const { launchBrowser, settled } = await import("../test/browser");
-const { measureV2Layout } = await import("../test/measure-v2-layout");
+const { launchBrowser } = await import("../test/browser");
+const { describeV2Page, measureV2Layout, settled } = await import("../src/v2/testing");
 const browser = await launchBrowser();
 try {
   for (const width of widths) {
@@ -173,7 +173,7 @@ try {
     try {
       await tab.setContent(page(true));
       await settled(tab);
-      const outline = (await tab.evaluate(`(${describeV2.toString()})(document.querySelector(".frame"), { layout: true })`)) as string;
+      const outline = await describeV2Page(tab, ".frame");
       if (outline.includes("\nProblems (")) failed = true;
       section(`outline at ${width} px`, outline.split("\n"));
       const layout = await measureV2Layout(tab, { root: "[data-k2-workspace], .frame" });

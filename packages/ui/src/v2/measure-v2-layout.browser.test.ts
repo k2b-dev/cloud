@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
+import { measureV2Layout } from "./testing";
 import { heights, textEdge, typeRoles } from "./tokens";
 
 // The v2 foundation measured in a browser, and the layout measurement itself proved red and green on small pages

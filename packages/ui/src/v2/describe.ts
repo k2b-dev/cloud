@@ -40,9 +40,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Canvas",
     "Field.Row",
     "Field",
+    "Toast",
   ]);
   // Parts that get their own line when they stand in the flow of a column, and are words inside a bar or a row.
-  const flowBlocks = new Set(["Text", "Inline", "Tabs", "Check", "Choice", "Progress", "Button"]);
+  const flowBlocks = new Set(["Text", "Inline", "Tabs", "Check", "Choice", "Progress", "Button", "Steps", "Path"]);
   const flow = new Set(["Pane", "Band", "Section", "Group", "Workspace"]);
   // Containers whose children must be primitives (rule 3: fixed places instead of free children).
   const containers: Record<string, string> = {
@@ -124,6 +125,13 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `Tabs ${quote(element.getAttribute("aria-label"))}: ${tabs.join(", ")}`;
     }
     if (name === "RecordHead") return `RecordHead ${quote(element.textContent)}`;
+    if (name === "Path")
+      return `Path: ${[...element.querySelectorAll("a, b")].map((step) => clip(step.textContent ?? "", 24)).join(" › ")}`;
+    if (name === "Steps")
+      return `Steps ${quote(element.getAttribute("aria-label"))}: ${[...element.querySelectorAll(".k2-step")]
+        .map((step) => `${clip(step.querySelector(".k2-step-label")?.textContent ?? "", 20)} ${step.getAttribute("data-state")}`)
+        .join(" → ")}`;
+    if (name === "Toast") return `Toast ${quote(element.textContent)}`;
     if (name === "Input" || name === "Select" || name === "DateInput") {
       const control = element.querySelector("input, textarea, select");
       const value =
@@ -204,7 +212,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         if (name === "StatusRow") {
           const lead = element.querySelector(".k2-status-lead")?.textContent;
           const facts = [...element.querySelectorAll(".k2-fact")].map((fact) => clip(fact.textContent ?? "", 30));
-          const select = element.querySelector(".k2-mark") ? " select-all" : "";
+          const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
+          if (element.hasAttribute("data-selecting"))
+            return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
           return `StatusRow ${quote(lead)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
@@ -261,17 +271,25 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Table": {
         const table = element.querySelector("table");
-        const heads = [...element.querySelectorAll("thead th")];
+        const heads = [...element.querySelectorAll("thead th:not([data-select])")];
+        const groups = element.querySelectorAll("tbody > tr[data-group]").length;
+        const extras = [
+          element.querySelector("thead th[data-select]") ? "select" : "",
+          groups ? `${groups} groups` : "",
+          element.querySelector("[data-sticky]") ? "sticky" : "",
+        ].filter(Boolean);
         const columns = heads.map((th) => {
           const notes = [th.getAttribute("data-align") === "end" ? "end" : "", th.hasAttribute("data-drop") ? "drops on phone" : ""].filter(
             Boolean,
           );
           return `${clip(th.textContent ?? "", 20)}${notes.length ? ` (${notes.join(", ")})` : ""}`;
         });
-        const dropped = options.layout ? heads.filter((th) => hidden(th)).map((th) => clip(th.textContent ?? "", 20)) : [];
-        const rows = element.querySelectorAll("tbody > tr").length;
+        const dropped =
+          options.layout && !(table && hidden(table)) ? heads.filter((th) => hidden(th)).map((th) => clip(th.textContent ?? "", 20)) : [];
+        const rows = element.querySelectorAll("tbody > tr:not([data-group])").length;
         const wrap = element.querySelector("[data-wrap]") ? " wrap" : "";
-        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
+        const shown = options.layout && table && hidden(table) ? " — shown as rows at this width" : "";
+        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}${shown}`;
       }
       case "Facts": {
         const labels = [...element.querySelectorAll("dt")].map(
@@ -368,6 +386,21 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     problems.push(
       `${primaries.length} primary buttons (${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per page; make the others secondary`,
     );
+  // The floating main action of the phone must not cover a control at the end of the page.
+  const fab = options.layout ? [...root.querySelectorAll(".k2-fab")].find((button) => !hidden(button)) : undefined;
+  if (fab) {
+    const box = fab.getBoundingClientRect();
+    // Buttons and fields only: a row that slides under it while the list scrolls is fine.
+    const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
+      if (control === fab || fab.contains(control) || hidden(control)) return false;
+      const other = control.getBoundingClientRect();
+      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+    });
+    if (covered.length)
+      problems.push(
+        `the floating main action ${quote(fab.textContent, 24)} covers ${covered.map((control) => quote(control.getAttribute("aria-label") ?? control.textContent, 24) || `<${control.tagName.toLowerCase()}>`).join(", ")} at this width: a form or dialog belongs on its own page (route) on the phone`,
+      );
+  }
   if (!lines.length) problems.push("no v2 part found: render the screen inside an element with the class k2-ui");
   if (problems.length) lines.push("", `Problems (${problems.length}):`, ...problems.map((problem) => `- ${problem}`));
   return lines.join("\n");

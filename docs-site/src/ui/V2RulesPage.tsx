@@ -111,7 +111,7 @@ const rules: readonly V2Rule[] = [
       title: "A browser test",
       language: "ts",
       source: [
-        'import { measureV2Layout } from "../../test/measure-v2-layout";',
+        'import { measureV2Layout } from "@k2b/ui/v2/testing";',
         "",
         "for (const width of [390, 1440])",
         "  test(`${width} px keeps the v2 rules`, async () => {",

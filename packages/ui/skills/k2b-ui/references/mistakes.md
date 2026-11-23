@@ -81,6 +81,12 @@ One filled action per page. The others: default (framed), `ghost`, or
 Head actions hide on the phone. Give `Workspace` the same action as
 `primary`; it floats there. A head button that must stay gets `keep`.
 
+### `the floating main action … covers "Speichern" at this width` (outline at 390 px)
+
+On the phone `Workspace primary` floats at the bottom right. A form at the
+end of a pane slides under it. A form or dialog is its own route on the
+phone; beside a list it is a `Pane detail`, which leaves at that width.
+
 ### A line under a section head, between entries, inside a group
 
 Rule 9. You drew it with your own element or a `Bar` between entries.

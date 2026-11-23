@@ -47,10 +47,18 @@ describe("describeV2", () => {
     expect(text).toContain('head: Tabs "Bereiche": Überblick ✓, Geld (12)');
     expect(text).toContain('Section "Anstehend" (2) ["Todo anlegen" text]');
     expect(text).toContain('Group "EL-2611-00009" (18) · angekommen 3. Nov. · Post (Läuft · ok) ["Öffnen" text]');
-    expect(text).toContain('Group "EL-2609-00017" folded (Ausgezahlt · ok)');
+    expect(text).toContain('Group "EL-2609-00017" folded · ausgezahlt am 12. Nov.');
+    expect(text).toContain('Steps "Weg der Einlieferung": Angekommen done → Ausgelaufen now → Ausgezahlt next');
     expect(text).toContain('Table "Abrechnung" 3 columns × 2 rows: Auslauftag, Abrechnung, Auszahlung (end)');
     expect(text).toContain('Canvas "Karte" 176px (free drawing, not measured)');
     expect(text).not.toContain("Problems");
+  });
+
+  test("outlines a large table with selection, groups and a path", () => {
+    const text = fixture("grid");
+    expect(text).toContain("head: Bar: Path: Werkstatt › Aufträge");
+    expect(text).toContain('status: StatusRow selecting "1 ausgewählt": ["Exportieren"] ["Auswahl aufheben" text]');
+    expect(text).toContain('Table "Aufträge" 5 columns × 8 rows (select, 2 groups, sticky)');
   });
 
   test("names fields with their errors and the state of every mark", () => {

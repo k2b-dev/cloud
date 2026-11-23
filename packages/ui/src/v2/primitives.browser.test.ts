@@ -6,7 +6,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
+import { measureV2Layout } from "./testing";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
