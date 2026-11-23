@@ -52,6 +52,7 @@ export const mailV2Messages = i18n.define({
       attach: "Attach files",
       signature: "Signature",
       send: "Send",
+      edit: "Edit",
     },
     de: {
       mailboxes: "Postfächer",
@@ -101,6 +102,7 @@ export const mailV2Messages = i18n.define({
       attach: "Dateien anhängen",
       signature: "Signatur",
       send: "Senden",
+      edit: "Bearbeiten",
     },
   },
 });

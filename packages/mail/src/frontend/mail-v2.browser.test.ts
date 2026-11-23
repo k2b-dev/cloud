@@ -54,15 +54,16 @@ afterAll(async () => {
   await server?.stop();
 });
 
-const open = async (path: string, width = 1440): Promise<Page> => {
-  const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 } });
+const open = async (path: string, width = 1440, height = width < 768 ? 844 : 900): Promise<Page> => {
+  const page = await browser.newPage({ viewport: { width, height } });
   pageErrors(page);
   await page.addInitScript(pinPageClock, Date.parse(MAIL_V2_NOW));
   await page.goto(`${server.url}${path}`);
   await page.waitForFunction(() => document.documentElement.dataset.mailV2Ready === "true", undefined, { timeout: 30_000 });
   return page;
 };
-const row = (page: Page, sender: string) => page.locator('[data-k2-part="Row"]', { hasText: sender });
+/** A conversation of the list (the reader's message heads are rows too). */
+const row = (page: Page, sender: string) => page.locator('[data-k2-part="List"] > [data-k2-part="Row"]', { hasText: sender });
 
 describe("Mail on the v2 pilot", () => {
   for (const [width, path] of [
@@ -134,13 +135,15 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
-  test("a live mail keeps the focused row focused and the list where it was", async () => {
-    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440);
+  // As in v1: a list scrolled down holds the focused row in place; at the very top the new mail shows above.
+  test("a live mail keeps the focused row focused and a scrolled list where it was", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 560);
     try {
       const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
       await list.evaluate((element) => {
         element.scrollTop = 120;
       });
+      expect(await list.evaluate((element) => element.scrollTop)).toBe(120);
       await row(page, "Lackfabrik Nordhaus").focus();
       const before = await row(page, "Lackfabrik Nordhaus").boundingBox();
       server.arrive();

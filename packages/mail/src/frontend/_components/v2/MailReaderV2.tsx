@@ -13,6 +13,7 @@ import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
+import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
 
 const attachmentIcon = (contentType: string, name: string): string => {
@@ -149,6 +150,7 @@ export default function MailReaderV2(props: {
   /** The reply composer; `request` counts the times a message's Reply asked it to start. */
   reply?: (request: Accessor<number>) => JSX.Element;
 }) {
+  const locale = useLocale();
   const c = () => props.controller;
   const data = () => c().data;
   const item = () => c().selectedListItem();
@@ -255,7 +257,11 @@ export default function MailReaderV2(props: {
       />
       <Show when={data().conversationSummary?.summary}>
         {(summary) => (
-          <Notice tone="ai" title={props.text.shortly}>
+          <Notice
+            tone="ai"
+            title={props.text.shortly}
+            actions={c().canWrite() ? [{ label: props.text.edit, onClick: () => void editMailV2Summary(c(), locale()) }] : undefined}
+          >
             {summary()}
           </Notice>
         )}
