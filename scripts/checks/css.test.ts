@@ -11,7 +11,7 @@ const check = async (property: string, uiCss = "", appOverrides: Record<string, 
   try {
     for (const directory of ["packages/cloud/src", "packages/cloud/scripts", "packages/ui/src", "packages/example/src/styles"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
@@ -56,6 +56,15 @@ test("CSS check recognizes UI-owned semantic tokens used by applications", async
   expect(await check("--k2b-surface-muted")).toEqual([]);
 });
 
+// Cloud's shared stylesheets read v2 tokens to hand a v2 page its app colour (the real global.css is in every fixture
+// here, so it passes in all of them); an app's stylesheet that reads one is a finding, owned by v2 or by Cloud.
+test("CSS check lets only Cloud's shared stylesheets read the tokens of @k2b/ui v2", async () => {
+  for (const property of ["--k2-surface", "--k2-app"])
+    expect(await check(property)).toEqual([
+      `${property} is a @k2b/ui v2 token; only Cloud's shared stylesheets read it, an app uses the v2 primitives`,
+    ]);
+});
+
 test("applications can each override a token owned by UI", async () => {
   expect(
     await check("--k2b-text-muted", "", {
@@ -98,7 +107,7 @@ test("CSS check rejects removed detail utilities in application JSX", async () =
   try {
     for (const directory of ["packages/cloud/src/styles", "packages/cloud/scripts", "packages/ui/src", "packages/example/src"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
@@ -119,7 +128,7 @@ test("CSS check accepts --ui-focus only as a box-shadow", async () => {
   try {
     for (const directory of ["packages/cloud/src/styles", "packages/cloud/scripts", "packages/ui/src", "packages/example/src"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
