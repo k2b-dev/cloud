@@ -1,5 +1,64 @@
 /* Portable catalog pages load only the package-owned scoped stylesheet. */
 @import "@k2b/ui/global.css";
+/* @k2b/ui v2 (provisional) beside v1, for the v2 rules page. */
+@import "@k2b/ui/v2.css";
+
+/* The v2 rules page: text in the v2 roles, each rule as text above a pair of mockup excerpt and code. */
+.ui-v2-rules__scope {
+  display: grid;
+  gap: 8px;
+  color: var(--k2-text);
+}
+.ui-v2-rules__lead {
+  margin: 0;
+}
+.ui-v2-rules__scope > p {
+  margin: 0;
+}
+.ui-v2-rule {
+  display: grid;
+  gap: 12px;
+  padding-top: 24px;
+  margin-top: 16px;
+  border-top: var(--k2-hairline);
+}
+.ui-v2-rule__text {
+  display: grid;
+  gap: 4px;
+  max-width: 720px;
+}
+.ui-v2-rule__text > * {
+  margin: 0;
+}
+.ui-v2-rule__pair {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .ui-v2-rule__pair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.ui-v2-rule__excerpt {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.ui-v2-rule__excerpt img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: var(--k2-hairline);
+}
+.ui-v2-rule__roles {
+  display: grid;
+  gap: 8px;
+  padding: 16px var(--k2-edge);
+  border: var(--k2-hairline);
+  background: var(--k2-surface);
+}
 
 .ui-demo-chart-group-grid {
   display: grid;

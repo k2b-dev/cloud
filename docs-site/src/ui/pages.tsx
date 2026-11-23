@@ -12,6 +12,7 @@ import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
+import { V2RulesPage } from "./V2RulesPage";
 
 export const uiPages = [
   solidPage({
@@ -157,6 +158,19 @@ export const uiPages = [
         </section>
       </article>
     ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/rules",
+    title: "UI v2 · Rules",
+    navTitle: "v2 rules (provisional)",
+    description:
+      "The layout rules of @k2b/ui v2, each with an excerpt of the approved mockup and the check that holds it. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 7,
+    layout: "full",
+    component: ({ page }) => <V2RulesPage title={page.meta.title} description={page.meta.description} />,
   }),
   solidPage({
     html: fibelHtml,
