@@ -44,12 +44,12 @@ export function Demo() {
           Archivieren
         </tooltip.Popup>
       </div>
-      <label class="check" id="unread-label">
+      <div class="check">
         <check.Root class="btn" data-testid="checkbox" aria-labelledby="unread-label">
           <check.Mark>✓</check.Mark>
         </check.Root>
-        Nur ungelesene
-      </label>
+        <span id="unread-label">Nur ungelesene</span>
+      </div>
       <output data-testid="checked">{String(unread())}</output>
       <div class="check">
         <toggle.Root class="btn" data-testid="switch" aria-label="Benachrichtigen">

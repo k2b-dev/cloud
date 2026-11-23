@@ -81,8 +81,8 @@ export function createColumnResize(options: {
   let keyDelta = 0;
 
   const grip = (index: number) => ({
-    role: "separator",
-    "aria-orientation": "vertical",
+    role: "separator" as const,
+    "aria-orientation": "vertical" as const,
     get "aria-label"() {
       return options.label(index);
     },

@@ -23,8 +23,10 @@ import {
   prepareAnnouncements,
   type ReorderDraft,
   type ReorderMessage,
+  reorderMessage,
   type TransferDraft,
   type TransferMessage,
+  transferMessage,
 } from "@ui-sdk/core";
 import { createSignal, For, type JSX, onCleanup } from "solid-js";
 import { type PartProps, part, usePrimitive } from "./adapter";
@@ -78,7 +80,7 @@ const sortable = definePrimitive({
       label: (key) => context.options().label?.(key),
       message: (message) => {
         const messages = context.options().messages;
-        return messages ? reorderText(messages(), message) : undefined;
+        return messages ? reorderText(messages(), message) : reorderMessage(message);
       },
     });
     return { roving, reorder };
@@ -198,7 +200,7 @@ const transferLists = definePrimitive({
       listLabel: (list) => context.options().listLabel?.(list),
       message: (message) => {
         const messages = context.options().messages;
-        return messages ? transferText(messages(), message) : undefined;
+        return messages ? transferText(messages(), message) : transferMessage(message);
       },
     });
     return { roving, transfer };
