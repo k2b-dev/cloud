@@ -33,7 +33,11 @@ export const hairline = { width: 1 } as const;
 /** Radii by role: a mark (4), a control or an overlay (8), round (999), the app card (14). Structure is square. */
 export const radii = { mark: 4, control: 8, overlay: 8, round: 999, card: 14 } as const;
 
-/** Fixed heights by place; a primitive takes its height from where it stands. */
+/**
+ * Fixed heights by place; a primitive takes its height from where it stands. The row heights are minima, as in the
+ * mockup: a row of two or three lines is taller than its minimum by its line, so it stands 53 and 73 px apart
+ * (`row2 + hairline.width`), exactly as the approved mockup renders it.
+ */
 export const heights = {
   head: 56,
   status: 52,

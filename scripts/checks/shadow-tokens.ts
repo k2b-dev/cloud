@@ -17,8 +17,13 @@ const message =
   "use a layer token instead (`--k2b-island-shadow` for islands via Paper, Section, or the hook; `--k2b-shadow-toolbar`, `-side`, `-sheet`, `-float`, `-toast`); see /en/ui/surfaces/elevation";
 
 /** The @k2b/ui token owners: the component scope and the classless base stylesheet that mirrors it. */
-const tokenFiles = new Set(["packages/ui/src/styles/index.css", "packages/ui/src/base/base.css"]);
-const tokenName = /^--k2b-(?:shadow-[\w-]+|overlay-lift)$/;
+const v1Tokens = /^--k2b-(?:shadow-[\w-]+|overlay-lift)$/;
+/** v2 (`@k2b/ui/v2.css`) owns its one shadow of things that float, `--k2-float` and `--k2-float-large`. */
+const tokenFiles = new Map<string, RegExp>([
+  ["packages/ui/src/styles/index.css", v1Tokens],
+  ["packages/ui/src/base/base.css", v1Tokens],
+  ["packages/ui/src/v2/v2.css", /^--k2-float(?:-large)?$/],
+]);
 const allowMarker = /shadow-tokens:\s*allow\s+\S/;
 
 /** Removes `var(...)` references (with nested fallbacks) so only literal shadow layers remain. */
@@ -91,7 +96,7 @@ const allowedAbove = (source: string, index: number): boolean => {
   return allowMarker.test(current) || allowMarker.test(previous);
 };
 
-const checkCss = (original: string, isTokenFile: boolean, report: (index: number, detail: string) => void) => {
+const checkCss = (original: string, tokens: RegExp | undefined, report: (index: number, detail: string) => void) => {
   // Comments become blanks of the same length, so offsets stay true; allow markers are read from the original.
   const source = original.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
   // A custom property that a box-shadow or filter reads as a whole layer is a shadow, whatever its name; one that
@@ -118,7 +123,7 @@ const checkCss = (original: string, isTokenFile: boolean, report: (index: number
     }
     const property = head.replace(/\s*:\s*$/, "");
     if (property.startsWith("--")) {
-      if (isTokenFile && tokenName.test(property)) continue;
+      if (tokens?.test(property)) continue;
       if ((/shadow|depth|lift|elevation/i.test(property) || readAsShadow.has(property)) && castsDepth(value))
         report(at, `${selector} defines ${property}: ${value.trim()}`);
       continue;
@@ -177,7 +182,7 @@ export const rule: Rule = {
         const original = readFileSync(file, "utf8");
         const report = (index: number, detail: string) =>
           findings.push({ file, line: lineOf(original, index), message: `${detail}: ${message}` });
-        if (file.endsWith(".css")) checkCss(original, tokenFiles.has(relative(workspaceRoot, file)), report);
+        if (file.endsWith(".css")) checkCss(original, tokenFiles.get(relative(workspaceRoot, file)), report);
         else checkSource(original, report);
       }
     }
