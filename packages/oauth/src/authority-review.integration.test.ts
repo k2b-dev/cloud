@@ -177,13 +177,11 @@ suite("OAuth external review regressions", () => {
   }, 60_000);
 
   test("unknown OAuth keys cannot poison a warm local verifier during a storage outage", async () => {
-    const originalOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
     const kid = crypto.randomUUID();
     const pair = await generateKeyPair("RS256", { extractable: true });
     const publicKey = await exportJWK(pair.publicKey);
     let renamed = false;
     try {
-      delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
       tokens.clearOAuthVerifierCacheForTest();
       await sql`INSERT INTO auth.signing_keys (
         purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
@@ -209,8 +207,6 @@ suite("OAuth external review regressions", () => {
       if (renamed) await sql`ALTER TABLE auth.signing_keys_cache_outage RENAME TO signing_keys`.simple();
       await sql`DELETE FROM auth.signing_keys WHERE kid = ${kid}`;
       tokens.clearOAuthVerifierCacheForTest();
-      if (originalOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
-      else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalOrigin;
     }
   });
 });

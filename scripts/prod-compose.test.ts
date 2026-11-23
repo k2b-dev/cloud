@@ -7,10 +7,12 @@ describe("production Compose release set", () => {
   test("ordinary production apps receive their enrolled identity and Core origin", () => {
     const parsed = Bun.YAML.parse(compose) as { services: Record<string, { environment: Record<string, string> }> };
     for (const id of appIds().filter((id) => id !== "core" && id !== "gateway")) {
-      const service = parsed.services[`app-${id}`]!;
+      // The Code runner is its own hardened service with a private key mount.
+      const service = parsed.services[id === "runner" ? "runner" : `app-${id}`]!;
       expect(Object.keys(service.environment).sort()).toEqual(["CLOUD_APP_KEY_FILE", "CLOUD_CORE_INTERNAL_ORIGIN"]);
-      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${id}.key`);
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(id === "runner" ? "/run/runner-key/source" : `/run/secrets/${id}.key`);
     }
+    expect(compose).not.toMatch(/CLOUD_OAUTH_BROKER_SECRET|CLOUD_[A-Z]*_?APP_CREDENTIAL/);
   });
   test("preserves the gateway host admission and private ingress listener", () => {
     const gateway = compose.split("  gateway:\n")[1]?.split("  app-gateway-ops:")[0];

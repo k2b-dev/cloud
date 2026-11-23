@@ -5,7 +5,7 @@ section: Operations
 order: 1141
 description: Prepare application keys before upgrading, verify signed work, and check every deployed replica.
 tags: [deployment, upgrade, configuration, app-keys]
-updated: 2026-11-12
+updated: 2026-11-23
 ---
 
 # Upgrade applications to app keys
@@ -72,9 +72,9 @@ Never generate a new `APP_SECRET` for this migration.
    Core versions. Mixing versions can cause failed requests or block the
    migration on old broker transactions. Applications keep running; requests and background work that
    need Core are briefly unavailable. Start the new Core version and wait for
-   readiness, then upgrade Gateway and the applications. Core's migration
-   revokes active app API tokens carrying former workload scopes and records each
-   revocation once. Use this release's Compose template: ordinary apps receive
+   readiness, then upgrade OAuth right after it, then Gateway and the other
+   applications. Core's migration removes app API tokens carrying former
+   workload scopes and records each still-active one once as revoked. Use this release's Compose template: ordinary apps receive
    their key file and direct Core origin; Core and Gateway retain infrastructure
    configuration. Keep documented third-party connection overrides. Across hosts
    use verified HTTPS to Core.
@@ -109,10 +109,13 @@ See [App migration status](/en/docs/operations/app-key-status).
 Returning to environment-only application identity requires returning to the
 previous parallel-support release. Restoring environment values alone cannot
 start an ordinary HTTP app on this release. Enrolled keys remain usable on
-that previous release, so retain them during rollback. The revocation migration
-is permanent: returning to older images does not reactivate retired tokens.
-If old authentication is needed there, provision replacement credentials using
-that release's supported procedure.
+that previous release, so retain them and keep them mounted during rollback:
+apps keep signing with them, and the previous Core recreates its workload and
+replay tables when it starts. Removed tokens do not come back; that release
+issues new runtime tokens to apps without a key on its own. Roll back Core and
+OAuth together, as in step 5, because both sides of OAuth issuance changed.
+Clients registered in `auth.oauth_clients` stay; the previous release ignores
+that table.
 
 This upgrade does not rotate the encryption root. Keep `APP_SECRET` and the
 Core identity encryption keys stable. An incompatible encryption-format change

@@ -20,7 +20,7 @@ suite("app identity cutover", () => {
     await database?.drop();
   });
 
-  test("revokes only former app API credentials and audits each once across repeated migrations", async () => {
+  test("removes only former app API credentials and audits each active one once across repeated migrations", async () => {
     const [app] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
       VALUES ('Cutover app', 'resource_bound', 'cutover', 'cloud.app', 'cutover') RETURNING id`;
     const [resource] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
@@ -56,6 +56,12 @@ suite("app identity cutover", () => {
       if (!key) throw new Error("Missing fixture credential");
       (shouldRetire ? retired : retained).push(key.id);
     }
+    // An already revoked runtime token is removed without a second revoke event.
+    const [revokedRuntime] = await sql<{ id: string }[]>`INSERT INTO auth.service_account_credentials
+      (service_account_id, name, kind, token_prefix, secret_hash, scopes, status, revoked_at)
+      VALUES (${app.id}::uuid, 'Runtime old', 'api_token', ${crypto.randomUUID()}, 'fixture-hash', ARRAY['identity:invoke']::text[],
+        'revoked', now()) RETURNING id`;
+    if (!revokedRuntime) throw new Error("Missing fixture credential");
     const [appKey] = await sql<{ id: string }[]>`INSERT INTO auth.service_account_credentials
       (service_account_id, name, kind, public_key, fingerprint) VALUES
       (${app.id}::uuid, 'Signed identity', 'app_key', ${APP_KEY_FIXTURES[0].publicKey}, ${APP_KEY_FIXTURES[0].fingerprint}) RETURNING id`;
@@ -64,14 +70,12 @@ suite("app identity cutover", () => {
     await retireAppWorkloads();
     await retireAppWorkloads();
     for (const id of retired) {
-      const [row] = await sql<
-        { status: string; revoked_at: Date | null }[]
-      >`SELECT status, revoked_at FROM auth.service_account_credentials WHERE id = ${id}::uuid`;
-      expect(row?.status).toBe("revoked");
-      expect(row?.revoked_at).not.toBeNull();
+      expect(await sql`SELECT id FROM auth.service_account_credentials WHERE id = ${id}::uuid`).toHaveLength(0);
       const rows = await sql<{ action: string; reason: string }[]>`SELECT action, reason FROM audit.events WHERE target_id = ${id}`;
       expect(rows).toEqual([{ action: "service_account_credential.revoke", reason: "app_key_cutover" }]);
     }
+    expect(await sql`SELECT id FROM auth.service_account_credentials WHERE id = ${revokedRuntime.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT id FROM audit.events WHERE target_id = ${revokedRuntime.id}`).toHaveLength(0);
     for (const id of retained) {
       const [row] = await sql<{ status: string }[]>`SELECT status FROM auth.service_account_credentials WHERE id = ${id}::uuid`;
       expect(row?.status).toBe("active");
