@@ -1,0 +1,6 @@
+### v2 primitives made a part passed as JSX twice, and hydration looked for nodes the server never sent
+
+- **What happened:** The first hydration test of the `@k2b/ui/v2` primitives failed with "Hydration Mismatch. Unable to find DOM nodes for hydration key". The head `Bar` passed to `Workspace` was made once for `<Show when={props.head}>` and once more for the child; `Field.Row` counted its children and rendered them again; `Table` called `column.cell` twice.
+- **Root cause:** In Solid a prop given as JSX is a getter: every read makes the JSX again. The server's `Show` reads `when` more than once, even with a callback child, so the server sent the second copy while the browser looked for the first.
+- **Error class:** A component reads a prop that holds JSX more than once, so the same part is made several times and server and browser disagree about which copy is on the page.
+- **Guard:** `packages/ui/src/v2/hydration.browser.test.ts` renders the primitives on the server and hydrates them with the development build of Solid, which throws on a mismatch. The test also counts how often each cell and field is made. Each primitive reads a prop that holds JSX once, through `children()` or `createMemo`, and only that result afterwards.

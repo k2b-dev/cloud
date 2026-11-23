@@ -60,38 +60,88 @@ test("there is one hairline of 1 px, and the radii and heights are the tokens", 
 });
 
 test("dark mode redefines only colours and shadows, never a measure", () => {
-  const dark = declarations('.dark .k2-ui:not([data-theme="light"]),\n.k2-ui.dark,\n.k2-ui[data-theme="dark"]');
+  const dark = declarations(
+    '.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),\n.k2-ui.dark,\n.k2-ui[data-theme="dark"]',
+  );
   expect(dark.size).toBeGreaterThan(20);
   for (const [property, value] of dark) {
     expect(property.startsWith("--k2-")).toBe(true);
-    expect(/^(?:#[0-9a-f]{6}|rgb\(|0 )/.test(value)).toBe(true);
+    // a literal colour or shadow, or one mixed from the app's accent
+    expect(/^(?:#[0-9a-f]{6}|rgb\(|0 |color-mix\()/.test(value)).toBe(true);
   }
   // Every colour the dark theme sets exists in light first.
   for (const property of dark.keys()) expect(scope.has(property)).toBe(true);
 });
+
+type SelectorNode = selectorParser.Node;
+
+/**
+ * What keeps one selector out of v2's namespace: it must stand below `.k2-ui`, its classes are `k2-` classes, and a
+ * tag or `*` only stands inside a primitive (`.k2-table th`, `.k2-prose :where(ul)`), never alone below the root, where
+ * it would restyle markup that is not v2's. A sibling (`+`, `~`) of a primitive stands beside it, not inside it; it is
+ * inside only what holds both (`.k2-sh > .k2-stile + h3`). The arguments of a pseudo-class are selectors of their own:
+ * they start where the pseudo-class stands and leak nothing after it.
+ */
+const namespaceProblems = (selectorText: string): string[] => {
+  const problems: string[] = [];
+  const check = (nodes: readonly SelectorNode[], start: boolean): { scoped: boolean } => {
+    // `inside`: an ancestor compound is a primitive; `here`: the current compound is one
+    let inside = start;
+    let here = false;
+    let scoped = false;
+    for (const node of nodes) {
+      if (node.type === "combinator") {
+        if (node.value === "+" || node.value === "~") here = false;
+        else {
+          inside ||= here;
+          here = false;
+        }
+      }
+      if (node.type === "class") {
+        if (node.value === "k2-ui") scoped = true;
+        else if (node.value.startsWith("k2-")) here = true;
+        else if (node.value !== "dark") problems.push(`class .${node.value} in ${selectorText}`);
+      }
+      if ((node.type === "tag" || node.type === "universal") && !inside && !here)
+        problems.push(`${node.toString().trim()} in ${selectorText}`);
+      if (node.type === "pseudo") {
+        if (node.value === ":root") problems.push(`:root in ${selectorText}`);
+        for (const argument of node.nodes) if (argument.type === "selector") check(argument.nodes, inside || here);
+      }
+    }
+    return { scoped };
+  };
+  selectorParser((selectors) => {
+    selectors.each((selector) => {
+      if (!check(selector.nodes, false).scoped) problems.push(`${selector.toString().trim()} is not below .k2-ui`);
+    });
+  }).processSync(selectorText);
+  return problems;
+};
+
+test("the namespace guard catches a tag beside a primitive and a tag after a pseudo-class argument", () => {
+  expect(namespaceProblems(".k2-ui .k2-table th")).toEqual([]);
+  expect(namespaceProblems(".k2-ui .k2-sh > .k2-stile + h3")).toEqual([]);
+  expect(namespaceProblems(".k2-ui :where(.k2-table td, .k2-prose ul)")).toEqual([]);
+  expect(namespaceProblems(".k2-ui .k2-table + p")).toEqual(["p in .k2-ui .k2-table + p"]);
+  expect(namespaceProblems(".k2-ui :not(.k2-x) p")).toEqual(["p in .k2-ui :not(.k2-x) p"]);
+});
+
+// The positioning of the behaviour layer writes these on an open popup; the page or the platform sets the one colour
+// of its app, and the platform may set its readable ink. v2.css may read them, never define them.
+const foreignVariables = new Set(["--anchor-width", "--available-height", "--k2-app", "--k2-app-ink"]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];
   root.walkDecls((declaration) => {
     if (declaration.prop.startsWith("--") && !declaration.prop.startsWith("--k2-")) problems.push(`custom property ${declaration.prop}`);
     for (const match of declaration.value.matchAll(/var\(\s*(--[\w-]+)/g))
-      if (!match[1]!.startsWith("--k2-")) problems.push(`${declaration.prop} reads ${match[1]}`);
+      if (!match[1]!.startsWith("--k2-") && !foreignVariables.has(match[1]!)) problems.push(`${declaration.prop} reads ${match[1]}`);
   });
   root.walkRules((rule: Rule) => {
-    selectorParser((selectors) => {
-      selectors.each((selector) => {
-        let scoped = false;
-        selector.walk((node) => {
-          if (node.type === "class") {
-            if (node.value === "k2-ui") scoped = true;
-            else if (node.value !== "dark" && !node.value.startsWith("k2-")) problems.push(`class .${node.value} in ${rule.selector}`);
-          }
-          if (node.type === "tag" || node.type === "universal" || (node.type === "pseudo" && node.value === ":root"))
-            problems.push(`${node.toString().trim()} in ${rule.selector}`);
-        });
-        if (!scoped) problems.push(`${selector.toString().trim()} is not below .k2-ui`);
-      });
-    }).processSync(rule.selector);
+    // the steps of a keyframes rule are no selectors
+    if (rule.parent?.type === "atrule" && /keyframes$/.test((rule.parent as postcss.AtRule).name)) return;
+    problems.push(...namespaceProblems(rule.selector));
   });
   expect(problems).toEqual([]);
 });
@@ -103,7 +153,8 @@ test("every custom property v2.css reads is one it defines", () => {
   });
   const missing: string[] = [];
   root.walkDecls((declaration) => {
-    for (const match of declaration.value.matchAll(/var\(\s*(--[\w-]+)/g)) if (!defined.has(match[1]!)) missing.push(match[1]!);
+    for (const match of declaration.value.matchAll(/var\(\s*(--[\w-]+)/g))
+      if (!defined.has(match[1]!) && !foreignVariables.has(match[1]!)) missing.push(match[1]!);
   });
   expect(missing).toEqual([]);
 });

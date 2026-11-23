@@ -227,13 +227,20 @@ const splitTopLevel = (text: string, separator: RegExp): string[] => {
 // Every class the shipped stylesheet names, read once: a fresh pattern over the whole stylesheet per token took
 // seconds and ran past the test timeout on a loaded machine.
 const styledClasses = new Set(Array.from(styles.matchAll(/\.([\w-]+)/g), (match) => match[1]!));
-const hasRule = (token: string) => styledClasses.has(token);
+// v2 (`src/v2`) ships its own stylesheet, `dist/v2.css`, and owns `k2-` names below `.k2-ui` beside v1.
+const v2StylesPath = resolve(packageRoot, "dist/v2.css");
+const styledV2Classes = new Set(
+  existsSync(v2StylesPath) ? Array.from(readFileSync(v2StylesPath, "utf8").matchAll(/\.([\w-]+)/g), (match) => match[1]!) : [],
+);
+const isV2 = (file: string) => relative(packageRoot, file).startsWith("src/v2/");
+const hasRule = (token: string, file: string) => (isV2(file) ? styledV2Classes : styledClasses).has(token);
+const ownPrefix = (file: string) => (isV2(file) ? "k2-" : "k2b-");
 
 describe("@k2b/ui package class contract", () => {
   test("renders no class the shipped stylesheet cannot style", () => {
     const unstyled = sources.flatMap((file) =>
       literalClassTokens(readFileSync(file, "utf8"))
-        .filter((token) => !isForeignContract(token) && !HOOK_CLASSES.has(token) && !hasRule(token))
+        .filter((token) => !isForeignContract(token) && !HOOK_CLASSES.has(token) && !hasRule(token, file))
         .map((token) => `${relative(packageRoot, file)}: ${token}`),
     );
 
@@ -243,7 +250,7 @@ describe("@k2b/ui package class contract", () => {
   test("renders only package-owned or externally-contracted class names", () => {
     const foreign = sources.flatMap((file) =>
       literalClassTokens(readFileSync(file, "utf8"))
-        .filter((token) => !token.startsWith("k2b-") && !isForeignContract(token) && !isStateModifier(token))
+        .filter((token) => !token.startsWith(ownPrefix(file)) && !isForeignContract(token) && !isStateModifier(token))
         .map((token) => `${relative(packageRoot, file)}: ${token}`),
     );
 
