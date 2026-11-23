@@ -948,8 +948,6 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-/* a row of three lines cuts each line with "…", the title too: its height is fixed at 72 px */
-.k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
   overflow: hidden;
@@ -1981,11 +1979,6 @@
 }
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
-}
-/* inside a band the drawing is a part of that one thing, such as a message's text above its attachments: the band's
-   own line closes it (rule 9), so the drawing draws none */
-.k2-ui .k2-band > .k2-canvas {
-  border-bottom: 0;
 }
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */

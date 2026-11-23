@@ -6,4 +6,4 @@
 - **Guard:**
   - The measure now reports a line inside a band or group at any distance (`inside`). It also reports a control that cuts its label and a one-line text that wraps (`cut`). A canvas's own line counts again.
   - `measure-v2-layout.browser.test.ts` holds a red and a green page for each of them, also built from v2's own band, canvas and three-line row. `describeV2` names the cut texts as well.
-  - Two primitives broke these rules and were fixed with them: a canvas in a band drew a line above the band's own line, and the title of a three-line row wrapped. The selecting status row at 390 px is tracked in #4073.
+  - Three primitives break these rules today. Each is allowed as one named finding until it is fixed: the selecting status row at 390 px (#4073), a canvas in a band that draws its own line (#4074), and the title of a three-line row that wraps (#4075).
