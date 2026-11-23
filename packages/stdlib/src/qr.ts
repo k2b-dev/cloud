@@ -14,7 +14,7 @@
  * const svg = qr.toSvg(data, { correctionLevel: "M", on: "#000", off: "#fff" });
  */
 
-import { type Correction, correction, generate } from "lean-qr";
+import { generate, correction, type Correction } from "lean-qr";
 import { toSvgSource } from "lean-qr/extras/svg";
 
 // ====================================
@@ -218,9 +218,7 @@ const vcard = (opts: VCardOptions): string => {
   if (opts.email) lines.push(`EMAIL:${escapeVCard(opts.email)}`);
   if (opts.website) lines.push(`URL:${escapeVCard(opts.website)}`);
   if (opts.street || opts.city || opts.zip || opts.country) {
-    lines.push(
-      `ADR:;;${escapeVCard(opts.street ?? "")};${escapeVCard(opts.city ?? "")};;${escapeVCard(opts.zip ?? "")};${escapeVCard(opts.country ?? "")}`,
-    );
+    lines.push(`ADR:;;${escapeVCard(opts.street ?? "")};${escapeVCard(opts.city ?? "")};;${escapeVCard(opts.zip ?? "")};${escapeVCard(opts.country ?? "")}`);
   }
   lines.push("END:VCARD");
   return lines.join("\r\n");
@@ -238,7 +236,13 @@ const vcard = (opts: VCardOptions): string => {
  * @returns iCalendar payload string with CRLF line endings
  */
 const event = (opts: EventOptions): string => {
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//stdlib//EN", "BEGIN:VEVENT", `SUMMARY:${escapeVCard(opts.title)}`];
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//stdlib//EN",
+    "BEGIN:VEVENT",
+    `SUMMARY:${escapeVCard(opts.title)}`,
+  ];
   if (opts.location) lines.push(`LOCATION:${escapeVCard(opts.location)}`);
   if (opts.start) lines.push(`DTSTART:${formatDt(opts.start)}`);
   if (opts.end) lines.push(`DTEND:${formatDt(opts.end)}`);

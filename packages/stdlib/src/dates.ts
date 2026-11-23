@@ -1,8 +1,9 @@
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
-import { publicHolidays } from "./holidays";
+
 import { formatList } from "./i18n";
+import { publicHolidays } from "./holidays";
 
 export type { GermanState, Holiday, HolidayKey, HolidayRegion } from "./holidays";
 export { publicHolidays };
@@ -137,7 +138,8 @@ const relativeTime = (value: number, unit: TimeUnit, context?: DateContext): str
 const unitFormatter = (unit: TimeUnit, context?: DateContext): Intl.NumberFormat =>
   new Intl.NumberFormat(contextLocale(context), { style: "unit", unit, unitDisplay: "long" });
 
-const formatUnit = (value: number, unit: TimeUnit, context?: DateContext): string => unitFormatter(unit, context).format(value);
+const formatUnit = (value: number, unit: TimeUnit, context?: DateContext): string =>
+  unitFormatter(unit, context).format(value);
 
 /** The localized unit name alone (e.g. "day" / "Tag"), without the number. */
 const unitName = (unit: TimeUnit, context?: DateContext): string =>
@@ -249,13 +251,29 @@ const parseWallClock = (input: string): WallClockParts => {
     hasSeconds: s !== undefined,
     hasMilliseconds: ms !== undefined,
   };
-  if (parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31 || parts.hour > 23 || parts.minute > 59 || parts.second > 59) {
+  if (
+    parts.month < 1 ||
+    parts.month > 12 ||
+    parts.day < 1 ||
+    parts.day > 31 ||
+    parts.hour > 23 ||
+    parts.minute > 59 ||
+    parts.second > 59
+  ) {
     throw new TypeError(`Invalid datetime-local value "${input}"`);
   }
   return parts;
 };
 
-type WallClockTuple = [year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number];
+type WallClockTuple = [
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  millisecond: number,
+];
 
 const DAY_MS = 86_400_000;
 const zonedDateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -317,11 +335,14 @@ const zonedWallClockTuple = (instantMs: number, timeZone: string): WallClockTupl
 const wallClockTupleToUtc = ([year, month, day, hour, minute, second, millisecond]: WallClockTuple): number =>
   Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
 
-const sameWallClock = (left: WallClockTuple, right: WallClockTuple): boolean => left.every((value, index) => value === right[index]);
+const sameWallClock = (left: WallClockTuple, right: WallClockTuple): boolean =>
+  left.every((value, index) => value === right[index]);
 
 const wallClockToNaiveDayjs = (input: string): dayjs.Dayjs => {
   const parts = parseWallClock(input);
-  return dayjs.utc(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, parts.millisecond));
+  return dayjs.utc(
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, parts.millisecond),
+  );
 };
 
 const applyZonedAdd = (input: string, options: ZonedAddOptions): string => {
@@ -357,7 +378,8 @@ const candidateInstantsForWallClock = (parts: WallClockParts, timeZone: string):
   return candidates.sort((a, b) => a.getTime() - b.getTime());
 };
 
-const defaultShiftedInstant = (input: string, timeZone: string): Date => dayjs.tz(input, timeZone).toDate();
+const defaultShiftedInstant = (input: string, timeZone: string): Date =>
+  dayjs.tz(input, timeZone).toDate();
 
 // =============================================================================
 // Timezones
@@ -386,7 +408,11 @@ export const normalizeTimeZone = (value: string | null | undefined, fallback: st
  * optional seconds/milliseconds). By default the function rejects nonexistent
  * and ambiguous DST times so user input cannot silently shift.
  */
-export const zonedDateTimeToInstant = (input: string, timeZone: string, options: ZonedDateTimeToInstantOptions = {}): string => {
+export const zonedDateTimeToInstant = (
+  input: string,
+  timeZone: string,
+  options: ZonedDateTimeToInstantOptions = {},
+): string => {
   const zone = normalizeTimeZone(timeZone);
   const disambiguation = options.disambiguation ?? "reject";
   const parts = parseWallClock(input);
@@ -439,8 +465,7 @@ export const formatDate = (input: string | Date, context?: DateContext & { style
   dateFormatter(contextLocale(context), {
     day: context?.style === "numeric" ? "2-digit" : "numeric",
     month: context?.style === "numeric" ? "2-digit" : "short",
-    year: "numeric",
-    timeZone: contextTimeZone(context, "UTC"),
+    year: "numeric", timeZone: contextTimeZone(context, "UTC"),
   }).format(asDate(input));
 
 /**
@@ -455,10 +480,7 @@ export const formatDateTime = (input: string | Date, context?: DateContext): str
   // Keep the existing ASCII, 24-hour HH:mm clock, independently of the date locale.
   const clock = dateFormatter("en-GB", {
     timeZone: contextTimeZone(context, "UTC"),
-    numberingSystem: "latn",
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
+    numberingSystem: "latn", hourCycle: "h23", hour: "2-digit", minute: "2-digit",
   }).format(date);
   return `${formatDate(date, context)}, ${clock}`;
 };
@@ -569,7 +591,8 @@ export const formatMonthYear = (date: Date, context?: DateContext): string => {
 
 export const formatDayNumber = (date: Date, context?: DateContext): string => String(zoned(date, context).date());
 
-export const formatWeekdayShort = (date: Date, context?: DateContext): string => weekdayName(date, context, "short").slice(0, 2);
+export const formatWeekdayShort = (date: Date, context?: DateContext): string =>
+  weekdayName(date, context, "short").slice(0, 2);
 
 export const formatWeekdayLong = (date: Date, context?: DateContext): string => weekdayName(date, context, "long");
 
@@ -623,7 +646,9 @@ export const formatRecurrence = (rule: RecurrenceRule, context?: DateContext): s
   const interval = Math.max(1, Math.trunc(rule.interval ?? 1));
 
   let result =
-    parts.weekdays && interval === 1 ? `Every ${parts.weekdays}` : `Every ${parts.every}${parts.weekdays ? ` on ${parts.weekdays}` : ""}`;
+    parts.weekdays && interval === 1
+      ? `Every ${parts.weekdays}`
+      : `Every ${parts.every}${parts.weekdays ? ` on ${parts.weekdays}` : ""}`;
   if (parts.until) result += ` until ${parts.until}`;
   if (parts.count !== undefined) result += `, ${parts.count} times`;
   return result;
@@ -711,7 +736,9 @@ export const getMonthGrid = (year: number, month: number, context?: DateContext)
   let current = start;
 
   for (let w = 0; w < 6; w++) {
-    const week = Array.from({ length: 7 }, (_, d) => zonedLocalDate(current.year(), current.month(), current.date() + d, context).toDate());
+    const week = Array.from({ length: 7 }, (_, d) =>
+      zonedLocalDate(current.year(), current.month(), current.date() + d, context).toDate(),
+    );
     weeks.push(week);
     current = zonedLocalDate(current.year(), current.month(), current.date() + 7, context);
 
@@ -723,7 +750,9 @@ export const getMonthGrid = (year: number, month: number, context?: DateContext)
 
 export const getWeekDays = (date: Date, context?: DateContext): Date[] => {
   const start = weekStart(date, context);
-  return Array.from({ length: 7 }, (_, i) => zonedLocalDate(start.year(), start.month(), start.date() + i, context).toDate());
+  return Array.from({ length: 7 }, (_, i) =>
+    zonedLocalDate(start.year(), start.month(), start.date() + i, context).toDate(),
+  );
 };
 
 export const getDateRange = (view: "month" | "week", date: Date, context?: DateContext): { from: Date; to: Date } => {

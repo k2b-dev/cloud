@@ -136,13 +136,16 @@ for (const [mimeType, exts] of Object.entries(MIME_TO_EXT)) {
 /**
  * Returns the canonical file extension for a MIME type, or `null` if unknown.
  */
-export const getExtension = (mimeType: string): string | null => MIME_TO_EXT[mimeType]?.[0] ?? null;
+export const getExtension = (mimeType: string): string | null =>
+  MIME_TO_EXT[mimeType]?.[0] ?? null;
 
 /**
  * Returns the MIME type for a filename or bare extension, or `null` if unknown.
  */
 export const getMimeType = (filenameOrExt: string): string | null => {
-  const ext = filenameOrExt.includes(".") ? filenameOrExt.split(".").pop()!.toLowerCase() : filenameOrExt.toLowerCase();
+  const ext = filenameOrExt.includes(".")
+    ? filenameOrExt.split(".").pop()!.toLowerCase()
+    : filenameOrExt.toLowerCase();
   return EXT_TO_MIME[ext] ?? null;
 };
 
@@ -217,7 +220,7 @@ const toUint8Array = async (source: ZipSource): Promise<Uint8Array> => {
 const crc32Table = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
   let c = i;
-  for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  for (let j = 0; j < 8; j++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
   crc32Table[i] = c;
 }
 
@@ -239,9 +242,9 @@ const asPlainBuffer = (data: Uint8Array): Uint8Array<ArrayBuffer> => {
 
 /** Compute CRC32 checksum for a Uint8Array. */
 const crc32 = (data: Uint8Array): number => {
-  let crc = 0xffffffff;
-  for (let i = 0; i < data.length; i++) crc = crc32Table[(crc ^ data[i]!) & 0xff]! ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) crc = crc32Table[(crc ^ data[i]!) & 0xFF]! ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
 };
 
 /** Compress data using native deflate-raw (no zlib/gzip wrapper). */
@@ -306,7 +309,8 @@ export const createZip = async (
     const { filename, source } = files[i]!;
     if (ZIP_FILENAME_FORBIDDEN.test(filename)) {
       throw new Error(
-        `createZip: refusing to add unsafe filename ${JSON.stringify(filename)} ` + "(absolute path, backslash, or '..' segment).",
+        `createZip: refusing to add unsafe filename ${JSON.stringify(filename)} ` +
+          "(absolute path, backslash, or '..' segment).",
       );
     }
     const nameBytes = encoder.encode(filename);
@@ -341,13 +345,20 @@ export const createZip = async (
   // ZIP (no ZIP64) restrictions. Throw a clear error rather than silently
   // emit a corrupt archive.
   if (entries.length > 0xffff) {
-    throw new Error(`createZip: too many files (${entries.length}); ZIP64 not supported (max ${0xffff}).`);
+    throw new Error(
+      `createZip: too many files (${entries.length}); ZIP64 not supported (max ${0xffff}).`,
+    );
   }
   if (totalUncompressed > 0xffffffff) {
-    throw new Error(`createZip: total uncompressed size exceeds 4 GiB; ZIP64 not supported.`);
+    throw new Error(
+      `createZip: total uncompressed size exceeds 4 GiB; ZIP64 not supported.`,
+    );
   }
   for (const entry of entries) {
-    if (entry.compressedData.length > 0xffffffff || entry.rawData.length > 0xffffffff) {
+    if (
+      entry.compressedData.length > 0xffffffff ||
+      entry.rawData.length > 0xffffffff
+    ) {
       throw new Error("createZip: a single file exceeds 4 GiB; ZIP64 not supported.");
     }
   }
@@ -369,44 +380,31 @@ export const createZip = async (
     const uncompSize = entry.rawData.length;
 
     // Local file header signature
-    view.setUint32(localOffset, 0x04034b50, true);
-    localOffset += 4;
+    view.setUint32(localOffset, 0x04034b50, true); localOffset += 4;
     // Version needed to extract
-    view.setUint16(localOffset, 20, true);
-    localOffset += 2;
+    view.setUint16(localOffset, 20, true); localOffset += 2;
     // General purpose bit flag — bit 11 set so the filename is interpreted
     // as UTF-8 (we always encode via TextEncoder which is UTF-8).
-    view.setUint16(localOffset, 0x0800, true);
-    localOffset += 2;
+    view.setUint16(localOffset, 0x0800, true); localOffset += 2;
     // Compression method
-    view.setUint16(localOffset, entry.method, true);
-    localOffset += 2;
+    view.setUint16(localOffset, entry.method, true); localOffset += 2;
     // Last mod file time & date (zero)
-    view.setUint16(localOffset, 0, true);
-    localOffset += 2;
-    view.setUint16(localOffset, 0, true);
-    localOffset += 2;
+    view.setUint16(localOffset, 0, true); localOffset += 2;
+    view.setUint16(localOffset, 0, true); localOffset += 2;
     // CRC-32
-    view.setUint32(localOffset, entry.crc, true);
-    localOffset += 4;
+    view.setUint32(localOffset, entry.crc, true); localOffset += 4;
     // Compressed size
-    view.setUint32(localOffset, compSize, true);
-    localOffset += 4;
+    view.setUint32(localOffset, compSize, true); localOffset += 4;
     // Uncompressed size
-    view.setUint32(localOffset, uncompSize, true);
-    localOffset += 4;
+    view.setUint32(localOffset, uncompSize, true); localOffset += 4;
     // Filename length
-    view.setUint16(localOffset, entry.nameBytes.length, true);
-    localOffset += 2;
+    view.setUint16(localOffset, entry.nameBytes.length, true); localOffset += 2;
     // Extra field length
-    view.setUint16(localOffset, 0, true);
-    localOffset += 2;
+    view.setUint16(localOffset, 0, true); localOffset += 2;
     // Filename
-    result.set(entry.nameBytes, localOffset);
-    localOffset += entry.nameBytes.length;
+    result.set(entry.nameBytes, localOffset); localOffset += entry.nameBytes.length;
     // File data
-    result.set(entry.compressedData, localOffset);
-    localOffset += compSize;
+    result.set(entry.compressedData, localOffset); localOffset += compSize;
   }
 
   // Write central directory entries
@@ -416,81 +414,56 @@ export const createZip = async (
     const uncompSize = entry.rawData.length;
 
     // Central directory file header signature
-    view.setUint32(cdPos, 0x02014b50, true);
-    cdPos += 4;
+    view.setUint32(cdPos, 0x02014b50, true); cdPos += 4;
     // Version made by
-    view.setUint16(cdPos, 20, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 20, true); cdPos += 2;
     // Version needed to extract
-    view.setUint16(cdPos, 20, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 20, true); cdPos += 2;
     // General purpose bit flag (matches the local header — UTF-8 filename).
-    view.setUint16(cdPos, 0x0800, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0x0800, true); cdPos += 2;
     // Compression method
-    view.setUint16(cdPos, entry.method, true);
-    cdPos += 2;
+    view.setUint16(cdPos, entry.method, true); cdPos += 2;
     // Last mod file time & date (zero)
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
     // CRC-32
-    view.setUint32(cdPos, entry.crc, true);
-    cdPos += 4;
+    view.setUint32(cdPos, entry.crc, true); cdPos += 4;
     // Compressed size
-    view.setUint32(cdPos, compSize, true);
-    cdPos += 4;
+    view.setUint32(cdPos, compSize, true); cdPos += 4;
     // Uncompressed size
-    view.setUint32(cdPos, uncompSize, true);
-    cdPos += 4;
+    view.setUint32(cdPos, uncompSize, true); cdPos += 4;
     // Filename length
-    view.setUint16(cdPos, entry.nameBytes.length, true);
-    cdPos += 2;
+    view.setUint16(cdPos, entry.nameBytes.length, true); cdPos += 2;
     // Extra field length
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
     // File comment length
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
     // Disk number start
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
     // Internal file attributes
-    view.setUint16(cdPos, 0, true);
-    cdPos += 2;
+    view.setUint16(cdPos, 0, true); cdPos += 2;
     // External file attributes
-    view.setUint32(cdPos, 0, true);
-    cdPos += 4;
+    view.setUint32(cdPos, 0, true); cdPos += 4;
     // Relative offset of local header
-    view.setUint32(cdPos, offsets[i]!, true);
-    cdPos += 4;
+    view.setUint32(cdPos, offsets[i]!, true); cdPos += 4;
     // Filename
-    result.set(entry.nameBytes, cdPos);
-    cdPos += entry.nameBytes.length;
+    result.set(entry.nameBytes, cdPos); cdPos += entry.nameBytes.length;
   }
 
   // Write End of Central Directory record
-  view.setUint32(cdPos, 0x06054b50, true);
-  cdPos += 4;
+  view.setUint32(cdPos, 0x06054b50, true); cdPos += 4;
   // Disk number
-  view.setUint16(cdPos, 0, true);
-  cdPos += 2;
+  view.setUint16(cdPos, 0, true); cdPos += 2;
   // Disk where central directory starts
-  view.setUint16(cdPos, 0, true);
-  cdPos += 2;
+  view.setUint16(cdPos, 0, true); cdPos += 2;
   // Number of central directory records on this disk
-  view.setUint16(cdPos, entries.length, true);
-  cdPos += 2;
+  view.setUint16(cdPos, entries.length, true); cdPos += 2;
   // Total number of central directory records
-  view.setUint16(cdPos, entries.length, true);
-  cdPos += 2;
+  view.setUint16(cdPos, entries.length, true); cdPos += 2;
   // Size of central directory
-  view.setUint32(cdPos, centralDirSize, true);
-  cdPos += 4;
+  view.setUint32(cdPos, centralDirSize, true); cdPos += 4;
   // Offset of start of central directory
-  view.setUint32(cdPos, centralDirOffset, true);
-  cdPos += 4;
+  view.setUint32(cdPos, centralDirOffset, true); cdPos += 4;
   // Comment length
   view.setUint16(cdPos, 0, true);
 
@@ -544,7 +517,9 @@ export const extractZip = async (
   const centralDirOffset = view.getUint32(eocdOffset + 16, true);
 
   if (entryCount > maxEntries) {
-    throw new Error(`extractZip: archive declares ${entryCount} entries; refusing (max ${maxEntries}).`);
+    throw new Error(
+      `extractZip: archive declares ${entryCount} entries; refusing (max ${maxEntries}).`,
+    );
   }
 
   const results: { filename: string; data: Uint8Array }[] = [];
@@ -581,7 +556,9 @@ export const extractZip = async (
       // Pre-flight bomb check: refuse before inflating if the declared
       // uncompressed size would already exceed the budget.
       if (bytesProduced + uncompressedSize > maxBytes) {
-        throw new Error(`extractZip: declared uncompressed size exceeds maxBytes (${maxBytes}).`);
+        throw new Error(
+          `extractZip: declared uncompressed size exceeds maxBytes (${maxBytes}).`,
+        );
       }
 
       let fileData: Uint8Array;
@@ -598,7 +575,9 @@ export const extractZip = async (
       // Post-decompress check (covers cases where the declared size lied).
       bytesProduced += fileData.length;
       if (bytesProduced > maxBytes) {
-        throw new Error(`extractZip: actual decompressed output exceeds maxBytes (${maxBytes}).`);
+        throw new Error(
+          `extractZip: actual decompressed output exceeds maxBytes (${maxBytes}).`,
+        );
       }
 
       results.push({ filename, data: fileData });
@@ -830,7 +809,7 @@ export const path = (strings: TemplateStringsArray, ...values: unknown[]): strin
     let hashValue = 0;
     for (let i = 0; i < segment.length; i++) {
       hashValue = (hashValue << 5) - hashValue + segment.charCodeAt(i);
-      hashValue = hashValue | 0; // Force 32-bit integer
+      hashValue = hashValue | 0;  // Force 32-bit integer
     }
     const shortHash = Math.abs(hashValue).toString(36).slice(0, 6);
 
@@ -929,7 +908,9 @@ export const checkMimeType = (fileOrType: File | string, accept: string): boolea
  * const compressed = await compress(new TextEncoder().encode("hello world"));
  */
 export const compress = async (data: Uint8Array): Promise<Uint8Array> =>
-  new Uint8Array(await new Response(new Blob([asPlainBuffer(data)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+  new Uint8Array(await new Response(
+    new Blob([asPlainBuffer(data)]).stream().pipeThrough(new CompressionStream("gzip")),
+  ).arrayBuffer());
 
 /**
  * Decompresses gzip data using native `DecompressionStream`.
@@ -938,7 +919,9 @@ export const compress = async (data: Uint8Array): Promise<Uint8Array> =>
  * const original = await decompress(compressedBytes);
  */
 export const decompress = async (data: Uint8Array): Promise<Uint8Array> =>
-  new Uint8Array(await new Response(new Blob([asPlainBuffer(data)]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  new Uint8Array(await new Response(
+    new Blob([asPlainBuffer(data)]).stream().pipeThrough(new DecompressionStream("gzip")),
+  ).arrayBuffer());
 
 // ============ OPFS (Origin Private File System) ============
 

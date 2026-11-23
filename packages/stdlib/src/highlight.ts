@@ -32,7 +32,12 @@ export type OverlayOptions = {
 };
 
 const escapeHtml = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const sanitizeClassPart = (s: string): string => {
   const clean = s.replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -54,7 +59,10 @@ type PresetRule = HighlightRule & {
   delimiters?: readonly { open: string; emptyClose?: string; lineBounded?: boolean }[];
 };
 
-const createHighlighter = (rules: readonly PresetRule[], options: CompileOptions = {}): Highlighter => {
+const createHighlighter = (
+  rules: readonly PresetRule[],
+  options: CompileOptions = {},
+): Highlighter => {
   const classPrefix = options.classPrefix ?? "hl-";
   const compiled = rules.map((rule) => ({
     className: `${classPrefix}${sanitizeClassPart(rule.kind)}`,
@@ -110,8 +118,10 @@ const createHighlighter = (rules: readonly PresetRule[], options: CompileOptions
   };
 };
 
-const compileHighlighter = (rules: readonly HighlightRule[], options: CompileOptions = {}): Highlighter =>
-  createHighlighter(rules, options);
+const compileHighlighter = (
+  rules: readonly HighlightRule[],
+  options: CompileOptions = {},
+): Highlighter => createHighlighter(rules, options);
 
 // A failed delimited match has no closer in its remaining input (or line).
 // Cache that boundary per opener so escaped quotes and nested openers cannot
@@ -120,11 +130,7 @@ const compileHighlighter = (rules: readonly HighlightRule[], options: CompileOpt
 const codeHighlighter = createHighlighter([
   { kind: "comment", match: /\/\*[\s\S]*?(?:\*\/|(?![\s\S]))/ },
   { kind: "comment", match: /\/\/[^\n]*/ },
-  {
-    kind: "string",
-    match: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/,
-    delimiters: [{ open: '"' }, { open: "'" }, { open: "`" }],
-  },
+  { kind: "string", match: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`/, delimiters: [{ open: '"' }, { open: "'" }, { open: "`" }] },
   { kind: "number", match: /\b\d+(?:\.\d+)?\b/ },
   {
     kind: "keyword",
@@ -137,14 +143,11 @@ const codeHighlighter = createHighlighter([
 const shellHighlighter = createHighlighter([
   { kind: "comment", match: /#[^\n]*/ },
   { kind: "string", match: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/, delimiters: [{ open: '"' }, { open: "'" }] },
-  {
-    kind: "variable",
-    match: /\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\{[^}\n]+\}|[0-9*@#$?!-])/,
-    delimiters: [{ open: "${", emptyClose: "}", lineBounded: true }],
-  },
+  { kind: "variable", match: /\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\{[^}\n]+\}|[0-9*@#$?!-])/, delimiters: [{ open: "${", emptyClose: "}", lineBounded: true }] },
   {
     kind: "keyword",
-    match: /\b(?:case|coproc|do|done|elif|else|esac|fi|for|function|if|in|select|then|time|until|while)\b/,
+    match:
+      /\b(?:case|coproc|do|done|elif|else|esac|fi|for|function|if|in|select|then|time|until|while)\b/,
   },
   { kind: "operator", match: /&&|\|\||;;|[|&;()<>]/ },
 ]);
@@ -153,11 +156,7 @@ const sqlHighlighter = createHighlighter([
   { kind: "comment", match: /\/\*[\s\S]*?(?:\*\/|(?![\s\S]))/ },
   { kind: "comment", match: /--[^\n]*/ },
   { kind: "string", match: /'(?:''|\\[\s\S]|[^'\\])*'/, delimiters: [{ open: "'" }] },
-  {
-    kind: "identifier",
-    match: /"(?:\\[\s\S]|[^"\\])*"|`(?:\\[\s\S]|[^`\\])*`|\[[^\]\n]+\]/,
-    delimiters: [{ open: '"' }, { open: "`" }, { open: "[", emptyClose: "]", lineBounded: true }],
-  },
+  { kind: "identifier", match: /"(?:\\[\s\S]|[^"\\])*"|`(?:\\[\s\S]|[^`\\])*`|\[[^\]\n]+\]/, delimiters: [{ open: '"' }, { open: "`" }, { open: "[", emptyClose: "]", lineBounded: true }] },
   { kind: "parameter", match: /\$(?:\d+|[a-zA-Z_][a-zA-Z0-9_]*)|:[a-zA-Z_][a-zA-Z0-9_]*|@[a-zA-Z_][a-zA-Z0-9_]*|\?(?!\?)/ },
   { kind: "number", match: /\b\d+(?:\.\d+)?\b/ },
   {
@@ -180,7 +179,9 @@ const OVERLAY_SENTINEL = String.fromCharCode(0xe010);
 
 type Sanctuaries = Map<string, string>;
 
-const extractMarkdownSanctuaries = (input: string): { text: string; sanctuaries: Sanctuaries } => {
+const extractMarkdownSanctuaries = (
+  input: string,
+): { text: string; sanctuaries: Sanctuaries } => {
   const sanctuaries: Sanctuaries = new Map();
   let counter = 0;
   const issue = (): string => `${PH_OPEN}${counter++}${PH_CLOSE}`;
@@ -198,7 +199,10 @@ const extractMarkdownSanctuaries = (input: string): { text: string; sanctuaries:
 
   text = text.replace(/\[([^\]\n]+?)\]\(([^)\n]+?)\)/g, (_match, label: string, url: string) => {
     const ph = issue();
-    sanctuaries.set(ph, `<span class="md-link"><span class="md-syntax">[</span>${label}<span class="md-syntax">](${url})</span></span>`);
+    sanctuaries.set(
+      ph,
+      `<span class="md-link"><span class="md-syntax">[</span>${label}<span class="md-syntax">](${url})</span></span>`,
+    );
     return ph;
   });
 
@@ -262,14 +266,20 @@ const processInline = (text: string, matchRegex: RegExp | null = null): string =
   text = text.replace(/\*\*((?:[^*\n]|\*[^*\n]+?\*)+?)\*\*/g, (_match, inner: string) => {
     const innerProcessed = processItalicAndMatches(inner, matchRegex);
     const ph = issue();
-    sanctuaries.set(ph, `<span class="md-bold"><span class="md-syntax">**</span>${innerProcessed}<span class="md-syntax">**</span></span>`);
+    sanctuaries.set(
+      ph,
+      `<span class="md-bold"><span class="md-syntax">**</span>${innerProcessed}<span class="md-syntax">**</span></span>`,
+    );
     return ph;
   });
 
   text = text.replace(/__((?:[^_\n]|_[^_\n]+?_)+?)__/g, (_match, inner: string) => {
     const innerProcessed = processItalicAndMatches(inner, matchRegex);
     const ph = issue();
-    sanctuaries.set(ph, `<span class="md-bold"><span class="md-syntax">__</span>${innerProcessed}<span class="md-syntax">__</span></span>`);
+    sanctuaries.set(
+      ph,
+      `<span class="md-bold"><span class="md-syntax">__</span>${innerProcessed}<span class="md-syntax">__</span></span>`,
+    );
     return ph;
   });
 
@@ -340,7 +350,11 @@ const markdownHighlighter = (text: string, options: MarkdownOptions = {}): strin
   return text.endsWith("\n") ? `${html}\n` : html;
 };
 
-const overlay = (text: string, render: (text: string) => string, options: OverlayOptions = {}): string => {
+const overlay = (
+  text: string,
+  render: (text: string) => string,
+  options: OverlayOptions = {},
+): string => {
   const injection = options.ghost ?? options.anchor;
   let workText = text;
 

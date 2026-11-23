@@ -89,7 +89,8 @@ export const defaultGradient = gradientPresets[0]!;
  * @param id - The preset ID to look up
  * @returns The matching preset, or the default if not found
  */
-export const getGradientById = (id: string): GradientPreset => gradientPresets.find((g) => g.id === id) ?? defaultGradient;
+export const getGradientById = (id: string): GradientPreset =>
+  gradientPresets.find((g) => g.id === id) ?? defaultGradient;
 
 export const gradients = {
   gradientPresets,

@@ -10,7 +10,7 @@
  * See docs/applayout-patterns.md for full documentation.
  */
 
-import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onMount, onCleanup, type Accessor } from "solid-js";
 
 // =============================================================================
 // Types
@@ -59,7 +59,11 @@ export type DetailPanelController<T> = {
  * the initial sync from URL state, where adding a history entry would
  * double-up the current page).
  */
-const setUrlParam = (paramName: string, value: string | null, mode: "push" | "replace" = "push"): void => {
+const setUrlParam = (
+  paramName: string,
+  value: string | null,
+  mode: "push" | "replace" = "push",
+): void => {
   const url = new URL(window.location.href);
   if (value) {
     url.searchParams.set(paramName, value);
@@ -220,11 +224,7 @@ const createDetailPanelController = <T>(options: DetailPanelOptions<T>): DetailP
  * );
  * ```
  */
-const createDetailListController = <T>(options: {
-  paramName: string;
-  eventName: string;
-  initialKey: string | null;
-}): {
+const createDetailListController = <T>(options: { paramName: string; eventName: string; initialKey: string | null }): {
   selectedKey: Accessor<string | null>;
   select: (item: T, key: string) => void;
   deselect: () => void;

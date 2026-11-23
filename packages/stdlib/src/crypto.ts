@@ -1,4 +1,4 @@
-import { fromBase32, fromBase64, fromHex, toBase32, toBase64, toHex } from "./encoding";
+import { fromBase64, toBase64, fromBase32, toBase32, toHex, fromHex } from "./encoding";
 
 const DEFAULT_SIGNATURE_AGE = 1000 * 60 * 60; // 1 hour
 const CLOCK_SKEW_TOLERANCE = 1000 * 30; // 30 seconds
@@ -41,7 +41,9 @@ const SYM_MIN_BLOB_LEN = 46;
 
 /** P-256 curve order. Used for ECDSA signature malleability mitigation —
  *  any high-S signature `s` can be normalized to `n - s` (its low-S form). */
-const P256_N = BigInt("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
+const P256_N = BigInt(
+  "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+);
 const P256_HALF_N = P256_N >> 1n;
 
 const encoder = new TextEncoder();
@@ -109,7 +111,11 @@ const isLowS = (sig: Uint8Array): boolean => {
  * The v1 (legacy) format `${nonce}:${message}:${timestamp}` is still accepted
  * by verify() for backward compatibility — see `buildSignedPayloadV1`.
  */
-const buildSignedPayloadV2 = (nonce: string, message: string, timestamp: number): Uint8Array => {
+const buildSignedPayloadV2 = (
+  nonce: string,
+  message: string,
+  timestamp: number,
+): Uint8Array => {
   const nonceBytes = encoder.encode(nonce);
   const msgBytes = encoder.encode(message);
   const total = 1 + 4 + nonceBytes.length + 4 + msgBytes.length + 8;
@@ -131,8 +137,11 @@ const buildSignedPayloadV2 = (nonce: string, message: string, timestamp: number)
 };
 
 /** Legacy (v1) signed-payload bytes — kept for backward-compatible verify(). */
-const buildSignedPayloadV1 = (nonce: string, message: string, timestamp: number): Uint8Array =>
-  encoder.encode(`${nonce}:${message}:${timestamp}`);
+const buildSignedPayloadV1 = (
+  nonce: string,
+  message: string,
+  timestamp: number,
+): Uint8Array => encoder.encode(`${nonce}:${message}:${timestamp}`);
 
 //====================================
 // COMMON UTILITIES
@@ -222,7 +231,7 @@ const generateKey = (length: number = 32): string => {
 };
 
 const normalizeUlidTimestamp = (timestamp: number | Date | undefined): number => {
-  const value = timestamp instanceof Date ? timestamp.getTime() : (timestamp ?? Date.now());
+  const value = timestamp instanceof Date ? timestamp.getTime() : timestamp ?? Date.now();
   if (!Number.isFinite(value) || !Number.isInteger(value)) {
     throw new TypeError("crypto.common.ulid: timestamp must be a finite integer millisecond value");
   }
@@ -463,12 +472,23 @@ const verify = async (data: {
    *  reissued in v2 form. Default false for backward compatibility. */
   strict?: boolean;
 }): Promise<boolean> => {
-  const { signature, nonce, message, publicKey, timestamp, maxAge = DEFAULT_SIGNATURE_AGE, v, strict = false } = data;
+  const {
+    signature,
+    nonce,
+    message,
+    publicKey,
+    timestamp,
+    maxAge = DEFAULT_SIGNATURE_AGE,
+    v,
+    strict = false,
+  } = data;
 
   // Validate maxAge. NaN/Infinity would silently disable expiration, negative
   // values would always reject — neither is what the caller intended.
   if (!Number.isFinite(maxAge) || maxAge <= 0) {
-    throw new TypeError(`crypto.verify: maxAge must be a positive finite number (got ${maxAge})`);
+    throw new TypeError(
+      `crypto.verify: maxAge must be a positive finite number (got ${maxAge})`,
+    );
   }
 
   const now = Date.now();
@@ -681,7 +701,11 @@ const asymDecrypt = async (data: { payload: string; privateKey: string }): Promi
 
   const myPrivateKey = await deserializeKey(ecdhKey, "ECDH", ["deriveBits"]);
 
-  const sharedSecret = await globalThis.crypto.subtle.deriveBits({ name: "ECDH", public: ephemeralPub }, myPrivateKey, 256);
+  const sharedSecret = await globalThis.crypto.subtle.deriveBits(
+    { name: "ECDH", public: ephemeralPub },
+    myPrivateKey,
+    256,
+  );
 
   const ephPubRaw = new Uint8Array(await globalThis.crypto.subtle.exportKey("raw", ephemeralPub));
 
@@ -737,9 +761,7 @@ export const asymmetric = {
  * @param salt - Random 16-byte salt (must be stored alongside ciphertext)
  */
 const deriveKeyPBKDF2 = async (password: string, salt: Uint8Array): Promise<CryptoKey> => {
-  const keyMaterial = await globalThis.crypto.subtle.importKey("raw", encoder.encode(password) as BufferSource, "PBKDF2", false, [
-    "deriveKey",
-  ]);
+  const keyMaterial = await globalThis.crypto.subtle.importKey("raw", encoder.encode(password) as BufferSource, "PBKDF2", false, ["deriveKey"]);
 
   return await globalThis.crypto.subtle.deriveKey(
     {
@@ -838,7 +860,9 @@ const symDecrypt = async (data: { payload: string; key: string }): Promise<strin
 
   // Reject blobs that can't possibly hold a valid header + ciphertext.
   if (encrypted.length < SYM_MIN_BLOB_LEN) {
-    throw new Error(`Symmetric ciphertext too short: ${encrypted.length} bytes (minimum ${SYM_MIN_BLOB_LEN})`);
+    throw new Error(
+      `Symmetric ciphertext too short: ${encrypted.length} bytes (minimum ${SYM_MIN_BLOB_LEN})`,
+    );
   }
 
   // Check version — both v1 and v2 share the same layout, only differ in
@@ -865,11 +889,7 @@ const symDecrypt = async (data: { payload: string; key: string }): Promise<strin
   // Derive key with correct method
   const cryptoKey = stretched ? await deriveKeyPBKDF2(data.key, salt) : await deriveKeyHKDF(data.key, salt);
 
-  const decrypted = await globalThis.crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: iv as BufferSource },
-    cryptoKey,
-    ciphertext as BufferSource,
-  );
+  const decrypted = await globalThis.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, cryptoKey, ciphertext as BufferSource);
 
   return decoder.decode(decrypted);
 };
@@ -984,7 +1004,9 @@ const verifyTotp = async (data: { token: string; secret: string; window?: number
   // Validate window upfront. Default RFC value is 1; we clamp to a max of
   // TOTP_MAX_WINDOW to prevent DoS via `window: 1e7` (millions of HMACs).
   if (!Number.isFinite(rawWindow) || rawWindow < 0) {
-    throw new TypeError(`crypto.totp.verify: window must be a non-negative finite number (got ${rawWindow})`);
+    throw new TypeError(
+      `crypto.totp.verify: window must be a non-negative finite number (got ${rawWindow})`,
+    );
   }
   const window = Math.min(Math.floor(rawWindow), TOTP_MAX_WINDOW);
 

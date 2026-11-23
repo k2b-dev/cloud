@@ -1,4 +1,4 @@
-import { type Accessor, createSignal, onCleanup } from "solid-js";
+import { createSignal, onCleanup, type Accessor } from "solid-js";
 
 // ==========================
 // Reactive Clipboard
@@ -63,7 +63,8 @@ export type ClipboardWriter<T> = {
   error: Accessor<Error | null>;
 };
 
-const normalizeError = (value: unknown): Error => (value instanceof Error ? value : new Error(String(value)));
+const normalizeError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(String(value));
 
 /**
  * Creates reactive copy feedback for a custom asynchronous clipboard writer.

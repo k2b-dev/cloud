@@ -171,7 +171,9 @@ export const parseAcceptLanguage = (header: string | null | undefined): string[]
       const [tag = "", ...params] = entry.trim().split(";");
       const locale = tag.trim();
       if (!locale || locale === "*") return [];
-      const qParam = params.map((param) => param.trim()).find((param) => param.startsWith("q="));
+      const qParam = params
+        .map((param) => param.trim())
+        .find((param) => param.startsWith("q="));
       const quality = qParam === undefined ? 1 : Number(qParam.slice(2));
       if (!Number.isFinite(quality) || quality <= 0) return [];
       return [{ locale, quality }];
@@ -218,7 +220,11 @@ export type FormatListOptions = {
  * @example i18n.formatList(["Tue", "Wed", "Fri"], "en")  // "Tue, Wed, and Fri"
  * @example i18n.formatList(["Di", "Mi"], "de", { type: "disjunction" })  // "Di oder Mi"
  */
-export const formatList = (items: readonly string[], locale?: string, options: FormatListOptions = {}): string =>
+export const formatList = (
+  items: readonly string[],
+  locale?: string,
+  options: FormatListOptions = {},
+): string =>
   new Intl.ListFormat(locale, {
     type: options.type ?? "conjunction",
     style: options.style ?? "long",
@@ -231,8 +237,10 @@ export const formatList = (items: readonly string[], locale?: string, options: F
  * @example ["Öl", "Apfel"].sort(i18n.compare("de"))  // ["Apfel", "Öl"]
  * @example i18n.compare("de", { sensitivity: "base" })("a", "A")  // 0
  */
-export const compare = (locale?: string, options?: Intl.CollatorOptions): ((a: string, b: string) => number) =>
-  new Intl.Collator(locale, options).compare;
+export const compare = (
+  locale?: string,
+  options?: Intl.CollatorOptions,
+): ((a: string, b: string) => number) => new Intl.Collator(locale, options).compare;
 
 // =============================================================================
 // Namespace Export

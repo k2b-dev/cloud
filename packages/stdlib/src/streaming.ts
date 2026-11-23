@@ -35,7 +35,9 @@ export type SSEEvent = { event?: string; data: string; id?: string };
  *   console.log(event.event, event.data);
  * }
  */
-export async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<SSEEvent> {
+export async function* parseSSE(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<SSEEvent> {
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let buffer = "";
@@ -199,7 +201,9 @@ export async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenera
  *   console.log(entry.level, entry.message);
  * }
  */
-export async function* parseNDJSON<T = unknown>(stream: ReadableStream<Uint8Array>): AsyncGenerator<T> {
+export async function* parseNDJSON<T = unknown>(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<T> {
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let buffer = "";

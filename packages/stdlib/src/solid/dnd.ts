@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js";
 
 export type DndId = string;
 
@@ -144,9 +144,11 @@ const isInteractiveTarget = (target: EventTarget | null): boolean => {
   return !!target.closest("button, a, input, textarea, select, [contenteditable='true'], [data-dnd-ignore]");
 };
 
-const defaultIntentComparator = <TIntent>(a: TIntent | null, b: TIntent | null) => a === b;
+const defaultIntentComparator = <TIntent,>(a: TIntent | null, b: TIntent | null) => a === b;
 
-const defaultCollisionDetector = <TDragMeta, TDropMeta, TIntent>(ctx: DndCollisionContext<TDragMeta, TDropMeta, TIntent>): DndId | null => {
+const defaultCollisionDetector = <TDragMeta, TDropMeta, TIntent>(
+  ctx: DndCollisionContext<TDragMeta, TDropMeta, TIntent>,
+): DndId | null => {
   if (ctx.droppables.length === 0) return null;
   const pointerHits = ctx.droppables.filter((entry) => entry.containsPointer);
   const pool = pointerHits.length > 0 ? pointerHits : ctx.droppables;
@@ -159,7 +161,7 @@ const defaultCollisionDetector = <TDragMeta, TDropMeta, TIntent>(ctx: DndCollisi
   return winner.id;
 };
 
-const sortDroppablesForKeyboard = <TDropMeta>(entries: DndDroppableSnapshot<TDropMeta>[]) =>
+const sortDroppablesForKeyboard = <TDropMeta,>(entries: DndDroppableSnapshot<TDropMeta>[]) =>
   [...entries].sort((a, b) => {
     const vertical = a.rect.top - b.rect.top;
     if (Math.abs(vertical) > 8) return vertical;
@@ -309,8 +311,16 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
     }
     return value;
   };
-  const activationDistance = validatePositiveNumber(options.activationDistance, DEFAULT_ACTIVATION_DISTANCE, "activationDistance");
-  const touchActivationDelayMs = validatePositiveNumber(options.touchActivationDelayMs, DEFAULT_TOUCH_DELAY, "touchActivationDelayMs");
+  const activationDistance = validatePositiveNumber(
+    options.activationDistance,
+    DEFAULT_ACTIVATION_DISTANCE,
+    "activationDistance",
+  );
+  const touchActivationDelayMs = validatePositiveNumber(
+    options.touchActivationDelayMs,
+    DEFAULT_TOUCH_DELAY,
+    "touchActivationDelayMs",
+  );
 
   /** Set to true when destroy() runs. Subsequent pointer/key events are
    *  no-ops so a destroyed controller doesn't react to anything. */
@@ -357,11 +367,19 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
     }
   };
 
-  const safeCall = <T extends unknown[]>(fn: ((...args: T) => void) | undefined, args: T, label: string): void => {
+  const safeCall = <T extends unknown[]>(
+    fn: ((...args: T) => void) | undefined,
+    args: T,
+    label: string,
+  ): void => {
     safeCompute(fn, args, undefined, label);
   };
 
-  const safeAnnouncement = <T extends unknown[]>(fn: ((...args: T) => string) | undefined, args: T, label: string) => {
+  const safeAnnouncement = <T extends unknown[]>(
+    fn: ((...args: T) => string) | undefined,
+    args: T,
+    label: string,
+  ) => {
     announce(safeCompute(fn, args, "", label));
   };
 
@@ -377,7 +395,10 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
         y: rect.top + rect.height / 2,
       };
       const containsPointer =
-        currentPointer.x >= rect.left && currentPointer.x <= rect.right && currentPointer.y >= rect.top && currentPointer.y <= rect.bottom;
+        currentPointer.x >= rect.left &&
+        currentPointer.x <= rect.right &&
+        currentPointer.y >= rect.top &&
+        currentPointer.y <= rect.bottom;
       const dx = currentPointer.x - center.x;
       const dy = currentPointer.y - center.y;
       entries.push({
@@ -421,7 +442,7 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
             null,
             "collisionDetector",
           );
-    const nextOver = nextOverId ? (droppableSnapshots.find((entry) => entry.id === nextOverId) ?? null) : null;
+    const nextOver = nextOverId ? droppableSnapshots.find((entry) => entry.id === nextOverId) ?? null : null;
 
     const nextIntent = options.buildIntent
       ? safeCompute(
@@ -612,7 +633,9 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
   const commitDrop = () => {
     if (!activeDrag) return;
     const currentOverId = overId();
-    const currentOver = currentOverId ? (getDroppableSnapshots(pointer).find((entry) => entry.id === currentOverId) ?? null) : null;
+    const currentOver = currentOverId
+      ? getDroppableSnapshots(pointer).find((entry) => entry.id === currentOverId) ?? null
+      : null;
 
     // No target (pointer released on empty space, or droppable was removed
     // mid-drag) → fire onCancel rather than silently dropping the drag.
@@ -656,7 +679,9 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
     }
     if (!activeDrag) return;
     const currentOverId = overId();
-    const currentOver = currentOverId ? (getDroppableSnapshots(pointer).find((entry) => entry.id === currentOverId) ?? null) : null;
+    const currentOver = currentOverId
+      ? getDroppableSnapshots(pointer).find((entry) => entry.id === currentOverId) ?? null
+      : null;
     const snapshot = activeDrag.snapshot;
     const mode = activeDrag.mode;
     const ctx = { mode, active: snapshot, over: currentOver, intent: intent(), pointer };
@@ -848,13 +873,20 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
     // Warn on duplicate id registration. Previously a silent overwrite that
     // produced confusing "drop fires for wrong item" bugs.
     if (draggables.has(record.id)) {
-      console.warn(`dnd: duplicate draggable id "${String(record.id)}" — the previous registration will be overwritten`);
+      console.warn(
+        `dnd: duplicate draggable id "${String(record.id)}" — the previous registration will be overwritten`,
+      );
     }
     draggables.set(record.id, record);
 
     const matchesHandleTarget = (target: EventTarget | null, selector: string): boolean => {
       try {
-        const candidate = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+        const candidate =
+          target instanceof Element
+            ? target
+            : target instanceof Node
+              ? target.parentElement
+              : null;
         return !!candidate?.closest(selector) && element.contains(candidate);
       } catch (error) {
         console.error("dnd: handleSelector invalid:", error);
@@ -974,7 +1006,9 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
         if (draggables.get(record.id) === record) draggables.delete(record.id);
         record.id = next.id;
         if (draggables.has(record.id)) {
-          console.warn(`dnd: duplicate draggable id "${String(record.id)}" — the previous registration will be overwritten`);
+          console.warn(
+            `dnd: duplicate draggable id "${String(record.id)}" — the previous registration will be overwritten`,
+          );
         }
         draggables.set(record.id, record);
       }
@@ -1050,7 +1084,9 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
     };
 
     if (droppables.has(record.id)) {
-      console.warn(`dnd: duplicate droppable id "${String(record.id)}" — the previous registration will be overwritten`);
+      console.warn(
+        `dnd: duplicate droppable id "${String(record.id)}" — the previous registration will be overwritten`,
+      );
     }
     droppables.set(record.id, record);
     element.setAttribute("data-dnd-droppable", "true");
@@ -1061,7 +1097,9 @@ const createDnd = <TDragMeta, TDropMeta, TIntent>(
         if (droppables.get(record.id) === record) droppables.delete(record.id);
         record.id = next.id;
         if (droppables.has(record.id)) {
-          console.warn(`dnd: duplicate droppable id "${String(record.id)}" — the previous registration will be overwritten`);
+          console.warn(
+            `dnd: duplicate droppable id "${String(record.id)}" — the previous registration will be overwritten`,
+          );
         }
         droppables.set(record.id, record);
       }

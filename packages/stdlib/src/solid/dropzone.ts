@@ -66,7 +66,9 @@ const create = (options: DropzoneOptions) => {
       // `items.length > 0`.
       const hasFiles =
         e.dataTransfer?.types?.includes("Files") ||
-        (e.dataTransfer?.items ? Array.from(e.dataTransfer.items).some((item) => item.kind === "file") : false);
+        (e.dataTransfer?.items
+          ? Array.from(e.dataTransfer.items).some((item) => item.kind === "file")
+          : false);
       if (!hasFiles) return;
 
       setDragCounter((prev) => prev + 1);

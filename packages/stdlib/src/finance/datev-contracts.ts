@@ -68,7 +68,7 @@ export const DatevHeaderSchema = z
   });
 
 export const DatevBatchSchema = DatevHeaderSchema.safeExtend({
-  createdAt: z.iso.datetime({ precision: 3 }).refine((value) => value.startsWith("20"), "DATEV timestamps must be in 2000–2099."),
+  createdAt: z.iso.datetime({ precision: 3 }).refine(value => value.startsWith("20"), "DATEV timestamps must be in 2000–2099."),
   rows: z.array(DatevPostingSchema).min(1),
 }).superRefine((input, ctx) => {
   const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });

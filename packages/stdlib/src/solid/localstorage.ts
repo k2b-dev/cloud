@@ -1,5 +1,5 @@
 import { onCleanup } from "solid-js";
-import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store";
+import { type Store, type SetStoreFunction, createStore, reconcile } from "solid-js/store";
 
 // ==========================
 // Types
@@ -22,9 +22,15 @@ type CreateLocalStoreOptions = {
   serializer?: Serializer;
 };
 
-type CreateLocalStoreResult<T extends Record<string, any>> = [Store<StoreItem<T>>, SetStoreFunction<StoreItem<T>>];
+type CreateLocalStoreResult<T extends Record<string, any>> = [
+  Store<StoreItem<T>>,
+  SetStoreFunction<StoreItem<T>>,
+];
 
-type CreateLocalStoreQueryResult<T extends Record<string, any>> = [Store<StoreItem<T>[]>, () => void];
+type CreateLocalStoreQueryResult<T extends Record<string, any>> = [
+  Store<StoreItem<T>[]>,
+  () => void,
+];
 
 type ListenerCallback = (key: string, value?: any) => void;
 type KeyFilter = (key: string) => boolean;
@@ -51,7 +57,10 @@ const listeners = new Map<string | Function, Set<ListenerCallback>>();
 
 const getGlobalChannel = (): BroadcastChannel | null => {
   if (globalChannel) return globalChannel;
-  if (typeof window === "undefined" || typeof window.BroadcastChannel !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.BroadcastChannel !== "function"
+  ) {
     return null;
   }
 
@@ -69,7 +78,10 @@ const getGlobalChannel = (): BroadcastChannel | null => {
  * Subscribes a callback to notifications for a specific key or a key-matching filter function.
  * Returns an unsubscribe function.
  */
-const subscribe = (keyOrFilter: string | KeyFilter, callback: ListenerCallback): (() => void) => {
+const subscribe = (
+  keyOrFilter: string | KeyFilter,
+  callback: ListenerCallback,
+): (() => void) => {
   getGlobalChannel();
   if (!listeners.has(keyOrFilter)) listeners.set(keyOrFilter, new Set());
   listeners.get(keyOrFilter)!.add(callback);
@@ -257,12 +269,16 @@ const modify = <T extends Record<string, any>>(
 /**
  * Checks if a key exists in localStorage.
  */
-const exists = (key: string, storage: Storage = localStorage): boolean => storage.getItem(key) !== null;
+const exists = (key: string, storage: Storage = localStorage): boolean =>
+  storage.getItem(key) !== null;
 
 /**
  * Reads a value from localStorage.
  */
-const read = <T extends Record<string, any>>(key: string, options: { storage?: Storage; serializer?: Serializer } = {}): T | null => {
+const read = <T extends Record<string, any>>(
+  key: string,
+  options: { storage?: Storage; serializer?: Serializer } = {},
+): T | null => {
   const { storage = localStorage, serializer = defaultSerializer } = options;
   const item = storage.getItem(key);
   if (!item) return null;

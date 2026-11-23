@@ -18,7 +18,18 @@ import { fromBase64 } from "./encoding";
 // Internal Helpers
 // ==========================
 
-const USER_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#6366f1", "#a855f7"];
+const USER_COLORS = [
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#6366f1",
+  "#a855f7",
+];
 
 /**
  * Selects a deterministic color from the palette based on a string identifier.
@@ -47,7 +58,8 @@ const getUserColor = (id: string): string => {
  * @param s - Raw string to escape
  * @returns XML-safe string
  */
-const escapeXml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const escapeXml = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // ==========================
 // Public API

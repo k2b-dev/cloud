@@ -20,7 +20,10 @@
  * @example
  * const data = await timing.withMinLoadTime(() => fetchData(), 500);
  */
-export const withMinLoadTime = async <T>(fn: () => Promise<T>, minMs: number = 300): Promise<T> => {
+export const withMinLoadTime = async <T>(
+  fn: () => Promise<T>,
+  minMs: number = 300,
+): Promise<T> => {
   const start = Date.now();
   const result = await fn();
   const elapsed = Date.now() - start;
@@ -60,7 +63,10 @@ export const withMinLoadTime = async <T>(fn: () => Promise<T>, minMs: number = 3
  * save("doc-1", { title: "Draft" }); // buffered
  * save("doc-1", { title: "Final" }); // replaces previous, flushes after 2s
  */
-export const buffer = <T>(fn: (key: string, data: T) => Promise<void>, intervalMs: number = 5000): ((key: string, data: T) => void) => {
+export const buffer = <T>(
+  fn: (key: string, data: T) => Promise<void>,
+  intervalMs: number = 5000,
+): ((key: string, data: T) => void) => {
   const cache = new Map<string, T>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   // Per-key write counter. The flush snapshots the counter at fire time and
@@ -124,7 +130,7 @@ export const buffer = <T>(fn: (key: string, data: T) => Promise<void>, intervalM
 export const jitter = (value: number, range: number): number => {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
-  const random = array[0]! / (0xffffffff + 1);
+  const random = array[0]! / (0xFFFFFFFF + 1);
   const randomOffset = (random - 0.5) * 2 * range;
   return value + randomOffset;
 };
@@ -145,7 +151,8 @@ export const jitter = (value: number, range: number): number => {
  * await timing.sleep(500);                         // wait 500 ms
  * await timing.sleep(1000 + timing.jitter(0, 200)); // wait ~1 s with jitter
  */
-export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 // ==========================
 // Random
@@ -207,10 +214,7 @@ export const debounce = <T extends (...args: any[]) => any>(
   let lastArgs: Parameters<T> | null = null;
 
   const cancel = () => {
-    if (timerId !== null) {
-      clearTimeout(timerId);
-      timerId = null;
-    }
+    if (timerId !== null) { clearTimeout(timerId); timerId = null; }
     lastArgs = null;
   };
 
@@ -228,10 +232,7 @@ export const debounce = <T extends (...args: any[]) => any>(
     if (timerId !== null) clearTimeout(timerId);
     timerId = setTimeout(() => {
       timerId = null;
-      if (lastArgs !== null) {
-        fn(...lastArgs);
-        lastArgs = null;
-      }
+      if (lastArgs !== null) { fn(...lastArgs); lastArgs = null; }
     }, delayMs);
   };
 
@@ -256,10 +257,7 @@ export const throttle = <T extends (...args: any[]) => any>(
   let timerId: ReturnType<typeof setTimeout> | null = null;
 
   const cancel = () => {
-    if (timerId !== null) {
-      clearTimeout(timerId);
-      timerId = null;
-    }
+    if (timerId !== null) { clearTimeout(timerId); timerId = null; }
   };
 
   const call = (...args: Parameters<T>) => {

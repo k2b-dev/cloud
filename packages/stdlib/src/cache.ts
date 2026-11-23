@@ -194,7 +194,10 @@ export const createCache = <T>(options?: CacheOptions<T>): Cache<T> => {
     return null;
   };
 
-  const set = async (key: string, valueOrUpdater: T | ((current: T | null) => T | Promise<T>)): Promise<T> => {
+  const set = async (
+    key: string,
+    valueOrUpdater: T | ((current: T | null) => T | Promise<T>),
+  ): Promise<T> => {
     let value: T;
 
     if (typeof valueOrUpdater === "function") {

@@ -24,14 +24,8 @@ export const readJsonCookie = <T>(name: string, defaultValue: T): T => {
       const value = decodeURIComponent(cookie.substring(eqIndex + 1));
       const parsed = JSON.parse(value);
       // Only merge if both default and parsed are plain objects
-      if (
-        typeof defaultValue === "object" &&
-        defaultValue !== null &&
-        !Array.isArray(defaultValue) &&
-        typeof parsed === "object" &&
-        parsed !== null &&
-        !Array.isArray(parsed)
-      ) {
+      if (typeof defaultValue === "object" && defaultValue !== null && !Array.isArray(defaultValue) &&
+          typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
         return { ...defaultValue, ...parsed };
       }
       return parsed as T;

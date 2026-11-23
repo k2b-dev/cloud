@@ -40,8 +40,8 @@
  * const unwatch = kvStore.watch((e) => console.log(e), "files:");
  */
 
-import { fromBase64, toBase64 } from "../encoding";
 import { OPFS } from "./files";
+import { toBase64, fromBase64 } from "../encoding";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -150,7 +150,9 @@ const loadIndex = async (): Promise<StoreIndex> => {
   try {
     return JSON.parse(dec.decode(data)) as StoreIndex;
   } catch (e) {
-    throw new Error(`kvStore: index file at ${INDEX_PATH} is corrupt: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(
+      `kvStore: index file at ${INDEX_PATH} is corrupt: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 };
 
@@ -220,11 +222,7 @@ const notifyWatchers = (event: KVEvent): void => {
     // `clear` events fire for ALL watchers regardless of prefix — a prefix
     // watcher needs to know its slice of the store has been wiped too.
     if (event.type === "clear" || !w.prefix || event.key.startsWith(w.prefix)) {
-      try {
-        w.cb(event);
-      } catch {
-        /* ignore */
-      }
+      try { w.cb(event); } catch { /* ignore */ }
     }
   }
 };
@@ -240,11 +238,7 @@ const emit = (event: KVEvent): void => {
 /** Delete an old blob file if the entry was stored externally (not inline). */
 const cleanupBlob = async (item: CacheItem | undefined): Promise<void> => {
   if (item && item.entry.inline === undefined) {
-    try {
-      await OPFS.delete(`${BLOBS_DIR}/${item.hash}`);
-    } catch {
-      /* already gone */
-    }
+    try { await OPFS.delete(`${BLOBS_DIR}/${item.hash}`); } catch { /* already gone */ }
   }
 };
 
@@ -270,7 +264,8 @@ export const set = async (key: string, value: unknown): Promise<void> => {
   // has(key) === true but get(key) === undefined. Reject loudly instead.
   if (serialized === undefined) {
     throw new TypeError(
-      "kvStore.set: value is not JSON-serializable (undefined, function, or symbol). " + "Use kvStore.delete(key) to remove an entry.",
+      "kvStore.set: value is not JSON-serializable (undefined, function, or symbol). " +
+        "Use kvStore.delete(key) to remove an entry.",
     );
   }
   const hash = await hashKey(key);
@@ -362,20 +357,12 @@ export const get = async <T = unknown>(key: string): Promise<T | undefined> => {
   if (!item || item.entry.type !== "json") return undefined;
 
   if (item.entry.inline !== undefined) {
-    try {
-      return JSON.parse(item.entry.inline) as T;
-    } catch {
-      return undefined;
-    }
+    try { return JSON.parse(item.entry.inline) as T; } catch { return undefined; }
   }
 
   const data = await OPFS.read(`${BLOBS_DIR}/${item.hash}`);
   if (!data) return undefined;
-  try {
-    return JSON.parse(dec.decode(data)) as T;
-  } catch {
-    return undefined;
-  }
+  try { return JSON.parse(dec.decode(data)) as T; } catch { return undefined; }
 };
 
 /**
@@ -394,11 +381,7 @@ export const getBytes = async (key: string): Promise<Uint8Array | undefined> => 
   if (!item || item.entry.type !== "bin") return undefined;
 
   if (item.entry.inline !== undefined) {
-    try {
-      return fromBase64(item.entry.inline);
-    } catch {
-      return undefined;
-    }
+    try { return fromBase64(item.entry.inline); } catch { return undefined; }
   }
 
   return OPFS.read(`${BLOBS_DIR}/${item.hash}`);
@@ -535,9 +518,7 @@ export const watch = (callback: (event: KVEvent) => void, prefix?: string): (() 
   const entry: WatcherEntry = { cb: callback, prefix };
   watchers.add(entry);
   initBC();
-  return () => {
-    watchers.delete(entry);
-  };
+  return () => { watchers.delete(entry); };
 };
 
 /**

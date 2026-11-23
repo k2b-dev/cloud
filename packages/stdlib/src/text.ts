@@ -147,12 +147,22 @@ const compactUnitIndexFor = (value: number): number => {
   return -1;
 };
 
-const formatCompactNumber = (value: number, unitIndex: number, decimals: number | undefined, locale: string | undefined): string => {
+const formatCompactNumber = (
+  value: number,
+  unitIndex: number,
+  decimals: number | undefined,
+  locale: string | undefined,
+): string => {
   const compactDecimals = decimals ?? 1;
   const roundingFactor = 10 ** compactDecimals;
   const unit = COMPACT_NUMBER_UNITS[unitIndex]!;
-  const roundedAbsolute = Math.round((Math.abs(value) / unit.threshold + Number.EPSILON) * roundingFactor) / roundingFactor;
-  const selectedIndex = roundedAbsolute >= 1_000 && unitIndex < COMPACT_NUMBER_UNITS.length - 1 ? unitIndex + 1 : unitIndex;
+  const roundedAbsolute =
+    Math.round((Math.abs(value) / unit.threshold + Number.EPSILON) * roundingFactor) /
+    roundingFactor;
+  const selectedIndex =
+    roundedAbsolute >= 1_000 && unitIndex < COMPACT_NUMBER_UNITS.length - 1
+      ? unitIndex + 1
+      : unitIndex;
   const selectedUnit = COMPACT_NUMBER_UNITS[selectedIndex]!;
   return `${formatLocalizedNumber(value / selectedUnit.threshold, {
     locale,
@@ -173,13 +183,18 @@ const formatCompactNumber = (value: number, unitIndex: number, decimals: number 
  * @example text.pprintNumber(1234567, { compact: true, locale: "en-US" })  // "1.2M"
  * @example text.pprintNumber(1234, { compact: true, locale: "de-DE" })     // "1,2k"
  */
-export const pprintNumber = (value: number | null | undefined, options: PprintNumberOptions = {}): string => {
+export const pprintNumber = (
+  value: number | null | undefined,
+  options: PprintNumberOptions = {},
+): string => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return options.fallback ?? DEFAULT_PPRINT_FALLBACK;
   }
 
   const hasExplicitDecimals = options.decimals !== undefined;
-  const decimals = hasExplicitDecimals ? normalizePprintDecimals(options.decimals, 0) : undefined;
+  const decimals = hasExplicitDecimals
+    ? normalizePprintDecimals(options.decimals, 0)
+    : undefined;
   const compactUnitIndex = options.compact ? compactUnitIndexFor(value) : -1;
 
   if (compactUnitIndex < 0) {
@@ -201,13 +216,18 @@ export const pprintNumber = (value: number | null | undefined, options: PprintNu
  * @example text.pprintPercent(0.999, { decimals: 3, locale: "en-US" })    // "99.900%"
  * @example text.pprintPercent(1.4, { clamp: true, locale: "en-US" })      // "100%"
  */
-export const pprintPercent = (ratio: number | null | undefined, options: PprintPercentOptions = {}): string => {
+export const pprintPercent = (
+  ratio: number | null | undefined,
+  options: PprintPercentOptions = {},
+): string => {
   if (typeof ratio !== "number" || !Number.isFinite(ratio)) {
     return options.fallback ?? DEFAULT_PPRINT_FALLBACK;
   }
 
   const decimals = normalizePprintDecimals(options.decimals, 0);
-  const normalizedRatio = options.clamp ? Math.max(0, Math.min(1, ratio)) : ratio;
+  const normalizedRatio = options.clamp
+    ? Math.max(0, Math.min(1, ratio))
+    : ratio;
   const percentage = normalizedRatio * 100;
   if (!Number.isFinite(percentage)) {
     return options.fallback ?? DEFAULT_PPRINT_FALLBACK;
@@ -243,7 +263,10 @@ const formatDurationParts = (totalSeconds: number, locale: string | undefined): 
     .join(" ");
 };
 
-const formatSubsecondDuration = (milliseconds: number, locale: string | undefined): string => {
+const formatSubsecondDuration = (
+  milliseconds: number,
+  locale: string | undefined,
+): string => {
   const roundedMilliseconds = Math.round(milliseconds);
   return roundedMilliseconds >= 1_000
     ? "1s"
@@ -253,11 +276,15 @@ const formatSubsecondDuration = (milliseconds: number, locale: string | undefine
       })}ms`;
 };
 
-const formatSecondsDuration = (milliseconds: number, locale: string | undefined): string => {
+const formatSecondsDuration = (
+  milliseconds: number,
+  locale: string | undefined,
+): string => {
   const seconds = milliseconds / 1_000;
   const decimals = seconds < 10 ? 2 : 1;
   const roundingFactor = 10 ** decimals;
-  const roundedSeconds = Math.round((seconds + Number.EPSILON) * roundingFactor) / roundingFactor;
+  const roundedSeconds =
+    Math.round((seconds + Number.EPSILON) * roundingFactor) / roundingFactor;
   return roundedSeconds >= 60
     ? formatDurationParts(60, locale)
     : `${formatLocalizedNumber(roundedSeconds, {
@@ -280,8 +307,15 @@ const formatSecondsDuration = (milliseconds: number, locale: string | undefined)
  * @example text.pprintDurationMs(90_000)    // "1m 30s"
  * @example text.pprintDurationMs(7_200_000) // "2h"
  */
-export const pprintDurationMs = (milliseconds: number | null | undefined, options: PprintDurationMsOptions = {}): string => {
-  if (typeof milliseconds !== "number" || !Number.isFinite(milliseconds) || milliseconds < 0) {
+export const pprintDurationMs = (
+  milliseconds: number | null | undefined,
+  options: PprintDurationMsOptions = {},
+): string => {
+  if (
+    typeof milliseconds !== "number" ||
+    !Number.isFinite(milliseconds) ||
+    milliseconds < 0
+  ) {
     return options.fallback ?? DEFAULT_PPRINT_FALLBACK;
   }
   if (milliseconds === 0) return "0ms";
@@ -289,7 +323,10 @@ export const pprintDurationMs = (milliseconds: number | null | undefined, option
   if (milliseconds < 1_000) return formatSubsecondDuration(milliseconds, options.locale);
   if (milliseconds < 60_000) return formatSecondsDuration(milliseconds, options.locale);
 
-  return formatDurationParts(Math.round(milliseconds / 1_000), options.locale);
+  return formatDurationParts(
+    Math.round(milliseconds / 1_000),
+    options.locale,
+  );
 };
 
 /**
@@ -331,13 +368,19 @@ export type PprintBytesOptions = {
  * @example text.pprintBytesParts(1500, { mode: "si" })    // { value: "1.5", unit: "KB"  }
  * @example text.pprintBytesParts(1536, { locale: "de" })  // { value: "1,5", unit: "KiB" }
  */
-export const pprintBytesParts = (bytes: number, options: PprintBytesOptions = {}): { value: string; unit: string } => {
+export const pprintBytesParts = (
+  bytes: number,
+  options: PprintBytesOptions = {},
+): { value: string; unit: string } => {
   if (!Number.isFinite(bytes) || bytes <= 0) return { value: "0", unit: "B" };
 
   const units = options.mode === "si" ? SI_UNITS : IEC_UNITS;
   const base = options.mode === "si" ? 1000 : 1024;
 
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(base)), units.length - 1);
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(base)),
+    units.length - 1,
+  );
   const unit = units[exponent]!;
   const value = bytes / Math.pow(base, exponent);
 
@@ -388,11 +431,16 @@ export type PprintCurrencyOptions = {
  * @example text.pprintCurrency(1234.5, "USD", { locale: "en-US" })  // "$1,234.50"
  * @example text.pprintCurrency(null, "EUR")                        // "—"
  */
-export const pprintCurrency = (value: number | null | undefined, currency: string, options: PprintCurrencyOptions = {}): string => {
+export const pprintCurrency = (
+  value: number | null | undefined,
+  currency: string,
+  options: PprintCurrencyOptions = {},
+): string => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return options.fallback ?? DEFAULT_PPRINT_FALLBACK;
   }
-  const decimals = options.decimals === undefined ? undefined : normalizePprintDecimals(options.decimals, 0);
+  const decimals =
+    options.decimals === undefined ? undefined : normalizePprintDecimals(options.decimals, 0);
   return new Intl.NumberFormat(options.locale, {
     style: "currency",
     currency,
@@ -435,7 +483,11 @@ const splitWords = (content: string): string[] =>
  * @example text.truncate("Hello World", 6)            // "Hello…"
  * @example text.truncate("Hello World", 6, "middle")  // "He…ld"
  */
-export const truncate = (content: string, limit: number, mode: "end" | "middle" = "end"): string => {
+export const truncate = (
+  content: string,
+  limit: number,
+  mode: "end" | "middle" = "end",
+): string => {
   if (content.length <= limit) return content;
   if (mode === "middle") {
     const half = Math.floor((limit - 1) / 2);
@@ -458,7 +510,11 @@ export const truncate = (content: string, limit: number, mode: "end" | "middle" 
  *
  * @example text.summarize("Hello World", 6)  // "Hello… [6 chars omitted]"
  */
-export const summarize = (content: string, limit: number, mode: "end" | "middle" = "end"): string => {
+export const summarize = (
+  content: string,
+  limit: number,
+  mode: "end" | "middle" = "end",
+): string => {
   if (content.length <= limit) return content;
   const omitted = content.length - limit + 1;
   const truncated = truncate(content, limit, mode);
@@ -479,7 +535,9 @@ export const summarize = (content: string, limit: number, mode: "end" | "middle"
  */
 export const camelCase = (content: string): string => {
   const words = splitWords(content);
-  return words.map((w, i) => (i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))).join("");
+  return words
+    .map((w, i) => (i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join("");
 };
 
 /**
@@ -511,7 +569,8 @@ export const pascalCase = (content: string): string =>
  * @example text.snakeCase("hello world")  // "hello_world"
  * @example text.snakeCase("helloWorld")   // "hello_world"
  */
-export const snakeCase = (content: string): string => splitWords(content).join("_");
+export const snakeCase = (content: string): string =>
+  splitWords(content).join("_");
 
 /**
  * Convert a string to kebab-case.
@@ -525,7 +584,8 @@ export const snakeCase = (content: string): string => splitWords(content).join("
  * @example text.kebabCase("hello world")  // "hello-world"
  * @example text.kebabCase("hello_world")  // "hello-world"
  */
-export const kebabCase = (content: string): string => splitWords(content).join("-");
+export const kebabCase = (content: string): string =>
+  splitWords(content).join("-");
 
 export const text = {
   slugify,

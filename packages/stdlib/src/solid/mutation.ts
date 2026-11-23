@@ -1,6 +1,7 @@
-import { type Accessor, batch, createSignal } from "solid-js";
+import { batch, createSignal, type Accessor } from "solid-js";
 
-const normalizeError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)));
+const normalizeError = (err: unknown): Error =>
+  err instanceof Error ? err : new Error(String(err));
 
 /** Thrown by `cancel()` in `onBefore` to end the hook immediately. */
 class MutationCancelled extends Error {
@@ -178,7 +179,11 @@ type MutationOptions<T, V, C = unknown> = {
    * It receives the error, the combined context (undefined when onBefore failed),
    * and the failed call, whose `retry()` repeats exactly that call.
    */
-  onError?: (error: Error, ctx: (C & { abortSignal: AbortSignal }) | undefined, run: MutationRun) => void;
+  onError?: (
+    error: Error,
+    ctx: (C & { abortSignal: AbortSignal }) | undefined,
+    run: MutationRun,
+  ) => void;
 
   /**
    * Optional callback executed if the mutation is aborted, after `loading` and `status`
@@ -260,7 +265,8 @@ const create = <T, V, C = unknown>(options: MutationOptions<T, V, C>): MutationR
   const [ended, setEnded] = createSignal<MutationStatus>("idle");
   const [settledAt, setSettledAt] = createSignal<number | null>(null);
 
-  const status: Accessor<MutationStatus> = () => (loading() ? "loading" : pending() > 0 ? "pending" : ended());
+  const status: Accessor<MutationStatus> = () =>
+    loading() ? "loading" : pending() > 0 ? "pending" : ended();
 
   // Plain mirrors, so mutate() never subscribes a caller to the signals.
   // `pendingCalls` counts calls whose onBefore is running and that were not aborted.
@@ -281,7 +287,9 @@ const create = <T, V, C = unknown>(options: MutationOptions<T, V, C>): MutationR
   // Anything still running, including a run that was aborted but has not returned yet.
   const inFlight = () => pendingCalls > 0 || currentAbortController !== null;
   // What a new call waits for under "drop": an aborted run no longer blocks.
-  const busy = () => pendingCalls > 0 || (currentAbortController !== null && !currentAbortController.signal.aborted);
+  const busy = () =>
+    pendingCalls > 0 ||
+    (currentAbortController !== null && !currentAbortController.signal.aborted);
   const dropped = () => concurrency === "drop" && busy();
 
   /**
@@ -422,7 +430,9 @@ const create = <T, V, C = unknown>(options: MutationOptions<T, V, C>): MutationR
         if (!isCurrent()) return abortController.signal.aborted ? "aborted" : "superseded";
         // AbortError surfacing as an exception (typical fetch behaviour) is
         // routed to onAbort, not onError, since the user explicitly cancelled.
-        const isAbortError = abortController.signal.aborted || (err instanceof Error && err.name === "AbortError");
+        const isAbortError =
+          abortController.signal.aborted ||
+          (err instanceof Error && err.name === "AbortError");
         if (isAbortError) {
           abortRun = null;
           finish("aborted");
@@ -606,4 +616,11 @@ export const mutation = {
   create,
 } as const;
 
-export type { MutationConcurrency, MutationOptions, MutationOutcome, MutationResult, MutationRun, MutationStatus };
+export type {
+  MutationResult,
+  MutationOptions,
+  MutationStatus,
+  MutationConcurrency,
+  MutationOutcome,
+  MutationRun,
+};

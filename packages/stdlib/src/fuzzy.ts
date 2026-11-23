@@ -75,7 +75,8 @@ const NEG_INF = Number.NEGATIVE_INFINITY;
 const isUpper = (code: number): boolean => code >= 65 && code <= 90;
 const isLower = (code: number): boolean => code >= 97 && code <= 122;
 const isDigit = (code: number): boolean => code >= 48 && code <= 57;
-const isWordChar = (code: number): boolean => isLower(code) || isUpper(code) || isDigit(code) || code === 95; // _
+const isWordChar = (code: number): boolean =>
+  isLower(code) || isUpper(code) || isDigit(code) || code === 95; // _
 
 /**
  * Boundary detection. Returns true at:
@@ -129,7 +130,11 @@ const collapseRanges = (positions: readonly number[]): Array<[number, number]> =
 // running prefix maximum of `E[k] = M[i-1][k] - k·GAP_EXTEND`, giving O(Q·T).
 // Backtracking pointers (`back[i][j]`) reconstruct the matched positions.
 
-const computeMatch = (query: string, target: string, caseSensitive: boolean): FuzzyMatch | null => {
+const computeMatch = (
+  query: string,
+  target: string,
+  caseSensitive: boolean,
+): FuzzyMatch | null => {
   const qLen = query.length;
   const tLen = target.length;
 
@@ -153,14 +158,26 @@ const computeMatch = (query: string, target: string, caseSensitive: boolean): Fu
   for (let i = 0; i < qLen; i++) {
     const c = query.charCodeAt(i);
     qOrig[i] = c;
-    qFold[i] = caseSensitive ? c : qFoldUsable ? qFoldStr.charCodeAt(i) : isUpper(c) ? c + 32 : c;
+    qFold[i] = caseSensitive
+      ? c
+      : qFoldUsable
+        ? qFoldStr.charCodeAt(i)
+        : isUpper(c)
+          ? c + 32
+          : c;
   }
   const tOrig = new Uint16Array(tLen);
   const tFold = new Uint16Array(tLen);
   for (let j = 0; j < tLen; j++) {
     const c = target.charCodeAt(j);
     tOrig[j] = c;
-    tFold[j] = caseSensitive ? c : tFoldUsable ? tFoldStr.charCodeAt(j) : isUpper(c) ? c + 32 : c;
+    tFold[j] = caseSensitive
+      ? c
+      : tFoldUsable
+        ? tFoldStr.charCodeAt(j)
+        : isUpper(c)
+          ? c + 32
+          : c;
   }
 
   // Subsequence pre-check: if q is not even a subsequence of t, bail out fast.
@@ -331,8 +348,11 @@ const levenshtein = (a: string, b: string): number => {
  * fuzzy.match("UDH", "userDashboard")     // matches (case-insensitive default)
  * fuzzy.match("UDH", "userDashboard", { caseSensitive: true })  // null
  */
-export const match = (query: string, target: string, opts: { caseSensitive?: boolean } = {}): FuzzyMatch | null =>
-  computeMatch(query, target, opts.caseSensitive ?? false);
+export const match = (
+  query: string,
+  target: string,
+  opts: { caseSensitive?: boolean } = {},
+): FuzzyMatch | null => computeMatch(query, target, opts.caseSensitive ?? false);
 
 /**
  * Filter and rank a list of items by fuzzy-match score against `query`.
@@ -374,7 +394,8 @@ export const filter = <T>(
     // would silently crash inside computeMatch. Throw a clear error early.
     if (typeof target !== "string") {
       throw new TypeError(
-        `fuzzy.filter: target is not a string (got ${typeof target}). ` + "Pass a `key` accessor to extract a string from each item.",
+        `fuzzy.filter: target is not a string (got ${typeof target}). ` +
+          "Pass a `key` accessor to extract a string from each item.",
       );
     }
     const m = computeMatch(query, target, caseSensitive);
@@ -400,7 +421,10 @@ export const filter = <T>(
  * Ranges are expected to be the canonical sorted, non-overlapping shape
  * produced by {@link match} / {@link filter}.
  */
-export const segments = (target: string, ranges: ReadonlyArray<readonly [number, number]>): FuzzySegment[] => {
+export const segments = (
+  target: string,
+  ranges: ReadonlyArray<readonly [number, number]>,
+): FuzzySegment[] => {
   if (ranges.length === 0) {
     return target.length === 0 ? [] : [{ text: target, match: false }];
   }

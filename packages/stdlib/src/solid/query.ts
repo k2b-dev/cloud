@@ -1,4 +1,12 @@
-import { type Accessor, batch, createEffect, createSignal, getOwner, onCleanup, onMount } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createSignal,
+  getOwner,
+  onCleanup,
+  onMount,
+  type Accessor,
+} from "solid-js";
 
 type QueryCauseType = "source" | "refresh" | "invalidate";
 
@@ -16,7 +24,9 @@ type QueryInvalidate<TInvalidation> = [TInvalidation] extends [void]
   ? (meta?: TInvalidation) => Promise<void>
   : (meta: TInvalidation) => Promise<void>;
 
-type QuerySubscription<TInvalidation> = (controls: { invalidate: QueryInvalidate<TInvalidation> }) => void | (() => void);
+type QuerySubscription<TInvalidation> = (controls: {
+  invalidate: QueryInvalidate<TInvalidation>;
+}) => void | (() => void);
 
 type QueryInitial<TSource, TData> = {
   source: TSource;
@@ -25,7 +35,10 @@ type QueryInitial<TSource, TData> = {
 
 type QueryOptions<TSource, TData, TInvalidation = void> = {
   source: Accessor<TSource>;
-  load: (source: TSource, context: QueryLoadContext<TInvalidation>) => Promise<TData>;
+  load: (
+    source: TSource,
+    context: QueryLoadContext<TInvalidation>,
+  ) => Promise<TData>;
   initial?: QueryInitial<TSource, TData>;
   enabled?: Accessor<boolean>;
   isSameSource?: (left: TSource, right: TSource) => boolean;
@@ -43,7 +56,9 @@ type QueryResult<TData, TInvalidation = void> = {
   abort: () => void;
 };
 
-type InfiniteQueryCause<TInvalidation> = QueryCause<TInvalidation> | { type: "load-more"; invalidations: readonly [] };
+type InfiniteQueryCause<TInvalidation> =
+  | QueryCause<TInvalidation>
+  | { type: "load-more"; invalidations: readonly [] };
 
 type InfiniteQueryLoadContext<TCursor, TInvalidation> = {
   cursor: TCursor | undefined;
@@ -56,9 +71,17 @@ type InfiniteQueryInitial<TSource, TPage> = {
   pages: readonly TPage[];
 };
 
-type InfiniteQueryOptions<TSource, TPage, TCursor, TInvalidation = void> = {
+type InfiniteQueryOptions<
+  TSource,
+  TPage,
+  TCursor,
+  TInvalidation = void,
+> = {
   source: Accessor<TSource>;
-  loadPage: (source: TSource, context: InfiniteQueryLoadContext<TCursor, TInvalidation>) => Promise<TPage>;
+  loadPage: (
+    source: TSource,
+    context: InfiniteQueryLoadContext<TCursor, TInvalidation>,
+  ) => Promise<TPage>;
   getNextCursor: (page: TPage) => TCursor | null | undefined;
   initial?: InfiniteQueryInitial<TSource, TPage>;
   enabled?: Accessor<boolean>;
@@ -80,7 +103,8 @@ type InfiniteQueryResult<TPage, TInvalidation = void> = {
   abort: () => void;
 };
 
-const normalizeError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+const normalizeError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
 
 const abortError = (message: string): Error => {
   const error = new Error(message);
@@ -88,7 +112,8 @@ const abortError = (message: string): Error => {
   return error;
 };
 
-const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === "AbortError";
 
 const reasonPriority: Record<QueryCauseType, number> = {
   invalidate: 1,
@@ -115,7 +140,10 @@ type ActiveRequest<TInvalidation> = {
   cause: QueryCause<TInvalidation>;
 };
 
-type QueryKernelOptions<TSource, TData, TInvalidation> = Omit<QueryOptions<TSource, TData, TInvalidation>, "initial"> & {
+type QueryKernelOptions<TSource, TData, TInvalidation> = Omit<
+  QueryOptions<TSource, TData, TInvalidation>,
+  "initial"
+> & {
   initial?: {
     source: TSource;
     data: () => TData;
@@ -123,14 +151,20 @@ type QueryKernelOptions<TSource, TData, TInvalidation> = Omit<QueryOptions<TSour
   onExternalInterrupt?: () => void;
 };
 
-type QueryKernel<TSource, TData, TInvalidation> = QueryResult<TData, TInvalidation> & {
+type QueryKernel<TSource, TData, TInvalidation> = QueryResult<
+  TData,
+  TInvalidation
+> & {
   currentSource: () => TSource;
   sourceGeneration: () => number;
   isEnabled: () => boolean;
   isMounted: () => boolean;
   isCanonicalActive: () => boolean;
   peek: () => { hasData: boolean; data: TData | undefined };
-  commitExternal: (sourceGeneration: number, update: (current: TData) => TData) => boolean;
+  commitExternal: (
+    sourceGeneration: number,
+    update: (current: TData) => TData,
+  ) => boolean;
   beginExternal: (sourceGeneration: number) => boolean;
   failExternal: (sourceGeneration: number, error: unknown) => void;
 };
@@ -144,13 +178,19 @@ const createKernel = <TSource, TData, TInvalidation = void>(
 
   const sameSource = options.isSameSource ?? Object.is;
   const initialSource = options.source();
-  const initialMatches = options.initial !== undefined && sameSource(options.initial.source, initialSource);
+  const initialMatches =
+    options.initial !== undefined &&
+    sameSource(options.initial.source, initialSource);
   const initialData = initialMatches ? options.initial?.data() : undefined;
   const initiallyEnabled = options.enabled?.() ?? true;
 
-  const [data, setData] = createSignal<TData | undefined>(initialData);
+  const [data, setData] = createSignal<TData | undefined>(
+    initialData,
+  );
   const [error, setError] = createSignal<Error | null>(null);
-  const [loading, setLoading] = createSignal(!initialMatches && initiallyEnabled);
+  const [loading, setLoading] = createSignal(
+    !initialMatches && initiallyEnabled,
+  );
   const [refreshing, setRefreshing] = createSignal(false);
   const [stale, setStale] = createSignal(false);
 
@@ -167,12 +207,19 @@ const createKernel = <TSource, TData, TInvalidation = void>(
   let refreshBatch: RefreshBatch | null = null;
   let queuedReason: QueryCauseType | null = initialMatches ? null : "source";
   let loadScheduled = false;
-  const invalidations = new Map<number, PendingInvalidation<TInvalidation>>();
+  const invalidations = new Map<
+    number,
+    PendingInvalidation<TInvalidation>
+  >();
 
   const writeData = (value: TData) => setData(() => value);
 
   const syncStale = () => {
-    setStale((hasData && !hasCommittedCurrentSource) || invalidations.size > 0 || failedWithLastGoodData);
+    setStale(
+      (hasData && !hasCommittedCurrentSource) ||
+        invalidations.size > 0 ||
+        failedWithLastGoodData,
+    );
   };
 
   const resolveRefreshBatch = (batch: RefreshBatch | null) => {
@@ -181,7 +228,10 @@ const createKernel = <TSource, TData, TInvalidation = void>(
     batch.resolve();
   };
 
-  const rejectInvalidations = (ids: Iterable<number>, rejection: Error) => {
+  const rejectInvalidations = (
+    ids: Iterable<number>,
+    rejection: Error,
+  ) => {
     for (const id of ids) {
       const pending = invalidations.get(id);
       if (!pending) continue;
@@ -209,9 +259,13 @@ const createKernel = <TSource, TData, TInvalidation = void>(
     activeRequest = null;
     request.controller.abort();
     if (rejectCovered) {
-      rejectInvalidations(request.coveredInvalidationIds, abortError(message));
+      rejectInvalidations(
+        request.coveredInvalidationIds,
+        abortError(message),
+      );
       resolveRefreshBatch(request.refreshBatch);
-      failedWithLastGoodData ||= hasData && request.coveredInvalidationIds.length > 0;
+      failedWithLastGoodData ||=
+        hasData && request.coveredInvalidationIds.length > 0;
     }
     batch(() => {
       setLoading(false);
@@ -221,19 +275,35 @@ const createKernel = <TSource, TData, TInvalidation = void>(
   };
 
   const mergeQueuedReason = (reason: QueryCauseType) => {
-    if (!queuedReason || reasonPriority[reason] > reasonPriority[queuedReason]) {
+    if (
+      !queuedReason ||
+      reasonPriority[reason] > reasonPriority[queuedReason]
+    ) {
       queuedReason = reason;
     }
   };
 
   const scheduleQueuedLoad = () => {
-    if (disposed || !mounted || !currentEnabled || activeRequest || loadScheduled || !queuedReason) {
+    if (
+      disposed ||
+      !mounted ||
+      !currentEnabled ||
+      activeRequest ||
+      loadScheduled ||
+      !queuedReason
+    ) {
       return;
     }
     loadScheduled = true;
     queueMicrotask(() => {
       loadScheduled = false;
-      if (disposed || !mounted || !currentEnabled || activeRequest || !queuedReason) {
+      if (
+        disposed ||
+        !mounted ||
+        !currentEnabled ||
+        activeRequest ||
+        !queuedReason
+      ) {
         return;
       }
       const reason = queuedReason;
@@ -288,9 +358,13 @@ const createKernel = <TSource, TData, TInvalidation = void>(
       } catch (caught) {
         if (activeRequest !== request) return;
         if (controller.signal.aborted || isAbortError(caught)) {
-          rejectInvalidations(request.coveredInvalidationIds, abortError("Query request was aborted"));
+          rejectInvalidations(
+            request.coveredInvalidationIds,
+            abortError("Query request was aborted"),
+          );
           resolveRefreshBatch(request.refreshBatch);
-          failedWithLastGoodData ||= hasData && request.coveredInvalidationIds.length > 0;
+          failedWithLastGoodData ||=
+            hasData && request.coveredInvalidationIds.length > 0;
           finishRequest(request);
           return;
         }
@@ -335,7 +409,9 @@ const createKernel = <TSource, TData, TInvalidation = void>(
     }
   };
 
-  const invalidateImplementation = (meta?: TInvalidation): Promise<void> => {
+  const invalidateImplementation = (
+    meta?: TInvalidation,
+  ): Promise<void> => {
     if (disposed) {
       return Promise.reject(abortError("Query owner was disposed"));
     }
@@ -458,7 +534,13 @@ const createKernel = <TSource, TData, TInvalidation = void>(
     isCanonicalActive: () => activeRequest !== null,
     peek: () => ({ hasData, data: data() }),
     commitExternal: (sourceGeneration, update) => {
-      if (disposed || activeRequest || sourceGeneration !== currentSourceGeneration || !currentEnabled || !hasData) {
+      if (
+        disposed ||
+        activeRequest ||
+        sourceGeneration !== currentSourceGeneration ||
+        !currentEnabled ||
+        !hasData
+      ) {
         return false;
       }
       writeData(update(data() as TData));
@@ -466,14 +548,24 @@ const createKernel = <TSource, TData, TInvalidation = void>(
       return true;
     },
     beginExternal: (sourceGeneration) => {
-      if (disposed || activeRequest || sourceGeneration !== currentSourceGeneration || !currentEnabled) {
+      if (
+        disposed ||
+        activeRequest ||
+        sourceGeneration !== currentSourceGeneration ||
+        !currentEnabled
+      ) {
         return false;
       }
       setError(null);
       return true;
     },
     failExternal: (sourceGeneration, caught) => {
-      if (disposed || activeRequest || sourceGeneration !== currentSourceGeneration || isAbortError(caught)) {
+      if (
+        disposed ||
+        activeRequest ||
+        sourceGeneration !== currentSourceGeneration ||
+        isAbortError(caught)
+      ) {
         return;
       }
       setError(normalizeError(caught));
@@ -510,13 +602,29 @@ type InfiniteSnapshot<TPage, TCursor> = {
   nextCursor: TCursor | undefined;
 };
 
-const normalizedCursor = <TCursor>(cursor: TCursor | null | undefined): TCursor | undefined => (cursor == null ? undefined : cursor);
+const normalizedCursor = <TCursor>(
+  cursor: TCursor | null | undefined,
+): TCursor | undefined => (cursor == null ? undefined : cursor);
 
-const createInfinite = <TSource, TPage, TCursor, TInvalidation = void>(
-  options: InfiniteQueryOptions<TSource, TPage, TCursor, TInvalidation>,
+const createInfinite = <
+  TSource,
+  TPage,
+  TCursor,
+  TInvalidation = void,
+>(
+  options: InfiniteQueryOptions<
+    TSource,
+    TPage,
+    TCursor,
+    TInvalidation
+  >,
 ): InfiniteQueryResult<TPage, TInvalidation> => {
   let cancelLoadMore = () => {};
-  let kernel!: QueryKernel<TSource, InfiniteSnapshot<TPage, TCursor>, TInvalidation>;
+  let kernel!: QueryKernel<
+    TSource,
+    InfiniteSnapshot<TPage, TCursor>,
+    TInvalidation
+  >;
 
   const initial = options.initial
     ? {
@@ -524,13 +632,19 @@ const createInfinite = <TSource, TPage, TCursor, TInvalidation = void>(
         data: (): InfiniteSnapshot<TPage, TCursor> => ({
           pages: [...options.initial!.pages],
           nextCursor: normalizedCursor(
-            options.initial!.pages.length > 0 ? options.getNextCursor(options.initial!.pages.at(-1)!) : undefined,
+            options.initial!.pages.length > 0
+              ? options.getNextCursor(options.initial!.pages.at(-1)!)
+              : undefined,
           ),
         }),
       }
     : undefined;
 
-  kernel = createKernel<TSource, InfiniteSnapshot<TPage, TCursor>, TInvalidation>({
+  kernel = createKernel<
+    TSource,
+    InfiniteSnapshot<TPage, TCursor>,
+    TInvalidation
+  >({
     source: options.source,
     initial,
     enabled: options.enabled,
@@ -539,7 +653,10 @@ const createInfinite = <TSource, TPage, TCursor, TInvalidation = void>(
     onExternalInterrupt: () => cancelLoadMore(),
     load: async (source, context) => {
       const current = kernel.peek();
-      const targetPageCount = context.cause.type === "source" ? 1 : Math.max(current.hasData ? current.data!.pages.length : 0, 1);
+      const targetPageCount =
+        context.cause.type === "source"
+          ? 1
+          : Math.max(current.hasData ? current.data!.pages.length : 0, 1);
       const pages: TPage[] = [];
       let cursor: TCursor | undefined;
 
@@ -560,11 +677,13 @@ const createInfinite = <TSource, TPage, TCursor, TInvalidation = void>(
 
   const emptyPages: readonly TPage[] = [];
   const [loadingMore, setLoadingMore] = createSignal(false);
-  let activeLoadMore: {
-    controller: AbortController;
-    promise: Promise<void>;
-    resolve: () => void;
-  } | null = null;
+  let activeLoadMore:
+    | {
+        controller: AbortController;
+        promise: Promise<void>;
+        resolve: () => void;
+      }
+    | null = null;
 
   cancelLoadMore = () => {
     const request = activeLoadMore;

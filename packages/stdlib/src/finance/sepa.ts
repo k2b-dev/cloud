@@ -1,26 +1,20 @@
+import { SepaBatchSchema, SepaHeaderSchema, type SepaBatch, type SepaHeader } from "./sepa-contracts";
+import { total, validate, type FinanceResult } from "./common";
 import { ok } from "../result";
-import { type FinanceResult, total, validate } from "./common";
-import { type SepaBatch, SepaBatchSchema, type SepaHeader, SepaHeaderSchema } from "./sepa-contracts";
 
 const namespace = "urn:iso:std:iso:20022:tech:xsd:pain.001.001.09";
 export type SepaFile = { bytes: Uint8Array; rowCount: number; total: string };
 
 // Input contracts reject invalid XML characters before reaching this function.
-const escapeXmlValue = (value: string | number) =>
-  String(value).replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case '"':
-        return "&quot;";
-      default:
-        return "&apos;";
-    }
-  });
+const escapeXmlValue = (value: string | number) => String(value).replace(/[&<>"']/g, char => {
+  switch (char) {
+    case "&": return "&amp;";
+    case "<": return "&lt;";
+    case ">": return "&gt;";
+    case '"': return "&quot;";
+    default: return "&apos;";
+  }
+});
 
 /** Validate inputs and serialize ordinary SCT synchronously, without loading an XSD engine. */
 function serialize(input: SepaBatch): FinanceResult<SepaFile> {
@@ -28,7 +22,7 @@ function serialize(input: SepaBatch): FinanceResult<SepaFile> {
   if (!checked.ok) return checked;
   const batch = checked.data;
   const createdAt = batch.createdAt;
-  const sum = total(batch.rows.map((row) => row.amount));
+  const sum = total(batch.rows.map(row => row.amount));
   const element = (name: string, value: string | number) => `<${name}>${escapeXmlValue(value)}</${name}>`;
   const agent = (name: string, value?: string) =>
     `<${name}><FinInstnId>${value === undefined ? "<Othr><Id>NOTPROVIDED</Id></Othr>" : element("BICFI", value)}</FinInstnId></${name}>`;

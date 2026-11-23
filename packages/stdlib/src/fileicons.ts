@@ -52,36 +52,8 @@ export function getFileCategory(item: FileInfoLike): FileCategory {
 
   if (
     [
-      "js",
-      "mjs",
-      "cjs",
-      "jsx",
-      "ts",
-      "mts",
-      "cts",
-      "tsx",
-      "py",
-      "pyw",
-      "rs",
-      "go",
-      "c",
-      "h",
-      "cpp",
-      "hpp",
-      "cc",
-      "java",
-      "kt",
-      "cs",
-      "rb",
-      "php",
-      "swift",
-      "sh",
-      "bash",
-      "zsh",
-      "ps1",
-      "bat",
-      "cmd",
-      "sql",
+      "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx", "py", "pyw", "rs", "go", "c", "h", "cpp", "hpp", "cc",
+      "java", "kt", "cs", "rb", "php", "swift", "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql",
     ].includes(ext)
   ) {
     return "code";
@@ -90,23 +62,8 @@ export function getFileCategory(item: FileInfoLike): FileCategory {
   if (
     mime.startsWith("text/") ||
     [
-      "txt",
-      "md",
-      "mdx",
-      "markdown",
-      "rst",
-      "log",
-      "json",
-      "jsonc",
-      "yaml",
-      "yml",
-      "toml",
-      "xml",
-      "ini",
-      "env",
-      "gitignore",
-      "dockerfile",
-      "makefile",
+      "txt", "md", "mdx", "markdown", "rst", "log", "json", "jsonc", "yaml", "yml", "toml", "xml", "ini", "env",
+      "gitignore", "dockerfile", "makefile",
     ].includes(ext)
   ) {
     return "text";
@@ -380,8 +337,7 @@ const FOLDER_ICONS: Record<string, string> = {
   templates: "ti-template text-zinc-400",
   vorlagen: "ti-template text-zinc-400",
   public: "ti-world text-green-500",
-  // A [string, value] pair: a bundler may print a quoted non-ASCII key bare, which breaks a script read as Latin-1.
-  ...Object.fromEntries([["\u00f6ffentlich", "ti-world text-green-500"]]),
+  "\u00f6ffentlich": "ti-world text-green-500",
   trash: "ti-trash text-zinc-400",
 };
 

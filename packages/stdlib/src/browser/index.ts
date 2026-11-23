@@ -5,10 +5,10 @@
  * All exports require a browser environment (DOM, `navigator`, `document`).
  */
 
-export * from "./clipboard";
-export * from "./cookies";
-export * from "./files";
 export * from "./images";
-export * from "./kv-store";
+export * from "./files";
+export * from "./cookies";
+export * from "./clipboard";
 export * from "./notifications";
+export * from "./kv-store";
 export * from "./theme";

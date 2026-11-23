@@ -1,6 +1,6 @@
 // Bun server utilities.
 import { join } from "node:path";
-import { type DatevXmlSchemas, datevXmlSchemaSha256 } from "../finance/datev-xml-schema-files";
+import { datevXmlSchemaSha256, type DatevXmlSchemas } from "../finance/datev-xml-schema-files";
 
 /**
  * Read DATEV's XML-Schnittstelle online 6.0 schema files from a directory, for

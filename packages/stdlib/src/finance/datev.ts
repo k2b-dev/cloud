@@ -75,9 +75,9 @@ const columns = [
   "Abw. Skontokonto",
 ];
 
+import { DatevBatchSchema, DatevHeaderSchema, type DatevBatch, type DatevHeader } from "./datev-contracts";
+import { total, validate, type FinanceResult } from "./common";
 import { ok } from "../result";
-import { type FinanceResult, total, validate } from "./common";
-import { type DatevBatch, DatevBatchSchema, type DatevHeader, DatevHeaderSchema } from "./datev-contracts";
 
 export type DatevFile = { bytes: Uint8Array; rowCount: number; debitTotal: string; creditTotal: string };
 
@@ -147,8 +147,8 @@ function serialize(input: DatevBatch): FinanceResult<DatevFile> {
   return ok({
     bytes: new TextEncoder().encode(`\uFEFF${[header.join(";"), columns.join(";"), ...lines].join("\r\n")}\r\n`),
     rowCount: batch.rows.length,
-    debitTotal: total(batch.rows.filter((row) => row.direction === "S").map((row) => row.amount)),
-    creditTotal: total(batch.rows.filter((row) => row.direction === "H").map((row) => row.amount)),
+    debitTotal: total(batch.rows.filter(row => row.direction === "S").map(row => row.amount)),
+    creditTotal: total(batch.rows.filter(row => row.direction === "H").map(row => row.amount)),
   });
 }
 
