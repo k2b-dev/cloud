@@ -225,24 +225,50 @@ describe("Mail on the v2 pilot in its live states", () => {
       }
     }, 60_000);
 
-  // Known gap of StatusRow (lane C, 23.11.): in a narrow list column the selection's actions run past its edge;
-  // they should turn into icons, then "…", by the column's width. This case turns red once the primitive does it:
-  // then make it a plain test.
-  test.failing("the selection's actions fit a narrow list column (StatusRow gap)", async () => {
-    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1024);
+  /**
+   * What a narrow place cuts: a button or tab past the edge of its column, and a first line of a list row that wraps
+   * instead of ending in "…". Neither is a line or a type role, so the layout measure does not see them.
+   */
+  const cutOff = (page: Page) =>
+    page.evaluate(() => {
+      const found: string[] = [];
+      for (const control of Array.from(document.querySelectorAll('[data-k2-workspace] :is([data-k2-part="Button"], .k2-tab)'))) {
+        const column = control.closest("[data-k2-column]")?.getBoundingClientRect();
+        const box = control.getBoundingClientRect();
+        if (column && box.width > 0 && (box.right > column.right + 0.5 || box.left < column.left - 0.5))
+          found.push(`${control.getAttribute("aria-label") ?? control.textContent?.trim()} runs past its column`);
+      }
+      for (const line of Array.from(document.querySelectorAll('[data-k2-part="List"] > [data-k2-part="Row"] > .k2-row-l1')))
+        if (line.getBoundingClientRect().height > 20.5) found.push(`"${line.textContent?.trim()}" wraps in its row`);
+      return found;
+    });
+  const cutAt = async (width: number, select: boolean) => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, width);
     try {
-      await page.locator('[data-k2-part="StatusRow"]').getByRole("checkbox").click();
-      await page.locator('[data-k2-part="StatusRow"][data-selecting]').waitFor();
+      if (select) {
+        await page.locator('[data-k2-part="StatusRow"]').getByRole("checkbox").click();
+        await page.locator('[data-k2-part="StatusRow"][data-selecting]').waitFor();
+      }
       await settled(page);
-      const overflow = await page.evaluate(() => {
-        const bar = document.querySelector('[data-k2-part="StatusRow"]')!.getBoundingClientRect();
-        return Array.from(document.querySelectorAll('[data-k2-part="StatusRow"] [data-k2-part="Button"]'))
-          .map((button) => button.getBoundingClientRect())
-          .filter((box) => box.right > bar.right + 0.5 || box.left < bar.left - 0.5).length;
-      });
-      expect(overflow).toBe(0);
+      return await cutOff(page);
     } finally {
       await page.close();
     }
+  };
+
+  test("at 1440 px nothing is cut: every control within its column, every row's first line on one line", async () => {
+    expect(await cutAt(1440, false)).toEqual([]);
+  }, 60_000);
+
+  // Known gaps of the primitives (lane C, 23.11.). Each case turns red once the primitive handles it: then make it a
+  // plain test.
+  // StatusRow: in the list column the selection's actions run past its edge; they should turn into icons, then "…",
+  // by the column's width.
+  test.failing("the selection's actions fit the list column (StatusRow gap)", async () => {
+    expect(await cutAt(1440, true)).toEqual([]);
+  }, 60_000);
+  // Bar and Row at 1024 px: the head's end runs past the card, and a row's first line wraps instead of ending in "…".
+  test.failing("at 1024 px nothing is cut (Bar and Row gaps)", async () => {
+    expect(await cutAt(1024, false)).toEqual([]);
   }, 60_000);
 });
