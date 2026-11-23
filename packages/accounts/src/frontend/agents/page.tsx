@@ -65,7 +65,7 @@ export default ssr<AuthContext>(async (c) => {
                         <span class="truncate">{agent.name}</span>
                       </a>
                     );
-                  if (col.id === "kind") return <span class="text-dimmed">{agent.kind === "agent" ? t.agent : t.standalone}</span>;
+                  if (col.id === "kind") return <span class="text-dimmed">{t.agent}</span>;
                   if (col.id === "status")
                     return (
                       <StatusBadge

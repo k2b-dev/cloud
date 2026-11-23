@@ -143,8 +143,8 @@ const de: Record<string, SettingCopy> = {
     label: "Unsicheres TLS erlauben",
     description: "Deaktiviert die Zertifikatsprüfung vollständig. Nur für lokale Entwicklung verwenden.",
   },
-  "freeipa.service_user": { label: "Dienstkonto", description: "FreeIPA-Benutzername für interne Verwaltungsaufgaben." },
-  "freeipa.service_password": { label: "Passwort des Dienstkontos", description: "FreeIPA-Passwort für interne Verwaltungsaufgaben." },
+  "freeipa.service_user": { label: "FreeIPA-Benutzer", description: "FreeIPA-Benutzername für interne Verwaltungsaufgaben." },
+  "freeipa.service_password": { label: "Passwort des FreeIPA-Benutzers", description: "FreeIPA-Passwort für interne Verwaltungsaufgaben." },
   "freeipa.groups.admin": {
     label: "Administrationsgruppen",
     description: "FreeIPA-Gruppen, die Administrationszugriff auf Apps gewähren.",

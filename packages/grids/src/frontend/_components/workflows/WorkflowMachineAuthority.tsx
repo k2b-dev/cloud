@@ -78,7 +78,7 @@ export function WorkflowMachineAuthority(props: { workflowId: string; onBusy?: (
             >
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-medium">{value().name ?? t().unavailable}</span>
-                <Tag>{value().kind === "agent" ? t().agent : t().serviceAccount}</Tag>
+                <Tag>{t().agent}</Tag>
                 <Tag>
                   {value().mandate?.state === "active" && value().accountStatus === "active"
                     ? t().active

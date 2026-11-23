@@ -405,7 +405,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
           description:
-            "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse. Persönliche Linux-Gruppen sind ausgenommen; berechtige stattdessen die Person.",
+            "Sucht sichtbare Benutzer, Gruppen, Agenten und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse. Persönliche Linux-Gruppen sind ausgenommen; berechtige stattdessen die Person.",
           input: {
             query: "Name oder Kontokennung; leer werden sichtbare Empfänger aufgelistet.",
             types: "Gewünschte Empfängertypen; ohne Angabe werden alle sichtbaren Typen berücksichtigt.",
@@ -653,7 +653,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chat.create": {
           title: "Neuen Chat erstellen",
           description:
-            "Erstellt einen leeren persönlichen Chat, optional in einem lesbaren Projekt. Derselbe Schlüssel liefert den ursprünglichen Chat. Eingeschränkte Zugänge, Dienstkonten und Chat-Ketten dürfen keine Chats erstellen.",
+            "Erstellt einen leeren persönlichen Chat, optional in einem lesbaren Projekt. Derselbe Schlüssel liefert den ursprünglichen Chat. Eingeschränkte Zugänge, Agenten, Dienstkonten und Chat-Ketten dürfen keine Chats erstellen.",
           input: {
             title: "Titel des neuen persönlichen Chats mit 1 bis 200 Zeichen.",
             project: "Optionales Projekt für den neuen Chat; aktueller Lesezugriff ist nötig.",

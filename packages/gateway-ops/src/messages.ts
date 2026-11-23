@@ -270,7 +270,7 @@ export const gatewayOpsMessages = i18n.define({
       searchMetricsLabel: "Search metrics",
       noMatchingMetrics: "No metrics match the current filters.",
       bearerTokens: "Bearer tokens",
-      bearerTokensDescription: "Resource-bound service account tokens with the metrics:read scope.",
+      bearerTokensDescription: "API keys with the metrics:read scope.",
       newToken: "New token",
       storeTokenNow: "Store this bearer token now. It is shown once and cannot be recovered later.",
       copyToken: "Copy token",
@@ -1142,7 +1142,7 @@ export const gatewayOpsMessages = i18n.define({
       searchMetricsLabel: "Metriken durchsuchen",
       noMatchingMetrics: "Keine Metriken entsprechen den aktuellen Filtern.",
       bearerTokens: "Bearer-Token",
-      bearerTokensDescription: "Ressourcengebundene Dienstkonto-Token mit dem Scope metrics:read.",
+      bearerTokensDescription: "API Keys mit dem Scope metrics:read.",
       newToken: "Neues Token",
       storeTokenNow:
         "Dieses Bearer-Token jetzt sicher speichern. Es wird nur einmal angezeigt und kann später nicht wiederhergestellt werden.",
