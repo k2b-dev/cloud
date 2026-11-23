@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../../../packages/ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../packages/ui/test/browser";
 import { measureV2Layout } from "../../../../packages/ui/test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../../../packages/ui/test/ssr-test-plugin";
 
@@ -139,6 +139,7 @@ describe("v2 demo screens keep the mockup", () => {
               await document.fonts.load('16px "tabler-icons"', "");
               await document.fonts.ready;
             });
+            await settled(page);
             const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
             expect(layout.problems).toEqual([]);
             const boxes = await page.evaluate((parts) => {
