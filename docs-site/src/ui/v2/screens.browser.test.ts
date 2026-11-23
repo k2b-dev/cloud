@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
@@ -19,7 +19,8 @@ const { MailScreen } = await import("./mail-screen");
 const { RecordScreen, DeliveriesScreen } = await import("./record-screen");
 const { default: TableScreen } = await import("./TableScreen.island");
 const css = readFileSync(resolve(import.meta.dir, "../../../../packages/ui/src/v2/v2.css"), "utf8");
-const plex = resolve(import.meta.dir, "../../../../packages/ui/dist/plex.css");
+const dist = resolve(import.meta.dir, "../../../../packages/ui/dist");
+const origin = "https://v2-screens.test";
 const drawings = readFileSync(resolve(import.meta.dir, "../cloud-ui.css"), "utf8").replace(/@import[^;]+;/g, "");
 const frame = `html, body { margin: 0; height: 100%; }
 .shell { position: fixed; inset: 8px 8px 8px 56px; display: flex; }
@@ -127,22 +128,32 @@ afterAll(async () => {
 
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
-/** Opens one screen in the shell frame, in a file next to the built fonts, so it wraps its text in IBM Plex like the mockup. */
+/**
+ * Opens one screen in the shell frame, with the built fonts, so it wraps its text in IBM Plex like the mockup. The page
+ * and the fonts come through `page.route` from this process, under an origin of their own: the browser may run in
+ * another container (CI's WebKit through `TEST_BROWSER_ENDPOINT`), which sees none of this machine's files.
+ */
 const show = async (name: keyof typeof screens, width: number, scale = 1): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 }, deviceScaleFactor: scale });
   const html = renderToString(() => createComponent(screens[name].render, {}));
-  const file = resolve(root, `${name}.html`);
-  writeFileSync(
-    file,
-    `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="file://${plex}">` +
-      `<link rel="stylesheet" href="file://${plex.replace(/plex\.css$/, "tabler.css")}">` +
-      `<style>${css}</style><style>${drawings}</style><style>${frame}</style></head>` +
-      `<body class="k2-ui" style="${screens[name].app}"><div class="shell">${html}</div></body></html>`,
-  );
-  await page.goto(`file://${file}`);
+  const markup =
+    `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="${origin}/plex.css">` +
+    `<link rel="stylesheet" href="${origin}/tabler.css">` +
+    `<style>${css}</style><style>${drawings}</style><style>${frame}</style></head>` +
+    `<body class="k2-ui" style="${screens[name].app}"><div class="shell">${html}</div></body></html>`;
+  await page.route(`${origin}/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === `/${name}.html`) return route.fulfill({ contentType: "text/html", body: markup });
+    // the stylesheets and the fonts they name, from the built package; nothing outside it
+    const file = resolve(dist, `.${path}`);
+    if (!file.startsWith(`${dist}/`)) return route.fulfill({ status: 404 });
+    return route.fulfill({ path: file });
+  });
+  await page.goto(`${origin}/${name}.html`);
   await page.evaluate(async () => {
     await Promise.all([400, 500, 600].map((weight) => document.fonts.load(`${weight} 13px "IBM Plex Sans"`)));
-    await document.fonts.load('16px "tabler-icons"', "");
+    // one glyph of the icon font (U+EA0F), so the font itself loads
+    await document.fonts.load('16px "tabler-icons"', "");
     await document.fonts.ready;
   });
   await settled(page);
@@ -154,25 +165,8 @@ describe("v2 demo screens keep the mockup", () => {
     for (const width of Object.keys(mockup[name]).map(Number))
       for (const scale of [1, 2])
         test(`${name} at ${width} px, DPR ${scale}`, async () => {
-          const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 }, deviceScaleFactor: scale });
+          const page = await show(name, width, scale);
           try {
-            const html = renderToString(() => createComponent(screens[name].render, {}));
-            // A file next to the built fonts, so the screen wraps its text in IBM Plex like the mockup.
-            const file = resolve(root, `${name}.html`);
-            writeFileSync(
-              file,
-              `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="file://${plex}">` +
-                `<link rel="stylesheet" href="file://${plex.replace(/plex\.css$/, "tabler.css")}">` +
-                `<style>${css}</style><style>${drawings}</style><style>${frame}</style></head>` +
-                `<body class="k2-ui" style="${screens[name].app}"><div class="shell">${html}</div></body></html>`,
-            );
-            await page.goto(`file://${file}`);
-            await page.evaluate(async () => {
-              await Promise.all([400, 500, 600].map((weight) => document.fonts.load(`${weight} 13px "IBM Plex Sans"`)));
-              await document.fonts.load('16px "tabler-icons"', "");
-              await document.fonts.ready;
-            });
-            await settled(page);
             const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
             expect(layout.problems).toEqual([]);
             const boxes = await page.evaluate((parts) => {

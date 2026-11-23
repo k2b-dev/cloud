@@ -372,6 +372,14 @@ own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
 targets, such as the OAuth consent test, run with `--integration` instead.
 `--filter` narrows the run to a package or a file name.
 
+In CI, WebKit runs in the Playwright container, and the tests connect to it
+through `TEST_BROWSER_ENDPOINT`. That browser sees none of the files of the
+machine that runs the test. Give it a page with `page.setContent()`, or serve
+pages, stylesheets, and fonts through `page.route()` from the test process;
+never open a `file://` address or another path of the test machine. A change
+to a package, a PWA, or `docs-site/src` with browser tests starts the WebKit
+job.
+
 When a test times out, `bun test` stops every process the test file started,
 including the shared browser. `launchBrowser()` starts a new browser for the
 next `newPage()` or `newContext()`, so one hung test fails alone. Closing a page
