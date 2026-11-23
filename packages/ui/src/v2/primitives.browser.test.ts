@@ -7,6 +7,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { personColor } from "../surfaces/person-color";
 import { measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
@@ -47,16 +48,28 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
 
 const TEST_TIMEOUT = 30_000;
 
-// Known findings, each with its issue; the list shrinks when the issue is fixed and never names a whole primitive.
-// #4076: a chip in a cell of a sized table is cut by 2 px.
-const chipsInCells = ["Gültig", "Wartet"].map(
-  (label) => `span.k2-cell-line "${label}" hides 2 px of its text above or below; every line shows whole`,
-);
-const known: Partial<Record<string, string[]>> = {
-  // #4073: on the phone the selecting status row has no room for its clear action.
-  "grid 390": ['control button.k2-btn cuts its label "Auswahl aufheben"; it needs the room of its whole label'],
-  "table 1440": chipsInCells,
-  "table 390": chipsInCells,
+/**
+ * Narrows the frame in a wide window until the element `selector` is `width` px wide, so a primitive meets a narrow
+ * column, not a narrow window. The sidebar gives way down to its minimum on the way, so it measures again until the
+ * width is reached.
+ */
+const narrowColumn = async (page: Page, selector: string, width: number) => {
+  await page.evaluate(
+    ([target, wanted]) => {
+      const frame = document.querySelector<HTMLElement>(".frame")!;
+      const element = document.querySelector(target)!;
+      frame.style.right = "auto";
+      frame.style.boxSizing = "border-box";
+      frame.style.width = `${frame.getBoundingClientRect().width}px`;
+      for (let step = 0; step < 6; step++) {
+        const short = element.getBoundingClientRect().width - wanted;
+        if (Math.abs(short) < 0.5) break;
+        frame.style.width = `${frame.getBoundingClientRect().width - short}px`;
+      }
+    },
+    [selector, width] as const,
+  );
+  await settled(page);
 };
 
 describe("v2 primitives keep the layout rules", () => {
@@ -69,7 +82,7 @@ describe("v2 primitives keep the layout rules", () => {
             const page = await open(name, { width, scale });
             try {
               const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
-              expect(layout.problems).toEqual(known[`${name} ${width}`] ?? []);
+              expect(layout.problems).toEqual([]);
               expect(layout.measured.lines).toBeGreaterThan(0);
               expect(layout.measured.texts).toBeGreaterThan(10);
               if (width === 1440) expect(layout.grips.length).toBeGreaterThan(0);
@@ -147,7 +160,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     test(
       `${width} px: bars and rows take their height from their place, text starts on the edge`,
       async () => {
-        const page = await open("layout", { width });
+        // on the phone the list is the page while nothing is open
+        const page = await open(width < textEdge.phoneBelow ? "list" : "layout", { width });
         try {
           const numbers = await page.evaluate(() => {
             const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
@@ -162,8 +176,14 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             return {
               head: box('.k2-ws-main > [data-slot="head"] > .k2-bar').height,
               status: box('[data-k2-part="StatusRow"]').height,
-              bar: box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height,
+              // the plain bar of the reader (there only while something is open)
+              bar: document.querySelector(".k2-pane[data-detail]") ? box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height : 0,
               rows: rows.map((row) => row.getBoundingClientRect().height),
+              // the long title of the row of three lines stays on its line and ends in "…"
+              title: (() => {
+                const title = rows[2]!.querySelector<HTMLElement>(".k2-row-title")!;
+                return [getComputedStyle(title).textOverflow, title.scrollWidth > title.clientWidth];
+              })(),
               iconText: textLeft(".k2-list > .k2-row .k2-row-title") - list.left,
               // flow text in a band of the reader on a wide screen; the lead of the status row on the phone
               bandText:
@@ -182,8 +202,43 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             expect(numbers.bar).toBe(heights.bar);
             expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
+          expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  for (const width of [1440, 390])
+    test(
+      `${width} px: an open detail stands beside its list on a wide screen; on the phone it is the page, with the way back`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          const shown = await page.evaluate(() => {
+            const seen = (selector: string) => {
+              const element = document.querySelector(selector);
+              return !!element && element.getBoundingClientRect().width > 0;
+            };
+            const detail = document.querySelector(".k2-pane[data-detail]")!.getBoundingClientRect();
+            const workspace = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
+            const back = document.querySelector(".k2-pane-back");
+            return {
+              list: seen('.k2-pane[aria-label="Breite der Liste"]'),
+              detail: Math.round(detail.width - workspace.width),
+              back: back ? Math.round(back.getBoundingClientRect().height) : 0,
+            };
+          });
+          if (width >= textEdge.phoneBelow) expect([shown.list, shown.back]).toEqual([true, 0]);
+          else {
+            // the detail takes the whole workspace; its way back is a bar of 44 px above its head
+            expect(shown).toEqual({ list: false, detail: 0, back: heights.tabs });
+            expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
+          }
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
         } finally {
           await page.close();
         }
@@ -229,13 +284,20 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           const cells = [...document.querySelectorAll(".k2-table tbody tr")].map((row) => row.getBoundingClientRect().height);
           const cut = document.querySelector<HTMLElement>(".k2-table tbody td .k2-cell-line:not([data-wrap])")!;
           const wrap = document.querySelector<HTMLElement>(".k2-table tbody td .k2-cell-line[data-wrap]")!;
+          // #4076: a chip is taller than the cut line it stands in, and still shows whole: the line cuts sideways only
+          const chip = document.querySelector(".k2-table tbody td .k2-cell-line .k2-chip")!.getBoundingClientRect();
+          const line = document.querySelector(".k2-table tbody td .k2-cell-line:has(.k2-chip)")!;
+          const shown = line.getBoundingClientRect();
+          const clipsBelow = getComputedStyle(line).overflowY !== "visible";
           return {
             heads,
             cells,
             cut: cut.scrollWidth > cut.clientWidth,
             wrapLines: Math.round(wrap.getBoundingClientRect().height / 20),
+            chip: [chip.height > shown.height, clipsBelow ? chip.top >= shown.top && chip.bottom <= shown.bottom : true],
           };
         });
+        expect(table.chip).toEqual([true, true]);
         expect(table.heads.slice(0, -1)).toEqual([260, 180, 300, 140]);
         expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
         expect(table.cut).toBe(true);
@@ -248,9 +310,225 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  test(
+    "line 2 of a row reaches its end, a person has the colour of their name, a notice's sign stands beside its title",
+    async () => {
+      const page = await open("layout");
+      try {
+        const found = await page.evaluate(() => {
+          const row = [...document.querySelectorAll(".k2-row[data-lines='3']")].find((each) => each.querySelector(".k2-row-marks"))!;
+          const right = (selector: string) => row.querySelector(selector)!.getBoundingClientRect().right;
+          const avatar = document.querySelector('.k2-av[aria-label="Ada Renz"]')!;
+          const centre = (element: Element) => {
+            const box = element.getBoundingClientRect();
+            return box.top + box.height / 2;
+          };
+          return {
+            line2: right(".k2-row-l2") - right(".k2-row-time"),
+            avatar: getComputedStyle(avatar).backgroundColor,
+            notices: [...document.querySelectorAll(".k2-notice[data-title]")].map(
+              (notice) => centre(notice.querySelector(":scope > .k2-icon")!) - centre(notice.querySelector(".k2-notice-title")!),
+            ),
+          };
+        });
+        // line 2 is as wide as the row's text area: its right edge is the right edge of the time above it
+        expect(found.line2).toBe(0);
+        const hex = personColor("Ada Renz");
+        const rgb = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
+        expect(found.avatar).toBe(`rgb(${rgb.join(", ")})`);
+        // with and without deeds at the end, the sign stands on the title's line
+        expect(found.notices.length).toBe(2);
+        for (const offset of found.notices) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a column of 400 px in a wide window takes the narrow form: a table becomes rows, fields and steps stand one under the other",
+    async () => {
+      const narrow = (page: Page, pane: string) => narrowColumn(page, pane, 400);
+      const messages = await open("messages");
+      const structure = await open("structure");
+      try {
+        // wide: the table is a table with its column grip, the fields of a row stand side by side
+        const wide = await messages.evaluate(() => ({
+          table: getComputedStyle(document.querySelector(".k2-table-scroll")!).display,
+          row: new Set([...document.querySelectorAll(".k2-frow > .k2-field")].map((field) => field.getBoundingClientRect().top)).size,
+        }));
+        expect(wide).toEqual({ table: "block", row: 1 });
+        await narrow(messages, '.k2-pane[aria-label="Auswahl"]');
+        const narrowed = await messages.evaluate(() => ({
+          pane: Math.round(document.querySelector('.k2-pane[aria-label="Auswahl"]')!.getBoundingClientRect().width),
+          table: getComputedStyle(document.querySelector(".k2-table-scroll")!).display,
+          phone: document.querySelectorAll(".k2-table-phone .k2-row").length,
+          grips: [...document.querySelectorAll(".k2-cgrip")].filter((grip) => grip.getBoundingClientRect().width > 0).length,
+          row: new Set([...document.querySelectorAll(".k2-frow > .k2-field")].map((field) => field.getBoundingClientRect().top)).size,
+          rowHeight: Math.round(document.querySelector(".k2-band .k2-row")!.getBoundingClientRect().height),
+        }));
+        // the row of a message keeps its desktop height: touch sizes follow the window, not the column
+        expect(narrowed).toEqual({ pane: 400, table: "none", phone: 2, grips: 0, row: 2, rowHeight: narrowed.rowHeight });
+        expect(narrowed.rowHeight).toBeLessThan(60);
+        expect((await measureV2Layout(messages, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        await narrow(structure, ".k2-pane:has(.k2-steps)");
+        const steps = await structure.evaluate(() => {
+          const items = [...document.querySelectorAll(".k2-step")].map((step) => step.getBoundingClientRect());
+          return {
+            lefts: new Set(items.map((box) => Math.round(box.left))).size,
+            tops: new Set(items.map((box) => Math.round(box.top))).size,
+          };
+        });
+        expect(steps).toEqual({ lefts: 1, tops: 3 });
+      } finally {
+        await messages.close();
+        await structure.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  for (const column of [360, 480, 640])
+    test(
+      `the bar of a selection in a column of ${column} px: nothing is cut, words give way to symbols first`,
+      async () => {
+        const page = await open("messages");
+        try {
+          // the window stays wide; only the column narrows (the frame is cut until the bar is `column` wide), so the
+          // bar measures its column, not the window
+          await narrowColumn(page, '[data-k2-part="StatusRow"]', column);
+          const bar = await page.evaluate(() => {
+            const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+            const edge = Number.parseFloat(getComputedStyle(row).paddingRight);
+            const right = row.getBoundingClientRect().right - edge;
+            return {
+              width: Math.round(row.getBoundingClientRect().width),
+              buttons: [...row.querySelectorAll(".k2-btn")].map((button) => ({
+                name: button.textContent?.trim(),
+                inside: button.getBoundingClientRect().right <= right + 0.5,
+                whole: button.scrollWidth <= button.clientWidth,
+                words: button.querySelector(".k2-btn-label")!.getBoundingClientRect().width > 1,
+                title: button.getAttribute("title"),
+              })),
+            };
+          });
+          expect(bar.width).toBe(column);
+          for (const button of bar.buttons) expect([button.name, button.inside, button.whole]).toEqual([button.name, true, true]);
+          // 640: all words; 480: the actions are symbols, the way out keeps its words; 360: the way out is its × too
+          expect(bar.buttons.map((button) => button.words)).toEqual(
+            column >= 600 ? [true, true, true, true] : column >= 400 ? [false, false, false, true] : [false, false, false, false],
+          );
+          // every button keeps its name, and a hint under the pointer for when only its symbol shows
+          expect(await page.getByRole("button", { name: "Archivieren" }).count()).toBe(1);
+          expect(await page.getByRole("button", { name: "Auswahl aufheben" }).count()).toBe(1);
+          for (const button of bar.buttons) expect(button.title).toBe(button.name);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // #4073: on the phone the bar of a selection keeps count, action and way out within its text edge
+  test(
+    "390 px: the bar of a selection in the large table keeps its text edge and cuts no label",
+    async () => {
+      const page = await open("grid", { width: 390 });
+      try {
+        const buttons = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const right = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
+          return [...row.querySelectorAll(".k2-btn")].map((button) => [
+            button.textContent?.trim(),
+            button.getBoundingClientRect().right <= right + 0.5,
+            button.scrollWidth <= button.clientWidth,
+          ]);
+        });
+        expect(buttons).toEqual([
+          ["Exportieren", true, true],
+          ["Auswahl aufheben", true, true],
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   for (const width of [1440, 390])
     test(
-      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v16), none after the last`,
+      `at ${width}: a reply box stands on the text edge, a required field says so, a choice shows its question, a phone row of a table needs no lead, no column grip on the phone`,
+      async () => {
+        const page = await open("messages", { width });
+        try {
+          const edge = width < textEdge.phoneBelow ? textEdge.phone : textEdge.wide;
+          const found = await page.evaluate(() => {
+            const pane = document.querySelector('.k2-pane[aria-label="Auswahl"]')!.getBoundingClientRect();
+            const left = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().left - pane.left;
+            const phoneRow = document.querySelector(".k2-table-phone .k2-row");
+            return {
+              reply: left(".k2-band > .k2-input[data-multiline]"),
+              phoneText: phoneRow && getComputedStyle(phoneRow).display !== "none" ? left(".k2-table-phone .k2-row-title") : null,
+              grips: [...document.querySelectorAll(".k2-cgrip")].filter((grip) => grip.getBoundingClientRect().width > 0).length,
+            };
+          });
+          expect(found.reply).toBe(edge);
+          if (width < textEdge.phoneBelow) {
+            expect(found.phoneText).toBe(edge);
+            expect(found.grips).toBe(0);
+          } else expect(found.grips).toBe(1);
+          expect(await page.getByRole("textbox", { name: "Betreff" }).getAttribute("required")).not.toBeNull();
+          expect(await page.getByRole("group", { name: "Antwort per" }).getByRole("radio").count()).toBe(2);
+          expect(await page.getByText("Antwort per", { exact: true }).isVisible()).toBe(true);
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  test(
+    "two messages in a row: one line between their bands, none inside a band, the tiles framed on their own",
+    async () => {
+      const page = await open("messages");
+      try {
+        const lines = await page.evaluate(() => {
+          const bands = [...document.querySelectorAll(".k2-band")];
+          // a structural line: a box with a top or bottom border that is not round (tiles and buttons are round)
+          const inside = bands.flatMap((band) =>
+            [...band.querySelectorAll("*")]
+              .filter((element) => {
+                const style = getComputedStyle(element);
+                const line = Number.parseFloat(style.borderTopWidth) > 0 || Number.parseFloat(style.borderBottomWidth) > 0;
+                return line && Number.parseFloat(style.borderTopLeftRadius) === 0;
+              })
+              .map((element) => element.className),
+          );
+          const [first, second] = bands.map((band) => band.getBoundingClientRect());
+          const own = bands.map((band) => [
+            Number.parseFloat(getComputedStyle(band).borderTopWidth),
+            Number.parseFloat(getComputedStyle(band).borderBottomWidth),
+          ]);
+          return { inside, touching: second!.top - first!.bottom, own, tiles: second ? bands[1]!.querySelectorAll(".k2-tile").length : 0 };
+        });
+        expect(lines.inside).toEqual([]);
+        // the bands touch; each owns its bottom line only, so between them there is exactly one
+        expect(lines.touching).toBe(0);
+        for (const own of lines.own) expect(own).toEqual([0, 1]);
+        expect(lines.tiles).toBe(1);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  for (const width of [1440, 390])
+    test(
+      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v17), none after the last`,
       async () => {
         const page = await open("structure", { width });
         try {
@@ -259,20 +537,28 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               const line = getComputedStyle(step, "::before");
               const box = step.getBoundingClientRect();
               const px = (value: string) => Math.round(Number.parseFloat(value));
+              const next = step.nextElementSibling?.getBoundingClientRect();
               return {
                 shown: line.display !== "none",
                 line: [px(line.left), px(line.top), px(line.width), px(line.height)],
                 step: [Math.round(box.width), Math.round(box.height)] as const,
+                // the space to the next step: 12 px on the phone (mockup v17)
+                gap: next ? Math.round(next.top - box.bottom) : null,
+                colour: line.backgroundColor,
               };
             }),
           );
           expect(steps.at(-1)!.shown).toBe(false);
-          for (const { shown, line, step } of steps.slice(0, -1)) {
+          for (const { shown, line, step, gap, colour } of steps.slice(0, -1)) {
             expect(shown).toBe(true);
             // desktop: from the circle (20 px) to the end of the step, 9 px down; phone: 9 px in, from below the circle
-            // (20 px) 8 px into the next step
+            // (20 px) across the 12 px between the steps, in n400
             if (width >= textEdge.phoneBelow) expect(line).toEqual([20, 9, step[0] - 20, 1]);
-            else expect(line).toEqual([9, 20, 1, step[1] - 20 + 8]);
+            else {
+              expect(gap).toBe(12);
+              expect(line).toEqual([9, 20, 1, step[1] - 20 + 12]);
+              expect(colour).toBe("rgb(161, 161, 170)");
+            }
           }
         } finally {
           await page.close();

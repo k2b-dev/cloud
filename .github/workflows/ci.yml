@@ -97,7 +97,8 @@ jobs:
           shared='^(packages/cloud/|packages/core/|packages/gateway/|packages/ssr/|packages/editor/|packages/stdlib/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|actions/|nats-ci\.conf|pull-images\.sh|retry\.sh|start-playwright\.sh|process-crashes\.sh|poppler\.sh|mirror-images\.(txt|sh)))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
           # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
-          browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
+          # The documentation's browser tests live in docs-site/src.
+          browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' 'docs-site/src/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
           # An application's production bundle depends on its package, the shared inputs, and the
           # non-application packages: @k2b/ui, and packages/cloud-cli, whose install script core bundles.
           bundles=()

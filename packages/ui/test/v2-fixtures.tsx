@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import {
   Avatar,
   Band,
@@ -65,8 +65,11 @@ const shell = (children: JSX.Element, head?: JSX.Element) => (
   </Workspace>
 );
 
-/** Workspace, Pane, Pane.Split, Bar, Band, Cells, Tiles, Row, List, Notice, Inline, Chip, Avatar, Icon, Text, Prose. */
-export const LayoutFixture = () =>
+/**
+ * Workspace, Pane, Pane.Split, Bar, Band, Cells, Tiles, Row, List, Notice, Inline, Chip, Avatar, Icon, Text, Prose.
+ * `open: false` is the list while nothing is open: no detail, as on the phone's first page.
+ */
+export const LayoutFixture = (props: { open?: boolean }) =>
   shell(
     <Pane.Split>
       <Pane
@@ -82,8 +85,8 @@ export const LayoutFixture = () =>
           <Row
             unread
             lines={[
-              "Holzwerk Brandt",
-              "Angebot Eichenplatten – Liefertermin",
+              "Holzwerk Brandt GmbH & Co. KG, Plattenzuschnitt und Kantenbearbeitung",
+              "Angebot Eichenplatten – Liefertermin, dazu die Frage, ob die Kanten geölt kommen",
               "Guten Tag Frau Solberg, die Platten können wir in KW 49 liefern …",
             ]}
             meta="3"
@@ -107,61 +110,67 @@ export const LayoutFixture = () =>
           />
         </List>
       </Pane>
-      <Pane
-        detail
-        label="Nachricht"
-        head={
-          <Bar
-            start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
-            end={
-              <>
-                <Button icon="check">Erledigt</Button>
-                <Button variant="ghost" icon="x" label="Schließen" />
-              </>
-            }
-          />
-        }
-      >
-        <Bar
-          start={
-            <Inline>
-              <Text type="meta">3 Nachrichten</Text>
-              <Chip status="warn">Wartet auf Antwort</Chip>
-              <Chip icon="plus" onClick={() => undefined}>
-                Tag
-              </Chip>
-            </Inline>
+      <Show when={props.open !== false}>
+        <Pane
+          detail
+          back={{ label: "Posteingang", href: "#posteingang" }}
+          label="Nachricht"
+          head={
+            <Bar
+              start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
+              end={
+                <>
+                  <Button icon="check">Erledigt</Button>
+                  <Button variant="ghost" icon="x" label="Schließen" />
+                </>
+              }
+            />
           }
-          end={<Avatar name="Ada Renz" color="#be123c" />}
-        />
-        <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
-          Brandt liefert 14 Eichenplatten in KW 49.
-        </Notice>
-        <Band>
-          <Row
-            avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
-            strong
-            lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
-            end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+        >
+          <Bar
+            start={
+              <Inline>
+                <Text type="meta">3 Nachrichten</Text>
+                <Chip status="warn">Wartet auf Antwort</Chip>
+                <Chip icon="plus" onClick={() => undefined}>
+                  Tag
+                </Chip>
+              </Inline>
+            }
+            end={<Avatar name="Ada Renz" />}
           />
-          <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
-          <Canvas label="Zitat der vorigen Nachricht">
-            <span>Wann können Sie liefern?</span>
-          </Canvas>
-          <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
-        </Band>
-        <Band tone="note">
-          <Text type="body" weight="strong">
-            Die erste Abrechnung kommt am 15. Dez.
-          </Text>
-          <Text>38 von 53 Artikeln sind verkauft.</Text>
-        </Band>
-        <Cells>
-          <Cells.Cell icon="clock" label="Offen" value={12} />
-          <Cells.Cell icon="check" label="Heute erledigt" value={31} href="#erledigt" />
-          <Cells.Cell icon="currency-euro" color="#8e1b6f" label="Geld" value={<Chip amount="out">532,30 €</Chip>} meta="1 überfällig" />
-        </Cells>
-      </Pane>
+          <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
+            Brandt liefert 14 Eichenplatten in KW 49.
+          </Notice>
+          <Band>
+            <Row
+              avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
+              strong
+              lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
+              end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+            />
+            <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
+            <Canvas label="Zitat der vorigen Nachricht">
+              <span>Wann können Sie liefern?</span>
+            </Canvas>
+            <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
+          </Band>
+          <Band tone="note">
+            <Text type="body" weight="strong">
+              Die erste Abrechnung kommt am 15. Dez.
+            </Text>
+            <Text>38 von 53 Artikeln sind verkauft.</Text>
+          </Band>
+          <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
+            Brandt war bei der letzten Lieferung zwei Tage zu spät.
+          </Notice>
+          <Cells>
+            <Cells.Cell icon="clock" label="Offen" value={12} />
+            <Cells.Cell icon="check" label="Heute erledigt" value={31} href="#erledigt" />
+            <Cells.Cell icon="currency-euro" color="#8e1b6f" label="Geld" value={<Chip amount="out">532,30 €</Chip>} meta="1 überfällig" />
+          </Cells>
+        </Pane>
+      </Show>
     </Pane.Split>,
     <Bar
       start={
@@ -485,10 +494,86 @@ export const ControlsFixture = () =>
     </Pane>,
   );
 
+/**
+ * A thread of two messages, each a band of its parts (who, the text, the attachments), and a column whose status row
+ * is the bar of a selection, for widths of the column from 360 to 640 px.
+ */
+const MessagesFixture = () => (
+  <Workspace
+    sidebarLabel="Breite der Seitenleiste"
+    sidebar={<Nav title="Mail" icon="mail" groups={[{ items: [{ label: "Posteingang", icon: "inbox", count: 7, current: true }] }]} />}
+  >
+    <Pane
+      label="Auswahl"
+      status={
+        <StatusRow
+          lead="12 Nachrichten"
+          selection={{
+            count: "10 ausgewählt",
+            actions: [
+              { label: "Erledigt", icon: "check" },
+              { label: "Archivieren", icon: "archive" },
+              { label: "Löschen", icon: "trash" },
+            ],
+            clear: { label: "Auswahl aufheben" },
+          }}
+        />
+      }
+    >
+      <Band>
+        <Row
+          avatar={{ name: "Holzwerk Brandt" }}
+          strong
+          lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
+          end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+        />
+        <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
+      </Band>
+      <Band>
+        <Row avatar={{ name: "Mira Solberg" }} strong lines={["Mira Solberg", "an Holzwerk Brandt · gestern"]} />
+        <Prose markdown="Bitte schicken Sie uns das Angebot." />
+        <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} />
+      </Band>
+      <Band>
+        <Input multiline label="Antwort an Mira Solberg" placeholder="Antwort schreiben …" />
+      </Band>
+      <Section title="Rückfrage">
+        <Field name="subject" label="Betreff" required>
+          <Input placeholder="Worum geht es?" />
+        </Field>
+        <Field.Row>
+          <Field name="due" label="Bis wann">
+            <DateInput value="15.12.2026" />
+          </Field>
+          <Field name="kind" label="Art">
+            <Select options={["Frage", "Reklamation"]} value="Frage" />
+          </Field>
+        </Field.Row>
+        <Choice name="channel" label="Antwort per" options={["E-Mail", "Telefon"]} value="E-Mail" />
+      </Section>
+      <Table
+        label="Aufträge"
+        rowKey={(order) => order.id}
+        columns={[
+          { title: "Auftrag", width: { min: 160, default: 240 }, cell: (order) => order.name },
+          { title: "Betrag", width: { min: 80, default: 120 }, align: "end", cell: (order) => order.sum },
+        ]}
+        rows={[
+          { id: "AU-1", name: "Einbauschrank Flur", sum: "180,50 €" },
+          { id: "AU-2", name: "Treppe Haus am Hang", sum: "617,00 €" },
+        ]}
+        phone={(order) => ({ lines: [order.name, order.sum] })}
+      />
+    </Pane>
+  </Workspace>
+);
+
 export const fixtures = {
   layout: LayoutFixture,
+  list: () => <LayoutFixture open={false} />,
   structure: StructureFixture,
   table: TableFixture,
   grid: GridFixture,
   controls: ControlsFixture,
+  messages: MessagesFixture,
 } as const;

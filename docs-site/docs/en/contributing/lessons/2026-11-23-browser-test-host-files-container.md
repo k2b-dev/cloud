@@ -1,0 +1,6 @@
+### The v2 screen test loaded host files that CI's WebKit could not see
+
+- **What happened:** After #4059, `webkit (5)` failed on `main` and on every pull request in that shard: `docs-site/src/ui/v2/screens.browser.test.ts` failed for all screens with `goto: Error opening file /tmp/k2-v2-screens-…/mail.html: No such file or directory`. The pull request itself was green because its WebKit job did not run.
+- **Root cause:** The test wrote each page to a temporary folder and opened it, and the IBM Plex and Tabler fonts, through `file://`. In CI, WebKit runs in the Playwright container and the test connects to it through `TEST_BROWSER_ENDPOINT`, so the browser does not see the runner's files. Chromium runs in the test process and saw them. The `webkit` filter in `.github/workflows/ci.yml` looked for browser tests only under `packages/` and `pwas/`, so a change under `docs-site/src` never started the WebKit job.
+- **Error class:** A browser test hands the browser a path on the machine that runs the test, and passes only where browser and test share one file system.
+- **Guard:** The screen test serves its page and the fonts through `page.route` under an origin of its own, from the test process. The `webkit` filter includes `docs-site/src`, so a change to a documentation browser test runs WebKit through `TEST_BROWSER_ENDPOINT` as on `main`.

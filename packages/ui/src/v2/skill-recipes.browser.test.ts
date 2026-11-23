@@ -31,14 +31,6 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } .frame { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-// Known findings, each with its issue; the list shrinks when the issue is fixed.
-const known: Partial<Record<string, string[]>> = {
-  // #4076: a chip in a cell of a sized table is cut by 2 px.
-  "table.tsx 1440": ["Überfällig", "Offen", "Offen"].map(
-    (label) => `span.k2-cell-line "${label}" hides 2 px of its text above or below; every line shows whole`,
-  ),
-};
-
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
@@ -63,7 +55,7 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
           const outline = await describeV2Page(page, ".frame");
           expect(outline).not.toContain("Problems");
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
-          expect(layout.problems).toEqual(known[`${name} ${width}`] ?? []);
+          expect(layout.problems).toEqual([]);
           expect(layout.measured.texts).toBeGreaterThan(5);
         } finally {
           await page.close();

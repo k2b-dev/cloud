@@ -513,7 +513,7 @@ describe("measureV2Layout", () => {
   );
 
   test(
-    "three-line row with a long title at 390 px: the wrapped title is the one known finding (#4075, lane C)",
+    "green at 390 px: v2's three-line row cuts a long title with …",
     async () => {
       const page = await open(
         columns(
@@ -522,10 +522,7 @@ describe("measureV2Layout", () => {
         { width: 390 },
       );
       try {
-        // Until #4075 is fixed the title wraps; afterwards v2 cuts it with "…" and this list is empty.
-        expect((await measureV2Layout(page)).cut).toEqual([
-          expect.stringMatching(/^span\.k2-row-l1 "Architekturbüro Winter und Partner, Hamb" wraps to \d lines/),
-        ]);
+        expect((await measureV2Layout(page)).cut).toEqual([]);
       } finally {
         await page.close();
       }

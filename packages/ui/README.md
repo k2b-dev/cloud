@@ -122,6 +122,12 @@ Primitives own spacing, lines, and type. They take no `class`, `style`,
 drawing belongs in `Canvas`. See
 [UI v2 rules](https://cloud.k2b.dev/en/ui/v2/rules).
 
+What a list has open belongs in the address. Render `Pane detail` only while
+the address names an entry, and give its `back` an `href` to the list without
+that entry, so reload, back, and forward show the same page. On the phone the
+detail is the page and `back` its way to the list. A detail that closes in
+place returns the focus to the row that opened it.
+
 ### Agent skill
 
 The package ships the `k2b-ui` agent skill in `skills/k2b-ui`, in the same

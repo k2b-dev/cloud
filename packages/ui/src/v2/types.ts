@@ -24,7 +24,12 @@ export type TwoActions = readonly [Action] | readonly [Action, Action];
 export type Status = "ok" | "warn" | "bad";
 
 /** A person or an organisation shown as initials on a colour. */
-export type Person = { name: string; initials?: string; color?: string };
+export type Person = {
+  name: string;
+  initials?: string;
+  /** The colour behind the initials; without it the fixed colour of the name, the same everywhere in Cloud. */
+  color?: string;
+};
 
 /** The initials of a name: the first letters of its first two words. */
 export const initialsOf = (person: Person): string =>
