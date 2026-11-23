@@ -54,7 +54,8 @@ const v2ValueImports = (sourceFile: ts.SourceFile): Map<string, string> => {
     const bindings = clause.namedBindings;
     if (bindings && ts.isNamespaceImport(bindings)) locals.set(bindings.name.text, "*");
     if (bindings && ts.isNamedImports(bindings))
-      for (const element of bindings.elements) if (!element.isTypeOnly) locals.set(element.name.text, (element.propertyName ?? element.name).text);
+      for (const element of bindings.elements)
+        if (!element.isTypeOnly) locals.set(element.name.text, (element.propertyName ?? element.name).text);
   }
   return locals;
 };
@@ -64,14 +65,17 @@ const v2ReExports = (sourceFile: ts.SourceFile): V2Exports | null => {
   const locals = v2ValueImports(sourceFile);
   const names = new Map<string, string>();
   let star = false;
-  const exported = (node: ts.Node) => ts.canHaveModifiers(node) && !!ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  const exported = (node: ts.Node) =>
+    ts.canHaveModifiers(node) && !!ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
   for (const statement of sourceFile.statements) {
     if (ts.isExportDeclaration(statement) && !statement.isTypeOnly) {
       const clause = statement.exportClause;
       if (isV2Specifier(statement.moduleSpecifier)) {
         if (!clause) star = true;
         else if (ts.isNamespaceExport(clause)) names.set(clause.name.text, "*");
-        else for (const element of clause.elements) if (!element.isTypeOnly) names.set(element.name.text, (element.propertyName ?? element.name).text);
+        else
+          for (const element of clause.elements)
+            if (!element.isTypeOnly) names.set(element.name.text, (element.propertyName ?? element.name).text);
       } else if (!statement.moduleSpecifier && clause && ts.isNamedExports(clause)) {
         for (const element of clause.elements) {
           const v2Name = locals.get((element.propertyName ?? element.name).text);
@@ -117,7 +121,8 @@ const bindingsOf = (file: string, sourceFile: ts.SourceFile, readModule: (path: 
     if (specifier === "solid-js" || specifier === "solid-js/web") {
       const bindings = clause?.namedBindings;
       if (bindings && ts.isNamedImports(bindings))
-        for (const element of bindings.elements) if (CONTROL_FLOW.has((element.propertyName ?? element.name).text)) control.add(element.name.text);
+        for (const element of bindings.elements)
+          if (CONTROL_FLOW.has((element.propertyName ?? element.name).text)) control.add(element.name.text);
       continue;
     }
     let offered: V2Exports | null = null;
@@ -145,11 +150,13 @@ const bindingsOf = (file: string, sourceFile: ts.SourceFile, readModule: (path: 
       members.set(bindings.name.text, offered);
     }
     if (bindings && ts.isNamedImports(bindings))
-      for (const element of bindings.elements) if (!element.isTypeOnly) take(element.name.text, (element.propertyName ?? element.name).text);
+      for (const element of bindings.elements)
+        if (!element.isTypeOnly) take(element.name.text, (element.propertyName ?? element.name).text);
   }
   // await import("@k2b/ui/v2"), also destructured: const { Canvas } = await import(…)
   const visit = (node: ts.Node) => {
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && isV2Specifier(node.arguments[0])) usesV2 = true;
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && isV2Specifier(node.arguments[0]))
+      usesV2 = true;
     if (ts.isVariableDeclaration(node) && node.initializer) {
       let value: ts.Expression = node.initializer;
       while (ts.isAwaitExpression(value) || ts.isParenthesizedExpression(value)) value = value.expression;
@@ -158,7 +165,10 @@ const bindingsOf = (file: string, sourceFile: ts.SourceFile, readModule: (path: 
         if (ts.isObjectBindingPattern(node.name))
           for (const element of node.name.elements)
             if (ts.isIdentifier(element.name))
-              names.set(element.name.text, (element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName : element.name).text);
+              names.set(
+                element.name.text,
+                (element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName : element.name).text,
+              );
       }
     }
     ts.forEachChild(node, visit);
@@ -213,12 +223,17 @@ export const layoutInV2Source = (file: string, source: string, readModule: (path
       if (ts.isJsxAttribute(attribute)) {
         const name = attributeName(attribute.name);
         const written = attribute.name.getText(sourceFile);
-        if (LAYOUT_ATTRIBUTES.has(name)) hits.push({ line: lineOf(attribute), message: `${written} on ${at} in a v2 screen; ${replacement}` });
+        if (LAYOUT_ATTRIBUTES.has(name))
+          hits.push({ line: lineOf(attribute), message: `${written} on ${at} in a v2 screen; ${replacement}` });
         if (name === "innerHTML" && plain(tag))
           hits.push({ line: lineOf(attribute), message: `${written} on ${at} in a v2 screen brings its own markup and styles; use Prose` });
         if (name === "ref" && attribute.initializer && ts.isJsxExpression(attribute.initializer)) {
           const callback = attribute.initializer.expression;
-          if (callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) && styling.test(callback.body.getText(sourceFile)))
+          if (
+            callback &&
+            (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+            styling.test(callback.body.getText(sourceFile))
+          )
             hits.push({ line: lineOf(attribute), message: `the ref of ${at} styles the element in a v2 screen; ${replacement}` });
         }
         continue;
@@ -226,8 +241,10 @@ export const layoutInV2Source = (file: string, source: string, readModule: (path
       if (ts.isObjectLiteralExpression(attribute.expression)) {
         // `{...{ class: "…" }}` is the same attribute written as a spread.
         for (const property of attribute.expression.properties) {
-          const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined;
-          if (name && LAYOUT_ATTRIBUTES.has(name)) hits.push({ line: lineOf(property), message: `${name} spread onto ${at} in a v2 screen; ${replacement}` });
+          const name =
+            property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined;
+          if (name && LAYOUT_ATTRIBUTES.has(name))
+            hits.push({ line: lineOf(property), message: `${name} spread onto ${at} in a v2 screen; ${replacement}` });
         }
       } else if (plain(tag)) {
         hits.push({ line: lineOf(attribute), message: `a spread onto ${at} in a v2 screen can carry class or style; ${replacement}` });
@@ -235,7 +252,12 @@ export const layoutInV2Source = (file: string, source: string, readModule: (path
     }
   };
   const visit = (node: ts.Node, context: Context, inCanvas: boolean) => {
-    if (!inCanvas && ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && /\.css(?:\?|$)/.test(node.moduleSpecifier.text))
+    if (
+      !inCanvas &&
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      /\.css(?:\?|$)/.test(node.moduleSpecifier.text)
+    )
       hits.push({ line: lineOf(node), message: `imports the stylesheet ${node.moduleSpecifier.text} into a v2 screen; ${replacement}` });
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const opening = ts.isJsxElement(node) ? node.openingElement : node;
@@ -278,7 +300,9 @@ export const v2InStylesheet = (source: string): Hit[] => {
     const at = lineAt(match.index! + match[1]!.length);
     // Name the class the rule targets: the last one in the selector.
     const k2Class = [...prelude.matchAll(/\.k2-[\w-]+/g)].at(-1);
-    const k2Attribute = [...prelude.matchAll(/\[\s*(data-k2-[\w-]+)/g)].map((attribute) => attribute[1]!).find((name) => name !== CANVAS_SCOPE);
+    const k2Attribute = [...prelude.matchAll(/\[\s*(data-k2-[\w-]+)/g)]
+      .map((attribute) => attribute[1]!)
+      .find((name) => name !== CANVAS_SCOPE);
     if (k2Class) hits.push({ line: at, message: `${prelude} restyles the v2 class ${k2Class[0]}; ${replacement}` });
     else if (k2Attribute) hits.push({ line: at, message: `${prelude} restyles the v2 attribute ${k2Attribute}; ${replacement}` });
   }
@@ -289,7 +313,8 @@ export const v2InStylesheet = (source: string): Hit[] => {
 
 export const rule: Rule = {
   name: "v2-app-layout-css",
-  description: "An app's v2 screens carry no layout CSS (class, style, spreads, stylesheets) outside Canvas, and no app stylesheet restyles v2",
+  description:
+    "An app's v2 screens carry no layout CSS (class, style, spreads, stylesheets) outside Canvas, and no app stylesheet restyles v2",
   run: async ({ workspaceRoot }) => {
     const findings: Finding[] = [];
     const texts = new Map<string, string | null>();
@@ -301,7 +326,8 @@ export const rule: Rule = {
       const root = join(workspaceRoot, "packages", app);
       for (const path of listFiles(root, /\.(?:ts|tsx)$/)) {
         if (isTestFile(path) || path.endsWith(".d.ts")) continue;
-        for (const hit of layoutInV2Source(path, cached(path) ?? "", cached)) findings.push({ file: relative(workspaceRoot, path), ...hit });
+        for (const hit of layoutInV2Source(path, cached(path) ?? "", cached))
+          findings.push({ file: relative(workspaceRoot, path), ...hit });
       }
       for (const path of listFiles(root, /\.css$/))
         for (const hit of v2InStylesheet(readFileSync(path, "utf8"))) findings.push({ file: relative(workspaceRoot, path), ...hit });

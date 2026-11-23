@@ -72,6 +72,8 @@ export type V2Layout = {
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
+  /** Pseudo-elements the helper could not measure without changing the page; each one is a problem, never a pass. */
+  pseudo: string[];
   /** How many hairlines and tinted bands were measured, so a test can tell an empty page from a clean one. */
   measured: { lines: number; bands: number; texts: number };
   /** Every problem as one readable line; empty when the page keeps the rules. */
@@ -96,12 +98,13 @@ type DomResult = {
   type: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
+  pseudo: string[];
   measured: V2Layout["measured"];
 };
 
 /** Runs in the page: closes over nothing. */
 function measureInPage(options: InPage): DomResult {
-  const empty: DomResult = { edge: [], double: [], type: [], grip: [], grips: [], measured: { lines: 0, bands: 0, texts: 0 } };
+  const empty: DomResult = { edge: [], double: [], type: [], grip: [], grips: [], pseudo: [], measured: { lines: 0, bands: 0, texts: 0 } };
   const root = document.querySelector(options.root);
   if (!root) return { ...empty, edge: [`no element matches ${options.root}`] };
   const round = (value: number) => Math.round(value * 100) / 100;
@@ -126,7 +129,16 @@ function measureInPage(options: InPage): DomResult {
         !["none", "hidden"].includes(style.getPropertyValue(`border-${side}-style`)) &&
         !clear(style.getPropertyValue(`border-${side}-color`)),
     );
-  const planned: { owner: Element; which: "before" | "after"; values: [string, string][] }[] = [];
+  const planned: { owner: Element; which: "before" | "after"; values: [string, string][]; text: string }[] = [];
+  // A quoted string such as `"… "` becomes the stand-in's text; anything else (a counter, attr()) changes its size, and
+  // the comparison below then reports the pseudo-element as not measurable.
+  const textOf = (content: string) => {
+    try {
+      return /^".*"$/.test(content) ? String(JSON.parse(content)) : "";
+    } catch {
+      return "";
+    }
+  };
   for (const owner of [root, ...Array.from(root.querySelectorAll("*"))]) {
     if (owner.closest(options.skip)) continue;
     for (const which of ["before", "after"] as const) {
@@ -137,24 +149,85 @@ function measureInPage(options: InPage): DomResult {
         const property = style.item(index);
         if (property !== "content") values.push([property, style.getPropertyValue(property)]);
       }
-      planned.push({ owner, which, values });
+      planned.push({ owner, which, values, text: textOf(style.content) });
     }
   }
   const hide = document.createElement("style");
   hide.textContent = "[data-k2-hide-before]::before{content:none!important}[data-k2-hide-after]::after{content:none!important}";
-  document.head.append(hide);
-  const standIns: Element[] = [];
-  for (const { owner, which, values } of planned) {
+  const standIns = new Map<(typeof planned)[number], Element>();
+  const pseudo: string[] = [];
+  // A stand-in is a real element: it can change what a sibling selector matches (`.row:last-child`, `:empty`, `+`,
+  // `:has()`) and so the look of its neighbours. Every box and line of the page is compared before and after; a
+  // stand-in that changes anything is taken out again and its pseudo-element reported as not measurable.
+  const look = () => {
+    const seen = new Map<Element, string>();
+    for (const element of [root, ...Array.from(root.querySelectorAll("*"))]) {
+      if (element.localName === "k2-stand-in") continue;
+      const r = element.getBoundingClientRect();
+      const s = getComputedStyle(element);
+      seen.set(
+        element,
+        [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 100)).join(",") +
+          ["top", "right", "bottom", "left"]
+            .map((side) => s.getPropertyValue(`border-${side}-width`) + s.getPropertyValue(`border-${side}-color`))
+            .join() +
+          s.boxShadow +
+          s.backgroundColor +
+          s.display,
+      );
+    }
+    return seen;
+  };
+  const differences = (before: Map<Element, string>) => {
+    const after = look();
+    return [...before].filter(([element, value]) => after.get(element) !== value).map(([element]) => element);
+  };
+  const insert = (plan: (typeof planned)[number]) => {
+    const { owner, which, values, text } = plan;
     const standIn = document.createElement("k2-stand-in");
     for (const [property, value] of values) (standIn as HTMLElement).style.setProperty(property, value);
+    standIn.textContent = text;
     standIn.setAttribute("data-k2-stand-in", `${name(owner)}::${which}`);
     owner.setAttribute(`data-k2-hide-${which}`, "");
     if (which === "before") owner.prepend(standIn);
     else owner.append(standIn);
-    standIns.push(standIn);
-  }
+    standIns.set(plan, standIn);
+  };
+  const remove = (plan: (typeof planned)[number]) => {
+    standIns.get(plan)?.remove();
+    standIns.delete(plan);
+    plan.owner.removeAttribute(`data-k2-hide-${plan.which}`);
+  };
 
   try {
+    if (planned.length) {
+      const before = look();
+      document.head.append(hide);
+      for (const plan of planned) insert(plan);
+      if (differences(before).length) {
+        // Find the stand-ins that change the page, one at a time, and keep only the others.
+        for (const plan of planned) remove(plan);
+        const clean = planned.filter((plan) => {
+          insert(plan);
+          const changed = differences(before);
+          remove(plan);
+          if (changed.length)
+            pseudo.push(
+              `pseudo-element ${name(plan.owner)}::${plan.which} cannot be measured: in its place a real element changes ${changed
+                .slice(0, 3)
+                .map(name)
+                .join(", ")} (a sibling selector such as :last-child depends on it)`,
+            );
+          return !changed.length;
+        });
+        for (const plan of clean) insert(plan);
+        if (differences(before).length) {
+          for (const plan of clean) remove(plan);
+          pseudo.push("pseudo-elements cannot be measured together: their stand-ins change the page only in combination");
+        }
+      }
+    }
+
     const visible = (element: Element) => {
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
@@ -426,11 +499,11 @@ function measureInPage(options: InPage): DomResult {
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
       grip,
       grips,
+      pseudo,
       measured: { lines: horizontal.length + vertical.length, bands, texts },
     };
   } finally {
-    for (const standIn of standIns) standIn.remove();
-    for (const { owner, which } of planned) owner.removeAttribute(`data-k2-hide-${which}`);
+    for (const plan of planned) remove(plan);
     hide.remove();
   }
 }
@@ -523,6 +596,21 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
         grip.push(`grip ${measure.grip}: its line is ${pixels.lineWidth} px wide in the screenshot at DPR ${scale}`);
     }
   }
-  const problems = [...dom.edge, ...dom.double, ...dom.type, ...grip];
-  return { edge: dom.edge, double: dom.double, type: dom.type, grip, grips, measured: dom.measured, problems };
+  // The DOM measurement and the screenshots are separate round trips; a grip that moved in between was not measured.
+  if (dom.grips.length) {
+    const now = await page.evaluate(
+      ({ root, grips: selector }) =>
+        Array.from(document.querySelector(root)?.querySelectorAll(selector) ?? [])
+          .filter((element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
+          .map((element) => element.getBoundingClientRect())
+          .filter((r) => r.width > 0 && r.height > 0)
+          .map((r) => [r.left, r.top, r.width, r.height]),
+      { root: limits.root, grips: limits.grips },
+    );
+    const then = dom.grips.map(({ rect }) => [rect.left, rect.top, rect.width, rect.height]);
+    if (JSON.stringify(now) !== JSON.stringify(then))
+      grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
+  }
+  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.type, ...grip];
+  return { edge: dom.edge, double: dom.double, type: dom.type, grip, grips, pseudo: dom.pseudo, measured: dom.measured, problems };
 }

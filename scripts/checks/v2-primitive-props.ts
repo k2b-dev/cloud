@@ -41,7 +41,11 @@ export const forbiddenPrimitiveProps = (entry: string, configPath: string): Foun
     { ...ts.sys, onUnRecoverableConfigFileDiagnostic: (diagnostic) => configErrors.push(diagnostic) },
   );
   for (const diagnostic of [...configErrors, ...(parsed?.errors ?? [])])
-    found.push({ file: configPath, line: 1, message: `cannot read the compiler options: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}` });
+    found.push({
+      file: configPath,
+      line: 1,
+      message: `cannot read the compiler options: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`,
+    });
   if (!parsed) return found;
 
   const program = ts.createProgram({ rootNames: [entry], options: parsed.options });
@@ -71,7 +75,8 @@ export const forbiddenPrimitiveProps = (entry: string, configPath: string): Foun
   const opaque = (type: ts.Type): string | undefined => {
     if (type.flags & ts.TypeFlags.Any) return "props of type any";
     if (type.flags & ts.TypeFlags.Unknown) return "props of type unknown";
-    if (type.flags & ts.TypeFlags.TypeParameter && !checker.getBaseConstraintOfType(type)) return "props of an unconstrained type parameter";
+    if (type.flags & ts.TypeFlags.TypeParameter && !checker.getBaseConstraintOfType(type))
+      return "props of an unconstrained type parameter";
     const apparent = checker.getApparentType(type);
     if (checker.getIndexInfoOfType(apparent, ts.IndexKind.String)) return "props with an index signature, which accept any name";
     return undefined;
@@ -124,7 +129,10 @@ export const rule: Rule = {
     const entry = join(workspaceRoot, ENTRY);
     if (!existsSync(entry)) return [];
     const config = join(workspaceRoot, CONFIG);
-    if (!existsSync(config)) return [{ file: CONFIG, message: "missing; the rule reads the v2 types with the compiler options of packages/ui" }];
-    return forbiddenPrimitiveProps(entry, config).map(({ file, line, message }): Finding => ({ file: relative(workspaceRoot, file), line, message }));
+    if (!existsSync(config))
+      return [{ file: CONFIG, message: "missing; the rule reads the v2 types with the compiler options of packages/ui" }];
+    return forbiddenPrimitiveProps(entry, config).map(
+      ({ file, line, message }): Finding => ({ file: relative(workspaceRoot, file), line, message }),
+    );
   },
 };

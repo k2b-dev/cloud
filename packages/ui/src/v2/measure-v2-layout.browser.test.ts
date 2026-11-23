@@ -225,6 +225,45 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "red: a pseudo line whose stand-in would change a :last-child neighbour is reported, not measured as a false double line",
+    async () => {
+      const page = await open(
+        `<style>.grp > .row:last-child { border-bottom: 0; } .grp.end::after { content: ""; display: block; height: 1px; background: var(--k2-line); }</style>` +
+          columns('<div class="grp end" data-probe="group"><div class="row">One</div><div class="row">Two</div></div>'),
+      );
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.double).toEqual([]);
+        expect(result.pseudo).toEqual([
+          'pseudo-element [data-probe="group"]::after cannot be measured: in its place a real element changes div.row (a sibling selector such as :last-child depends on it)',
+        ]);
+        expect(result.problems).toEqual(result.pseudo);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a :last-child rule beside a pseudo line its stand-in does not disturb",
+    async () => {
+      const page = await open(
+        `<style>.grp > .row:last-child { border-bottom: 0; } .grp.start::before { content: ""; display: block; height: 1px; background: var(--k2-line); }</style>` +
+          columns('<div class="grp start"><div class="row">One</div><div class="row">Two</div></div>'),
+      );
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.problems).toEqual([]);
+        expect(result.pseudo).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: text outside the four roles and three weights",
     async () => {
       const page = await open(

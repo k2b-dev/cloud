@@ -97,7 +97,9 @@ test("red: a Canvas around the whole screen or inside a plain element; green: in
 });
 
 test("green: a v1 screen is untouched, also with a type-only import from v2", () => {
-  expect(screen('import { Button } from "@k2b/ui";', 'export const Old = () => <div class="flex gap-2 p-4"><Button>Save</Button></div>;')).toEqual([]);
+  expect(
+    screen('import { Button } from "@k2b/ui";', 'export const Old = () => <div class="flex gap-2 p-4"><Button>Save</Button></div>;'),
+  ).toEqual([]);
   expect(
     screen(
       'import type { TypeRole } from "@k2b/ui/v2";',
@@ -175,7 +177,8 @@ test("red: a local barrel that re-exports v2 makes a v2 screen; green: a module 
         'import { Band, Drawing } from "./ui";',
         'export const A = () => <Band><Drawing label="x"><svg class="free" /></Drawing><p class="mt-2">x</p></Band>;',
       ].join("\n"),
-      "packages/mail/src/B.tsx": 'import * as ui from "./all";\nexport const B = () => <ui.Band><ui.Canvas label="y"><i class="free" /></ui.Canvas><b class="m-1" /></ui.Band>;\n',
+      "packages/mail/src/B.tsx":
+        'import * as ui from "./all";\nexport const B = () => <ui.Band><ui.Canvas label="y"><i class="free" /></ui.Canvas><b class="m-1" /></ui.Band>;\n',
       "packages/mail/src/C.tsx": 'import { MailRow } from "./Row";\nexport const C = () => <div class="flex"><MailRow /></div>;\n',
     }),
   ).toEqual([

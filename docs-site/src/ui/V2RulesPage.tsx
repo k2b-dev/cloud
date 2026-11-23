@@ -13,6 +13,8 @@ type V2Rule = {
   /** Set when the rule shows a live example from `@k2b/ui/v2.css` instead of a mockup picture. */
   live?: "type-roles";
   checked: string;
+  /** What the check does not see, said plainly. */
+  limits?: string;
   /** DocCode highlights TypeScript; CSS shows as plain text. */
   code: { title: string; language: "ts" | "tsx" | "text"; source: string };
 };
@@ -25,7 +27,9 @@ const rules: readonly V2Rule[] = [
     excerpts: [
       { src: "/assets/ui-v2/square.png", alt: "A bar, a row from edge to edge and a notice as a whole cell", width: 522, height: 148 },
     ],
-    checked: "v2-primitive-props reads the prop types of every component that @k2b/ui/v2 exports.",
+    checked:
+      "v2-primitive-props reads the prop types of every component that @k2b/ui/v2 exports, its parts at any depth included, with the compiler options of packages/ui.",
+    limits: "A type it cannot resolve, props typed any or unknown, and props with an index signature fail the check instead of passing.",
     code: {
       title: "scripts/checks/v2-primitive-props.ts",
       language: "tsx",
@@ -101,6 +105,8 @@ const rules: readonly V2Rule[] = [
       { src: "/assets/ui-v2/group-frame.png", alt: "A framed group with a tinted head and two rows", width: 522, height: 139 },
     ],
     checked: "measureV2Layout reports two lines that lie at most 1 px apart, also when a pseudo-element under display: contents draws one.",
+    limits:
+      "It measures what is on screen after the page settled. A pseudo-element whose stand-in would change a neighbour (a :last-child rule, for example) is reported as not measurable, never passed.",
     code: {
       title: "A browser test",
       language: "ts",
@@ -161,9 +167,11 @@ const rules: readonly V2Rule[] = [
   {
     id: "app-css",
     title: "An app writes no layout CSS",
-    text: "From its first import of @k2b/ui/v2, a screen has no class, style or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas.",
+    text: "From its first value import of @k2b/ui/v2, directly or through a local module that re-exports it, a screen has no class, style, spread onto a plain element, styling ref, innerHTML or stylesheet of its own, and no app stylesheet restyles v2. An app may draw freely only inside Canvas, which stands directly in a v2 primitive and never wraps a whole screen.",
     excerpts: [],
-    checked: "v2-app-layout-css fails the build. Screens without a v2 import are untouched for now.",
+    checked: "v2-app-layout-css fails bun run check and the gate. Screens without a v2 import are untouched for now.",
+    limits:
+      "It reads one file and the local modules it imports directly. Layout in a file without a v2 import, imperative styling outside a ref callback, and CSS that a v1 component brings along stay unseen.",
     code: {
       title: "scripts/checks/v2-app-layout-css.ts",
       language: "tsx",
@@ -183,7 +191,9 @@ const rules: readonly V2Rule[] = [
     title: "Only @k2b/ui sees ui-sdk",
     text: "ui-sdk brings keyboard, focus, ARIA and dragging below the primitives. Apps and other packages never import it; they use the primitive that wraps it.",
     excerpts: [],
-    checked: "v2-no-ui-sdk-outside-ui reports every import of and dependency on @ui-sdk/* outside packages/ui.",
+    checked:
+      "v2-no-ui-sdk-outside-ui reports every import, resolve, module mock, stylesheet import and dependency of @ui-sdk/* outside packages/ui.",
+    limits: "A module name built at runtime from parts stays unseen.",
     code: {
       title: "scripts/checks/v2-no-ui-sdk-outside-ui.ts",
       language: "ts",
@@ -230,6 +240,7 @@ export function V2RulesPage(props: { title: string; description: string }) {
                   </h2>
                   <p class="k2-t-row">{rule.text}</p>
                   <p class="k2-t-meta">{rule.checked}</p>
+                  <Show when={rule.limits}>{(limits) => <p class="k2-t-meta">Limits: {limits()}</p>}</Show>
                 </div>
                 <div class="ui-v2-rule__pair">
                   <Show
