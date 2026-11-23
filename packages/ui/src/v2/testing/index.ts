@@ -16,5 +16,10 @@ export { measureV2Layout, type V2GripMeasure, type V2Layout, type V2LayoutOption
 export { settled } from "./settled";
 
 /** The `describeV2` outline of a laid-out page, from `root` (the whole body by default). */
-export const describeV2Page = async (page: Page, root = "body"): Promise<string> =>
-  (await page.evaluate(`(${describeV2})(document.querySelector(${JSON.stringify(root)}), { layout: true })`)) as string;
+export const describeV2Page = async (page: Page, root = "body"): Promise<string> => {
+  const outline = (await page.evaluate(
+    `(() => { const root = document.querySelector(${JSON.stringify(root)}); return root ? (${describeV2})(root, { layout: true }) : null; })()`,
+  )) as string | null;
+  if (outline === null) throw new Error(`describeV2Page: no element matches ${root}`);
+  return outline;
+};

@@ -70,10 +70,11 @@ columns dropped.
 app (Playwright is an optional peer dependency of `@k2b/ui`):
 
 ```ts
+import { expect, test } from "@playwright/test";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 
 for (const width of [1440, 390])
-  test(`the sources screen at ${width} px`, async () => {
+  test(`the sources screen at ${width} px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(url);
     expect(await describeV2Page(page)).not.toContain("Problems");

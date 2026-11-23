@@ -9,7 +9,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import ts from "@typescript/typescript6";
 
 const HELP = `Usage: bun packages/ui/scripts/v2-preview.ts <screen.tsx> [options]
@@ -29,7 +29,8 @@ Options:
   --height <px>    viewport height (default 900)
   --help           this text
 
-Exit code: 0 when every step is clean, 1 when a step found a problem, 2 on a usage error.
+Exit code: 0 when every step is clean, 1 when a step found a problem, 2 on a usage error, 3 when the tool itself
+failed (the browser did not start). A screen that throws while it renders is a finding (exit 1).
 On the shared VM run it through the heavy wrapper; without --text it starts a browser.`;
 
 const args = process.argv.slice(2);
@@ -37,25 +38,34 @@ if (args.includes("--help") || args.length === 0) {
   console.log(HELP);
   process.exit(args.length === 0 ? 2 : 0);
 }
+const usage = (message: string): never => {
+  console.error(`v2-preview: ${message} (see --help)`);
+  process.exit(2);
+};
+const valued = ["--png", "--width", "--height"];
+const flags = new Set(["--text", ...valued]);
+const files: string[] = [];
+for (let index = 0; index < args.length; index++) {
+  const arg = args[index]!;
+  if (!arg.startsWith("--")) files.push(arg);
+  else if (!flags.has(arg)) usage(`unknown option ${arg}`);
+  else if (valued.includes(arg) && (args[index + 1] === undefined || args[index + 1]!.startsWith("--"))) usage(`${arg} needs a value`);
+  else if (valued.includes(arg)) index++;
+}
+if (files.length !== 1) usage("give exactly one screen file");
+const file = resolve(files[0]!);
+if (!existsSync(file) || !/\.tsx?$/.test(file)) usage(`${file} is no .ts or .tsx file`);
 const option = (name: string) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
 };
-const file = resolve(
-  args.find((arg, index) => !arg.startsWith("--") && !["--png", "--width", "--height"].includes(args[index - 1] ?? ""))!,
-);
-if (!existsSync(file) || !/\.tsx?$/.test(file)) {
-  console.error(`v2-preview: ${file} is no .tsx file`);
-  process.exit(2);
-}
 const textOnly = args.includes("--text");
 const pngDir = option("--png");
+if (textOnly && pngDir) usage("--png needs the browser; leave out --text");
 const widths = (option("--width") ?? "1440,390").split(",").map(Number);
 const height = Number(option("--height") ?? 900);
-if (widths.some((width) => !Number.isFinite(width) || width < 200) || !Number.isFinite(height)) {
-  console.error("v2-preview: --width takes px values such as 1440,390");
-  process.exit(2);
-}
+if (widths.some((width) => !Number.isFinite(width) || width < 200)) usage("--width takes px values such as 1440,390");
+if (!Number.isFinite(height) || height < 200) usage("--height takes px, such as 900");
 
 const uiRoot = resolve(import.meta.dir, "..");
 const v2Entry = join(uiRoot, "src/v2/index.ts");
@@ -66,20 +76,23 @@ const section = (title: string, body: string[]) => {
   for (const line of body) console.log(line);
 };
 
-// 1. Types, with the compiler options of packages/ui and @k2b/ui/v2 mapped to the source.
+// 1. Types, with the compiler options of the screen's own tsconfig (an app's `@/…` paths stay) and @k2b/ui/v2 mapped
+// to the source of this checkout.
 {
+  const config = ts.findConfigFile(dirname(file), ts.sys.fileExists) ?? join(uiRoot, "tsconfig.json");
   const parsed = ts.getParsedCommandLineOfConfigFile(
-    join(uiRoot, "tsconfig.json"),
+    config,
     { noEmit: true },
     { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} },
   );
   const program = ts.createProgram({
     rootNames: [file],
-    options: { ...parsed?.options, paths: { "@k2b/ui/v2": [v2Entry] } },
+    options: { ...parsed?.options, paths: { ...parsed?.options.paths, "@k2b/ui/v2": [v2Entry] } },
   });
+  // Only the screen and the files beside it: the rest of an app has its own typecheck.
   const own = program
     .getSourceFiles()
-    .filter((source) => !source.fileName.includes("/node_modules/") && !source.fileName.startsWith(join(uiRoot, "src")));
+    .filter((source) => source.fileName.startsWith(`${dirname(file)}/`) && !source.fileName.includes("/node_modules/"));
   const found = own
     .flatMap((source) => [...program.getSyntacticDiagnostics(source), ...program.getSemanticDiagnostics(source)])
     .map((diagnostic) => {
@@ -126,7 +139,7 @@ try {
   const component = screen.default as Parameters<typeof createComponent>[0];
   markup = renderToString(() => createComponent(component, {}));
 } catch (error) {
-  failed = true;
+  // A screen that does not render is a finding of the screen (exit 1), not a failure of the tool.
   section("render", [`- ${error instanceof Error ? error.message : String(error)}`]);
   process.exit(1);
 }
@@ -166,7 +179,10 @@ if (textOnly) {
 // 4. Measure in Chromium at each width.
 const { launchBrowser } = await import("../test/browser");
 const { describeV2Page, measureV2Layout, settled } = await import("../src/v2/testing");
-const browser = await launchBrowser();
+const browser = await launchBrowser().catch((error: unknown) => {
+  console.error(`v2-preview: the browser did not start: ${error instanceof Error ? error.message : String(error)}`);
+  return process.exit(3);
+});
 try {
   for (const width of widths) {
     const tab = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, colorScheme: "light" });

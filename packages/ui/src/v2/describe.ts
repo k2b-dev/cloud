@@ -32,6 +32,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Group",
     "List",
     "Digest",
+    "Digest.Entry",
     "Row",
     "Table",
     "Facts",
@@ -101,7 +102,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const word = (element: Element): string => {
     const name = part(element);
     if (name === "Button") {
-      const label = element.getAttribute("aria-label") ?? textOf(element);
+      // The label only: an avatar's initials in the button are no part of its name.
+      const label = element.getAttribute("aria-label") ?? textOf(element.querySelector(".k2-btn-label") ?? element);
       const variant = element.getAttribute("data-variant");
       const disabled = element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true";
       return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${disabled ? " disabled" : ""}]`;
@@ -140,11 +142,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     if (name === "Toast") return `Toast ${quote(element.textContent)}`;
     if (name === "Input" || name === "Select" || name === "DateInput") {
       const control = element.querySelector("input, textarea, select");
+      // A select without a choice shows its placeholder in the value's place, marked `data-placeholder`.
+      const shownValue = element.querySelector(".k2-input-value");
       const value =
         name === "Select"
-          ? element.querySelector(".k2-input-value")?.textContent
+          ? shownValue?.hasAttribute("data-placeholder")
+            ? ""
+            : shownValue?.textContent
           : ((control as HTMLInputElement | null)?.value ?? control?.getAttribute("value"));
-      const placeholder = control?.getAttribute("placeholder");
+      const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
       return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}`;
     }
     if (name === "Progress")
@@ -207,7 +213,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Pane": {
         const width = (element as HTMLElement).style?.getPropertyValue?.("--k2-pane-w");
         const min = (element as HTMLElement).style?.getPropertyValue?.("--k2-pane-min");
-        return `Pane ${quote(label)}${flags(element, ["detail", "side"])
+        return `Pane${label ? ` ${quote(label)}` : ""}${flags(element, ["detail", "side"])
           .map((flag) => ` ${flag}`)
           .join("")}${width ? ` width ${min || "?"}–${width}` : ""}`;
       }
@@ -294,8 +300,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           options.layout && !(table && hidden(table)) ? heads.filter((th) => hidden(th)).map((th) => clip(th.textContent ?? "", 20)) : [];
         const rows = element.querySelectorAll("tbody > tr:not([data-group])").length;
         const wrap = element.querySelector("[data-wrap]") ? " wrap" : "";
-        const shown = options.layout && table && hidden(table) ? " — shown as rows at this width" : "";
-        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}${shown}`;
+        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
       }
       case "Facts": {
         const labels = [...element.querySelectorAll("dt")].map(
@@ -327,13 +332,18 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      case "Digest.Entry": {
+        const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
+        return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
+      }
       default:
         return word(element);
     }
   };
 
   const checkChildren = (element: Element) => {
-    const owner = [...element.classList].map((name) => containers[name]).find(Boolean);
+    // A digest is drawn as a list; name it as what it is.
+    const owner = element.classList.contains("k2-digest") ? "Digest" : [...element.classList].map((name) => containers[name]).find(Boolean);
     if (!owner) return;
     const where =
       owner === "Pane" ? `Pane ${quote(element.closest("[data-k2-part='Pane']")?.getAttribute("aria-label")) || ""}`.trim() : owner;
@@ -413,9 +423,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   const fab = options.layout ? [...root.querySelectorAll(".k2-fab")].find((button) => !hidden(button)) : undefined;
   if (fab) {
     const box = fab.getBoundingClientRect();
-    // Buttons and fields only: a row that slides under it while the list scrolls is fine.
+    // Fields and the buttons of a bar in the content (a form's footer): rows and their buttons slide under it while the
+    // list scrolls, which is fine.
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
       if (control === fab || fab.contains(control) || hidden(control)) return false;
+      const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
+      if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
       const other = control.getBoundingClientRect();
       return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
     });

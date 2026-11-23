@@ -45,6 +45,7 @@ describe("describeV2", () => {
   test("outlines sections, groups, a folded group, a table and facts", () => {
     const text = fixture("structure");
     expect(text).toContain('head: Tabs "Bereiche": Überblick ✓, Geld (12)');
+    expect(text).toContain('Entry 3. Nov. "EL-2611-00009" (Läuft)');
     expect(text).toContain('Section "Anstehend" (2) ["Todo anlegen" text]');
     expect(text).toContain('Group "EL-2611-00009" (18) · angekommen 3. Nov. · Post (Läuft · ok) ["Öffnen" text]');
     expect(text).toContain('Group "EL-2609-00017" folded · ausgezahlt am 12. Nov.');
@@ -86,6 +87,14 @@ describe("describeV2", () => {
     expect(text).toContain('- Group "Im Band" stands in a Band');
     expect(text).toContain('- Button "Eins" stands alone in Pane');
     expect(text).toContain('- 2 primary buttons ("Eins", "Zwei")');
+  });
+
+  test("tells a select's placeholder from a chosen value", () => {
+    const text = outline(
+      `<div class="k2-field" data-k2-part="Field"><label class="k2-field-label">Land</label>` +
+        `<span class="k2-input" data-k2-part="Select"><span class="k2-input-value" data-placeholder="">Bitte wählen</span><select></select></span></div>`,
+    );
+    expect(text).toContain('Field "Land": Select placeholder "Bitte wählen"');
   });
 
   test("says so when nothing on the page is v2", () => {

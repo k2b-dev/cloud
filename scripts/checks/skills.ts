@@ -14,7 +14,16 @@ const recipeFindings = (skillDir: string): Finding[] => {
   const index = join(skillDir, "references", "recipes.md");
   const listed = existsSync(index) ? readFileSync(index, "utf8") : "";
   const findings: Finding[] = [];
-  for (const entry of readdirSync(recipesDir).filter((name) => name.endsWith(".tsx"))) {
+  const recipes = readdirSync(recipesDir).filter((name) => name.endsWith(".tsx"));
+  // A picture or a description without its recipe teaches a screen that no longer exists.
+  const imagesDir = join(skillDir, "images");
+  for (const image of isDirectory(imagesDir) ? readdirSync(imagesDir) : [])
+    if (!recipes.includes(`${image.replace(/-\d+\.png$/, "")}.tsx`))
+      findings.push({ file: join(imagesDir, image), message: "Picture has no recipe in recipes/; delete it or add the recipe." });
+  for (const match of listed.matchAll(/^## ([\w-]+\.tsx)/gm))
+    if (!recipes.includes(match[1]!))
+      findings.push({ file: index, message: `references/recipes.md describes ${match[1]}, which is not in recipes/.` });
+  for (const entry of recipes) {
     const name = entry.replace(/\.tsx$/, "");
     if (!listed.includes(`## ${entry}`))
       findings.push({ file: join(recipesDir, entry), message: "Recipe is not described in references/recipes.md." });
