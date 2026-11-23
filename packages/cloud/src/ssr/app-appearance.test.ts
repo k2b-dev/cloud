@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { httpAppIds } from "../../../../scripts/workspace";
 import type { AppAppearance, RuntimeAppMeta } from "../contracts/app";
-import { appAccentStyle, appAppearanceStyle, appBarGrounds, appBarIconStyle, resolveCurrentApp } from "./app-appearance";
-import { contrastRatio, mixHex } from "./app-color";
+import { appAccentStyle, appAppearanceStyle, appBarGrounds, appBarIconStyle, appV2InkStyle, resolveCurrentApp } from "./app-appearance";
+import { appV2Ink, contrastRatio, mixHex } from "./app-color";
 import { appIconTone, appTileStyle, declaredIconColor } from "./app-icon-style";
 
 type HexColor = `#${string}`;
@@ -68,9 +68,15 @@ test("accent scopes emit the six computed app color properties", () => {
   );
 });
 
+test("a v2 page emits the app's v2 ink of each theme", () => {
+  const ink = appV2Ink("#f59e0b");
+  expect(appV2InkStyle("#f59e0b")).toBe(`--app-v2-ink-light:${ink.light};--app-v2-ink-dark:${ink.dark}`);
+});
+
 test("appearance helpers reject invalid accents before emitting any CSS", () => {
   for (const accent of [undefined, "red", "#fff", "#12345g", "#123456;color:red"]) {
     expect(appAccentStyle(accent)).toBeUndefined();
+    expect(appV2InkStyle(accent)).toBeUndefined();
     // @ts-expect-error Exercise unvalidated runtime input at the CSS emission boundary.
     expect(appAppearanceStyle(accent === undefined ? undefined : { accent })).toBeUndefined();
   }
