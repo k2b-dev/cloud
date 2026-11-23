@@ -38,9 +38,17 @@ const normalized = (page: Page, html?: string) =>
     // without focusable content. None is painted, so none can flash; they are the only attributes left out here.
     const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls"]);
     const boundTabStop = (node: Element, name: string) => name === "tabindex" && node.getAttribute("role") === "tabpanel";
+    // Core's Resizable lays panels out in the page only: each panel's size as `--resizable-panel-size` (the server
+    // renders the same width from the panel's default), and the grip's tab stop and values once there is a layout
+    // ("never in the server's HTML", core's resizable.js). The pixel check below proves the widths are the same.
+    const liveResizable = (node: Element, name: string) =>
+      node.getAttribute("data-slot") === "resizable-handle" &&
+      ["tabindex", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-controls"].includes(name);
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
+      if (node instanceof HTMLElement && node.getAttribute("data-slot") === "resizable-panel")
+        node.style.removeProperty("--resizable-panel-size");
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]
@@ -48,6 +56,7 @@ const normalized = (page: Page, html?: string) =>
           (attr) =>
             !unpainted.has(attr.name) &&
             !boundTabStop(node, attr.name) &&
+            !liveResizable(node, attr.name) &&
             !(input && (attr.name === "value" || attr.name === "checked")) &&
             !(attr.name === "style" && !attr.value.trim()),
         )
