@@ -102,8 +102,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    scratch.
 7. **Rows and columns stay dense.** In a table with column `width`s, long
    text is cut with "…" and the row keeps its height; columns that matter
-   less `drop` on the phone. A small table without widths (a few rows in a
-   group) wraps its cells instead; keep its texts short.
+   less `drop` on the phone, and a table wider than a phone gets
+   `phone(row)` (two-line rows). A small table without widths (a few rows
+   in a group) wraps its cells instead; keep its texts short.
 8. **Round is what you press; square is what structures.** Buttons, chips,
    inputs and tiles are round; panes, bands, sections, groups are square.
 9. **Lines separate groups, not entries or the parts of one thing.** No
@@ -181,6 +182,7 @@ Details, the outline format and use outside the monorepo:
 | `2 primary buttons` | keep one `primary`; the others are default or `ghost` |
 | `primary action is hidden at this width` | add `Workspace primary` |
 | `floating main action … covers …` | the form leaves on the phone: put it in a `Pane detail` or its own route |
+| `Table … wider than its column` | give the table `phone(row)`; give a `Pane detail` beside it a `width` |
 | `Group … stands in another Group` | flatten: one `Section`, several `Group`s |
 | a line under a section head | remove your own divider; `Section` draws the one line |
 | icon button without a name (type error) | give `label="…"` |

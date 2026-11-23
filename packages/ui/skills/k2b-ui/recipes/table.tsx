@@ -1,5 +1,5 @@
 // Recipe: a table with a status row. The lead says the one main fact, key figures follow, filters sit at the end.
-// Each row has one deed; columns that matter less drop on the phone. With no rows, a quiet band says so.
+// Each row has one deed; on the phone the table becomes two-line rows. With no rows, a quiet band says so.
 import { Band, Bar, Button, Chip, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 
 type Invoice = { number: string; customer: string; due: string; overdue: boolean; amount: string };
@@ -38,6 +38,12 @@ export default function OpenInvoices() {
           <Table
             label="Offene Rechnungen"
             rows={invoices}
+            // On the phone each invoice is a row of two lines; the widths of six columns never fit 390 px.
+            // k2b-ui gap: phone rows take no deed yet, so "Mahnung senden" is not reachable on the phone.
+            phone={(row) => ({
+              lines: [row.customer, `${row.number} · fällig ${row.due}${row.overdue ? " · überfällig" : ""}`],
+              time: row.amount,
+            })}
             columns={[
               { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true },
               { title: "Kunde", width: { min: 160, default: 240 }, cell: (row) => row.customer },

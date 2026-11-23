@@ -87,6 +87,13 @@ On the phone `Workspace primary` floats at the bottom right. A form at the
 end of a pane slides under it. A form or dialog is its own route on the
 phone; beside a list it is a `Pane detail`, which leaves at that width.
 
+### `Table "…" is 312 px wider than its column at this width` (outline at 390 px)
+
+The widths of the columns that stay do not fit the phone, so the last
+columns (often the amount and the deed) are cut off. Give the table
+`phone(row)`; `drop` alone is rarely enough. The same happens at 1440 px
+when a `Pane detail` beside the table has no `width`.
+
 ### A line under a section head, between entries, inside a group
 
 Rule 9. You drew it with your own element or a `Bar` between entries.

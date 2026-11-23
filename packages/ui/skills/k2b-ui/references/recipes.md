@@ -91,8 +91,9 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
 
 `StatusRow` with the lead ("3 offen"), facts (sum, overdue) and a filter
 button at the end; `Table` with widths, a status `Chip`, an amount column
-`align: "end"`, one text button per row, and `drop` on the columns that
-matter least. With no rows: a `Band` with `Text muted`.
+`align: "end"`, one text button per row, `drop` on the columns that matter
+least, and `phone(row)` so the phone shows two-line rows instead of a cut
+table. With no rows: a `Band` with `Text muted`.
 
 - The lead says the one thing; the rest are facts, which leave on the phone.
 - A deed per row is a `Button variant="text"` in its own last column.

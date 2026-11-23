@@ -126,7 +126,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "RecordHead") {
       // The identifiers stand beside the name, in the same place (its kinds are chips and name themselves).
-      const ids = [...(element.parentElement?.querySelectorAll(":scope > .k2-record-id") ?? [])].map((id) => clip(id.textContent ?? "", 30));
+      const ids = [...(element.parentElement?.querySelectorAll(":scope > .k2-record-id") ?? [])].map((id) =>
+        clip(id.textContent ?? "", 30),
+      );
       return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
     }
     if (name === "Path")
@@ -217,8 +219,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           const lead = element.querySelector(".k2-status-lead")?.textContent;
           const facts = [...element.querySelectorAll(".k2-fact")].map((fact) => clip(fact.textContent ?? "", 30));
           const select = element.querySelector(".k2-mark, [data-k2-mark]") ? " select-all" : "";
-          if (element.hasAttribute("data-selecting"))
-            return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
+          if (element.hasAttribute("data-selecting")) return `StatusRow selecting ${quote(lead)}: ${start ? words(start).join(" ") : ""}`;
           return `StatusRow ${quote(lead)}${facts.length ? ` · ${facts.join(" · ")}` : ""}${select}${end ? ` | ${words(end).join(" ")}` : ""}`;
         }
         const startWords = start ? words(start) : [];
@@ -281,6 +282,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector("thead th[data-select]") ? "select" : "",
           groups ? `${groups} groups` : "",
           element.querySelector("[data-sticky]") ? "sticky" : "",
+          element.nextElementSibling?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
           const notes = [th.getAttribute("data-align") === "end" ? "end" : "", th.hasAttribute("data-drop") ? "drops on phone" : ""].filter(
@@ -350,6 +352,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   };
 
   const visit = (element: Element, depth: number) => {
+    // A table's phone form and the table never show together; the one out of sight is no part of this width.
+    // Without layout the phone form is only named in the table's line.
+    if (element.classList.contains("k2-table-phone") && (!options.layout || hidden(element))) return;
+    if (options.layout && part(element) === "Table" && hidden(element)) return;
     checkChildren(element);
     let next = depth;
     if (element.hasAttribute("data-k2-part") && isLine(element)) {
@@ -364,7 +370,17 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (name === "Group" && element.parentElement?.closest("[data-k2-part='Group']"))
         problems.push(`Group ${quote(element.getAttribute("aria-label"))} stands in another Group: groups are never nested`);
       else if (name === "Group" && part(partOf(element)) === "Band")
-        problems.push(`Group ${quote(element.getAttribute("aria-label"))} stands in a Band: put groups in a Section or directly in the Pane`);
+        problems.push(
+          `Group ${quote(element.getAttribute("aria-label"))} stands in a Band: put groups in a Section or directly in the Pane`,
+        );
+      // A table that is wider than its column cuts columns off at the edge; only a large table scrolls sideways.
+      if (name === "Table" && options.layout && !element.hasAttribute("data-grid")) {
+        const cut = element.scrollWidth - element.clientWidth;
+        if (cut > 1)
+          problems.push(
+            `Table ${quote(element.querySelector("table")?.getAttribute("aria-label"))} is ${Math.round(cut)} px wider than its column at this width, so its last columns are cut off: give it \`phone(row)\`, \`drop\` more columns, or narrow the widths`,
+          );
+      }
       if (name === "Button")
         problems.push(
           `Button ${quote(element.getAttribute("aria-label") ?? element.textContent, 30)} stands alone in ${part(partOf(element))} and takes its full width: put actions in a Bar end, a Row action, Section/Group actions or Notice actions`,

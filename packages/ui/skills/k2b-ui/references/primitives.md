@@ -45,7 +45,10 @@ Until v2 has a `Dialog`, a screen "with the dialog open" shows the dialog's
 form as one more `Pane detail` at the end of the split: a head `Bar` with
 its title and a close button, `Band`s of fields, a footer `Bar`. Mark it
 with a `k2b-ui gap` comment. `detail` makes it leave on the phone, where the
-form is its own route.
+form is its own route. Its confirm button is a default (framed) button: the
+page's one primary stays in the head, and `Workspace primary` must never
+confirm a dialog. When the list beside it is a table, give the dialog pane
+a `width` so the table keeps its columns.
 
 ### Bar
 
@@ -145,6 +148,11 @@ tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 direction }` (an arrow in that head), `phone(row) => { lines, avatar?, time?
 }` (on the phone each row becomes a two-line row instead).
 
+Give every table whose column widths add up to more than a phone (about
+350 px after the dropped ones) a `phone(row)`; otherwise its last columns
+are cut off at 390 px (the outline reports it). Phone rows take no deed
+yet (gap): a row's action is not reachable there until v2 adds it.
+
 ### Facts
 
 `items: { label, value, hint?, copy? }[]`: label 12 quiet, value 13, 32 px
@@ -222,7 +230,9 @@ in a `Bar start`.
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
-  head `Bar start` instead of `Tabs`. The last item is the page itself.
+  head `Bar start` instead of `Tabs`. The last item is the page itself. On
+  the phone a head with a path is hidden and the shell's phone bar names
+  the page.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `toast(message, { action?, icon?, duration? })`: one short sentence at

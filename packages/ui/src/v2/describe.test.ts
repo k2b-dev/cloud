@@ -58,7 +58,8 @@ describe("describeV2", () => {
     const text = fixture("grid");
     expect(text).toContain("head: Bar: Path: Werkstatt › Aufträge");
     expect(text).toContain('status: StatusRow selecting "1 ausgewählt": ["Exportieren"] ["Auswahl aufheben" text]');
-    expect(text).toContain('Table "Aufträge" 5 columns × 8 rows (select, 2 groups, sticky)');
+    expect(text).toContain('Table "Aufträge" 5 columns × 8 rows (select, 2 groups, sticky, phone rows)');
+    expect(text).not.toContain('List "Aufträge"');
   });
 
   test("names fields with their errors and the state of every mark", () => {

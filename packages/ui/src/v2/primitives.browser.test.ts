@@ -6,8 +6,8 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
-import { measureV2Layout } from "./testing";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
