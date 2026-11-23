@@ -102,7 +102,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     if (name === "Button") {
       const label = element.getAttribute("aria-label") ?? textOf(element);
       const variant = element.getAttribute("data-variant");
-      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}]`;
+      const disabled = element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true";
+      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${disabled ? " disabled" : ""}]`;
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");

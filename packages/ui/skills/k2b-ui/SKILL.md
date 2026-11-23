@@ -45,8 +45,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 ```
 
 - Styles: `@k2b/ui/v2.css`. Every v2 class lives under the scope class
-  `k2-ui` on an ancestor (the page template's `<body>`, never a screen).
-  In the Cloud monorepo `packages/cloud/src/styles/global.css` loads v2.css.
+  `k2-ui` on an ancestor, never set by a screen.
+- In a Cloud app, a page opts in with `ui: "v2"` on its layout; the layout
+  puts `k2-ui` on the page's main area and loads v2.css with the app's accent
+  tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
+  and loads `@k2b/ui/v2.css`.
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
