@@ -321,6 +321,39 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
+  for (const width of [1440, 390])
+    test(
+      `at ${width}: a reply box stands on the text edge, a required field says so, a choice shows its question, a phone row of a table needs no lead, no column grip on the phone`,
+      async () => {
+        const page = await open("messages", { width });
+        try {
+          const edge = width < textEdge.phoneBelow ? textEdge.phone : textEdge.wide;
+          const found = await page.evaluate(() => {
+            const pane = document.querySelector('.k2-pane[aria-label="Auswahl"]')!.getBoundingClientRect();
+            const left = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().left - pane.left;
+            const phoneRow = document.querySelector(".k2-table-phone .k2-row");
+            return {
+              reply: left(".k2-band > .k2-input[data-multiline]"),
+              phoneText: phoneRow && getComputedStyle(phoneRow).display !== "none" ? left(".k2-table-phone .k2-row-title") : null,
+              grips: [...document.querySelectorAll(".k2-cgrip")].filter((grip) => grip.getBoundingClientRect().width > 0).length,
+            };
+          });
+          expect(found.reply).toBe(edge);
+          if (width < textEdge.phoneBelow) {
+            expect(found.phoneText).toBe(edge);
+            expect(found.grips).toBe(0);
+          } else expect(found.grips).toBe(1);
+          expect(await page.getByRole("textbox", { name: "Betreff" }).getAttribute("required")).not.toBeNull();
+          expect(await page.getByRole("group", { name: "Antwort per" }).getByRole("radio").count()).toBe(2);
+          expect(await page.getByText("Antwort per", { exact: true }).isVisible()).toBe(true);
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   test(
     "two messages in a row: one line between their bands, none inside a band, the tiles framed on their own",
     async () => {
@@ -348,10 +381,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         expect(lines.inside).toEqual([]);
         // the bands touch; each owns its bottom line only, so between them there is exactly one
         expect(lines.touching).toBe(0);
-        expect(lines.own).toEqual([
-          [0, 1],
-          [0, 1],
-        ]);
+        for (const own of lines.own) expect(own).toEqual([0, 1]);
         expect(lines.tiles).toBe(1);
         expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       } finally {

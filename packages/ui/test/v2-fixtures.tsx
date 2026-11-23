@@ -522,6 +522,28 @@ const MessagesFixture = () => (
         <Prose markdown="Bitte schicken Sie uns das Angebot." />
         <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} />
       </Band>
+      <Band>
+        <Input multiline label="Antwort an Mira Solberg" placeholder="Antwort schreiben …" />
+      </Band>
+      <Section title="Rückfrage">
+        <Field name="subject" label="Betreff" required>
+          <Input placeholder="Worum geht es?" />
+        </Field>
+        <Choice name="channel" label="Antwort per" options={["E-Mail", "Telefon"]} value="E-Mail" />
+      </Section>
+      <Table
+        label="Aufträge"
+        rowKey={(order) => order.id}
+        columns={[
+          { title: "Auftrag", width: { min: 160, default: 240 }, cell: (order) => order.name },
+          { title: "Betrag", width: { min: 80, default: 120 }, align: "end", cell: (order) => order.sum },
+        ]}
+        rows={[
+          { id: "AU-1", name: "Einbauschrank Flur", sum: "180,50 €" },
+          { id: "AU-2", name: "Treppe Haus am Hang", sum: "617,00 €" },
+        ]}
+        phone={(order) => ({ lines: [order.name, order.sum] })}
+      />
     </Pane>
   </Workspace>
 );

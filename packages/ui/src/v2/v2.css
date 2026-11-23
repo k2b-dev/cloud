@@ -911,6 +911,15 @@
   place-items: center;
   min-width: 16px;
 }
+/* A row without a symbol, a person or a dot has no lead: its text starts on the text edge. In a list where another
+   row has a lead, the empty lead keeps its place, so the text of all rows starts in one line (Mail). */
+.k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "l1 time" "l2 end" "l3 marks";
+}
+.k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) > .k2-row-lead {
+  display: none;
+}
 .k2-ui .k2-row-lead > .k2-icon {
   color: var(--k2-c, var(--k2-subtle));
 }
@@ -1161,8 +1170,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a cut line clips sideways only: a chip of 24 px on its 20 px line stays whole above and below */
 .k2-ui .k2-table[data-sized] td > .k2-cell-line {
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow-wrap: normal;
@@ -1173,6 +1184,7 @@
   color: var(--k2-subtle);
 }
 .k2-ui .k2-table[data-sized] td > .k2-cell-line[data-wrap] {
+  overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -1911,6 +1923,10 @@
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-field {
   padding: 0 var(--k2-edge);
+}
+/* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-input {
+  margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {
   display: flex;
@@ -2680,9 +2696,11 @@
     border-radius: 0;
     flex-direction: column;
   }
+  /* on the phone nothing is dragged wider: no grips of columns, none of a table's columns */
   .k2-ui .k2-ws > .k2-ws-side,
   .k2-ui .k2-ws > .k2-seam,
-  .k2-ui .k2-grip {
+  .k2-ui .k2-grip,
+  .k2-ui .k2-cgrip {
     display: none;
   }
   .k2-ui .k2-split {
@@ -2770,6 +2788,10 @@
   .k2-ui .k2-row[data-action] {
     grid-template-areas: "lead l1" "lead l2" "lead time";
     grid-template-columns: auto minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1" "l2" "time";
+    grid-template-columns: minmax(0, 1fr);
   }
   .k2-ui .k2-row[data-action] > .k2-row-end {
     grid-area: time;

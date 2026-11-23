@@ -7,6 +7,7 @@
  * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components.
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
+ * - **clip:** a box that clips its text shows every line whole and cuts a line at its end only with "…".
  * - **grip:** the pill of every grip is centred on its 1 px line within ±0.25 CSS px, measured in the DOM and again
  *   in the screenshot at the page's device pixel ratio, inside the grip only.
  *
@@ -70,6 +71,8 @@ export type V2Layout = {
   edge: string[];
   double: string[];
   type: string[];
+  /** Text a box cuts: a line hidden below or above, or a line cut at its end without "…". */
+  clip: string[];
   grip: string[];
   grips: V2GripMeasure[];
   /** Pseudo-elements the helper could not measure without changing the page; each one is a problem, never a pass. */
@@ -96,6 +99,7 @@ type DomResult = {
   edge: string[];
   double: string[];
   type: string[];
+  clip: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
   pseudo: string[];
@@ -104,7 +108,16 @@ type DomResult = {
 
 /** Runs in the page: closes over nothing. */
 function measureInPage(options: InPage): DomResult {
-  const empty: DomResult = { edge: [], double: [], type: [], grip: [], grips: [], pseudo: [], measured: { lines: 0, bands: 0, texts: 0 } };
+  const empty: DomResult = {
+    edge: [],
+    double: [],
+    type: [],
+    clip: [],
+    grip: [],
+    grips: [],
+    pseudo: [],
+    measured: { lines: 0, bands: 0, texts: 0 },
+  };
   const root = document.querySelector(options.root);
   if (!root) return { ...empty, edge: [`no element matches ${options.root}`] };
   const round = (value: number) => Math.round(value * 100) / 100;
@@ -461,6 +474,28 @@ function measureInPage(options: InPage): DomResult {
       type.set(key, (type.get(key) ?? 0) + 1);
     }
 
+    // 5b. Cut text: a box that clips its text (overflow hidden or clip, not a scroller) shows every line of it whole,
+    // and cuts a line at its end only with "…". Only boxes of text count: text of their own or inline children.
+    const clip: string[] = [];
+    for (const element of elements) {
+      if (!(element instanceof HTMLElement) || !element.textContent?.trim()) continue;
+      // text kept only as a name (a visually hidden label of 1 px) shows nothing to cut
+      const box = element.getBoundingClientRect();
+      if (box.width <= 1 || box.height <= 1) continue;
+      const style = getComputedStyle(element);
+      // a clamp to a number of lines ends its last line with "…" by itself
+      if (style.webkitLineClamp !== "none" && style.webkitLineClamp !== "") continue;
+      const clipsX = style.overflowX === "hidden" || style.overflowX === "clip";
+      const clipsY = style.overflowY === "hidden" || style.overflowY === "clip";
+      if (!clipsX && !clipsY) continue;
+      const inline = Array.from(element.children).every((child) => getComputedStyle(child).display.startsWith("inline"));
+      if (!inline) continue;
+      if (clipsY && element.scrollHeight > element.clientHeight + 1)
+        clip.push(`cut text: ${name(element)} hides ${element.scrollHeight - element.clientHeight} px of its lines`);
+      if (clipsX && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
+        clip.push(`cut text: ${name(element)} cuts its line without "…"`);
+    }
+
     // 6. Grips: the pill centre against the centre of the vertical hairline that runs through it, above the pill.
     const grip: string[] = [];
     const grips: DomResult["grips"] = [];
@@ -502,6 +537,7 @@ function measureInPage(options: InPage): DomResult {
       edge,
       double,
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
+      clip,
       grip,
       grips,
       pseudo,
@@ -626,6 +662,16 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.type, ...grip];
-  return { edge: dom.edge, double: dom.double, type: dom.type, grip, grips, pseudo: dom.pseudo, measured: dom.measured, problems };
+  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.type, ...dom.clip, ...grip];
+  return {
+    edge: dom.edge,
+    double: dom.double,
+    type: dom.type,
+    clip: dom.clip,
+    grip,
+    grips,
+    pseudo: dom.pseudo,
+    measured: dom.measured,
+    problems,
+  };
 }

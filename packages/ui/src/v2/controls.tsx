@@ -7,6 +7,7 @@ type FieldIds = {
   /** The id of the label line. */
   label: string;
   invalid: boolean;
+  required: boolean;
   name?: string;
   /** The id of the hint or error, while there is one. */
   described?: string;
@@ -25,6 +26,11 @@ export type FieldProps = {
   error?: string;
   /** "Optional" or a unit, quiet at the end of the label line. */
   optional?: string;
+  /**
+   * The form is not sent without a value here: the control says so to the browser and to assistive technology. The
+   * label line shows nothing for it; the fields that may stay empty say "optional" instead (as the mockup does).
+   */
+  required?: boolean;
   children: JSX.Element;
 };
 
@@ -46,6 +52,9 @@ export const Field = (props: FieldProps) => {
         label,
         get invalid() {
           return !!props.error;
+        },
+        get required() {
+          return props.required === true;
         },
         get name() {
           return props.name;
@@ -134,6 +143,7 @@ export const Input = (props: InputProps) => {
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
     "aria-describedby": field?.described,
+    required: field?.required || undefined,
   });
   return (
     <span
@@ -196,6 +206,7 @@ export const Select = (props: SelectProps) => {
         aria-label={field ? undefined : props.label}
         aria-invalid={field?.invalid ? "true" : undefined}
         aria-describedby={field?.described}
+        required={field?.required || undefined}
         onChange={(event) => {
           setChosen(event.currentTarget.value);
           props.onChange?.(event.currentTarget.value);
@@ -239,6 +250,7 @@ export const DateInput = (props: DateInputProps) => {
         aria-label={field ? undefined : props.label}
         aria-invalid={field?.invalid ? "true" : undefined}
         aria-describedby={field?.described}
+        required={field?.required || undefined}
         onInput={(event) => props.onInput?.(event.currentTarget.value)}
       />
       <Icon name="calendar" />
@@ -279,6 +291,7 @@ export const Check = (props: CheckProps) => {
           checked={checked() === true}
           aria-checked={checked() === "mixed" ? "mixed" : undefined}
           aria-describedby={field?.described}
+          required={field?.required || undefined}
           disabled={props.disabled}
           onChange={(event) => {
             setOwn(event.currentTarget.checked);
@@ -326,13 +339,26 @@ export type ChoiceProps = {
   name: string;
   options: readonly (string | { value: string; label: string })[];
   value?: string;
-  /** A name for the group when it stands without a Field. */
+  /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
   onChange?: (value: string) => void;
 };
 
-/** A few visible options, one of which is chosen: round points, each on one 20 px text line. */
+/**
+ * A few visible options, one of which is chosen: round points, each on one 20 px text line. With a `label` and no
+ * Field around it, it stands in a field of its own, so its question is visible and names the group.
+ */
 export const Choice = (props: ChoiceProps) => {
+  if (!useField() && props.label !== undefined)
+    return (
+      <Field label={props.label}>
+        <ChoiceGroup {...props} />
+      </Field>
+    );
+  return <ChoiceGroup {...props} />;
+};
+
+const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
@@ -357,6 +383,7 @@ export const Choice = (props: ChoiceProps) => {
                 name={props.name}
                 value={option.value}
                 checked={option.value === value()}
+                required={field?.required || undefined}
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
