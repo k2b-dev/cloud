@@ -332,18 +332,13 @@ export const Table = <T,>(props: TableProps<T>) => {
 
   const cell = (column: Column<T>, row: T) => {
     const value = column.cell(row);
-    // A line of text in its own block (cut or wrapped); a single mark such as a chip stands as it is.
+    // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
         {content}
       </span>
     );
-    const single = value as JSX.Element;
-    return isPair(value)
-      ? [line(value[0]), line(value[1], true)]
-      : typeof single === "string" || typeof single === "number"
-        ? line(single)
-        : single;
+    return isPair(value) ? [line(value[0]), line(value[1], true)] : line(value as JSX.Element);
   };
 
   return (

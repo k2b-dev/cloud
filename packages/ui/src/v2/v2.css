@@ -1113,7 +1113,9 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.k2-ui .k2-table td > .k2-chip {
+/* a chip of 24 px in a cell takes one 20 px line, like the check: it stays on the first line when the row grows */
+.k2-ui .k2-table .k2-cell-line > .k2-chip,
+.k2-ui .k2-table .k2-cell-line > .k2-inline > .k2-chip {
   vertical-align: top;
   margin-block: -2px;
 }
