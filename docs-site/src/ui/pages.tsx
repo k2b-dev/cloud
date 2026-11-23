@@ -13,6 +13,7 @@ import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 import { V2RulesPage } from "./V2RulesPage";
+import { V2DemoPage } from "./v2/V2DemoPage";
 
 export const uiPages = [
   solidPage({
@@ -171,6 +172,30 @@ export const uiPages = [
     order: 7,
     layout: "full",
     component: ({ page }) => <V2RulesPage title={page.meta.title} description={page.meta.description} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/mail",
+    title: "UI v2 · Mail",
+    navTitle: "v2 demo: Mail",
+    description: "Mail as a list with its reader, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 8,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage name="mail" title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/record",
+    title: "UI v2 · Kundenakte",
+    navTitle: "v2 demo: Kundenakte",
+    description: "The customer record of Warenfluss, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 9,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage name="record" title={page.meta.title} />,
   }),
   solidPage({
     html: fibelHtml,
