@@ -302,10 +302,10 @@ HTTP.
 ## SEO and response behavior
 
 The app controls every HTML byte, title and metadata field. Cloud adds no
-shell, JavaScript or forced `noindex` to the site. Its only Content Security
-Policy default is `frame-ancestors 'self'` on HTML responses that state no
-framing policy of their own; set `frame-ancestors` on a page that other sites
-may embed. If the app chooses `publicSsr`, its island loader is included by its own
+shell, JavaScript or forced `noindex` to the site. Its only framing default
+is `Content-Security-Policy: frame-ancestors 'self'` with
+`X-Frame-Options: SAMEORIGIN` on HTML responses that state no framing policy
+of their own; set `frame-ancestors` on a page that other sites may embed. If the app chooses `publicSsr`, its island loader is included by its own
 template.
 
 | Guarantee | Owner |
@@ -316,7 +316,7 @@ template.
 | HEAD, ETag/If-None-Match with 304, Last-Modified, Vary and Cache-Control keep their HTTP semantics | App and gateway |
 | Brotli/gzip compression for text responses, including crawlers | Gateway; explicit no-transform and existing content encodings are respected |
 | No Cloud routing headers such as X-Gateway-App on app domains | Gateway |
-| `frame-ancestors 'self'` on HTML responses without a framing policy of their own | Gateway; the app's own `frame-ancestors` wins |
+| `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN` on HTML responses without a framing policy of their own | Gateway; the app's own `frame-ancestors` wins |
 | Immutable caching for versioned static files | App sets the header; gateway preserves it |
 | Readable initial content without JavaScript | App SSR |
 | Response time and asset weight | App and gateway; measure the deployed page |

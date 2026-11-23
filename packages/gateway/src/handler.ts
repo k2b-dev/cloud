@@ -85,7 +85,8 @@ export const createGatewayHandler = (dependencies: GatewayDependencies) => {
   const handle = decide(dependencies);
   return async (req: Request, server: GatewayServer, client: ClientAddress | null): Promise<Response | undefined> => {
     const response = await handle(req, server, client);
-    if (response) defaultFraming(response.headers);
+    // A 304 replaces the stored headers of the cached page; a default here would replace that page's own policy.
+    if (response && response.status !== 304) defaultFraming(response.headers);
     return response;
   };
 };

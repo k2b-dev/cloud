@@ -234,8 +234,7 @@ those headers. An HTML response without a framing policy of its own receives
 `Content-Security-Policy: frame-ancestors 'self'` and
 `X-Frame-Options: SAMEORIGIN`, so only the site itself can frame its pages.
 An app that wants other sites to embed a page sets its own `frame-ancestors`
-directive or `X-Frame-Options` header on that response; the gateway then
-leaves framing unchanged. Applications own the rest of their CSP, indexing,
+directive on that response; the gateway then leaves framing unchanged. Applications own the rest of their CSP, indexing,
 canonical URLs, sitemaps, and robots files. App-domain responses have no Cloud
 telemetry headers.
 

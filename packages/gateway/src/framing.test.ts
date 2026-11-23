@@ -74,6 +74,9 @@ const state: MaintenanceState = {
   bypassKey: "B".repeat(43),
 };
 
+const ETAG = '"v1"';
+const STRICT = "script-src 'self'; frame-ancestors 'none'";
+
 /** A gateway in front of one upstream that answers every path the way Core and apps do. */
 const fixture = () => {
   const upstream = Bun.serve({
@@ -93,6 +96,13 @@ const fixture = () => {
       if (path === "/app/pwa/") {
         return new Response("<!doctype html><title>App</title>", {
           headers: { "Content-Type": HTML, "Content-Security-Policy": "frame-ancestors 'none'" },
+        });
+      }
+      // A page with its own strict policy that revalidates like hono/etag: the 304 repeats the ETag, not the policy.
+      if (path.endsWith("/cached")) {
+        if (req.headers.get("If-None-Match") === ETAG) return new Response(null, { status: 304, headers: { ETag: ETAG } });
+        return new Response("<!doctype html><title>Cached</title>", {
+          headers: { "Content-Type": HTML, ETag: ETAG, "Content-Security-Policy": STRICT },
         });
       }
       // App-domain paths arrive below the app's public prefix.
@@ -198,6 +208,21 @@ test("an app-domain page gets the same default, and JSON stays untouched", async
   expect(framing(await f.request("/api/thing"))).toEqual({ csp: null, xfo: null });
 });
 
+// A 304 replaces the stored headers of the cached page, so a default on it would replace the page's own policy.
+test("a 304 revalidation leaves the cached page's own policy in place", async () => {
+  const f = fixture();
+  const cases: Array<[path: string, host: string]> = [
+    ["/app/notes/cached", "cloud.test"],
+    ["/cached", "site.test"],
+  ];
+  for (const [path, host] of cases) {
+    const first = await f.request(path, page, host);
+    expect([first.status, framing(first)]).toEqual([200, { csp: STRICT, xfo: null }]);
+    const again = await f.request(path, { headers: { ...page.headers, "If-None-Match": ETAG } }, host);
+    expect([path, again.status, framing(again)]).toEqual([path, 304, { csp: null, xfo: null }]);
+  }
+});
+
 // Guard for the class: whichever branch of the gateway answers, a page never leaves without a framing policy.
 // A new branch in the handler is covered as long as it answers through `createGatewayHandler`.
 test("every answer the gateway gives a browser carries a framing policy when it can render as a page", async () => {
@@ -217,10 +242,17 @@ test("every answer the gateway gives a browser carries a framing policy when it 
     ["/", page, "site.test"],
     ["/_cloud/internal", page, "site.test"],
     ["/api/live", { headers: { Upgrade: "websocket", Connection: "Upgrade" } }],
+    ["/app/notes/cached", { headers: { ...page.headers, "If-None-Match": ETAG } }],
+    ["/cached", { headers: { ...page.headers, "If-None-Match": ETAG } }, "site.test"],
   ];
   const answer = async () => {
     for (const [path, init, host] of paths) {
       const response = await f.request(path, init, host);
+      // A 304 keeps the headers of the page it revalidates; it never adds a policy of its own.
+      if (response.status === 304) {
+        expect([path, host, framing(response)]).toEqual([path, host, { csp: null, xfo: null }]);
+        continue;
+      }
       const type = response.headers.get("Content-Type") ?? "";
       if (type && !/^\s*(?:text\/html|application\/xhtml\+xml)/i.test(type)) continue;
       expect([path, host, response.headers.get("Content-Security-Policy")]).toEqual([
