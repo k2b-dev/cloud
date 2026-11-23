@@ -3,7 +3,6 @@ import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { custom, Icon } from "./marks";
-import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -96,7 +95,6 @@ export const Workspace = (props: WorkspaceProps) => {
           </Dynamic>
         )}
       </Show>
-      <Toasts />
     </div>
   );
 };
@@ -312,15 +310,17 @@ export const Cells = (props: { children: JSX.Element }) => (
 Cells.Cell = (props: CellProps) => {
   const meta = resolveChildren(() => props.meta);
   return (
-    <Dynamic
-      component={props.href ? "a" : "div"}
+    // a cell that leads somewhere: its label is the link, stretched over the cell, so a value may hold its own controls
+    <div
       class="k2-cell"
       data-k2-part="Cells.Cell"
-      href={props.href}
+      data-open={props.href !== undefined ? "" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       <Icon name={props.icon} />
-      <span class="k2-cell-label">{props.label}</span>
+      <span class="k2-cell-label">
+        <RowOpen href={props.href}>{props.label}</RowOpen>
+      </span>
       <Show when={props.href} fallback={<span />}>
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
@@ -328,7 +328,7 @@ Cells.Cell = (props: CellProps) => {
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">{meta()}</span>
       </Show>
-    </Dynamic>
+    </div>
   );
 };
 
@@ -367,15 +367,13 @@ export type CanvasProps = {
   label: string;
   /** The height of the drawing in px; the width comes from its place. */
   height?: number;
-  /**
-   * The drawing is a framed box of its own, such as a composer: it stands apart by its frame, so the canvas draws no
-   * line below it (rule 9). Without it the canvas reaches edge to edge with one line below, like a map.
-   */
-  framed?: boolean;
   children: JSX.Element;
 };
 
-/** The one way out: a surface with its own drawing, where an app may write its own CSS. Never measured by the rules. */
+/**
+ * The one way out: a surface with its own drawing, where an app may write its own CSS. Never measured by the rules.
+ * It draws no line of its own; the structure around it separates it, and a drawing that needs an edge draws it.
+ */
 export const Canvas = (props: CanvasProps) => (
   <div
     class="k2-canvas"
@@ -384,7 +382,6 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    data-framed={props.framed ? "" : undefined}
     style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
   >
     {props.children}

@@ -50,7 +50,7 @@ const choiceOf = (option: PrincipalOption): PrincipalChoice => ({
       ? "ti ti-user"
       : option.type === "group"
         ? "ti ti-users-group"
-        : option.accountKind === "agent"
+        : option.accountKind === "agent" || option.accountKind === "standalone"
           ? "ti ti-robot"
           : "ti ti-key",
 });

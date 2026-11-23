@@ -150,17 +150,20 @@ export const LayoutFixture = (props: { open?: boolean }) =>
               end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
             />
             <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
+            <Canvas label="Zitat der vorigen Nachricht">
+              <span>Wann können Sie liefern?</span>
+            </Canvas>
             <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
           </Band>
-          <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
-            Brandt war bei der letzten Lieferung zwei Tage zu spät.
-          </Notice>
           <Band tone="note">
             <Text type="body" weight="strong">
               Die erste Abrechnung kommt am 15. Dez.
             </Text>
             <Text>38 von 53 Artikeln sind verkauft.</Text>
           </Band>
+          <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
+            Brandt war bei der letzten Lieferung zwei Tage zu spät.
+          </Notice>
           <Cells>
             <Cells.Cell icon="clock" label="Offen" value={12} />
             <Cells.Cell icon="check" label="Heute erledigt" value={31} href="#erledigt" />
@@ -273,9 +276,12 @@ export const StructureFixture = () =>
                   { day: "24. Nov.", items: "8 Artikel", when: "15. Jan.", amount: "offen" },
                 ]}
                 columns={[
-                  { title: "Auslauftag", cell: (row) => [row.day, row.items] },
-                  { title: "Abrechnung", cell: (row) => [row.when, <Progress value={5} of={22} label="Arbeitstag 5 von 22" />] },
-                  { title: "Auszahlung", align: "end", cell: (row) => [row.amount, "geschätzt"] },
+                  { title: "Auslauftag", cell: (row) => ({ lines: [row.day, row.items] }) },
+                  {
+                    title: "Abrechnung",
+                    cell: (row) => ({ lines: [row.when, <Progress value={5} of={22} label="Arbeitstag 5 von 22" />] }),
+                  },
+                  { title: "Auszahlung", align: "end", cell: (row) => ({ lines: [row.amount, "geschätzt"] }) },
                 ]}
               />
               <Facts
@@ -400,7 +406,7 @@ export const GridFixture = () =>
         select={{ selected: ["AU-101"], onChange: () => undefined, all: "Alle Aufträge", row: (order) => order.name }}
         group={(order) => ({
           key: order.state,
-          head: order.state === "open" ? <Chip status="warn">Offen</Chip> : <Chip status="ok">Erledigt</Chip>,
+          head: () => (order.state === "open" ? <Chip status="warn">Offen</Chip> : <Chip status="ok">Erledigt</Chip>),
           meta: order.state === "open" ? "5 · 2.700,00 €" : "3 · 3.780,00 €",
           count: order.state === "open" ? "5" : "3",
         })}

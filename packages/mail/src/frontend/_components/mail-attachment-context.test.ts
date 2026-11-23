@@ -3,7 +3,7 @@ import type { CapabilityCatalogClientResult } from "@k2b/cloud/capabilities";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityCatalog, contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
 import type { ContactDirectoryTarget } from "../../contact-directory";
-import type { resolveContacts } from "./contact-capabilities";
+import { ContactDirectoryRefusedError, type resolveContacts } from "./contact-capabilities";
 import { resolveAttachmentContext } from "./mail-attachment-context";
 
 type Dependencies = NonNullable<Parameters<typeof resolveAttachmentContext>[1]>;
@@ -211,6 +211,20 @@ describe("attachment recipient context", () => {
         ),
       ).rejects.toMatchObject({ name: "Error" });
     }
+  });
+
+  test("contact apps the person may not use answer with no hints instead of failing the lookup", async () => {
+    // Build plan 1.3: a 403 from an optional contact lookup means "no matches", while an outage still fails.
+    const context = await resolveAttachmentContext(
+      { directory, recipients, signal: signal() },
+      {
+        listCatalog: async () => catalog([app("contacts"), app("customers")]),
+        resolve: async () => {
+          throw new ContactDirectoryRefusedError("This app is not available to you");
+        },
+      },
+    );
+    expect(context).toEqual({ refs: [] });
   });
 
   test("one failing contact app does not suppress another app's refs or successful empty result", async () => {

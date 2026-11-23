@@ -57,7 +57,7 @@ for (const kind of ["standalone", "agent"] as const) {
       expect(urls.some((url) => url.searchParams.get("kinds") === "user,group,service_account")).toBe(true);
       const option = dom.document.querySelector<HTMLElement>('[role="option"]')!;
       expect(option.textContent).toContain("Catalog assistant");
-      expect(option.querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+      expect(option.querySelector(".ti-robot")).not.toBeNull();
       option.click();
       await waitFor(() => selected.length > 0);
       expect(selected).toEqual([[{ type: "service_account", id }]]);

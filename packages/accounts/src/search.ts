@@ -44,7 +44,7 @@ export const searchAccounts = async (
       preview: item.serviceAccount.status,
       icon: "ti ti-user-key",
       priority: 4,
-      links: [{ rel: "open", href: `/app/accounts/service-accounts?search=${encodeURIComponent(item.serviceAccount.name)}` }],
+      links: [{ rel: "open", href: `/app/accounts/api-keys?search=${encodeURIComponent(item.serviceAccount.name)}` }],
     };
   });
   return ok({ data });

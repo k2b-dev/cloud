@@ -60,7 +60,9 @@ test("there is one hairline of 1 px, and the radii and heights are the tokens", 
 });
 
 test("dark mode redefines only colours and shadows, never a measure", () => {
-  const dark = declarations('.dark .k2-ui:not([data-theme="light"]),\n.k2-ui.dark,\n.k2-ui[data-theme="dark"]');
+  const dark = declarations(
+    '.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),\n.k2-ui.dark,\n.k2-ui[data-theme="dark"]',
+  );
   expect(dark.size).toBeGreaterThan(20);
   for (const [property, value] of dark) {
     expect(property.startsWith("--k2-")).toBe(true);
@@ -126,8 +128,8 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 });
 
 // The positioning of the behaviour layer writes these on an open popup; the page or the platform sets the one colour
-// of its app. v2.css may read them, never define them.
-const foreignVariables = new Set(["--anchor-width", "--available-height", "--k2-app"]);
+// of its app, and the platform may set its readable ink. v2.css may read them, never define them.
+const foreignVariables = new Set(["--anchor-width", "--available-height", "--k2-app", "--k2-app-ink"]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];

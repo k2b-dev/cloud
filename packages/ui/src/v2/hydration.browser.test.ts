@@ -7,6 +7,7 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
+import type {} from "../../test/v2-hydration-twice";
 import { hairline, heights, textEdge } from "./tokens";
 
 // The primitives rendered on the server and hydrated in the browser, as a page with islands that hydrate would: the
@@ -50,6 +51,10 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
     );
+    // what the server sent, kept to compare with the page once it is live
+    await page.evaluate(() => {
+      window.__k2Sent = document.getElementById("root")!.cloneNode(true);
+    });
     await page.addScriptTag({ content: client });
     await page
       .waitForFunction(() => window.__k2Hydrated === true)
@@ -64,6 +69,100 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
     await page.close();
   }
 };
+
+/**
+ * Runs in the page: where the live page differs from what the server sent, in elements, texts and attributes. The
+ * keys of hydration and comments do not count; a style counts by its declarations, not their spelling.
+ */
+const differencesInPage = () => {
+  const sent = window.__k2Sent!;
+  const live = document.getElementById("root")!;
+  const found: string[] = [];
+  const style = (element: Element) => {
+    const probe = document.createElement("i");
+    probe.setAttribute("style", element.getAttribute("style") ?? "");
+    return Array.from(probe.style)
+      .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
+      .sort()
+      .join(";");
+  };
+  const nodes = (parent: Node) =>
+    Array.from(parent.childNodes).filter((node) => node.nodeType === 1 || (node.nodeType === 3 && node.textContent !== ""));
+  const walk = (a: Node, b: Node, path: string) => {
+    if (a.nodeType === 3 || b.nodeType === 3) {
+      if (a.nodeType !== b.nodeType || a.textContent !== b.textContent)
+        found.push(`${path}: text "${a.textContent}" became "${b.textContent}"`);
+      return;
+    }
+    if (!(a instanceof Element) || !(b instanceof Element)) return;
+    if (a.tagName !== b.tagName) {
+      found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
+      return;
+    }
+    const names = new Set([...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk"));
+    for (const name of names) {
+      const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);
+      if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
+    }
+    const [left, right] = [nodes(a), nodes(b)];
+    if (left.length !== right.length) found.push(`${path} ${a.tagName.toLowerCase()}: ${left.length} children became ${right.length}`);
+    left.forEach((child, index) => {
+      const other = right[index];
+      if (other) walk(child, other, `${path} > ${index}`);
+    });
+  };
+  walk(sent, live, "root");
+  return found;
+};
+
+test("hydration: the live page is what the server sent, in elements, texts and attributes", async () => {
+  await withPage(async (page) => {
+    expect(await page.evaluate(differencesInPage)).toEqual([]);
+  });
+});
+
+test("red: a component that reads a prop holding JSX twice fails to hydrate, so the test above would see it", async () => {
+  const serverFile = resolve(temp, "twice.js");
+  await Bun.write(serverFile, await bundle("v2-hydration-twice.tsx", "ssr"));
+  const { render }: { render: () => { html: string; script: string } } = await import(serverFile);
+  const sent = render();
+  const page = await browser.newPage();
+  page.setDefaultTimeout(2000);
+  const errors = pageErrors(page);
+  try {
+    await page.setContent(`<!doctype html><html><head>${sent.script}</head><body><div id="twice">${sent.html}</div></body></html>`);
+    await page.addScriptTag({ content: await bundle("v2-hydration-twice.tsx", "dom") }).catch(() => undefined);
+    await page.waitForFunction(() => window.__k2TwiceDone === true);
+    expect(errors.some((error) => error.includes("Hydration Mismatch"))).toBe(true);
+    errors.length = 0;
+  } finally {
+    await page.close();
+  }
+});
+
+test("the comparison of sent and live pages finds a changed attribute and a changed text", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      document.querySelector(".k2-field-label")!.setAttribute("data-probe", "changed");
+      const title = document.querySelector(".k2-row-title")!.firstChild!;
+      title.textContent = `${title.textContent} (neu)`;
+    });
+    const found = await page.evaluate(differencesInPage);
+    expect(found.some((line) => line.includes("[data-probe]"))).toBe(true);
+    expect(found.some((line) => line.includes("(neu)"))).toBe(true);
+  });
+});
+
+test("a box set for some of a group is the browser's third state", async () => {
+  await withPage(async (page) => {
+    expect(
+      await page
+        .getByRole("checkbox", { name: "Einige Positionen" })
+        .evaluate((input) => input instanceof HTMLInputElement && input.indeterminate),
+    ).toBe(true);
+    expect(await page.getByRole("checkbox", { name: "Einige Positionen" }).getAttribute("aria-checked")).toBeNull();
+  });
+});
 
 test("hydration: the browser finds every node the server sent, and every name points at an element", async () => {
   await withPage(async (page) => {
@@ -83,10 +182,14 @@ test("hydration: the browser finds every node the server sent, and every name po
   });
 });
 
-test("every cell and every field is made once, on the server and in the browser", async () => {
-  expect(server.made).toEqual({ cells: 4, probe: 1 });
+test("every cell and every field is made once, on the server and in the browser; a group head stands in both places", async () => {
+  // 2 rows × 3 columns
+  expect(server.made).toEqual({ cells: 6, probe: 1 });
   await withPage(async (page) => {
-    expect(await page.evaluate(() => globalThis.__k2Made)).toEqual({ cells: 4, probe: 1 });
+    expect(await page.evaluate(() => globalThis.__k2Made)).toEqual({ cells: 6, probe: 1 });
+    // the head of each group is in the table and in the phone list, each its own
+    expect(await page.locator(".k2-table tr[data-group] .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
+    expect(await page.locator(".k2-table-phone .k2-bar .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
   });
 });
 
@@ -110,6 +213,11 @@ test("an entry that opens something holds no control inside a control, and each 
     await page.getByRole("button", { name: "Annehmen" }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
+    // a link in the title of a row stays its own; the row is opened by the element named by that title
+    const entries = page.getByRole("list", { name: "Einträge" });
+    await entries.getByRole("link", { name: "EL-2611", exact: true }).click();
+    expect(await hash()).toBe("#einlieferung");
+    expect(await entries.getByRole("link", { name: "Einlieferung EL-2611" }).getAttribute("href")).toBe("#zeile");
     await page.locator('[data-k2-part="Digest.Entry"]').getByRole("link", { name: "Q-21" }).click();
     expect(await hash()).toBe("#quittung");
     await page.locator(".k2-table td", { hasText: "617,00 €" }).click();
@@ -151,7 +259,7 @@ test("controls without a handler keep their own state, and the shape shows it", 
     expect(await select.locator(".k2-input-value").textContent()).toBe("Montage");
     const check = page.getByRole("checkbox", { name: "Kunde benachrichtigen" });
     await check.check();
-    expect(await page.locator('[data-k2-part="Check"] .k2-check').getAttribute("data-checked")).toBe("");
+    expect(await page.locator('[data-k2-part="Check"] .k2-check').first().getAttribute("data-checked")).toBe("");
     await page.getByText("Abholung").click();
     expect(await page.locator(".k2-radio[data-checked]").count()).toBe(1);
     expect(await page.getByRole("radio", { name: "Abholung" }).isChecked()).toBe(true);
@@ -170,6 +278,12 @@ test("facts are pairs of term and value, Markdown in prose runs nothing", async 
     expect(await prose.locator("script, img, [onerror]").count()).toBe(0);
     expect(await prose.locator('a[href^="javascript"]').count()).toBe(0);
     expect(await page.evaluate(() => "__k2Bad" in window)).toBe(false);
+    // images load nothing (their words stay); links lead only to web pages and mail addresses
+    expect(await prose.getByText("Pixel").count()).toBe(1);
+    expect(await prose.locator("a").evaluateAll((links) => links.map((link) => link.getAttribute("href")))).toEqual([
+      "https://example.com",
+      "mailto:post@example.com",
+    ]);
   });
 });
 
@@ -196,13 +310,15 @@ test("dark: the three ways in give the same colours, a light island stays light,
   const page = await browser.newPage();
   try {
     await page.setContent(
-      `<!doctype html><html><head><style>${css}</style><style>.probe { background: var(--k2-app-tint); color: var(--k2-app-ink); border-color: var(--k2-surface); outline-color: var(--k2-warn-ink); }</style></head><body>
+      `<!doctype html><html><head><style>${css}</style><style>.probe { background: var(--k2-app-tint); color: var(--k2-app-text); border-color: var(--k2-surface); outline-color: var(--k2-warn-ink); }</style></head><body>
         <div class="dark"><div class="k2-ui" id="page"><i class="probe"></i></div></div>
         <div class="k2-ui dark" id="scope"><i class="probe"></i></div>
         <div class="k2-ui" data-theme="dark" id="attribute"><i class="probe"></i></div>
         <div class="dark"><div class="k2-ui" data-theme="light" id="island"><i class="probe"></i></div></div>
+        <div class="dark"><div class="k2-ui" data-theme="light"><div class="k2-ui" id="nested"><i class="probe"></i></div></div></div>
         <div class="k2-ui" id="light"><i class="probe"></i></div>
         <div style="--k2-app: #0f766e"><div class="k2-ui" id="accent"><i class="probe"></i></div><div class="k2-ui dark" id="accent-dark"><i class="probe"></i></div></div>
+        <div style="--k2-app: #ca8a04; --k2-app-ink: #713f12"><div class="k2-ui" id="readable"><i class="probe"></i></div></div>
       </body></html>`,
     );
     await settled(page);
@@ -217,6 +333,10 @@ test("dark: the three ways in give the same colours, a light island stays light,
     expect(colours.scope).toBe(colours.page);
     expect(colours.attribute).toBe(colours.page);
     expect(colours.island).toBe(colours.light);
+    // a scope inside a light island stays light, though the page around it is dark
+    expect(colours.nested).toBe(colours.light);
+    // the platform's readable ink wins over the mix
+    expect(colours.readable!.split(" | ")[1]).toBe("rgb(113, 63, 18)");
     expect(colours.page).not.toBe(colours.light);
     // without an app colour the blue of v2 stands; with one, ink and tint follow it in each theme
     expect(colours.light).toContain("rgb(239, 246, 255) | rgb(29, 78, 216)");

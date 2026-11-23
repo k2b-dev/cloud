@@ -145,9 +145,9 @@ type AccessSubject =
 A delegated credential uses only its user's grants. Do not merge them with
 service-account grants.
 
-A standalone service account has no user and no resource binding. Read
-`serviceAccount.kind` before treating a userless actor as resource-bound; see
-[Standalone service accounts and agents](/en/docs/identity/service-accounts).
+An agent has no user and no resource binding. Read
+`serviceAccount.kind` before treating a userless actor as an API key at a resource; see
+[Agents](/en/docs/identity/service-accounts).
 
 ## Retain service-account authority
 
