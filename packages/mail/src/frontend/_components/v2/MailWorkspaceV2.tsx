@@ -12,7 +12,7 @@ import { Bar, Button, Input, Nav, type NavItem, Pane, StatusRow, Tabs, Workspace
 import { type Accessor, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
-import type { MailboxController, MailWorkspaceDom } from "../../MailWorkspace.island";
+import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
 import type { MailSidebarMailbox } from "../MailSidebar";
 import { buildVisibleMailFolderTree, flattenMailFolderTree } from "../mail-folder-tree";
 import { mailListRowKey } from "../mail-list-projection";

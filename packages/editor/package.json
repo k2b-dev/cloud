@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./markdown": "./src/markdown/index.ts",
     "./styles.css": "./src/styles.css",
+    "./composer": "./src/Composer.tsx",
     "./composer.css": "./src/composer.css",
     "./markdown/lib/*": "./src/markdown/lib/*.ts",
     "./markdown/urls": "./src/markdown/urls.ts",

@@ -5,7 +5,7 @@ import { mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
-import MailWorkspace from "./MailWorkspace.island";
+import MailWorkspacePilot from "./MailWorkspaceV2.island";
 import { mailboxData, sidebar } from "./mail-shell.browser-fixture";
 
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
@@ -279,8 +279,7 @@ export default function MailV2Fixture(props: { source: string; locale?: "en" | "
   const data = mailV2Data(url, props.now);
   return (
     <LocaleProvider locale={locale}>
-      <MailWorkspace
-        ui="v2"
+      <MailWorkspacePilot
         now={new Date(props.now).toISOString()}
         data={data}
         requestPath={props.source}

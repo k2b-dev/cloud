@@ -14,6 +14,7 @@ import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/work
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
+import MailWorkspacePilot from "../MailWorkspaceV2.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
 import { showsMailV2 } from "../mail-v2-pilot";
 import { mailPageMessages } from "../pages-messages";
@@ -64,6 +65,22 @@ export default ssr<AuthContext>(async (c) => {
 
     const directory = await requestContactDirectory(c);
     const now = new Date().toISOString();
+    const workspace = {
+      data,
+      requestPath: requestPath(c),
+      cloudUrl: publicCloudOrigin(appUrl),
+      currentUserId: user.id,
+      currentUserEmail: user.mail,
+      contactDirectory: directory,
+      dateConfig,
+      now,
+      initialPreferences: workspacePreferences,
+      initialUserPreferences: userPreferences,
+      initialTheme: themePreference === "system" ? null : themePreference,
+      calendarIntegrationAvailable: spacesIntegration.invitations,
+      liveDictation: liveDictation.available,
+      sidebar,
+    };
     return () => (
       <Layout
         c={c}
@@ -75,23 +92,7 @@ export default ssr<AuthContext>(async (c) => {
         workspaceSidebarCollapsible={false}
         title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail, href: "/app/mail" }, { title: data.mailbox.name }]}
       >
-        <MailWorkspace
-          data={data}
-          requestPath={requestPath(c)}
-          cloudUrl={publicCloudOrigin(appUrl)}
-          currentUserId={user.id}
-          currentUserEmail={user.mail}
-          contactDirectory={directory}
-          dateConfig={dateConfig}
-          now={now}
-          initialPreferences={workspacePreferences}
-          initialUserPreferences={userPreferences}
-          initialTheme={themePreference === "system" ? null : themePreference}
-          calendarIntegrationAvailable={spacesIntegration.invitations}
-          liveDictation={liveDictation.available}
-          sidebar={sidebar}
-          ui={ui}
-        />
+        {ui === "v2" ? <MailWorkspacePilot {...workspace} /> : <MailWorkspace {...workspace} />}
       </Layout>
     );
   } catch (error) {

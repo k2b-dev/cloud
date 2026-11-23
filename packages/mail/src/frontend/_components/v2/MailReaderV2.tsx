@@ -5,7 +5,7 @@ import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Notice, Pane, Row, Tex
 import { type Accessor, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import type { SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
-import type { MailboxController } from "../../MailWorkspace.island";
+import type { MailboxController } from "../../mail-workspace";
 import MailMessageBody from "../MailMessageBody";
 import { isOutgoingMessage } from "../mail-conversation-history";
 import { buildMailConversationTimeline } from "../mail-conversation-timeline";

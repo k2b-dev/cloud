@@ -1,9 +1,9 @@
-import { Composer } from "@k2b/editor";
+import { Composer } from "@k2b/editor/composer";
 import type { DateContext } from "@k2b/stdlib";
 import { prompts, useLocale } from "@k2b/ui";
 import { Band, Button, Canvas, Icon, Text } from "@k2b/ui/v2";
 import { type Accessor, createEffect, createMemo, createSignal, on, Show } from "solid-js";
-import type { MailboxController } from "../../MailWorkspace.island";
+import type { MailboxController } from "../../mail-workspace";
 import MailReplyBox from "../MailReplyBox";
 import { deriveReplyIdentityId, deriveReplyRecipients } from "../mail-compose-derivation";
 import { createMailConversationNotes } from "../mail-conversation-notes";
