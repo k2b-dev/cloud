@@ -4,13 +4,13 @@ import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
- * A `var(--k2b-…)` or `var(--ui-…)` that nothing defines resolves to nothing: a removed token silently turns red text
+ * A `var(--k2b-…)`, `var(--k2-…)` (v2) or `var(--ui-…)` that nothing defines resolves to nothing: a removed token silently turns red text
  * black or drops a background. Every such use without a fallback names a custom property that some stylesheet
  * declares, or that code sets at runtime as a quoted name (a style object key or `setProperty`). Tests are skipped,
  * because they may name removed tokens on purpose.
  */
 const ROOTS = ["packages", "docs-site", "fixtures", "styles.css"];
-const NAME = String.raw`--(?:k2b|ui)-[\w-]*\w`;
+const NAME = String.raw`--(?:k2b|k2|ui)-[\w-]*\w`;
 const declaration = new RegExp(`(${NAME})\\s*:`, "g");
 // A style object key (`"--k2b-lane": value`) or `setProperty("--k2b-lane", …)`; a read such as `getPropertyValue` defines nothing.
 const runtime = new RegExp(String.raw`["'\`](${NAME})["'\`]\s*:|setProperty\(\s*["'\`](${NAME})["'\`]`, "g");
@@ -20,7 +20,7 @@ const lineAt = (source: string, index: number) => source.slice(0, index).split("
 
 export const rule: Rule = {
   name: "css-variables",
-  description: "Every var(--k2b-*) and var(--ui-*) without a fallback names a custom property that is defined",
+  description: "Every var(--k2b-*), var(--k2-*) and var(--ui-*) without a fallback names a custom property that is defined",
   run: async ({ workspaceRoot }) => {
     const files = ROOTS.flatMap((root) => {
       const path = join(workspaceRoot, root);
