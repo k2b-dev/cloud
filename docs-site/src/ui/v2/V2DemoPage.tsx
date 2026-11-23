@@ -1,4 +1,3 @@
-import type { Action } from "@k2b/ui/v2";
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
 import { MailScreen } from "./mail-screen";
@@ -15,7 +14,7 @@ export type V2Screen = {
   /** The one colour of the app (`--k2-app`); v2 derives its ink and tint in each theme. */
   app?: string;
   /** The platform's bar on the phone, as the mockup draws it: the app with its switcher, or the way back to a list. */
-  phone: { app: string } | { back: Action };
+  phone: { app: string } | { back: string };
   render: () => JSX.Element;
 };
 
@@ -43,7 +42,7 @@ export const v2Screens = {
     description:
       "One customer record of Warenfluss: the identity in the head, tabs, a pinned note, three statements, what is due, the latest deliveries, the contact history and the info column with its map.",
     mockup: "akte.html",
-    phone: { back: { label: "Kunden", href: "#kunden" } },
+    phone: { back: "Kunden" },
     render: () => <RecordScreen />,
   },
   deliveries: {
@@ -51,7 +50,7 @@ export const v2Screens = {
     description:
       "The tab Einlieferungen of the same record: every delivery in its own framed group with a tinted head and no line inside; the latest two open with their way, run-out days and returns, the older ones folded.",
     mockup: "akte-einlieferungen.html",
-    phone: { back: { label: "Kunden", href: "#kunden" } },
+    phone: { back: "Kunden" },
     render: () => <DeliveriesScreen />,
   },
   table: {
@@ -60,7 +59,7 @@ export const v2Screens = {
       "34 orders of Grids in 11 columns, grouped by state: the head and the first column stay while scrolling, rows and cells answer the pointer, the boxes select rows and turn the status row into the bar of what can be done with them. On the phone every order becomes a row of two lines.",
     mockup: "tabelle-grids.html",
     app: "#047857",
-    phone: { back: { label: "Aufträge", href: "#auftraege" } },
+    phone: { back: "Aufträge" },
     render: () => <TableScreen />,
   },
   form: {
@@ -69,7 +68,7 @@ export const v2Screens = {
       "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Dialog, menu, the open list of a selection and the toast with Rückgängig after the main action follow with the behaviour layer.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
-    phone: { back: { label: "Aufträge", href: "#auftraege" } },
+    phone: { back: "Aufträge" },
     render: () => <FormScreen />,
   },
 } satisfies Record<string, V2Screen>;
@@ -78,9 +77,8 @@ export type V2ScreenName = keyof typeof v2Screens;
 
 /**
  * The platform's bar above an app on the phone (52 px), drawn as the mockup has it: the app's name with its switcher,
- * or the way back, then search and more. The way back is an `Action` like `Pane back`, so the platform can later show
- * the way back of an open detail here (`Pane back`) without an app changing. It is a picture of the Cloud shell, not
- * part of v2, so assistive technology skips it.
+ * or the name of the list it leads back to, then search and more. It is a picture of the Cloud shell, not part of v2,
+ * so assistive technology skips it.
  */
 export const PhoneBar = (props: V2Screen["phone"]) => (
   <div class="ui-v2-phonebar" aria-hidden="true">
@@ -98,7 +96,7 @@ export const PhoneBar = (props: V2Screen["phone"]) => (
           <span class="ui-v2-phonebar__button">
             <i class="ti ti-chevron-left" />
           </span>
-          <span class="ui-v2-phonebar__title">{back().label}</span>
+          <span class="ui-v2-phonebar__title">{back()}</span>
         </>
       )}
     </Show>

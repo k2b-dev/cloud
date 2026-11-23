@@ -272,12 +272,14 @@ describe("v2 demo screens keep the mockup", () => {
           })
           .map((thing) => thing.textContent?.trim());
         // the end follows the last thing on its line when it has room there
-        const lines = new Set(
-          things.map((thing) => {
+        // things whose middles lie within 8 px of each other stand on one line (a chip, an avatar and a text differ)
+        const middles = things
+          .map((thing) => {
             const r = thing.getBoundingClientRect();
-            return Math.round((r.top + r.bottom) / 2);
-          }),
-        ).size;
+            return (r.top + r.bottom) / 2;
+          })
+          .sort((a, b) => a - b);
+        const lines = middles.filter((middle, index) => index === 0 || middle - middles[index - 1]! > 8).length;
         // the composer's head: the recipient and the sender's choices each on one line, inside the box
         const top = document.querySelector(".ui-v2-composer__top")!.getBoundingClientRect();
         const parts = [...document.querySelectorAll(".ui-v2-composer__part")].map((part) => {

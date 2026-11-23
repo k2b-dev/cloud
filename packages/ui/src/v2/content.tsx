@@ -100,7 +100,10 @@ export const Prose = (props: ProseProps) => {
 
 export type InlineProps = { children: JSX.Element };
 
-/** One line of things with the one fixed gap of 8 px. In a column it carries the text edge itself. */
+/**
+ * One line of things with the one fixed gap of 8 px. In a column it carries the text edge itself. In a column narrower
+ * than 480 px it wraps onto more lines instead of cutting a thing; in a bar it flows together with the bar's end.
+ */
 export const Inline = (props: InlineProps) => (
   <div class="k2-inline" data-k2-part="Inline">
     {props.children}

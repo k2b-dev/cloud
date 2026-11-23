@@ -57,7 +57,11 @@ from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
 `Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
 state under the head, as in `mail.tsx`) or directly after the fields it
-serves (the buttons of a form or of a reply), never between entries.
+serves (the buttons of a form or of a reply), never between entries. In a
+column narrower than 480 px, a bar inside a pane whose `start` is an
+`Inline` wraps: its things and its `end` flow as one line, one line stays
+40 px, and only a second line makes the bar higher. A head and a status row
+keep their height.
 
 ### Band
 
@@ -115,7 +119,10 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
-- `meta` (quiet note after the title, a count), `time` (top right).
+- `meta` (quiet note after the title, a count), `time` (top right). Title
+  and `meta` share the first line in equal parts, and each takes only what
+  it needs: a count or a number stays whole, a long note is cut with "…",
+  and the title breaks only when it is longer than its part.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
@@ -178,7 +185,8 @@ safe links only) or children.
 ### Inline
 
 One line of things with the one gap of 8 px, such as chips after a count
-in a `Bar start`.
+in a `Bar start`. In a column narrower than 480 px it wraps onto more
+lines instead of cutting a thing.
 
 ### Icon, Avatar, Chip, Progress
 
