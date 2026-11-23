@@ -39,6 +39,8 @@ describe("describeV2", () => {
     expect(text).toContain("… 1 more");
     expect(text).toContain('Notice ai "Kurz gesagt": "Brandt liefert 14 Eichenplatten in KW 49." ["Bearbeiten" text]');
     expect(text).toContain("Cells: Offen = 12 · Heute erledigt = 31 · Geld = 532,30 €");
+    // the way back of the open detail, a part of its own
+    expect(text).toContain('Back "Posteingang" link');
     expect(text).not.toContain("Problems");
   });
 
