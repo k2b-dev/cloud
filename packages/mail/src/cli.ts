@@ -2098,8 +2098,8 @@ const everydayCommands = (t: Translate) => {
         }),
         assignee: flag.stringList({
           description: t({
-            en: "Eligible user or service-account UUID, exact name, or me; repeatable or comma-separated; replaces all assignees",
-            de: "Berechtigte Benutzer- oder Dienstkonto-UUID, exakter Name oder me; wiederholbar oder kommagetrennt; ersetzt alle Zuständigen",
+            en: "Eligible UUID or exact name of a user, agent, or service account, or me; repeatable or comma-separated; replaces all assignees",
+            de: "Berechtigte UUID oder exakter Name einer Person, eines Agenten oder Dienstkontos, oder me; wiederholbar oder kommagetrennt; ersetzt alle Zuständigen",
           }),
         }),
         unassign: flag.boolean({ description: t({ en: "Clear all assignees", de: "Alle Zuweisungen aufheben" }) }),
@@ -2186,8 +2186,8 @@ const everydayCommands = (t: Translate) => {
         to: flag.string({
           valueLabel: "user",
           description: t({
-            en: "Comma-separated user or service-account UUIDs, exact names, me, or none",
-            de: "Kommagetrennte Benutzer- oder Dienstkonto-UUIDs, exakte Namen, me oder none",
+            en: "Comma-separated UUIDs or exact names of users, agents, or service accounts, me, or none",
+            de: "Kommagetrennte UUIDs oder exakte Namen von Personen, Agenten oder Dienstkonten, me oder none",
           }),
         }),
         onlyIfUnassigned: flag.boolean({
@@ -2202,8 +2202,8 @@ const everydayCommands = (t: Translate) => {
         remove: flag.string({
           valueLabel: "users",
           description: t({
-            en: "Remove comma-separated user or service-account UUIDs, exact names, or me",
-            de: "Kommagetrennte Benutzer- oder Dienstkonto-UUIDs, exakte Namen oder me entfernen",
+            en: "Remove comma-separated UUIDs or exact names of users, agents, or service accounts, or me",
+            de: "Kommagetrennte UUIDs oder exakte Namen von Personen, Agenten oder Dienstkonten oder me entfernen",
           }),
         }),
       },

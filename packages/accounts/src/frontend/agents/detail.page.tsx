@@ -24,7 +24,7 @@ export default ssr<AuthContext>(async (c) => {
     getServiceAccountAvatarState({ id: account.id }),
     account.createdBy ? accountsService.user.get({ id: account.createdBy }) : Promise.resolve(null),
   ]);
-  const kindLabel = account.kind === "agent" ? t.agent : t.standalone;
+  const kindLabel = t.agent;
   const facts = [
     { label: t.type, value: kindLabel },
     {

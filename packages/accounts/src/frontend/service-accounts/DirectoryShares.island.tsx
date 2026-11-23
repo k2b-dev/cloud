@@ -1,6 +1,7 @@
 import { PrincipalPicker } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { Principal } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts/service-account-kinds";
 import { principalLabel } from "@k2b/cloud/shared";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -93,8 +94,8 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                 return result.items.map((account) => ({
                   id: account.id,
                   label: account.name,
-                  icon: account.kind === "agent" ? "ti ti-robot" : "ti ti-key",
-                  description: account.kind === "agent" ? t().agent : t().service,
+                  icon: isAgentServiceAccountKind(account.kind) ? "ti ti-robot" : "ti ti-key",
+                  description: t().agent,
                 }));
               }}
               onSelect={(option) => {
@@ -157,13 +158,11 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                         </span>
                         <Show when={entry.principal.type === "service_account"}>
                           <Tag size="sm">
-                            {entry.serviceAccountKind === "agent"
-                              ? accountsText().agentServiceAccount
-                              : entry.serviceAccountKind === "resource_bound"
-                                ? accountsText().resourceBoundServiceAccount
-                                : entry.serviceAccountKind === "user_delegated"
-                                  ? accountsText().userBoundServiceAccount
-                                  : accountsText().standaloneServiceAccount}
+                            {entry.serviceAccountKind === "resource_bound"
+                              ? accountsText().resourceBoundServiceAccount
+                              : entry.serviceAccountKind === "user_delegated"
+                                ? accountsText().userBoundServiceAccount
+                                : accountsText().agentServiceAccount}
                           </Tag>
                         </Show>
                         <RemoveButton

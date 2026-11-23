@@ -1,5 +1,5 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { ssr } from "../config";
 import agentDetailPage from "./agents/detail.page";
 import agentsPage from "./agents/page";
@@ -19,14 +19,21 @@ import userDetailPage from "./users/detail/page";
 import usersNewPage from "./users/new/page";
 import usersPage from "./users/page";
 
+/** Permanent move of the API key list, with any sub-path and the query kept. */
+const movedToApiKeys = (c: Context<AuthContext>) => {
+  const url = new URL(c.req.url);
+  const rest = url.pathname.slice(url.pathname.indexOf("/service-accounts") + "/service-accounts".length);
+  return c.redirect(`/app/accounts/api-keys${rest}${url.search}`, 301);
+};
+
 export default new Hono<AuthContext>()
   .use("/", middleware.noTransform())
   .use("/groups/:id", middleware.noTransform())
   .use("/groups/:id/*", middleware.noTransform())
   .use("/agents", middleware.noTransform())
   .use("/agents/*", middleware.noTransform())
-  .use("/service-accounts", middleware.noTransform())
-  .use("/service-accounts/*", middleware.noTransform())
+  .use("/api-keys", middleware.noTransform())
+  .use("/api-keys/*", middleware.noTransform())
   .use("/users", middleware.noTransform())
   .use("/users/*", middleware.noTransform())
   .use("/duplicate-emails", middleware.noTransform())
@@ -47,7 +54,10 @@ export default new Hono<AuthContext>()
   .get("/users/:id", auth.requireRole("admin", ssr.access), ...userDetailPage)
   .get("/requests", auth.requireRole("admin", ssr.access), ...requestsPage)
   .get("/audit", auth.requireRole("admin", ssr.access), ...auditPage)
-  .get("/service-accounts", auth.requireRole("admin", ssr.access), ...serviceAccountsPage)
+  .get("/api-keys", auth.requireRole("admin", ssr.access), ...serviceAccountsPage)
+  // The API key list moved from /service-accounts; old bookmarks and links keep working.
+  .get("/service-accounts", movedToApiKeys)
+  .get("/service-accounts/*", movedToApiKeys)
   .get("/agents", auth.requireRole("admin", ssr.access), ...agentsPage)
   .get("/agents/:id", auth.requireRole("admin", ssr.access), ...agentDetailPage)
   .get("/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)

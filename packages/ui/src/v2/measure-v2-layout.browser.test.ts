@@ -263,6 +263,40 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A head with tabs: the active tab's 2 px mark reaches 1 px below the tab box onto the head line and covers it.
+  const head = (overflow: string) =>
+    `<style>.head { display: flex; height: var(--k2-h-tabs); padding: 0 var(--k2-edge); border-bottom: var(--k2-hairline); font: var(--k2-t-row); }` +
+    ` .tabs { display: flex; overflow: ${overflow}; } .tab { display: flex; align-items: center; border-bottom: 2px solid var(--k2-app); margin-bottom: -1px; }</style>` +
+    columns('<div class="head"><div class="tabs"><span class="tab">Inbox</span></div></div>');
+
+  test(
+    "green: overflow: clip visible cuts only sideways, so the 2 px tab mark stays whole on the head line",
+    async () => {
+      const page = await open(head("clip visible"));
+      try {
+        expect((await measureV2Layout(page)).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: overflow: hidden cuts the tab mark to 1 px beside the head line, a double line",
+    async () => {
+      const page = await open(head("hidden"));
+      try {
+        expect((await measureV2Layout(page)).double).toEqual([
+          expect.stringMatching(/^double line: span\.tab border-bottom and div\.head border-bottom at \d+ px over [\d.]+ px$/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: text outside the four roles and three weights",
     async () => {
