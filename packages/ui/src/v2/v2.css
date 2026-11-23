@@ -1892,6 +1892,11 @@
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
 }
+/* inside a band the drawing is a part of that one thing, such as a message's text above its attachments: the band's
+   own line closes it (rule 9), so the drawing draws none */
+.k2-ui .k2-band > .k2-canvas {
+  border-bottom: 0;
+}
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */
 
