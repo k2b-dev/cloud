@@ -67,6 +67,11 @@ type LayoutProps = {
    * name. For pages an app hosts for someone else, such as a Code page, whose app name would be an internal detail.
    */
   headTitle?: "app" | "page";
+  /**
+   * The page's content is built with `@k2b/ui/v2` (provisional): the content area becomes the v2 scope, in the app's
+   * colour. The shell around it stays v1.
+   */
+  ui?: "v2";
 }; // ==========================
 // Helpers
 function buildNavLinks(
@@ -481,7 +486,7 @@ export default function Layout(props: LayoutProps) {
                 <PageTrailProvider trail={pageTrail} onOwnTitle={() => (content.ownTitle = true)}>
                   <PageTrailRow trail={pageTrail} />
                   <main
-                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}${props.ui === "v2" ? " k2-ui" : ""}`}
                     data-scroll-preserve={swap ? "cloud-main" : undefined}
                     data-scroll-page={swap ? "" : undefined}
                   >
