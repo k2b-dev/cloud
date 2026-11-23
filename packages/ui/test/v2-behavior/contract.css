@@ -2,7 +2,10 @@
    It carries the styling contracts the behaviour relies on, which v2's CSS must keep:
    - a modal is placed by the stylesheet (fixed, centred by inset + margin), as ui-sdk's own web.css does;
    - draggable items are opaque and `user-select: none`, and the drag copy (a clone that also carries
-     data-grabbed) stays opaque. */
+     data-grabbed) stays opaque;
+   - `hidden` wins over every display rule: a closed tooltip's content stays in the server markup with `hidden`, and a
+     `display: grid` on its class would show it until the island mounts (the reload contract caught this). */
+[hidden] { display: none !important; }
 :root { --bg: #fff; --surface: #fff; --line: #e2e2de; --text: #1d1d1b; --hover: #efefec; --over: #e8eefc; --accent: #2f5bd3; color-scheme: light; }
 :root[data-theme="dark"] { --bg: #161615; --surface: #1d1d1c; --line: #353532; --text: #ededea; --hover: #2a2a28; --over: #263252; --accent: #7f9ff0; color-scheme: dark; }
 * { box-sizing: border-box; }

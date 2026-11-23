@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, serverMarkup } from "../../../test/v2-behavior/harness";
 
-const demos = ["overlays", "select", "board", "transfer", "resize"] as const;
+const demos = ["overlays", "select", "board", "transfer", "resize", "controls"] as const;
 let browser: Browser;
 let css: string;
 const bundles = new Map<string, string>();
@@ -32,17 +32,25 @@ const normalized = (page: Page, html?: string) =>
     const root = document.createElement("div");
     if (source === null) root.append(...[...(document.getElementById("root")?.childNodes ?? [])].map((node) => node.cloneNode(true)));
     else root.innerHTML = source;
-    const references = new Set(["id", "for", "aria-describedby", "aria-controls", "aria-activedescendant"]);
-    // Core adds `aria-labelledby` to a part rendered before its label once that label's element binds (a combobox's
-    // chips). It is a reference, never painted, so it cannot flash; it is the one attribute left out here.
-    const unpainted = new Set(["data-hk", "aria-labelledby"]);
+    const references = new Set(["id", "for", "aria-describedby", "aria-activedescendant"]);
+    // Core writes a few attributes only once elements bind, because they depend on the page: `aria-labelledby` on a
+    // combobox's chips once its label binds, `aria-controls` on a tab once its panel binds, and a tab stop on a panel
+    // without focusable content. None is painted, so none can flash; they are the only attributes left out here.
+    const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls"]);
+    const boundTabStop = (node: Element, name: string) => name === "tabindex" && node.getAttribute("role") === "tabpanel";
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]
-        .filter((attr) => !unpainted.has(attr.name) && !(input && attr.name === "value") && !(attr.name === "style" && !attr.value.trim()))
+        .filter(
+          (attr) =>
+            !unpainted.has(attr.name) &&
+            !boundTabStop(node, attr.name) &&
+            !(input && (attr.name === "value" || attr.name === "checked")) &&
+            !(attr.name === "style" && !attr.value.trim()),
+        )
         .map((attr) => {
           if (references.has(attr.name)) return `${attr.name}=#`;
           // Both styles as the browser parses them: the server writes `width:240px`, the DOM `width: 240px;`.
@@ -50,7 +58,7 @@ const normalized = (page: Page, html?: string) =>
           if (attr.name === "class") return `class=${attr.value.split(/\s+/).filter(Boolean).sort().join(" ")}`;
           return `${attr.name}=${attr.value}`;
         })
-        .concat(input ? [`value=${node.value}`] : [])
+        .concat(input ? [`value=${node.value}`, `checked=${node.checked}`] : [])
         .sort();
       return `<${node.localName} ${attrs.join(" ")}>${[...node.childNodes].map(walk).join("")}</${node.localName}>`;
     };

@@ -49,7 +49,7 @@ import {
   splitProps,
   untrack,
 } from "solid-js";
-import { Dynamic, isServer, Portal } from "solid-js/web";
+import { Dynamic, isServer, Portal, Properties } from "solid-js/web";
 
 export type Props = Record<string, unknown>;
 
@@ -68,6 +68,19 @@ const sameRecord = (a: Props, b: Props) => {
 const clean = (record: Props): Props => {
   const out: Props = {};
   for (const [name, value] of Object.entries(record)) if (value !== undefined) out[name] = value;
+  return out;
+};
+
+/**
+ * Core writes a boolean attribute the HTML way, as `""` (`hidden: ""` on a closed popup). Solid 1 sets `hidden`,
+ * `disabled`, `inert` … as properties on the client and drops falsy ones on the server, so `""` would mean "off" in
+ * both. They become `true` here.
+ */
+export const toSolidAttrs = (attrs: Props): Props => {
+  const out = clean(attrs);
+  for (const [name, value] of Object.entries(out)) {
+    if (value === "" && Properties.has(name) && name !== "value" && name !== "className") out[name] = true;
+  }
   return out;
 };
 
@@ -200,37 +213,12 @@ export function part<P extends Primitive>(
     };
   }
 
-  // Core binds the element once it is in the page; a keyed part whose key changes hands the element over.
-  let element: HTMLElement | undefined;
-  let bound = ref(record, host);
-  const setRef = (el: HTMLElement) => {
-    element = el;
-    user.ref?.(el);
-  };
-  if (!isServer) {
-    onMount(() => element && bound(element));
-    createComputed(
-      on(
-        current,
-        (next) => {
-          const nextBound = ref(next, host);
-          if (nextBound === bound) return;
-          if (element) bound(null);
-          bound = nextBound;
-          if (element) bound(element);
-        },
-        { defer: true },
-      ),
-    );
-    onCleanup(() => element && bound(null));
-  }
-
   const attrs = createMemo(
     () => {
       watched.attrs();
       const now = current();
       takeOwnId(now, user.id);
-      return clean(yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null));
+      return toSolidAttrs(yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null));
     },
     undefined,
     { equals: sameRecord },
@@ -238,22 +226,50 @@ export function part<P extends Primitive>(
 
   const [, rest] = splitProps(user, [...taken]);
   const children = user.children;
-  const merged = mergeProps(rest, attrs, handlers, {
-    ref: setRef,
-    get children() {
-      // A reactive child: it runs again only when a state key it reads itself changes (one memo per key). Components
-      // it creates (a `For` over `state.items`) track their own reads, so they are not recreated.
-      return typeof children === "function" && children.length > 0 ? () => children(state) : children;
-    },
-  });
-  const element_ = () => <Dynamic component={tag} {...merged} />;
-  if (!conditional(record)) return element_();
+
+  // One element's life. Core binds it once it is in the page and unbinds it when it leaves; this runs inside the
+  // `Show` of a part that comes and goes, so a panel shown later binds then. A keyed part whose key changes hands the
+  // element over.
+  const render = () => {
+    let element: HTMLElement | undefined;
+    let bound = ref(record, host);
+    if (!isServer) {
+      onMount(() => element && bound(element));
+      createComputed(
+        on(
+          current,
+          (next) => {
+            const nextBound = ref(next, host);
+            if (nextBound === bound) return;
+            if (element) bound(null);
+            bound = nextBound;
+            if (element) bound(element);
+          },
+          { defer: true },
+        ),
+      );
+      onCleanup(() => element && bound(null));
+    }
+    const merged = mergeProps(rest, attrs, handlers, {
+      ref: (el: HTMLElement) => {
+        element = el;
+        user.ref?.(el);
+      },
+      get children() {
+        // A reactive child: it runs again only when a state key it reads itself changes (one memo per key). Components
+        // it creates (a `For` over `state.items`) track their own reads, so they are not recreated.
+        return typeof children === "function" && children.length > 0 ? () => children(state) : children;
+      },
+    });
+    return <Dynamic component={tag} {...merged} />;
+  };
+  if (!conditional(record)) return render();
   const shown = () => {
     watched.state();
     const now = current();
     return isPresent(now, now.props);
   };
-  return <Show when={shown()}>{element_()}</Show>;
+  return <Show when={shown()}>{render()}</Show>;
 }
 
 /** Whether the slot's element should exist now. */
@@ -361,6 +377,7 @@ export function popupComponent<P extends Primitive>(handle: Handle<P>, slot: Slo
       for (const name of own) if (props[name] !== undefined) named[name] = props[name];
       return named;
     };
-    return popupPart(handle, slot, partProps, element, viewport(handle));
+    // A tooltip has no viewport slot: it never turns into a sheet.
+    return popupPart(handle, slot, partProps, element, "viewport" in schemaOf(handle.primitive).slots ? viewport(handle) : undefined);
   };
 }
