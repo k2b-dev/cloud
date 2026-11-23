@@ -24,7 +24,10 @@ test("finds every way a source can name @ui-sdk/*", () => {
 });
 
 test("finds ui-sdk in any dependency field of a manifest", () => {
-  const manifest = JSON.stringify({ dependencies: { "@ui-sdk/core": "0.1.0-beta.14", "solid-js": "1.9.18" }, devDependencies: { "@ui-sdk/solid": "1.0.0" } });
+  const manifest = JSON.stringify({
+    dependencies: { "@ui-sdk/core": "0.1.0-beta.14", "solid-js": "1.9.18" },
+    devDependencies: { "@ui-sdk/solid": "1.0.0" },
+  });
   expect(uiSdkDependencies(manifest)).toEqual(["@ui-sdk/core", "@ui-sdk/solid"]);
 });
 
@@ -33,7 +36,10 @@ test("red: an app and its manifest that reach ui-sdk; green: packages/ui itself"
   try {
     await mkdir(join(root, "packages/mail/src"), { recursive: true });
     await mkdir(join(root, "packages/ui/src/v2/behavior"), { recursive: true });
-    await writeFile(join(root, "packages/mail/src/List.tsx"), 'import { createReorder } from "@ui-sdk/core";\nexport const List = () => null;\n');
+    await writeFile(
+      join(root, "packages/mail/src/List.tsx"),
+      'import { createReorder } from "@ui-sdk/core";\nexport const List = () => null;\n',
+    );
     await writeFile(join(root, "packages/mail/package.json"), JSON.stringify({ dependencies: { "@ui-sdk/core": "0.1.0-beta.14" } }));
     await writeFile(join(root, "packages/ui/src/v2/behavior/adapter.ts"), 'import { attrs } from "@ui-sdk/core/renderer";\n');
     await writeFile(join(root, "packages/ui/package.json"), JSON.stringify({ dependencies: { "@ui-sdk/core": "0.1.0-beta.14" } }));

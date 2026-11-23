@@ -27,7 +27,8 @@ test("reports a removed token in a class, a style object and a stylesheet", asyn
       "packages/cloud/src/Row.tsx": `export const a = <b class="text-[var(--k2b-danger)]" />;\nexport const b = { color: "var(--ui-accent)" };\n`,
       "packages/spaces/src/styles/app.css": ".row {\n  background: var(--ui-bg);\n}\n",
       "packages/mail/src/Read.ts": `export const read = (el: HTMLElement) => [getComputedStyle(el).getPropertyValue("--k2b-gone"), "var(--k2b-gone)"];\n`,
-      "packages/ui/src/v2/v2.css": ".k2-ui { --k2-line: #e4e4e7; --k2-hairline: 1px solid var(--k2-line); border-color: var(--k2-lines); }\n",
+      "packages/ui/src/v2/v2.css":
+        ".k2-ui { --k2-line: #e4e4e7; --k2-hairline: 1px solid var(--k2-line); border-color: var(--k2-lines); }\n",
     }),
   ).toEqual([
     "packages/cloud/src/Row.tsx:1 --k2b-danger",

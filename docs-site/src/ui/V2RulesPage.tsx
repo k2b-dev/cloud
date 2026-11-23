@@ -13,7 +13,8 @@ type V2Rule = {
   /** Set when the rule shows a live example from `@k2b/ui/v2.css` instead of a mockup picture. */
   live?: "type-roles";
   checked: string;
-  code: { title: string; language: string; source: string };
+  /** DocCode highlights TypeScript; CSS shows as plain text. */
+  code: { title: string; language: "ts" | "tsx" | "text"; source: string };
 };
 
 const rules: readonly V2Rule[] = [
@@ -21,7 +22,9 @@ const rules: readonly V2Rule[] = [
     id: "layout",
     title: "Primitives own spacing, lines and type",
     text: "An app passes data and order. It never sets a gap, a padding, a size or a font. A primitive takes its height and its text edge from the place where it stands.",
-    excerpts: [{ src: "/assets/ui-v2/square.png", alt: "A bar, a row from edge to edge and a notice as a whole cell", width: 522, height: 148 }],
+    excerpts: [
+      { src: "/assets/ui-v2/square.png", alt: "A bar, a row from edge to edge and a notice as a whole cell", width: 522, height: 148 },
+    ],
     checked: "v2-primitive-props reads the prop types of every component that @k2b/ui/v2 exports.",
     code: {
       title: "scripts/checks/v2-primitive-props.ts",
@@ -65,11 +68,13 @@ const rules: readonly V2Rule[] = [
     id: "edge",
     title: "One line, one text edge",
     text: "Every line is 1 px in one colour and runs from edge to edge of its column. Text starts at 20 px, after an icon at 44 px; below 768 px at 16 and 40 px. No container pads its children.",
-    excerpts: [{ src: "/assets/ui-v2/line-edge.png", alt: "A row with an icon, text at 44 px; plain text at 20 px", width: 522, height: 95 }],
+    excerpts: [
+      { src: "/assets/ui-v2/line-edge.png", alt: "A row with an icon, text at 44 px; plain text at 20 px", width: 522, height: 95 },
+    ],
     checked: "measureV2Layout reports a line or a tinted band that stops short of its column edge.",
     code: {
       title: "@k2b/ui/v2.css",
-      language: "css",
+      language: "text",
       source: [
         ".k2-ui {",
         "  --k2-hairline: 1px solid var(--k2-line);",
@@ -87,7 +92,12 @@ const rules: readonly V2Rule[] = [
     title: "Lines separate groups, not entries",
     text: "No line under the head of a section and none between its entries; one line at its end. What belongs together, such as a delivery, gets one square frame with a tinted head and no line inside.",
     excerpts: [
-      { src: "/assets/ui-v2/group-lines.png", alt: "Section “Anstehend” with two entries and no line between them", width: 523, height: 167 },
+      {
+        src: "/assets/ui-v2/group-lines.png",
+        alt: "Section “Anstehend” with two entries and no line between them",
+        width: 523,
+        height: 167,
+      },
       { src: "/assets/ui-v2/group-frame.png", alt: "A framed group with a tinted head and two rows", width: 522, height: 139 },
     ],
     checked: "measureV2Layout reports two lines that lie at most 1 px apart, also when a pseudo-element under display: contents draws one.",
@@ -109,11 +119,13 @@ const rules: readonly V2Rule[] = [
     id: "round",
     title: "Round is what you operate, square is what structures",
     text: "Buttons, fields, segments, chips and entries in a sidebar or menu are round. Columns, bars, bands, rows, cells, tables, sections and groups are square, also when a row opens something. Overlays take 8 px.",
-    excerpts: [{ src: "/assets/ui-v2/round.png", alt: "Round controls: buttons, a field, a segment, a switch, chips", width: 523, height: 77 }],
+    excerpts: [
+      { src: "/assets/ui-v2/round.png", alt: "Round controls: buttons, a field, a segment, a switch, chips", width: 523, height: 77 },
+    ],
     checked: "Radii exist only as tokens for marks, controls, overlays and the app card.",
     code: {
       title: "@k2b/ui/v2.css",
-      language: "css",
+      language: "text",
       source: [
         ".k2-ui {",
         "  --k2-r-mark: 4px;",
@@ -226,7 +238,9 @@ export function V2RulesPage(props: { title: string; description: string }) {
                       <Show when={rule.excerpts.length > 0}>
                         <figure class="ui-v2-rule__excerpt">
                           <For each={rule.excerpts}>
-                            {(excerpt) => <img src={excerpt.src} alt={excerpt.alt} width={excerpt.width} height={excerpt.height} loading="lazy" />}
+                            {(excerpt) => (
+                              <img src={excerpt.src} alt={excerpt.alt} width={excerpt.width} height={excerpt.height} loading="lazy" />
+                            )}
                           </For>
                           <figcaption class="k2-t-meta">Mockup excerpt</figcaption>
                         </figure>

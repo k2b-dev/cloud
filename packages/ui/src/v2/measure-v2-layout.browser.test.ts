@@ -157,7 +157,9 @@ describe("measureV2Layout", () => {
   test(
     "red: a line in a padded wrapper stops short of its column edge (the flat build's 8 px)",
     async () => {
-      const page = await open(columns('<div class="padded"><div class="row">Row</div></div><div class="padded"><div class="tint"></div></div>'));
+      const page = await open(
+        columns('<div class="padded"><div class="row">Row</div></div><div class="padded"><div class="tint"></div></div>'),
+      );
       try {
         const { edge } = await measureV2Layout(page);
         expect(edge).toHaveLength(2);
@@ -173,7 +175,9 @@ describe("measureV2Layout", () => {
   test(
     "red: two lines on top of each other, also when a pseudo-element under display: contents draws one",
     async () => {
-      const page = await open(columns('<div class="band">One</div><div class="band top">Two</div><div class="row">Row</div><div class="seam"></div>'));
+      const page = await open(
+        columns('<div class="band">One</div><div class="band top">Two</div><div class="row">Row</div><div class="seam"></div>'),
+      );
       try {
         const { double, edge } = await measureV2Layout(page);
         expect(edge).toEqual([]);
@@ -192,7 +196,9 @@ describe("measureV2Layout", () => {
     "red: text outside the four roles and three weights",
     async () => {
       const page = await open(
-        columns('<div class="row"><span style="font-size:11px">11 px</span> <b style="font-weight:700">bold</b></div><div class="k2-t-body" data-k2-prose><h3 style="font:600 16px/22px sans-serif">Prose heading</h3></div>'),
+        columns(
+          '<div class="row"><span style="font-size:11px">11 px</span> <b style="font-weight:700">bold</b></div><div class="k2-t-body" data-k2-prose><h3 style="font:600 16px/22px sans-serif">Prose heading</h3></div>',
+        ),
       );
       try {
         expect((await measureV2Layout(page)).type).toEqual([
@@ -228,7 +234,9 @@ describe("measureV2Layout", () => {
   test(
     "free drawing in Canvas is never measured",
     async () => {
-      const page = await open(columns('<div data-k2-canvas><div class="padded"><div class="row" style="font-size:9px">Drawn</div></div></div>'));
+      const page = await open(
+        columns('<div data-k2-canvas><div class="padded"><div class="row" style="font-size:9px">Drawn</div></div></div>'),
+      );
       try {
         expect((await measureV2Layout(page)).problems).toEqual([]);
       } finally {

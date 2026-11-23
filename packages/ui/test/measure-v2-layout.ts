@@ -140,8 +140,7 @@ function measureInPage(options: InPage): DomResult {
     }
   }
   const hide = document.createElement("style");
-  hide.textContent =
-    "[data-k2-hide-before]::before{content:none!important}[data-k2-hide-after]::after{content:none!important}";
+  hide.textContent = "[data-k2-hide-before]::before{content:none!important}[data-k2-hide-after]::after{content:none!important}";
   document.head.append(hide);
   const standIns: Element[] = [];
   for (const { owner, which, values } of planned) {
@@ -159,7 +158,9 @@ function measureInPage(options: InPage): DomResult {
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     };
-    const elements = [root, ...Array.from(root.querySelectorAll("*"))].filter((element) => !element.closest(options.skip) && visible(element));
+    const elements = [root, ...Array.from(root.querySelectorAll("*"))].filter(
+      (element) => !element.closest(options.skip) && visible(element),
+    );
     // What a person sees of an element: the viewport, cut by every ancestor that clips (a scrolled column, the card).
     const clips = new Map<Element, { left: number; right: number; top: number; bottom: number }>();
     const clipOf = (element: Element): { left: number; right: number; top: number; bottom: number } => {
@@ -172,7 +173,12 @@ function measureInPage(options: InPage): DomResult {
         const style = getComputedStyle(parent);
         if (style.display !== "contents" && (style.overflowX !== "visible" || style.overflowY !== "visible")) {
           const r = parent.getBoundingClientRect();
-          clip = { left: Math.max(clip.left, r.left), right: Math.min(clip.right, r.right), top: Math.max(clip.top, r.top), bottom: Math.min(clip.bottom, r.bottom) };
+          clip = {
+            left: Math.max(clip.left, r.left),
+            right: Math.min(clip.right, r.right),
+            top: Math.max(clip.top, r.top),
+            bottom: Math.min(clip.bottom, r.bottom),
+          };
         }
       }
       clips.set(element, clip);
@@ -182,7 +188,16 @@ function measureInPage(options: InPage): DomResult {
     // 2. Every line: border sides, blur-free shadows, and boxes of at most 1.5 px, as far as it can be seen.
     // `frame`: one side of a box framed on several sides, or of a rounded one; it is no divider, so the edge rule skips it.
     // `round`: drawn by a rounded box, a control, mark or overlay; it floats on its own, so the double-line rule skips it.
-    type Line = { element: Element; how: string; across0: number; across1: number; along0: number; along1: number; frame: boolean; round: boolean };
+    type Line = {
+      element: Element;
+      how: string;
+      across0: number;
+      across1: number;
+      along0: number;
+      along1: number;
+      frame: boolean;
+      round: boolean;
+    };
     const horizontal: Line[] = [];
     const vertical: Line[] = [];
     const add = (element: Element, how: string, x0: number, x1: number, y0: number, y1: number, frame: boolean, round: boolean) => {
@@ -275,7 +290,9 @@ function measureInPage(options: InPage): DomResult {
       .sort((a, b) => a.across0 - b.across0 || a.along0 - b.along0);
     const merged: Line[] = [];
     for (const line of dividers) {
-      const same = merged.find((m) => Math.abs(m.across0 - line.across0) <= 0.6 && line.along0 <= m.along1 + 1.5 && line.along1 >= m.along0 - 1.5);
+      const same = merged.find(
+        (m) => Math.abs(m.across0 - line.across0) <= 0.6 && line.along0 <= m.along1 + 1.5 && line.along1 >= m.along0 - 1.5,
+      );
       if (same) {
         same.along0 = Math.min(same.along0, line.along0);
         same.along1 = Math.max(same.along1, line.along1);
@@ -298,7 +315,9 @@ function measureInPage(options: InPage): DomResult {
       return "rgb(255, 255, 255)";
     };
     const control = (element: Element) =>
-      !!element.closest("button, a, input, textarea, select, [role=button], [role=tab], [role=option], [role=menuitem], [role=separator], [contenteditable=true], [data-k2-grip]");
+      !!element.closest(
+        "button, a, input, textarea, select, [role=button], [role=tab], [role=option], [role=menuitem], [role=separator], [contenteditable=true], [data-k2-grip]",
+      );
     let bands = 0;
     for (const element of elements) {
       const style = getComputedStyle(element);
@@ -306,7 +325,12 @@ function measureInPage(options: InPage): DomResult {
       if (clear(color) || color === fillBelow(element) || control(element) || Number.parseFloat(style.borderTopLeftRadius) > 0) continue;
       const box = element.getBoundingClientRect();
       const clip = clipOf(element);
-      const r = { left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right), top: Math.max(box.top, clip.top), bottom: Math.min(box.bottom, clip.bottom) };
+      const r = {
+        left: Math.max(box.left, clip.left),
+        right: Math.min(box.right, clip.right),
+        top: Math.max(box.top, clip.top),
+        bottom: Math.min(box.bottom, clip.bottom),
+      };
       if (r.right - r.left < 160 || r.bottom - r.top < 36) continue;
       bands += 1;
       const gap = gaps(r.left, r.right, (r.top + r.bottom) / 2);
@@ -342,7 +366,8 @@ function measureInPage(options: InPage): DomResult {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const parent = node.parentElement;
-      if (!parent || !node.textContent?.trim() || parent.closest(options.skip) || parent.closest(options.untyped) || !visible(parent)) continue;
+      if (!parent || !node.textContent?.trim() || parent.closest(options.skip) || parent.closest(options.untyped) || !visible(parent))
+        continue;
       if (parent.closest("script, style, template")) continue;
       texts += 1;
       const style = getComputedStyle(parent);
@@ -367,7 +392,13 @@ function measureInPage(options: InPage): DomResult {
       const own = new Set([element, ...standInsOf(element)]);
       const y = r.top - 4;
       const candidates = hairlines(vertical)
-        .filter((line) => !own.has(line.element) && line.along0 <= y && line.along1 >= y && Math.abs((line.across0 + line.across1) / 2 - centre) <= r.width)
+        .filter(
+          (line) =>
+            !own.has(line.element) &&
+            line.along0 <= y &&
+            line.along1 >= y &&
+            Math.abs((line.across0 + line.across1) / 2 - centre) <= r.width,
+        )
         .sort((a, b) => Math.abs((a.across0 + a.across1) / 2 - centre) - Math.abs((b.across0 + b.across1) / 2 - centre));
       const line = candidates[0];
       const label = name(element);
@@ -380,7 +411,12 @@ function measureInPage(options: InPage): DomResult {
       if (Math.abs(offset) > options.tolerance) grip.push(`grip ${label}: pill centre ${round(offset)} px off its line (DOM)`);
       if (Math.abs(line.across1 - line.across0 - options.hairline) > 0.01)
         grip.push(`grip ${label}: its line is ${round(line.across1 - line.across0)} px, not ${options.hairline} px`);
-      grips.push({ grip: label, dom: round(offset), rect: { left: r.left, top: r.top, width: r.width, height: r.height }, line: { x0: line.across0, x1: line.across1 } });
+      grips.push({
+        grip: label,
+        dom: round(offset),
+        rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+        line: { x0: line.across0, x1: line.across1 },
+      });
     }
 
     return {

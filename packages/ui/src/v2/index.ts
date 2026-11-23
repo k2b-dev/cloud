@@ -9,4 +9,4 @@
  *   `Canvas` only. The repository checks `v2-primitive-props`, `v2-app-layout-css` and `v2-no-ui-sdk-outside-ui`
  *   enforce this.
  */
-export { fontWeights, gripTolerance, hairline, heights, radii, textEdge, type TypeRole, typeRoles } from "./tokens";
+export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";

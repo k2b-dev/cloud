@@ -39,13 +39,19 @@ test("green: free drawing inside Canvas, also under an alias or a namespace impo
     "  </Band>",
     ");",
   ].join("\n");
-  const namespace = ['import * as ui from "@k2b/ui/v2";', 'export const Map = () => <ui.Canvas label="Map"><div class="pin" /></ui.Canvas>;'].join("\n");
+  const namespace = [
+    'import * as ui from "@k2b/ui/v2";',
+    'export const Map = () => <ui.Canvas label="Map"><div class="pin" /></ui.Canvas>;',
+  ].join("\n");
   expect(layoutInV2Source("Radar.tsx", named)).toEqual([]);
   expect(layoutInV2Source("Map.tsx", namespace)).toEqual([]);
 });
 
 test("green: a v1 screen is untouched until its first v2 import", () => {
-  const v1 = ['import { Button } from "@k2b/ui";', 'export const Old = () => <div class="flex gap-2 p-4"><Button>Save</Button></div>;'].join("\n");
+  const v1 = [
+    'import { Button } from "@k2b/ui";',
+    'export const Old = () => <div class="flex gap-2 p-4"><Button>Save</Button></div>;',
+  ].join("\n");
   expect(layoutInV2Source("Old.tsx", v1)).toEqual([]);
 });
 

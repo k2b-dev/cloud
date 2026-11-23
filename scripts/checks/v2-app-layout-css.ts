@@ -28,7 +28,8 @@ const v2Bindings = (sourceFile: ts.SourceFile): { canvas: Set<string>; namespace
   const namespaces = new Set<string>();
   let usesV2 = false;
   for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !V2.test(statement.moduleSpecifier.text)) continue;
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !V2.test(statement.moduleSpecifier.text))
+      continue;
     usesV2 = true;
     const bindings = statement.importClause?.namedBindings;
     if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
@@ -49,20 +50,25 @@ export const layoutInV2Source = (file: string, source: string): Hit[] => {
   const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
   const isCanvas = (tag: ts.JsxTagNameExpression) =>
     (ts.isIdentifier(tag) && v2.canvas.has(tag.text)) ||
-    (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression) && v2.namespaces.has(tag.expression.text) && tag.name.text === "Canvas");
+    (ts.isPropertyAccessExpression(tag) &&
+      ts.isIdentifier(tag.expression) &&
+      v2.namespaces.has(tag.expression.text) &&
+      tag.name.text === "Canvas");
   const tagText = (tag: ts.JsxTagNameExpression) => tag.getText(sourceFile);
   const checkAttributes = (tag: ts.JsxTagNameExpression, attributes: ts.JsxAttributes) => {
     if (tagText(tag) === "style") hits.push({ line: lineOf(tag), message: `<style> in a v2 screen; ${replacement}` });
     for (const attribute of attributes.properties) {
       if (ts.isJsxAttribute(attribute)) {
         const name = attribute.name.getText(sourceFile);
-        if (LAYOUT_ATTRIBUTES.has(name)) hits.push({ line: lineOf(attribute), message: `${name} on <${tagText(tag)}> in a v2 screen; ${replacement}` });
+        if (LAYOUT_ATTRIBUTES.has(name))
+          hits.push({ line: lineOf(attribute), message: `${name} on <${tagText(tag)}> in a v2 screen; ${replacement}` });
         continue;
       }
       // `{...{ class: "…" }}` is the same attribute written as a spread.
       if (ts.isObjectLiteralExpression(attribute.expression))
         for (const property of attribute.expression.properties) {
-          const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined;
+          const name =
+            property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined;
           if (name && LAYOUT_ATTRIBUTES.has(name))
             hits.push({ line: lineOf(property), message: `${name} spread onto <${tagText(tag)}> in a v2 screen; ${replacement}` });
         }
@@ -104,7 +110,9 @@ export const v2InStylesheet = (source: string): Hit[] => {
     const at = lineAt(match.index! + match[1]!.length);
     // Name the class the rule targets: the last one in the selector.
     const k2Class = [...prelude.matchAll(/\.k2-[\w-]+/g)].at(-1);
-    const k2Attribute = [...prelude.matchAll(/\[\s*(data-k2-[\w-]+)/g)].map((attribute) => attribute[1]!).find((name) => name !== CANVAS_SCOPE);
+    const k2Attribute = [...prelude.matchAll(/\[\s*(data-k2-[\w-]+)/g)]
+      .map((attribute) => attribute[1]!)
+      .find((name) => name !== CANVAS_SCOPE);
     if (k2Class) hits.push({ line: at, message: `${prelude} restyles the v2 class ${k2Class[0]}; ${replacement}` });
     else if (k2Attribute) hits.push({ line: at, message: `${prelude} restyles the v2 attribute ${k2Attribute}; ${replacement}` });
   }
@@ -122,7 +130,8 @@ export const rule: Rule = {
       const root = join(workspaceRoot, "packages", app);
       for (const path of listFiles(root, /\.(?:ts|tsx)$/)) {
         if (isTestFile(path)) continue;
-        for (const hit of layoutInV2Source(path, readFileSync(path, "utf8"))) findings.push({ file: relative(workspaceRoot, path), ...hit });
+        for (const hit of layoutInV2Source(path, readFileSync(path, "utf8")))
+          findings.push({ file: relative(workspaceRoot, path), ...hit });
       }
       for (const path of listFiles(root, /\.css$/))
         for (const hit of v2InStylesheet(readFileSync(path, "utf8"))) findings.push({ file: relative(workspaceRoot, path), ...hit });
