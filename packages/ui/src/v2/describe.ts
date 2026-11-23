@@ -170,7 +170,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const input = label.querySelector("input") as HTMLInputElement | null;
         return `${clip(label.textContent ?? "", 20)}${input?.checked || input?.hasAttribute("checked") ? " ✓" : ""}`;
       });
-      return `Choice ${quote(element.getAttribute("aria-label"))}: ${options.join(", ")}`;
+      // A choice in a field is named by the field's label; alone it names itself.
+      const label = element.getAttribute("aria-label");
+      return `Choice${label ? ` ${quote(label)}` : ""}: ${options.join(", ")}`;
     }
     if (name === "Inline") return words(element).join(" ");
     if (name === "Nav.Item" || name === "Digest.Entry" || name === "Cells.Cell") return quote(element.textContent);

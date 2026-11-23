@@ -135,8 +135,8 @@ default (framed) button.
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 `Dialog`, `Menu`, `Popover`, `Tooltip`, `Toast` (their behaviour exists
 inside `@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
-error states of a whole pane, a search field and filter components, a
-`required` mark on `Field`, the mail and chat composer (comes from
+error states of a whole pane, a search field and filter components, the
+mail and chat composer (comes from
 `@k2b/editor`), an assistant message or answer card, and a phone form for
 a narrow panel (the phone form follows the viewport below 768 px, not the
 width of a 400 px side panel).

@@ -201,9 +201,10 @@ in a `Bar start`.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), one control as child. `Field.Row`
-  puts fields side by side (one column on the phone). There is no
-  `required` mark yet (gap): a required field shows `error="Pflichtfeld."`
-  after a failed save.
+  puts fields side by side (one column on the phone). `required` keeps the
+  form from being sent without a value; the label line shows nothing for
+  it, the fields that may stay empty say "optional". After a failed save a
+  required field shows `error="Pflichtfeld."`.
 - `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
   `max`, `onInput`; `label` when it stands without a `Field` (a search).
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
@@ -212,9 +213,9 @@ in a `Bar start`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`.
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
-  `label`, `onChange`. Its `label` is only the accessible name; for a
-  visible label put it in a `Field` and pass the same `label` (gap: the
-  field's label does not point at the group yet).
+  `label`, `onChange`. With a `label` and no `Field` around it, it shows
+  that label as a field of its own; inside a `Field` the field's label is
+  its question.
 
 ## Components
 

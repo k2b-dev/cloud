@@ -68,7 +68,7 @@ describe("describeV2", () => {
     expect(text).toContain('Field "Intervall": Input "30" invalid — error "Mindestens 60 Sekunden."');
     expect(text).toContain('Check "Alle Postfächer" mixed');
     expect(text).toContain('Switch "Aktiv" on');
-    expect(text).toContain('Choice "Wie oft": Täglich ✓, Wöchentlich');
+    expect(text).toContain('Field "Wie oft": Choice: Täglich ✓, Wöchentlich');
   });
 
   test("reports what no primitive owns, nested groups and a second primary action", () => {
