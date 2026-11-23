@@ -48,6 +48,30 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
 
 const TEST_TIMEOUT = 30_000;
 
+/**
+ * Narrows the frame in a wide window until the element `selector` is `width` px wide, so a primitive meets a narrow
+ * column, not a narrow window. The sidebar gives way down to its minimum on the way, so it measures again until the
+ * width is reached.
+ */
+const narrowColumn = async (page: Page, selector: string, width: number) => {
+  await page.evaluate(
+    ([target, wanted]) => {
+      const frame = document.querySelector<HTMLElement>(".frame")!;
+      const element = document.querySelector(target)!;
+      frame.style.right = "auto";
+      frame.style.boxSizing = "border-box";
+      frame.style.width = `${frame.getBoundingClientRect().width}px`;
+      for (let step = 0; step < 6; step++) {
+        const short = element.getBoundingClientRect().width - wanted;
+        if (Math.abs(short) < 0.5) break;
+        frame.style.width = `${frame.getBoundingClientRect().width - short}px`;
+      }
+    },
+    [selector, width] as const,
+  );
+  await settled(page);
+};
+
 describe("v2 primitives keep the layout rules", () => {
   for (const name of Object.keys(fixtures) as (keyof typeof fixtures)[])
     for (const width of [1440, 390])
@@ -273,6 +297,49 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  test(
+    "a column of 400 px in a wide window takes the narrow form: a table becomes rows, fields and steps stand one under the other",
+    async () => {
+      const narrow = (page: Page, pane: string) => narrowColumn(page, pane, 400);
+      const messages = await open("messages");
+      const structure = await open("structure");
+      try {
+        // wide: the table is a table with its column grip, the fields of a row stand side by side
+        const wide = await messages.evaluate(() => ({
+          table: getComputedStyle(document.querySelector(".k2-table-scroll")!).display,
+          row: new Set([...document.querySelectorAll(".k2-frow > .k2-field")].map((field) => field.getBoundingClientRect().top)).size,
+        }));
+        expect(wide).toEqual({ table: "block", row: 1 });
+        await narrow(messages, '.k2-pane[aria-label="Auswahl"]');
+        const narrowed = await messages.evaluate(() => ({
+          pane: Math.round(document.querySelector('.k2-pane[aria-label="Auswahl"]')!.getBoundingClientRect().width),
+          table: getComputedStyle(document.querySelector(".k2-table-scroll")!).display,
+          phone: document.querySelectorAll(".k2-table-phone .k2-row").length,
+          grips: [...document.querySelectorAll(".k2-cgrip")].filter((grip) => grip.getBoundingClientRect().width > 0).length,
+          row: new Set([...document.querySelectorAll(".k2-frow > .k2-field")].map((field) => field.getBoundingClientRect().top)).size,
+          rowHeight: Math.round(document.querySelector(".k2-band .k2-row")!.getBoundingClientRect().height),
+        }));
+        // the row of a message keeps its desktop height: touch sizes follow the window, not the column
+        expect(narrowed).toEqual({ pane: 400, table: "none", phone: 2, grips: 0, row: 2, rowHeight: narrowed.rowHeight });
+        expect(narrowed.rowHeight).toBeLessThan(60);
+        expect((await measureV2Layout(messages, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        await narrow(structure, ".k2-pane:has(.k2-steps)");
+        const steps = await structure.evaluate(() => {
+          const items = [...document.querySelectorAll(".k2-step")].map((step) => step.getBoundingClientRect());
+          return {
+            lefts: new Set(items.map((box) => Math.round(box.left))).size,
+            tops: new Set(items.map((box) => Math.round(box.top))).size,
+          };
+        });
+        expect(steps).toEqual({ lefts: 1, tops: 3 });
+      } finally {
+        await messages.close();
+        await structure.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   for (const column of [360, 480, 640])
     test(
       `the bar of a selection in a column of ${column} px: nothing is cut, words give way to symbols first`,
@@ -281,16 +348,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         try {
           // the window stays wide; only the column narrows (the frame is cut until the bar is `column` wide), so the
           // bar measures its column, not the window
-          await page.evaluate((width) => {
-            const frame = document.querySelector<HTMLElement>(".frame")!;
-            const bar = document.querySelector('[data-k2-part="StatusRow"]')!;
-            frame.style.right = "auto";
-            frame.style.boxSizing = "border-box";
-            frame.style.width = `${frame.getBoundingClientRect().width}px`;
-            const short = bar.getBoundingClientRect().width - width;
-            frame.style.width = `${frame.getBoundingClientRect().width - short}px`;
-          }, column);
-          await settled(page);
+          await narrowColumn(page, '[data-k2-part="StatusRow"]', column);
           const bar = await page.evaluate(() => {
             const row = document.querySelector('[data-k2-part="StatusRow"]')!;
             const edge = Number.parseFloat(getComputedStyle(row).paddingRight);

@@ -2696,11 +2696,10 @@
     border-radius: 0;
     flex-direction: column;
   }
-  /* on the phone nothing is dragged wider: no grips of columns, none of a table's columns */
+  /* on the phone no column is dragged wider (a table's columns follow their own pane, below) */
   .k2-ui .k2-ws > .k2-ws-side,
   .k2-ui .k2-ws > .k2-seam,
-  .k2-ui .k2-grip,
-  .k2-ui .k2-cgrip {
+  .k2-ui .k2-grip {
     display: none;
   }
   .k2-ui .k2-split {
@@ -2766,15 +2765,6 @@
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
     display: none;
   }
-  /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
-  .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
-    display: none;
-  }
-  .k2-ui .k2-table-phone {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
   /* tabs that share a head with actions stand closer */
   .k2-ui .k2-bar-start > .k2-tabs-nav > .k2-tabs {
     gap: 20px;
@@ -2837,16 +2827,6 @@
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
     display: none;
   }
-  .k2-ui .k2-cells {
-    grid-auto-flow: row;
-  }
-  .k2-ui .k2-cell + .k2-cell {
-    border-left: 0;
-    border-top: var(--k2-hairline);
-  }
-  .k2-ui .k2-table [data-drop] {
-    display: none;
-  }
   .k2-ui .k2-row[data-digest] {
     grid-template-columns: 16px minmax(0, 1fr) auto;
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
@@ -2865,6 +2845,36 @@
   }
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {
     padding: 6px 0;
+  }
+}
+
+/* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
+   What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
+   fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
+   is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+.k2-ui .k2-pane {
+  container: k2-pane / inline-size;
+}
+@container k2-pane (max-width: 479px) {
+  /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
+    display: none;
+  }
+  .k2-ui .k2-table-phone {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .k2-ui .k2-table [data-drop],
+  .k2-ui .k2-cgrip {
+    display: none;
+  }
+  .k2-ui .k2-cells {
+    grid-auto-flow: row;
+  }
+  .k2-ui .k2-cell + .k2-cell {
+    border-left: 0;
+    border-top: var(--k2-hairline);
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;

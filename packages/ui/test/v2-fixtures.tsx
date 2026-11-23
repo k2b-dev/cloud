@@ -529,6 +529,14 @@ const MessagesFixture = () => (
         <Field name="subject" label="Betreff" required>
           <Input placeholder="Worum geht es?" />
         </Field>
+        <Field.Row>
+          <Field name="due" label="Bis wann">
+            <DateInput value="15.12.2026" />
+          </Field>
+          <Field name="kind" label="Art">
+            <Select options={["Frage", "Reklamation"]} value="Frage" />
+          </Field>
+        </Field.Row>
         <Choice name="channel" label="Antwort per" options={["E-Mail", "Telefon"]} value="E-Mail" />
       </Section>
       <Table
