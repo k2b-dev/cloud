@@ -6,11 +6,6 @@ on:
         type: string
         description: "Testbox session ID"
         required: true
-  # Measurement only: a pull request run registers this workflow, so
-  # `blacksmith testbox warmup --ref` can dispatch it before it is on main.
-  # The job below skips that run; the trigger is reverted after the trial.
-  pull_request:
-    paths: [.github/workflows/ci-integration-testbox.yml]
 
 permissions:
   contents: read
@@ -21,7 +16,6 @@ env:
 
 jobs:
   integration:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     services:
