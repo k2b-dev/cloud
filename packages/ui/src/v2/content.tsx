@@ -51,9 +51,15 @@ export const Text = (props: TextProps) => (
   </Dynamic>
 );
 
+/** The links reading text may carry; any other target shows as text. */
+const proseLinks = ["https:", "http:", "mailto:"] as const;
+
 export type ProseProps =
   | {
-      /** Text in Markdown, such as a message. Raw HTML in it shows as text, and unsafe link targets are dropped. */
+      /**
+       * Text in Markdown, such as a message. Raw HTML in it shows as text; links lead only to web pages and mail
+       * addresses; images show their words, they load nothing.
+       */
       markdown: string;
       children?: never;
     }
@@ -75,7 +81,7 @@ export const Prose = (props: ProseProps) => {
         class="k2-prose"
         data-k2-part="Prose"
         data-k2-prose=""
-        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale() })}
+        innerHTML={renderSafeMarkdown(props.markdown ?? "", { locale: locale(), allowImages: false, linkProtocols: proseLinks })}
       />
     </Show>
   );
@@ -295,8 +301,11 @@ export const Row = (props: RowProps) => {
 
 // ── Table ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** What a cell shows: one line, or a line and a quiet second line. */
-export type CellValue = JSX.Element | readonly [JSX.Element, JSX.Element];
+/** Two lines of a cell: the line itself and a quiet second line under it. */
+export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
+
+/** What a cell shows: one line, or two lines named as such (`{ lines: [first, second] }`). */
+export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
   title: string;
@@ -357,10 +366,19 @@ type PlainTable = { rowKey?: undefined; select?: undefined; current?: undefined;
 
 export type TableProps<T> = TableBase<T> & (KeyedTable<T> | PlainTable);
 
-const isPair = (value: CellValue): value is readonly [JSX.Element, JSX.Element] => Array.isArray(value) && value.length === 2;
+/** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
+const isPair = (value: CellValue): value is CellLines =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !(typeof Node !== "undefined" && value instanceof Node) &&
+  "lines" in value;
 
-/** A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone. */
-export type TableGroup = { key: string; head: JSX.Element; meta?: string; count?: string };
+/**
+ * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
+ * The head is made where it stands (the table and the phone list each make their own), so it is a function.
+ */
+export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; count?: string };
 
 type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 
@@ -425,7 +443,7 @@ export const Table = <T,>(props: TableProps<T>) => {
           content
         ),
       );
-    return isPair(value) ? [first(value[0]), line(value[1], true)] : first(value as JSX.Element);
+    return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
   };
 
   return (
@@ -506,7 +524,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   <tr data-group="">
                     <td colSpan={span()}>
                       <span class="k2-group-row">
-                        {item.group.head}
+                        {item.group.head()}
                         <Show when={item.group.meta}>
                           <span class="k2-group-row-meta">{item.group.meta}</span>
                         </Show>
@@ -564,7 +582,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   "group" in item ? (
                     <div class="k2-bar" role="presentation">
                       <div class="k2-bar-start">
-                        {item.group.head}
+                        {item.group.head()}
                         <Show when={item.group.count ?? item.group.meta}>
                           <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
                         </Show>
