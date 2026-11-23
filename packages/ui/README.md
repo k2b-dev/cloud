@@ -122,6 +122,18 @@ Primitives own spacing, lines, and type. They take no `class`, `style`,
 drawing belongs in `Canvas`. See
 [UI v2 rules](https://cloud.k2b.dev/en/ui/v2/rules).
 
+### Agent skill
+
+The package ships the `k2b-ui` agent skill in `skills/k2b-ui`, in the same
+version as the primitives: which primitive to use for what, the rules,
+recipes with code and pictures, the check messages with their fixes, and
+`describeV2`, a short text outline of a rendered screen. Link it into the
+skill folder of your agent, for example:
+
+```bash
+ln -s ../../node_modules/@k2b/ui/skills/k2b-ui .claude/skills/k2b-ui
+```
+
 ## Documentation
 
 - [Getting started and SSR setup](https://cloud.k2b.dev/en/ui/getting-started)

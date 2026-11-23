@@ -94,8 +94,9 @@ do not add a `package.json` script or workflow for it.
 bun scripts/install-skills.sh
 ```
 
-This links `cloud-dev` and `cloud-cli` into the agent skill directories on
-this machine.
+This links the repository skills under `skills/` and the `k2b-ui` skill that
+`@k2b/ui` ships (`packages/ui/skills/k2b-ui`) into the agent skill directories
+on this machine.
 
 ## Update documentation
 
