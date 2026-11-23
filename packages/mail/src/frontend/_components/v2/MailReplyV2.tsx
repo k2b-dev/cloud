@@ -113,6 +113,7 @@ export default function MailReplyV2(props: {
                 <Button variant="ghost" icon="typography" label={props.text.formatting} onClick={() => setWriting(true)} />
                 <Button variant="ghost" icon="paperclip" label={props.text.attach} onClick={() => setWriting(true)} />
                 <Button variant="ghost" icon="signature" label={props.text.signature} onClick={() => setWriting(true)} />
+                <Button variant="ghost" icon="sparkles" label={props.text.assistant} onClick={() => setWriting(true)} />
               </>
             }
             actions={
