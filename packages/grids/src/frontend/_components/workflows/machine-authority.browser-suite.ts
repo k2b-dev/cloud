@@ -149,18 +149,18 @@ for (const [width, theme] of [
       await picker.fill("Inventory");
       const candidate = page.getByRole("button", { name: "Inventory agent avatar Inventory agent Agent", exact: true });
       await candidate.waitFor();
-      await page.getByRole("button", { name: "Nightly service avatar Nightly service Agent (API key only)", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Nightly service avatar Nightly service Agent", exact: true }).waitFor();
       expect(searches.at(-1)!.searchParams.get("kinds")).toBe("service_account");
       expect(searches.at(-1)!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
       expect(searches.at(-1)!.searchParams.get("service_account_status")).toBe("active");
       await candidate.focus();
       await page.keyboard.press("Enter");
-      await page.getByRole("button", { name: "Pause mandate", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Pause automatic runs", exact: true }).waitFor();
       expect(writes[0]).toEqual({ action: "assign", serviceAccountId: agentId, expected: { serviceAccountId: null, mandate: null } });
-      await page.getByRole("button", { name: "Pause mandate", exact: true }).click();
-      await page.getByRole("button", { name: "Resume mandate", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Pause automatic runs", exact: true }).click();
+      await page.getByRole("button", { name: "Resume automatic runs", exact: true }).waitFor();
       conflict = true;
-      await page.getByRole("button", { name: "Resume mandate", exact: true }).click();
+      await page.getByRole("button", { name: "Resume automatic runs", exact: true }).click();
       await page
         .getByRole("alert")
         .getByText("Execution authority changed. Review the current owner before trying again.", { exact: true })
@@ -168,13 +168,13 @@ for (const [width, theme] of [
       expect(writes.at(-1)).toEqual({ action: "resume", expected: { serviceAccountId: agentId, mandate: { id: mandateId, revision: 2 } } });
       expect(await page.locator("section").textContent()).toContain("Nightly service");
       await page.getByRole("button", { name: "Reload authority", exact: true }).click();
-      await page.getByRole("button", { name: "Revoke mandate", exact: true }).click();
+      await page.getByRole("button", { name: "End automatic runs", exact: true }).click();
       await page.getByText("Blocked", { exact: true }).waitFor();
       expect(writes.at(-1)).toEqual({
         action: "revoke",
         expected: { serviceAccountId: serviceId, mandate: { id: replacementId, revision: 2 } },
       });
-      expect(await page.getByRole("button", { name: "Resume mandate", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "Resume automatic runs", exact: true }).count()).toBe(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       expect(await page.locator("[data-ssr-error]").count()).toBe(0);
     } finally {

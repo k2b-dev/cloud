@@ -391,7 +391,7 @@ the resulting access token is valid only for that exact audience.
 The token resolves to a service-account actor of the bound account's kind.
 `service_account_kind` is `resource_bound`, `standalone`, or `agent`; for the
 standalone kinds the `app_id`, `resource_type`, and `resource_id` claims are
-`null`. See [Standalone service accounts and agents](/en/docs/identity/service-accounts).
+`null`. See [Agents](/en/docs/identity/service-accounts).
 
 For a resource-bound account the application must still verify:
 

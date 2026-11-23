@@ -601,12 +601,12 @@ const relationEntities = async (
 
 export default defineCliCommands({
   name: "accounts",
-  summary: "Manage accounts, groups, requests, audit events, and service-account credentials.",
+  summary: "Manage accounts, groups, requests, audit events, and API keys.",
   groupSummaries: {
     audit: "Inspect account administration audit events",
     groups: "Create, inspect, and manage groups",
     requests: "Review and resolve account requests",
-    "service-accounts": "Inspect and revoke service-account credentials",
+    "service-accounts": "Inspect and revoke API keys",
     users: "Create, inspect, and manage user accounts",
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
@@ -1343,7 +1343,7 @@ export default defineCliCommands({
     }),
 
     command("service-accounts list", {
-      summary: "List service-account API keys",
+      summary: "List API keys",
       flags: {
         ...paginationFlags({ defaultPerPage: 50, maxPerPage: 100 }),
         search: flag.string({ aliases: ["q"] }),
@@ -1378,11 +1378,11 @@ export default defineCliCommands({
       },
     }),
     command("service-accounts revoke", {
-      summary: "Revoke a service-account API key",
+      summary: "Revoke an API key",
       args: { credential: arg.required({ valueLabel: "credential-id" }) },
-      flags: { yes: confirmFlag("Confirm revoking this service-account API key") },
+      flags: { yes: confirmFlag("Confirm revoking this API key") },
       async run({ ctx, args, flags }) {
-        if (!flags.yes) throw new Error("Refusing to revoke a service-account API key without --yes.");
+        if (!flags.yes) throw new Error("Refusing to revoke an API key without --yes.");
         const result = await apiJson<MessageResponse>(ctx, "DELETE", `/service-accounts/credentials/${encode(args.credential)}`);
         printMessage(ctx, result, "API key revoked.");
       },

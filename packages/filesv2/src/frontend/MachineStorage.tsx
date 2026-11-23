@@ -99,7 +99,7 @@ export default function MachineStorage() {
           {(selected) => (
             <div class="flex flex-wrap items-center gap-2">
               <span>{selected().name}</span>
-              <StatusBadge tone="neutral" label={selected().kind === "agent" ? t().agent : t().standalone} />
+              <StatusBadge tone="neutral" label={t().agent} />
             </div>
           )}
         </Show>
@@ -144,7 +144,7 @@ export default function MachineStorage() {
                     summary={
                       <span class="inline-flex flex-wrap items-center gap-2">
                         {storage.owner.name}
-                        <StatusBadge tone="neutral" label={storage.owner.kind === "agent" ? t().agent : t().standalone} />
+                        <StatusBadge tone="neutral" label={t().agent} />
                       </span>
                     }
                   >
@@ -326,7 +326,7 @@ function StorageGrants(props: { storage: Storage }) {
                       {entry.path || "/"} · {t()[entry.permission === "admin" ? "admin" : entry.permission === "write" ? "write" : "read"]}
                     </div>
                     <Show when={entry.serviceAccountKind}>
-                      <StatusBadge tone="neutral" label={entry.serviceAccountKind === "agent" ? t().agent : t().standalone} />
+                      <StatusBadge tone="neutral" label={t().agent} />
                     </Show>
                   </div>
                   <Button
