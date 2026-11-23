@@ -478,7 +478,7 @@ describe("measureV2Layout", () => {
   );
 
   test(
-    "v2's own Band with a Canvas in it: the canvas's line is the one known finding (#4074, lane C)",
+    "green: v2's own Band with a Canvas in it; the band's line closes both",
     async () => {
       const page = await open(
         columns(
@@ -486,10 +486,7 @@ describe("measureV2Layout", () => {
         ),
       );
       try {
-        // Until #4074 is fixed the canvas draws its own line inside the band; afterwards this list is empty.
-        expect((await measureV2Layout(page)).problems).toEqual([
-          expect.stringMatching(/^line inside section\.k2-band: div\.k2-canvas border-bottom at y \d+ separates parts of one thing/),
-        ]);
+        expect((await measureV2Layout(page)).problems).toEqual([]);
       } finally {
         await page.close();
       }
