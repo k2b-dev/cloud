@@ -41,6 +41,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       row: [".k2-list > .k2-row", "250,109 432x73"],
       readerHead: ['.k2-pane[data-detail] > [data-slot="head"] > .k2-bar', "683,57 692x52"],
       notice: ['.k2-notice[data-tone="ai"]', "683,149 692x85"],
+      // the first message 12 px below the framed composer, with no line between them (Valentin, v2 of ui-v2-bausteine)
+      message: [".k2-pane[data-detail] .k2-canvas + .k2-band", "683,456 692x285"],
       listGrip: [".k2-split .k2-grip", "677,460 11x20"],
     },
     390: {
@@ -152,11 +154,12 @@ describe("v2 demo screens keep the mockup", () => {
                 }),
               );
             }, mockup[name][width]!);
-            // Two lines end within a few px of their place: the meta line of the first statement in the record ("alle 4
-            // offenen Belege …") and the inline facts of a delivery on the phone. With the Plex build of @k2b/ui they
-            // break in Chromium as in the mockup, in WebKit at another word; the mockup's own font breaks the same in
-            // both engines. In WebKit only the parts above them are compared.
+            // Three texts end within a few px of their place: the meta line of the first statement in the record ("alle
+            // 4 offenen Belege …"), the inline facts of a delivery on the phone, and the message in Mail. With the Plex
+            // build of @k2b/ui they break in Chromium as in the mockup, in WebKit at another word; the mockup's own font
+            // breaks the same in both engines. In WebKit only the parts above them are compared.
             const webkitBreaks: Partial<Record<keyof typeof screens, Record<number, string[]>>> = {
+              mail: { 1440: ["message"] },
               record: { 1440: ["cells", "section", "todo", "facts"] },
               deliveries: { 390: ["facts", "folded", "section"] },
             };
