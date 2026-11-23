@@ -1,4 +1,4 @@
-import { For, type JSX } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
@@ -13,6 +13,8 @@ export type V2Screen = {
   mockup: string;
   /** The one colour of the app (`--k2-app`); v2 derives its ink and tint in each theme. */
   app?: string;
+  /** The platform's bar on the phone, as the mockup draws it: the app with its switcher, or the way back to a list. */
+  phone: { app: string } | { back: string };
   render: () => JSX.Element;
 };
 
@@ -23,6 +25,7 @@ export const v2Screens = {
       "The inbox: sidebar, a head with views, a status row, rows of three lines, and the reader with a summary, the reply, the message, its attachments and an internal note.",
     mockup: "mail.html",
     app: "#0f766e",
+    phone: { app: "Mail" },
     render: () => <MailScreen />,
   },
   "mail-list": {
@@ -31,6 +34,7 @@ export const v2Screens = {
       "The same inbox while no message is open: on the phone the list is the page, and a row opens its message as a page of its own with the way back.",
     mockup: "mail.html (390 px)",
     app: "#0f766e",
+    phone: { app: "Mail" },
     render: () => <MailScreen open={false} />,
   },
   record: {
@@ -38,6 +42,7 @@ export const v2Screens = {
     description:
       "One customer record of Warenfluss: the identity in the head, tabs, a pinned note, three statements, what is due, the latest deliveries, the contact history and the info column with its map.",
     mockup: "akte.html",
+    phone: { back: "Kunden" },
     render: () => <RecordScreen />,
   },
   deliveries: {
@@ -45,6 +50,7 @@ export const v2Screens = {
     description:
       "The tab Einlieferungen of the same record: every delivery in its own framed group with a tinted head and no line inside; the latest two open with their way, run-out days and returns, the older ones folded.",
     mockup: "akte-einlieferungen.html",
+    phone: { back: "Kunden" },
     render: () => <DeliveriesScreen />,
   },
   table: {
@@ -53,6 +59,7 @@ export const v2Screens = {
       "34 orders of Grids in 11 columns, grouped by state: the head and the first column stay while scrolling, rows and cells answer the pointer, the boxes select rows and turn the status row into the bar of what can be done with them. On the phone every order becomes a row of two lines.",
     mockup: "tabelle-grids.html",
     app: "#047857",
+    phone: { back: "Aufträge" },
     render: () => <TableScreen />,
   },
   form: {
@@ -61,11 +68,47 @@ export const v2Screens = {
       "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Dialog, menu, the open list of a selection and the toast with Rückgängig after the main action follow with the behaviour layer.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
+    phone: { back: "Aufträge" },
     render: () => <FormScreen />,
   },
 } satisfies Record<string, V2Screen>;
 
 export type V2ScreenName = keyof typeof v2Screens;
+
+/**
+ * The platform's bar above an app on the phone (52 px), drawn as the mockup has it: the app's name with its switcher,
+ * or the name of the list it leads back to, then search and more. It is a picture of the Cloud shell, not part of v2,
+ * so assistive technology skips it.
+ */
+export const PhoneBar = (props: V2Screen["phone"]) => (
+  <div class="ui-v2-phonebar" aria-hidden="true">
+    <Show
+      when={"back" in props ? props.back : undefined}
+      fallback={
+        <>
+          <span class="ui-v2-phonebar__title">{"app" in props ? props.app : ""}</span>
+          <i class="ti ti-chevron-down ui-v2-phonebar__muted" />
+        </>
+      }
+    >
+      {(back) => (
+        <>
+          <span class="ui-v2-phonebar__button">
+            <i class="ti ti-chevron-left" />
+          </span>
+          <span class="ui-v2-phonebar__title">{back()}</span>
+        </>
+      )}
+    </Show>
+    <span class="ui-v2-phonebar__fill" />
+    <span class="ui-v2-phonebar__button">
+      <i class="ti ti-search" />
+    </span>
+    <span class="ui-v2-phonebar__button">
+      <i class={"back" in props ? "ti ti-dots" : "ti ti-menu-2"} />
+    </span>
+  </div>
+);
 
 /**
  * A screen on a page of its own, framed like the Cloud shell of the mockup (rail 56 px, the app card inset 8 px; the
@@ -75,6 +118,7 @@ export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   const screen: V2Screen = v2Screens[props.name];
   return (
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
+      <PhoneBar {...screen.phone} />
       <div class="ui-v2-screen__card">{screen.render()}</div>
       <V2Inspect />
     </div>
