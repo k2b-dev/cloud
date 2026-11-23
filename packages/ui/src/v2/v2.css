@@ -1071,6 +1071,11 @@
 .k2-ui .k2-row-open:focus-visible::after {
   box-shadow: inset 0 0 0 2px var(--k2-blue);
 }
+/* in a row the open element holds nothing and lies over the whole row, outside its grid */
+.k2-ui .k2-row > .k2-row-open {
+  position: absolute;
+  inset: 0;
+}
 .k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open),
 .k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open) {
   position: relative;

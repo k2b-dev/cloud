@@ -151,11 +151,30 @@ test("hydration: the live page is what the server sent, in elements, texts and a
   });
 });
 
+test("red: a component that reads a prop holding JSX twice fails to hydrate, so the test above would see it", async () => {
+  const serverFile = resolve(temp, "twice.js");
+  await Bun.write(serverFile, await bundle("v2-hydration-twice.tsx", "ssr"));
+  const { render }: { render: () => { html: string; script: string } } = await import(serverFile);
+  const sent = render();
+  const page = await browser.newPage();
+  page.setDefaultTimeout(2000);
+  const errors = pageErrors(page);
+  try {
+    await page.setContent(`<!doctype html><html><head>${sent.script}</head><body><div id="twice">${sent.html}</div></body></html>`);
+    await page.addScriptTag({ content: await bundle("v2-hydration-twice.tsx", "dom") }).catch(() => undefined);
+    await page.waitForFunction(() => window.__k2TwiceDone === true);
+    expect(errors.some((error) => error.includes("Hydration Mismatch"))).toBe(true);
+    errors.length = 0;
+  } finally {
+    await page.close();
+  }
+});
+
 test("the comparison of sent and live pages finds a changed attribute and a changed text", async () => {
   await withPage(async (page) => {
     await page.evaluate(() => {
       document.querySelector(".k2-field-label")!.setAttribute("data-probe", "changed");
-      const title = document.querySelector(".k2-row-title .k2-row-open")!.firstChild!;
+      const title = document.querySelector(".k2-row-title")!.firstChild!;
       title.textContent = `${title.textContent} (neu)`;
     });
     const found = await page.evaluate(differencesInPage);
@@ -224,6 +243,11 @@ test("an entry that opens something holds no control inside a control, and each 
     await page.getByRole("button", { name: "Annehmen" }).click();
     await page.getByText("Geöffnet: annehmen").waitFor();
     // a digest entry and a table row open from anywhere on them, their own links stay theirs
+    // a link in the title of a row stays its own; the row is opened by the element named by that title
+    const entries = page.getByRole("list", { name: "Einträge" });
+    await entries.getByRole("link", { name: "EL-2611", exact: true }).click();
+    expect(await hash()).toBe("#einlieferung");
+    expect(await entries.getByRole("link", { name: "Einlieferung EL-2611" }).getAttribute("href")).toBe("#zeile");
     await page.locator('[data-k2-part="Digest.Entry"]').getByRole("link", { name: "Q-21" }).click();
     expect(await hash()).toBe("#quittung");
     await page.locator(".k2-table td", { hasText: "617,00 €" }).click();

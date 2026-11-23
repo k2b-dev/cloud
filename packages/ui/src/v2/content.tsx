@@ -1,4 +1,4 @@
-import { createContext, createMemo, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
+import { createContext, createMemo, createUniqueId, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
@@ -231,6 +231,7 @@ export const Row = (props: RowProps) => {
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
+  const title = createUniqueId();
   return (
     <div
       class="k2-row"
@@ -248,6 +249,17 @@ export const Row = (props: RowProps) => {
       data-action={props.action ? "" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
+      {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
+          the title stays a link of its own (no link inside a link). */}
+      <Show when={props.href !== undefined || props.onOpen}>
+        <Show
+          when={props.href !== undefined}
+          fallback={<button type="button" class="k2-row-open" aria-labelledby={title} onClick={() => props.onOpen?.()} />}
+        >
+          {/* biome-ignore lint/a11y/useAnchorContent: the row's title names it through aria-labelledby; holding the title would put a link of the title inside this one. */}
+          <a class="k2-row-open" href={props.href} aria-labelledby={title} onClick={() => props.onOpen?.()} />
+        </Show>
+      </Show>
       <span class="k2-row-lead">
         <Show
           when={props.avatar}
@@ -268,10 +280,8 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title">
-          <RowOpen href={props.href} onOpen={props.onOpen}>
-            {text()[0]}
-          </RowOpen>
+        <span class="k2-row-title" id={title}>
+          {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
           <span class="k2-row-meta">{meta()}</span>

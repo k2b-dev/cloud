@@ -86,6 +86,14 @@ export function Fixture() {
               onOpen={() => setOpened("jonas")}
               action={{ label: "Annehmen", onClick: () => setOpened("annehmen") }}
             />
+            <Row
+              lines={[
+                <>
+                  Einlieferung <Text href="#einlieferung">EL-2611</Text>
+                </>,
+              ]}
+              href="#zeile"
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>
