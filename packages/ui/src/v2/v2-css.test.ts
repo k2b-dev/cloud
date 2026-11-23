@@ -78,16 +78,23 @@ test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
       if (!match[1]!.startsWith("--k2-")) problems.push(`${declaration.prop} reads ${match[1]}`);
   });
   root.walkRules((rule: Rule) => {
+    // the steps of a keyframes rule are no selectors
+    if (rule.parent?.type === "atrule" && /keyframes$/.test((rule.parent as postcss.AtRule).name)) return;
     selectorParser((selectors) => {
       selectors.each((selector) => {
         let scoped = false;
+        // A tag or `*` may only stand below a primitive of v2 (`.k2-table th`, `.k2-prose :where(ul)`), never alone
+        // below the root, where it would restyle markup that is not v2's.
+        let inPrimitive = false;
         selector.walk((node) => {
           if (node.type === "class") {
             if (node.value === "k2-ui") scoped = true;
-            else if (node.value !== "dark" && !node.value.startsWith("k2-")) problems.push(`class .${node.value} in ${rule.selector}`);
+            else if (node.value.startsWith("k2-")) inPrimitive = true;
+            else if (node.value !== "dark") problems.push(`class .${node.value} in ${rule.selector}`);
           }
-          if (node.type === "tag" || node.type === "universal" || (node.type === "pseudo" && node.value === ":root"))
+          if ((node.type === "tag" || node.type === "universal") && !inPrimitive)
             problems.push(`${node.toString().trim()} in ${rule.selector}`);
+          if (node.type === "pseudo" && node.value === ":root") problems.push(`${node.toString().trim()} in ${rule.selector}`);
         });
         if (!scoped) problems.push(`${selector.toString().trim()} is not below .k2-ui`);
       });

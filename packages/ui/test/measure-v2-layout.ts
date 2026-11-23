@@ -509,7 +509,7 @@ function measureInPage(options: InPage): DomResult {
 }
 
 /** Runs in the page: finds the pill and the line in a screenshot of one grip. */
-async function gripPixelsInPage(input: { png: string; scale: number; left: number; top: number; width: number }) {
+async function gripPixelsInPage(input: { png: string; scale: number; left: number; top: number; width: number; height: number }) {
   const image = new Image();
   image.src = `data:image/png;base64,${input.png}`;
   await image.decode();
@@ -542,8 +542,11 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
   // Only inside the grip and 3 px around it, so text beside it never counts.
   const from = Math.round((input.left - 3) * s);
   const to = Math.round((input.left + input.width + 3) * s) - 1;
-  // The line 3 px above the pill, and the pill 3 px below its top edge, above its first dots.
-  const line = run(row((input.top - 3) * s + s / 2), from, to);
+  // The line 3 px above the pill, and the pill 3 px below its top edge, above its first dots. A horizontal line or a
+  // band edge can cross the column right there, so the line is also looked for further up and below the pill.
+  const line = [input.top - 3, input.top - 5, input.top + input.height + 3, input.top + input.height + 5]
+    .map((y) => run(row(y * s + s / 2), from, to))
+    .find((found) => found !== null);
   const pill = run(row((input.top + 3) * s + s / 2), from, to);
   if (!line || !pill) return null;
   const centre = (r: { first: number; last: number }) => (r.first + r.last + 1) / 2;
@@ -586,7 +589,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
       animations: "disabled",
       caret: "hide",
     });
-    const pixels = await page.evaluate(gripPixelsInPage, { png: png.toString("base64"), scale, left: left - x, top: top - y, width });
+    const pixels = await page.evaluate(gripPixelsInPage, { png: png.toString("base64"), scale, left: left - x, top: top - y, width, height });
     grips.push({ grip: measure.grip, dom: measure.dom, pixels: pixels?.offset ?? null, lineWidth: pixels?.lineWidth ?? null });
     if (!pixels) grip.push(`grip ${measure.grip}: pill or line not found in the screenshot at DPR ${scale}`);
     else {
