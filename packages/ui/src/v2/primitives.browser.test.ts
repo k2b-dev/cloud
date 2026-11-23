@@ -8,6 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import { personColor } from "../surfaces/person-color";
 import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
@@ -229,6 +230,42 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
         expect(table.cells[1]).toBe(heights.row);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "line 2 of a row reaches its end, a person has the colour of their name, a notice's sign stands beside its title",
+    async () => {
+      const page = await open("layout");
+      try {
+        const found = await page.evaluate(() => {
+          const row = [...document.querySelectorAll(".k2-row[data-lines='3']")].find((each) => each.querySelector(".k2-row-marks"))!;
+          const right = (selector: string) => row.querySelector(selector)!.getBoundingClientRect().right;
+          const avatar = document.querySelector('.k2-av[aria-label="Ada Renz"]')!;
+          const centre = (element: Element) => {
+            const box = element.getBoundingClientRect();
+            return box.top + box.height / 2;
+          };
+          return {
+            line2: right(".k2-row-l2") - right(".k2-row-time"),
+            avatar: getComputedStyle(avatar).backgroundColor,
+            notices: [...document.querySelectorAll(".k2-notice[data-title]")].map(
+              (notice) => centre(notice.querySelector(":scope > .k2-icon")!) - centre(notice.querySelector(".k2-notice-title")!),
+            ),
+          };
+        });
+        // line 2 is as wide as the row's text area: its right edge is the right edge of the time above it
+        expect(found.line2).toBe(0);
+        const hex = personColor("Ada Renz");
+        const rgb = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16));
+        expect(found.avatar).toBe(`rgb(${rgb.join(", ")})`);
+        // with and without deeds at the end, the sign stands on the title's line
+        expect(found.notices.length).toBe(2);
+        for (const offset of found.notices) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
       } finally {
         await page.close();
       }

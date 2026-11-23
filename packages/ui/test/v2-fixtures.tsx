@@ -83,7 +83,7 @@ export const LayoutFixture = () =>
             unread
             lines={[
               "Holzwerk Brandt",
-              "Angebot Eichenplatten – Liefertermin",
+              "Angebot Eichenplatten – Liefertermin, dazu die Frage, ob die Kanten geölt kommen",
               "Guten Tag Frau Solberg, die Platten können wir in KW 49 liefern …",
             ]}
             meta="3"
@@ -132,7 +132,7 @@ export const LayoutFixture = () =>
               </Chip>
             </Inline>
           }
-          end={<Avatar name="Ada Renz" color="#be123c" />}
+          end={<Avatar name="Ada Renz" />}
         />
         <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
           Brandt liefert 14 Eichenplatten in KW 49.
@@ -147,6 +147,9 @@ export const LayoutFixture = () =>
           <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
           <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
         </Band>
+        <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
+          Brandt war bei der letzten Lieferung zwei Tage zu spät.
+        </Notice>
         <Band tone="note">
           <Text type="body" weight="strong">
             Die erste Abrechnung kommt am 15. Dez.

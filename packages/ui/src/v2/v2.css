@@ -936,6 +936,15 @@
 .k2-ui .k2-row-l2 {
   grid-area: l2;
 }
+/* Line 2 reaches the end of the row while nothing stands beside it: only an end beside line 2 (a row with a time and
+   two or three lines), or the marks of a row of two lines, keep it in its column. */
+.k2-ui .k2-row > .k2-row-l2 {
+  grid-column-end: -1;
+}
+.k2-ui .k2-row[data-time]:not([data-lines="1"]):has(> .k2-row-end) > .k2-row-l2,
+.k2-ui .k2-row[data-lines="2"]:has(> .k2-row-marks):not(:has(> .k2-row-end)) > .k2-row-l2 {
+  grid-column-end: auto;
+}
 .k2-ui .k2-row-l3 {
   grid-area: l3;
   font: var(--k2-t-meta);
@@ -2194,6 +2203,10 @@
 .k2-ui .k2-notice > .k2-icon {
   grid-row: 1 / span 2;
   justify-self: center;
+}
+/* with a title the sign stands beside the title, with or without deeds at the end */
+.k2-ui .k2-notice[data-title] > .k2-icon {
+  grid-row: 1;
 }
 .k2-ui .k2-notice-title {
   font-weight: 600;
