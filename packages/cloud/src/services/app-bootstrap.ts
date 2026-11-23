@@ -11,8 +11,8 @@ import {
   BootstrapIdentitySchema,
   bootstrapBodyDigest,
 } from "../runtime/bootstrap-protocol";
-import { sql } from "../runtime/clients";
-import { getActiveAppKey, getInstallationId, getStoredAppKey, type LastRejectedStart } from "./app-keys";
+import { redis, sql } from "../runtime/clients";
+import { getActiveAppKey, getStoredAppKey, type LastRejectedStart } from "./app-keys";
 import { get } from "./settings";
 
 export class BootstrapProofError extends Error {
@@ -32,14 +32,27 @@ export class RejectedBootstrapStart extends BootstrapProofError {
   }
 }
 const invalid = () => new BootstrapProofError("invalid_proof");
+const replayKey = (keyId: string, jti: string) => `cloud:app-proof:${keyId}:${jti}`;
+
+export class BootstrapProofUnavailableError extends Error {
+  constructor() {
+    super("App proof replay protection is temporarily unavailable");
+    this.name = "BootstrapProofUnavailableError";
+  }
+}
 
 /** A refused proof is never consumed. Already-consumed proofs cannot change administrator state. */
 export const recordRejectedBootstrapStart = async (rejection: RejectedBootstrapStart, db: SQL = sql): Promise<void> => {
   const { identity, jti, reason } = rejection;
+  try {
+    if ((await redis.send("EXISTS", [replayKey(identity.keyId, jti)])) !== 0) return;
+  } catch {
+    // An unavailable replay store cannot establish that this is a new start.
+    return;
+  }
   await db`
     INSERT INTO auth.app_start_rejections (app_id, rejected_at, reason, key_id)
-    SELECT ${identity.appId}, clock_timestamp(), ${reason}, ${identity.keyId}::uuid
-    WHERE NOT EXISTS (SELECT 1 FROM auth.app_proof_replays WHERE key_id = ${identity.keyId}::uuid AND jti = ${jti})
+    VALUES (${identity.appId}, clock_timestamp(), ${reason}, ${identity.keyId}::uuid)
     ON CONFLICT (app_id) DO UPDATE
       SET rejected_at = EXCLUDED.rejected_at, reason = EXCLUDED.reason, key_id = EXCLUDED.key_id
   `;
@@ -49,70 +62,21 @@ export const clearRejectedBootstrapStart = async (appId: string, db: SQL = sql):
   await db`DELETE FROM auth.app_start_rejections WHERE app_id = ${appId}`;
 };
 
-/** Shared Postgres uniqueness rejects replay across replicas; each admission also drains one expired proof for its key. */
-export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number, db: SQL = sql, touch = false): Promise<boolean> => {
-  const rows = await db`
-    WITH expired AS MATERIALIZED (
-      SELECT key_id,jti FROM auth.app_proof_replays
-      WHERE key_id=${keyId}::uuid AND retain_until<=now() ORDER BY retain_until LIMIT 1 FOR UPDATE SKIP LOCKED
-    ), pruned AS (
-      DELETE FROM auth.app_proof_replays replay USING expired
-      WHERE replay.key_id=expired.key_id AND replay.jti=expired.jti AND replay.retain_until<=now()
-    ), consumed AS (
-    INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
-    VALUES (${keyId}::uuid, ${jti}, ${new Date((exp + BOOTSTRAP_REPLAY_RETENTION_SECONDS) * 1000)})
-    ON CONFLICT (key_id, jti) DO NOTHING RETURNING jti
-    ), touched AS (
-      UPDATE auth.service_account_credentials c SET last_used_at=now()
-      FROM auth.service_accounts sa WHERE ${touch} AND EXISTS (SELECT 1 FROM consumed)
-        AND c.id=${keyId}::uuid AND c.kind='app_key' AND c.status='active' AND (c.expires_at IS NULL OR c.expires_at>now())
-        AND sa.id=c.service_account_id AND sa.status='active' AND sa.kind='resource_bound'
-        AND sa.resource_type='cloud.app' AND sa.resource_id=sa.app_id
-    ) SELECT jti FROM consumed
-  `;
-  return rows.length === 1;
-};
-
-/** Default signed ingress/key admission and the minute maintenance catch-up budget. Domain bridges may apply their own budgets. */
-export const bootstrapRateLimit = async (): Promise<number> => Math.max(1, Math.floor(await get<number>("security.rate_limit_per_second")));
-
-/** Drain expired pages, with two minutes of per-key admission capacity to catch up after missed runs. */
-export const cleanupBootstrapProofs = async (
-  db: SQL = sql,
-  { signal }: { signal?: AbortSignal } = {},
-): Promise<{ deleted: number; remaining: number }> => {
-  signal?.throwIfAborted();
-  // Include revoked keys: their retained evidence still needs cleaning after revocation.
-  const [keys] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.service_account_credentials WHERE kind = 'app_key'`;
-  const maxRows = Math.max(1, keys?.count ?? 0) * (await bootstrapRateLimit()) * 60 * 2;
-  let deleted = 0;
-  while (deleted < maxRows) {
-    signal?.throwIfAborted();
-    const batchSize = Math.min(100, maxRows - deleted);
-    const query = db`
-      WITH batch AS MATERIALIZED (
-        SELECT key_id, jti FROM auth.app_proof_replays WHERE retain_until <= now()
-        ORDER BY retain_until LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
-      )
-      DELETE FROM auth.app_proof_replays replay USING batch
-      WHERE replay.key_id = batch.key_id AND replay.jti = batch.jti AND replay.retain_until <= now()
-      RETURNING replay.jti
-    `;
-    const abort = () => void query.cancel().catch(() => {});
-    signal?.addEventListener("abort", abort, { once: true });
-    try {
-      signal?.throwIfAborted();
-      const rows = await query;
-      deleted += rows.length;
-      if (rows.length < batchSize) break;
-    } finally {
-      signal?.removeEventListener("abort", abort);
-    }
+/** One atomic Valkey claim rejects parallel reuse across all Core replicas. */
+export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number): Promise<boolean> => {
+  const ttl = Math.max(1, (exp + BOOTSTRAP_REPLAY_RETENTION_SECONDS) * 1000 - Date.now());
+  try {
+    const result = await redis.send("SET", [replayKey(keyId, jti), "1", "NX", "PX", String(ttl)]);
+    if (result === "OK") return true;
+    if (result === null) return false;
+    throw new BootstrapProofUnavailableError();
+  } catch {
+    throw new BootstrapProofUnavailableError();
   }
-  signal?.throwIfAborted();
-  const [backlog] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.app_proof_replays WHERE retain_until <= now()`;
-  return { deleted, remaining: backlog?.count ?? 0 };
 };
+
+/** Default signed ingress and key admission budget. Domain bridges may apply their own budgets. */
+export const bootstrapRateLimit = async (): Promise<number> => Math.max(1, Math.floor(await get<number>("security.rate_limit_per_second")));
 
 /** Reject malformed or expired envelopes before allocating or reading a signed request body. Not authentication. */
 export const inspectAppProof = (proof: string, now = Date.now()): { appId: string; keyId: string } => {
@@ -156,14 +120,13 @@ export const authenticateAppProof = async (
   // Only validated IDs reach SQL, and the app identity must own this active credential.
   const key = await getActiveAppKey({ appId, keyId }, db);
   if (!key) throw invalid();
-  return verifyAppProof(proof, request, key, db, now);
+  return verifyAppProof(proof, request, key, now);
 };
 
 const verifyAppProof = async (
   proof: string,
   request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
   key: NonNullable<Awaited<ReturnType<typeof getStoredAppKey>>>,
-  db: SQL,
   now: number,
 ) => {
   let claims: JWTPayload;
@@ -189,7 +152,7 @@ const verifyAppProof = async (
   )
     throw invalid();
   if (claims.iss !== key.appId || claims.sub !== key.appId) throw new BootstrapProofError("wrong_app");
-  const installationId = await getInstallationId(db);
+  const installationId = key.installationId;
   if (claims.aud !== `cloud-core:${installationId}`) throw new BootstrapProofError("wrong_installation");
   // Admission must succeed before the route atomically consumes this verified nonce.
   return { identity: { installationId, appId: key.appId, keyId: key.keyId }, key, jti: claims.jti, exp: claims.exp! };
@@ -201,14 +164,14 @@ export const authenticateBootstrap = async (
   request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
   db: SQL = sql,
   now = Date.now(),
-): Promise<{ identity: BootstrapIdentity; jti: string; exp: number }> => {
+) => {
   const ids = inspectAppProof(proof, now);
   const key = await getStoredAppKey(ids, db);
   if (!key) throw invalid();
   const inactive = key.status !== "active" || key.accountStatus !== "active";
   let verified: Awaited<ReturnType<typeof verifyAppProof>>;
   try {
-    verified = await verifyAppProof(proof, request, key, db, now);
+    verified = await verifyAppProof(proof, request, key, now);
   } catch (error) {
     // Inactive keys have always returned invalid_proof, regardless of their claims.
     if (inactive) throw invalid();
@@ -226,6 +189,5 @@ export const authenticateBootstrap = async (
             ? "connections_not_permitted"
             : null;
   if (reason) throw new RejectedBootstrapStart(verified.identity, verified.jti, reason);
-  const { identity, jti, exp } = verified;
-  return { identity, jti, exp };
+  return verified;
 };

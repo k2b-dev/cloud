@@ -1,4 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { decodeJwt } from "jose";
+import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
+import { env } from "../config/env";
 import autocomplete from "../services/geo/fixtures/autocomplete.json";
 import geocode from "../services/geo/fixtures/geocode.json";
 import { GEO_TEST_KEY, GEO_TEST_NOW } from "../services/geo/geo.test-fixture";
@@ -6,8 +9,10 @@ import { GeoapifyAdapter } from "../services/geo/geoapify";
 import { geoClient } from "./geo-client";
 
 const original = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+const originalKey = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
 afterEach(() => {
   mock.restore();
+  Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
   if (original === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   else process.env.CLOUD_CORE_INTERNAL_ORIGIN = original;
 });
@@ -37,14 +42,18 @@ test("geoClient preserves caller identity and locale, parses the Core response",
   expect(requests[0]!.headers.get("x-cloud-locale")).toBe("de-CH");
   expect(await requests[0]!.json()).toEqual({ input: { text: "Orle" } });
 });
-test("background geoClient uses the mandate broker and caller workload credential", async () => {
+test("background geoClient signs app authority and uses the mandate broker", async () => {
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = "https://core.example.test";
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture("test-app"), configurable: true });
   const result = await geoClient.availability({
-    authorization: "Bearer workload",
     locale: "de",
     mandate: { id: "mandate", revision: 2, callingAppId: "test-app" },
     transport: async (request) => {
       expect(new URL(request.url).pathname).toBe("/api/_internal/identity/v1/invoke");
+      expect(decodeJwt(request.headers.get("authorization")!.slice(7))).toMatchObject({
+        iss: "test-app",
+        htu: "/api/_internal/identity/v1/invoke",
+      });
       expect(await request.json()).toMatchObject({
         kind: "query",
         targetApp: "core",

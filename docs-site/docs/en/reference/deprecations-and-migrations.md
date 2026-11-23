@@ -5,13 +5,62 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## The app key is an app's only identity
+
+Operator note: every serving app except Core and Gateway now needs its
+enrolled Ed25519 app key (`CLOUD_APP_KEY_FILE` or `CLOUD_APP_KEY`). An app
+without one does not start. Enroll and mount the keys on your current release
+first; since 0.66 every release accepts them next to the old credentials.
+Then follow [App key upgrade](/en/docs/operations/app-key-upgrade).
+
+Removed without a replacement path:
+
+- runtime workload tokens, their delivery over NATS and the per-minute refresh
+  in every app process;
+- bearer workload authentication in Core and the automatic refresh-and-retry
+  in the capability client;
+- `CLOUD_APP_CREDENTIAL`, `CLOUD_MAIL_APP_CREDENTIAL`,
+  `CLOUD_OAUTH_BROKER_SECRET`, `CLOUD_IDENTITY_JWKS_ORIGIN` and
+  `CLOUD_OAUTH_JWKS_ORIGIN`; Core's private origin
+  (`CLOUD_CORE_INTERNAL_ORIGIN`) supplies the public keys;
+- `cld admin app-credentials`, `cld admin apps migration observe`, the
+  `/api/admin/identity/workloads` routes and **Keys → Tokens for host
+  operation** under **Administration → Apps**;
+- `getAppWorkloadCredential`, `sendAppRequest({ bearer })` and
+  `cleanupBootstrapProofs`. `consumeBootstrapProof(keyId, jti, exp)` no longer
+  takes a database. `touchAppKey(key, db)` takes the authenticated key row.
+
+Core's migration removes app API tokens with the former workload scopes, audits
+each active one as revoked once, and drops `auth.app_workload_instances`, the
+migration-observation tables and `auth.app_proof_replays`. Stop all old Core
+replicas before the first new one starts; applications keep running.
+
+A signed call now costs one Postgres read and no Postgres write: the key and
+the installation identity come from one query, `last_used_at` is written at
+most once per minute and key, and the replay claim is a Valkey `SET NX` with a
+TTL. If Valkey is unavailable, Core refuses signed calls with HTTP 503. Keep
+Valkey's `maxmemory-policy noeviction`; see
+[Upgrade all Core replicas together](/en/docs/operations/app-keys#upgrade-all-core-replicas-together).
+
+OAuth issuance runs through a platform contract. Any app whose key holds the
+operator grant `oauth:issue` registers its clients in `auth.oauth_clients`
+through `oauthClients` and sends Core a closed `OAuthAuthorityStatement`; Core
+no longer reads the built-in OAuth app's tables. Update Core first, then OAuth
+right after it: token issuance and terminal sign-ins are unavailable between
+the two updates. See [Roll out issuer ownership](/en/docs/operations/app-keys#roll-out-issuer-ownership)
+and [Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
+
+Explicit connection values still win per value, so third-party apps that use
+Bun's `sql` or `redis` keep them. Keyless one-off scripts keep
+`initializePlatform({ appId, source: "env" })` and must not make signed calls.
 
 ## The UI returns to the look of 0.83
 

@@ -1,4 +1,4 @@
-import { redis, sql } from "@k2b/cloud";
+import { connections, redis, sql } from "@k2b/cloud";
 import { audit, requireConfirmedBrowserSignIn, toPgTextArray } from "@k2b/cloud/services";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import { rejectBrowserSignIn } from "./sign-in";
@@ -74,12 +74,12 @@ export const create = async (params: {
   scopes: OAuthScope[];
   loginLifetimeSeconds?: number | null;
   appApproval?: boolean;
-}): Promise<{ id: string; deviceCode: string; userCode: string; expiresIn: number; interval: number }> => {
+}): Promise<{ id: string; deviceCode: string; userCode: string; expiresIn: number; expiresAt: string; interval: number }> => {
   const expiresIn = params.appApproval ? APP_APPROVAL_DEVICE_LIFETIME_SECONDS : DEVICE_CODE_LIFETIME_SECONDS;
   const deviceCode = randomDeviceCode();
   for (let attempt = 0; attempt < INSERT_ATTEMPTS; attempt += 1) {
     const userCode = randomUserCode();
-    const [row] = await sql<{ id: string }[]>`
+    const [row] = await sql<{ id: string; expires_at: Date }[]>`
       INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at, login_lifetime_seconds, app_approval)
       SELECT
         ${sha256(deviceCode)},
@@ -98,9 +98,17 @@ export const create = async (params: {
       FROM oauth.clients client
       WHERE client.client_id = ${params.client.clientId}
       ON CONFLICT (user_code_hash) DO NOTHING
-      RETURNING id
+      RETURNING id,expires_at
     `;
-    if (row) return { id: row.id, deviceCode, userCode, expiresIn, interval: DEVICE_POLL_INTERVAL_SECONDS };
+    if (row)
+      return {
+        id: row.id,
+        deviceCode,
+        userCode,
+        expiresIn,
+        expiresAt: row.expires_at.toISOString(),
+        interval: DEVICE_POLL_INTERVAL_SECONDS,
+      };
   }
   throw new Error("Could not allocate a unique device user code");
 };
@@ -196,7 +204,7 @@ export type DevicePollResult =
       scopes: OAuthScope[];
       audiences: string[];
       loginLifetimeSeconds: number;
-      authorityGrant: { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
+      authorityGrant: { kind: "device_code"; deviceAuthorizationId: string };
     };
 
 /**
@@ -208,6 +216,16 @@ export const poll = async (params: {
   clientId: string;
   resolveLoginLifetime: (stored: number | null) => Promise<number>;
 }): Promise<DevicePollResult> => {
+  await sql`UPDATE oauth.device_authorizations d
+    SET status=CASE WHEN l.state='approved' THEN 'approved' ELSE 'denied' END,
+      user_id=l.user_id,auth_epoch=l.auth_epoch,decided_at=now(),login_lifetime_seconds=l.lifetime_seconds
+    FROM auth.app_logins l WHERE d.device_code_hash=${sha256(params.deviceCode)} AND d.client_id=${params.clientId}
+      AND d.app_approval AND d.status='pending' AND d.expires_at > now()
+      AND l.device_authorization_id=d.id AND l.kind='terminal' AND l.oauth_issuer_app_id=${connections().appId}
+      AND l.client_id=d.client_id AND l.state IN ('approved','denied') AND l.user_id IS NOT NULL
+      AND l.oauth_grant_expires_at=date_trunc('milliseconds',d.expires_at)
+      AND d.scopes @> l.scopes AND d.scopes <@ l.scopes
+      AND (d.login_lifetime_seconds IS NULL OR l.lifetime_seconds<=d.login_lifetime_seconds)`;
   const [row] = await sql<(DbDeviceAuthorization & { expired: boolean; epoch_current: boolean | null })[]>`
     SELECT id, client_id, scopes, status, user_id, auth_epoch, expires_at, login_lifetime_seconds, expires_at <= now() AS expired,
       auth_epoch = (SELECT auth_epoch FROM auth.users WHERE id = device.user_id) AS epoch_current
@@ -228,10 +246,9 @@ export const poll = async (params: {
   if (row.status === "denied") return { ok: false, error: "access_denied" };
 
   const loginLifetimeSeconds = await params.resolveLoginLifetime(row.login_lifetime_seconds);
-  const nonce = crypto.randomUUID();
   const [consumed] = await sql<{ user_id: string; auth_epoch: string | number; scopes: string[]; audiences: string[] }[]>`
     UPDATE oauth.device_authorizations
-    SET status = 'consumed', authority_nonce = ${nonce}::uuid
+    SET status = 'consumed'
     WHERE id = ${row.id}::uuid
       AND status = 'approved'
       AND auth_epoch IS NOT NULL
@@ -246,7 +263,7 @@ export const poll = async (params: {
     scopes: consumed.scopes as OAuthScope[],
     audiences: consumed.audiences,
     loginLifetimeSeconds,
-    authorityGrant: { kind: "device_code", deviceAuthorizationId: row.id, nonce },
+    authorityGrant: { kind: "device_code", deviceAuthorizationId: row.id },
   };
 };
 

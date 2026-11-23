@@ -30,6 +30,7 @@ export * from "./geo-route";
 export * from "./geoip";
 export * from "./installable";
 export * from "./notification-types";
+export * from "./oauth-issuer";
 export * from "./outgoing-mail";
 export * from "./panel-context";
 export * from "./posix";

@@ -37,7 +37,6 @@ test("status preserves machine JSON, explicit inventory and exceptions, and neve
       needsAttention,
       apps: [],
       registryIssues: [],
-      observation: { startedAt: null, lastLegacyUseAt: null, observedAt: "2030-01-02T00:00:00.000Z", windowSeconds: null, complete: false },
     };
     expect(await invoke(["migration", "status"], { strict: true, expect: "mail,inventory", "allow-env": "inventory" }, result)).toEqual({
       code: needsAttention ? 1 : 0,
@@ -56,7 +55,6 @@ test("status includes rejected starts and attention reasons in text and machine 
   const result = {
     needsAttention: true,
     registryIssues: [],
-    observation: { startedAt: null, lastLegacyUseAt: null, observedAt: "2030-01-02T00:00:00.000Z", windowSeconds: 86400, complete: false },
     apps: [
       {
         appId: "mail",
@@ -71,17 +69,10 @@ test("status includes rejected starts and attention reasons in text and machine 
       },
     ],
   };
-  const json = await invoke(["migration", "status"], { "observation-seconds": "86400" }, result);
+  const json = await invoke(["migration", "status"], {}, result);
   expect(json.output).toEqual([result]);
-  expect(json.requests[0]?.path).toContain("windowSeconds=86400");
   const text = await invoke(["migration", "status"], {}, result, "text");
   expect(text.code).toBe(1);
   expect(text.output).toContain("mail: last_rejected_start");
   expect(text.output).toContain("mail: lastRejectedStart 2030-01-02T00:00:00.000Z · revoked · key unknown");
-});
-test("observation begins through the administrator write endpoint", async () => {
-  const result = { startedAt: "2030-01-02T00:00:00.000Z" };
-  expect((await invoke(["migration", "observe"], {}, result)).requests).toEqual([
-    { path: "/api/admin/apps/observation", body: {}, method: "POST" },
-  ]);
 });

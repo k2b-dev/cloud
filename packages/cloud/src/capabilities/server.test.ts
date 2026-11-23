@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { decodeJwt } from "jose";
 import { z } from "zod";
+import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
 import * as dispatcher from "../api/capabilities";
+import { env } from "../config/env";
 import type { RequestAuthority } from "../server";
 import { sessionOriginGuard } from "../server/middleware/session-origin";
 import * as settings from "../services/settings";
@@ -9,6 +13,7 @@ import { invokeCapability, invokeCapabilityWithDataSchema, reviewCapabilityActio
 
 const originalFetch = globalThis.fetch;
 const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+const originalKey = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
 const publicOrigin = "https://cloud.example.test";
 let settingSpy: ReturnType<typeof spyOn<typeof settings, "get">>;
 beforeEach(() => {
@@ -19,6 +24,7 @@ afterEach(() => {
   expect(settingSpy.mock.calls.every(([key]) => key === "app.url")).toBe(true);
   settingSpy.mockRestore();
   globalThis.fetch = originalFetch;
+  Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
   if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
 });
@@ -204,8 +210,9 @@ describe("server capability client", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE", status: 502 } });
   });
 
-  test("sends a workload credential and mandate only to Core", async () => {
+  test("signs app authority and sends the mandate only to Core", async () => {
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
+    Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture("mail"), configurable: true });
     let request: Request | undefined;
     let body: BodyInit | null | undefined;
     globalThis.fetch = (async (input, init) => {
@@ -217,7 +224,6 @@ describe("server capability client", () => {
     const result = await invokeCapability(
       { appId: "spaces", capabilityId: "event.create", kind: "action", input: { title: "One" }, idempotencyKey: "job-7" },
       {
-        authorization: "Bearer cld_mail-workload",
         cookie: "session_token=must-not-leave",
         requestId: "request-7",
         traceparent: "00-trace",
@@ -228,7 +234,10 @@ describe("server capability client", () => {
 
     expect(result.ok).toBeTrue();
     expect(request?.url).toBe("http://core.internal:3000/api/_internal/identity/v1/invoke");
-    expect(request?.headers.get("authorization")).toBe("Bearer cld_mail-workload");
+    expect(decodeJwt(request!.headers.get("authorization")!.slice(7))).toMatchObject({
+      iss: "mail",
+      htu: "/api/_internal/identity/v1/invoke",
+    });
     expect(request?.headers.get("x-cloud-app-id")).toBe("mail");
     expect(request?.headers.get("cookie")).toBeNull();
     expect(request?.headers.get("idempotency-key")).toBeNull();
@@ -255,12 +264,17 @@ describe("server capability client", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const caller = { authorization: "Bearer cld_chat-workload", workload: { appId: "chat" } };
+    Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture("chat"), configurable: true });
+    const caller = { workload: { appId: "chat" } };
     const query = { appId: "spaces", capabilityId: "item.readable", kind: "query" as const, input: { id: "Abc123", principals: [] } };
     expect((await invokeCapability(query, caller)).ok).toBe(true);
     expect(requests[0]!.url).toBe("http://core.internal:3000/api/_internal/identity/v1/invoke");
     expect(requests[0]!.headers.get("cookie")).toBeNull();
     expect(requests[0]!.headers.get("x-cloud-app-id")).toBe("chat");
+    expect(decodeJwt(requests[0]!.headers.get("authorization")!.slice(7))).toMatchObject({
+      iss: "chat",
+      htu: "/api/_internal/identity/v1/invoke",
+    });
     expect(await requests[0]!.json()).toEqual({ kind: "query", targetApp: "spaces", capabilityId: "item.readable", input: query.input });
     expect((await invokeCapability({ ...query, kind: "action" }, caller)).ok).toBe(false);
     expect((await invokeCapability(query, { ...caller, cookie: "session=unexpected" })).ok).toBe(false);
@@ -271,6 +285,41 @@ describe("server capability client", () => {
     delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     expect((await invokeCapability(query, caller)).ok).toBe(false);
     expect(requests).toHaveLength(1);
+  });
+
+  test("Core's own app queries stay in process without an app key, and no other process can send them", async () => {
+    delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
+    let fetched = false;
+    globalThis.fetch = Object.assign(
+      async () => {
+        fetched = true;
+        return Response.json({ data: {} });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const dispatch = spyOn(dispatcher, "dispatchCapability").mockResolvedValue(Response.json({ data: { readable: [] } }));
+    const query = { appId: "spaces", capabilityId: "item.readable", kind: "query" as const, input: { id: "Abc123", principals: [] } };
+    try {
+      bindProcessApplicationId("core", ["resources:readers"]);
+      expect(await invokeCapability(query, { workload: { appId: "core" } })).toMatchObject({ ok: true });
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+        kind: "queries",
+        appId: "spaces",
+        capabilityId: "item.readable",
+        callingAppId: "core",
+        workload: { appId: "core", scope: "identity:invoke" },
+      });
+      expect(dispatch.mock.calls[0]?.[0].authority).toBeUndefined();
+      clearProcessApplicationId();
+      bindProcessApplicationId("chat", ["resources:readers"]);
+      expect(await invokeCapability(query, { workload: { appId: "core" } })).toMatchObject({ ok: false, error: { status: 503 } });
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(fetched).toBe(false);
+    } finally {
+      clearProcessApplicationId();
+      dispatch.mockRestore();
+    }
   });
 
   test("distinguishes network failure, cancellation, and an unknown non-idempotent Action outcome", async () => {

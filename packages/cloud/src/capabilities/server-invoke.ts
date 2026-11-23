@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { getProcessApplicationId } from "../_internal/process-identity";
-import { refreshAppWorkloadCredential } from "../_internal/workload-credential";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import { env } from "../config/env";
 import {
@@ -14,6 +13,7 @@ import {
 import type { RequestAuthority } from "../server";
 import { sendAppRequest } from "../services/identity/app-request";
 import { coreOrigin } from "../services/identity/core-origin";
+import { CORE_WORKLOAD } from "../services/identity/workload-auth";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
@@ -94,7 +94,13 @@ export const callerRequest = async (
   }
   const signal = combineCapabilitySignals(caller.signal, invocationSignal);
   return new Request(
-    new URL(path, await coreOrigin(caller.app !== undefined || caller.mandate !== undefined || caller.workload !== undefined)),
+    // Core's own app queries stay in process and need no internal listener origin.
+    new URL(
+      path,
+      await coreOrigin(
+        caller.app !== undefined || caller.mandate !== undefined || (caller.workload !== undefined && caller.workload.appId !== "core"),
+      ),
+    ),
     {
       method: "POST",
       headers,
@@ -148,6 +154,34 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         ? "/api/_internal/identity/v1/invoke"
         : `/api/capabilities/v1/${invocation.kind === "query" ? "queries" : "actions"}/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}`;
     const request = await callerRequest(caller, path, invocation.idempotencyKey, invocation.signal);
+    if (caller.workload?.appId === "core") {
+      // Core holds no app key: its own app queries never leave the process.
+      if (getProcessApplicationId() !== "core" || caller.authorization || caller.transport)
+        throw new Error("Only the Core process sends Core app queries, in process");
+      const outcome = await dispatchCapability({
+        request,
+        kind: "queries",
+        appId: invocation.appId,
+        capabilityId: invocation.capabilityId,
+        input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
+        workload: CORE_WORKLOAD,
+        callingAppId: "core",
+        locale: caller.locale ?? undefined,
+        origin: "app",
+      });
+      return validateReceivedCapabilityView(
+        await readCapabilityResponse(
+          outcome,
+          capabilityResultSchema(dataSchema, { consumer: true }),
+          CAPABILITY_MAX_RESULT_BYTES,
+          caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+          caller.consumeResponseBytes,
+        ),
+        invocation.appId,
+      );
+    }
     if (caller.authority) {
       if (caller.authorization || caller.cookie || caller.app || caller.mandate || caller.workload || caller.transport)
         throw new Error("Use exactly one capability authority source");
@@ -220,26 +254,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
     const workloadAppId = caller.app?.appId ?? caller.mandate?.callingAppId ?? caller.workload?.appId;
     const send = (request: Request) =>
       workloadAppId ? sendAppRequest(request, { appId: workloadAppId, transport: caller.transport }) : (caller.transport ?? fetch)(request);
-    // Only Core's pre-dispatch legacy rejection is safe to refresh and retry.
-    // A configured app key is never downgraded to a reusable credential.
-    const retryRequest = workloadAppId ? brokerRequest.clone() : undefined;
-    let response = await send(brokerRequest);
-    const credentialRejected = (reply: Response) => reply.status === 401 && reply.headers.get("x-cloud-workload-auth") === "required";
-    if (!caller.app && workloadAppId && retryRequest && !env.CLOUD_APP_KEY && credentialRejected(response)) {
-      await response.body?.cancel();
-      let token: string | undefined;
-      try {
-        token = await refreshAppWorkloadCredential(workloadAppId);
-      } catch {
-        // This rejection happened before dispatch; credential state is retryable unavailability.
-      }
-      if (token) retryRequest.headers.set("authorization", `Bearer ${token}`);
-      response = await send(retryRequest);
-      if (credentialRejected(response)) {
-        await response.body?.cancel();
-        return unavailable(undefined, undefined, caller.locale ?? undefined);
-      }
-    }
+    const response = await send(brokerRequest);
     return validateReceivedCapabilityView(
       await readCapabilityResponse(
         response,

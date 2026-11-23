@@ -3,7 +3,7 @@ import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import { jsonResponse } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
 import * as linksRuntime from "../services/links/runtime";
@@ -19,6 +19,7 @@ import * as watcher from "./runtime-watcher";
 type Operation = { responses?: Record<string, { description?: string; content?: Record<string, { schema?: unknown }> }> };
 
 test("the published OpenAPI spec describes the validation error body Cloud sends", async () => {
+  const identityStub = stubAppIdentity();
   const secretStub = stubConnections({ appSecret: { current: "openapi-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -100,5 +101,6 @@ test("the published OpenAPI spec describes the validation error body Cloud sends
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
     secretStub.mockRestore();
+    identityStub.mockRestore();
   }
 });

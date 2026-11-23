@@ -5,16 +5,18 @@ import { Hono } from "hono";
 import { decodeJwt } from "jose";
 import { compileReviewFixture } from "../../../packages/cloud/src/_internal/capability-review.test-fixture";
 import { createMeMandateRoutes } from "../../../packages/cloud/src/api/me";
+import type { AppKey } from "../../../packages/cloud/src/app-key";
 import type { CapabilityActionPolicy } from "../../../packages/cloud/src/contracts/capabilities";
+import { signAppProof } from "../../../packages/cloud/src/runtime/bootstrap-protocol";
 import { sql } from "../../../packages/cloud/src/runtime/clients";
 import { auth } from "../../../packages/cloud/src/server";
 import { mandates } from "../../../packages/cloud/src/services/mandates";
 import { toPgTextArray } from "../../../packages/cloud/src/services/postgres";
-import { serviceAccountCredentials } from "../../../packages/cloud/src/services/service-account-credentials";
 import { createTestSession } from "../../../packages/cloud/src/services/session/session.test-fixture";
 import { useTestSettings } from "../../../packages/cloud/src/services/settings/settings.test-fixture";
 import { createIdentityInvocationRoutes } from "../../../packages/core/src/api/identity-invocation";
 import { createIdentityMandateRoutes } from "../../../packages/core/src/api/identity-mandates";
+import { APP_KEY_FIXTURES } from "../../../scripts/fixtures/app-key-fixtures";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -26,7 +28,16 @@ suite("mandate capability policy through self-service and broker routes", () => 
   const serviceAccountId = crypto.randomUUID();
   const mandateIds: string[] = [];
   let sessionToken = "";
-  let workloadToken = "";
+  let appKey: AppKey;
+  const signedRequest = async (routes: Hono, path: string, body: unknown) => {
+    const encoded = JSON.stringify(body);
+    const proof = await signAppProof(appKey, { method: "POST", path, body: new TextEncoder().encode(encoded) });
+    return routes.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${proof}`, "x-cloud-app-id": "mail" },
+      body: encoded,
+    });
+  };
   let policy: CapabilityActionPolicy | null = { silent: "you" };
   const targetRequests: Request[] = [];
   const me = new Hono().route("/api/me", createMeMandateRoutes(mandates, auth.requireRole("authenticated")));
@@ -53,13 +64,12 @@ suite("mandate capability policy through self-service and broker routes", () => 
       VALUES (${userId}::uuid, ${`mandate-policy-${userId}`}, 'local', 'user', 'Policy fixture', 'policy@example.test')`;
     await sql`INSERT INTO auth.service_accounts (id, name, kind, app_id, resource_type, resource_id, created_by)
       VALUES (${serviceAccountId}::uuid, 'Policy workload', 'resource_bound', 'mail', 'cloud.app', 'mail', ${userId}::uuid)`;
-    const created = await serviceAccountCredentials.createApiToken({
-      serviceAccountId,
-      name: "Policy fixture",
-      scopes: ["identity:invoke"],
-    });
-    if (!created.ok) throw new Error(created.error.message);
-    workloadToken = created.data.token;
+    const [credential] = await sql<{ id: string }[]>`INSERT INTO auth.service_account_credentials
+      (service_account_id, name, kind, public_key, fingerprint)
+      VALUES (${serviceAccountId}::uuid, 'Policy fixture', 'app_key', ${APP_KEY_FIXTURES[0].publicKey}, ${APP_KEY_FIXTURES[0].fingerprint}) RETURNING id`;
+    const [installation] = await sql<{ id: string }[]>`SELECT id FROM auth.installation WHERE singleton`;
+    if (!credential || !installation) throw new Error("Missing policy fixture identity");
+    appKey = { appId: "mail", installationId: installation.id, keyId: credential.id, seed: APP_KEY_FIXTURES[0].seed };
     sessionToken = await createTestSession(userId);
   });
 
@@ -102,28 +112,20 @@ suite("mandate capability policy through self-service and broker routes", () => 
       expect(mandate.confirmedAt).toBeNull();
       expect(mandate.policy.grants === undefined).toBe(!hasGrants);
       const invoke = (key: string, revision = mandate.revision) =>
-        broker.request("/invoke", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${workloadToken}`, "x-cloud-app-id": "mail" },
-          body: JSON.stringify({
-            kind: "action",
-            targetApp: "demo",
-            capabilityId: "send",
-            input: {},
-            mandateId: mandate.id,
-            mandateRevision: revision,
-            idempotencyKey: `${mandate.id}-${key}`,
-          }),
+        signedRequest(broker, "/invoke", {
+          kind: "action",
+          targetApp: "demo",
+          capabilityId: "send",
+          input: {},
+          mandateId: mandate.id,
+          mandateRevision: revision,
+          idempotencyKey: `${mandate.id}-${key}`,
         });
       policy = { silent: "you" };
       const before = targetRequests.length;
       expect((await invoke("pending")).status).toBe(403);
       expect(targetRequests.length).toBe(before);
-      const confirmedResponse = await lifecycle.request(`/mandates/${mandate.id}/confirm`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${workloadToken}`, "x-cloud-app-id": "mail" },
-        body: JSON.stringify({ expectedRevision: mandate.revision }),
-      });
+      const confirmedResponse = await signedRequest(lifecycle, `/mandates/${mandate.id}/confirm`, { expectedRevision: mandate.revision });
       expect(confirmedResponse.status).toBe(200);
       const confirmed = await mandates.get(mandate.id);
       if (!confirmed) throw new Error("Confirmed mandate is missing");
@@ -152,7 +154,6 @@ suite("mandate capability policy through self-service and broker routes", () => 
         ?.headers.get("authorization")
         ?.replace(/^Bearer /, "");
       if (!token) throw new Error("Target invocation is missing");
-      expect(token).not.toBe(workloadToken);
       expect(decodeJwt(token)).toMatchObject({ credential_kind: "mandate", mandate_id: mandate.id, op: "capability.action.run:send" });
     }, 20_000);
   }

@@ -1,7 +1,10 @@
 import { afterAll } from "bun:test";
 import { bindProcessApplicationId } from "../../packages/cloud/src/_internal/process-identity";
 import { getProcessSync, startProcessSync } from "../../packages/cloud/src/_internal/process-sync";
+import { sql } from "../../packages/cloud/src/runtime/clients";
+import { connections } from "../../packages/cloud/src/runtime/connections";
 import { createIdentityPublicRoutes, initializeIdentityAuthority } from "../../packages/cloud/src/services/identity";
+import { enrollTestAppKey } from "./app-key-fixtures";
 import { requireInfra, testInfra, usesMigratedDatabase } from "./test-infra";
 
 /**
@@ -35,6 +38,11 @@ if (testInfra.database && testInfra.nats) {
   const { createIdentityOAuthDeviceApprovalRoutes } = (await import(deviceApprovalPath)) as DeviceApprovalModule;
   const { default: oauthRoutes } = (await import(oauthPath)) as OAuthModule;
   bindProcessApplicationId("core");
+  // The HTTP authority is Core; client writes below run as the co-hosted OAuth application.
+  connections().appId = "oauth";
+  const clientsPath = "../../packages/oauth/src/service/clients";
+  const { registerAll } = (await import(clientsPath)) as { registerAll: () => Promise<void> };
+  await registerAll();
   // Reuse the package's test Sync when its preload owns the lifecycle.
   let runtime: Awaited<ReturnType<typeof startProcessSync>> | undefined;
   try {
@@ -48,11 +56,10 @@ if (testInfra.database && testInfra.nats) {
     .route("/", oauthRoutes);
   const authority = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: routes.fetch });
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = authority.url.origin;
-  process.env.CLOUD_IDENTITY_JWKS_ORIGIN = authority.url.origin;
-  process.env.CLOUD_OAUTH_JWKS_ORIGIN = authority.url.origin;
   afterAll(async () => {
     await authority.stop(true);
     await runtime?.stop();
   });
   await initializeIdentityAuthority();
+  process.env.CLOUD_APP_KEY = (await enrollTestAppKey(sql, "oauth", ["oauth:issue"])).value;
 }

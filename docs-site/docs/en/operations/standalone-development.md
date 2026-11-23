@@ -5,7 +5,7 @@ section: Operations
 order: 1120
 description: Develop an independent application against the published Cloud package.
 tags: [development, standalone, npm]
-updated: 2026-08-12
+updated: 2026-11-12
 ---
 
 # Standalone development
@@ -28,12 +28,15 @@ shared platform services below.
 
 ## Run the application directly
 
-The development preload configures Solid SSR and watches the application
-stylesheet:
+[Enroll an app key](/en/docs/operations/app-keys) on the target Cloud installation
+and set its private Core origin. The development preload requires that key,
+configures Solid SSR, and watches the application stylesheet:
 
 ```bash
 APP_ID=inventory \
 APP_DIR=. \
+CLOUD_APP_KEY_FILE=./secrets/inventory.key \
+CLOUD_CORE_INTERNAL_ORIGIN=https://core.internal.example \
 bun run --preload=node_modules/@k2b/cloud/scripts/preload.ts \
 src/index.ts
 ```

@@ -20,6 +20,21 @@ should use them only when a feature guide gives the exact import.
 `Preview` means the contract may still change before its feature is released,
 and such changes are not treated as breaking until then.
 
+## OAuth issuer services
+
+Applications granted `oauth:issue` use `oauthClients` and
+`OAuthClientRegistration` from `@k2b/cloud/services` to maintain verifier
+facts in the transaction that changes a private client. The service captures
+the running app ID and refuses a different existing owner or any deleted ID.
+Removal keeps a tombstone that permanently reserves the ID.
+`OAuthAuthorityStatementSchema`, `OAuthDeviceApprovalRequestSchema`,
+`OAuthNewAccessNoticeSchema` and their corresponding types are supported
+exports of `@k2b/cloud/contracts`. Send the closed requests through the
+app-signed transport described in
+[Implement an OAuth issuer](/en/docs/identity/oauth#implement-an-oauth-issuer).
+Client policy, single-use reservations, finalization and notice retries
+belong to the issuer; the platform registry contains no private OAuth grants.
+
 ## Application entry points
 
 | Entry point | Status | Use |
@@ -201,7 +216,7 @@ Use the capability guide to choose the narrow API:
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
-- [Background mandates](/en/docs/identity/background-mandates): `CapabilityGrant`, `MandateGrant`, `CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE` from `@k2b/cloud/services` define durable operation/target grants and per-version bindings; `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
+- [Background mandates](/en/docs/identity/background-mandates): `CapabilityGrant`, `MandateGrant`, `CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE` from `@k2b/cloud/services` define durable operation/target grants and per-version bindings; `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core with the required enrolled app key.
 - [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)

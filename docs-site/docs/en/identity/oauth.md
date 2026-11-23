@@ -39,8 +39,9 @@ relationship with the Cloud instance.
 
 Creating a refresh-token family with `offline_access` requires a browser
 sign-in from the last ten minutes. Cloud checks that sign-in inside the
-transaction that records the authorization, and Core requires that recorded
-confirmation before activating the family. OAuth tokens, API keys, and mobile
+transaction that records the authorization. The issuer checks that recorded
+confirmation before asking Core to sign and activates the family after the
+signing response succeeds. OAuth tokens, API keys, and mobile
 app sessions do not count as browser confirmation. Access-token-only grants
 and rotation of an existing refresh family keep their existing behavior.
 
@@ -508,6 +509,8 @@ User access tokens carry an `auth_epoch` claim matching the account's current
 authentication epoch. Applications and `/oauth/userinfo` check it on every
 request; tokens with a missing or invalid claim, or a different epoch, are
 rejected. ID tokens and client-credentials tokens do not carry this claim.
+An account locked by FreeIPA cannot obtain or use OAuth user tokens, even when
+its account category remains enabled.
 
 Signing an account out everywhere ends its OAuth sign-ins: refresh families,
 authorization codes and device codes approved but not yet redeemed (in the
@@ -527,15 +530,153 @@ until expiry. Current-client validation and domain authorization still apply
 on each request.
 
 Core signs OAuth tokens. The OAuth application owns the public protocol,
-clients, consent, authorization codes, refresh grants and discovery. Core and
-OAuth require the configured broker secret; see
-[Runtime configuration](/en/docs/operations/runtime-configuration) for setup.
-If the signer or broker secret is unavailable, OAuth cannot start or issue tokens.
+clients, consent, authorization codes, refresh grants and discovery. An issuer
+calls Core with its enrolled app key and the operator-granted `oauth:issue`
+permission; see [App keys](/en/docs/operations/app-keys#background-and-oauth-authority).
+If the signer or app key is unavailable, OAuth cannot start or issue tokens.
 
 A rejected grant returns `invalid_grant`. An uncertain issuance outcome returns
-`server_error` and is not retried automatically. A refresh grant is released
-for retry only when Cloud can establish that no tokens were issued; otherwise
-it stays blocked to prevent duplicate issuance.
+`server_error` and is not retried automatically. A complete Core error response
+releases the issuer's reservation. A timeout, connection loss, or malformed
+success response leaves the credential consumed. There is no lost-response
+recovery ledger.
+
+## Implement an OAuth issuer
+
+Any application whose enrolled key has `oauth:issue` can issue through Core.
+This is a trusted platform role: the application validates its clients,
+consent, scopes, audiences, access policy and single-use credentials. Core
+owns signing keys and live platform identity facts. Core and verifiers need
+no tables from the built-in OAuth application.
+
+### Register verifier facts
+
+Import `oauthClients` from `@k2b/cloud/services`. In the transaction that
+creates or updates your private client, register its public verifier facts:
+
+```ts
+import { sql } from "@k2b/cloud";
+import { oauthClients } from "@k2b/cloud/services";
+
+await sql.begin(async (tx) => {
+  await tx`UPDATE issuer.clients SET name=${name} WHERE client_id=${clientId}`;
+  await oauthClients.upsert(tx, {
+    clientId, name, serviceAccountId: null, status: "active",
+  });
+});
+```
+
+Use your application's own schema in place of `issuer`. `upsert` captures the
+running application's declared ID; it accepts no issuer ID. It updates only
+a client already owned by that issuer and rejects another issuer's client ID.
+Use globally unique client IDs. Deleted IDs remain reserved permanently;
+`upsert` rejects them for every issuer, including the original owner.
+
+`serviceAccountId` is a UUID or `null`; service tokens require the exact live
+binding. Set `status` to `disabled` in the same transaction as disabling a
+private client. Call `oauthClients.remove(tx, clientId)` in the transaction
+that deletes it, including automatic-registration cleanup. Removal sets the
+registry status to `deleted` and retains the row as a tombstone. Verifiers
+read current active registrations without a cache, so a
+disabled or deleted client, or a changed service-account binding, rejects its
+existing access tokens on their next use.
+
+At startup, idempotently upsert your existing clients before accepting
+protocol requests. This also reconciles clients written during an upgrade.
+The registry stores only the client ID, owning issuer, service-account
+binding, status and display name; private client policy stays with the issuer.
+Display names in this registry, terminal approvals and access notices accept
+at most 120 characters. The built-in issuer truncates longer legacy client
+names at these boundaries while preserving the private client name.
+
+### Reserve, sign and finalize
+
+Reserve a code, approved device grant or refresh credential in your own
+transaction and commit before making an HTTP request. Revalidate current
+client policy and record the immutable scope, audience, resource and login
+expiry there. Keep exactly-once issuance in that reservation; Core does not
+store or consume private issuer grants.
+
+Send an app-signed `POST /api/_internal/identity/v1/oauth/token` through
+`sendAppRequest` from `@k2b/cloud/services/identity`. The JSON body uses
+`OAuthAuthorityStatement` and `OAuthAuthorityStatementSchema` from
+`@k2b/cloud/contracts`:
+
+```ts
+const statement: OAuthAuthorityStatement = {
+  clientId,
+  subject: { kind: "user", userId, authEpoch },
+  scopes: ["openid", "profile"],
+  audiences: ["cloud", clientId],
+  resource: null,
+  nonce: null,
+  loginExpiresAt,
+  terminalLoginId: null,
+  tokens: [
+    { kind: "user_access", expiresIn: 3600 },
+    { kind: "user_id", expiresIn: 3600 },
+  ],
+};
+```
+
+The response is `{ tokens: string[] }` in the requested order. Fields are
+closed: unknown properties, identity claims and issuer IDs are rejected.
+A batch contains one access token and optionally one user ID token with
+`openid`; each requested lifetime is an integer from 1 to 3600 seconds.
+For a service account, use `{ kind: "service_account", serviceAccountId }`,
+one `service_access` token, and `null` for nonce, login expiry and terminal
+login. A non-null resource must be an absolute URI without a fragment and the
+only audience. The issuer enforces client audience policy, including the
+same-origin resource requirement for built-in dynamic registrations.
+
+Core checks the active client's owner and service-account binding, the live
+user's authentication epoch, category and account expiry, or the live service
+account's eligibility to hold credentials. Core derives identity claims and
+groups from its own reads. Token shapes, issuer, key IDs and JWKS remain the
+same. Signatures are clamped to the requested login end and account expiry.
+A user statement may use a null login end when it has no absolute login cap;
+terminal approval requires a non-null end within the approved lifetime.
+
+After a successful response, finalize your reserved family or rotation. On a
+complete 4xx or 5xx response, release the reservation. After an uncertain
+transport outcome, keep it consumed; do not retry or reconstruct signatures.
+The built-in issuer revokes an affected refresh family on an uncertain
+rotation. A fresh app proof authenticates a request; it does not deduplicate
+authority statements.
+
+### Terminal approval and access notices
+
+For terminal Cloud Login, send an app-signed
+`POST /api/_internal/identity/v1/oauth/device-approval` with
+`OAuthDeviceApprovalRequest`: device authorization UUID, identifier, client
+ID, display name, scopes, lifetime in seconds and UTC grant deadline. Core
+stores the display statement and issuer in `auth.app_logins`, caps its UI
+expiry to the grant deadline and applies platform account, device and legal
+requirements. The response keeps `{ comparison, expiresAt }`.
+
+The issuer reads `auth.app_logins` by its `oauth_issuer_app_id` and
+`device_authorization_id`, then matches the approved decision's user, epoch,
+client, exact scopes, lifetime and `oauth_grant_expires_at` to its private
+device grant before consuming that grant. Include the platform row's `id` as
+`terminalLoginId` in the authority statement. Core consumes the exact
+approved login with signing, checking issuer, client, user, epoch, scopes,
+deadline, paired device and lifetime. Expiry of the sign-in UI does not erase
+approved evidence before the grant deadline. Private client access policy is
+checked by the issuer at issuance; an approval does not override it. Terminal
+approval audit events identify the client by its public client ID.
+
+After committing a new browser-confirmed family, send an app-signed
+`POST /api/_internal/identity/v1/oauth/new-access` with
+`OAuthIssuerNewAccessNotice`: `familyId`, `userId`, `clientId`, `clientName`
+and UTC `createdAt`. The client must have an active registry entry owned by
+the calling issuer. Core renders the existing **New access** notification
+with idempotency key `oauth-new-access:<familyId>`. Only the built-in issuer's
+`cloud-cli` client receives the command-line wording. Keep retry state in
+the issuer, mark delivery only after success, and suppress this additional
+notice for terminal-confirmed access. The built-in issuer retries a bounded
+page every minute, newest first so older failures do not block newer notices.
+Retries stop at family expiry, when cleanup removes the family even if its
+notice was never delivered.
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

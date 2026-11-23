@@ -1,33 +1,12 @@
 import { env } from "@k2b/cloud/config";
+import type { OAuthAuthorityStatement, OAuthDeviceApprovalRequest, OAuthIssuerNewAccessNotice } from "@k2b/cloud/contracts";
 import { sendAppRequest } from "@k2b/cloud/services/identity";
 import { z } from "zod";
 
 export type OAuthUserGrantReference =
-  | { kind: "authorization_code"; code: string; nonce: string; familyId?: string }
-  | { kind: "refresh_token"; tokenId: string; nonce: string }
-  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string; familyId?: string };
-
-export type OAuthClientCredentialsGrantReference = { kind: "client_credentials"; grantId: string; nonce: string };
-
-export type UserAccessTokenRequest = {
-  kind: "user_access";
-  grant: OAuthUserGrantReference;
-  expiresIn: number;
-};
-
-export type UserIdTokenRequest = {
-  kind: "user_id";
-  grant: OAuthUserGrantReference;
-  expiresIn: number;
-};
-
-export type ServiceAccessTokenRequest = {
-  kind: "service_access";
-  grant: OAuthClientCredentialsGrantReference;
-  expiresIn: number;
-};
-
-export type OAuthTokenRequest = UserAccessTokenRequest | UserIdTokenRequest | ServiceAccessTokenRequest;
+  | { kind: "authorization_code"; code: string; familyId?: string }
+  | { kind: "refresh_token"; tokenId: string }
+  | { kind: "device_code"; deviceAuthorizationId: string; familyId?: string };
 
 const AuthorityResponseSchema = z.object({
   tokens: z.array(z.string().min(1).max(16_384)).min(1).max(2),
@@ -35,9 +14,15 @@ const AuthorityResponseSchema = z.object({
 
 type AuthorityFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-export class OAuthAuthorityGrantRejectedError extends Error {
+/** A complete error response is safe to release; timeouts and malformed success responses are uncertain. */
+export class OAuthAuthorityRejectedError extends Error {
+  constructor(readonly status: number) {
+    super(`Core OAuth issuance failed with status ${status}`);
+  }
+}
+export class OAuthAuthorityGrantRejectedError extends OAuthAuthorityRejectedError {
   constructor() {
-    super("Core rejected the current OAuth grant authority");
+    super(403);
   }
 }
 
@@ -49,21 +34,13 @@ const coreOrigin = (): string => {
   return url.origin;
 };
 
-const sendOAuthRequest = (url: URL, init: RequestInit, options: { fetch?: AuthorityFetch; brokerSecret?: string }) =>
+const sendOAuthRequest = (url: URL, init: RequestInit, options: { fetch?: AuthorityFetch }) =>
   sendAppRequest(new Request(url, init), {
     appId: "oauth",
     transport: options.fetch,
-    bearer: () => {
-      const secret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
-      if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret))
-        throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
-      return secret;
-    },
   });
 
-export const probeOAuthTokenAuthority = async (
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
-): Promise<void> => {
+export const probeOAuthTokenAuthority = async (options: { fetch?: AuthorityFetch; origin?: string } = {}): Promise<void> => {
   const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/ready", options.origin ?? coreOrigin()),
     {
@@ -79,10 +56,10 @@ export const probeOAuthTokenAuthority = async (
 
 /** Ask Core to sign one validated, closed OAuth token batch. Deliberately never retries an uncertain request. */
 export const issueOAuthTokenBatch = async (
-  requests: OAuthTokenRequest[],
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
+  statement: OAuthAuthorityStatement,
+  options: { fetch?: AuthorityFetch; origin?: string } = {},
 ): Promise<string[]> => {
-  if (requests.length < 1 || requests.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
+  if (statement.tokens.length < 1 || statement.tokens.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
 
   const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/token", options.origin ?? coreOrigin()),
@@ -92,15 +69,18 @@ export const issueOAuthTokenBatch = async (
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify({ tokens: requests }),
+      body: JSON.stringify(statement),
       signal: AbortSignal.timeout(5_000),
     },
     options,
   );
-  if (response.status === 403) throw new OAuthAuthorityGrantRejectedError();
-  if (!response.ok) throw new Error(`Core OAuth issuance failed with status ${response.status}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new OAuthAuthorityGrantRejectedError();
+    if (response.status >= 400) throw new OAuthAuthorityRejectedError(response.status);
+    throw new Error(`Core OAuth issuance failed with status ${response.status}`);
+  }
   const parsed = AuthorityResponseSchema.safeParse(await response.json());
-  if (!parsed.success || parsed.data.tokens.length !== requests.length) {
+  if (!parsed.success || parsed.data.tokens.length !== statement.tokens.length) {
     throw new Error("Core OAuth issuance returned an invalid token batch");
   }
   return parsed.data.tokens;
@@ -114,8 +94,8 @@ export class OAuthDeviceApprovalUnavailableError extends Error {
 
 /** Hand one terminal sign-in to Core. An uncertain request is never retried. */
 export const startOAuthDeviceApproval = async (
-  request: { deviceAuthorizationId: string; identifier: string; clientId: string; scopes: string[]; lifetimeSeconds: number },
-  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
+  request: OAuthDeviceApprovalRequest,
+  options: { fetch?: AuthorityFetch; origin?: string } = {},
 ): Promise<{ comparison: string; expiresAt: string }> => {
   const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/device-approval", options.origin ?? coreOrigin()),
@@ -138,4 +118,20 @@ export const startOAuthDeviceApproval = async (
   const parsed = z.object({ comparison: z.string().regex(/^\d{6}$/), expiresAt: z.string() }).safeParse(body);
   if (!parsed.success) throw new OAuthDeviceApprovalUnavailableError(response.status);
   return parsed.data;
+};
+
+/** The issuer retains pending notices; Core owns the shared notification template. */
+export const sendOAuthNewAccessNotice = async (notice: OAuthIssuerNewAccessNotice): Promise<void> => {
+  const response = await sendOAuthRequest(
+    new URL("/api/_internal/identity/v1/oauth/new-access", coreOrigin()),
+    {
+      method: "POST",
+      redirect: "error",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(notice),
+      signal: AbortSignal.timeout(5_000),
+    },
+    {},
+  );
+  if (!response.ok) throw new Error(`Core OAuth new-access notice failed with status ${response.status}`);
 };

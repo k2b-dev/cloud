@@ -7,7 +7,6 @@ import meRoutes from "../../api/me";
 import { AI_INFERENCE_SCOPE } from "../../contracts/shared";
 import { redis } from "../../runtime/clients";
 import { authenticateModelsOnlyCredential } from "../../services/identity/models-only-auth";
-import { authenticateWorkloadCredential } from "../../services/identity/workload-auth";
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "../../services/service-account-credentials";
 import { buildProjectedUser } from "../../services/session/user";
 import * as settings from "../../services/settings";
@@ -134,19 +133,6 @@ describe("models-only credential boundary", () => {
     try {
       const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).get("/", (c) => c.text("ok"));
       expect((await app.request("/", { headers: { authorization: `Bearer ${token}` } })).status).toBe(401);
-    } finally {
-      lookup.mockRestore();
-    }
-  });
-  test("models-only personal keys never authenticate as an identity workload", async () => {
-    const lookup = spyOn(serviceAccountCredentials, "authenticateApiToken").mockResolvedValue(authenticated);
-    try {
-      expect(await authenticateWorkloadCredential({ token, appId: "core", scope: "identity:invoke" })).toBeNull();
-      lookup.mockResolvedValue({
-        ...authenticated,
-        credential: { ...authenticated.credential, scopes: [AI_INFERENCE_SCOPE, "identity:invoke"] },
-      });
-      expect(await authenticateWorkloadCredential({ token, appId: "core", scope: "identity:invoke" })).toBeNull();
     } finally {
       lookup.mockRestore();
     }

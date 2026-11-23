@@ -65,11 +65,10 @@ sequence and time survive process restarts. No environment variable is added.
 
 ## Enable resource discussion notifications after the upgrade
 
-Update Core first to the release with automatic app credentials (PR #2112),
-then deploy Chat and the discussion providers. Chat declares
-`platformPermissions: ["resources:readers"]` and receives its workload credential
-automatically from Core. There is no Chat credential to create or environment
-variable to add. Deployment of Chat's declaration admits the reader checks, as described in
+Update Core, Chat and discussion providers together. Chat declares
+`platformPermissions: ["resources:readers"]` and signs reader checks with its
+required app key. Configure its key and direct Core origin as for every other
+application. Chat's declaration admits the reader checks; see
 [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
 
 A provider offers the `discussions` role and `access.readable` on both its item
@@ -99,7 +98,7 @@ Owner checks run outside Chat database transactions.
   An earlier positive decision cannot authorize the push.
 - `not_configured` suppresses push until setup is complete. **Administration →
   Chat** shows each recorded provider item type's delivery state, time and reason,
-  such as a missing reader function, automatic credential or Core admission.
+  such as a missing reader function, app identity or Core admission.
   Before any delivery check it says **Not checked yet**. Interactive count
   checks do not update delivery health. Successful checks become healthy only
   after hand-off succeeds; expired decisions report a failure. The snapshot

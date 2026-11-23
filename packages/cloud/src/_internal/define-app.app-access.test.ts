@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { appAccess } from "../contracts/app-access";
-import { stubConnections } from "../runtime/connections.test-fixture";
+import { stubAppIdentity, stubConnections } from "../runtime/connections.test-fixture";
 import { defineHelp } from "../server/help";
 import * as authMiddleware from "../server/middleware/auth";
 import * as linksRuntime from "../services/links/runtime";
@@ -20,6 +20,7 @@ import * as watcher from "./runtime-watcher";
 test.each(["roles", "resources"] as const)(
   "the %s framework gate precedes app mounts while framework probes remain reachable",
   async (rule) => {
+    const identityStub = stubAppIdentity();
     const secretStub = stubConnections({ appSecret: { current: "gate-test-only" } });
     const signals = ["SIGTERM", "SIGINT"] as const;
     const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
@@ -111,6 +112,7 @@ test.each(["roles", "resources"] as const)(
       clearProcessApplicationId();
       for (const spy of spies.toReversed()) spy.mockRestore();
       secretStub.mockRestore();
+      identityStub.mockRestore();
     }
   },
 );

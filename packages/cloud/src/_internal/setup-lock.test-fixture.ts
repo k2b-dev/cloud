@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
+import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
+import { env } from "../config/env";
 import { sql } from "../runtime/clients";
-
 import { initializePlatform } from "../start";
 import { defineApp } from "./define-app";
 
@@ -8,6 +9,7 @@ import { defineApp } from "./define-app";
 const [appId, schema, mode] = process.argv.slice(2);
 if (!appId || !schema || !/^setup_lock_[a-f0-9]+$/.test(schema)) throw new Error("Invalid setup probe arguments");
 await initializePlatform({ appId, source: "env" });
+Object.defineProperty(env, "CLOUD_APP_KEY", { value: appKeyFixture(appId), configurable: true });
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 const command = async () => {
   if ((await lines.next()).done) throw new Error("Parent closed the setup probe barrier");

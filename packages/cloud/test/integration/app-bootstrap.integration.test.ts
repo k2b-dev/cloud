@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, expect, jest, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
 import { createAdminAppKeyRoutes, createAppBootstrapRoutes } from "@k2b/cloud/api";
 import { type AppKey, formatAppKey, importAppKeySeed } from "@k2b/cloud/app-key";
-import { authenticateAppProof, cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
+import { authenticateAppProof } from "@k2b/cloud/services/app-bootstrap";
 import { appKeys, getActiveAppKey, getInstallationId } from "@k2b/cloud/services/app-keys";
 import { get as getSetting, set as setSetting } from "@k2b/cloud/services/settings";
 import { SQL } from "bun";
@@ -21,7 +21,7 @@ import {
   signAppProof,
   signBootstrapProof,
 } from "../../src/runtime/bootstrap-protocol";
-import { sql } from "../../src/runtime/clients";
+import { redis, sql } from "../../src/runtime/clients";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
 const actor = {
@@ -34,7 +34,7 @@ suiteFor(
   "database",
   "valkey",
   "nats",
-)("Core signed bootstrap, two replicas sharing Postgres", () => {
+)("Core signed bootstrap, two replicas sharing Postgres and Valkey", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let replicas: [SQL, SQL];
   let key: AppKey;
@@ -74,6 +74,17 @@ suiteFor(
     await database?.drop();
   });
 
+  test("migration removes the former replay table and its indexes, including on repeated setup", async () => {
+    await sql`CREATE TABLE auth.app_proof_replays (key_id uuid NOT NULL, jti text NOT NULL, retain_until timestamptz NOT NULL,
+      PRIMARY KEY (key_id, jti))`.simple();
+    await sql`CREATE INDEX app_proof_replays_retention ON auth.app_proof_replays (retain_until)`.simple();
+    await migrateAppBootstrap();
+    await migrateAppBootstrap();
+    const [relations] = await sql`SELECT to_regclass('auth.app_proof_replays') AS replay,
+      to_regclass('auth.app_proof_replays_pkey') AS uniqueness, to_regclass('auth.app_proof_replays_retention') AS retention`;
+    expect(relations).toEqual({ replay: null, uniqueness: null, retention: null });
+  });
+
   test("two Core replicas admit exactly one parallel copy; retries use a fresh proof and touch last_used_at", async () => {
     const proof = await signBootstrapProof(key);
     const responses = await Promise.all(routes.map((route) => route.request(BOOTSTRAP_PATH, request(proof))));
@@ -85,9 +96,9 @@ suiteFor(
     expect(payload.connections.database.url).toBe(database.url);
     const [row] = await sql`SELECT last_used_at FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid`;
     expect(row?.last_used_at).toBeInstanceOf(Date);
-    const [replay] = await sql`SELECT extract(epoch FROM retain_until)::bigint AS until FROM auth.app_proof_replays
-      WHERE key_id = ${key.keyId}::uuid AND jti = ${decodeJwt(proof).jti!}`;
-    expect(Number(replay?.until)).toBe(NOW / 1000 + 30 + 300);
+    const ttl = Number(await redis.send("PTTL", [`cloud:app-proof:${key.keyId}:${decodeJwt(proof).jti}`]));
+    expect(ttl).toBeGreaterThan(300_000);
+    expect(ttl).toBeLessThanOrEqual(330_000);
     expect((await routes[1].request(BOOTSTRAP_PATH, request(await signBootstrapProof(key)))).status).toBe(200);
   });
 
@@ -106,9 +117,7 @@ suiteFor(
       }
       const invalid = await signBootstrapProof({ ...key, seed: APP_KEY_FIXTURES[1].seed });
       expect((await routes[0].request(BOOTSTRAP_PATH, request(invalid))).status).toBe(401);
-      const [replay] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid
-        AND jti = ${decodeJwt(proof).jti!}`;
-      expect(replay?.n).toBe(0);
+      expect(await redis.send("EXISTS", [`cloud:app-proof:${key.keyId}:${decodeJwt(proof).jti}`])).toBe(0);
     } finally {
       await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${key.keyId}::uuid`;
     }
@@ -133,13 +142,13 @@ suiteFor(
       }
       const body = new TextEncoder().encode(JSON.stringify({ instanceId: "33333333-3333-4333-8333-333333333333", freeSlots: 2 }));
       const runRequest = { method: "POST", path: "/_internal/code/runner/fetch", body };
-      const verified = await authenticateAppProof(await signAppProof(runnerKey, runRequest), runRequest);
+      const runProof = await signAppProof(runnerKey, runRequest);
+      const verified = await authenticateAppProof(runProof, runRequest);
       expect(verified.identity.appId).toBe("runner");
-      const [replays] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${runnerKey.keyId}::uuid`;
-      expect(replays?.n).toBe(0);
+      // Authentication alone never claims the nonce; the route consumes it after admission.
+      expect(await redis.send("EXISTS", [`cloud:app-proof:${runnerKey.keyId}:${decodeJwt(runProof).jti}`])).toBe(0);
     } finally {
-      // Cleanup budgets count every enrolled key, including revoked keys. Remove
-      // this test's account/key even when an assertion fails, restoring that budget.
+      // Remove this test's account and key even when an assertion fails.
       await sql.begin(async (db) => {
         await db`DELETE FROM auth.app_start_rejections WHERE app_id = 'runner' AND key_id = ${runnerKey.keyId}::uuid`;
         await db`DELETE FROM auth.service_accounts WHERE id = (
@@ -225,9 +234,7 @@ suiteFor(
         expect(response.status).toBe(200);
         expect((await response.json()).lastRejectedStart).toEqual(rejection);
         expect((await sql`SELECT app_id FROM auth.app_start_rejections WHERE app_id = ${key.appId}`).length).toBe(1);
-        expect(
-          (await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${decodeJwt(proof).jti!}`).length,
-        ).toBe(0);
+        expect(await redis.send("EXISTS", [`cloud:app-proof:${key.keyId}:${decodeJwt(proof).jti}`])).toBe(0);
       } finally {
         await resetKey();
       }
@@ -313,6 +320,33 @@ suiteFor(
     } finally {
       await resetKey();
     }
+  });
+
+  test("an unavailable replay check cannot create or replace rejection diagnostics", async () => {
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+    const send = redis.send.bind(redis);
+    try {
+      for (const prior of [null, "recorded"] as const) {
+        if (prior) expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(403);
+        const before = await lastRejectedStart();
+        const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+          if (command === "EXISTS") throw new Error("Replay lookup unavailable");
+          return send(command, args);
+        });
+        try {
+          const response = await routes[1].request(BOOTSTRAP_PATH, request(await rejectionProof()));
+          expect(response.status).toBe(403);
+          expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+          expect(await lastRejectedStart()).toEqual(before);
+        } finally {
+          unavailable.mockRestore();
+        }
+      }
+    } finally {
+      await resetKey();
+    }
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(200);
+    expect(await lastRejectedStart()).toBeNull();
   });
 
   test("signed non-bootstrap requests never record starts or clear a previous refusal", async () => {
@@ -505,9 +539,7 @@ suiteFor(
         .setProtectedHeader({ alg: "EdDSA", typ: variant.typ ?? "cloud-app+jwt", kid: key.keyId })
         .sign(await importAppKeySeed(key.seed));
       expect([401, 403]).toContain((await routes[0].request(BOOTSTRAP_PATH, request(proof))).status);
-      const [count] =
-        await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${decodeJwt(proof).jti!}`;
-      expect(count?.n).toBe(0);
+      expect(await redis.send("EXISTS", [`cloud:app-proof:${key.keyId}:${decodeJwt(proof).jti}`])).toBe(0);
     }
     const wrongKey = await signBootstrapProof({ ...key, seed: APP_KEY_FIXTURES[1].seed });
     expect((await routes[0].request(BOOTSTRAP_PATH, request(wrongKey))).status).toBe(401);
@@ -555,9 +587,7 @@ suiteFor(
       expect(result.headers.get("Cache-Control")).toBe("no-store");
       expect(result.headers.get("Retry-After")).toBe(down ? "1" : "2");
       expect(await result.text()).not.toContain("PRIVATE");
-      const [replay] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid
-        AND jti = ${decodeJwt(proof).jti!}`;
-      expect(replay?.n).toBe(0);
+      expect(await redis.send("EXISTS", [`cloud:app-proof:${key.keyId}:${decodeJwt(proof).jti}`])).toBe(0);
       const retried = await Promise.all(routes.map((replica) => replica.request(BOOTSTRAP_PATH, request(proof))));
       expect(retried.map((response) => response.status).sort()).toEqual([200, 403]);
     }
@@ -567,6 +597,46 @@ suiteFor(
     const route = createAppBootstrapRoutes({ db: replicas[0] });
     expect((await route.request(BOOTSTRAP_PATH, request("invalid"))).status).toBe(401);
     expect((await route.request(BOOTSTRAP_PATH, request(await signBootstrapProof(key)))).status).toBe(200);
+  });
+
+  test("unavailable production rate admission fails closed with app_proof_unavailable", async () => {
+    const route = createAppBootstrapRoutes({ db: replicas[0] });
+    const proof = await signBootstrapProof(key);
+    const send = redis.send.bind(redis);
+    const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+      if (command === "EVAL") throw new Error("Rate store unavailable");
+      return send(command, args);
+    });
+    try {
+      const response = await route.request(BOOTSTRAP_PATH, request(proof));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ code: "app_proof_unavailable" });
+      expect(response.headers.get("Retry-After")).toBe("1");
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect((await route.request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+  });
+
+  test("unavailable Valkey replay claims fail closed on both replicas with a retryable 503", async () => {
+    const proof = await signBootstrapProof(key);
+    const send = redis.send.bind(redis);
+    const unavailable = spyOn(redis, "send").mockImplementation(async (command, args) => {
+      if (command === "SET") throw new Error("Replay store unavailable PRIVATE");
+      return send(command, args);
+    });
+    try {
+      for (const route of routes) {
+        const response = await route.request(BOOTSTRAP_PATH, request(proof));
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({ code: "app_proof_unavailable" });
+        expect(response.headers.get("Retry-After")).toBe("1");
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+      }
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
   });
 
   test("direct ingress budgets use the socket peer independently of forwarded headers", async () => {
@@ -600,91 +670,6 @@ suiteFor(
       await server.stop(true);
     }
   }, 90_000);
-
-  test("retention cleanup preserves unexpired records", async () => {
-    const proof = await signBootstrapProof(key);
-    await routes[0].request(BOOTSTRAP_PATH, request(proof));
-    const jti = decodeJwt(proof).jti!;
-    await sql`UPDATE auth.app_proof_replays SET retain_until = now() + interval '1 minute' WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`;
-    await cleanupBootstrapProofs();
-    expect((await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`).length).toBe(1);
-    await sql`UPDATE auth.app_proof_replays SET retain_until = now() - interval '1 minute' WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`;
-    await cleanupBootstrapProofs();
-    expect((await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`).length).toBe(0);
-  });
-
-  test("nonce cleanup drains multiple pages, caps work at the admission budget and honours cancellation", async () => {
-    const previous = await getSetting<number>("security.rate_limit_per_second");
-    const seedExpired = async (count: number) => {
-      await sql`INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
-        SELECT ${key.keyId}::uuid, 'cleanup-' || n::text, now() - interval '1 minute' FROM generate_series(1, ${count}::int) AS n`;
-    };
-    try {
-      await sql`DELETE FROM auth.app_proof_replays`;
-      await seedExpired(350);
-      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 350, remaining: 0 });
-      await setSetting("security.rate_limit_per_second", 1);
-      // At one proof/second, one enrolled key admits 120 retained proofs.
-      const [keys] = await sql`SELECT count(*)::int AS n FROM auth.service_account_credentials WHERE kind = 'app_key'`;
-      expect(keys?.n).toBe(1);
-      await seedExpired(250);
-      const cancelled = new AbortController();
-      cancelled.abort(new Error("cleanup cancelled"));
-      await expect(cleanupBootstrapProofs(sql, { signal: cancelled.signal })).rejects.toThrow("cleanup cancelled");
-      const [unchanged] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE retain_until <= now()`;
-      expect(unchanged?.n).toBe(250);
-      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 120, remaining: 130 });
-      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 120, remaining: 10 });
-      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 10, remaining: 0 });
-    } finally {
-      await setSetting("security.rate_limit_per_second", previous);
-      await sql`DELETE FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti LIKE 'cleanup-%'`;
-    }
-  });
-
-  test("nonce cleanup stops before the next batch when maintenance is cancelled", async () => {
-    await sql`INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
-      SELECT ${key.keyId}::uuid, 'cancel-' || n::text, now() - interval '1 minute' FROM generate_series(1, 350) AS n`;
-    const lock = await replicas[0].reserve();
-    const controller = new AbortController();
-    let pending: Promise<boolean> | undefined;
-    let released = false;
-    try {
-      await lock`BEGIN`;
-      await lock`LOCK TABLE auth.app_proof_replays IN ACCESS EXCLUSIVE MODE`;
-      pending = cleanupBootstrapProofs(replicas[1], { signal: controller.signal }).then(
-        () => false,
-        () => true,
-      );
-      let waiting = false;
-      const deadline = performance.now() + 3000;
-      while (!waiting && performance.now() < deadline) {
-        const [row] = await sql`SELECT EXISTS (
-          SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
-          AND query LIKE '%WITH batch AS MATERIALIZED%'
-        ) AS waiting`;
-        waiting = row?.waiting === true;
-        if (!waiting) await Bun.sleep(10);
-      }
-      expect(waiting).toBe(true);
-      controller.abort();
-      // Cancellation is cooperative between bounded batches; release the current statement's table lock.
-      await lock`ROLLBACK`;
-      lock.release();
-      released = true;
-      expect(await pending).toBe(true);
-      const [rows] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE jti LIKE 'cancel-%'`;
-      expect(rows?.n).toBeGreaterThanOrEqual(250);
-    } finally {
-      controller.abort();
-      if (!released) {
-        await lock`ROLLBACK`;
-        lock.release();
-      }
-      await pending;
-      await sql`DELETE FROM auth.app_proof_replays WHERE jti LIKE 'cancel-%'`;
-    }
-  }, 10_000);
 
   test("revocation is immediately effective on both replicas, including a proof signed before revocation", async () => {
     const proofs = await Promise.all([signBootstrapProof(key), signBootstrapProof(key)]);

@@ -3,55 +3,21 @@ title: Check application migration evidence
 navTitle: App migration status
 section: Operations
 order: 1147
-description: Check every application and deployed key, and observe legacy broker usage before retiring old credentials.
+description: Check every application and deployed key, and verify fresh signed broker and OAuth requests.
 tags: [app-keys, migration, status, operations]
 updated: 2026-10-31
 ---
 
 # Check application migration evidence
 
-Use `cld admin apps migration status` before retiring shared application environment
-values or legacy broker credentials. It checks bootstrap metadata from every
-live replica, sends fresh signed broker/OAuth probes, and reads a durable
-legacy-use observation shared by every Core replica. Missing evidence returns
-a nonzero exit code, including without `--strict`.
+Use `cld admin apps migration status --strict` after upgrading all Core replicas,
+Gateway and applications. It checks every live replica and sends fresh signed
+broker/OAuth probes. Missing evidence returns a nonzero exit code, including
+without `--strict`. There is no observation command or waiting window.
 
-Upgrade **all Core replicas**, Gateway and the applications first. Enroll the
-application keys and configure the applications to use them; see
-[App keys](/en/docs/operations/app-keys). Every OAuth issuer key requires
-`--grant oauth:issue`, including each rotation. Key enrollment never infers
-a grant from an app name.
-
-## Begin a representative observation
-
-Only after every Core replica runs this release, explicitly start observation.
-Core refuses to begin while a live Core instance lacks its legacy-evidence
-capability marker. Status also reports `core_legacy_evidence_missing` for
-those instances, even if a previous window was complete:
-
-```bash
-cld --profile migration admin apps migration observe --json
-```
-
-This administrator write requires OAuth `write` or `admin` scope when using
-OAuth credentials. Core checks administrator access in the service and records
-`app_migration.observation_begin` in the audit trail. Starting again resets elapsed time. Do not restart it while
-waiting for completion. Keep older Core releases stopped for the whole window.
-The capability check sees replicas live at begin and status time; it cannot
-reconstruct a replica that appeared and disappeared between those checks.
-If an older Core runs during the window, upgrade it and begin a new observation.
-
-Choose the clean duration to cover the installation's actual background jobs,
-OAuth issuance and infrequent callers. For example, `OBSERVATION_SECONDS=86400`
-covers one daily cycle; include weekly jobs deliberately or choose a longer
-interval. Exercise those paths with their new keys. Every accepted legacy
-bearer or OAuth broker-secret request restarts the clean interval. Core keeps
-the evidence across restarts and shares it between replicas. If it cannot
-establish new evidence, the request that needs it fails and can be retried.
-Requests covered by a successful evidence write continue without another
-write. Core coalesces writes per legacy path for five seconds and skips row
-locks held by another replica. The stored last-use time conservatively covers
-that interval, so the clean window may start up to five seconds later.
+Enroll keys before upgrading to this release; see
+[App key upgrade](/en/docs/operations/app-key-upgrade). Every OAuth issuer key
+requires an explicit `--grant oauth:issue`, including rotations, whatever its app ID.
 
 ## Check the complete inventory
 
@@ -59,7 +25,7 @@ Write one intended app ID per line in `apps.txt`, including stopped and
 third-party apps; exclude `core` and `gateway`. Then run:
 
 ```bash
-cld --profile migration admin apps migration status --strict --json --observation-seconds "$OBSERVATION_SECONDS" --expect "$(paste -sd, apps.txt)"
+cld --profile migration admin apps migration status --strict --json --expect "$(paste -sd, apps.txt)"
 ```
 
 The inventory combines active app keys on enabled accounts, live registry
@@ -84,15 +50,13 @@ replica using the other key; finish the rollout and retry.
 `--allow-env inventory` permits that third-party app to keep explicit
 connection environment values. It still needs modern bootstrap metadata,
 a deployed app key and successful signed probes. The exception never waives
-the observation window, stopped apps or rejected starts.
+stopped apps or rejected starts, and never permits a keyless serving process.
 
-JSON includes `observation`, per-app `attentionReasons`, `probes` and
-`lastRejectedStart`. Text output prints the same evidence. A rejected start
-remains an attention reason until a successful bootstrap clears it; a healthy
-older process does not clear it. No observation start, no chosen duration or
-any missing evidence keeps the command nonzero.
+JSON includes per-app `attentionReasons`, `probes` and `lastRejectedStart`.
+Text output prints the same evidence. A rejected start remains an attention
+reason until a successful bootstrap clears it; an older healthy process does
+not clear it. `--allow-env` affects connection sources only: bootstrap mode
+must still be `core` with a current app key.
 
-A clean window cannot prove that an unexercised client has migrated. Review
-the deployed configuration and representative work before removing legacy
-secret injection or revoking old tokens. Keep valid rollback credentials
-until the deployment no longer needs to return to environment mode.
+Review deployed configuration and representative background jobs as well as
+status. A probe does not prove that every business workflow has run.
