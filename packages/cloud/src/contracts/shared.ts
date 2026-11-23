@@ -106,6 +106,90 @@ export const BaseGroupSchema = z.object({
 });
 export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 
+/** How many levels the relations view walks out from its focus group, in each direction. */
+export const GroupRelationDepthSchema = z.coerce.number().int().min(1).max(4);
+/**
+ * A budgeted part of the relations view: a column (`u` for groups that contain the focus, `d` for groups it contains,
+ * then the level), or `roots`, the top groups of the list.
+ */
+export const GroupRelationColumnKeySchema = z.string().regex(/^([ud][1-4]|roots)$/);
+
+const GroupRelationListSchema = z.object({
+  /** The first groups of the list, ordered by name. */
+  ids: z.array(z.uuid()),
+  total: z.number().int().nonnegative(),
+});
+
+const GroupRelationCycleSchema = z.object({
+  /** One real cycle through the group, as `[group, …, group]`. */
+  path: z.array(z.uuid()),
+  /** Groups in the same strongly connected component. */
+  size: z.number().int().positive(),
+});
+
+export const GroupRelationsSchema = z.object({
+  /** The group in the middle; `null` when no group contains another. */
+  focus: z.uuid().nullable(),
+  depth: z.number().int().min(1).max(4),
+  managers: z.boolean(),
+  /** Every group that is not a personal Linux group. */
+  groupCount: z.number().int().nonnegative(),
+  /** Groups the response refers to. Never lists members. */
+  nodes: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      provider: UserProviderSchema,
+      /** Direct user and service-account members. */
+      members: z.number().int().nonnegative(),
+      /** Groups this group contains directly. */
+      contains: z.number().int().nonnegative(),
+      /** Set when the group is part of a membership cycle. */
+      inCycle: z.boolean(),
+    }),
+  ),
+  /** Containing groups by level, nearest first; then contained groups by level, nearest first. */
+  columns: z.array(
+    z.object({
+      key: GroupRelationColumnKeySchema,
+      items: z.array(z.object({ id: z.uuid(), via: z.uuid() })),
+      /** Edges to groups that are already in the picture. `closesCycle` when both ends share a cycle. */
+      backs: z.array(z.object({ from: z.uuid(), to: z.uuid(), closesCycle: z.boolean() })),
+      /** Items and back edges left out by the column budget. */
+      hidden: z.number().int().nonnegative(),
+    }),
+  ),
+  /**
+   * For the list view: groups that contain others and are contained in none, plus one group per cycle without an
+   * outside parent. 10 unless `roots` is expanded; `hidden` counts the rest.
+   */
+  roots: z.object({ ids: z.array(z.uuid()), hidden: z.number().int().nonnegative() }).nullable(),
+  /** Details of the selected group, or of the focus. */
+  selected: z
+    .object({
+      id: z.uuid(),
+      parents: GroupRelationListSchema,
+      children: GroupRelationListSchema,
+      manages: GroupRelationListSchema.nullable(),
+      managedBy: GroupRelationListSchema.nullable(),
+      cycle: GroupRelationCycleSchema.nullable(),
+      managerCycle: GroupRelationCycleSchema.nullable(),
+    })
+    .nullable(),
+  cycles: z.object({
+    count: z.number().int().nonnegative(),
+    /** A group in the first cycle, to jump to. */
+    first: z.uuid().nullable(),
+  }),
+  /** The read of membership edges stopped at its limit. Levels may miss groups. */
+  truncated: z.boolean(),
+  /** `false` when `truncated`: membership cycles were searched only in the edges that were read. */
+  cyclesComplete: z.boolean(),
+  /** `false` when the read of management edges stopped at its own limit. `true` without `managers`. */
+  managerCyclesComplete: z.boolean(),
+});
+export type GroupRelations = z.infer<typeof GroupRelationsSchema>;
+
 export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent", "code"]);
 export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
 export { isAgentServiceAccountKind } from "./service-account-kinds";
