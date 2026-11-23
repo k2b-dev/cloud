@@ -286,6 +286,12 @@ its authorization boundaries.
 
 `printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
 
+`ui?: "v2"` (provisional, like `@k2b/ui/v2`) renders the page's content as a
+v2 scope: the content area carries `.k2-ui`, the v2 app colour `--k2-app` is
+the app's accent, and `--k2-app-ink` is its nearest tone that keeps 4.5:1 on
+the v2 surface and tint in each theme. The shell around it stays v1. Use it only on
+a page whose content is built with `@k2b/ui/v2`.
+
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling

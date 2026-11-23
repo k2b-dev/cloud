@@ -118,6 +118,24 @@ export const appColors = (accent: HexColor) => {
   return { light: forTheme("light"), dark: forTheme("dark") };
 };
 
+/**
+ * The grounds app ink stands on in a `@k2b/ui` v2 page: the surface, and the app's tint, which v2 mixes as 8 % accent
+ * on white (light) and 28 % accent on the dark surface (dark).
+ */
+export const v2InkGrounds = (accent: HexColor) => ({
+  light: ["#ffffff", mixHex(accent, "#ffffff", 0.08)] as const,
+  dark: ["#11151b", mixHex(accent, "#11151b", 0.28)] as const,
+});
+
+/** The v2 app ink of each theme: the nearest tone of the accent that keeps 4.5:1 on the v2 surface and tint. */
+export const appV2Ink = (accent: HexColor) => {
+  const grounds = v2InkGrounds(accent);
+  return {
+    light: readableTone(accent, grounds.light, "light", minimumContrast),
+    dark: readableTone(accent, grounds.dark, "dark", minimumContrast),
+  };
+};
+
 /** Plain hex declarations for server-rendered app appearance and accent scopes. */
 export const appColorStyle = (accent: HexColor): string => {
   const { light, dark } = appColors(accent);

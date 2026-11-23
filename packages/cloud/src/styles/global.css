@@ -4,6 +4,16 @@
 @import "@k2b/ui/v2.css";
 @plugin "@tailwindcss/typography";
 
+/* A v2 page inside Cloud (`Layout ui="v2"`) speaks in its app's colour. Cloud sets the colour and the readable ink of
+   each theme (4.5:1 on the v2 surface and tint, from `appV2Ink`); v2 derives the tint. Without an ink, v2 mixes one. */
+.app-accent-scope .k2-ui {
+  --k2-app: var(--app-accent, var(--k2-blue));
+  --k2-app-ink: var(--app-v2-ink-light);
+}
+.dark .app-accent-scope .k2-ui {
+  --k2-app-ink: var(--app-v2-ink-dark);
+}
+
 /* global.css carries the Cloud shell, integration surfaces, and shared app
    utilities. Portable UI primitives live in @k2b/ui. This stylesheet is
    served to every container via the gateway; per-app classes belong in each

@@ -11,7 +11,7 @@ const check = async (property: string, uiCss = "", appOverrides: Record<string, 
   try {
     for (const directory of ["packages/cloud/src", "packages/cloud/scripts", "packages/ui/src", "packages/example/src/styles"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
@@ -56,6 +56,10 @@ test("CSS check recognizes UI-owned semantic tokens used by applications", async
   expect(await check("--k2b-surface-muted")).toEqual([]);
 });
 
+test("CSS check recognizes the tokens of @k2b/ui v2, which live beside its primitives", async () => {
+  expect(await check("--k2-surface")).toEqual([]);
+});
+
 test("applications can each override a token owned by UI", async () => {
   expect(
     await check("--k2b-text-muted", "", {
@@ -98,7 +102,7 @@ test("CSS check rejects removed detail utilities in application JSX", async () =
   try {
     for (const directory of ["packages/cloud/src/styles", "packages/cloud/scripts", "packages/ui/src", "packages/example/src"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
@@ -119,7 +123,7 @@ test("CSS check accepts --ui-focus only as a box-shadow", async () => {
   try {
     for (const directory of ["packages/cloud/src/styles", "packages/cloud/scripts", "packages/ui/src", "packages/example/src"])
       await mkdir(join(fixture, directory), { recursive: true });
-    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts", "packages/ui/src/v2"])
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),

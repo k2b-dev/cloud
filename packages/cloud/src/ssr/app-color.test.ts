@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { parse } from "postcss";
 import { httpAppIds } from "../../../../scripts/workspace";
 import { appBarTokens } from "./app-appearance";
-import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
+import { appColorStyle, appColorSurfaces, appColors, appV2Ink, contrastRatio, mixHex, relativeLuminance, v2InkGrounds } from "./app-color";
 
 type HexColor = `#${string}`;
 const workspaceRoot = resolve(import.meta.dir, "../../../..");
@@ -234,6 +234,30 @@ describe("app colors", () => {
       // The narrow bar's hover over a ground, here the plain canvas.
       expect(resolveColor(required(themeTokens[theme], "--ui-hover"), theme)).toBe(mixHex(tokens.hover, tokens.canvas, tokens.hoverShare));
     }
+  });
+
+  test("a light accent gets a v2 ink that keeps 4.5:1 on the v2 surface and tint of each theme", () => {
+    for (const accent of ["#f59e0b", "#0f766e", "#e11d48", "#fde047"] as const) {
+      const ink = appV2Ink(accent);
+      const grounds = v2InkGrounds(accent);
+      for (const theme of ["light", "dark"] as const)
+        for (const ground of grounds[theme])
+          expect({ accent, theme, ground, enough: contrastRatio(ink[theme], ground) >= 4.5 }).toEqual({
+            accent,
+            theme,
+            ground,
+            enough: true,
+          });
+    }
+    // Amber is too light on white: its ink moves toward black, the mildest step that reads.
+    expect(appV2Ink("#f59e0b").light).not.toBe("#f59e0b");
+    // An accent that already reads stays itself.
+    expect(appV2Ink("#1d4ed8").light).toBe("#1d4ed8");
+    // The tints are the ones v2 mixes: 8 % accent on white, 28 % on the dark surface.
+    expect(v2InkGrounds("#f59e0b")).toEqual({
+      light: ["#ffffff", mixHex("#f59e0b", "#ffffff", 0.08)],
+      dark: ["#11151b", mixHex("#f59e0b", "#11151b", 0.28)],
+    });
   });
 
   test("platform defaults match the colors computed for Tailwind's blue-500", () => {
