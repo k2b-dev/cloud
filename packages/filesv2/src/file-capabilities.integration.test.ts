@@ -1,7 +1,9 @@
-import { expect, mock } from "bun:test";
+import { expect, mock, spyOn } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, type CapabilityResult } from "@k2b/cloud/contracts";
+import * as settingsCache from "@k2b/cloud/services/request-cache-redis";
 import { requireInfra, testFor } from "../../../scripts/fixtures/test-infra";
+import { migrate as migrateSettings } from "../../core/src/migrate/core/settings";
 import { assertPrivateDatabase } from "../test/private-database";
 import type { FileEntry } from "./contracts";
 import { resolveEntryRefId } from "./data/references";
@@ -82,6 +84,11 @@ testFor("database")("folder and completed upload refs persist long paths for the
   await assertPrivateDatabase();
   await sql`CREATE SCHEMA IF NOT EXISTS filesv2`.simple();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
+  // `entry.read` formats the modified time in the installation zone (`app.timezone`). Settings reads hit the Valkey
+  // cache that every integration process shares, so a warm key from another suite hid the read of this private
+  // database (#4068). Without the cache every read reaches `settings.entries` here, on every run.
+  await migrateSettings();
+  spyOn(settingsCache, "requestCacheRedis").mockRejectedValue(new Error("this suite reads settings from its own database"));
   const assertRef = async (result: CapabilityResult<unknown>) => {
     const ref = result.refs?.[0];
     if (!ref) throw new Error("expected persisted entry ref");
