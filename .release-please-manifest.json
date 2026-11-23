@@ -1,8 +1,8 @@
 {
-  ".": "0.84.0",
-  "packages/cloud": "0.76.0",
-  "packages/ui": "0.64.0",
+  ".": "0.85.0",
+  "packages/cloud": "0.77.0",
+  "packages/ui": "0.65.0",
   "packages/ssr": "0.23.1",
-  "packages/editor": "0.14.0",
-  "packages/stdlib": "0.36.0"
+  "packages/editor": "0.15.0",
+  "packages/stdlib": "0.36.1"
 }

@@ -1,6 +1,6 @@
 {
   "name": "@k2b/stdlib",
-  "version": "0.36.0",
+  "version": "0.36.1",
   "description": "Generic headless utility library -- crypto, encoding, dates, files, images, SolidJS primitives",
   "repository": {
     "type": "git",

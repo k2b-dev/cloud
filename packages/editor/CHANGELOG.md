@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.14.0...npm-editor-v0.15.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** @k2b/ui removes the flat build's Area, FactGroup, FieldGrid, FileName, FloatingPill, RowGroup and StatusRow components, the PlaceholderTone type and the flat options of DataTable, Placeholder, Section, AppWorkspace, Breadcrumbs, NoticeCard and StatusBadge; applications use the 0.63 building blocks again.
+
+### Bug Fixes
+
+* **apps:** Files, Grids, Weather, Contacts, Notebooks, FAQ and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
+* **ui:** the app shell, tables and fields return to their look from before the flat build ([#4026](https://github.com/k2b-dev/cloud/issues/4026)) ([64d11cb](https://github.com/k2b-dev/cloud/commit/64d11cbd672de0713c4a03df4d60e86ac8942a93))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/stdlib bumped from 0.36.0 to 0.36.1
+    * @k2b/ui bumped from 0.64.0 to 0.65.0
+
 ## [0.14.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.13.0...npm-editor-v0.14.0) (2026-11-22)
 
 
