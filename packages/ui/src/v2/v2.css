@@ -1801,6 +1801,10 @@
 .k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input {
   height: var(--k2-h-control-small);
 }
+/* a form in a section: 12 px between its rows of fields and choices, as in a dialog */
+.k2-ui .k2-sec > :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) + :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) {
+  margin-top: 12px;
+}
 /* Field: label 20, control 36, hint or error; a field row shares one grid (K5) */
 .k2-ui .k2-frow {
   display: grid;
