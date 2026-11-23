@@ -51,6 +51,7 @@ export {
   type RowLines,
   type RowProps,
   Table,
+  type TableGroup,
   type TableProps,
   Text,
   type TextProps,

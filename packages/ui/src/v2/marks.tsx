@@ -63,7 +63,15 @@ export type ChipProps = {
       amount?: never;
       ai?: never;
     }
-  | { status?: never /** "You are next" in the blue of selection. */; yours: true; tag?: never; amount?: never; ai?: never }
+  | {
+      status?: never;
+      /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
+      yours: true;
+      dot?: boolean;
+      tag?: never;
+      amount?: never;
+      ai?: never;
+    }
   | {
       status?: never;
       yours?: never;
@@ -117,6 +125,9 @@ export const Chip = (props: ChipProps) => {
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
       <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
+      <Show when={"dot" in props && props.dot}>
+        <span class="k2-dot" data-status="app" />
+      </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.children}

@@ -282,7 +282,7 @@ export type TableProps<T> = {
   /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
   sticky?: boolean;
   /** Rows of a group follow one another under a tinted group row of 36 px (no frame: it would cut the columns). */
-  group?: (row: T) => { key: string; head: JSX.Element; meta?: string };
+  group?: (row: T) => TableGroup;
   /** The column the rows are sorted by: an arrow in its head. */
   sort?: { column: number; direction: "ascending" | "descending" };
   /** On the phone each row becomes a row of two lines instead (rule 7). */
@@ -291,7 +291,10 @@ export type TableProps<T> = {
 
 const isPair = (value: CellValue): value is readonly [JSX.Element, JSX.Element] => Array.isArray(value) && value.length === 2;
 
-type TableItem<T> = { group: { key: string; head: JSX.Element; meta?: string } } | { row: T };
+/** A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone. */
+export type TableGroup = { key: string; head: JSX.Element; meta?: string; count?: string };
+
+type TableItem<T> = { group: TableGroup } | { row: T };
 
 /**
  * Many like things in columns: head 36, a line under every row, none between columns. Long text stays on one line
@@ -471,8 +474,8 @@ export const Table = <T,>(props: TableProps<T>) => {
                     <div class="k2-bar" role="presentation">
                       <div class="k2-bar-start">
                         {item.group.head}
-                        <Show when={item.group.meta}>
-                          <span class="k2-t-meta">{item.group.meta}</span>
+                        <Show when={item.group.count ?? item.group.meta}>
+                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
                         </Show>
                       </div>
                     </div>
