@@ -6,12 +6,15 @@ import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
- * Shared UI (`@k2b/cloud`, `@k2b/ui`) renders inside every app page. The page links `global.css` first and the app's
- * own `app.css` after it (#3921), and both put their utilities in `@layer utilities`. A class list that pairs a plain
- * utility with a variant on the same property, such as `gap-1 sm:gap-2` or `text-zinc-400 dark:text-zinc-600`, then
- * breaks as soon as the app's sheet repeats the plain utility: at equal specificity the later `gap-1` beats the
- * shared `sm:gap-2`. Shared markup scopes both sides instead (`max-sm:gap-1 sm:gap-2`,
- * `not-dark:text-zinc-400 dark:text-zinc-600`) and looks the same in either order.
+ * Shared UI (`@k2b/cloud`, `@k2b/ui`) renders inside every app page. The app page links the app's own `app.css`
+ * before `global.css`, but many browser fixtures load it after, and both put their utilities in `@layer utilities`.
+ * A class list that pairs a plain utility with a variant on the same property, such as `gap-1 sm:gap-2` or
+ * `text-zinc-400 dark:text-zinc-600`, then breaks wherever the app's sheet comes later and repeats the plain
+ * utility: at equal specificity the later `gap-1` beats the shared `sm:gap-2`. Shared markup scopes both sides
+ * instead (`max-sm:gap-1 sm:gap-2`, `not-dark:text-zinc-400 dark:text-zinc-600`) and looks the same in either order.
+ *
+ * App markup is out of scope: an app sheet compiles without Cloud's theme and has no breakpoint variants, so only
+ * the page order protects it (`define-app.css-order.browser.test.ts`).
  *
  * Which classes collide is read from Cloud's own Tailwind setup (`global.css`): a variant collides with a plain
  * utility when its rule styles the same element at the same specificity (media, container, `dark:`) and sets a
@@ -292,15 +295,59 @@ export const collisionsIn = async (file: string, source: string): Promise<Collis
   };
   const { sourceFile } = parseSource(file, source);
   const collisions: Collision[] = [];
+  // Strings a template already read as part of its class list.
+  const inTemplate = new Set<ts.Node>();
+
+  /**
+   * The class texts an expression can add, one per alternative: a string, each branch of a condition, the strings
+   * beside `&&`, `||` and `??`, and each text of a nested template. Anything else adds no known class.
+   */
+  const alternatives = (node: ts.Expression): string[] => {
+    if (ts.isStringLiteralLike(node)) {
+      inTemplate.add(node);
+      return [node.text];
+    }
+    if (ts.isTemplateExpression(node)) {
+      inTemplate.add(node);
+      return templateTexts(node);
+    }
+    if (ts.isParenthesizedExpression(node)) return alternatives(node.expression);
+    if (ts.isConditionalExpression(node)) return [...alternatives(node.whenTrue), ...alternatives(node.whenFalse)];
+    if (
+      ts.isBinaryExpression(node) &&
+      [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(
+        node.operatorToken.kind,
+      )
+    )
+      return [...alternatives(node.left), ...alternatives(node.right)];
+    return [];
+  };
+
+  /**
+   * Every class text a template can produce: its static parts with one alternative of each substitution. In
+   * `flex ${open ? "md:hidden" : ""}` the shared `md:hidden` sits on the same element as `flex`; the branches of
+   * one condition never meet. A substitution without a known class adds nothing.
+   */
+  const templateTexts = (node: ts.TemplateExpression): string[] =>
+    node.templateSpans.reduce(
+      (texts, span) => {
+        const options = alternatives(span.expression);
+        return (options.length ? options : [""]).flatMap((option) => texts.map((text) => `${text} ${option} ${span.literal.text}`));
+      },
+      [node.head.text],
+    );
 
   const visit = (node: ts.Node): void => {
-    // A template's static parts form one class list; its substitutions are visited on their own.
-    const text = ts.isStringLiteralLike(node)
-      ? node.text
-      : ts.isTemplateExpression(node)
-        ? [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(" ")
-        : undefined;
-    for (const list of text === undefined ? [] : classLists(text)) {
+    const texts = inTemplate.has(node)
+      ? []
+      : ts.isStringLiteralLike(node)
+        ? [node.text]
+        : ts.isTemplateExpression(node)
+          ? templateTexts(node)
+          : [];
+    // One template's texts repeat their static pairs; report each pair once per node.
+    const reported = new Set<string>();
+    for (const list of texts.flatMap(classLists)) {
       // `!` makes a class important; then the stylesheet order decides nothing.
       const tokens = [...new Set(list.split(/\s+/).filter((token) => token && !token.startsWith("!") && !token.endsWith("!")))];
       const plains = tokens.filter((token) => variantsOf(token).length === 0);
@@ -323,7 +370,8 @@ export const collisionsIn = async (file: string, source: string): Promise<Collis
               }
               return false;
             });
-            if (collides) {
+            if (collides && !reported.has(`${plain} ${variant}`)) {
+              reported.add(`${plain} ${variant}`);
               collisions.push({ file, plain, variant, line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1 });
             }
           }

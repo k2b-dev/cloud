@@ -67,8 +67,8 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css">
     <link rel="stylesheet" href="/public/tabler-icons.css">
-    <link rel="stylesheet" href="/public/global.css">
     <link rel="stylesheet" href="/public/head-probe/app.css">
+    <link rel="stylesheet" href="/public/global.css">
     <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
@@ -110,8 +110,6 @@ describe("document head", () => {
       // Fonts, styles and the theme bootstrap stay shared with the web.
       expect(html).toContain('<link rel="stylesheet" href="/public/global.css">');
       expect(html).toContain("<style data-cloud-css-layers>");
-      // An app's own stylesheet follows the shared one, so its utilities win at equal specificity (#3921).
-      expect(html.indexOf("/public/head-probe/app.css")).toBeGreaterThan(html.indexOf("/public/global.css"));
       // No cross-fade between app pages: it would swallow the next tap. Later than global.css, which turns it on.
       expect(html.indexOf("<style data-cloud-app-navigation>@view-transition{navigation:none}</style>")).toBeGreaterThan(
         html.indexOf("/public/global.css"),
