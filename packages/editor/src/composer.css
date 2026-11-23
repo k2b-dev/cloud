@@ -1,0 +1,75 @@
+/* The composer frame (Composer.tsx) on the @k2b/ui v2 tokens, measured from Cloud's v2 mockup (mail.html): a round
+   card, because one writes in it (rule 8), 8 px inside its column and 12 px from what stands above and below. It
+   draws only inside a v2 scope (`.k2-ui`). */
+.k2-ui .k2-composer {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 8px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-card);
+  background: var(--k2-surface);
+}
+.k2-ui .k2-composer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-bar);
+  padding: 4px 11px 0;
+  font: var(--k2-t-row);
+  color: var(--k2-text);
+}
+.k2-ui .k2-composer-head-end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+/* body text in its role (14/20); the mockup's 22 px reading line is not one of the four roles */
+.k2-ui .k2-composer-write {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 104px;
+  padding: 8px 11px;
+  font: var(--k2-t-body);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-composer-start {
+  all: unset;
+  display: block;
+  font: inherit;
+  color: inherit;
+  cursor: text;
+}
+.k2-ui .k2-composer-start:focus-visible {
+  border-radius: var(--k2-r-mark);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-composer-signature {
+  margin-top: auto;
+  font: var(--k2-t-row);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--k2-h-status);
+  padding: 0 11px;
+}
+.k2-ui .k2-composer-tools,
+.k2-ui .k2-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.k2-ui .k2-composer-actions {
+  margin-left: auto;
+}
+/* the tools of the foot are the small icon buttons of a 40 px place; the send action keeps its full height */
+.k2-ui .k2-composer-foot .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  padding: 0;
+  color: var(--k2-muted);
+}
