@@ -80,13 +80,48 @@ const head = (dark: boolean) =>
   `<!doctype html><html lang="en" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
 
-/** The dialog's box and whether its body has to scroll. */
-const measure = (page: Page) =>
-  page.evaluate(() => {
+declare global {
+  interface Window {
+    approvalBoxes?: () => string[];
+  }
+}
+
+/**
+ * The dialog's box and whether its body has to scroll, once the layout settled. A text that a locator waited for is
+ * there from its first frame, before layout that answers it, such as a resize observer, has run (#4039).
+ */
+const measure = async (page: Page) => {
+  await settled(page);
+  return page.evaluate(() => {
     const dialog = document.querySelector<HTMLElement>("dialog[open]")!;
     const box = dialog.getBoundingClientRect();
     const body = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
     return { top: Math.round(box.top), height: Math.round(box.height), overflow: body.scrollHeight - body.clientHeight };
+  });
+};
+
+/** Records the dialog's box on every frame and resize until `window.approvalBoxes()`, so a box shown for one frame counts. */
+const recordBoxes = (page: Page) =>
+  page.evaluate(() => {
+    const dialog = document.querySelector<HTMLElement>("dialog[open]")!;
+    const boxes = new Set<string>();
+    const read = () => {
+      const box = dialog.getBoundingClientRect();
+      boxes.add(`${Math.round(box.top)}/${Math.round(box.height)}`);
+    };
+    const sizes = new ResizeObserver(read);
+    sizes.observe(dialog);
+    let frame = 0;
+    const next = () => {
+      read();
+      frame = requestAnimationFrame(next);
+    };
+    next();
+    window.approvalBoxes = () => {
+      sizes.disconnect();
+      cancelAnimationFrame(frame);
+      return [...boxes];
+    };
   });
 
 type Api = (route: Route, path: string) => Promise<void> | void;
@@ -158,7 +193,6 @@ describe("approval on a paired device in a browser", () => {
           await page.touchscreen.tap(2, 2);
           await page.keyboard.press("Escape");
           expect(await dialog.count()).toBe(1);
-          await settled(page);
           steps.ask = await measure(page);
           await shot("ask");
           const footer = dialog.locator(".k2b-panel-dialog__footer");
@@ -209,6 +243,8 @@ describe("approval on a paired device in a browser", () => {
           await dialog.getByText("482913").waitFor({ timeout: 12_000 });
           const code = await measure(page);
           if (shots) await page.screenshot({ path: join(shots, `pair-code-${view.name}-${theme}.png`) });
+          // Every frame from the code to the wait shows the same box: a move that comes back also counts.
+          await recordBoxes(page);
           await page.touchscreen.tap(2, 2);
           await page.keyboard.press("Escape");
           expect(await dialog.count()).toBe(1);
@@ -218,6 +254,7 @@ describe("approval on a paired device in a browser", () => {
           if (shots) await page.screenshot({ path: join(shots, `pair-waiting-${view.name}-${theme}.png`) });
           expect([code.overflow, waiting.overflow].filter((overflow) => overflow > 0)).toEqual([]);
           expect(waiting).toEqual(code);
+          expect(await page.evaluate(() => window.approvalBoxes?.())).toEqual([`${code.top}/${code.height}`]);
         } finally {
           await close();
         }
