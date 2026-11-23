@@ -46,7 +46,7 @@ describe("accessMemberEntries", () => {
       })),
       { locale: "en" },
     );
-    expect(entries.map((entry) => entry.detail)).toEqual(["Agent", "Personal", "API key", "Agent (API key only)"]);
+    expect(entries.map((entry) => entry.detail)).toEqual(["Agent", "Personal", "API key", "Agent"]);
   });
 
   test("speaks the request locale", () => {

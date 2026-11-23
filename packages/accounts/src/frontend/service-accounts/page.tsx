@@ -4,6 +4,7 @@ import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   coreSettings,
+  STANDALONE_SERVICE_ACCOUNT_KINDS,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
@@ -33,7 +34,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; aut
   if (params.automatic) query.set("automatic", "1");
   if (params.page && params.page > 1) query.set("page", String(params.page));
   const search = query.toString();
-  return search ? `/app/accounts/service-accounts?${search}` : "/app/accounts/service-accounts";
+  return search ? `/app/accounts/api-keys?${search}` : "/app/accounts/api-keys";
 };
 
 const statusTone = (status: ServiceAccountCredentialOverview["status"]): StatusTone => (status === "active" ? "ok" : "error");
@@ -41,7 +42,7 @@ const statusTone = (status: ServiceAccountCredentialOverview["status"]): StatusT
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const serviceAccountKindLabel = (kind: ServiceAccountCredentialOverview["serviceAccount"]["kind"]) =>
-    kind === "user_delegated" ? t.userBound : kind === "standalone" ? t.standalone : kind === "agent" ? t.agent : t.resourceBound;
+    kind === "user_delegated" ? t.userBound : kind === "standalone" || kind === "agent" ? t.agent : t.resourceBound;
   const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const user = expectUserBackedActor(c);
   const modelsAvailable = await coreSettings.get<boolean>("ai.openai_api_enabled");
@@ -52,7 +53,7 @@ export default ssr<AuthContext>(async (c) => {
   automaticParams.delete("page");
   if (automatic) automaticParams.delete("automatic");
   else automaticParams.set("automatic", "1");
-  const automaticUrl = `/app/accounts/service-accounts?${automaticParams}`;
+  const automaticUrl = `/app/accounts/api-keys?${automaticParams}`;
   const search = (c.req.query("search") ?? "").trim();
   const kind = (c.req.query("kind") ?? "").trim();
   const rawStatus = (c.req.query("status") ?? "active").trim();
@@ -65,8 +66,9 @@ export default ssr<AuthContext>(async (c) => {
       filter: {
         automatic: automatic ? "include" : "hide",
         search: search || undefined,
+        // "Agent" covers both standalone kinds; the model has one word for them.
         serviceAccountKind:
-          kind === "user_delegated" || kind === "resource_bound" || kind === "standalone" || kind === "agent" ? kind : undefined,
+          kind === "user_delegated" || kind === "resource_bound" ? kind : kind === "agent" ? STANDALONE_SERVICE_ACCOUNT_KINDS : undefined,
         credentialStatus: status === "active" || status === "revoked" ? status : undefined,
       },
     }),
@@ -80,7 +82,7 @@ export default ssr<AuthContext>(async (c) => {
     if (automatic) params.set("automatic", "1");
     if (status !== "active") params.set("status", status);
     const query = params.toString();
-    return query ? `/app/accounts/service-accounts?${query}&page=` : "/app/accounts/service-accounts?page=";
+    return query ? `/app/accounts/api-keys?${query}&page=` : "/app/accounts/api-keys?page=";
   })();
 
   const columns: DataTableColumn<ServiceAccountCredentialOverview>[] = [
@@ -100,7 +102,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.serviceAccounts }]}
     >
-      <AccountsWorkspace active="service-accounts" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-service-accounts">
+      <AccountsWorkspace active="api-keys" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-service-accounts">
         <div class="flex flex-col gap-2">
           <div class="flex flex-wrap items-start justify-between gap-3" style="view-transition-name: accounts-service-accounts-title">
             <div class="min-w-0">
@@ -206,7 +208,7 @@ export default ssr<AuthContext>(async (c) => {
                             {entry.owner.name}
                           </a>
                           <span class="truncate text-xs text-dimmed">
-                            {entry.owner.kind === "agent" ? t.agentServiceAccount : t.standaloneServiceAccount}
+                            {t.agentServiceAccount}
                           </span>
                         </div>
                       );

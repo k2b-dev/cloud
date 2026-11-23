@@ -1,47 +1,51 @@
 ---
-title: Standalone service accounts and agents
-navTitle: Service accounts and agents
+title: Agents
+navTitle: Agents
 section: Identity and access
 order: 352
-description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
+description: Give an integration or a coding agent its own account with an OAuth client or API keys, and grant it access like a person.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-11-03
+updated: 2026-11-23
 ---
 
-# Standalone service accounts and agents
+# Agents
 
 See [Who may do what](/en/docs/identity/access-model) for the access model.
 
-A standalone service account is a principal of its own: it has a name, it is
-not delegated by a user, and it is not bound to one application resource. Grant
-it access exactly like a user, through Space membership, Notebook access, or
-any other resource grant. A new account starts with nothing.
+An agent is an account without a person. An administrator creates it for a
+program, such as a coding agent or an integration. It has a name and a
+picture, and it signs in with an API key or an OAuth client. Grant it access
+exactly like a person, through Space membership, Notebook access, or any other
+resource grant. A new agent starts with nothing.
 
-Every service account has one `kind`:
+Every agent shows a picture, never a bare icon: a robot drawn from its account
+ID, or a photo. Administrators change it on the agent's page under
+**Accounts → Agents** or with `cld admin agents avatar`; see
+[Profile pictures](/en/docs/identity/profile-pictures). People recognize the
+agent by name and picture in assignee lists, activity, and audit trails.
 
-| Kind | Identity | Grants |
-| --- | --- | --- |
-| `user_delegated` | A credential acting for one user | The delegated user's live grants |
-| `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
-| `standalone` | An integration with its own identity | Direct and local group grants |
-| `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
-| `code` | A platform-managed identity for resource or app Code | Only its own explicit resource and app grants |
+A service account is the account that Code of a resource or an app runs as. It
+has no sign-in and no API key; see [Code accounts](#code-accounts).
 
-`agent` changes presentation only: pickers and the Accounts app show the label
-"Agent" instead of a key. It carries no extra permission and no different token
-rules. Every service account shows a picture, never a bare icon: a robot drawn
-from its account ID, or a photo. Administrators change a standalone account's
-picture on its page under **Accounts → Agents** or with `cld admin agents
-avatar`; see [Profile pictures](/en/docs/identity/profile-pictures). Use it for
-coding agents and other automated workers that people should recognize in
-assignee lists, activity, and audit trails.
+### Technical names
 
-The request contract does not change. A standalone account authenticates as a
-`service_account` actor with `delegatedUser: null`, and its `accessSubject` is
-`{ type: "service_account", serviceAccountId }`. Application code that treats
-"not user-delegated" as "resource-bound" is wrong: check
-`serviceAccount.kind === "resource_bound"` before reading `appId`,
-`resourceType`, or `resourceId`. See
+The API and the CLI keep one technical name, `service_account`, for every
+account without a person. An agent authenticates as a `service_account` actor
+with `delegatedUser: null`, and its `accessSubject` is
+`{ type: "service_account", serviceAccountId }`. The `serviceAccount.kind` field
+tells the cases apart:
+
+- `agent` is an agent; accounts created before agents existed carry
+  `standalone` and behave the same. Interfaces show both as "Agent".
+- `user_delegated` carries a person's API key and acts with that person's
+  current access.
+- `resource_bound` carries an API key at one resource, such as a Space or a
+  Pulse source, and reaches only that resource.
+- `code` is a service account for Code.
+
+Application code that treats "not user-delegated" as "an API key at a
+resource" is wrong: check `serviceAccount.kind === "resource_bound"` before
+reading `appId`, `resourceType`, or `resourceId`. See
 [Request identity](/en/docs/identity/authentication).
 
 Studio machine execution is retired. See [Studio retirement](/en/docs/operations/studio-retirement).
@@ -93,7 +97,7 @@ separate from deleting the resource or application that owns the Code.
 
 ## Create the account
 
-Administrators create standalone accounts through Core's administrator API:
+Administrators create agents through Core's administrator API:
 
 ```http
 POST /api/admin/identity/service-accounts
@@ -102,16 +106,17 @@ Content-Type: application/json
 {"name":"Release agent","kind":"agent"}
 ```
 
-`kind` defaults to `standalone`; `name` is unique among standalone accounts,
+Send `kind: "agent"`. Without it the API stores the older `standalone` kind,
+which Cloud also shows as an agent. `name` is unique among agents,
 case-insensitively. `GET /api/admin/identity/service-accounts` lists them with
 `kind`, `status`, `search`, `page`, and `perPage` filters, and
-`GET /api/admin/identity/service-accounts/<id>` reads one. User-delegated and
-resource-bound accounts are not part of this list; they stay with their owning
-user or application.
+`GET /api/admin/identity/service-accounts/<id>` reads one. Personal API keys
+and API keys at a resource are not part of this list; they stay with their
+person or resource.
 
 ## Choose the credential
 
-A standalone account or agent can hold both credential forms at once. The
+An agent can hold both credential forms at once. The
 agent CLI creates an OAuth client; administrators can also issue an API key.
 
 | Credential | Lifetime | Revocation | Create with |
@@ -183,7 +188,7 @@ account as target.
 
 ## Grant access
 
-Grant a standalone or agent account access like a person, with the CLI or
+Grant an agent access like a person, with the CLI or
 the REST API:
 
 ```bash
@@ -203,7 +208,7 @@ grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
 A human group manager or installation administrator can also add an active
-standalone or agent account to a local Cloud group through Accounts, its API,
+agent to a local Cloud group through Accounts, its API,
 or `cld accounts groups members add <group> --service-account <id-or-name> --yes`.
 The account inherits resource grants through the group and its local ancestors;
 removing membership or disabling the account ends that inherited access.
@@ -234,7 +239,7 @@ health, and runs read-only SQL through `sql.run` with a `read` grant. The API,
 CLI, and capability use the same base access check. A query sees only its own
 base; querying two bases requires two calls. Listing saved queries needs read
 access; saving and deleting them needs write access. Changing base settings
-needs base admin access. By default, standalone and agent accounts
+needs base admin access. By default, agents
 with write or admin credential scope can also create a Pulse base and receive
 its admin grant. A delegated account can create a base for its person, who
 receives the admin grant. Cloud admins can restrict creation under
@@ -247,7 +252,7 @@ person stay user-only: creating a Space, Notebook, contact book, or venue, creat
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
 signing up for or cancelling Venue shifts. Managing access in Spaces, Notebooks, and Contacts follows the admin grant
-and credential scope, including for agents and standalone accounts. Listing
+and credential scope, including for agents. Listing
 API keys stays user-only in those applications.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
@@ -305,9 +310,9 @@ with its own base grant and an exact-workflow, revocable mandate. See
 For independently owned file storage and explicit path grants, see
 [Files machine storage](/en/docs/identity/files-machine-storage).
 
-## Local group management by machines
+## Local group management by agents
 
-Standalone and agent accounts can receive a direct, revocable local group
+Agents can receive a direct, revocable local group
 management grant, separate from membership. A matching token scope is also
 required. See [Machine group management](./machine-group-management.md).
 

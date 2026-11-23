@@ -18,7 +18,7 @@ export const accessCommands = [
   command("access reference", {
     summary: "Show Grids resource access levels",
     description:
-      "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including standalone and agent account grants.",
+      "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including grants to agents.",
     examples: ["cld grids access reference", "cld grids access reference --json"],
     async run({ ctx }) {
       const reference = {
@@ -77,7 +77,7 @@ export const accessCommands = [
     flags: {
       includeServiceAccounts: flag.boolean({
         name: "include-service-accounts",
-        description: "Also show grants of resource-bound service accounts in text output.",
+        description: "Also show grants of API keys in text output.",
       }),
     },
     async run({ ctx, args, flags }) {

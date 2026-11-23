@@ -94,7 +94,7 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                   id: account.id,
                   label: account.name,
                   icon: account.kind === "agent" ? "ti ti-robot" : "ti ti-key",
-                  description: account.kind === "agent" ? t().agent : t().service,
+                  description: t().agent,
                 }));
               }}
               onSelect={(option) => {
@@ -157,13 +157,11 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                         </span>
                         <Show when={entry.principal.type === "service_account"}>
                           <Tag size="sm">
-                            {entry.serviceAccountKind === "agent"
-                              ? accountsText().agentServiceAccount
-                              : entry.serviceAccountKind === "resource_bound"
-                                ? accountsText().resourceBoundServiceAccount
-                                : entry.serviceAccountKind === "user_delegated"
-                                  ? accountsText().userBoundServiceAccount
-                                  : accountsText().standaloneServiceAccount}
+                            {entry.serviceAccountKind === "resource_bound"
+                              ? accountsText().resourceBoundServiceAccount
+                              : entry.serviceAccountKind === "user_delegated"
+                                ? accountsText().userBoundServiceAccount
+                                : accountsText().agentServiceAccount}
                           </Tag>
                         </Show>
                         <RemoveButton

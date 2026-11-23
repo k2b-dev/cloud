@@ -11,7 +11,7 @@ Hosts shows a local mirror of FreeIPA hosts and hostgroups, then lets admins syn
 ## Overview {icon="layout-grid"}
 
 :::reference
-- **FreeIPA:** FreeIPA is the source of truth. The page reads from the local mirror and mutations call FreeIPA through the service account.
+- **FreeIPA:** FreeIPA is the source of truth. The page reads from the local mirror and mutations call FreeIPA as the FreeIPA user from the sign-in settings.
 - **Hostgroup:** A hostgroup groups hosts by FreeIPA membership. Nested hostgroups appear as compact badges in the group header.
 - **Ungrouped host:** A mirrored host without any hostgroup membership. The page surfaces them first because they usually need assignment.
 - **Sync:** Sync refreshes the local mirror from FreeIPA. The schedule uses a five-field cron expression in the configured timezone.

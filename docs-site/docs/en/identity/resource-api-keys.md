@@ -31,7 +31,7 @@ Cloud has four service-account kinds:
 Personal API keys use a user-delegated service account. Resource API keys use
 a resource-bound service account. Standalone and agent accounts are
 administrator-created principals; see
-[Standalone service accounts and agents](/en/docs/identity/service-accounts).
+[Agents](/en/docs/identity/service-accounts).
 
 Do not combine the delegated user's grants with the service account's grants.
 See [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials)

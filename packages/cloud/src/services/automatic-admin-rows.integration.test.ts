@@ -64,6 +64,17 @@ suite("automatic rows in administrator lists", () => {
         filter: { automatic: "hide", search: marker, serviceAccountKind: "agent" },
       });
       expect(agents).toMatchObject({ total: 1, hiddenAutomaticCount: 0 });
+      // Several kinds match any of them; the admin's "Agent" filter covers both standalone kinds.
+      expect(
+        await serviceAccountCredentials.listOverview({
+          filter: { automatic: "hide", search: marker, serviceAccountKind: ["standalone", "agent"] },
+        }),
+      ).toMatchObject({ total: 1 });
+      expect(
+        await serviceAccountCredentials.listOverview({
+          filter: { automatic: "hide", search: marker, serviceAccountKind: ["resource_bound", "agent"] },
+        }),
+      ).toMatchObject({ total: 2 });
       const unrelated = await serviceAccountCredentials.listOverview({ filter: { automatic: "hide", search: `missing-${marker}` } });
       expect(unrelated).toMatchObject({ total: 0, hiddenAutomaticCount: 0 });
 

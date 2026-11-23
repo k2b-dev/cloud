@@ -267,15 +267,15 @@ function spacesCommands(locale?: string) {
     if (accounts.length > 1)
       throw new Error(
         t({
-          en: `Several service accounts are named "${ref}" in this space. Use the ID of the one you mean: ${accounts.map((account) => account.id).join(", ")}.`,
-          de: `Mehrere Dienstkonten in diesem Space heißen „${ref}“. Verwende die ID des gemeinten Kontos: ${accounts.map((account) => account.id).join(", ")}.`,
+          en: `Several accounts are named "${ref}" in this space. Use the ID of the one you mean: ${accounts.map((account) => account.id).join(", ")}.`,
+          de: `Mehrere Konten in diesem Space heißen „${ref}“. Verwende die ID des gemeinten Kontos: ${accounts.map((account) => account.id).join(", ")}.`,
         }),
       );
     if (accounts[0]) return accounts[0].id;
     throw new Error(
       t({
-        en: `No person or service account named "${ref}" can be assigned in this space. Use me, an ID, a username, or a service account name with access.`,
-        de: `Keine Person und kein Dienstkonto mit dem Namen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine ID, einen Benutzernamen oder den Namen eines Dienstkontos mit Zugriff.`,
+        en: `No person, agent, or service account named "${ref}" can be assigned in this space. Use me, an ID, a username, or the name of an agent or service account with access.`,
+        de: `Keine Person, kein Agent und kein Dienstkonto mit dem Namen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine ID, einen Benutzernamen oder den Namen eines Agenten oder Dienstkontos mit Zugriff.`,
       }),
     );
   };
@@ -371,8 +371,8 @@ function spacesCommands(locale?: string) {
     }),
     assignee: flag.stringList({
       description: t({
-        en: "Assignee: me, user or service account ID, username, or service account name; repeatable",
-        de: "Zuständige: me, Benutzer- oder Dienstkonto-ID, Benutzername oder Dienstkontoname; wiederholbar",
+        en: "Assignee: me, ID of a user, agent, or service account, username, or name of an agent or service account; repeatable",
+        de: "Zuständige: me, ID einer Person, eines Agenten oder Dienstkontos, Benutzername oder Name eines Agenten oder Dienstkontos; wiederholbar",
       }),
     }),
   };
@@ -454,8 +454,8 @@ function spacesCommands(locale?: string) {
           unassigned: flag.boolean({ description: t({ en: "Only unassigned items", de: "Nur Einträge ohne Zuweisung" }) }),
           assignee: flag.stringList({
             description: t({
-              en: "Assignee user or service account ID; repeatable",
-              de: "Benutzer- oder Dienstkonto-ID der Zuweisung; wiederholbar",
+              en: "Assignee ID of a user, agent, or service account; repeatable",
+              de: "ID der zugewiesenen Person, des Agenten oder Dienstkontos; wiederholbar",
             }),
           }),
           ready: flag.boolean({ description: t({ en: "Open tasks without active blockers", de: "Offene Aufgaben ohne aktive Blocker" }) }),
@@ -1000,13 +1000,16 @@ function spacesCommands(locale?: string) {
           addAssignee: flag.stringList({
             name: "add-assignee",
             description: t({
-              en: "Add a person or service account without replacing others",
-              de: "Person oder Dienstkonto hinzufügen, andere bleiben zugewiesen",
+              en: "Add a person, agent, or service account without replacing others",
+              de: "Person, Agent oder Dienstkonto hinzufügen, andere bleiben zugewiesen",
             }),
           }),
           removeAssignee: flag.stringList({
             name: "remove-assignee",
-            description: t({ en: "Remove only this person or service account", de: "Nur diese Person oder dieses Dienstkonto entfernen" }),
+            description: t({
+              en: "Remove only this person, agent, or service account",
+              de: "Nur diese Person, diesen Agenten oder dieses Dienstkonto entfernen",
+            }),
           }),
           title: flag.string({ description: t({ en: "Title", de: "Titel" }) }),
           ...itemFieldFlags,
@@ -1130,16 +1133,16 @@ function spacesCommands(locale?: string) {
       ),
       command("assign", {
         summary: t({
-          en: "Assign to one person, service account, or nobody; release an active claim before removing its holder (409)",
-          de: "Einer Person, einem Dienstkonto oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
+          en: "Assign to one person, agent, service account, or nobody; release an active claim before removing its holder (409)",
+          de: "Einer Person, einem Agenten, einem Dienstkonto oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
         }),
         args: {
           ...itemArg,
           user: arg.required({
             valueLabel: "user|me|none",
             description: t({
-              en: "me, none, a user or service account ID, a username, or a service account name",
-              de: "me, none, eine Benutzer- oder Dienstkonto-ID, ein Benutzername oder Dienstkontoname",
+              en: "me, none, the ID of a user, agent, or service account, a username, or the name of an agent or service account",
+              de: "me, none, die ID einer Person, eines Agenten oder Dienstkontos, ein Benutzername oder der Name eines Agenten oder Dienstkontos",
             }),
           }),
         },
@@ -1405,8 +1408,8 @@ function spacesCommands(locale?: string) {
       }),
       command("claim", {
         summary: t({
-          en: "Claim an open, unblocked task; also assigns your person or service account, except personal automation keys",
-          de: "Eine offene, unblockierte Aufgabe übernehmen; weist dich als Person oder Dienstkonto zu, außer bei persönlichen Automatisierungsschlüsseln",
+          en: "Claim an open, unblocked task; also assigns you as a person, agent, or service account, except with a personal API key",
+          de: "Eine offene, unblockierte Aufgabe übernehmen; weist dich als Person, Agent oder Dienstkonto zu, außer mit einem persönlichen API Key",
         }),
         args: itemArg,
         flags: {

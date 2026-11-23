@@ -525,7 +525,7 @@ export const getWorkflowTriggerRuntimeState = async (
             ...schedule,
             state: "degraded",
             nextRunAt: null,
-            problem: "Automatic execution authority is unavailable. Review its owner, mandate and base grant.",
+            problem: "Automatic execution authority is unavailable. Review its owner, whether automatic runs are paused or ended, and its base access.",
           }
         : scheduleRuntimeState(workflow, schedule, registered)
       : null,

@@ -150,8 +150,7 @@ export const chatMessages = i18n.define({
       removeChannelMemberDescription:
         "Their direct membership ends. If this channel is still discoverable for them, they can read its history and join again. Their messages stay in the channel.",
       delegatedAccount: "Personal",
-      resourceAccount: "Service account",
-      standaloneAccount: "Agent (API key only)",
+      resourceAccount: "API key",
       agentAccount: "Agent",
       codeAccount: "Service account",
       codeAuthority: "Anyone who edits the Code acts with this permission.",
@@ -667,8 +666,7 @@ export const chatMessages = i18n.define({
       removeChannelMemberDescription:
         "Der direkte Mitgliedseintrag endet. Solange der Kanal für dieses Konto auffindbar ist, kann es den Verlauf lesen und wieder beitreten. Seine Nachrichten bleiben im Kanal.",
       delegatedAccount: "Persönlich",
-      resourceAccount: "Dienstkonto",
-      standaloneAccount: "Agent (nur API Key)",
+      resourceAccount: "API Key",
       agentAccount: "Agent",
       codeAccount: "Dienstkonto",
       codeAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
