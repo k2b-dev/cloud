@@ -180,7 +180,7 @@ jobs:
 
   unit:
     needs: [setup, mirror]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -250,7 +250,7 @@ jobs:
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -283,7 +283,7 @@ jobs:
 
   integration:
     needs: [setup, mirror]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
