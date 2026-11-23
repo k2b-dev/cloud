@@ -74,7 +74,8 @@ export type MailV2Shell = {
 
 /**
  * A plain click on a link that the island opens in place, in the shape `@k2b/ssr/nav`'s `Link` hands its handler:
- * history moves only when the island commits, and a failure loads the page. Temporary with the delegated clicks.
+ * history moves only when the island commits, and a failure loads the page. TEMPORARY: goes with the click delegation
+ * below once the v2 primitives take `onNavigate`.
  */
 export const linkNavigation = (url: URL, event: MouseEvent): LinkNavigateEvent => {
   const scrollSnapshot = captureScroll();
@@ -219,7 +220,10 @@ export default function MailWorkspaceV2(props: {
 
   // ── Links open in place ────────────────────────────────────────────────────────────────────────────────────────
   // Rows, tabs and sidebar entries are real links (a new tab, a page before hydration). A plain click opens them in
-  // place, as v1's rows and tabs do. Temporary: the v2 primitives take no navigation handler yet (gap reported).
+  // place, as v1's rows and tabs do.
+  // TEMPORARY (v2 pilot): this document-wide click delegation and `linkNavigation` stand in for `href` + `onNavigate`
+  // on Row, Tabs and Nav, which @k2b/ui v2 does not have yet (gap reported to lane C, 23.11.). Remove both as soon as
+  // the primitives take `onNavigate`, and hand each primitive its handler instead.
   onMount(() => {
     const click = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
