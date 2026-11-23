@@ -2368,6 +2368,163 @@
   font-weight: 600;
 }
 
+/* ── Overlays: they float above the content; 8 px, the one shadow. Behaviour (focus, Escape, placement) comes from
+   the behaviour layer; these are their shapes. ── */
+/* Dialog: head, content and foot are parts of ONE thing, so no line between them (rule 9, Valentin 22.11.); spacing
+   alone separates them. The only line: while the content scrolls, a hairline at the edge behind which more content
+   lies (data-more="above|below|both"), drawn as a box-shadow of head and foot, so nothing moves when it appears. */
+.k2-ui .k2-dialog {
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 64px);
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float-large);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  padding: 0;
+}
+.k2-ui .k2-dialog > .k2-bar {
+  border-bottom: 0;
+  position: relative;
+  z-index: 1;
+  background: var(--k2-surface);
+  height: var(--k2-h-head);
+}
+.k2-ui .k2-dialog > .k2-bar:last-child {
+  justify-content: flex-end;
+}
+.k2-ui .k2-dialog-title {
+  font: var(--k2-t-body);
+  font-weight: 600;
+  margin: 0;
+}
+.k2-ui .k2-dialog-body {
+  padding: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.k2-ui .k2-dialog[data-more="above"] > .k2-bar:first-child,
+.k2-ui .k2-dialog[data-more="both"] > .k2-bar:first-child {
+  box-shadow: 0 1px 0 var(--k2-line);
+}
+.k2-ui .k2-dialog[data-more="below"] > .k2-bar:last-child,
+.k2-ui .k2-dialog[data-more="both"] > .k2-bar:last-child {
+  box-shadow: 0 -1px 0 var(--k2-line);
+}
+/* a tinted notice in a dialog needs no line: the tint is its edge */
+.k2-ui .k2-dialog .k2-notice {
+  border-bottom: 0;
+}
+.k2-ui .k2-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(9 9 11 / 0.32);
+}
+/* Menu: entries 32 px, 4 px inside the menu of 8 px radius; a separator reaches the menu's edges */
+.k2-ui .k2-menu {
+  width: 232px;
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border: var(--k2-hairline);
+}
+.k2-ui .k2-mi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--k2-h-dense);
+  padding: 0 8px;
+  border-radius: var(--k2-r-mark);
+  color: var(--k2-text-2);
+  outline: none;
+}
+.k2-ui .k2-mi > .k2-icon:first-child {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-mi > .k2-mi-meta {
+  margin-left: auto;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-mi:is(:hover, [data-highlighted], :focus-visible) {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-mi[data-danger],
+.k2-ui .k2-mi[data-danger] > .k2-icon:first-child {
+  color: var(--k2-bad);
+}
+.k2-ui .k2-msep {
+  height: 1px;
+  background: var(--k2-line);
+  margin: 4px -4px;
+}
+/* Tooltip and popover */
+.k2-ui .k2-tip {
+  display: inline-block;
+  max-width: 360px;
+  background: var(--k2-n950);
+  color: var(--k2-surface);
+  font: var(--k2-t-meta);
+  padding: 4px 8px;
+  border-radius: var(--k2-r-mark);
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-pop {
+  width: 280px;
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float);
+  border: var(--k2-hairline);
+  overflow: hidden;
+}
+/* Toast: one sentence and at most one deed such as "Undo", at the bottom */
+.k2-ui .k2-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 60;
+  pointer-events: none;
+}
+.k2-ui .k2-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  background: var(--k2-n950);
+  color: var(--k2-surface);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float);
+  pointer-events: auto;
+}
+.k2-ui .k2-toast > .k2-icon {
+  color: var(--k2-surface);
+}
+.k2-ui .k2-toast .k2-btn[data-variant="text"] {
+  color: var(--k2-surface);
+  font: var(--k2-t-row);
+  font-weight: 500;
+}
+
 /* the main action floats on the phone only (K12) */
 .k2-ui .k2-fab {
   display: none;
