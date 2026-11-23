@@ -120,6 +120,11 @@ export type PaneProps = {
   detail?: boolean;
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
+  /**
+   * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
+   * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
+   */
+  scrollKey?: string;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -164,7 +169,9 @@ export const Pane = (props: PaneProps) => {
           {status()}
         </div>
       </Show>
-      <div class="k2-scroll">{props.children}</div>
+      <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
+        {props.children}
+      </div>
     </section>
   );
 };
