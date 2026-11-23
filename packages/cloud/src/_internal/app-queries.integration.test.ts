@@ -14,6 +14,7 @@ import { redis, sql } from "../runtime/clients";
 import { getActiveAppKey, registerAppKey } from "../services/app-keys";
 import { signAppQueryInvocation } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { CORE_WORKLOAD } from "../services/identity/workload-auth";
 import { toPgTextArray } from "../services/postgres";
 import { encryptValue } from "../services/settings/crypto";
 import { createAppQueryRoutes } from "./app-queries";
@@ -108,13 +109,49 @@ suiteFor(
       await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account!.id}::uuid`;
       expect(await auth()).toBeNull();
       expect((await call()).status).toBe(403);
-      await sql`UPDATE auth.service_accounts SET status = 'active', resource_id = 'wrong' WHERE id = ${account!.id}::uuid`;
-      expect(await auth()).toBeNull();
-      expect((await call()).status).toBe(403);
+      // An app key's account binding cannot change at all: the credential transition trigger refuses it.
+      const rebound =
+        await sql`UPDATE auth.service_accounts SET status = 'active', resource_id = 'wrong' WHERE id = ${account!.id}::uuid`.then(
+          () => null,
+          (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        );
+      expect(rebound).toBe("Account credentials do not match its kind or binding");
       expect(invoked).toBe(1);
     } finally {
       await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
     }
+  });
+  test("Core's own query needs no app key at the provider; any other subject without a current key is refused", async () => {
+    const compiled = compileCapabilities(
+      "query-provider",
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: { "item.read": reader },
+        types: { item: { title: "Item", description: "An item.", reader: "item.read", access: { readable: async () => [] } } },
+      }),
+    );
+    const payload = { id: "Abc123", principals: [] };
+    const sign = (workload: typeof CORE_WORKLOAD) =>
+      withActiveIdentitySigner("invocation", (signer) =>
+        signAppQueryInvocation({
+          workload,
+          targetAppId: "query-provider",
+          capabilityId: "item.readable",
+          schemaHash: compiled.queries.get("item.readable")!.manifest.schemaHash,
+          input: payload,
+          requestId: "core-query",
+          signer,
+        }),
+      );
+    const routes = createAppQueryRoutes(compiled);
+    const call = async (workload: typeof CORE_WORKLOAD) =>
+      routes.request("http://provider.test/item.readable", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${(await sign(workload)).token}` },
+        body: JSON.stringify({ input: payload }),
+      });
+    expect((await call(CORE_WORKLOAD)).status).toBe(200);
+    expect((await call({ ...CORE_WORKLOAD, appId: "not-core" })).status).toBe(403);
   });
   test("enrolled app keys carry reader authority and enforce live revocation", async () => {
     const appId = "reader-consumer";
