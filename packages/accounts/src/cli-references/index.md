@@ -90,6 +90,15 @@ cld accounts groups members remove "Local editors" --service-account "Publishing
 
 Machine members inherit resource grants through local parent groups, within their credential scopes. Membership creates no Linux or IPA identity and grants no installation role. IPA groups retain directory membership rules. Group management still requires a full user account with the appropriate manager or administrator authority.
 
+Administrators see which groups contain a group, and which groups it contains, in levels around it:
+
+```bash
+cld accounts groups relations "Editors" --depth 3
+cld accounts groups relations "Editors" --managers --all --json
+```
+
+Each level lists 10 groups unless `--all` is set; the next level continues only from the groups listed. A row marked `closes` leads back into a cycle; `already shown` is a group listed earlier. `--managers` adds which groups the starting group manages, which manage it, and a management cycle through it. Without a group, the command starts at the group with the most direct relations. Relations show group names and member counts, never member names; personal Linux groups are left out. Above 20,000 edges of one kind the command warns that cycles were checked only in part.
+
 Resolve a group and principal first, because these changes affect access recursively. Denying a request and deleting a group both require explicit confirmation.
 
 `groups list` excludes personal Linux groups, including JSON exports. The `--include-personal` switch is no longer supported, and exact group references do not resolve them. Inspect a user's primary GID with `users linux get <user> --json`. Use ordinary team groups for group-based integrations.

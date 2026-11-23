@@ -6,6 +6,7 @@ import type {
   EntityKind,
   EntityListItem,
   GroupMember,
+  GroupRelations,
   MutationResult,
   ServiceAccountKind,
   ServiceAccountStatus,
@@ -41,6 +42,7 @@ import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isA
 import type { AvatarChange, AvatarState } from "./avatar";
 import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
+import { type GroupRelationsQuery, loadGroupRelations } from "./group-relations";
 import * as groups from "./groups";
 import { mutateMachineGroupMember } from "./machine-group-management";
 import type { AccountsNotificationSender } from "./notification-sender";
@@ -997,6 +999,14 @@ export const accountsAppService = {
     get: async (config: { id: string }) => {
       const result = await groups.list({ ids: [config.id], perPage: 1 });
       return result.groups[0] ?? null;
+    },
+    /** Which groups contain which, around one group. Administrators only; the same check serves API, CLI, and pages. */
+    relations: async (config: GroupRelationsQuery & { actor: AccountsActor | null | undefined }): Promise<Result<GroupRelations>> => {
+      const { actor, ...query } = config;
+      const denied = await requireAdminActor<GroupRelations>({ actor, action: "accounts.group.relations" });
+      if (denied) return denied;
+      const relations = await loadGroupRelations(query);
+      return relations ? ok(relations) : fail(err.notFound("Group"));
     },
     member: {
       list: async (config: {
