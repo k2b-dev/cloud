@@ -8,6 +8,7 @@ import deletedAccountsPage from "./deleted-accounts/page";
 import duplicateEmailsPage from "./duplicate-emails/page";
 import groupDetailPage from "./groups/detail/page";
 import groupsPage from "./groups/page";
+import groupRelationsPage from "./groups/relations/page";
 import notificationDetailPage from "./notifications/detail.page";
 import notificationsPage from "./notifications/page";
 import landingPage from "./page";
@@ -64,4 +65,5 @@ export default new Hono<AuthContext>()
   .get("/deleted-accounts", auth.requireRole("admin", ssr.access), ...deletedAccountsPage)
   .get("/reminders", auth.requireRole("admin", ssr.access), ...remindersPage)
   .get("/groups", auth.requireRole("user", ssr.access), ...groupsPage)
+  .get("/groups/relations", auth.requireRole("admin", ssr.access), ...groupRelationsPage)
   .get("/groups/:id", auth.requireRole("user", ssr.access), ...groupDetailPage);
