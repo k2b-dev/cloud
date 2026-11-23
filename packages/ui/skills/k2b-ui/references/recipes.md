@@ -77,6 +77,13 @@ with the subject as `Text type="lead"` and actions; a `Bar` with `Inline`
 chips; `Notice tone="ai"` for the summary; one `Band` per message with a
 sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
 
+- A colleague's internal note in the thread is a `Notice tone="note"` with
+  `title` and `meta` (who, when).
+- The reply: until the composer of `@k2b/editor` arrives (gap), a `Band`
+  with a `Field` and `<Input multiline />`, followed by a `Bar` whose `end`
+  holds "Senden" as a default button (the page's primary stays "Neue
+  Nachricht").
+
 ## table.tsx: a table with a status row
 
 ![table at 1440 px](../images/table-1440.png)

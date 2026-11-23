@@ -52,7 +52,9 @@ form is its own route.
 A bar of fixed height with one line below: `start`, `end`. Height comes
 from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
 `Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
-a bar is cut to one line.
+a bar is cut to one line. Inside a pane a bar stands at the top (a line of
+state under the head, as in `mail.tsx`) or directly after the fields it
+serves (the buttons of a form or of a reply), never between entries.
 
 ### Band
 
@@ -176,7 +178,8 @@ in a `Bar start`.
 ## Controls
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
-  `text` (quiet, in heads and at row ends); `icon`, `avatar`, `href`,
+  `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
+  such as the one a thread is assigned to), `href`,
   `onClick`, `menu` (chevron), `forward`, `disabled`, `type`, `keep` (stays
   in a head on the phone). Without children it needs `label`.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
@@ -201,7 +204,8 @@ in a `Bar start`.
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
-  `nested`, `dot`.
+  `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
+  problem there).
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, current?, menu?
   }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar.

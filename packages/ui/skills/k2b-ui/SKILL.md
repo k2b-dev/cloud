@@ -75,7 +75,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | "done, undo?" after an action | `toast(message, { action })` | – |
 | the newest few on a first page | `Digest` | `record.tsx` |
 | labels with values | `Facts` (`inline` for one line) | `record.tsx` |
-| something wrong, waiting, a note, an AI summary | `Notice` with `tone` | `list-detail.tsx` |
+| something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
+| one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | reading text, an email body | `Prose` | `mail.tsx` |
