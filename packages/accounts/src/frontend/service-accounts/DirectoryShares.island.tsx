@@ -1,6 +1,6 @@
 import { PrincipalPicker } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
-import type { Principal } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind, type Principal } from "@k2b/cloud/contracts";
 import { principalLabel } from "@k2b/cloud/shared";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -93,7 +93,7 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                 return result.items.map((account) => ({
                   id: account.id,
                   label: account.name,
-                  icon: account.kind === "agent" ? "ti ti-robot" : "ti ti-key",
+                  icon: isAgentServiceAccountKind(account.kind) ? "ti ti-robot" : "ti ti-key",
                   description: t().agent,
                 }));
               }}

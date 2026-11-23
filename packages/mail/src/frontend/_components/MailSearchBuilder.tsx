@@ -1,3 +1,4 @@
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -104,7 +105,11 @@ function MailSearchConditionEditor(props: {
         id: user.id,
         label: user.displayName,
         description: user.description,
-        icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+        icon: isAgentServiceAccountKind(user.serviceAccountKind)
+          ? "ti ti-robot"
+          : user.type === "service_account"
+            ? "ti ti-key"
+            : "ti ti-user",
       })),
     ];
   };

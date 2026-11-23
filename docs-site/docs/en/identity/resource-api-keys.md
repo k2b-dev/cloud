@@ -19,21 +19,21 @@ account and issues the API key.
 
 ## Choose the identity
 
-Cloud has four service-account kinds:
+The API stores every account without a person under the technical name
+`service_account`, with one `kind`:
 
-| Kind | Identity | Grants |
+| Kind | What it is | Grants |
 | --- | --- | --- |
-| `user_delegated` | A credential acting for one user | The delegated user's live grants |
-| `resource_bound` | A machine identity bound to one app resource | Explicit service-account grants |
-| `standalone` | An integration with its own identity | Explicit service-account grants |
-| `agent` | A standalone account shown as an agent | Explicit service-account grants |
+| `user_delegated` | A person's API key | The person's live grants |
+| `resource_bound` | An API key at one app resource | Explicit grants on that resource |
+| `agent`, `standalone` | An agent; `standalone` for accounts created before agents existed | Explicit grants to the agent |
+| `code` | A service account, the account that Code runs as | Explicit grants to that account |
 
-Personal API keys use a user-delegated service account. Resource API keys use
-a resource-bound service account. Standalone and agent accounts are
-administrator-created principals; see
+Personal API keys use the `user_delegated` kind and resource API keys the
+`resource_bound` kind. Agents are created by an administrator; see
 [Agents](/en/docs/identity/service-accounts).
 
-Do not combine the delegated user's grants with the service account's grants.
+Do not combine the person's grants with the key's own grants.
 See [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials)
 for the complete binding, grant, and scope check.
 
@@ -44,7 +44,7 @@ A resource API key gives an integration access to one application resource.
 Each create, list, and revoke route requires a user-backed actor with `admin`
 permission on that resource.
 
-Provision one resource-bound service account in the application's serialized
+Provision one `resource_bound` account for the resource's keys in the application's serialized
 resource lifecycle:
 
 ```ts
@@ -227,7 +227,7 @@ only the resource-bound entries that `ResourceApiKeys` manages:
 />
 ```
 
-Agents and standalone service accounts stay visible with their kind, because
+Agents stay visible with their kind, because
 they can manage the resource; see
 [Show the last manager](/en/docs/identity/authorization#show-the-last-manager).
 

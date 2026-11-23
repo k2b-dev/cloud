@@ -1,4 +1,4 @@
-import { isLegacyLimitedApiKey, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind, isLegacyLimitedApiKey, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -55,7 +55,9 @@ export default ssr<AuthContext>(async (c) => {
   else automaticParams.set("automatic", "1");
   const automaticUrl = `/app/accounts/api-keys?${automaticParams}`;
   const search = (c.req.query("search") ?? "").trim();
-  const kind = (c.req.query("kind") ?? "").trim();
+  const requestedKind = (c.req.query("kind") ?? "").trim();
+  // An older link names the standalone kind; the filter shows it as "Agent".
+  const kind = isAgentServiceAccountKind(requestedKind) ? "agent" : requestedKind;
   const rawStatus = (c.req.query("status") ?? "active").trim();
   const status = rawStatus === "revoked" ? "revoked" : "active";
 
@@ -66,7 +68,7 @@ export default ssr<AuthContext>(async (c) => {
       filter: {
         automatic: automatic ? "include" : "hide",
         search: search || undefined,
-        // "Agent" covers both standalone kinds; the model has one word for them.
+        // "Agent" covers both standalone kinds.
         serviceAccountKind:
           kind === "user_delegated" || kind === "resource_bound" ? kind : kind === "agent" ? STANDALONE_SERVICE_ACCOUNT_KINDS : undefined,
         credentialStatus: status === "active" || status === "revoked" ? status : undefined,

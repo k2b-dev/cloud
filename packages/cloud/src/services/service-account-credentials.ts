@@ -575,7 +575,7 @@ export const listOverview = async (config?: {
   const kindMatches =
     kindFilter === undefined
       ? sql`TRUE`
-      : sql`sa.kind = ANY(${sql.array(typeof kindFilter === "string" ? [kindFilter] : [...kindFilter])})`;
+      : sql`sa.kind = ANY(${toPgTextArray(typeof kindFilter === "string" ? [kindFilter] : [...kindFilter])}::text[])`;
   const credentialStatus = config?.filter?.credentialStatus ?? null;
   const userId = config?.filter?.userId ?? null;
   const appId = config?.filter?.appId ?? null;

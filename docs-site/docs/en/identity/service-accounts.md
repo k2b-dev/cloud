@@ -27,10 +27,11 @@ agent by name and picture in assignee lists, activity, and audit trails.
 A service account is the account that Code of a resource or an app runs as. It
 has no sign-in and no API key; see [Code accounts](#code-accounts).
 
-### Technical names
+## Technical names
 
 The API and the CLI keep one technical name, `service_account`, for every
-account without a person. An agent authenticates as a `service_account` actor
+account without a person; in prose, "service account" means only the account
+of Code. An agent authenticates as a `service_account` actor
 with `delegatedUser: null`, and its `accessSubject` is
 `{ type: "service_account", serviceAccountId }`. The `serviceAccount.kind` field
 tells the cases apart:
@@ -42,6 +43,11 @@ tells the cases apart:
 - `resource_bound` carries an API key at one resource, such as a Space or a
   Pulse source, and reaches only that resource.
 - `code` is a service account for Code.
+
+A third-party app shows `agent` and `standalone` the same way, as "Agent" with
+the robot icon: use `isAgentServiceAccountKind(kind)` from
+`@k2b/cloud/contracts` in the browser, or `STANDALONE_SERVICE_ACCOUNT_KINDS`
+from `@k2b/cloud/services` to filter both on the server.
 
 Application code that treats "not user-delegated" as "an API key at a
 resource" is wrong: check `serviceAccount.kind === "resource_bound"` before
@@ -243,9 +249,9 @@ needs base admin access. By default, agents
 with write or admin credential scope can also create a Pulse base and receive
 its admin grant. A delegated account can create a base for its person, who
 receives the admin grant. Cloud admins can restrict creation under
-Administration → Pulse → Bases; under "people only", every service account
-counts as an agent, delegated ones included. Resource-bound accounts cannot
-create bases. In Venue it lists its venues and reads
+Administration → Pulse → Bases; under "people only", every account without a
+person counts as an agent, personal API keys included. API keys at a resource
+cannot create bases. In Venue it lists its venues and reads
 their dashboards.
 In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal

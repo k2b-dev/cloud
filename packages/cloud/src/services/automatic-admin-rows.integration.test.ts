@@ -29,8 +29,10 @@ suite("automatic rows in administrator lists", () => {
       accounts.push(account.id);
       const resource = await serviceAccounts.createResourceBound({ name: marker, appId, resourceType: "fixture", resourceId: marker });
       const agent = await serviceAccounts.createStandalone({ name: `Agent ${marker}`, kind: "agent" });
-      if (!resource.ok || !agent.ok) throw new Error("Account fixture creation failed");
-      accounts.push(resource.data.id, agent.data.id);
+      // An agent created before agents existed carries the standalone kind.
+      const older = await serviceAccounts.createStandalone({ name: `Older agent ${marker}`, kind: "standalone" });
+      if (!resource.ok || !agent.ok || !older.ok) throw new Error("Account fixture creation failed");
+      accounts.push(resource.data.id, agent.data.id, older.data.id);
       const visibleIds: string[] = [];
       for (const serviceAccountId of accounts) {
         const key = await serviceAccountCredentials.createApiToken({ serviceAccountId, name: "Runtime foo", scopes: ["identity:invoke"] });
@@ -45,17 +47,17 @@ suite("automatic rows in administrator lists", () => {
       const hidden = await serviceAccountCredentials.listOverview({
         filter: { automatic: "hide", search: marker, credentialStatus: "active" },
       });
-      expect(hidden.total).toBe(3);
+      expect(hidden.total).toBe(4);
       expect(hidden.hiddenAutomaticCount).toBe(2);
       expect(hidden.items.map((item) => item.id).sort()).toEqual(visibleIds.sort());
       const firstPage = await serviceAccountCredentials.listOverview({
         pagination: { perPage: 1 },
         filter: { automatic: "hide", search: marker },
       });
-      expect(firstPage).toMatchObject({ total: 3, hiddenAutomaticCount: 2, hasNext: true });
+      expect(firstPage).toMatchObject({ total: 4, hiddenAutomaticCount: 2, hasNext: true });
       expect(firstPage.items).toHaveLength(1);
       const included = await serviceAccountCredentials.listOverview({ filter: { search: marker, automatic: "include" } });
-      expect(included.total).toBe(5);
+      expect(included.total).toBe(6);
       expect(included.items.map((item) => item.id)).toEqual(expect.arrayContaining([issued.credentialId, rotated.credentialId]));
       expect(included).not.toHaveProperty("hiddenAutomaticCount");
       // Other callers keep today's list: hiding is opt-in.
@@ -69,19 +71,20 @@ suite("automatic rows in administrator lists", () => {
         await serviceAccountCredentials.listOverview({
           filter: { automatic: "hide", search: marker, serviceAccountKind: ["standalone", "agent"] },
         }),
-      ).toMatchObject({ total: 1 });
+      ).toMatchObject({ total: 2 });
       expect(
         await serviceAccountCredentials.listOverview({
           filter: { automatic: "hide", search: marker, serviceAccountKind: ["resource_bound", "agent"] },
         }),
-      ).toMatchObject({ total: 2 });
+        // The app's own account is resource-bound too: its manual key, the fixture key, and the agent's key.
+      ).toMatchObject({ total: 3 });
       const unrelated = await serviceAccountCredentials.listOverview({ filter: { automatic: "hide", search: `missing-${marker}` } });
       expect(unrelated).toMatchObject({ total: 0, hiddenAutomaticCount: 0 });
 
       const stopping = await issueAppWorkloadCredential({ ...request, instanceId: "fedcba9876543210" }, async () => true);
       if (stopping.status !== "issued") throw new Error("Stopping runtime fixture issuance failed");
       expect(await serviceAccountCredentials.listOverview({ filter: { automatic: "hide", search: marker } })).toMatchObject({
-        total: 3,
+        total: 4,
         hiddenAutomaticCount: 3,
       });
       await issueAppWorkloadCredential(
@@ -90,7 +93,7 @@ suite("automatic rows in administrator lists", () => {
       );
       expect(await serviceAccountCredentials.getOverview({ id: stopping.credentialId })).toBeNull();
       expect(await serviceAccountCredentials.listOverview({ filter: { automatic: "hide", search: marker } })).toMatchObject({
-        total: 3,
+        total: 4,
         hiddenAutomaticCount: 2,
       });
 
@@ -106,7 +109,7 @@ suite("automatic rows in administrator lists", () => {
       // An admin-revoked instance keeps its mapping even when it subsequently stops.
       await issueAppWorkloadCredential({ ...request, operation: "release", credentialId: rotated.credentialId }, async () => true);
       expect(await serviceAccountCredentials.listOverview({ filter: { automatic: "hide", search: marker } })).toMatchObject({
-        total: 3,
+        total: 4,
         hiddenAutomaticCount: 2,
       });
     } finally {

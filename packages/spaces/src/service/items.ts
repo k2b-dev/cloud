@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AccessUser,
@@ -417,7 +418,15 @@ export const listServiceAccountsWithAccess = async (params: {
     displayName: row.name,
     avatarHash: null,
     uid: row.name,
-    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · ${row.source}`,
+    description: `${
+      isAgentServiceAccountKind(row.kind)
+        ? "agent"
+        : row.kind === "resource_bound"
+          ? "Space API key"
+          : row.kind === "user_delegated"
+            ? "personal API key"
+            : "service account"
+    } · ${row.source}`,
   }));
 };
 

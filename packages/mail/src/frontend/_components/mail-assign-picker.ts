@@ -1,3 +1,4 @@
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts";
 import { openSpotlightSearch, type PromptSearchItem, useLocale } from "@k2b/ui";
 import { apiClient } from "../../api/client";
 import type { MailAssignableUser } from "../../service/collaboration";
@@ -32,7 +33,7 @@ export const chooseMailAssignee = (params: { mailboxId: string; currentUserId: s
     id: `user:${user.id}`,
     label: user.displayName,
     desc: user.uid,
-    icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+    icon: isAgentServiceAccountKind(user.serviceAccountKind) ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
     previewUrl: avatarUrl(user),
     value: { mode: "add", userId: user.id, name: user.displayName },
   });
