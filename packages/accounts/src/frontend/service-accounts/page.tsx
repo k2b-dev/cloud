@@ -4,8 +4,8 @@ import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   coreSettings,
-  STANDALONE_SERVICE_ACCOUNT_KINDS,
   type ServiceAccountCredentialOverview,
+  STANDALONE_SERVICE_ACCOUNT_KINDS,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
@@ -207,9 +207,7 @@ export default ssr<AuthContext>(async (c) => {
                           >
                             {entry.owner.name}
                           </a>
-                          <span class="truncate text-xs text-dimmed">
-                            {t.agentServiceAccount}
-                          </span>
+                          <span class="truncate text-xs text-dimmed">{t.agentServiceAccount}</span>
                         </div>
                       );
                     }

@@ -17,8 +17,7 @@ import { jsonRequest, type MessageResponse, printCliStructured, printJsonOrMessa
 export const accessCommands = [
   command("access reference", {
     summary: "Show Grids resource access levels",
-    description:
-      "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including grants to agents.",
+    description: "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including grants to agents.",
     examples: ["cld grids access reference", "cld grids access reference --json"],
     async run({ ctx }) {
       const reference = {

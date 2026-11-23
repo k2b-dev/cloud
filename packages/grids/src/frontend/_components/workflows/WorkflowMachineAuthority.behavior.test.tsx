@@ -80,7 +80,8 @@ domTest("machine authority loads, recovers from failures, pauses and revokes wit
     writeFails = false;
     await click("Reload authority");
     await waitFor(
-      () => ![...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "End automatic runs")!.disabled,
+      () =>
+        ![...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "End automatic runs")!.disabled,
     );
     await click("End automatic runs");
     await waitFor(() => dom.root.textContent!.includes("Blocked"));

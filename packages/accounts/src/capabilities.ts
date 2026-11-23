@@ -26,7 +26,10 @@ export const accountsCapabilities = defineCapabilities({
         types: {
           user: { title: "Konto", description: "Ein Konto im bestehenden Core-Verzeichnis." },
           group: { title: "Gruppe", description: "Eine Gruppe im bestehenden Core-Verzeichnis." },
-          "service-account": { title: "Agent oder Dienstkonto", description: "Ein Agent oder Dienstkonto im bestehenden Core-Verzeichnis." },
+          "service-account": {
+            title: "Agent oder Dienstkonto",
+            description: "Ein Agent oder Dienstkonto im bestehenden Core-Verzeichnis.",
+          },
         },
         queries: {
           search: {
