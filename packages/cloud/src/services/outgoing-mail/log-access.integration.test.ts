@@ -10,13 +10,11 @@ import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync
 import * as registry from "../../_internal/registry";
 import type { MailFilter, MailPageParams } from "../../contracts/outgoing-mail";
 import { sql } from "../../runtime/clients";
-import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import { outgoingMailLog } from "./admin";
 import { mail } from "./index";
 import { outgoingMailStore } from "./store";
 
-const context = { actor: { uid: "mail-log-test" }, requestId: crypto.randomUUID() };
 const list = async (filter: MailFilter = {}, page: MailPageParams = {}) => {
   const result = await mail.list(filter, page);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
@@ -90,86 +88,34 @@ suiteFor("database", "nats")("application mail log access and indexed search", (
     await sql.close();
     await fresh?.drop();
   });
-  test("own-only defaults, explicit grants, metadata-only foreign rows and immediate revocation", async () => {
+  test("each app reads only its own mail, also with a grant an older Core stored (access model F2)", async () => {
     const own = await insert("reader");
     const source = await insert("source");
     await insert("other");
     await insert("core");
-    await outgoingMailStore.setAppLogAccess("reader", { apps: ["source"] }, context);
+    // A row an older Core wrote before the migration emptied the table grants nothing.
+    await sql`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, level) VALUES ('reader', 'source', 'content')`;
     expect((await list()).items.map((row) => row.id)).toEqual([own]);
     expect((await list()).items[0]?.text).toBe("private text");
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader", "source"] });
-    expect((await list({ apps: ["source"] })).items.map((row) => row.id)).toEqual([source]);
-    const all = await list({ apps: ["reader", "source"] });
-    expect(all.total).toBe(2);
-    expect(all.items.find((row) => row.id === source)).toMatchObject({ appId: "source", subject: "Invoice", to: ["User@Example.org"] });
-    expect(all.items.find((row) => row.id === source)).not.toHaveProperty("text");
-    expect(all.items.find((row) => row.id === own)?.text).toBe("private text");
-    expect(JSON.stringify(all)).not.toContain("private html");
-    expect(JSON.stringify(all)).not.toContain("x-private");
-    expect(await mail.list({ apps: ["source", "other"] })).toMatchObject({ ok: false, error: { code: "app_not_allowed", status: 403 } });
-    // Core's mail is never granted, so naming it is refused like any ungranted app.
-    expect(await mail.list({ apps: ["core"] })).toMatchObject({ ok: false, error: { code: "app_not_allowed" } });
+    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
+    expect((await list({ apps: ["reader"] })).items.map((row) => row.id)).toEqual([own]);
+    for (const apps of [["source"], ["reader", "source"], ["core"]])
+      expect(await mail.list({ apps })).toMatchObject({ ok: false, error: { code: "app_not_allowed", status: 403 } });
+    expect(JSON.stringify(await list())).not.toContain(source);
     identity("reader", false);
-    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "mail_not_declared", status: 403 } });
     expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
-    identity();
-    await outgoingMailStore.setAppLogAccess("reader", { apps: [] }, context);
-    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "app_not_allowed" } });
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
-    expect((await list()).items.map((row) => row.id)).toEqual([own]);
-    // Core reads only its own mail.
+    // Core reads only its own mail too.
     identity("core");
     expect((await list()).items.map((row) => row.appId)).toEqual(["core"]);
     expect(await mail.readableApps()).toEqual({ ok: true, data: ["core"] });
+    // The administration lists every app's mail.
+    expect((await outgoingMailLog.list({}, {})).total).toBe(4);
   });
-  test("stored offline readers, sorted grants, validation and atomic audited replacement", async () => {
-    const item = await outgoingMailStore.setAppLogAccess("offline", { apps: ["zebra", "alpha"] }, context);
-    expect(item).toMatchObject({ appId: "offline", registered: false, declared: false, readDeclared: false, logApps: ["alpha", "zebra"] });
-    expect((await outgoingMailStore.apps()).items).toContainEqual(item);
-    expect((await outgoingMailStore.apps()).items.find((app) => app.appId === "reader")?.readDeclared).toBe(true);
-    expect((await outgoingMailStore.apps()).items.find((app) => app.appId === "core")).toMatchObject({ readDeclared: false, logApps: [] });
-    expect(await outgoingMailStore.logAppsFor("offline")).toEqual(["alpha", "zebra"]);
-    identity("offline");
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["offline", "alpha", "zebra"] });
-    const events = await sql<{ action: string; target_type: string; target_id: string; apps: string }[]>`
-      SELECT action, target_type, target_id, (metadata->'apps')::text AS apps FROM audit.events WHERE request_id = ${context.requestId}`;
-    expect(events.map((event) => ({ ...event, apps: JSON.parse(event.apps) }))).toEqual([
-      { action: "outgoing_mail.app_log_access.update", target_type: "outgoing_mail_app", target_id: "offline", apps: ["alpha", "zebra"] },
-    ]);
-    for (const [appId, apps] of [
-      ["core", []],
-      ["offline", ["offline"]],
-      ["offline", ["core"]],
-      ["", []],
-      ["offline", ["a", "a"]],
-    ] as const)
-      await expect(outgoingMailStore.setAppLogAccess(appId, { apps: [...apps] }, context)).rejects.toMatchObject({
-        code: "bad_input",
-        status: 400,
-      });
-    expect(await sql`SELECT id FROM audit.events`).toHaveLength(1);
-    const record = spyOn(audit, "record").mockRejectedValue(new Error("audit unavailable"));
-    try {
-      await expect(outgoingMailStore.setAppLogAccess("offline", { apps: ["replacement"] }, context)).rejects.toThrow("audit unavailable");
-      expect(await outgoingMailStore.logAppsFor("offline")).toEqual(["alpha", "zebra"]);
-    } finally {
-      record.mockRestore();
-    }
-    expect(await outgoingMailStore.setAppLogAccess("offline", { apps: [] }, context)).toMatchObject({ logApps: [] });
-    expect(await outgoingMailStore.logAppsFor("offline")).toEqual([]);
-  });
-  test("readableApps() at the grant limit and registry-style app IDs are valid filter.apps", async () => {
-    const sources = Array.from({ length: 100 }, (_, i) => `source_${String(i).padStart(3, "0")}`);
-    await outgoingMailStore.setAppLogAccess("erp_v2", { apps: sources }, context);
-    identity("erp_v2");
-    const own = await insert("erp_v2");
-    const granted = await insert("source_099");
-    const readable = await mail.readableApps();
-    expect(readable).toEqual({ ok: true, data: ["erp_v2", ...sources] });
-    if (!readable.ok) return;
-    expect((await list({ apps: readable.data })).items.map((row) => row.id).sort()).toEqual([own, granted].sort());
-    expect((await list({ apps: ["erp_v2"] })).items.map((row) => row.id)).toEqual([own]);
+  test("the migration empties grants an older Core stored", async () => {
+    await sql`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, level) VALUES ('reader', 'source', 'metadata')`;
+    await migrate();
+    expect(await sql`SELECT app_id FROM outgoing_mail.app_log_access`).toHaveLength(0);
+    expect((await outgoingMailStore.apps()).items.find((app) => app.appId === "reader")).toMatchObject({ readDeclared: true });
   });
   test("a search without a usable trigram is refused and every search is bounded in time", async () => {
     const timeout = async () => (await sql<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`)[0]?.timeout;
@@ -230,17 +176,16 @@ suiteFor("database", "nats")("application mail log access and indexed search", (
     ]);
   });
   test("filtered keyset pages return every matching row exactly once, including timestamp ties", async () => {
-    await outgoingMailStore.setAppLogAccess("reader", { apps: ["source"] }, context);
     const expected: string[] = [];
     for (let i = 0; i < 23; i++) {
       const at = i < 12 ? "2026-10-09T11:00:00Z" : "2026-10-09T11:30:00Z";
-      expected.push(await insert(i % 2 ? "reader" : "source", "MATCH invoice", ["User@example.org"], at));
+      expected.push(await insert("reader", "MATCH invoice", ["User@example.org"], at));
       await insert("reader", "Does not match", ["other@example.org"], at);
-      await insert("ungranted", "MATCH invoice", ["User@example.org"], at);
+      await insert("source", "MATCH invoice", ["User@example.org"], at);
     }
     await insert("reader", "MATCH invoice", ["User@example.org"], "2026-10-09T12:00:00Z");
     const filter: MailFilter = {
-      apps: ["reader", "source"],
+      apps: ["reader"],
       q: "invoice",
       recipient: "user@example.org",
       since: "2026-10-09T11:00:00Z",
@@ -290,11 +235,11 @@ suiteFor("database", "nats")("application mail log access and indexed search", (
       expect(JSON.stringify(plan)).toContain(index);
       expect(JSON.stringify(plan)).not.toContain('"Seq Scan"');
     }
+    // An app searches its own mail: app-0 holds every third RareNeedle subject and every Unique recipient.
     identity("app-0");
-    await outgoingMailStore.setAppLogAccess("app-0", { apps: ["app-1", "app-2"] }, context);
     const start = performance.now();
-    expect((await list({ apps, q: "rareneedle" })).total).toBe(40);
-    expect((await list({ apps, recipient: "UNIQUE@example.org" })).total).toBe(40);
+    expect((await list({ q: "rareneedle" })).total).toBe(20);
+    expect((await list({ recipient: "UNIQUE@example.org" })).total).toBe(40);
     expect(performance.now() - start).toBeLessThan(10000);
   }, 30000);
 });

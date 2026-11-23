@@ -126,6 +126,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     )`.simple();
     await tx`ALTER TABLE outgoing_mail.app_log_access
       ADD COLUMN IF NOT EXISTS level TEXT NOT NULL DEFAULT 'metadata' CHECK(level IN ('metadata', 'content'))`.simple();
+    // Access model F2: an app reads only its own mail. Apps on an older @k2b/cloud still join this table, so it
+    // stays until none does, and stays empty: without a grant they, too, see only their own mail.
+    await tx`DELETE FROM outgoing_mail.app_log_access`.simple();
     await tx`CREATE OR REPLACE FUNCTION outgoing_mail.search_text(subject pg_catalog.text, addresses pg_catalog.text[])
       RETURNS pg_catalog.text LANGUAGE sql IMMUTABLE PARALLEL SAFE
       AS $$ SELECT pg_catalog.lower(subject OPERATOR(pg_catalog.||) E'\\n' OPERATOR(pg_catalog.||)

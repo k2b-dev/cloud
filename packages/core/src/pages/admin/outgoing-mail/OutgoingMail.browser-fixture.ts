@@ -23,8 +23,6 @@ const initial: OutgoingMailState = {
         readDeclared: true,
         mode: "default",
         profiles: [],
-        logApps: ["invoices", "legacy-crm"],
-        logContentApps: ["invoices"],
       },
       {
         appId: "customers",
@@ -34,7 +32,6 @@ const initial: OutgoingMailState = {
         readDeclared: false,
         mode: "default",
         profiles: [],
-        logApps: [],
       },
       {
         appId: "invoices",
@@ -44,9 +41,8 @@ const initial: OutgoingMailState = {
         readDeclared: false,
         mode: "default",
         profiles: [],
-        logApps: [],
       },
-      { appId: "core", name: "Cloud", registered: true, declared: true, readDeclared: false, mode: "default", profiles: [], logApps: [] },
+      { appId: "core", name: "Cloud", registered: true, declared: true, readDeclared: false, mode: "default", profiles: [] },
     ],
   },
   log: { filter: {}, retention: { contentDays: 90, recordDays: 365 }, page: { items: [], page: 1, perPage: 25, total: 0, hasNext: false } },

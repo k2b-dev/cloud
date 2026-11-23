@@ -438,7 +438,8 @@ const content = async (id: string, context: MailAuditContext) =>
   });
 /** One budget for database work, from transaction start through audit. Pool acquisition and commit are outside it. */
 const CONTENT_BUDGET_MS = 5_000;
-const appContent = async (id: string, readingAppId: string, canReadOtherApps: boolean, context: MailContentContext): Promise<MailContent> =>
+/** An app reads only the content of mail it sent itself; all mail is for the administration (access model F2). */
+const appContent = async (id: string, readingAppId: string, context: MailContentContext): Promise<MailContent> =>
   sql.begin(async (tx) => {
     const deadline = Date.now() + CONTENT_BUDGET_MS;
     const limit = async () => {
@@ -447,18 +448,11 @@ const appContent = async (id: string, readingAppId: string, canReadOtherApps: bo
       await tx`SELECT set_config('statement_timeout', ${`${remaining}ms`}, true)`;
     };
     await limit();
-    // Writers take this same key exclusively. Check grants in a fresh statement after acquiring it.
-    await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
-    await limit();
-    const [row] = await tx<{ app_id: string; content_purged_at: Date | string | null; level: string | null }[]>`
-      SELECT m.app_id, m.content_purged_at, g.level FROM outgoing_mail.messages m
-      LEFT JOIN outgoing_mail.app_log_access g ON g.app_id = ${readingAppId} AND g.source_app_id = m.app_id
-      WHERE m.id = ${id}::uuid AND (m.app_id = ${readingAppId} OR
-        (${canReadOtherApps} AND ${readingAppId} <> 'core' AND m.app_id <> 'core' AND g.app_id IS NOT NULL))
+    const [row] = await tx<{ app_id: string; content_purged_at: Date | string | null }[]>`
+      SELECT m.app_id, m.content_purged_at FROM outgoing_mail.messages m
+      WHERE m.id = ${id}::uuid AND m.app_id = ${readingAppId}
       FOR SHARE OF m`;
     if (!row) throw new OutgoingMailError("message_unknown", "Outgoing mail message does not exist.", 404);
-    if (row.app_id !== readingAppId && row.level !== "content")
-      throw new OutgoingMailError("app_not_allowed", "This application may not read this mail content.", 403);
     let result: MailContent;
     if (row.content_purged_at !== null) result = { purged: true, contentPurgedAt: date(row.content_purged_at) };
     else {

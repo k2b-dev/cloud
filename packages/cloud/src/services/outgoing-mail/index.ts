@@ -85,27 +85,16 @@ export const mail = {
     if (!parsedId.success || !parsedContext.success)
       return fail({ code: "bad_input", message: "Provide a valid mail ID and authenticated actor context.", status: 400 });
     try {
-      return ok(
-        await outgoingMailMessages.appContent(
-          parsedId.data,
-          caller.data,
-          getProcessPlatformPermissions().includes("mail:read"),
-          parsedContext.data,
-        ),
-      );
+      return ok(await outgoingMailMessages.appContent(parsedId.data, caller.data, parsedContext.data));
     } catch (error) {
       return fail(failure(error));
     }
   },
+  /** The apps whose mail this app may read: only itself. All mail is for the administration (access model F2). */
   async readableApps(): Promise<Result<string[], MailServiceError>> {
     const caller = identity(true);
     if (!caller.ok) return caller;
-    try {
-      const granted = getProcessPlatformPermissions().includes("mail:read") ? await outgoingMailStore.logAppsFor(caller.data) : [];
-      return ok([caller.data, ...granted.filter((appId) => appId !== caller.data && appId !== "core").sort()]);
-    } catch (error) {
-      return fail(failure(error));
-    }
+    return ok([caller.data]);
   },
   async enqueue(messages: MailMessage[]): Promise<Result<{ batchId: string; ids: string[] }, MailServiceError>> {
     const caller = identity();
@@ -173,19 +162,10 @@ export const mail = {
       return fail({ code: "bad_input", message: "Invalid outgoing mail filter or page.", status: 400 });
     try {
       const { apps = [caller.data], recipient, ...filter } = parsedFilter.data;
-      const otherApps = apps.filter((appId) => appId !== caller.data);
-      if (otherApps.length) {
-        if (!getProcessPlatformPermissions().includes("mail:read"))
-          return fail({
-            code: "mail_not_declared",
-            message: 'Declare "mail:read" in platformPermissions to read other apps’ mail logs.',
-            status: 403,
-          });
-        const granted = await outgoingMailStore.logAppsFor(caller.data);
-        const denied = otherApps.find((appId) => !granted.includes(appId));
-        if (denied)
-          return fail({ code: "app_not_allowed", message: `This application may not read the mail log of "${denied}".`, status: 403 });
-      }
+      // An app reads only its own mail; all mail is for the administration (access model F2).
+      const denied = apps.find((appId) => appId !== caller.data);
+      if (denied)
+        return fail({ code: "app_not_allowed", message: `This application may not read the mail log of "${denied}".`, status: 403 });
       return ok(await outgoingMailMessages.list({ ...filter, apps, recipientExact: recipient }, parsedPage.data, false, caller.data));
     } catch (error) {
       return fail(failure(error));

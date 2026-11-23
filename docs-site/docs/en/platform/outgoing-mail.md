@@ -5,7 +5,7 @@ section: Platform services
 order: 535
 description: Send application mail through operator-managed profiles and read its delivery status.
 tags: [mail, smtp, permissions, services]
-updated: 2026-10-22
+updated: 2026-11-23
 ---
 
 # Outgoing mail
@@ -212,9 +212,9 @@ acceptance and before the log update can repeat a message.
 
 ## Read application delivery status
 
-`mail.list(filter?, page?)` returns the calling application's records unless
-`apps` names others; see [Read other apps' mail](#read-other-apps-mail). It works
-for applications that declare `mail:send` or `mail:read`. All filters combine:
+`mail.list(filter?, page?)` returns the calling application's records; see
+[Your own mail only](#your-own-mail-only). It works for applications that
+declare `mail:send` or `mail:read`. All filters combine:
 
 | Filter | Matches |
 | --- | --- |
@@ -271,47 +271,29 @@ optional `contentPurgedAt`. Text disappears after content retention; subject,
 recipients, actor, and attachment metadata remain until record retention, and
 stay searchable until then. SMTP credentials are never returned.
 
-### Read other apps' mail
+### Your own mail only
 
-A business system often spans several applications on one installation, for
-example invoices, customers, and HR. One of them can offer an "Emails" page
-across all of their mail:
+An application reads only the mail it sent itself, with metadata and text.
+It never reads another application's mail, including Core's notifications,
+sign-in links and password resets; the mail of all applications is for the
+administration ([Inspect the send log](/en/docs/operations/outgoing-mail#inspect-the-send-log)).
+Declare `platformPermissions: ["mail:read"]` to read your own log without
+sending. `mail.readableApps()` returns only your application ID, and a
+`filter.apps` that names another application returns `app_not_allowed`
+(status 403). When another application needs to know whether a mail went out,
+let it ask yours through a [capability](/en/docs/platform/capabilities) that
+checks the person's access to the record.
 
-1. Declare `platformPermissions: ["mail:read"]`, next to `mail:send` if the
-   application also sends.
-2. Ask the operator to choose which applications' mail it may read, in
-   **Administration → Outgoing mail → Apps** or with
-   [`cld admin outgoing-mail apps set-log-access`](/en/docs/operations/outgoing-mail#let-an-app-read-other-apps-mail).
-   Without a choice, an application reads only its own mail.
-3. Call `mail.readableApps()` for the application IDs you may read: your own
-   first, then the granted ones. Pass them, or a subset, as `filter.apps`.
-
-Cloud checks the declaration and the grants on every call, so a revoked grant
-applies to the next call. Naming an application without `mail:read` returns
-`mail_not_declared`; naming one without a grant returns `app_not_allowed`
-(both status 403). Core's own mail (notifications, sign-in links, password
-resets) is never readable by applications.
-
-In `mail.list`, other applications' records carry metadata only, even with
-content access: `text` is returned for your own records, never for theirs.
-Read access does not let an application send,
-cancel, or change mail.
-
-Cloud only decides which applications' mail your application may read.
-**Your application decides which of its users may see it**: put the page and
-its API behind your own permission check, as in
-[the Emails page example](#emails-page-across-apps).
+**Your application decides which of its users may see its mail**: put the page
+and its API behind your own permission check, as in
+[the Emails page example](#emails-page).
 
 ### Read one approved mail text
 
 Use `mail.content(id, { actor, requestId })` from `@k2b/cloud/services` after
-your service has authorized the actual mail record. The operator must explicitly
-choose **Content** for the source application; **Metadata** remains the default
-and includes recipients, subject and attachment names. Content includes metadata
-and permits individual reads of existing and future mail within retention.
-Own mail needs `mail:send` or `mail:read`, without a self-grant; foreign mail
-needs `mail:read` and the current content grant. An administrator actor does
-not bypass application grants. Core mail remains unavailable to other apps.
+your service has authorized the actual mail record. It reads the mail your
+application sent itself and needs `mail:send` or `mail:read`. An administrator
+actor does not let an application read another application's mail.
 
 The result is `Result<MailContent, MailServiceError>`:
 
@@ -320,7 +302,7 @@ The result is `Result<MailContent, MailServiceError>`:
 
 An empty or null text is not a purge marker. This method returns no HTML,
 headers, attachment bytes or download links. It writes one
-`outgoing_mail.message.read` audit event, including the source app, reading app,
+`outgoing_mail.message.read` audit event, including your application, the
 acting user or service account and invocation provenance, before returning
 either successful result. An audit or storage failure returns `mail_unavailable`
 without content. The audit contains no mail text or attachment names.
@@ -333,12 +315,9 @@ snapshot or a workload credential alone. Background work uses the existing
 [mandate and invocation flow](/en/docs/identity/background-mandates), which
 resolves current authority; this method adds no mandate evaluator or scopes.
 
-An invalid UUID or actor context returns `bad_input` (400). An unknown/deleted
-ID and mail outside the app's metadata grants return the same `message_unknown`
-(404), including Core mail. A metadata-visible record without a content grant
-returns `app_not_allowed` (403), without text or purge time. Revocation and
-content-to-metadata changes block subsequent reads. A read already admitted
-commits its audit before the policy change; delivered text cannot be recalled.
+An invalid UUID or actor context returns `bad_input` (400). An unknown or
+deleted ID and another application's mail return the same `message_unknown`
+(404), including Core mail. Delivered text cannot be recalled.
 Retention is serialized with the read: it returns the body or the committed
 purge marker, never a mixture. It does not cache or copy bodies.
 
@@ -347,8 +326,8 @@ credential scope caps and resource binding. `ref` is optional and not unique;
 a subject or recipient is no substitute for that check. Without a recognized
 reference, deny access unless your domain explicitly grants application-wide
 visibility. Missing and domain-invisible records must have the same public
-response. The following Backoffice service accepts only invoice mail and uses
-its current domain service to check the access subject. Its existing credential
+response. The following service of an Invoices application accepts only its
+invoice mail and uses its current domain service to check the access subject. Its existing credential
 scopes are `read`, `write` and `admin`; use your application's own scope contract.
 
 ```ts
@@ -363,15 +342,13 @@ export const createInvoiceMailReader =
     const hidden = () => fail({ code: "message_unknown" as const, message: "Mail unavailable.", status: 404 as const });
     const { actor, accessSubject, credentialKind, scopes } = authority;
     if (credentialKind !== "session" && !scopes.some((scope) => ["read", "write", "admin"].includes(scope))) return hidden();
-    const apps = await mail.readableApps();
-    if (!apps.ok) return apps;
-    const page = await mail.list({ ids: [id], apps: apps.data }, { perPage: 1 });
+    const page = await mail.list({ ids: [id] }, { perPage: 1 });
     if (!page.ok) return page;
     const record = page.data.items[0];
-    if (!record || record.appId !== "invoices" || record.ref?.scope !== "invoice") return hidden();
+    if (!record || record.ref?.scope !== "invoice") return hidden();
     if (actor.kind === "service_account" && actor.serviceAccount.kind === "resource_bound") {
       const account = actor.serviceAccount;
-      if (account.appId !== "backoffice" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
+      if (account.appId !== "invoices" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
     }
     if (!(await mayReadInvoice(accessSubject, record.ref.id))) return hidden();
     return mail.content(record.id, { actor, requestId });
@@ -383,15 +360,15 @@ Mount the consumer route behind its application route policy. Pass
 `Cache-Control: no-store`, and localize public messages in your application.
 Render returned text and filenames as escaped text, with no `innerHTML` or
 remote image loading. Recheck on reload and show failures with a retry action.
-Do not preload foreign bodies or embed them in SSR before authorization.
+Do not preload bodies or embed them in SSR before authorization.
 
 ## Handle errors
 
 | Acceptance error | Meaning |
 | --- | --- |
 | `bad_input` | Invalid addresses, message, headers, filter, or page |
-| `mail_not_declared` | The application did not declare `mail:send`, or `mail:read` for reading other apps' mail |
-| `app_not_allowed` | `filter.apps` names an application whose mail the operator did not let you read; status 403 |
+| `mail_not_declared` | The application did not declare `mail:send`, or `mail:read` for reading its own log |
+| `app_not_allowed` | `filter.apps` names another application; an application reads only its own mail; status 403 |
 | `profile_unknown` | The requested profile does not exist |
 | `profile_not_allowed` | The application cannot use the requested profile |
 | `profile_required` | No usable default; choose an allowed profile explicitly |
@@ -594,12 +571,11 @@ reports failed recipients. On a resumed run, known records retain their
 original batch membership; use the saved `ids` to read them in groups of at
 most 100, as described in [Enqueue a batch](#enqueue-a-batch).
 
-### Emails page across apps
+### Emails page
 
-A back-office application shows the mail of the invoice, customer, and HR
-applications in one place. It declares `platformPermissions: ["mail:read"]`
-and the operator granted it those applications. The route answers "Did customer
-X get the invoice in March?" with `q`, `recipient`, `since`, and `until`.
+An invoice application shows the mail it sent in one place. The route answers
+"Did customer X get the invoice in March?" with `q`, `recipient`, `since`, and
+`until`.
 `mayReadSentMail` is your own authorization rule, for example an application
 permission for the management team; Cloud does not decide it.
 
@@ -614,13 +590,10 @@ export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<b
     .use("*", auth.requireRole("authenticated"))
     .use("*", auth.requireUser())
     .get("/emails", async (c) => {
-      // Cloud decides whose mail this app may read; this app decides who sees it.
+      // An app reads only its own mail; this app decides who sees it.
       if (!(await mayReadSentMail(expectUserBackedActor(c).id))) return c.json({ code: "forbidden" }, 403);
-      const apps = await mail.readableApps();
-      if (!apps.ok) return c.json({ code: apps.error.code }, apps.error.status);
       const { q, recipient, since, until, cursor } = c.req.query();
       const filter: MailFilter = {
-        apps: apps.data,
         ...(q ? { q } : {}),
         ...(recipient ? { recipient } : {}),
         ...(since ? { since } : {}),
@@ -644,14 +617,12 @@ export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<b
 ```
 
 `?recipient=customer@example.org&since=2026-03-01T00:00:00Z&until=2026-04-01T00:00:00Z`
-lists that customer's March mail across the granted applications; a `bounced`
+lists that customer's March mail; a `bounced`
 status with its `failures` answers "Which mails to this address bounced?". Pass
 `nextCursor` back with the same search for the next page. A `bad_input`
 answer means the person needs to change the search: it is invalid, such as a
 `q` without three letters or digits in a row, or it took too long and needs to
-be narrower. Show its `message`. If the operator revokes a grant between
-`readableApps()` and `list`, the call returns `app_not_allowed`; reload to use
-the current grants.
+be narrower. Show its `message`.
 
 ## Move from an application-owned SMTP account
 

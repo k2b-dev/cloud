@@ -127,30 +127,14 @@ export const AdminMailAppSchema = z.object({
   declared: z.boolean(),
   mode: z.enum(["default", "selected"]),
   profiles: z.array(z.string()),
-  /** Whether the registered app declares `mail:read`; grants in `logApps` only apply with it. */
+  /** Whether the registered app declares `mail:read`, which lets it read its own send log without sending. */
   readDeclared: z.boolean(),
-  /** Other apps whose send log this app may read, besides its own. */
-  logApps: z.array(z.string()),
-  /** Subset of logApps with explicit content access. Missing on older servers. */
-  logContentApps: z.array(z.string()).optional(),
 });
 export type AdminMailApp = z.infer<typeof AdminMailAppSchema>;
-/** Application IDs as registered, like sender access; Core's own mail is never readable by apps. */
+/** Application IDs as registered, like sender access. */
 export const MailLogAppIdSchema = z.string().min(1);
-/** How many other apps' send logs an administrator can let one app read. */
+/** Older servers let an app read up to 100 other apps' logs; filters still accept that many IDs and refuse all but the caller. */
 const MAIL_LOG_GRANT_LIMIT = 100;
-export const MailLogAccessSchema = z
-  .object({
-    apps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT),
-    contentApps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT).optional(),
-  })
-  .strict()
-  .refine((value) => new Set(value.apps).size === value.apps.length && !value.apps.includes("core"), "Choose distinct apps other than core")
-  .refine(
-    ({ apps, contentApps = [] }) => new Set(contentApps).size === contentApps.length && contentApps.every((id) => apps.includes(id)),
-    "Content apps must be a distinct subset of apps",
-  );
-export type MailLogAccess = z.infer<typeof MailLogAccessSchema>;
 
 export const MailStatusSchema = z.enum(["queued", "sending", "sent", "failed", "bounced", "cancelled"]);
 export type MailStatus = z.infer<typeof MailStatusSchema>;
@@ -254,8 +238,8 @@ export const MailFilterSchema = z
     /** Exclusive upper bound on `createdAt`. */
     until: z.iso.datetime({ offset: true }).optional(),
     /**
-     * Apps whose records to read; omitted means only the calling app. Others need `mail:read` and an
-     * administrator grant. Holds everything `mail.readableApps()` returns: the caller and every grant.
+     * Apps whose records to read; omitted means the calling app. An app reads only its own mail, so any other
+     * ID returns `app_not_allowed`; all mail is for the administration.
      */
     apps: z
       .array(MailLogAppIdSchema)
