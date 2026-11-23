@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "@k2b/ui/styles.css";
+/* @k2b/ui v2 (provisional) beside v1: its own `.k2-ui` scope and `k2-` namespace, so neither touches the other. */
+@import "@k2b/ui/v2.css";
 @plugin "@tailwindcss/typography";
 
 /* global.css carries the Cloud shell, integration surfaces, and shared app
