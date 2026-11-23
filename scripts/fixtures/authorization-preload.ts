@@ -38,11 +38,18 @@ if (testInfra.database && testInfra.nats) {
   const { createIdentityOAuthDeviceApprovalRoutes } = (await import(deviceApprovalPath)) as DeviceApprovalModule;
   const { default: oauthRoutes } = (await import(oauthPath)) as OAuthModule;
   bindProcessApplicationId("core");
-  // The HTTP authority is Core; client writes below run as the co-hosted OAuth application.
+  // The HTTP authority is Core; the client registry sync below runs as the co-hosted OAuth application. A suite
+  // without its own application identity (the shared default) keeps acting as that issuer; a suite that bound its
+  // own application, such as Mail, gets it back, so its domain code does not run as OAuth.
+  const suiteAppId = connections().appId;
   connections().appId = "oauth";
   const clientsPath = "../../packages/oauth/src/service/clients";
   const { registerAll } = (await import(clientsPath)) as { registerAll: () => Promise<void> };
-  await registerAll();
+  try {
+    await registerAll();
+  } finally {
+    if (suiteAppId !== "integration-test") connections().appId = suiteAppId;
+  }
   // Reuse the package's test Sync when its preload owns the lifecycle.
   let runtime: Awaited<ReturnType<typeof startProcessSync>> | undefined;
   try {
