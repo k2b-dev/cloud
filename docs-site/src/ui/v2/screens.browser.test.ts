@@ -83,13 +83,14 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       folded: [".k2-group[data-folded]", "270,897 1085x58"],
     },
     390: {
-      section: [".k2-sec", "0,101 390x1389"],
-      group: [".k2-group", "16,205 358x366"],
+      // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
+      section: [".k2-sec", "0,101 390x1421"],
+      group: [".k2-group", "16,205 358x382"],
       groupHead: [".k2-gh", "17,206 356x84"],
-      steps: [".k2-steps", "17,354 356x132"],
-      table: [".k2-group .k2-table", "17,876 356x204"],
-      facts: ['[data-k2-part="Facts"]', "17,1160 356x64"],
-      folded: [".k2-group[data-folded]", "16,1253 358x102"],
+      steps: [".k2-steps", "17,354 356x148"],
+      table: [".k2-group .k2-table", "17,908 356x204"],
+      facts: ['[data-k2-part="Facts"]', "17,1192 356x64"],
+      folded: [".k2-group[data-folded]", "16,1285 358x102"],
     },
   },
   // tabelle-grids.html; the table is wider than its column and scrolls sideways
