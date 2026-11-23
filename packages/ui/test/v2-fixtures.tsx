@@ -85,7 +85,7 @@ export const LayoutFixture = (props: { open?: boolean }) =>
           <Row
             unread
             lines={[
-              "Holzwerk Brandt",
+              "Holzwerk Brandt GmbH & Co. KG, Plattenzuschnitt und Kantenbearbeitung",
               "Angebot Eichenplatten – Liefertermin, dazu die Frage, ob die Kanten geölt kommen",
               "Guten Tag Frau Solberg, die Platten können wir in KW 49 liefern …",
             ]}

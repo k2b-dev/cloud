@@ -179,6 +179,11 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               // the plain bar of the reader (there only while something is open)
               bar: document.querySelector(".k2-pane[data-detail]") ? box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height : 0,
               rows: rows.map((row) => row.getBoundingClientRect().height),
+              // the long title of the row of three lines stays on its line and ends in "…"
+              title: (() => {
+                const title = rows[2]!.querySelector<HTMLElement>(".k2-row-title")!;
+                return [getComputedStyle(title).textOverflow, title.scrollWidth > title.clientWidth];
+              })(),
               iconText: textLeft(".k2-list > .k2-row .k2-row-title") - list.left,
               // flow text in a band of the reader on a wide screen; the lead of the status row on the phone
               bandText:
@@ -197,6 +202,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             expect(numbers.bar).toBe(heights.bar);
             expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
+          expect(numbers.title).toEqual(["ellipsis", true]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
         } finally {
@@ -414,6 +420,33 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       },
       TEST_TIMEOUT,
     );
+
+  // #4073: on the phone the bar of a selection keeps count, action and way out within its text edge
+  test(
+    "390 px: the bar of a selection in the large table keeps its text edge and cuts no label",
+    async () => {
+      const page = await open("grid", { width: 390 });
+      try {
+        const buttons = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const right = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
+          return [...row.querySelectorAll(".k2-btn")].map((button) => [
+            button.textContent?.trim(),
+            button.getBoundingClientRect().right <= right + 0.5,
+            button.scrollWidth <= button.clientWidth,
+          ]);
+        });
+        expect(buttons).toEqual([
+          ["Exportieren", true, true],
+          ["Auswahl aufheben", true, true],
+        ]);
+        expect((await measureV2Layout(page, { root: '[data-k2-part="StatusRow"]' })).clip).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 
   for (const width of [1440, 390])
     test(

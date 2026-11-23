@@ -943,7 +943,7 @@
   align-items: baseline;
   gap: 8px;
 }
-/* the title wraps (it is what the row is about); the quiet note after it is cut */
+/* in a row of one or two lines the title wraps (it is what the row is about); the quiet note after it is cut */
 .k2-ui .k2-row-title {
   font-weight: 400;
   flex: 0 1 auto;
@@ -980,6 +980,8 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* a row of three lines cuts each line with "…", its title too: the row keeps its 72 px */
+.k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
   overflow: hidden;
