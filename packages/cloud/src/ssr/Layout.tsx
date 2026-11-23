@@ -20,7 +20,7 @@ import { createLoginRedirectUrl, dates, resolveHomePath } from "../shared";
 import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
-import { appAppearanceStyle, appV2InkStyle, resolveCurrentApp } from "./app-appearance";
+import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 import { declaredIconColor } from "./app-icon-style";
 import { resolveRuntimeRoute, visibleNavigationApps, visiblePanelProviders } from "./app-navigation";
 import { getLayoutHelp, layoutHelpFailed } from "./help";
@@ -227,7 +227,8 @@ export default function Layout(props: LayoutProps) {
   if (!page.title) page.title = pageTitle;
   page.appAccent = currentApp?.appearance?.accent;
   page.appPrimary = currentApp?.appearance?.primary;
-  const v2Ink = props.ui === "v2" ? appV2InkStyle(currentApp?.appearance?.accent) : undefined;
+  // The document puts the app's v2 inks on the body beside its accent, so v2 overlays on the body read them too.
+  page.appUi = props.ui;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
   // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
@@ -486,26 +487,14 @@ export default function Layout(props: LayoutProps) {
               <ShellContentStateContext.Provider value={content}>
                 <PageTrailProvider trail={pageTrail} onOwnTitle={() => (content.ownTitle = true)}>
                   <PageTrailRow trail={pageTrail} />
-                  {props.ui === "v2" ? (
-                    // A v2 page's content is the v2 scope, with the app's v2 ink of each theme (readable on the v2
-                    // surface and tint; global.css picks one). Other pages keep their markup as it was.
-                    <main
-                      class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass} k2-ui`}
-                      style={v2Ink}
-                      data-scroll-preserve={swap ? "cloud-main" : undefined}
-                      data-scroll-page={swap ? "" : undefined}
-                    >
-                      <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-                    </main>
-                  ) : (
-                    <main
-                      class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
-                      data-scroll-preserve={swap ? "cloud-main" : undefined}
-                      data-scroll-page={swap ? "" : undefined}
-                    >
-                      <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-                    </main>
-                  )}
+                  <main
+                    // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
+                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}${props.ui === "v2" ? " k2-ui" : ""}`}
+                    data-scroll-preserve={swap ? "cloud-main" : undefined}
+                    data-scroll-page={swap ? "" : undefined}
+                  >
+                    <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                  </main>
                 </PageTrailProvider>
               </ShellContentStateContext.Provider>
             );

@@ -45,15 +45,17 @@ export const appColorSurfaces = {
 const channels = (hex: HexColor) =>
   [Number.parseInt(hex.slice(1, 3), 16), Number.parseInt(hex.slice(3, 5), 16), Number.parseInt(hex.slice(5, 7), 16)] as const;
 
-/** WCAG 2.x relative luminance from a six-digit sRGB hex color. */
-export const relativeLuminance = (hex: HexColor): number => {
+/** WCAG 2.x relative luminance of sRGB channels from 0 to 255, also between whole values. */
+const channelLuminance = ([r, g, b]: readonly [number, number, number]): number => {
   const linearize = (value: number) => {
     const c = value / 255;
     return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   };
-  const [r, g, b] = channels(hex);
   return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
 };
+
+/** WCAG 2.x relative luminance from a six-digit sRGB hex color. */
+export const relativeLuminance = (hex: HexColor): number => channelLuminance(channels(hex));
 
 /** WCAG 2.x contrast ratio between two opaque hex colors. */
 export const contrastRatio = (a: HexColor, b: HexColor): number => {
@@ -119,21 +121,43 @@ export const appColors = (accent: HexColor) => {
 };
 
 /**
- * The grounds app ink stands on in a `@k2b/ui` v2 page: the surface, and the app's tint, which v2 mixes as 8 % accent
- * on white (light) and 28 % accent on the dark surface (dark).
+ * The grounds app ink stands on in a `@k2b/ui` v2 page: the v2 surface, and the app's tint, which v2 mixes as
+ * `color-mix(in srgb, accent <tint>, surface)`. A test reads both from `@k2b/ui/v2.css`, so a change there fails here.
  */
-export const v2InkGrounds = (accent: HexColor) => ({
-  light: ["#ffffff", mixHex(accent, "#ffffff", 0.08)] as const,
-  dark: ["#11151b", mixHex(accent, "#11151b", 0.28)] as const,
-});
+export const v2InkGrounds = {
+  light: { surface: "#ffffff", tint: 0.08 },
+  dark: { surface: "#11151b", tint: 0.28 },
+} as const satisfies Record<keyof typeof appColorSurfaces, { surface: HexColor; tint: number }>;
 
-/** The v2 app ink of each theme: the nearest tone of the accent that keeps 4.5:1 on the v2 surface and tint. */
+/**
+ * Contrast of `color` against `color-mix(in srgb, a share, b)` as the browser paints it: unrounded, so a tone that just
+ * passes against the rounded hex of the mix cannot fall below the minimum on screen.
+ */
+export const contrastOnMix = (color: HexColor, a: HexColor, b: HexColor, share: number): number => {
+  const first = channels(a);
+  const second = channels(b);
+  const mixed = first.map((value, index) => value * share + second[index]! * (1 - share)) as [number, number, number];
+  const mixLuminance = channelLuminance(mixed);
+  const own = relativeLuminance(color);
+  return (Math.max(own, mixLuminance) + 0.05) / (Math.min(own, mixLuminance) + 0.05);
+};
+
+/**
+ * The v2 app ink of each theme: the mildest whole-percent step of the accent toward black (light) or white (dark) that
+ * keeps 4.5:1 on the v2 surface and on the app's tint; the end color when no step does.
+ */
 export const appV2Ink = (accent: HexColor) => {
-  const grounds = v2InkGrounds(accent);
-  return {
-    light: readableTone(accent, grounds.light, "light", minimumContrast),
-    dark: readableTone(accent, grounds.dark, "dark", minimumContrast),
+  const forTheme = (theme: keyof typeof v2InkGrounds): HexColor => {
+    const { surface, tint } = v2InkGrounds[theme];
+    const toward = theme === "light" ? "#000000" : "#ffffff";
+    for (let i = 100; i >= 0; i--) {
+      const candidate = mixHex(accent, toward, i / 100);
+      if (contrastRatio(candidate, surface) >= minimumContrast && contrastOnMix(candidate, accent, surface, tint) >= minimumContrast)
+        return candidate;
+    }
+    return toward;
   };
+  return { light: forTheme("light"), dark: forTheme("dark") };
 };
 
 /** Plain hex declarations for server-rendered app appearance and accent scopes. */

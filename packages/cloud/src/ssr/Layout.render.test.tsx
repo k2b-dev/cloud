@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Hono } from "hono";
+import { parse } from "postcss";
 import { createComponent } from "solid-js";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { appAccentStyle } from "./app-appearance";
@@ -330,14 +331,31 @@ describe("Cloud layouts SSR", () => {
     const scope = css.slice(css.indexOf(".app-accent-scope .k2-ui {"), css.indexOf("}", css.indexOf(".app-accent-scope .k2-ui {")));
     expect(scope).toContain("--k2-app: var(--app-accent");
     expect(scope).toContain("--k2-app-ink: var(--app-v2-ink-light)");
-    expect(css).toContain(".dark .app-accent-scope .k2-ui {\n  --k2-app-ink: var(--app-v2-ink-dark);");
+    // The dark ink follows exactly the ways into v2's dark theme that v2.css names, inside the accent scope.
+    const selectorsOf = (source: string, has: (prop: string, value: string) => boolean) => {
+      const found: string[][] = [];
+      parse(source).walkRules((rule) => {
+        const declarations: { prop: string; value: string }[] = [];
+        rule.walkDecls((declaration) => void declarations.push(declaration));
+        if (declarations.some((declaration) => has(declaration.prop, declaration.value))) found.push(rule.selectors);
+      });
+      return found;
+    };
+    const v2 = await Bun.file(resolve(import.meta.dir, "../../../ui/src/v2/v2.css")).text();
+    const v2Dark = selectorsOf(v2, (prop, value) => prop === "--k2-surface" && value === "#11151b")[0]!;
+    expect(selectorsOf(css, (prop, value) => prop === "--k2-app-ink" && value === "var(--app-v2-ink-dark)")).toEqual([
+      v2Dark.map((selector) => selector.replace(".k2-ui", ".app-accent-scope .k2-ui")),
+    ]);
     expect(css).not.toMatch(/--k2-app-tint\s*:/);
     expect(css).not.toMatch(/--k2-app-ink:\s*color-mix/);
     // The app's accent reaches the v2 scope as its readable ink of each theme; a v1 page carries none.
+    // They sit on the body beside the accent, so an overlay a v2 page places on the body reads them too.
     const amber = async (query: string) =>
-      (await (await server.request(`/app/amber-probe${query}`)).text()).match(/<main[^>]*layout-content-main[^>]*>/)?.[0] ?? "";
+      (await (await server.request(`/app/amber-probe${query}`)).text()).match(/<body[^>]*>/)?.[0] ?? "";
     const ink = appV2Ink("#f59e0b");
-    expect(await amber("?ui=v2")).toContain(`--app-v2-ink-light:${ink.light};--app-v2-ink-dark:${ink.dark}`);
+    const v2Body = await amber("?ui=v2");
+    expect(v2Body).toContain("--app-accent:#f59e0b;");
+    expect(v2Body).toContain(`--app-v2-ink-light:${ink.light};--app-v2-ink-dark:${ink.dark}`);
     expect(await amber("")).not.toContain("--app-v2-ink");
   });
   test("the shell reserves a stable scrollbar gutter on the page scroller it owns", async () => {
