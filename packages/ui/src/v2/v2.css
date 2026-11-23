@@ -1126,7 +1126,7 @@
 .k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:last-child {
   margin-right: -8px;
 }
-.k2-ui .k2-group .k2-table td {
+.k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
   height: var(--k2-h-row);
 }
 /* a table in a group starts at the group's text edge */
