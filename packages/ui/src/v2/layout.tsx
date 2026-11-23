@@ -1,6 +1,7 @@
-import { createContext, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
+import { createContext, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
+import { RowOpen } from "./content";
 import { custom, Icon } from "./marks";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
@@ -55,6 +56,10 @@ const sidebarDefault: Width = { min: 200, default: 248 };
  */
 export const Workspace = (props: WorkspaceProps) => {
   const width = () => props.sidebarWidth ?? sidebarDefault;
+  // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
+  // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
+  const sidebar = resolveChildren(() => props.sidebar);
+  const head = resolveChildren(() => props.head);
   return (
     <div
       class="k2-ws"
@@ -62,26 +67,33 @@ export const Workspace = (props: WorkspaceProps) => {
       data-k2-part="Workspace"
       style={custom({ "--k2-ws-side": `${width().default}px`, "--k2-ws-side-min": `${width().min}px` })}
     >
-      <Show when={props.sidebar}>
+      <Show when={sidebar()}>
         <aside class="k2-ws-side" data-k2-column="">
-          {props.sidebar}
+          {sidebar()}
         </aside>
         <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
-        <Show when={props.head}>
+        <Show when={head()}>
           <div class="k2-slot" data-slot="head">
-            {props.head}
+            {head()}
           </div>
         </Show>
         {props.children}
       </div>
       <Show when={props.primary}>
         {(action) => (
-          <a class="k2-btn k2-fab" data-variant="primary" href={action().href} onClick={() => action().onClick?.()}>
+          <Dynamic
+            component={action().href !== undefined ? "a" : "button"}
+            type={action().href !== undefined ? undefined : "button"}
+            class="k2-btn k2-fab"
+            data-variant="primary"
+            href={action().href}
+            onClick={() => action().onClick?.()}
+          >
             <Show when={action().icon}>{(name) => <Icon name={name()} />}</Show>
             {action().label}
-          </a>
+          </Dynamic>
         )}
       </Show>
       <Toasts />
@@ -91,8 +103,9 @@ export const Workspace = (props: WorkspaceProps) => {
 
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
-type SplitEntry = { width?: Width; label?: string };
-const SplitContext = createContext<SplitEntry[]>();
+type SplitEntry = { readonly width?: Width; readonly label?: string; element?: HTMLElement };
+/** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
+const SplitContext = createContext<(entry: SplitEntry) => void>();
 
 export type PaneProps = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
@@ -113,9 +126,22 @@ export type PaneProps = {
 
 /** A column that scrolls. It has no padding and no gutter, so every band in it reaches both edges. */
 export const Pane = (props: PaneProps) => {
-  useContext(SplitContext)?.push({ width: props.width, label: props.label });
+  const entry: SplitEntry = {
+    get width() {
+      return props.width;
+    },
+    get label() {
+      return props.label;
+    },
+  };
+  useContext(SplitContext)?.(entry);
+  const head = resolveChildren(() => props.head);
+  const status = resolveChildren(() => props.status);
   return (
     <section
+      ref={(element) => {
+        entry.element = element;
+      }}
       class="k2-pane"
       data-k2-part="Pane"
       data-k2-column=""
@@ -128,14 +154,14 @@ export const Pane = (props: PaneProps) => {
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
       })}
     >
-      <Show when={props.head}>
+      <Show when={head()}>
         <div class="k2-slot" data-slot="head">
-          {props.head}
+          {head()}
         </div>
       </Show>
-      <Show when={props.status}>
+      <Show when={status()}>
         <div class="k2-slot" data-slot="status">
-          {props.status}
+          {status()}
         </div>
       </Show>
       <div class="k2-scroll">{props.children}</div>
@@ -148,26 +174,51 @@ export const Pane = (props: PaneProps) => {
  * between them; where a pane has a `width`, its line carries a grip.
  */
 Pane.Split = (props: { children: JSX.Element }) => {
-  const entries: SplitEntry[] = [];
+  const [entries, setEntries] = createSignal<readonly SplitEntry[]>([]);
+  const register = (entry: SplitEntry) => {
+    setEntries((list) => [...list, entry]);
+    onCleanup(() => setEntries((list) => list.filter((other) => other !== entry)));
+  };
   return (
-    <SplitContext.Provider value={entries}>
-      <SplitBody entries={entries}>{props.children}</SplitBody>
+    <SplitContext.Provider value={register}>
+      <SplitBody entries={entries()}>{props.children}</SplitBody>
     </SplitContext.Provider>
   );
 };
 
-/** Renders the panes first (each registers its width), then puts a seam between every two of them. */
-const SplitBody = (props: { entries: SplitEntry[]; children: JSX.Element }) => {
-  const panes = resolveChildren(() => props.children).toArray();
-  const seam = (index: number) => {
-    const left = props.entries[index - 1];
-    const right = props.entries[index];
-    const moving = right?.width ? right : left?.width ? left : undefined;
-    return <Seam grip={moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined} />;
+/**
+ * Renders the panes first (each registers its width), then puts a seam after every pane; the stylesheet hides the one
+ * after the last. Panes may come and go (`Show`): each takes its own seam with it, and the grips follow. Every entry
+ * of the list is the same two nodes, so nothing in it comes and goes on its own (that would not be removed cleanly
+ * after hydration). In the browser a pane's entry is found by its element, on the server by its order.
+ */
+const SplitBody = (props: { entries: readonly SplitEntry[]; children: JSX.Element }) => {
+  const resolved = resolveChildren(() => props.children);
+  // a pane hidden by `Show` stays in the list as nothing: it gets no seam
+  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && pane !== "");
+  const entryOf = (index: number) => {
+    const pane = panes()[index];
+    if (pane === undefined) return undefined;
+    return props.entries.find((entry) => entry.element !== undefined && entry.element === pane) ?? props.entries[index];
+  };
+  // The seam after pane `index`: the pane on its right moves it if it has a width, else the pane on its left.
+  const grip = (index: number) => {
+    const left = entryOf(index);
+    const right = entryOf(index + 1);
+    if (!right) return undefined;
+    const moving = right.width ? right : left?.width ? left : undefined;
+    return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
-      {panes.map((pane, index) => (index > 0 ? [seam(index), pane] : pane))}
+      <For each={panes()}>
+        {(pane, index) => (
+          <>
+            {pane}
+            <Seam grip={grip(index())} />
+          </>
+        )}
+      </For>
     </div>
   );
 };
@@ -186,16 +237,20 @@ export type BarProps = {
  * 52 as a status row, 40 on its own. Controls in it take the height that leaves equal air above and below. The
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
  */
-export const Bar = (props: BarProps) => (
-  <div class="k2-bar" data-k2-part="Bar">
-    <Show when={props.start !== undefined}>
-      <div class="k2-bar-start">{props.start}</div>
-    </Show>
-    <Show when={props.end !== undefined}>
-      <div class="k2-bar-end">{props.end}</div>
-    </Show>
-  </div>
-);
+export const Bar = (props: BarProps) => {
+  const start = resolveChildren(() => props.start);
+  const end = resolveChildren(() => props.end);
+  return (
+    <div class="k2-bar" data-k2-part="Bar">
+      <Show when={start() !== undefined}>
+        <div class="k2-bar-start">{start()}</div>
+      </Show>
+      <Show when={end() !== undefined}>
+        <div class="k2-bar-end">{end()}</div>
+      </Show>
+    </div>
+  );
+};
 
 // ── Band ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -228,54 +283,57 @@ export type CellProps = {
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
-export const Cells = (props: { children: JSX.Element }) => {
-  const resolved = resolveChildren(() => props.children);
-  const count = () => Math.max(1, Math.min(4, resolved.toArray().length));
+export const Cells = (props: { children: JSX.Element }) => (
+  <div class="k2-cells" data-k2-part="Cells">
+    {props.children}
+  </div>
+);
+
+Cells.Cell = (props: CellProps) => {
+  const meta = resolveChildren(() => props.meta);
   return (
-    <div class="k2-cells" data-k2-part="Cells" style={custom({ "--k2-cells": String(count()) })}>
-      {resolved()}
-    </div>
+    <Dynamic
+      component={props.href ? "a" : "div"}
+      class="k2-cell"
+      data-k2-part="Cells.Cell"
+      href={props.href}
+      style={custom({ "--k2-c": props.color })}
+    >
+      <Icon name={props.icon} />
+      <span class="k2-cell-label">{props.label}</span>
+      <Show when={props.href} fallback={<span />}>
+        <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
+      </Show>
+      <span class="k2-cell-value">{props.value}</span>
+      <Show when={meta() !== undefined}>
+        <span class="k2-cell-meta">{meta()}</span>
+      </Show>
+    </Dynamic>
   );
 };
-
-Cells.Cell = (props: CellProps) => (
-  <Dynamic
-    component={props.href ? "a" : "div"}
-    class="k2-cell"
-    data-k2-part="Cells.Cell"
-    href={props.href}
-    style={custom({ "--k2-c": props.color })}
-  >
-    <Icon name={props.icon} />
-    <span class="k2-cell-label">{props.label}</span>
-    <Show when={props.href} fallback={<span />}>
-      <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
-    </Show>
-    <span class="k2-cell-value">{props.value}</span>
-    <Show when={props.meta !== undefined}>
-      <span class="k2-cell-meta">{props.meta}</span>
-    </Show>
-  </Dynamic>
-);
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Tile = { icon: string; title: string; meta?: string; href?: string };
 
 /** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
-export const Tiles = (props: { items: readonly Tile[]; more?: Action; label?: string }) => (
+export type TilesProps = { items: readonly Tile[]; more?: Action; label?: string };
+
+export const Tiles = (props: TilesProps) => (
   <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
     <For each={props.items}>
       {(tile) => (
-        <a class="k2-tile" href={tile.href} role="listitem">
+        <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
           <Icon name={tile.icon} />
           <span>
-            <span class="k2-tile-title">{tile.title}</span>
+            <span class="k2-tile-title">
+              <RowOpen href={tile.href}>{tile.title}</RowOpen>
+            </span>
             <Show when={tile.meta}>
               <span class="k2-t-meta">{tile.meta}</span>
             </Show>
           </span>
-        </a>
+        </div>
       )}
     </For>
     <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>

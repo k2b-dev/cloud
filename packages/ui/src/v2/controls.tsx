@@ -1,7 +1,18 @@
-import { createContext, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
+import { createContext, createSignal, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
 import { Icon } from "./marks";
 
-type FieldIds = { control: string; message: string; invalid: boolean; name?: string };
+type FieldIds = {
+  /** The id of the one control the label names. */
+  control: string;
+  /** The id of the label line. */
+  label: string;
+  invalid: boolean;
+  name?: string;
+  /** The id of the hint or error, while there is one. */
+  described?: string;
+  /** A control of several choices (Check, Choice) makes the field a named group instead of a labelled control. */
+  group: () => void;
+};
 const FieldContext = createContext<FieldIds>();
 
 export type FieldProps = {
@@ -23,52 +34,76 @@ export type FieldProps = {
  */
 export const Field = (props: FieldProps) => {
   const control = createUniqueId();
+  const label = createUniqueId();
   const message = createUniqueId();
-  return (
-    <div class="k2-field" data-k2-part="Field">
-      <label class="k2-field-label" for={control}>
-        {props.label}
-        <Show when={props.optional}>
-          <span class="k2-field-optional">{props.optional}</span>
-        </Show>
-      </label>
-      <FieldContext.Provider
-        value={{
-          control,
-          message,
-          get invalid() {
-            return !!props.error;
-          },
-          get name() {
-            return props.name;
-          },
-        }}
-      >
-        {props.children}
-      </FieldContext.Provider>
-      <Show when={props.error ?? props.hint}>
-        {(text) => (
-          <span class="k2-field-message" id={message} data-error={props.error ? "" : undefined} role={props.error ? "alert" : undefined}>
-            {text()}
-          </span>
-        )}
+  // The control is made first, so the field knows whether it labels one control or names a group of choices; the
+  // order is the same on the server and in the browser.
+  let grouped = false;
+  const content = (
+    <FieldContext.Provider
+      value={{
+        control,
+        label,
+        get invalid() {
+          return !!props.error;
+        },
+        get name() {
+          return props.name;
+        },
+        get described() {
+          return props.error || props.hint ? message : undefined;
+        },
+        group: () => {
+          grouped = true;
+        },
+      }}
+    >
+      {props.children}
+    </FieldContext.Provider>
+  );
+  const labelLine = (
+    <>
+      {props.label}
+      <Show when={props.optional}>
+        <span class="k2-field-optional">{props.optional}</span>
       </Show>
+    </>
+  );
+  const messageLine = (
+    <Show when={props.error ?? props.hint}>
+      {(text) => (
+        <span class="k2-field-message" id={message} data-error={props.error ? "" : undefined} role={props.error ? "alert" : undefined}>
+          {text()}
+        </span>
+      )}
+    </Show>
+  );
+  // A group of choices is named by its label line; one control is labelled by it.
+  return grouped ? (
+    <div class="k2-field" data-k2-part="Field" role="group" aria-labelledby={label}>
+      <span class="k2-field-label" id={label}>
+        {labelLine}
+      </span>
+      {content}
+      {messageLine}
+    </div>
+  ) : (
+    <div class="k2-field" data-k2-part="Field">
+      <label class="k2-field-label" id={label} for={control}>
+        {labelLine}
+      </label>
+      {content}
+      {messageLine}
     </div>
   );
 };
 
 /** Fields side by side on one grid; one column on the phone. */
-Field.Row = (props: { children: JSX.Element }) => {
-  const count = () => {
-    const children = props.children;
-    return Array.isArray(children) ? children.length : 1;
-  };
-  return (
-    <div class="k2-frow" data-k2-part="Field.Row" style={{ "--k2-fields": String(count()) }}>
-      {props.children}
-    </div>
-  );
-};
+Field.Row = (props: { children: JSX.Element }) => (
+  <div class="k2-frow" data-k2-part="Field.Row">
+    {props.children}
+  </div>
+);
 
 const useField = () => useContext(FieldContext);
 
@@ -98,7 +133,7 @@ export const Input = (props: InputProps) => {
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
-    "aria-describedby": field ? field.message : undefined,
+    "aria-describedby": field?.described,
   });
   return (
     <span
@@ -129,7 +164,9 @@ export const Input = (props: InputProps) => {
 
 export type SelectProps = {
   options: readonly (string | { value: string; label: string })[];
+  /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
+  onChange?: (value: string) => void;
   placeholder?: string;
   name?: string;
   label?: string;
@@ -137,12 +174,15 @@ export type SelectProps = {
 
 /**
  * The closed shape of a selection: the value and a chevron in the round field. (The list opens with the behaviour
- * layer; until then it is a native select laid over the shape, so it works with the keyboard and in forms.)
+ * layer; until then it is a native select laid over the shape, so it works with the keyboard and in forms.) The
+ * shape always shows the value that is chosen now.
  */
 export const Select = (props: SelectProps) => {
   const field = useField();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
-  const current = () => options().find((option) => option.value === props.value);
+  const [chosen, setChosen] = createSignal(props.value);
+  const value = () => (props.onChange ? props.value : chosen());
+  const current = () => options().find((option) => option.value === value());
   return (
     <span class="k2-input" data-k2-part="Select" data-select="" data-invalid={field?.invalid ? "" : undefined}>
       <span class="k2-input-value" data-placeholder={current() ? undefined : ""}>
@@ -155,13 +195,18 @@ export const Select = (props: SelectProps) => {
         name={props.name ?? field?.name}
         aria-label={field ? undefined : props.label}
         aria-invalid={field?.invalid ? "true" : undefined}
+        aria-describedby={field?.described}
+        onChange={(event) => {
+          setChosen(event.currentTarget.value);
+          props.onChange?.(event.currentTarget.value);
+        }}
       >
         <Show when={!current()}>
           <option value="">{props.placeholder ?? ""}</option>
         </Show>
         <For each={options()}>
           {(option) => (
-            <option value={option.value} selected={option.value === props.value}>
+            <option value={option.value} selected={option.value === value()}>
               {option.label}
             </option>
           )}
@@ -171,7 +216,13 @@ export const Select = (props: SelectProps) => {
   );
 };
 
-export type DateInputProps = { value?: string; placeholder?: string; name?: string; label?: string };
+export type DateInputProps = {
+  value?: string;
+  onInput?: (value: string) => void;
+  placeholder?: string;
+  name?: string;
+  label?: string;
+};
 
 /** The shape of a date field: the date and a calendar symbol. (The picker opens with the behaviour layer.) */
 export const DateInput = (props: DateInputProps) => {
@@ -186,6 +237,9 @@ export const DateInput = (props: DateInputProps) => {
         value={props.value ?? ""}
         placeholder={props.placeholder}
         aria-label={field ? undefined : props.label}
+        aria-invalid={field?.invalid ? "true" : undefined}
+        aria-describedby={field?.described}
+        onInput={(event) => props.onInput?.(event.currentTarget.value)}
       />
       <Icon name="calendar" />
     </span>
@@ -208,7 +262,12 @@ export type CheckProps = {
  * sits on the same pixel empty, set and mixed (guard: mark-geometry).
  */
 export const Check = (props: CheckProps) => {
-  const set = () => props.checked === true || props.checked === "mixed";
+  const field = useField();
+  field?.group();
+  const [own, setOwn] = createSignal(props.checked);
+  // With `onChange` the caller holds the state; without, the box keeps it, so the mark always shows what is set.
+  const checked = () => (props.onChange ? props.checked : own());
+  const set = () => checked() === true || checked() === "mixed";
   return (
     <label class="k2-choice" data-k2-part="Check" data-switch={props.switch ? "" : undefined}>
       <span class="k2-mark">
@@ -216,23 +275,27 @@ export const Check = (props: CheckProps) => {
           class="k2-mark-input"
           type="checkbox"
           role={props.switch ? "switch" : undefined}
-          name={props.name}
-          checked={props.checked === true}
-          aria-checked={props.checked === "mixed" ? "mixed" : undefined}
+          name={props.name ?? field?.name}
+          checked={checked() === true}
+          aria-checked={checked() === "mixed" ? "mixed" : undefined}
+          aria-describedby={field?.described}
           disabled={props.disabled}
-          onChange={(event) => props.onChange?.(event.currentTarget.checked)}
+          onChange={(event) => {
+            setOwn(event.currentTarget.checked);
+            props.onChange?.(event.currentTarget.checked);
+          }}
         />
         <Show
           when={props.switch}
           fallback={
             <span class="k2-check" data-checked={set() ? "" : undefined} data-k2-mark="">
               <Show when={set()}>
-                <Icon name={props.checked === "mixed" ? "minus" : "check"} />
+                <Icon name={checked() === "mixed" ? "minus" : "check"} />
               </Show>
             </span>
           }
         >
-          <span class="k2-switch" data-checked={props.checked === true ? "" : undefined} data-k2-mark="" />
+          <span class="k2-switch" data-checked={checked() === true ? "" : undefined} data-k2-mark="" />
         </Show>
       </span>
       <span class="k2-choice-text">{props.label}</span>
@@ -270,9 +333,20 @@ export type ChoiceProps = {
 
 /** A few visible options, one of which is chosen: round points, each on one 20 px text line. */
 export const Choice = (props: ChoiceProps) => {
+  const field = useField();
+  field?.group();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  const [own, setOwn] = createSignal(props.value);
+  const value = () => (props.onChange ? props.value : own());
   return (
-    <div class="k2-choices" data-k2-part="Choice" role="radiogroup" aria-label={props.label}>
+    <div
+      class="k2-choices"
+      data-k2-part="Choice"
+      role="radiogroup"
+      aria-label={field ? undefined : props.label}
+      aria-labelledby={field?.label}
+      aria-describedby={field?.described}
+    >
       <For each={options()}>
         {(option) => (
           <label class="k2-choice">
@@ -282,10 +356,13 @@ export const Choice = (props: ChoiceProps) => {
                 type="radio"
                 name={props.name}
                 value={option.value}
-                checked={option.value === props.value}
-                onChange={() => props.onChange?.(option.value)}
+                checked={option.value === value()}
+                onChange={() => {
+                  setOwn(option.value);
+                  props.onChange?.(option.value);
+                }}
               />
-              <span class="k2-radio" data-checked={option.value === props.value ? "" : undefined} data-k2-mark="" />
+              <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />
             </span>
             <span class="k2-choice-text">{option.label}</span>
           </label>
