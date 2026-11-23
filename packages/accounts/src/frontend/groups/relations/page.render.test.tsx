@@ -59,6 +59,7 @@ const relations: GroupRelations = {
   cycles: { count: 0, first: null },
   truncated: false,
   cyclesComplete: true,
+  managerCyclesComplete: true,
 };
 
 type App = Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>;

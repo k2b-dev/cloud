@@ -131,7 +131,7 @@ export default ssr<AuthContext>(async (c) => {
                     <span>{t.legendShown}</span>
                   </Show>
                 </div>
-                <Show when={current().truncated}>
+                <Show when={current().truncated || !current().managerCyclesComplete}>
                   <NoticeCard tone="warning" icon={true}>
                     {t.truncated}
                   </NoticeCard>

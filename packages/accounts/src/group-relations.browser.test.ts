@@ -53,8 +53,9 @@ const graph: GroupRelations = {
   cycles: { count: 1, first: tech },
   truncated: false,
   cyclesComplete: true,
+  managerCyclesComplete: true,
 };
-const tree: GroupRelations = { ...graph, columns: [], roots: [all] };
+const tree: GroupRelations = { ...graph, columns: [], roots: { ids: [all], hidden: 1 } };
 const children: Record<string, string[]> = { [all]: [sales, tech], [tech]: [platform], [platform]: [oncall], [oncall]: [tech] };
 
 beforeAll(async () => {
@@ -108,7 +109,11 @@ const open = async (width: number, dark: boolean, view: "graph" | "list", reques
       });
     }
     return route.fulfill({
-      json: { ...tree, selected: { ...graph.selected!, id: selected ?? tech, cycle: selected === sales ? null : graph.selected!.cycle } },
+      json: {
+        ...tree,
+        roots: url.searchParams.get("expand") === "roots" ? { ids: [all, sales], hidden: 0 } : tree.roots,
+        selected: { ...graph.selected!, id: selected ?? tech, cycle: selected === sales ? null : graph.selected!.cycle },
+      },
     });
   });
   await tab.route("https://cloud.example.test/fixture.js", (route) =>
@@ -192,6 +197,12 @@ test("relation tree: one tab stop, arrow keys open and move, Enter selects, and 
     await tab.keyboard.press("Enter");
     await tab.getByRole("heading", { name: "Sales", level: 3 }).waitFor();
     expect(new URL(tab.url()).searchParams.get("sel")).toBe(sales);
+    // The top groups carry a budget too; the rest opens in place.
+    await tab.getByRole("button", { name: "+ 1 more" }).click();
+    await tab.locator('[role="treeitem"][aria-level="1"]').nth(1).waitFor();
+    expect(await tab.locator('[role="treeitem"][aria-level="1"]').count()).toBe(2);
+    await tab.getByRole("button", { name: "+ 1 more" }).waitFor({ state: "detached" });
+    expect(requests.at(-1)).toContain("expand=roots");
     expect(requests.some((search) => search.includes("selected=00000000-0000-4000-8000-000000000005"))).toBe(true);
     expect(errors).toEqual([]);
   } finally {

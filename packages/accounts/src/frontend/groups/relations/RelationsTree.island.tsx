@@ -69,21 +69,28 @@ export default function RelationsTree(props: Props) {
     if (open) void load(row.id);
   };
 
-  const select = async (id: string) => {
+  // Once all top groups are open, every later answer keeps them all.
+  const [allRoots, setAllRoots] = createSignal(false);
+  const reload = async (id: string | undefined, all: boolean) => {
     setDetailsFailed(false);
     try {
       const response = await apiClient.groups.relations.$get({
-        query: query(props.state, { focus: props.state.focus, selected: id, view: "list" }),
+        query: query(props.state, { focus: props.state.focus, selected: id, view: "list", expand: all ? "roots" : undefined }),
       });
       const result = await response.json();
       if (!response.ok || !("columns" in result)) throw new Error(t().errorTitle);
       merge(result.nodes);
       setRelations(result);
-      // Selection is part of the URL, so a reload shows the same details.
-      window.history.replaceState(window.history.state, "", relationsHref(props.state, { sel: id }));
+      setAllRoots(all);
+      return true;
     } catch {
       setDetailsFailed(true);
+      return false;
     }
+  };
+  const select = async (id: string) => {
+    // Selection is part of the URL, so a reload shows the same details.
+    if (await reload(id, allRoots())) window.history.replaceState(window.history.state, "", relationsHref(props.state, { sel: id }));
   };
 
   const rows = createMemo(() => {
@@ -98,7 +105,7 @@ export default function RelationsTree(props: Props) {
         else walk(child, level + 1, [...path, id], key);
       }
     };
-    for (const root of relations().roots ?? []) walk(root, 1, []);
+    for (const root of relations().roots?.ids ?? []) walk(root, 1, []);
     return out;
   });
   const current = () =>
@@ -200,6 +207,17 @@ export default function RelationsTree(props: Props) {
             }}
           </For>
         </ul>
+        <Show when={relations().roots?.hidden}>
+          {(hidden) => (
+            <button
+              type="button"
+              class="mt-1 flex min-h-8 items-center rounded-[var(--ui-radius-control)] px-1.5 text-[12.5px] text-[var(--k2b-action)] hover:bg-[var(--ui-hover)] focus-visible:outline-2 focus-visible:outline-[var(--k2b-focus-ring)]"
+              onClick={() => void reload(selectedId(), true)}
+            >
+              {t().more({ count: hidden() })}
+            </button>
+          )}
+        </Show>
       </div>
       <aside class="w-full shrink-0 md:w-[17.5rem]" aria-label={relations().selected ? node(relations().selected!.id)?.name : undefined}>
         <Show when={detailsFailed()}>
