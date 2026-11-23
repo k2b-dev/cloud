@@ -129,6 +129,8 @@ describe("Mail on the v2 pilot", () => {
       expect(await composer.textContent()).toContain("Holzwerk Brandt");
       await composer.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box-frame]').waitFor();
+      // Mail's own composer writes there: its editor takes text.
+      await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
       expect(await composer.count()).toBe(0);
     } finally {
       await page.close();

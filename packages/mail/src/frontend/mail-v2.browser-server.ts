@@ -118,6 +118,38 @@ document.documentElement.dataset.mailV2Ready='true';
         });
       }
       if (url.pathname.endsWith("/presence")) return Response.json({ participants: [] });
+      // The reply box writes into a seed the server derives, as the v1 suite's fixture answers it; nothing is stored.
+      if (url.pathname.endsWith("/compose-templates") || url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
+      if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
+        const body: { origin: { input: Record<string, unknown> } } = await request.json();
+        const input = body.origin.input;
+        return Response.json({
+          id: "00000000-0000-4000-8000-0000000000d1",
+          mailboxId: "Box001",
+          conversationId: input.conversationId,
+          intent: input.intent,
+          sourceMessageId: input.sourceMessageId,
+          derivedFromMessageId: null,
+          derivationKind: null,
+          content: {
+            senderIdentityId: input.senderIdentityId,
+            signatureTemplateId: null,
+            quoteSource: input.quoteSource ?? null,
+            to: [{ name: "Holzwerk Brandt", address: "einkauf@holzwerk-brandt.example" }],
+            cc: [],
+            bcc: [],
+            subject: input.subject,
+            body: input.body ?? "",
+            format: "markdown",
+            priority: "normal",
+            requestDeliveryReceipt: false,
+            requestReadReceipt: false,
+          },
+          attachments: [],
+          origin: body.origin,
+          createdAt: new Date(now()).toISOString(),
+        });
+      }
       if (url.pathname.endsWith("/actions") && request.method === "POST") return Response.json({ commands: [] });
       if (url.pathname.endsWith("/conversations/completion") && request.method === "POST") {
         const input: { conversationIds: string[]; completion: "done" | "open" } = await request.json();
