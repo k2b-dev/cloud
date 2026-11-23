@@ -68,7 +68,8 @@ export default function V2Inspect() {
     };
     const leave = () => setBox(undefined);
     const message = (event: MessageEvent) => {
-      if (event.origin !== location.origin || event.data?.type !== inspectMessage) return;
+      // only the Fibel page that frames this screen switches the layer
+      if (event.source !== window.parent || event.origin !== location.origin || event.data?.type !== inspectMessage) return;
       setOn(event.data.on === true);
       if (!on()) setBox(undefined);
     };
