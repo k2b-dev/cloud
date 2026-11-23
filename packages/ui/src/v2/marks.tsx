@@ -52,6 +52,8 @@ export type ChipProps = {
    */
   onClick?: () => void;
   href?: string;
+  /** A pressable chip that is on, such as an active filter: in the tint of the app. */
+  pressed?: boolean;
 } & (
   | {
       /** A state with a dot and a word: ok, waiting or wrong. */
@@ -61,7 +63,15 @@ export type ChipProps = {
       amount?: never;
       ai?: never;
     }
-  | { status?: never /** "You are next" in the blue of selection. */; yours: true; tag?: never; amount?: never; ai?: never }
+  | {
+      status?: never;
+      /** "You are next" in the blue of selection; with `dot` a state that is being worked on ("in Arbeit"). */
+      yours: true;
+      dot?: boolean;
+      tag?: never;
+      amount?: never;
+      ai?: never;
+    }
   | {
       status?: never;
       yours?: never;
@@ -110,9 +120,14 @@ export const Chip = (props: ChipProps) => {
       data-k2-part="Chip"
       data-status={props.status}
       data-kind={kind()}
+      aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
+      data-pressed={props.pressed ? "" : undefined}
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
       <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
+      <Show when={"dot" in props && props.dot}>
+        <span class="k2-dot" data-status="app" />
+      </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.children}

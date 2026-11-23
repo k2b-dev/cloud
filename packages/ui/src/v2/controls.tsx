@@ -240,6 +240,25 @@ export const Check = (props: CheckProps) => {
   );
 };
 
+/** A box without visible words, named for assistive technology (internal: "select all", "select this row"). */
+export const MarkCheck = (props: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void }) => (
+  <span class="k2-mark">
+    <input
+      class="k2-mark-input"
+      type="checkbox"
+      aria-label={props.label}
+      checked={props.checked === true}
+      aria-checked={props.checked === "mixed" ? "mixed" : undefined}
+      onChange={(event) => props.onChange?.(event.currentTarget.checked)}
+    />
+    <span class="k2-check" data-checked={props.checked ? "" : undefined} data-k2-mark="">
+      <Show when={props.checked}>
+        <Icon name={props.checked === "mixed" ? "minus" : "check"} />
+      </Show>
+    </span>
+  </span>
+);
+
 export type ChoiceProps = {
   name: string;
   options: readonly (string | { value: string; label: string })[];

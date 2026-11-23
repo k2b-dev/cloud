@@ -21,6 +21,7 @@ import {
   Nav,
   Notice,
   Pane,
+  Path,
   Progress,
   Prose,
   RecordHead,
@@ -28,6 +29,7 @@ import {
   Section,
   Select,
   StatusRow,
+  Steps,
   Table,
   Tabs,
   Text,
@@ -232,6 +234,29 @@ export const StructureFixture = () =>
               <Text type="body" strong>
                 10 Artikel sind ausgelaufen.
               </Text>
+              <Steps
+                label="Weg der Einlieferung"
+                items={[
+                  { label: "Angekommen", meta: "3. Nov.", state: "done" },
+                  { label: "Ausgelaufen", meta: "10 von 18", state: "now" },
+                  { label: "Ausgezahlt", state: "next" },
+                ]}
+              />
+              <Row
+                icon="signature"
+                strong
+                lines={[
+                  <>
+                    Quittung <Text href="#quittung">Q-2611-00021</Text> wartet
+                  </>,
+                  "per Post gesendet am 18. Nov.",
+                ]}
+                end={
+                  <Button variant="text" forward>
+                    Zur Quittung
+                  </Button>
+                }
+              />
               <Table
                 label="Abrechnung"
                 rows={[
@@ -257,7 +282,18 @@ export const StructureFixture = () =>
                 }
               />
             </Group>
-            <Group icon="package" title="EL-2609-00017" folded state={<Chip status="ok">Ausgezahlt</Chip>} />
+            <Group
+              icon="package"
+              title="EL-2609-00017"
+              meta="ausgezahlt am 12. Nov."
+              folded
+              state={
+                <Text medium tone="ok">
+                  <Icon name="circle-check" /> Ausgezahlt
+                </Text>
+              }
+              menu={{ label: "Weitere Aktionen" }}
+            />
           </Section>
         </Pane>
         <Pane side label="Breite der Angaben" width={{ min: 280, default: 360 }}>
@@ -325,6 +361,76 @@ export const TableFixture = () =>
     </Pane>,
   );
 
+const orders = Array.from({ length: 8 }, (_, index) => ({
+  key: `AU-${100 + index}`,
+  name: ["Einbauschrank Familie Oswald", "Treppe Haus am Hang", "Küche Lindqvist", "Esstisch Eiche massiv"][index % 4]!,
+  state: index < 5 ? ("open" as const) : ("done" as const),
+  person: { name: ["Mira Solberg", "Jule Amsel"][index % 2]!, color: ["#0f766e", "#7c3aed"][index % 2] },
+  amount: `${(index + 1) * 180},50 €`,
+}));
+
+/** The large table: Path in the head, a selecting status row, box column, sticky first column, groups, sort, phone form. */
+export const GridFixture = () =>
+  shell(
+    <Pane
+      label="Aufträge"
+      status={
+        <StatusRow
+          lead="8 Aufträge"
+          select={{ label: "Alle Aufträge", checked: "mixed" }}
+          selection={{ count: "1 ausgewählt", actions: [{ label: "Exportieren", icon: "download" }], clear: { label: "Auswahl aufheben" } }}
+        />
+      }
+    >
+      <Table
+        label="Aufträge"
+        rows={orders}
+        rowKey={(order) => order.key}
+        current="AU-102"
+        sticky
+        select={{ selected: ["AU-101"], onChange: () => undefined, all: "Alle Aufträge", row: (order) => order.name }}
+        group={(order) => ({
+          key: order.state,
+          head: order.state === "open" ? <Chip status="warn">Offen</Chip> : <Chip status="ok">Erledigt</Chip>,
+          meta: order.state === "open" ? "5 · 2.700,00 €" : "3 · 3.780,00 €",
+          count: order.state === "open" ? "5" : "3",
+        })}
+        sort={{ column: 3, direction: "ascending" }}
+        phone={(order) => ({ lines: [order.name, order.key], avatar: order.person, time: order.amount })}
+        columns={[
+          { title: "Auftrag", width: { min: 160, default: 260 }, cell: (order) => <Text medium>{order.name}</Text> },
+          {
+            title: "Verantwortlich",
+            width: { min: 120, default: 176 },
+            cell: (order) => (
+              <Inline>
+                <Avatar {...order.person} />
+                {order.person.name}
+              </Inline>
+            ),
+          },
+          {
+            title: "Tags",
+            width: { min: 120, default: 188 },
+            cell: () => (
+              <Inline>
+                <Chip tag color="#b45309">
+                  Eiche
+                </Chip>
+                <Chip tag color="#be123c">
+                  Eilig
+                </Chip>
+              </Inline>
+            ),
+          },
+          { title: "Betrag", align: "end", width: { min: 96, default: 120 }, cell: (order) => order.amount },
+          { title: "Beleg", width: { min: 100, default: 140 }, cell: (order) => <Text href="#beleg">RE-{order.key}</Text> },
+        ]}
+      />
+    </Pane>,
+    <Bar start={<Path label="Ort" items={[{ label: "Werkstatt", href: "#werkstatt" }, { label: "Aufträge" }]} />} />,
+  );
+
 /** Field, Field.Row, Input, Select, DateInput, Check (box, switch; empty, set, mixed), Choice, Button variants. */
 export const ControlsFixture = () =>
   shell(
@@ -373,4 +479,10 @@ export const ControlsFixture = () =>
     </Pane>,
   );
 
-export const fixtures = { layout: LayoutFixture, structure: StructureFixture, table: TableFixture, controls: ControlsFixture } as const;
+export const fixtures = {
+  layout: LayoutFixture,
+  structure: StructureFixture,
+  table: TableFixture,
+  grid: GridFixture,
+  controls: ControlsFixture,
+} as const;
