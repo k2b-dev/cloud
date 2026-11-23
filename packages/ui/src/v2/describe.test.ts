@@ -74,6 +74,7 @@ describe("describeV2", () => {
       `<section class="k2-pane" data-k2-part="Pane" aria-label="Liste"><div class="k2-scroll">` +
         `<div>frei</div>lose<section class="k2-group" data-k2-part="Group" aria-label="Außen"><div class="k2-gh"></div>` +
         `<section class="k2-group" data-k2-part="Group" aria-label="Innen"><div class="k2-gh"></div></section></section>` +
+        `<section class="k2-band" data-k2-part="Band"><section class="k2-group" data-k2-part="Group" aria-label="Im Band"><div class="k2-gh"></div></section></section>` +
         `<button class="k2-btn" data-k2-part="Button" data-variant="primary">Eins</button>` +
         `<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button" data-variant="primary">Zwei</button></div></div>` +
         `</div></section>`,
@@ -81,6 +82,7 @@ describe("describeV2", () => {
     expect(text).toContain('- plain <div> in Pane "Liste" "frei": no primitive owns it');
     expect(text).toContain('- loose text "lose" in Pane "Liste": put it in <Text> or <Notice>');
     expect(text).toContain('- Group "Innen" stands in another Group: groups are never nested');
+    expect(text).toContain('- Group "Im Band" stands in a Band');
     expect(text).toContain('- Button "Eins" stands alone in Pane');
     expect(text).toContain('- 2 primary buttons ("Eins", "Zwei")');
   });

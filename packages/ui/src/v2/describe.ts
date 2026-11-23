@@ -363,6 +363,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       next = depth + 1;
       if (name === "Group" && element.parentElement?.closest("[data-k2-part='Group']"))
         problems.push(`Group ${quote(element.getAttribute("aria-label"))} stands in another Group: groups are never nested`);
+      else if (name === "Group" && part(partOf(element)) === "Band")
+        problems.push(`Group ${quote(element.getAttribute("aria-label"))} stands in a Band: put groups in a Section or directly in the Pane`);
       if (name === "Button")
         problems.push(
           `Button ${quote(element.getAttribute("aria-label") ?? element.textContent, 30)} stands alone in ${part(partOf(element))} and takes its full width: put actions in a Bar end, a Row action, Section/Group actions or Notice actions`,
