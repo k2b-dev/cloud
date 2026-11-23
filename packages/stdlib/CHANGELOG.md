@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/k2b-dev/cloud/compare/npm-stdlib-v0.36.0...npm-stdlib-v0.36.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **stdlib:** optional peers solid-js and lean-qr name the versions stdlib supports ([#4048](https://github.com/k2b-dev/cloud/issues/4048)) ([f7efa78](https://github.com/k2b-dev/cloud/commit/f7efa7817631ed6e3d74c1dbcb53546eecfeaab3))
+
 ## 0.36.0 — 2026-11-19
 
 - Add optional `DatevPosting.documentGuid`: EXTF 700/13 column 20 (Beleglink)

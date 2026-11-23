@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.65.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.64.0...npm-ui-v0.65.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** @k2b/ui removes TaskRow, DropdownSubmenu, PanelDialogError, the @k2b/ui/layout-check entry and the submenu, PanelDialog error and progress path current options of the flat build; applications use the 0.63 building blocks again.
+* **ui:** @k2b/ui removes the flat build's Area, FactGroup, FieldGrid, FileName, FloatingPill, RowGroup and StatusRow components, the PlaceholderTone type and the flat options of DataTable, Placeholder, Section, AppWorkspace, Breadcrumbs, NoticeCard and StatusBadge; applications use the 0.63 building blocks again.
+
+### Bug Fixes
+
+* **apps:** Files, Grids, Weather, Contacts, Notebooks, FAQ and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
+* **chat:** a message sent right after Quote shows at once and never goes out without a quote that could not load ([#4036](https://github.com/k2b-dev/cloud/issues/4036)) ([cadd95a](https://github.com/k2b-dev/cloud/commit/cadd95a2004eb115988135beb8417f929c310c27))
+* **cloud:** an app page loads the shared stylesheet after the app's own again ([#4044](https://github.com/k2b-dev/cloud/issues/4044)) ([b4a433a](https://github.com/k2b-dev/cloud/commit/b4a433afc39c81686c3327d61226efef2277a867))
+* **ui:** a refreshed DataTable keeps the focus on a link or button inside a cell ([#4034](https://github.com/k2b-dev/cloud/issues/4034)) ([d215888](https://github.com/k2b-dev/cloud/commit/d215888e5ddc7a53ea3dc6ade09eec6718f07bf5))
+* **ui:** dialogs, menus, sheets and tokens return to their look from before the flat build ([#4027](https://github.com/k2b-dev/cloud/issues/4027)) ([a97740d](https://github.com/k2b-dev/cloud/commit/a97740dcdf4dd851c71fa8f25f2166a0f5f708c4))
+* **ui:** the app shell, tables and fields return to their look from before the flat build ([#4026](https://github.com/k2b-dev/cloud/issues/4026)) ([64d11cb](https://github.com/k2b-dev/cloud/commit/64d11cbd672de0713c4a03df4d60e86ac8942a93))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/stdlib bumped from 0.36.0 to 0.36.1
+
 ## [0.64.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.63.0...npm-ui-v0.64.0) (2026-11-22)
 
 

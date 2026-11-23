@@ -3,6 +3,38 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.85.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.84.0...cloud-v0.85.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** @k2b/ui removes TaskRow, DropdownSubmenu, PanelDialogError, the @k2b/ui/layout-check entry and the submenu, PanelDialog error and progress path current options of the flat build; applications use the 0.63 building blocks again.
+* **ui:** @k2b/ui removes the flat build's Area, FactGroup, FieldGrid, FileName, FloatingPill, RowGroup and StatusRow components, the PlaceholderTone type and the flat options of DataTable, Placeholder, Section, AppWorkspace, Breadcrumbs, NoticeCard and StatusBadge; applications use the 0.63 building blocks again.
+
+### Bug Fixes
+
+* **apps:** Files, Grids, Weather, Contacts, Notebooks, FAQ and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
+* **chat:** a message sent right after Quote shows at once and never goes out without a quote that could not load ([#4036](https://github.com/k2b-dev/cloud/issues/4036)) ([cadd95a](https://github.com/k2b-dev/cloud/commit/cadd95a2004eb115988135beb8417f929c310c27))
+* **ci:** the release check rejects a squash body that release-please would drop ([#4033](https://github.com/k2b-dev/cloud/issues/4033)) ([7bc1b3a](https://github.com/k2b-dev/cloud/commit/7bc1b3ac4d8a34543ca104e571a2821dbe3bc70a))
+* **cli:** served-plugin tests pack the echo plugin once, outside the test deadline ([#4017](https://github.com/k2b-dev/cloud/issues/4017)) ([e86dac4](https://github.com/k2b-dev/cloud/commit/e86dac4724157b78cb5f7cfb31b5ffc66c6020dd))
+* **cloud:** an app page loads the shared stylesheet after the app's own again ([#4044](https://github.com/k2b-dev/cloud/issues/4044)) ([b4a433a](https://github.com/k2b-dev/cloud/commit/b4a433afc39c81686c3327d61226efef2277a867))
+* **core:** profile, settings, admin and sign-in return to their look from before the flat build ([#4012](https://github.com/k2b-dev/cloud/issues/4012)) ([da47333](https://github.com/k2b-dev/cloud/commit/da473334dae31e98d6525cd66d864fe53dc11721))
+* **filesv2:** a changed folder poll keeps the list's scroll position and the focus in a row ([#4035](https://github.com/k2b-dev/cloud/issues/4035)) ([31782be](https://github.com/k2b-dev/cloud/commit/31782bea66e6529aa039ad3b9d638b9e6327e6d1))
+* **mail:** Mail returns to its list, reader and composer from before the flat build ([#4015](https://github.com/k2b-dev/cloud/issues/4015)) ([86b62c4](https://github.com/k2b-dev/cloud/commit/86b62c4f8efe6c2ef4a8b5251d3f87aca4c89062))
+* **pulse:** concurrent ingests to one source no longer queue behind each other's ClickHouse write ([#4037](https://github.com/k2b-dev/cloud/issues/4037)) ([cf5afba](https://github.com/k2b-dev/cloud/commit/cf5afbadd25c98fa0a008bfb3730697844996742))
+* **pulse:** Pulse returns to its look from before the flat build, without dashboards and the overview ([#4016](https://github.com/k2b-dev/cloud/issues/4016)) ([bdf5acf](https://github.com/k2b-dev/cloud/commit/bdf5acf9ad579b8482bfd6630bea5cebaa412602))
+* **stdlib:** optional peers solid-js and lean-qr name the versions stdlib supports ([#4048](https://github.com/k2b-dev/cloud/issues/4048)) ([f7efa78](https://github.com/k2b-dev/cloud/commit/f7efa7817631ed6e3d74c1dbcb53546eecfeaab3))
+* **ui:** a refreshed DataTable keeps the focus on a link or button inside a cell ([#4034](https://github.com/k2b-dev/cloud/issues/4034)) ([d215888](https://github.com/k2b-dev/cloud/commit/d215888e5ddc7a53ea3dc6ade09eec6718f07bf5))
+* **ui:** dialogs, menus, sheets and tokens return to their look from before the flat build ([#4027](https://github.com/k2b-dev/cloud/issues/4027)) ([a97740d](https://github.com/k2b-dev/cloud/commit/a97740dcdf4dd851c71fa8f25f2166a0f5f708c4))
+* **ui:** the app shell, tables and fields return to their look from before the flat build ([#4026](https://github.com/k2b-dev/cloud/issues/4026)) ([64d11cb](https://github.com/k2b-dev/cloud/commit/64d11cbd672de0713c4a03df4d60e86ac8942a93))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/stdlib bumped to 0.36.1
+
 ## [0.84.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.83.0...cloud-v0.84.0) (2026-11-22)
 
 
