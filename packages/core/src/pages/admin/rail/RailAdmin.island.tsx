@@ -164,6 +164,8 @@ function Editor(props: {
           <Show when={restricted()}>
             <PanelDialog.Section title={t().audience} icon="ti ti-users">
               <p class="text-xs text-dimmed">{t().audienceHint}</p>
+              {/* Stays inline (rule inline-access-editors): this picks the shortcut's audience inside its own editor
+                  dialog and saves with that dialog's Save. It shares no resource, so the access dialog does not fit. */}
               <PermissionEditor
                 initialEntries={entry().access.filter((access) => access.principal.type !== "authenticated")}
                 canEdit={!save.loading()}

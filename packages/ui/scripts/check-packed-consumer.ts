@@ -258,17 +258,31 @@ try {
   }
 
   // v2 (provisional): the entry resolves to its own server and browser builds, and its stylesheet bundles on its own.
+  // The server build runs here; the browser build wires DOM events when it loads, so it is resolved and bundled for
+  // the browser like the v1 entry below, not run.
   const v2Smoke = `
     const resolved = import.meta.resolve("@k2b/ui/v2");
     const mode = process.env.V2_BROWSER ? "browser" : "ssr";
     if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/v2/index.js")) {
       throw new Error("v2 entry did not resolve inside the packed package: " + resolved);
     }
-    const v2 = await import("@k2b/ui/v2");
-    if (v2.typeRoles?.row?.size !== 13 || v2.textEdge?.wide !== 20) throw new Error("packed v2 entry has the wrong tokens");
+    if (!process.env.V2_BROWSER) {
+      const v2 = await import("@k2b/ui/v2");
+      if (v2.typeRoles?.row?.size !== 13 || v2.textEdge?.wide !== 20) throw new Error("packed v2 entry has the wrong tokens");
+    }
   `;
   run([process.execPath, "--no-install", "-e", v2Smoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", v2Smoke], consumer, { ...process.env, V2_BROWSER: "1" });
+  const v2BrowserEntry = join(consumer, "v2-browser-entry.ts");
+  await Bun.write(v2BrowserEntry, 'export { typeRoles, Workspace, Row, Table } from "@k2b/ui/v2";\n');
+  const v2BrowserBuild = await Bun.build({
+    entrypoints: [v2BrowserEntry],
+    outdir: join(consumer, "v2-browser-dist"),
+    target: "browser",
+    format: "esm",
+    external: ["solid-js", "solid-js/*"],
+  });
+  if (!v2BrowserBuild.success) throw new Error(`packed v2 browser build failed\n${v2BrowserBuild.logs.join("\n")}`);
   const v2Styles = import.meta.resolve("@k2b/ui/v2.css", join(consumer, "index.ts"));
   if (!v2Styles.includes("/node_modules/@k2b/ui/dist/v2.css")) {
     throw new Error(`v2 stylesheet did not resolve from packed dist: ${v2Styles}`);

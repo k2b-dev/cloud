@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { gripTolerance, heights, textEdge } from "./tokens";
@@ -41,6 +41,7 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
     `<!doctype html><html lang="de"><head><style>${css}</style><style>${testCss}</style></head>` +
       `<body class="k2-ui"><div class="frame">${markup[name]}</div></body></html>`,
   );
+  await settled(page);
   return page;
 };
 
@@ -228,6 +229,23 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         expect(table.cut).toBe(true);
         expect(table.wrapLines).toBe(3);
         expect(table.cells[1]).toBe(heights.row);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "K5: the controls of a field row stand on one line, with a hint, an error or a note in the label line",
+    async () => {
+      const page = await open("controls");
+      try {
+        const rows = await page.$$eval(".k2-frow", (frows) =>
+          frows.map((row) => [...row.querySelectorAll(".k2-input")].map((control) => control.getBoundingClientRect().top)),
+        );
+        expect(rows.length).toBeGreaterThan(1);
+        for (const tops of rows) expect(new Set(tops).size).toBe(1);
       } finally {
         await page.close();
       }

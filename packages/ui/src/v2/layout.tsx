@@ -2,6 +2,7 @@ import { createContext, For, type JSX, onCleanup, children as resolveChildren, S
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { custom, Icon } from "./marks";
+import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ export const Workspace = (props: WorkspaceProps) => {
           </a>
         )}
       </Show>
+      <Toasts />
     </div>
   );
 };
