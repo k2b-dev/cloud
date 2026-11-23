@@ -122,7 +122,14 @@ const resolveAuthorityState = async ({
       }[]
     >`SELECT id,kind,status,delegated_user_id,app_id,resource_type,resource_id FROM auth.service_accounts
       WHERE id=${request.subject.serviceAccountId}::uuid FOR SHARE`;
-    if (!account || !serviceAccountMayHoldCredentials(account.kind) || account.status !== "active" || account.delegated_user_id !== null || account.resource_type === "cloud.app") return null;
+    if (
+      !account ||
+      !serviceAccountMayHoldCredentials(account.kind) ||
+      account.status !== "active" ||
+      account.delegated_user_id !== null ||
+      account.resource_type === "cloud.app"
+    )
+      return null;
     const resourceBound =
       account.kind === "resource_bound" && account.app_id !== null && account.resource_type !== null && account.resource_id !== null;
     const standalone =

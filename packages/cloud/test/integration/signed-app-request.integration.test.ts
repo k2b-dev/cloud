@@ -9,6 +9,7 @@ import { SQL } from "bun";
 import { Hono } from "hono";
 import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityInvocationRoutes } from "../../../core/src/api/identity-invocation";
 import { createIdentityMandateRoutes } from "../../../core/src/api/identity-mandates";
@@ -142,6 +143,32 @@ suiteFor(
       }
     } finally {
       commands.mockRestore();
+    }
+  });
+
+  test("on the wire, a signed call costs one Postgres read and no write after the first use of its key", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "signed-meter", publicKey: APP_KEY_FIXTURES[2].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const appKey = { ...key, appId: "signed-meter", keyId: enrolled.data.keyId, seed: APP_KEY_FIXTURES[2].seed };
+    // The platform's own pool, as Core uses it; the meter sees every statement of this process.
+    const route = new Hono().post(path, async (c) => {
+      const authenticated = await authenticateSignedAppRequest(c, "identity:invoke", { ingress: admitted, admit: admitted });
+      return authenticated instanceof Response ? authenticated : c.json({ appId: authenticated.appId });
+    });
+    const meter = await meterSql();
+    try {
+      for (let index = 0; index < 10; index++) {
+        const request = await signed(appKey, "{}");
+        let status = 0;
+        const statements = await meter.during(async () => {
+          status = (await route.request(path, request.init)).status;
+        });
+        expect(status).toBe(200);
+        expect(statements.filter((statement) => /^SELECT\b/i.test(statement))).toHaveLength(1);
+        expect(statements.filter((statement) => !/^SELECT\b/i.test(statement))).toHaveLength(index === 0 ? 1 : 0);
+      }
+    } finally {
+      await meter.close();
     }
   });
 
