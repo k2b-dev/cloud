@@ -23,6 +23,7 @@ export {
   Notice,
   type NoticeProps,
   Path,
+  type PathProps,
   RecordHead,
   type RecordHeadProps,
   type RecordId,
@@ -31,6 +32,7 @@ export {
   type StatusRowProps,
   type Step,
   Steps,
+  type StepsProps,
   type Tab,
   Tabs,
   type TabsProps,
@@ -45,6 +47,7 @@ export {
   type InlineProps,
   List,
   type ListProps,
+  type OpenTarget,
   Prose,
   type ProseProps,
   Row,
@@ -84,6 +87,7 @@ export {
   type PaneProps,
   type Tile,
   Tiles,
+  type TilesProps,
   Workspace,
   type WorkspaceProps,
 } from "./layout";
@@ -91,4 +95,4 @@ export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, P
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { type ToastOptions, toast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
-export type { Action, Person, Status, Width } from "./types";
+export type { Action, Person, Status, TwoActions, Width } from "./types";

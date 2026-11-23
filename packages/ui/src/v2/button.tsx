@@ -1,4 +1,4 @@
-import { type JSX, Show } from "solid-js";
+import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { Avatar, Icon } from "./marks";
@@ -39,7 +39,9 @@ export type ButtonProps = ButtonBase &
 
 /** The one button: round, one height per place, a link through `href`. An icon button must have a label. */
 export const Button = (props: ButtonProps) => {
-  const iconOnly = () => props.children === undefined;
+  // the label is made once and read from here (reading `children` again would make its JSX again)
+  const label = resolveChildren(() => props.children);
+  const iconOnly = () => label() === undefined;
   return (
     <Dynamic
       component={props.href ? "a" : "button"}
@@ -63,7 +65,7 @@ export const Button = (props: ButtonProps) => {
           {(person) => <Avatar {...person()} />}
         </Show>
         <Show when={!iconOnly()}>
-          <span class="k2-btn-label">{props.children}</span>
+          <span class="k2-btn-label">{label()}</span>
         </Show>
         <Show when={props.menu}>
           <Icon name="chevron-down" />

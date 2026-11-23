@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { gripTolerance, heights, textEdge } from "./tokens";
+import { gripTolerance, hairline, heights, textEdge } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
 // measureV2Layout (edges, double lines, type roles, grips at DPR 1 and 2), and the numbers of the mockup (heights by
@@ -168,8 +168,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           // 56 px, 8 px above and below, and the line); with a button at the end 61. On the phone one line takes 60.
           if (width >= textEdge.phoneBelow) {
             expect(numbers.bar).toBe(heights.bar);
-            expect(numbers.rows).toEqual([heights.row, heights.row2 + 1, heights.row3 + 1, 61]);
-          } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + 1, heights.row3 + 1]);
+            expect(numbers.rows).toEqual([heights.row, heights.row2 + hairline.width, heights.row3 + hairline.width, 61]);
+          } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
         } finally {

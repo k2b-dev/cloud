@@ -144,11 +144,11 @@ export const LayoutFixture = () =>
             lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
             end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
           />
-          <Prose html="<p>Guten Tag Frau Solberg,</p><p>die 14 Platten können wir in KW 49 liefern.</p>" />
+          <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
           <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
         </Band>
         <Band tone="note">
-          <Text type="body" strong>
+          <Text type="body" weight="strong">
             Die erste Abrechnung kommt am 15. Dez.
           </Text>
           <Text>38 von 53 Artikeln sind verkauft.</Text>
@@ -215,7 +215,7 @@ export const StructureFixture = () =>
                   state: { icon: "gavel", label: "Läuft" },
                   text: (
                     <>
-                      8 Artikel laufen, die Auktion endet <Text strong>morgen</Text>.
+                      8 Artikel laufen, die Auktion endet <Text weight="strong">morgen</Text>.
                     </>
                   ),
                 },
@@ -231,7 +231,7 @@ export const StructureFixture = () =>
               state={<Chip status="ok">Läuft</Chip>}
               actions={[{ label: "Öffnen" }]}
             >
-              <Text type="body" strong>
+              <Text type="body" weight="strong">
                 10 Artikel sind ausgelaufen.
               </Text>
               <Steps
@@ -288,7 +288,7 @@ export const StructureFixture = () =>
               meta="ausgezahlt am 12. Nov."
               folded
               state={
-                <Text medium tone="ok">
+                <Text weight="medium" tone="ok">
                   <Icon name="circle-check" /> Ausgezahlt
                 </Text>
               }
@@ -398,7 +398,7 @@ export const GridFixture = () =>
         sort={{ column: 3, direction: "ascending" }}
         phone={(order) => ({ lines: [order.name, order.key], avatar: order.person, time: order.amount })}
         columns={[
-          { title: "Auftrag", width: { min: 160, default: 260 }, cell: (order) => <Text medium>{order.name}</Text> },
+          { title: "Auftrag", width: { min: 160, default: 260 }, cell: (order) => <Text weight="medium">{order.name}</Text> },
           {
             title: "Verantwortlich",
             width: { min: 120, default: 176 },
