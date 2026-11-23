@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import type { Browser, Page, Route } from "playwright";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-states-navigation.client";
@@ -34,9 +34,27 @@ afterAll(async () => {
   rmSync(temp, { recursive: true, force: true });
 });
 
-/** The page as the server sent it; with `live` (the default) hydrated, as an island would be. */
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, live = true } = {}) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+/** The test page's own origin: links are same-origin, as in an app, and a new tab loads the same page. */
+const origin = "http://k2.test";
+
+/**
+ * The page as the server sent it, inside a page-swap shell; with `live` (the default) hydrated, as an island would
+ * be. `/app/…` answers only when the test lets it (`hold`).
+ */
+const withPage = async (run: (page: Page, hold: { requests: Route[] }) => Promise<void>, { width = 1440, live = true } = {}) => {
+  const context = await browser.newContext({ viewport: { width, height: 900 } });
+  const hold = { requests: [] as Route[] };
+  await context.route(`${origin}/**`, async (route) => {
+    if (new URL(route.request().url()).pathname.startsWith("/app/")) {
+      hold.requests.push(route);
+      return;
+    }
+    await route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div data-nav-shell="" data-nav-scope="/"><div data-nav-root=""><div id="root">${server.html}</div></div></div></body></html>`,
+    });
+  });
+  const page = await context.newPage();
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   const consoleErrors: string[] = [];
@@ -44,9 +62,7 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, live
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   try {
-    await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
-    );
+    await page.goto(`${origin}/`);
     if (live) {
       await page.evaluate(() => {
         window.__k2Sent = document.getElementById("root")!.cloneNode(true);
@@ -59,13 +75,16 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, live
         });
     }
     await settled(page);
-    await run(page);
+    await run(page, hold);
     expect(errors).toEqual([]);
     expect(consoleErrors).toEqual([]);
   } finally {
-    await page.close();
+    await context.close();
   }
 };
+
+/** Waits until the handlers have noted `count` entries (a link runs `onNavigate` in a view transition, a moment later). */
+const seenCount = (page: Page, count: number) => page.waitForFunction((expected) => (window.__k2Seen?.length ?? 0) >= expected, count);
 
 const setState = async (page: Page, state: FixtureState) => {
   await page.evaluate((next) => window.__k2SetState!(next), state);
@@ -131,10 +150,15 @@ describe("states: loading, empty and failed stand where the data will stand", ()
   test("hydration: the loading page in the browser is what the server sent", async () => {
     await withPage(async (page) => {
       expect(await page.evaluate(differencesInPage)).toEqual([]);
-      // assistive technology hears "loading" once per place; the placeholders themselves are hidden from it
-      expect(await page.getByRole("status", { name: "Wird geladen..." }).count()).toBe(1);
+      // assistive technology hears "loading" once per place (the list and the table; the phone list is hidden on a
+      // wide screen), from a status line outside anything busy; the placeholders themselves are hidden from it
+      expect(await page.getByRole("status").allTextContents()).toEqual(["Wird geladen...", "Wird geladen..."]);
       expect(await page.locator('.k2-table[aria-busy="true"]').count()).toBe(1);
+      expect(await page.locator('[aria-busy="true"] [role="status"]').count()).toBe(0);
       expect(await page.locator(".k2-skel:not([aria-hidden] *)").count()).toBe(0);
+      // the phone form of the loading table is placeholders, not an empty list
+      expect(await page.locator('.k2-table-phone [role="list"]').count()).toBe(0);
+      expect(await page.locator('.k2-table-phone [data-k2-part="Loading"] [role="status"]').textContent()).toBe("Wird geladen...");
     });
   });
 
@@ -221,10 +245,18 @@ describe("states: loading, empty and failed stand where the data will stand", ()
       expect(await failed.getAttribute("role")).toBe("alert");
       expect(await failed.locator(".k2-sign").getAttribute("data-tone")).toBe("bad");
       expect((await places(page)).status).toEqual(before.status);
-      await failed.getByRole("button", { name: "Erneut versuchen" }).click();
+      await failed.getByRole("button", { name: "Erneut versuchen" }).focus();
+      await page.keyboard.press("Enter");
       await settled(page);
       expect(await seen(page)).toEqual(["retry"]);
+      // it loads again: placeholders stand in the place, then the rows come
+      expect(await page.locator('.k2-pane[aria-label="Liste"] [data-k2-part="Loading"]').count()).toBe(1);
+      await setState(page, "loaded");
       expect(await page.locator('.k2-pane[aria-label="Liste"] .k2-list .k2-row').count()).toBe(3);
+      // the button left with the state: the focus goes on to the first row that came in its place, not to the page
+      expect(
+        await page.evaluate(() => document.activeElement?.closest(".k2-row")?.textContent ?? document.activeElement?.tagName),
+      ).toContain("Holzwerk Brandt");
     });
   });
 });
@@ -274,48 +306,80 @@ describe("navigation: real links that may open their page in place", () => {
     );
   });
 
-  test("a plain click and Enter open in place; a link without a handler goes to its page", async () => {
+  test("a plain click and Enter open in place through the link of @k2b/ssr/nav; a link without a handler goes to its page", async () => {
     await withPage(async (page) => {
       await setState(page, "loaded");
       await page.getByRole("link", { name: "Holzwerk Brandt" }).click();
       await page.getByRole("link", { name: "Ungelesen" }).click();
       await page.getByRole("link", { name: "Posteingang" }).click();
       await page.getByRole("link", { name: "1 verknüpft" }).click();
+      // anywhere on a table row: the row hands the click on to its link
       await page.locator(".k2-table td", { hasText: "617,00 €" }).click();
       await page.getByRole("link", { name: "Alle" }).focus();
       await page.keyboard.press("Enter");
+      await seenCount(page, 6);
       expect(await seen(page)).toEqual([
-        "row-m1:pointer",
-        "tab:pointer",
-        "nav:pointer",
-        "chip:pointer",
-        "order-AU-2:pointer",
-        "tab:keyboard",
+        "row-m1:#m1",
+        "tab:#tab-unread",
+        "nav:#nav-inbox",
+        "chip:#chip",
+        "order-AU-2:#AU-2",
+        "tab:#tab-all",
       ]);
+      // the link took each click: the page stayed where it was
+      expect(await hash(page)).toBe("");
+      // a disabled link button is an anchor without an address: it leads nowhere and calls nothing
+      await page.getByText("Gesperrt").click();
+      await settled(page);
+      expect(await seen(page)).toHaveLength(6);
       expect(await hash(page)).toBe("");
       await page.getByRole("link", { name: "Gesendet" }).click();
       expect(await hash(page)).toBe("#nav-sent");
     });
   });
 
-  test("a click with a modifier key stays the browser's (a new tab or window): the handler never sees it", async () => {
-    await withPage(async (page) => {
-      await setState(page, "loaded");
-      // after the page's own handlers: note whether one took the click, then keep the test page where it is
-      await page.evaluate(() => {
-        window.addEventListener("click", (event) => {
-          window.__k2Seen!.push(`taken:${event.defaultPrevented}`);
-          event.preventDefault();
-        });
-        window.__k2Seen = [];
+  for (const modifier of ["Control", "Shift"] as const)
+    test(`${modifier} and a click open a new tab or window, on the link and anywhere on a table row; the handler never sees it`, async () => {
+      await withPage(async (page) => {
+        await setState(page, "loaded");
+        for (const [target, address, browserOwn] of [
+          [page.getByRole("link", { name: "Holzwerk Brandt" }), "#m1", true],
+          // anywhere on a table row: WebKit would follow a click handed on to the link in this tab, so the row opens it
+          [page.locator(".k2-table td", { hasText: "617,00 €" }), "#AU-2", false],
+        ] as const) {
+          const [opened] = await Promise.all([page.context().waitForEvent("page"), target.click({ modifiers: [modifier] })]);
+          // Playwright's WebKit on Linux opens the new page of a modifier click on a link but never loads it (measured
+          // 23.11. on a bare anchor): there the new page itself is the proof; everywhere else also its address
+          if (browserName === "chromium" || !browserOwn) await opened.waitForURL(`${origin}/${address}`);
+          await opened.close();
+        }
+        await settled(page);
+        expect(await seen(page)).toEqual([]);
+        expect(page.url()).toBe(`${origin}/`);
       });
-      for (const modifier of ["Shift", "Alt", "Meta", "Control"] as const) {
-        await page.getByRole("link", { name: "Holzwerk Brandt" }).click({ modifiers: [modifier] });
-        // anywhere on a table row: the row hands the click on to its link with the same keys
-        await page.locator(".k2-table td", { hasText: "617,00 €" }).click({ modifiers: [modifier] });
-      }
-      // a link: one click; a table row: the click on the cell and the one it hands to the link
-      expect(await seen(page)).toEqual(Array.from({ length: 12 }, () => "taken:false"));
+    });
+
+  test("opening in place cancels a pending page swap, which then never replaces the page", async () => {
+    await withPage(async (page, hold) => {
+      await setState(page, "loaded");
+      await Promise.all([
+        page.waitForRequest(`${origin}/app/A`),
+        page.evaluate(() => {
+          window.__k2Swap!.install();
+          void window.__k2Swap!.swap("/app/A");
+        }),
+      ]);
+      await page.getByRole("link", { name: "Holzwerk Brandt" }).click();
+      await seenCount(page, 1);
+      // the server answers late; the swap was cancelled when the link took the click, so nothing of it lands
+      await hold.requests[0]!.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: '<!doctype html><html><head></head><body><div data-nav-shell="" data-nav-scope="/"><div data-nav-root="">Neu</div></div></body></html>',
+      }).catch(() => undefined);
+      await settled(page);
+      expect(page.url()).toBe(`${origin}/`);
+      expect(await page.locator("[data-k2-workspace]").count()).toBe(1);
+      expect(await seen(page)).toEqual(["row-m1:#m1"]);
     });
   });
 
@@ -323,7 +387,8 @@ describe("navigation: real links that may open their page in place", () => {
     await withPage(
       async (page) => {
         await page.getByRole("link", { name: "Verfassen" }).click();
-        expect(await seen(page)).toEqual(["primary:pointer"]);
+        await seenCount(page, 1);
+        expect(await seen(page)).toEqual(["primary:#compose"]);
         expect(await hash(page)).toBe("");
       },
       { width: 390 },

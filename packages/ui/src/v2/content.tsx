@@ -1,3 +1,4 @@
+import { Link } from "@k2b/ssr/nav";
 import { createContext, createMemo, createUniqueId, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
@@ -5,9 +6,9 @@ import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { Avatar, custom, Dot, Icon } from "./marks";
-import { Empty, type EmptyProps, Loading } from "./states";
+import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
-import { type Action, navigate, type OnNavigate, type Person, type Status } from "./types";
+import type { Action, OnNavigate, Person, Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -217,16 +218,9 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
         </button>
       }
     >
-      <a
-        class="k2-row-open"
-        href={props.href}
-        onClick={(event) => {
-          props.onOpen?.();
-          navigate(props.onNavigate, event);
-        }}
-      >
+      <Link class="k2-row-open" href={props.href ?? ""} onNavigate={props.onNavigate} onClick={() => props.onOpen?.()}>
         {props.children}
-      </a>
+      </Link>
     </Show>
   </Show>
 );
@@ -266,15 +260,14 @@ export const Row = (props: RowProps) => {
           when={props.href !== undefined}
           fallback={<button type="button" class="k2-row-open" aria-labelledby={title} onClick={() => props.onOpen?.()} />}
         >
-          {/* biome-ignore lint/a11y/useAnchorContent: the row's title names it through aria-labelledby; holding the title would put a link of the title inside this one. */}
-          <a
+          {/* The row's title names the link through aria-labelledby; holding the title would put a link of the title
+              inside this one. */}
+          <Link
             class="k2-row-open"
-            href={props.href}
+            href={props.href ?? ""}
             aria-labelledby={title}
-            onClick={(event) => {
-              props.onOpen?.();
-              navigate(props.onNavigate, event);
-            }}
+            onNavigate={props.onNavigate}
+            onClick={() => props.onOpen?.()}
           />
         </Show>
       </Show>
@@ -453,14 +446,16 @@ export const Table = <T,>(props: TableProps<T>) => {
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
     if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
-    // the click is handed on as it was (pointer or keyboard, modifier keys), so a link keeps "open in a new tab" and
-    // `onNavigate` sees the same click as on the link itself
-    const { detail, button, ctrlKey, metaKey, shiftKey, altKey } = event;
-    event.currentTarget
-      .querySelector<HTMLElement>(".k2-row-open")
-      ?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true, view: window, detail, button, ctrlKey, metaKey, shiftKey, altKey }),
-      );
+    const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
+    if (!open || event.altKey) return;
+    // With Ctrl, Cmd or Shift a link opens elsewhere, as on the link itself. A click handed on loses that in WebKit,
+    // which follows it in this tab, so the row opens the link's address in a new tab itself.
+    if (open instanceof HTMLAnchorElement && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      window.open(open.href, "_blank", "noopener");
+      return;
+    }
+    // a plain click is handed on to the link or button, which decides (`onNavigate`, `onOpen`, or the browser)
+    open.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, detail: event.detail }));
   };
   const all = (): boolean | "mixed" => {
     const count = props.select?.selected.length ?? 0;
@@ -504,6 +499,10 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
       >
+        {/* said outside the table, which is busy while its rows load */}
+        <Show when={loading()}>
+          <LoadingStatus />
+        </Show>
         <table
           class="k2-table"
           data-lines={lines()}
@@ -662,40 +661,42 @@ export const Table = <T,>(props: TableProps<T>) => {
       <Show when={props.phone}>
         {(phone) => (
           <div class="k2-table-phone">
-            <Show when={loading()}>{(shape) => <Loading rows={shape().rows} lines={2} />}</Show>
-            <List label={props.label}>
-              <For each={loading() ? [] : items()}>
-                {(item) =>
-                  "group" in item ? (
-                    <div class="k2-bar" role="presentation">
-                      <div class="k2-bar-start">
-                        {item.group.head()}
-                        <Show when={item.group.count ?? item.group.meta}>
-                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
-                        </Show>
+            {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
+            <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
+              <List label={props.label}>
+                <For each={items()}>
+                  {(item) =>
+                    "group" in item ? (
+                      <div class="k2-bar" role="presentation">
+                        <div class="k2-bar-start">
+                          {item.group.head()}
+                          <Show when={item.group.count ?? item.group.meta}>
+                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                          </Show>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    (() => {
-                      const form = phone()(item.row);
-                      const target = props.open?.(item.row);
-                      return (
-                        <Row
-                          lines={form.lines}
-                          avatar={form.avatar}
-                          time={form.time}
-                          strong
-                          href={target?.href}
-                          onNavigate={target?.onNavigate}
-                          onOpen={target?.onOpen}
-                          selected={props.current !== undefined && props.current === key(item.row, item.index)}
-                        />
-                      );
-                    })()
-                  )
-                }
-              </For>
-            </List>
+                    ) : (
+                      (() => {
+                        const form = phone()(item.row);
+                        const target = props.open?.(item.row);
+                        return (
+                          <Row
+                            lines={form.lines}
+                            avatar={form.avatar}
+                            time={form.time}
+                            strong
+                            href={target?.href}
+                            onNavigate={target?.onNavigate}
+                            onOpen={target?.onOpen}
+                            selected={props.current !== undefined && props.current === key(item.row, item.index)}
+                          />
+                        );
+                      })()
+                    )
+                  }
+                </For>
+              </List>
+            </Show>
           </div>
         )}
       </Show>

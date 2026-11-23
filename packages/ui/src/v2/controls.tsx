@@ -131,7 +131,11 @@ export type InputProps = {
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
   onInput?: (value: string) => void;
-  /** A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. */
+  /**
+   * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
+   * `event.isComposing` is true the key belongs to an input method (Japanese, Chinese, …): Enter then confirms the
+   * characters and must not search.
+   */
   onKeyDown?: (event: KeyboardEvent) => void;
   /**
    * The text field itself, to focus it (`input.focus()`) or select its text: `let input; <Input ref={input} />` or a

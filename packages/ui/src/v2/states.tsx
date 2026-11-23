@@ -45,17 +45,63 @@ export type FailedProps = {
  */
 export const Failed = (props: FailedProps) => {
   const t = useUiMessages();
+  let root: HTMLDivElement | undefined;
   return (
-    <div class="k2-state" data-k2-part="Failed" role="alert">
+    <div ref={root} class="k2-state" data-k2-part="Failed" role="alert">
       <span class="k2-sign" data-tone="bad">
         <Icon name="alert-circle" />
       </span>
       <span class="k2-state-text">{props.text}</span>
-      <Button icon="refresh" onClick={() => props.onRetry()}>
+      <Button
+        icon="refresh"
+        onClick={() => {
+          // the focus is on the button, which leaves with this state: it goes on to what comes in its place
+          if (root?.contains(document.activeElement)) focusWhatComes(root);
+          props.onRetry();
+        }}
+      >
         {t().retry}
       </Button>
     </div>
   );
+};
+
+const focusable = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]";
+
+/**
+ * Gives the focus to the first visible thing that can take it among what replaces `state` in its place, such as the
+ * first row of the list that loaded. It waits while placeholders stand there, and stops once it has placed the
+ * focus, once the person focuses something themselves, or once the content has come without anything to focus.
+ */
+const focusWhatComes = (state: HTMLElement) => {
+  const place = state.parentElement;
+  if (!place || typeof MutationObserver === "undefined") return;
+  const before = state.previousSibling;
+  const after = state.nextSibling;
+  const follows = (node: Node, anchor: Node | null) =>
+    !anchor?.isConnected || !!(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const precedes = (node: Node, anchor: Node | null) =>
+    !anchor?.isConnected || !!(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING);
+  const inPlace = (node: Node) => follows(node, before) && precedes(node, after) && !state.contains(node);
+  const stop = () => {
+    observer.disconnect();
+    document.removeEventListener("focusin", stop);
+  };
+  const settle = () => {
+    const target = [...place.querySelectorAll<HTMLElement>(focusable)].find(
+      (element) => inPlace(element) && element.tabIndex >= 0 && element.getClientRects().length > 0,
+    );
+    if (target) {
+      stop();
+      target.focus();
+      return;
+    }
+    const waiting = [...place.querySelectorAll('[data-k2-part="Loading"], [aria-busy="true"]')].some(inPlace);
+    if (!state.isConnected && !waiting) stop();
+  };
+  const observer = new MutationObserver(settle);
+  observer.observe(place, { childList: true, subtree: true });
+  document.addEventListener("focusin", stop);
 };
 
 export type LoadingProps = {
@@ -68,14 +114,22 @@ export type LoadingProps = {
 /**
  * Loading: square placeholders in the heights of the real rows, so nothing moves when the data arrives. It stands
  * where the `List` will stand; a `Table` takes `loading` itself and keeps its head. Assistive technology hears
- * "loading" once.
+ * "Wird geladen…" (in the language of the page) from a status line; the placeholders themselves are hidden from it.
  */
-export const Loading = (props: LoadingProps) => {
+export const Loading = (props: LoadingProps) => (
+  <div class="k2-list k2-loading" data-k2-part="Loading">
+    <LoadingStatus />
+    <PlaceholderRows rows={props.rows ?? 3} lines={props.lines ?? 1} />
+  </div>
+);
+
+/** The words "loading" for assistive technology only (internal: `Loading` and a loading `Table`). */
+export const LoadingStatus = () => {
   const t = useUiMessages();
   return (
-    <div class="k2-list k2-loading" data-k2-part="Loading" role="status" aria-busy="true" aria-label={t().loading}>
-      <PlaceholderRows rows={props.rows ?? 3} lines={props.lines ?? 1} />
-    </div>
+    <span class="k2-hidden-text" role="status">
+      {t().loading}
+    </span>
   );
 };
 

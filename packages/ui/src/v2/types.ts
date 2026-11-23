@@ -1,25 +1,13 @@
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+
 /**
- * Opens a link's page in place, beside the real link (`href`): it is called on a plain click of the link (the main
- * button without a modifier key, also Enter on the focused link) and opens the page in place when it calls
- * `event.preventDefault()`; without that call the browser follows the link. A click with a modifier key or the middle
- * button, a link with another target, and "open in new tab" never reach it, and before the page is live the link
- * works on its own.
+ * Opens a link's page in place, beside the real link (`href`): the contract of `@k2b/ssr/nav`'s `Link`, which the
+ * primitive renders. A plain same-origin click (the main button, no modifier key, no other target) reaches it; the
+ * link has then taken the click and cancelled a pending page swap, and the handler moves history with `push` or
+ * `replaceWith`, or loads the page with `fallback`. A click with a modifier key, "open in new tab" and a click before
+ * the page is live stay the browser's.
  */
-export type OnNavigate = (event: MouseEvent) => void;
-
-/** A click that the page may take over: the main button, no modifier key, not taken yet, no other target (internal). */
-const isPlainClick = (event: MouseEvent) => {
-  const link = event.currentTarget;
-  const elsewhere = link instanceof HTMLAnchorElement && ((link.target !== "" && link.target !== "_self") || link.hasAttribute("download"));
-  return (
-    !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && !elsewhere
-  );
-};
-
-/** Hands a click of a link to its `onNavigate` when it is a plain click (internal to the primitives). */
-export const navigate = (onNavigate: OnNavigate | undefined, event: MouseEvent) => {
-  if (onNavigate && isPlainClick(event)) onNavigate(event);
-};
+export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
 
 /** The width of a column that can be dragged: its minimum and its default, in CSS px. Nothing else. */
 export type Width = { min: number; default: number };

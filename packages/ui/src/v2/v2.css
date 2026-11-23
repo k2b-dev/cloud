@@ -2860,11 +2860,11 @@
   height: 1lh;
   background: linear-gradient(var(--k2-n100) 0 0) left center / 100% 12px no-repeat;
 }
-.k2-ui .k2-loading > .k2-row:nth-child(3n + 2) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n + 2) > .k2-row-l1 > .k2-skel,
 .k2-ui .k2-table tr[data-loading]:nth-child(3n + 2) .k2-skel {
   width: 45%;
 }
-.k2-ui .k2-loading > .k2-row:nth-child(3n) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n) > .k2-row-l1 > .k2-skel,
 .k2-ui .k2-table tr[data-loading]:nth-child(3n) .k2-skel {
   width: 75%;
 }
@@ -2873,6 +2873,18 @@
 }
 .k2-ui .k2-table td[data-align="end"] .k2-skel {
   margin-left: auto;
+}
+/* words for assistive technology only, such as "loading" beside the placeholders */
+.k2-ui .k2-hidden-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 /* the placeholder of a box stands where the box will stand */
 .k2-ui .k2-table .k2-skel[data-box] {

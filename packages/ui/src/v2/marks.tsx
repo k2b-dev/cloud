@@ -1,6 +1,7 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { initialsOf, navigate, type OnNavigate, type Person, type Status } from "./types";
+import { linkOr } from "./link";
+import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
@@ -114,13 +115,11 @@ export const Chip = (props: ChipProps) => {
                 : "plain";
   return (
     <Dynamic
-      component={props.href ? "a" : props.onClick ? "button" : "span"}
+      component={linkOr(props.href, props.onClick ? "button" : "span")}
       href={props.href}
-      type={props.onClick && !props.href ? "button" : undefined}
-      onClick={(event: MouseEvent) => {
-        props.onClick?.();
-        if (props.href) navigate(props.onNavigate, event);
-      }}
+      onNavigate={props.href !== undefined ? props.onNavigate : undefined}
+      type={props.onClick && props.href === undefined ? "button" : undefined}
+      onClick={() => props.onClick?.()}
       class="k2-chip"
       data-k2-part="Chip"
       data-status={props.status}

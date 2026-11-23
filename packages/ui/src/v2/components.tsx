@@ -3,8 +3,9 @@ import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
+import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { type Action, navigate, type OnNavigate, type Person, type Status, type TwoActions } from "./types";
+import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -39,13 +40,11 @@ export type NavProps = {
 
 const NavEntry = (props: { item: NavItem }) => (
   <Dynamic
-    component={props.item.href !== undefined ? "a" : "button"}
+    component={linkOr(props.item.href, "button")}
     type={props.item.href !== undefined ? undefined : "button"}
     href={props.item.href}
-    onClick={(event: MouseEvent) => {
-      props.item.onClick?.();
-      if (props.item.href !== undefined) navigate(props.item.onNavigate, event);
-    }}
+    onNavigate={props.item.href !== undefined ? props.item.onNavigate : undefined}
+    onClick={() => props.item.onClick?.()}
     class="k2-ni"
     data-k2-part="Nav.Item"
     aria-current={props.item.current ? "page" : undefined}
@@ -117,14 +116,12 @@ export const Tabs = (props: TabsProps) => (
       <For each={props.items}>
         {(tab) => (
           <Dynamic
-            component={tab.href !== undefined ? "a" : "button"}
+            component={linkOr(tab.href, "button")}
             type={tab.href !== undefined ? undefined : "button"}
             class="k2-tab"
             href={tab.href}
-            onClick={(event: MouseEvent) => {
-              tab.onClick?.();
-              if (tab.href !== undefined) navigate(tab.onNavigate, event);
-            }}
+            onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
+            onClick={() => tab.onClick?.()}
             aria-current={tab.current ? "page" : undefined}
           >
             <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>

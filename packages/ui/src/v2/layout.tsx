@@ -2,8 +2,9 @@ import { createContext, createSignal, For, type JSX, onCleanup, children as reso
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
+import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
-import { type Action, navigate, type Width } from "./types";
+import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -83,15 +84,13 @@ export const Workspace = (props: WorkspaceProps) => {
       <Show when={props.primary}>
         {(action) => (
           <Dynamic
-            component={action().href !== undefined ? "a" : "button"}
+            component={linkOr(action().href, "button")}
             type={action().href !== undefined ? undefined : "button"}
             class="k2-btn k2-fab"
             data-variant="primary"
             href={action().href}
-            onClick={(event: MouseEvent) => {
-              action().onClick?.();
-              if (action().href !== undefined) navigate(action().onNavigate, event);
-            }}
+            onNavigate={action().href !== undefined ? action().onNavigate : undefined}
+            onClick={() => action().onClick?.()}
           >
             <Show when={action().icon}>{(name) => <Icon name={name()} />}</Show>
             {action().label}

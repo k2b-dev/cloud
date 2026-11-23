@@ -40,12 +40,11 @@ const seen = (entry: string) => {
   window.__k2Seen.push(entry);
 };
 
-/** Opens the page in place: the link does not move the page, the handler notes how it was reached. */
+/** Opens the page in place: the link has taken the click; the handler notes which link and leaves history alone. */
 const inPlace =
   (name: string): OnNavigate =>
   (event) => {
-    event.preventDefault();
-    seen(`${name}:${event.detail === 0 ? "keyboard" : "pointer"}`);
+    seen(`${name}:${new URL(event.href, location.href).hash}`);
   };
 
 const mails = [
@@ -102,7 +101,7 @@ export function Fixture() {
                   placeholder="Suchen"
                   ref={search}
                   onKeyDown={(event) => {
-                    if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+                    if (event.key !== "Enter" || event.isComposing || !(event.target instanceof HTMLInputElement)) return;
                     event.preventDefault();
                     seen(`search:${event.target.value}`);
                   }}
@@ -110,6 +109,9 @@ export function Fixture() {
                 />
                 <Button keep onClick={() => search?.focus()}>
                   Suche fokussieren
+                </Button>
+                <Button keep href="#locked" disabled onNavigate={inPlace("locked")}>
+                  Gesperrt
                 </Button>
               </>
             }
@@ -128,7 +130,7 @@ export function Fixture() {
                   text="Unterhaltungen konnten nicht geladen werden. Deine Ansicht und Auswahl bleiben erhalten."
                   onRetry={() => {
                     seen("retry");
-                    setState("loaded");
+                    setState("loading");
                   }}
                 />
               </Match>
