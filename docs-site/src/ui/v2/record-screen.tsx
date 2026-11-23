@@ -384,9 +384,9 @@ export const DeliveriesScreen = () => (
             },
           ]}
           columns={[
-            { title: "Auslauftag", cell: (row) => [<Text weight="strong">{row.day}</Text>, row.items] },
-            { title: "Abrechnung", cell: (row) => [<Text weight="strong">{row.when}</Text>, row.progress] },
-            { title: "Auszahlung", align: "end", cell: (row) => (row.amount ? [row.amount, row.note] : ["", row.note]) },
+            { title: "Auslauftag", cell: (row) => ({ lines: [<Text weight="strong">{row.day}</Text>, row.items] }) },
+            { title: "Abrechnung", cell: (row) => ({ lines: [<Text weight="strong">{row.when}</Text>, row.progress] }) },
+            { title: "Auszahlung", align: "end", cell: (row) => ({ lines: [row.amount ?? "", row.note] }) },
           ]}
         />
         <Row

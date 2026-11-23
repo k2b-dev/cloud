@@ -254,9 +254,11 @@
   gap: 8px;
   font-weight: 500;
 }
+/* the map stands from edge to edge: it draws the line below it itself (a Canvas draws none) */
 .ui-v2-map {
   position: absolute;
   inset: 0;
+  border-bottom: var(--k2-hairline);
   background:
     linear-gradient(115deg, transparent 47%, var(--k2-surface) 47% 50%, transparent 50%),
     linear-gradient(15deg, transparent 58%, var(--k2-surface) 58% 60%, transparent 60%),

@@ -282,7 +282,7 @@ export const MailScreen = () => (
         <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
           Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.
         </Notice>
-        <Canvas label="Antwort an Holzwerk Brandt" framed>
+        <Canvas label="Antwort an Holzwerk Brandt">
           <ComposerDrawing />
         </Canvas>
         <Band>

@@ -50,7 +50,7 @@ export const v2Screens = {
   form: {
     title: "Bedienung · Neuer Auftrag",
     description:
-      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch; the main action answers with a toast and Rückgängig. Dialog, menu and the open list of a selection follow with the behaviour layer.",
+      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Dialog, menu, the open list of a selection and the toast with Rückgängig after the main action follow with the behaviour layer.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
     render: () => <FormScreen />,

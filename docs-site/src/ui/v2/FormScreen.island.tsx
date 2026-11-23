@@ -1,25 +1,9 @@
-import {
-  Bar,
-  Button,
-  Check,
-  Choice,
-  DateInput,
-  Field,
-  Input,
-  Nav,
-  Notice,
-  Pane,
-  Path,
-  Section,
-  Select,
-  toast,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Bar, Button, Check, Choice, DateInput, Field, Input, Nav, Notice, Pane, Path, Section, Select, Workspace } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // A realistic form with the controls of @k2b/ui/v2: a new order in Grids. Fields share one grid, errors stand at the
-// field, the main action shows a toast with "Rückgängig". Only primitives; an island so the controls answer.
-// Dialog, menu and the open list of a selection come with the behaviour layer.
+// field. Only primitives; an island so the controls answer. Dialog, menu, the open list of a selection and the toast
+// that answers the main action come with the behaviour layer.
 
 export default function FormScreen() {
   const [quantity, setQuantity] = createSignal("0");
@@ -27,15 +11,10 @@ export default function FormScreen() {
   const [urgent, setUrgent] = createSignal(false);
   const [delivery, setDelivery] = createSignal("Lieferung");
   const quantityError = () => (Number(quantity()) >= 1 ? undefined : "Mindestens 1 Stück.");
-  const create = () =>
-    toast("Auftrag AU-2611-0134 angelegt", {
-      icon: "check",
-      action: { label: "Rückgängig", onClick: () => toast("Auftrag verworfen") },
-    });
   return (
     <Workspace
       sidebarLabel="Breite der Seitenleiste"
-      primary={{ label: "Anlegen", icon: "check", onClick: create }}
+      primary={{ label: "Anlegen", icon: "check" }}
       sidebar={
         <Nav
           title="Grids"
@@ -63,7 +42,7 @@ export default function FormScreen() {
           end={
             <>
               <Button>Abbrechen</Button>
-              <Button variant="primary" icon="check" onClick={create} disabled={quantityError() !== undefined}>
+              <Button variant="primary" icon="check" disabled={quantityError() !== undefined}>
                 Auftrag anlegen
               </Button>
             </>

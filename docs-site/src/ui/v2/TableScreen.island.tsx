@@ -207,7 +207,7 @@ export default function TableScreen() {
           select={{ selected: selected(), onChange: setSelected, all: "Alle Aufträge", row: (order) => order.name }}
           group={(order) => ({
             key: order.state,
-            head: groups[order.state].chip(),
+            head: groups[order.state].chip,
             meta: groups[order.state].meta,
             count: groups[order.state].meta.split(" · ")[0],
           })}
