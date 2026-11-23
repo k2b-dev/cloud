@@ -1,4 +1,4 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Band, Button, Chip, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
@@ -7,6 +7,7 @@ import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { buildMailSelectionHref, isMailListItemActive, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
+import { mailV2RowTime } from "./mail-v2-time";
 
 /**
  * The conversation list of Mail's v2 pilot: one `Row` of three lines per conversation, as in the mockup. Each row is
@@ -50,7 +51,7 @@ export default function MailListV2(props: {
       snoozeDay(item) ? (
         <>
           <Icon name="clock" />
-          {snoozeDay(item)}
+          {t().snoozedUntilDay({ day: snoozeDay(item)! })}
         </>
       ) : null,
       drafted ? (
@@ -95,7 +96,7 @@ export default function MailListV2(props: {
                 href={buildMailSelectionHref(requestUrl(), item)}
                 lines={[sender(item), item.subject || t().noSubject, item.preview || " "]}
                 meta={item.selectionKind === "conversation" && item.messageCount > 1 ? String(item.messageCount) : undefined}
-                time={dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}
+                time={mailV2RowTime(item.latestMessageAt, props.dateConfig)}
                 unread={item.unread}
                 selected={isMailListItemActive(item, props.selectedConversationId, props.selectedMessageId)}
                 marks={marks(item)}

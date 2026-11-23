@@ -3,6 +3,8 @@
    other's source. */
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./reader.css";
+/* The composer frame of the v2 pilot; it draws only inside a v2 scope. */
+@import "@k2b/editor/composer.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 

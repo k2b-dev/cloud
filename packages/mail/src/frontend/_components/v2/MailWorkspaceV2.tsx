@@ -28,6 +28,7 @@ import {
 } from "../mail-navigation";
 import MailListV2 from "./MailListV2";
 import MailReaderV2 from "./MailReaderV2";
+import MailReplyV2, { type MailV2Session } from "./MailReplyV2";
 import { mailV2Messages } from "./mail-v2-messages";
 
 /** The head shows these views as tabs; the others wait under "More". */
@@ -108,7 +109,7 @@ export default function MailWorkspaceV2(props: {
   controller: Accessor<MailboxController>;
   shell: MailV2Shell;
   dateConfig: DateContext;
-  reply?: () => import("solid-js").JSX.Element;
+  session: MailV2Session;
 }) {
   const locale = useLocale();
   const text = createMemo(() => mailV2Messages.resolve([locale()]).t);
@@ -345,7 +346,17 @@ export default function MailWorkspaceV2(props: {
           />
         </Pane>
         <Show when={c().readerOpen()}>
-          <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} reply={props.reply?.()} />
+          <MailReaderV2
+            controller={c()}
+            dateConfig={props.dateConfig}
+            text={text()}
+            reply={(request) => (
+              // One reply per conversation: another conversation starts at rest again.
+              <Show when={c().data.selectedConversationId} keyed>
+                <MailReplyV2 controller={c()} session={props.session} dateConfig={props.dateConfig} text={text()} request={request} />
+              </Show>
+            )}
+          />
         </Show>
       </Pane.Split>
     </Workspace>

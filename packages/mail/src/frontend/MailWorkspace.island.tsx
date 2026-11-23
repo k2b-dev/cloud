@@ -3347,7 +3347,17 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
   if (v2)
     return (
       <>
-        <MailWorkspaceV2 controller={controller} shell={v2} dateConfig={props.dateConfig} />
+        <MailWorkspaceV2
+          controller={controller}
+          shell={v2}
+          dateConfig={props.dateConfig}
+          session={{
+            currentUserId: props.currentUserId,
+            currentUserEmail: props.currentUserEmail,
+            calendarIntegrationAvailable: props.calendarIntegrationAvailable,
+            liveDictation: props.liveDictation ?? false,
+          }}
+        />
         {composeWindows("[data-k2-workspace]")}
       </>
     );

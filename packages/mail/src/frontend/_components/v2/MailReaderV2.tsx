@@ -2,22 +2,18 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { toast, useLocale } from "@k2b/ui";
 import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
-import { createMemo, For, type JSX, Show } from "solid-js";
+import { type Accessor, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import type { SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../MailWorkspace.island";
 import MailMessageBody from "../MailMessageBody";
 import { isOutgoingMessage } from "../mail-conversation-history";
+import { buildMailConversationTimeline } from "../mail-conversation-timeline";
 import { mailMessageMessages } from "../mail-message-messages";
-import {
-  formatMailMessageDateTime,
-  normalizeContentId,
-  referencedContentIds,
-  resolveMessageBodyFormat,
-  resolveMessageColors,
-} from "../mail-message-presentation";
+import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
+import { mailV2MessageTime } from "./mail-v2-time";
 
 const attachmentIcon = (contentType: string, name: string): string => {
   if (contentType === "application/pdf" || name.toLowerCase().endsWith(".pdf")) return "file-type-pdf";
@@ -39,7 +35,8 @@ function MessageV2(props: {
   controller: MailboxController;
   dateConfig: DateContext;
   text: MailV2Text;
-  replyHref?: string;
+  /** Starts the reply to this conversation; absent where the person cannot write. */
+  onReply?: () => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailMessageMessages.resolve([locale()]).t);
@@ -55,7 +52,7 @@ function MessageV2(props: {
       ? t().toMe
       : t().toRecipient({ recipients });
   };
-  const when = () => formatMailMessageDateTime(props.message.sentAt ?? props.message.internalDate, props.dateConfig);
+  const when = () => mailV2MessageTime(props.message.sentAt ?? props.message.internalDate, props.dateConfig);
   const format = () =>
     resolveMessageBodyFormat(
       props.controller.userPreferences().readingFormat,
@@ -96,8 +93,8 @@ function MessageV2(props: {
         meta={outgoing() ? undefined : sender()?.address}
         end={
           <>
-            <Show when={props.replyHref}>
-              {(href) => <Button variant="ghost" icon="arrow-back-up" label={props.text.reply} href={href()} />}
+            <Show when={props.onReply}>
+              {(reply) => <Button variant="ghost" icon="arrow-back-up" label={props.text.reply} onClick={() => reply()()} />}
             </Show>
             <Button variant="ghost" icon="dots" label={props.text.moreActions} disabled />
           </>
@@ -106,19 +103,22 @@ function MessageV2(props: {
       <Show when={format()} fallback={<Text muted>{props.text.bodyLoading}</Text>}>
         {(bodyFormat) => (
           <Canvas label={props.text.messageText}>
-            <MailMessageBody
-              mailboxId={props.mailboxId}
-              messageId={props.message.id}
-              format={bodyFormat()}
-              theme={props.controller.theme()}
-              colors={resolveMessageColors(props.controller.userPreferences().readingFormat, null)}
-              html={props.message.sanitizedHtml}
-              plainText={props.message.plainText}
-              attachments={props.message.attachments}
-              remoteContent={props.message.remoteContent}
-              linksDisabled={props.message.security?.linksDisabled ?? false}
-              onSelectionChange={() => undefined}
-            />
+            {/* The message's own document draws in its sandboxed frame; it stands on the text edge of the band. */}
+            <div style={{ "padding-inline": "var(--k2-edge)" }}>
+              <MailMessageBody
+                mailboxId={props.mailboxId}
+                messageId={props.message.id}
+                format={bodyFormat()}
+                theme={props.controller.theme()}
+                colors={resolveMessageColors(props.controller.userPreferences().readingFormat, null)}
+                html={props.message.sanitizedHtml}
+                plainText={props.message.plainText}
+                attachments={props.message.attachments}
+                remoteContent={props.message.remoteContent}
+                linksDisabled={props.message.security?.linksDisabled ?? false}
+                onSelectionChange={() => undefined}
+              />
+            </div>
           </Canvas>
         )}
       </Show>
@@ -146,14 +146,16 @@ export default function MailReaderV2(props: {
   controller: MailboxController;
   dateConfig: DateContext;
   text: MailV2Text;
-  /** The reply composer, which Mail draws in its own surface. */
-  reply?: JSX.Element;
+  /** The reply composer; `request` counts the times a message's Reply asked it to start. */
+  reply?: (request: Accessor<number>) => JSX.Element;
 }) {
   const c = () => props.controller;
   const data = () => c().data;
   const item = () => c().selectedListItem();
   const listHref = () => buildMailListHref(mailRouteUrl(c().requestPath()));
-  const messages = () => [...data().detailMessages].reverse();
+  const [replyRequest, setReplyRequest] = createSignal(0);
+  // Newest first, each internal note at the time it was written, as v1's reader with the reply on top.
+  const timeline = createMemo(() => buildMailConversationTimeline(data().detailMessages, data().comments).reverse());
   const tags = () => data().conversationLocalTags?.tags ?? item()?.localTags ?? [];
   const assignees = () => data().collaborationState?.assignees ?? [];
   const readers = () => c().presence().participants;
@@ -259,29 +261,29 @@ export default function MailReaderV2(props: {
         )}
       </Show>
       <Show when={data().detailError}>{(error) => <Notice tone="bad">{error()}</Notice>}</Show>
-      {props.reply}
-      <For each={messages()}>
-        {(message) => (
-          <MessageV2
-            message={message}
-            mailboxId={data().mailbox.id}
-            identities={data().identities}
-            controller={c()}
-            dateConfig={props.dateConfig}
-            text={props.text}
-          />
-        )}
-      </For>
-      <For each={data().comments}>
-        {(comment) => (
-          <Notice
-            tone="note"
-            title={comment.body === null ? props.text.noteDeleted : props.text.noteBy({ name: comment.author.displayName })}
-            meta={formatMailMessageDateTime(comment.createdAt, props.dateConfig)}
-          >
-            {comment.body ?? ""}
-          </Notice>
-        )}
+      {props.reply?.(replyRequest)}
+      <For each={timeline()}>
+        {(entry) =>
+          entry.kind === "message" ? (
+            <MessageV2
+              message={entry.message}
+              mailboxId={data().mailbox.id}
+              identities={data().identities}
+              controller={c()}
+              dateConfig={props.dateConfig}
+              text={props.text}
+              onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
+            />
+          ) : (
+            <Notice
+              tone="note"
+              title={entry.note.body === null ? props.text.noteDeleted : props.text.noteBy({ name: entry.note.author.displayName })}
+              meta={mailV2MessageTime(entry.note.createdAt, props.dateConfig)}
+            >
+              {entry.note.body ?? ""}
+            </Notice>
+          )
+        }
       </For>
     </Pane>
   );
