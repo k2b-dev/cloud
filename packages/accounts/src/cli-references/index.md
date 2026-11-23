@@ -97,7 +97,7 @@ cld accounts groups relations "Editors" --depth 3
 cld accounts groups relations "Editors" --managers --all --json
 ```
 
-Each level lists 10 groups unless `--all` is set. A row marked `closes` leads back into a cycle; `already shown` is a group listed earlier. Without a group, the command starts at the group with the most direct relations. Relations show group names and member counts, never member names.
+Each level lists 10 groups unless `--all` is set; the next level continues only from the groups listed. A row marked `closes` leads back into a cycle; `already shown` is a group listed earlier. `--managers` adds which groups the starting group manages, which manage it, and a management cycle through it. Without a group, the command starts at the group with the most direct relations. Relations show group names and member counts, never member names; personal Linux groups are left out. Above 20,000 edges of one kind the command warns that cycles were checked only in part.
 
 Resolve a group and principal first, because these changes affect access recursively. Denying a request and deleting a group both require explicit confirmation.
 

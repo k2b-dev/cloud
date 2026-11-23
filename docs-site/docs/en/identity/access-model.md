@@ -48,7 +48,13 @@ every group in the cycle count in each of them.
 Administrators see which groups contain which with
 `cld accounts groups relations <group>` or `GET /api/accounts/groups/relations`.
 The answer shows levels around one group and marks cycles. It shows group names
-and member counts, never member names. Personal Linux groups are left out.
+and member counts, never member names. Personal Linux groups are left out, so a
+cycle through a personal group does not show.
+
+To stay within a quarter second of server time, one answer reads at most
+20,000 membership edges and 20,000 management edges. If an installation has
+more, the answer says so (`truncated`, `cyclesComplete: false`), some groups may
+be missing, and cycles were checked only in the edges that were read.
 
 ## If you know Unix
 

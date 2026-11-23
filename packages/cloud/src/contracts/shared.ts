@@ -108,8 +108,11 @@ export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 
 /** How many levels the relations view walks out from its focus group, in each direction. */
 export const GroupRelationDepthSchema = z.coerce.number().int().min(1).max(4);
-/** A column of the relations view: `u` for groups that contain the focus, `d` for groups it contains, then the level. */
-export const GroupRelationColumnKeySchema = z.string().regex(/^[ud][1-4]$/);
+/**
+ * A budgeted part of the relations view: a column (`u` for groups that contain the focus, `d` for groups it contains,
+ * then the level), or `roots`, the top groups of the list.
+ */
+export const GroupRelationColumnKeySchema = z.string().regex(/^([ud][1-4]|roots)$/);
 
 const GroupRelationListSchema = z.object({
   /** The first groups of the list, ordered by name. */
@@ -156,8 +159,11 @@ export const GroupRelationsSchema = z.object({
       hidden: z.number().int().nonnegative(),
     }),
   ),
-  /** For the list view: groups that contain others and are contained in none, plus one group per cycle without an outside parent. */
-  roots: z.array(z.uuid()).nullable(),
+  /**
+   * For the list view: groups that contain others and are contained in none, plus one group per cycle without an
+   * outside parent. 10 unless `roots` is expanded; `hidden` counts the rest.
+   */
+  roots: z.object({ ids: z.array(z.uuid()), hidden: z.number().int().nonnegative() }).nullable(),
   /** Details of the selected group, or of the focus. */
   selected: z
     .object({
@@ -175,10 +181,12 @@ export const GroupRelationsSchema = z.object({
     /** A group in the first cycle, to jump to. */
     first: z.uuid().nullable(),
   }),
-  /** The edge read stopped at its limit. Levels may miss groups. */
+  /** The read of membership edges stopped at its limit. Levels may miss groups. */
   truncated: z.boolean(),
-  /** `false` when `truncated`: cycles were searched only in the edges that were read. */
+  /** `false` when `truncated`: membership cycles were searched only in the edges that were read. */
   cyclesComplete: z.boolean(),
+  /** `false` when the read of management edges stopped at its own limit. `true` without `managers`. */
+  managerCyclesComplete: z.boolean(),
 });
 export type GroupRelations = z.infer<typeof GroupRelationsSchema>;
 

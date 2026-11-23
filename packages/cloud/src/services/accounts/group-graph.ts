@@ -97,33 +97,48 @@ export type RelationLevel = {
   items: { id: string; via: string }[];
   /** Edges from this level's source groups to groups that are already in the picture. */
   backs: { from: string; to: string }[];
+  /** Groups and back edges of this level left out by its budget. */
+  hidden: number;
+};
+
+type LevelOptions = {
+  /** How many entries (groups first, then back edges) the level shows. */
+  budget: (level: number) => number;
+  /** Leaves out a back edge that the picture already shows elsewhere. */
+  skipBack?: (from: string, to: string) => boolean;
 };
 
 /**
  * Levels outward from `focus`. A group already in the picture is never expanded again; an edge to it becomes a back edge.
+ * Only shown groups enter the picture, and only they lead to the next level, so no edge starts at a hidden group.
  * Pass one `seen` set to both directions so each group appears once.
  */
-export const relationLevels = (focus: string, depth: number, next: Next, seen: Set<string>): RelationLevel[] => {
+export const relationLevels = (focus: string, depth: number, next: Next, seen: Set<string>, options: LevelOptions): RelationLevel[] => {
   const levels: RelationLevel[] = [];
   let current = [focus];
   for (let level = 1; level <= depth && current.length > 0; level += 1) {
-    const items: RelationLevel["items"] = [];
-    const backs: RelationLevel["backs"] = [];
-    const following: string[] = [];
+    const reached: RelationLevel["items"] = [];
+    const reachedHere = new Set<string>();
+    const edges: RelationLevel["backs"] = [];
     for (const id of current) {
       for (const neighbour of next(id)) {
-        if (seen.has(neighbour)) {
-          backs.push({ from: id, to: neighbour });
+        if (seen.has(neighbour) || reachedHere.has(neighbour)) {
+          if (!options.skipBack?.(id, neighbour)) edges.push({ from: id, to: neighbour });
           continue;
         }
-        seen.add(neighbour);
-        items.push({ id: neighbour, via: id });
-        following.push(neighbour);
+        reachedHere.add(neighbour);
+        reached.push({ id: neighbour, via: id });
       }
     }
-    if (items.length === 0 && backs.length === 0) break;
-    levels.push({ items, backs });
-    current = following;
+    if (reached.length === 0 && edges.length === 0) break;
+    const budget = options.budget(level);
+    const items = reached.slice(0, budget);
+    for (const item of items) seen.add(item.id);
+    // A back edge to a group this level left out would point at nothing.
+    const pointing = edges.filter((edge) => seen.has(edge.to));
+    const backs = pointing.slice(0, Math.max(0, budget - items.length));
+    levels.push({ items, backs, hidden: reached.length - items.length + pointing.length - backs.length });
+    current = items.map((item) => item.id);
   }
   return levels;
 };

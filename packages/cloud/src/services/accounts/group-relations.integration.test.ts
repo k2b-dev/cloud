@@ -102,8 +102,11 @@ suite("group relations (integration)", () => {
       });
       expect(list).toHaveLength(2);
       if (!result?.ok) throw new Error("relations failed");
-      expect(result.data.roots).toContain(all!);
-      expect(result.data.roots).not.toContain(tech!);
+      const roots = await accountsAppService.group.relations({ actor, depth: 2, managers: false, view: "list", expand: ["roots"] });
+      if (!roots.ok) throw new Error("relations failed");
+      expect(roots.data.roots?.ids).toContain(all!);
+      expect(roots.data.roots?.ids).not.toContain(tech!);
+      expect(roots.data.roots?.hidden).toBe(0);
     } finally {
       await meter.close();
     }
@@ -127,6 +130,80 @@ suite("group relations (integration)", () => {
       view: "graph",
     });
     expect(missing.ok ? null : missing.error.status).toBe(404);
+  });
+
+  test("a cut edge read says so for each kind and gives the same answer on every reload", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const [a, b, c, d] = await Promise.all(["a", "b", "c", "d"].map((label) => insertGroup(suffix, label)));
+    await contains(a!, b!);
+    await contains(b!, c!);
+    await contains(c!, d!);
+    await manages(a!, b!);
+    await manages(b!, a!);
+    const actor = admin(await insertUser(suffix, "admin"));
+    const read = async (edgeLimit: number) => {
+      const result = await accountsAppService.group.relations({ actor, focus: a, depth: 4, managers: true, view: "graph", edgeLimit });
+      if (!result.ok) throw new Error("relations failed");
+      return result.data;
+    };
+    const cut = await read(1);
+    expect(cut).toMatchObject({ truncated: true, cyclesComplete: false, managerCyclesComplete: false });
+    expect(await read(1)).toEqual(cut);
+    // Management edges have their own limit: they never push out membership edges.
+    const whole = await read(1_000_000);
+    expect(whole).toMatchObject({ truncated: false, cyclesComplete: true, managerCyclesComplete: true });
+    expect(whole.columns.map((column) => column.items.map((item) => item.id))).toEqual([[b!], [c!], [d!]]);
+  });
+
+  test("a personal group is never a focus and never a neighbour", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const [team, personal] = await Promise.all(["team", "personal"].map((label) => insertGroup(suffix, label)));
+    const owner = await insertUser(suffix, "owner");
+    const gid = 400_000 + Math.floor(Math.random() * 500_000);
+    await sql`INSERT INTO auth.personal_groups (group_id, owner_id, group_name, gid_number)
+      VALUES (${personal}::uuid, ${owner}::uuid, ${`relations-personal-${suffix}`}, ${gid})`;
+    await contains(team!, personal!);
+    await contains(personal!, team!);
+    const actor = admin(await insertUser(suffix, "admin"));
+    const asFocus = await accountsAppService.group.relations({ actor, focus: personal, depth: 2, managers: false, view: "graph" });
+    expect(asFocus.ok ? null : asFocus.error.status).toBe(404);
+    const around = await accountsAppService.group.relations({ actor, focus: team, depth: 2, managers: false, view: "graph" });
+    if (!around.ok) throw new Error("relations failed");
+    expect(around.data.columns).toEqual([]);
+    expect(around.data.nodes.map((node) => node.id)).not.toContain(personal);
+    expect(around.data.selected).toMatchObject({ parents: { total: 0 }, children: { total: 0 } });
+    // The cycle runs through the personal group, so it is not one here.
+    expect(around.data.selected?.cycle).toBeNull();
+  });
+
+  test("a column shows 10 groups and the next level grows only from those, unless it is expanded", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const parent = await insertGroup(suffix, "parent");
+    // Zero-padded labels keep the name order equal to the number order.
+    for (let index = 0; index < 12; index += 1) {
+      const label = `child-${String(index).padStart(2, "0")}`;
+      const child = await insertGroup(suffix, label);
+      await contains(parent, child);
+      await contains(child, await insertGroup(suffix, `${label}-grandchild`));
+    }
+    const actor = admin(await insertUser(suffix, "admin"));
+    const read = async (expand: string[]) => {
+      const result = await accountsAppService.group.relations({ actor, focus: parent, depth: 2, managers: false, view: "graph", expand });
+      if (!result.ok) throw new Error("relations failed");
+      return result.data;
+    };
+    const budgeted = await read([]);
+    expect(budgeted.columns.map((column) => [column.key, column.items.length, column.hidden])).toEqual([
+      ["d1", 10, 2],
+      ["d2", 10, 0],
+    ]);
+    const shown = new Set(budgeted.columns[0]!.items.map((item) => item.id));
+    expect(budgeted.columns[1]!.items.every((item) => shown.has(item.via))).toBe(true);
+    const expanded = await read(["d1"]);
+    expect(expanded.columns.map((column) => [column.key, column.items.length, column.hidden])).toEqual([
+      ["d1", 12, 0],
+      ["d2", 10, 2],
+    ]);
   });
 
   test("a check and a member list cost the same statements for a direct and a nested membership", async () => {

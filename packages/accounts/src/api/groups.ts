@@ -130,10 +130,13 @@ const app = new Hono<AuthContext>()
       summary: "Show group relations",
       description:
         "Show which groups contain which, in levels around one group. Without focus, the group with the most direct relations is the focus. " +
-        "Each column lists 10 groups unless its key (u1-u4 for containing groups, d1-d4 for contained groups) is in expand. " +
-        "Edges to groups already shown are back edges; closesCycle marks a membership cycle. view=list adds the top groups for a tree. " +
-        "Names and member counts only, never member names. Personal Linux groups are excluded. " +
-        "truncated and cyclesComplete=false mean the edge read stopped at its limit.",
+        "Each column lists 10 groups unless its key (u1-u4 for containing groups, d1-d4 for contained groups) is in expand; " +
+        "the next level grows only from the groups shown. " +
+        "Edges to groups already shown are back edges; closesCycle marks a membership cycle. " +
+        "view=list adds the top groups for a tree, 10 unless roots is in expand. " +
+        "Names and member counts only, never member names. Personal Linux groups are excluded, so a cycle through one does not show. " +
+        "Each kind of edge is read up to 20,000 pairs, a quarter second of server time; truncated and cyclesComplete=false " +
+        "(managerCyclesComplete=false for management) mean that read stopped at its limit.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(GroupRelationsSchema, "Group relations"),
@@ -154,7 +157,7 @@ const app = new Hono<AuthContext>()
           .string()
           .optional()
           .transform((value) => (value ? value.split(",") : []))
-          .pipe(z.array(GroupRelationColumnKeySchema).max(8)),
+          .pipe(z.array(GroupRelationColumnKeySchema).max(9)),
       }),
     ),
     async (c) => {

@@ -4,13 +4,13 @@ import { toPgUuidArray } from "../postgres";
 import { adjacency, componentIndex, cycleComponents, cycleWitness, type Next, relationLevels } from "./group-graph";
 
 /**
- * Edges one relations request reads at most, from the page's server budget: the in-memory pass over 20,000
- * pairs (sorting, cycles, levels) took 0.1 to 0.17 s on a loaded shared development host on 23 Nov 2026,
- * 100,000 pairs took 0.2 to 0.5 s. Above the limit the response says `truncated`, and the view says cycles
- * were checked only in part.
+ * Edges of each kind (membership, management) one relations request reads at most. The budget is a quarter second
+ * of server time for the relations in the page's SSR path: walking 20,000 pairs in memory (sorting, cycles, levels)
+ * took 0.1 to 0.17 s on a loaded shared development host on 23 Nov 2026, 100,000 pairs took 0.2 to 0.5 s.
+ * Above the limit the response says `truncated`, and the view says cycles were checked only in part.
  */
 export const GROUP_RELATION_EDGE_LIMIT = 20_000;
-/** A column shows 10 groups plus "more", as the relations view was designed. */
+/** A column, and the top groups of the list, show 10 groups plus "more", as the relations view was designed. */
 export const GROUP_RELATION_COLUMN_BUDGET = 10;
 /** The details of the selection list 6 groups per relation plus "and n more". */
 export const GROUP_RELATION_DETAIL_BUDGET = 6;
@@ -30,8 +30,10 @@ export type GroupRelationsQuery = {
   depth: number;
   managers: boolean;
   view: "graph" | "list";
-  /** Column keys shown without the column budget. */
+  /** Column keys, or `roots`, shown without the budget. */
   expand?: readonly string[];
+  /** Overrides `GROUP_RELATION_EDGE_LIMIT`, for tests of a cut read. */
+  edgeLimit?: number;
   signal?: AbortSignal;
 };
 
@@ -46,39 +48,54 @@ const listOf = (ids: readonly string[]) => ({ ids: ids.slice(0, GROUP_RELATION_D
  * here, never with a recursive query. Returns `null` when the requested focus is unknown or a personal group.
  */
 export const loadGroupRelations = async (query: GroupRelationsQuery): Promise<GroupRelations | null> => {
+  const limit = query.edgeLimit ?? GROUP_RELATION_EDGE_LIMIT;
+  // Each kind has its own limit and a stable order by primary key, so a cut read is the same on every reload
+  // and management edges never push out membership edges.
   const edgeRows = await sql<EdgeRow[]>`
-    SELECT 'member' AS kind, gg.parent_group_id AS source, gg.child_group_id AS target,
-      source_group.name AS source_name, target_group.name AS target_name
-    FROM auth.group_groups_v2 gg
-    JOIN auth.groups source_group ON source_group.id = gg.parent_group_id
-    JOIN auth.groups target_group ON target_group.id = gg.child_group_id
-    WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id IN (gg.parent_group_id, gg.child_group_id))
+    (
+      SELECT 'member' AS kind, gg.parent_group_id AS source, gg.child_group_id AS target,
+        source_group.name AS source_name, target_group.name AS target_name
+      FROM auth.group_groups_v2 gg
+      JOIN auth.groups source_group ON source_group.id = gg.parent_group_id
+      JOIN auth.groups target_group ON target_group.id = gg.child_group_id
+      WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id IN (gg.parent_group_id, gg.child_group_id))
+      ORDER BY gg.parent_group_id, gg.child_group_id
+      LIMIT ${limit + 1}
+    )
     ${
       query.managers
         ? sql`
     UNION ALL
-    SELECT 'manager' AS kind, gmg.manager_group_id AS source, gmg.group_id AS target,
-      source_group.name AS source_name, target_group.name AS target_name
-    FROM auth.group_manager_groups_v2 gmg
-    JOIN auth.groups source_group ON source_group.id = gmg.manager_group_id
-    JOIN auth.groups target_group ON target_group.id = gmg.group_id
-    WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id IN (gmg.manager_group_id, gmg.group_id))`
+    (
+      SELECT 'manager' AS kind, gmg.manager_group_id AS source, gmg.group_id AS target,
+        source_group.name AS source_name, target_group.name AS target_name
+      FROM auth.group_manager_groups_v2 gmg
+      JOIN auth.groups source_group ON source_group.id = gmg.manager_group_id
+      JOIN auth.groups target_group ON target_group.id = gmg.group_id
+      WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id IN (gmg.manager_group_id, gmg.group_id))
+      ORDER BY gmg.group_id, gmg.manager_group_id
+      LIMIT ${limit + 1}
+    )`
         : sql``
     }
-    LIMIT ${GROUP_RELATION_EDGE_LIMIT + 1}
   `;
   query.signal?.throwIfAborted();
-  const truncated = edgeRows.length > GROUP_RELATION_EDGE_LIMIT;
-  const rows = truncated ? edgeRows.slice(0, GROUP_RELATION_EDGE_LIMIT) : edgeRows;
 
+  // The one row past the limit of a kind only says that its read was cut.
+  const memberRows = edgeRows.filter((row) => row.kind === "member");
+  const managerRows = edgeRows.filter((row) => row.kind === "manager");
+  const truncated = memberRows.length > limit;
+  const managersTruncated = managerRows.length > limit;
   const names = new Map<string, string>();
-  const memberPairs: [string, string][] = [];
-  const managerPairs: [string, string][] = [];
-  for (const row of rows) {
-    names.set(row.source, row.source_name);
-    names.set(row.target, row.target_name);
-    (row.kind === "member" ? memberPairs : managerPairs).push([row.source, row.target]);
-  }
+  const pairsOf = (rows: EdgeRow[]) =>
+    rows.slice(0, limit).map((row): [string, string] => {
+      names.set(row.source, row.source_name);
+      names.set(row.target, row.target_name);
+      return [row.source, row.target];
+    });
+  const memberPairs = pairsOf(memberRows);
+  const managerPairs = pairsOf(managerRows);
+
   const byName = (left: string, right: string) => names.get(left)!.localeCompare(names.get(right)!) || left.localeCompare(right);
   const members = adjacency(memberPairs, byName);
   const managers = adjacency(managerPairs, byName);
@@ -97,46 +114,52 @@ export const loadGroupRelations = async (query: GroupRelationsQuery): Promise<Gr
     }, null);
 
   const expanded = new Set(query.expand ?? []);
+  const budgetOf = (key: string) => (expanded.has(key) ? Number.POSITIVE_INFINITY : GROUP_RELATION_COLUMN_BUDGET);
   const columns: GroupRelations["columns"] = [];
   const named = new Set<string>();
   if (focus && query.view === "graph") {
     const seen = new Set([focus]);
-    const down = relationLevels(focus, query.depth, members.down, seen);
+    const down = relationLevels(focus, query.depth, members.down, seen, { budget: (level) => budgetOf(columnKey("down", level)) });
     const shownBacks = new Set(down.flatMap((level) => level.backs.map((back) => `${back.from}>${back.to}`)));
-    const up = relationLevels(focus, query.depth, members.up, seen).map((level) => ({
-      items: level.items,
+    const up = relationLevels(focus, query.depth, members.up, seen, {
+      budget: (level) => budgetOf(columnKey("up", level)),
       // Drawn once: an edge already shown as a back edge below is not repeated above.
-      backs: level.backs.filter((back) => !shownBacks.has(`${back.to}>${back.from}`)),
-    }));
+      skipBack: (from, to) => shownBacks.has(`${to}>${from}`),
+    });
     const column = (direction: "up" | "down", level: (typeof down)[number], position: number) => {
-      const key = columnKey(direction, position + 1);
-      const budget = expanded.has(key) ? Number.POSITIVE_INFINITY : GROUP_RELATION_COLUMN_BUDGET;
-      const items = level.items.slice(0, budget);
-      const backs = level.backs.slice(0, Math.max(0, budget - items.length)).map((back) => {
-        const component = cycleOf.get(back.from);
-        return { ...back, closesCycle: component !== undefined && component === cycleOf.get(back.to) };
-      });
-      for (const item of items) named.add(item.id).add(item.via);
-      for (const back of backs) named.add(back.from).add(back.to);
-      return { key, items, backs, hidden: level.items.length + level.backs.length - items.length - backs.length };
+      for (const item of level.items) named.add(item.id).add(item.via);
+      for (const back of level.backs) named.add(back.from).add(back.to);
+      return {
+        key: columnKey(direction, position + 1),
+        items: level.items,
+        backs: level.backs.map((back) => {
+          const component = cycleOf.get(back.from);
+          return { ...back, closesCycle: component !== undefined && component === cycleOf.get(back.to) };
+        }),
+        hidden: level.hidden,
+      };
     };
+    const shown = (level: (typeof down)[number]) => level.items.length + level.backs.length + level.hidden > 0;
     up.forEach((level, position) => {
-      if (level.items.length > 0 || level.backs.length > 0) columns.push(column("up", level, position));
+      if (shown(level)) columns.push(column("up", level, position));
     });
     down.forEach((level, position) => {
-      columns.push(column("down", level, position));
+      if (shown(level)) columns.push(column("down", level, position));
     });
   }
 
-  let roots: string[] | null = null;
+  let roots: GroupRelations["roots"] = null;
   if (query.view === "list") {
     // A cycle that no outside group contains has no top; its first group by name stands in for it.
-    const closed = (component: string[]) => component.every((id) => members.up(id).every((parent) => component.includes(parent)));
-    roots = [...members.nodes]
+    const closed = (component: string[]) =>
+      component.every((id) => members.up(id).every((parent) => cycleOf.get(parent) === cycleOf.get(id)));
+    const all = [...members.nodes]
       .filter((id) => members.up(id).length === 0)
       .concat(cycles.filter(closed).map((component) => [...component].sort(byName)[0]!))
       .sort(byName);
-    for (const id of roots) named.add(id);
+    const ids = all.slice(0, budgetOf("roots"));
+    roots = { ids, hidden: all.length - ids.length };
+    for (const id of ids) named.add(id);
   }
 
   const selectedId = query.selected ?? focus;
@@ -180,6 +203,7 @@ export const loadGroupRelations = async (query: GroupRelationsQuery): Promise<Gr
       WHERE g.id = ANY(${toPgUuidArray([...named])}::uuid[])
         AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
     ) named ON true
+    ORDER BY named.name, named.id
   `;
   const nodes = nodeRows.flatMap((row) =>
     row.id && row.name && row.provider
@@ -211,5 +235,6 @@ export const loadGroupRelations = async (query: GroupRelationsQuery): Promise<Gr
     cycles: { count: cycles.length, first: cycles[0]?.[0] ?? null },
     truncated,
     cyclesComplete: !truncated,
+    managerCyclesComplete: !managersTruncated,
   };
 };

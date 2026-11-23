@@ -121,7 +121,13 @@ describe("accounts CLI", () => {
           { id: "g2", name: "platform", inCycle: true },
         ],
         columns: [{ key: "d1", items: [{ id: "g2", via: "g1" }], backs: [{ from: "g2", to: "g1", closesCycle: true }], hidden: 4 }],
+        selected: {
+          manages: { ids: ["g2"], total: 1 },
+          managedBy: { ids: ["g2"], total: 8 },
+          managerCycle: { path: ["g1", "g2", "g1"] },
+        },
         cyclesComplete: false,
+        managerCyclesComplete: true,
       }),
     ]);
     await accountsCli.run(ctx);
@@ -131,8 +137,13 @@ describe("accounts CLI", () => {
       { level: "contains 1", group: "platform", via: "team", cycle: "yes" },
       { level: "contains 1", group: "team", via: "platform", cycle: "closes" },
       { level: "contains 1", group: "4 more (--all)", via: "", cycle: "" },
+      { level: "manages", group: "platform", via: "", cycle: "" },
+      { level: "managed by", group: "platform", via: "", cycle: "" },
+      { level: "managed by", group: "7 more", via: "", cycle: "" },
+      { level: "management cycle", group: "team → platform → team", via: "", cycle: "" },
     ]);
     expect(lines).toContain("Only part of the relations was read; cycles were checked only in part.");
+    expect(lines.some((line) => line.includes("management relations"))).toBe(false);
   });
 
   test("uses the same group POSIX operation for both providers", async () => {
