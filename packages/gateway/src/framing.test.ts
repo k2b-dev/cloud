@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import type { MaintenanceState } from "@k2b/cloud/contracts/maintenance";
 import * as services from "@k2b/cloud/services";
+import { MAINTENANCE_BYPASS_PARAM } from "@k2b/cloud/services/maintenance-bypass";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createAvailability } from "./availability";
@@ -209,7 +210,8 @@ test("every answer the gateway gives a browser carries a framing policy when it 
     ["/public/storage/x/y.html", page],
     ["/_cloud/gateway/status", page],
     ["/_cloud/internal", page],
-    ["/?cloud_bypass=x", page],
+    [`/?${MAINTENANCE_BYPASS_PARAM}=x`, page],
+    [`/?${MAINTENANCE_BYPASS_PARAM}=x`, page, "site.test"],
     ["/health", page],
     ["/missing", page, "unknown.test"],
     ["/", page, "site.test"],
