@@ -104,6 +104,22 @@ metadata and fresh signed work. Review actual deployment configuration and
 representative jobs too; a probe does not exercise every business operation.
 See [App migration status](/en/docs/operations/app-key-status).
 
+## Third-party apps on an older `@k2b/cloud`
+
+A third-party app does not have to update its `@k2b/cloud` at the same time.
+Any version from 0.66 on signs with its mounted key and keeps working against
+the new Core. Mount its key before Core changes: without a key, an older
+library waits for runtime tokens that no longer come, so its background calls
+and resource checks stay unavailable. An app that imports `sql` or `redis`
+from `bun` keeps its connection values and passes the status check with
+`--allow-env <app>`.
+
+One check needs the new library on the provider side: Core asks a provider's
+`readable` and `managers` queries for Code as the app `core`, which holds no
+key. A provider on an older library refuses these calls, so Code treats its
+objects as not readable and sends no manager notices for them until the
+provider updates `@k2b/cloud`. Nothing is opened wider in the meantime.
+
 ## Roll back at the right boundary
 
 Returning to environment-only application identity requires returning to the
