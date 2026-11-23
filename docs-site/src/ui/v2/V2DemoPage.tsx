@@ -67,7 +67,16 @@ export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   return (
     <div
       class="k2-ui ui-v2-screen"
-      style={screen.app ? { "--k2-app": screen.app.color, "--k2-app-ink": screen.app.ink, "--k2-app-tint": screen.app.tint } : undefined}
+      style={
+        screen.app
+          ? {
+              "--k2-app": screen.app.color,
+              // The mockup gives the light ink and tint; in dark both come from the app colour, as v2's own blue does.
+              "--k2-app-ink": `light-dark(${screen.app.ink}, color-mix(in srgb, ${screen.app.color} 55%, white))`,
+              "--k2-app-tint": `light-dark(${screen.app.tint}, color-mix(in srgb, ${screen.app.color} 28%, var(--k2-surface)))`,
+            }
+          : undefined
+      }
     >
       <div class="ui-v2-screen__card">{screen.render()}</div>
       <V2Inspect />
