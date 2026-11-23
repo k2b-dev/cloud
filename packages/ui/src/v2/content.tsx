@@ -152,7 +152,7 @@ export type ListProps = { children: JSX.Element; label?: string };
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
  * focused row, else the first visible one, keeps its distance to the top of the column. Browsers with CSS scroll
- * anchoring already hold it, so nothing moves there; WebKit has none. At the very top nothing is held, so a new row
+ * anchoring already hold it, so nothing moves there; Safari ships none. At the very top nothing is held, so a new row
  * shows up there. (As v1's `MailConversationList`.)
  */
 const keepPlace = (list: HTMLElement) => {

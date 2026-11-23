@@ -6,12 +6,14 @@ import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/bro
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-list.client";
 
-// A list keeps the place someone works on when new entries arrive on top, also in WebKit, which has no CSS scroll
-// anchoring; its pane carries the key under which the page keeps its scroll position for back and forward.
+// A list keeps the place someone works on when new entries arrive on top, also in Safari, which ships no CSS scroll
+// anchoring; its pane carries the key under which the page keeps its scroll position for back and forward. The page
+// switches scroll anchoring off (`overflow-anchor: none`): Chromium and the WebKit build of Playwright have it, and
+// would hold the place without the list.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
+  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; } .k2-scroll { overflow-anchor: none; }";
 
 let browser: Browser;
 let client: string;
