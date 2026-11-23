@@ -20,6 +20,8 @@ export type LayoutContext = {
     pwaOwner?: string;
     /** The current app's accent, which colours the page's body as that app's scope. */
     appAccent?: string;
+    /** The page's content is built with `@k2b/ui/v2`: the body carries the app's v2 inks beside its accent. */
+    appUi?: "v2";
     appPrimary?: AppAppearance["primary"];
     /** Signed-in pages: the person's screen preferences, read with the page. */
     screen?: ScreenPreferences;

@@ -52,6 +52,267 @@
   height: auto;
   border: var(--k2-hairline);
 }
+/* v2 demo pages: a frame like the Cloud shell around one screen, and the "Bausteine zeigen" layer. */
+.ui-v2-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+.ui-v2-demo__intro {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+.ui-v2-demo__intro > p {
+  margin: 0;
+}
+.ui-v2-demo__screen {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.ui-v2-demo__screen > h2,
+.ui-v2-demo__screen > p {
+  margin: 0;
+}
+.ui-v2-demo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+.ui-v2-demo__frame {
+  display: block;
+  width: 100%;
+  height: 900px;
+  border: 1px solid var(--k2b-border, #e4e4e7);
+  border-radius: 14px;
+}
+@media (max-width: 767px) {
+  .ui-v2-demo__frame {
+    height: 844px;
+    border-radius: 0;
+  }
+}
+/* A screen on its own page: the frame of the Cloud shell from the mockup (rail 56, card inset 8; phone bar 52). */
+.ui-v2-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: 8px 8px 8px 56px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--k2-app, var(--k2-blue)) 9%, var(--k2-surface)),
+    color-mix(in srgb, #4f46e5 7%, var(--k2-surface))
+  );
+}
+.ui-v2-screen__card {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+@media (max-width: 767px) {
+  .ui-v2-screen {
+    padding: 52px 0 0;
+    background: var(--k2-surface);
+  }
+}
+.ui-v2-inspect-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 13px/20px "IBM Plex Sans", system-ui, sans-serif;
+  cursor: pointer;
+  justify-self: start;
+}
+.ui-v2-inspect-toggle[data-floating] {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 51;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #86198f;
+  color: #fff;
+}
+.ui-v2-inspect-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+.ui-v2-inspect-box {
+  position: fixed;
+  box-shadow: inset 0 0 0 1px #c026d3;
+  background: rgb(192 38 211 / 0.06);
+}
+.ui-v2-inspect-label {
+  position: fixed;
+  max-width: 480px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #86198f;
+  color: #fff;
+  font: 500 12px/16px "IBM Plex Mono", ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Drawings inside a v2 Canvas on the Fibel screens (Canvas is the one place with own CSS). From the mockup. */
+.ui-v2-composer,
+.ui-v2-composer *,
+.ui-v2-map,
+.ui-v2-map * {
+  box-sizing: border-box;
+}
+.ui-v2-composer {
+  margin: 12px 8px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-card);
+  background: var(--k2-surface);
+  display: flex;
+  flex-direction: column;
+}
+.ui-v2-composer__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-bar);
+  padding: 4px 11px 0;
+}
+.ui-v2-composer .ti {
+  font-size: 16px;
+  line-height: 1;
+}
+.ui-v2-composer__text .ti {
+  font-size: 14px;
+}
+.ui-v2-composer__top > .ti,
+.ui-v2-composer__tool {
+  color: var(--k2-muted);
+}
+.ui-v2-composer__to {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.ui-v2-composer__fill {
+  flex: 1;
+}
+.ui-v2-composer__text {
+  height: var(--k2-h-control-small);
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-muted);
+}
+.ui-v2-composer__write {
+  padding: 8px 11px;
+  min-height: 104px;
+  font: var(--k2-t-body);
+  line-height: 22px;
+  color: var(--k2-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ui-v2-composer__sig {
+  color: var(--k2-subtle);
+  font: var(--k2-t-row);
+  margin-top: auto;
+}
+.ui-v2-composer__bottom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 52px;
+  padding: 0 11px;
+}
+.ui-v2-composer__tool {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--k2-r-control);
+}
+.ui-v2-composer__tool:nth-child(4) {
+  color: var(--k2-ai);
+}
+.ui-v2-composer__send {
+  height: var(--k2-h-control);
+  padding: 0 12px;
+  border-radius: var(--k2-r-control);
+  background: var(--k2-blue);
+  color: var(--k2-white);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+/* the map stands from edge to edge: it draws the line below it itself (a Canvas draws none) */
+.ui-v2-map {
+  position: absolute;
+  inset: 0;
+  border-bottom: var(--k2-hairline);
+  background:
+    linear-gradient(115deg, transparent 47%, var(--k2-surface) 47% 50%, transparent 50%),
+    linear-gradient(15deg, transparent 58%, var(--k2-surface) 58% 60%, transparent 60%),
+    radial-gradient(circle at 80% 20%, color-mix(in srgb, #22c55e 16%, var(--k2-surface)) 0 18%, transparent 18.5%),
+    linear-gradient(160deg, transparent 62%, color-mix(in srgb, #3b82f6 22%, var(--k2-surface)) 62% 72%, transparent 72%),
+    color-mix(in srgb, var(--k2-n200) 60%, var(--k2-surface));
+}
+.ui-v2-map .ti {
+  font-size: 16px;
+  line-height: 1;
+}
+.ui-v2-map__pin {
+  position: absolute;
+  left: 52%;
+  top: 40%;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n950);
+  color: var(--k2-surface);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 0 0 3px var(--k2-surface);
+}
+.ui-v2-map__address {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  background: var(--k2-surface);
+  padding: 2px 8px;
+  border-radius: var(--k2-r-control);
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-text);
+}
+.ui-v2-map__open {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  height: var(--k2-h-control-small);
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+
 .ui-v2-rule__roles {
   display: grid;
   gap: 8px;

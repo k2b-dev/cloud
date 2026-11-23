@@ -28,6 +28,11 @@ type ButtonBase = {
   type?: "button" | "submit";
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
+  /**
+   * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
+   * selection). An icon button shows its label as the hint by itself.
+   */
+  title?: string;
 };
 
 export type ButtonProps = ButtonBase &
@@ -55,7 +60,7 @@ export const Button = (props: ButtonProps) => {
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={props.href && props.disabled ? "true" : undefined}
       aria-label={iconOnly() ? props.label : undefined}
-      title={iconOnly() ? props.label : undefined}
+      title={iconOnly() ? props.label : props.title}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={props.onClick}
       class="k2-btn"
@@ -84,7 +89,7 @@ export const Button = (props: ButtonProps) => {
 };
 
 /** An action as data turned into a button of the given weight; without an icon it always shows its label. */
-export const ActionButton = (props: { action: Action; variant?: ButtonProps["variant"]; iconOnly?: boolean }) => (
+export const ActionButton = (props: { action: Action; variant?: ButtonProps["variant"]; iconOnly?: boolean; titled?: boolean }) => (
   <Show
     when={props.iconOnly && props.action.icon}
     fallback={
@@ -92,6 +97,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         variant={props.variant}
         icon={props.action.icon}
         forward={props.action.forward}
+        title={props.titled ? props.action.label : undefined}
         href={props.action.href}
         onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}

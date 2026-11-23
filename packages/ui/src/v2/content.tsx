@@ -1,5 +1,16 @@
 import { Link } from "@k2b/ssr/nav";
-import { createContext, createMemo, createUniqueId, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
+import {
+  createContext,
+  createMemo,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  useContext,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
@@ -157,12 +168,79 @@ const ListContext = createContext(false);
 
 export type ListProps = { children: JSX.Element; label?: string };
 
+/**
+ * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
+ * focused row, else the first visible one, keeps its distance to the top of the column. When that row goes itself,
+ * the row after it takes its place, else the row before it keeps its own. Browsers with CSS scroll anchoring already
+ * hold the place, so nothing moves twice there; Safari ships none. At the very top nothing is held, so a new row shows
+ * up there. (As v1's `MailConversationList`.)
+ */
+const keepPlace = (list: HTMLElement) => {
+  const scroller = list.closest<HTMLElement>(".k2-scroll");
+  if (!scroller || typeof MutationObserver === "undefined") return;
+  type Place = { row: HTMLElement; top: number };
+  let held: { place: Place; next?: Place; previous?: Place } | null = null;
+  const isRow = (node: Node | null): node is HTMLElement => node instanceof HTMLElement && node.matches(".k2-row");
+  const hold = () => {
+    const view = scroller.getBoundingClientRect();
+    const placeOf = (row: HTMLElement): Place => ({ row, top: row.getBoundingClientRect().top - view.top });
+    const visible = (row: HTMLElement) => {
+      const box = row.getBoundingClientRect();
+      return box.bottom > view.top && box.top < view.bottom;
+    };
+    const focused = document.activeElement?.closest<HTMLElement>(".k2-row");
+    const row =
+      scroller.scrollTop <= 0
+        ? undefined
+        : focused && focused.parentElement === list && visible(focused)
+          ? focused
+          : Array.from(list.children).find((each) => isRow(each) && each.getBoundingClientRect().top >= view.top);
+    if (!row || !isRow(row)) {
+      held = null;
+      return;
+    }
+    const next = row.nextElementSibling;
+    const previous = row.previousElementSibling;
+    held = {
+      place: placeOf(row),
+      // the row after it would take its place, the row before it keeps its own
+      next: isRow(next) ? { row: next, top: placeOf(row).top } : undefined,
+      previous: isRow(previous) ? placeOf(previous) : undefined,
+    };
+  };
+  const changed = (records: MutationRecord[]) => {
+    if (!records.some((record) => [...record.addedNodes, ...record.removedNodes].some(isRow))) return;
+    const place = [held?.place, held?.next, held?.previous].find((each) => each?.row.isConnected);
+    if (place) {
+      const moved = place.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - place.top;
+      if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
+    }
+    hold();
+  };
+  const rows = new MutationObserver(changed);
+  rows.observe(list, { childList: true });
+  scroller.addEventListener("scroll", hold, { passive: true });
+  scroller.addEventListener("focusin", hold);
+  hold();
+  onCleanup(() => {
+    rows.disconnect();
+    scroller.removeEventListener("scroll", hold);
+    scroller.removeEventListener("focusin", hold);
+  });
+};
+
 /** Rows one under the other. (Selection, keyboard and drag come with the behaviour layer.) */
-export const List = (props: ListProps) => (
-  <div class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
-    <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
-  </div>
-);
+export const List = (props: ListProps) => {
+  let list: HTMLDivElement | undefined;
+  onMount(() => {
+    if (list) keepPlace(list);
+  });
+  return (
+    <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
+      <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+    </div>
+  );
+};
 
 export type RowLines = readonly [JSX.Element] | readonly [JSX.Element, JSX.Element] | readonly [JSX.Element, JSX.Element, JSX.Element];
 

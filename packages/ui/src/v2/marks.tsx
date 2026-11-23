@@ -1,5 +1,6 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -39,7 +40,15 @@ export type AvatarProps = Person;
  * lines and in a record head (soft there), 20 px among the marks of a row and in a button.
  */
 export const Avatar = (props: AvatarProps) => (
-  <span class="k2-av" data-k2-part="Avatar" data-k2-avatar="" role="img" aria-label={props.name} style={custom({ "--k2-c": props.color })}>
+  <span
+    class="k2-av"
+    data-k2-part="Avatar"
+    data-k2-avatar=""
+    role="img"
+    aria-label={props.name}
+    // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
+    style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
+  >
     {initialsOf(props)}
   </span>
 );

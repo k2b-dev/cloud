@@ -4,7 +4,17 @@ import { resolve } from "node:path";
 import { parse } from "postcss";
 import { httpAppIds } from "../../../../scripts/workspace";
 import { appBarTokens } from "./app-appearance";
-import { appColorStyle, appColorSurfaces, appColors, contrastRatio, mixHex, relativeLuminance } from "./app-color";
+import {
+  appColorStyle,
+  appColorSurfaces,
+  appColors,
+  appV2Ink,
+  contrastOnMix,
+  contrastRatio,
+  mixHex,
+  relativeLuminance,
+  v2InkGrounds,
+} from "./app-color";
 
 type HexColor = `#${string}`;
 const workspaceRoot = resolve(import.meta.dir, "../../../..");
@@ -234,6 +244,57 @@ describe("app colors", () => {
       // The narrow bar's hover over a ground, here the plain canvas.
       expect(resolveColor(required(themeTokens[theme], "--ui-hover"), theme)).toBe(mixHex(tokens.hover, tokens.canvas, tokens.hoverShare));
     }
+  });
+
+  test("the v2 grounds are the surface and tint mix of @k2b/ui/v2.css in each theme", () => {
+    const v2 = parse(readFileSync(resolve(workspaceRoot, "packages/ui/src/v2/v2.css"), "utf8"));
+    const grounds = (pick: (selector: string) => boolean) => {
+      let found: { surface: string; tint: number } | undefined;
+      v2.walkRules((rule) => {
+        if (found || !pick(rule.selector)) return;
+        const values = new Map<string, string>();
+        rule.walkDecls((declaration) => void values.set(declaration.prop, declaration.value));
+        const mix = values.get("--k2-app-tint-mix")?.match(/^color-mix\(in srgb, var\(--k2-app\) ([\d.]+)%, var\(--k2-surface\)\)$/);
+        const surface = values.get("--k2-surface");
+        if (mix && surface) found = { surface, tint: Number(mix[1]) / 100 };
+      });
+      if (!found) throw new Error("v2.css names no surface and tint mix here");
+      return found;
+    };
+    expect({
+      light: grounds((selector) => selector === ".k2-ui"),
+      dark: grounds((selector) => selector.includes('.k2-ui[data-theme="dark"]')),
+    }).toEqual(v2InkGrounds);
+  });
+
+  // 9 steps per channel (00, 22, … ee, ff) give 729 accents; the paint of the tint is unrounded, as in the browser.
+  test("every accent gets a v2 ink that keeps 4.5:1 on the v2 surface and the painted tint of each theme", () => {
+    const steps = ["00", "22", "44", "66", "88", "aa", "cc", "ee", "ff"];
+    const short: string[] = [];
+    for (const r of steps)
+      for (const g of steps)
+        for (const b of steps) {
+          const accent: HexColor = `#${r}${g}${b}`;
+          const ink = appV2Ink(accent);
+          for (const theme of themes) {
+            const { surface, tint } = v2InkGrounds[theme];
+            if (contrastRatio(ink[theme], surface) < 4.5 || contrastOnMix(ink[theme], accent, surface, tint) < 4.5)
+              short.push(`${accent} ${theme}`);
+          }
+        }
+    expect(short).toEqual([]);
+    // Two accents that passed against the rounded tint but fell to 4.49 on the painted one.
+    for (const [accent, theme] of [
+      ["#66eecc", "light"],
+      ["#cc88aa", "dark"],
+    ] as const) {
+      const { surface, tint } = v2InkGrounds[theme];
+      expect(contrastOnMix(appV2Ink(accent)[theme], accent, surface, tint)).toBeGreaterThanOrEqual(4.5);
+    }
+    // Amber is too light on white: its ink moves toward black, the mildest step that reads.
+    expect(appV2Ink("#f59e0b").light).not.toBe("#f59e0b");
+    // An accent that already reads stays itself.
+    expect(appV2Ink("#1d4ed8").light).toBe("#1d4ed8");
   });
 
   test("platform defaults match the colors computed for Tailwind's blue-500", () => {

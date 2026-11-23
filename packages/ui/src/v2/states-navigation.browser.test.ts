@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page, Route } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-states-navigation.client";
 import type { FixtureState } from "../../test/v2-states-navigation.fixture";
+import { measureV2Layout } from "./testing";
 import { hairline, heights, textEdge } from "./tokens";
 
 // The states every place with data has (loading, empty, failed) in a list and a table, the search field (keys, focus,
