@@ -15,7 +15,7 @@ export const activityTimelineMessages = i18n.define({
       createdBy: ({ actor, value }: Words) => (value ? `Created by ${actor} (${value})` : `Created by ${actor}`),
       system: "System",
       formerUser: "Former user",
-      formerService: "Former service account",
+      formerService: "Former agent or service account",
       changed: ({ actor, kind }: Words) => `${actor} changed the ${kind}`,
       created: ({ actor, kind }: Words) => `${actor} created the ${kind}`,
       completed: ({ actor, kind }: Words) => `${actor} completed the ${kind}`,
@@ -44,7 +44,7 @@ export const activityTimelineMessages = i18n.define({
       createdBy: ({ actor, value }: Words) => (value ? `Angelegt von ${actor} (${value})` : `Angelegt von ${actor}`),
       system: "System",
       formerUser: "Ehemaliger Benutzer",
-      formerService: "Ehemaliges Dienstkonto",
+      formerService: "Ehemaliger Agent oder ehemaliges Dienstkonto",
       changed: ({ actor, self, kind }: Words) =>
         `${actor} ${self ? "hast" : "hat"} ${kind === "task" ? "die Aufgabe" : "den Termin"} geändert`,
       created: ({ actor, self, kind }: Words) =>

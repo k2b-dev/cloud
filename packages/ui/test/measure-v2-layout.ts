@@ -245,14 +245,11 @@ function measureInPage(options: InPage): DomResult {
       if (parent) {
         clip = { ...clipOf(parent) };
         const style = getComputedStyle(parent);
-        if (style.display !== "contents" && (style.overflowX !== "visible" || style.overflowY !== "visible")) {
+        // Each axis on its own: `overflow: clip visible` cuts sideways only, and a 2 px tab mark below the box stays whole.
+        if (style.display !== "contents") {
           const r = parent.getBoundingClientRect();
-          clip = {
-            left: Math.max(clip.left, r.left),
-            right: Math.min(clip.right, r.right),
-            top: Math.max(clip.top, r.top),
-            bottom: Math.min(clip.bottom, r.bottom),
-          };
+          if (style.overflowX !== "visible") clip = { ...clip, left: Math.max(clip.left, r.left), right: Math.min(clip.right, r.right) };
+          if (style.overflowY !== "visible") clip = { ...clip, top: Math.max(clip.top, r.top), bottom: Math.min(clip.bottom, r.bottom) };
         }
       }
       clips.set(element, clip);

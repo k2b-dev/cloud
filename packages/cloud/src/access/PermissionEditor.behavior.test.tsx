@@ -35,20 +35,20 @@ const installPopoverApi = (dom: DomTestHarness) => {
 const labels = {
   en: {
     agent: "Agent",
-    standalone: "Agent (API key only)",
+    standalone: "Agent",
     resource_bound: "API key",
     user_delegated: "Personal",
   },
   de: {
     agent: "Agent",
-    standalone: "Agent (nur API Key)",
+    standalone: "Agent",
     resource_bound: "API Key",
     user_delegated: "Persönlich",
   },
 } as const;
 const icons: Record<Exclude<ServiceAccountKind, "code">, string> = {
   agent: "ti-robot",
-  standalone: "ti-key",
+  standalone: "ti-robot",
   resource_bound: "ti-key",
   user_delegated: "ti-user-key",
 };
@@ -1034,10 +1034,10 @@ describe("PermissionEditor group coverage", () => {
         await waitFor(() => view.panel().querySelectorAll("li").length === 1, "machine member");
         view.toggle().click();
         expect(view.panel().textContent).toContain("Research helper");
-        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Agent (API key only)");
+        expect(view.panel().textContent).toContain("Agent");
         expect(view.panel().textContent).toContain("1 account receives access");
         expect(view.panel().textContent).not.toContain("machine-member");
-        expect(view.panel().querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+        expect(view.panel().querySelector(".ti-robot")).not.toBeNull();
       } finally {
         view.done();
         dom.cleanup();

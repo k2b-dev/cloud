@@ -60,11 +60,11 @@ for (const mode of [
       await info.getByRole("button", { name: t.addPeople, exact: true }).click();
       await dialog.getByRole("combobox").fill("Studio");
       await page.getByRole("option").filter({ hasText: account.name }).click();
-      await dialog.locator(".chat-member-row").getByText(t.standaloneAccount, { exact: true }).waitFor();
+      await dialog.locator(".chat-member-row").getByText(t.agentAccount, { exact: true }).waitFor();
       await dialog.getByRole("button", { name: t.add, exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
       const row = info.locator(".chat-member-row").filter({ hasText: account.name });
-      await row.getByText(t.standaloneAccount, { exact: true }).waitFor();
+      await row.getByText(t.agentAccount, { exact: true }).waitFor();
       const role = row.getByRole("button", { name: t.permissionFor({ name: account.name }), exact: true });
       await role.click();
       await page
@@ -153,7 +153,7 @@ for (const mode of [
           const t = chatMessages.resolve([mode.locale]).t;
           const panel = page.locator("#k2b-workspace-detail-chat-info");
           const row = panel.locator(".chat-member-row").filter({ hasText: "Atlas Example" });
-          await row.getByText(kind === "agent" ? t.agentAccount : t.standaloneAccount, { exact: true }).waitFor();
+          await row.getByText(t.agentAccount, { exact: true }).waitFor();
           expect(await row.locator(".ti-robot").count()).toBe(1);
           expect(await row.locator("img").count()).toBe(0);
           await settled(page);

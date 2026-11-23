@@ -177,7 +177,7 @@ export const revalidateWorkflowPrincipal = async (
 
   if (principal.mandate) {
     if (!(await validateWorkflowMachineMandate(principal, baseId, db)))
-      return { ok: false, reason: "Workflow mandate is inactive or changed." };
+      return { ok: false, reason: "Automatic runs of this workflow are paused, ended, or changed." };
     if (!acceptedCredential) return { ok: true, subject, permissionCap: "write", credential: null };
   }
   const now = deps.now();

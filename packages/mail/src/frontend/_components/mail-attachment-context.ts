@@ -9,7 +9,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { type ContactDirectoryTarget, MAIL_CONTACT_DIRECTORY_DEFAULTS } from "../../contact-directory";
 import type { MailAddress } from "../../contracts";
-import { resolveContacts } from "./contact-capabilities";
+import { ContactDirectoryRefusedError, resolveContacts } from "./contact-capabilities";
 import { mailAssistantRecipientEmails } from "./mail-assistant-launch";
 
 type CatalogApp = CapabilityCatalog["apps"][number];
@@ -88,9 +88,11 @@ export const resolveAttachmentContext = async (
       try {
         const result = await resolve(targets[current]!, { emails, limit: 50 }, bounded);
         if (!bounded.aborted) results[current] = result.data.items;
-      } catch {
+      } catch (error) {
         signal.throwIfAborted();
-        // A failing, slow, or refusing provider contributes no hints.
+        // A failing, slow, or refusing provider contributes no hints. A refusal is an answer: this person has no
+        // matches there, so it does not count as a contact app that failed to answer.
+        if (error instanceof ContactDirectoryRefusedError) results[current] = [];
       }
     }
   };

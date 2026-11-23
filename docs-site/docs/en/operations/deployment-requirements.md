@@ -460,6 +460,20 @@ browser signs out. Cloud server capability and sync-operations transports set
 the canonical Origin when forwarding a session to Core; the originating
 application has already applied the same mandatory ingress check.
 
+## Embed Cloud pages only in Cloud
+
+The gateway gives every HTML response that states no framing policy of its own
+`Content-Security-Policy: frame-ancestors 'self'` and
+`X-Frame-Options: SAMEORIGIN`. Only pages of the same origin can show a Cloud
+page in a frame, such as the side panel. Pages that already forbid all framing
+keep their stricter policy.
+
+After upgrading the gateway, a site on another origin, such as an intranet
+portal, can no longer show Cloud pages in a frame; link to them instead. The
+same default applies to pages on app domains unless the app sets its own
+`frame-ancestors` directive. Pass both headers through the reverse proxy
+unchanged; do not remove or replace them.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
