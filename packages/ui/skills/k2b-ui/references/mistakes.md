@@ -24,7 +24,8 @@ already carries the text edge and reaches both column edges.
 
 ### `innerHTML on <div> … use Prose`
 
-Markup brings its own classes. Reading text goes into `<Prose html={…} />`.
+Markup brings its own classes. Reading text goes into
+`<Prose markdown={…} />`, which renders safe Markdown.
 
 ### `<Canvas> stands as the root of a component` / `outside a v2 primitive`
 
@@ -57,7 +58,7 @@ Rule 3, fixed places. A wrapper element in a `Pane`, `List`, `Section`,
 
 ### `loose text "…" in Pane` (outline)
 
-Text needs a type role: `<Text>`, `<Text type="body" strong>`, or a
+Text needs a type role: `<Text>`, `<Text type="body" weight="strong">`, or a
 `Notice` when it is a message.
 
 ### `Button "…" stands alone in Pane and takes its full width` (outline)
@@ -109,7 +110,7 @@ Rule 9. You drew it with your own element or a `Bar` between entries.
   usually a `Bar` right under a `Bar`, or a `Band` before a `Section` end.
   Drop one of them.
 - `text outside the type roles: 15px/22px 500`: own font sizes. Use
-  `Text type`; emphasis is `strong`, never a size.
+  `Text type`; emphasis is `weight`, never a size.
 - `grip …: pill centre … px off its line`: a primitive bug. Report it.
 
 ## Types

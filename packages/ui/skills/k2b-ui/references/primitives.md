@@ -98,7 +98,7 @@ section, or a `Digest`, `Facts`, `Group`s.
 
 What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
 (head grows to 56), `state` (a `Chip`; for a running state such as "Läuft"
-`state={<Text medium><Icon name="gavel" /> Läuft</Text>}`; or an amount),
+`state={<Text weight="medium"><Icon name="gavel" /> Läuft</Text>}`; or an amount),
 `actions` (text buttons),
 `menu` (more deeds behind "…"), `folded` (head only, with a chevron),
 children. No line inside; never a `Group` in a `Group`, and never in a
@@ -134,17 +134,18 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
-returning one value or `[line, quietLine]`, `align: "end"` for numbers and
-amounts, `width={{ min, default }}` (exactly that wide, cut text never
-widens it, grip in the head), `wrap` (one text column may take 3 lines),
-`drop` (leaves on the phone). The last column takes the rest. Chips,
-`Progress`, text buttons are fine in cells.
+returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
+numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
+never widens it, grip in the head), `wrap` (one text column may take 3
+lines), `drop` (leaves on the phone). The last column takes the rest. Chips,
+`Progress`, text buttons are fine in cells. `open(row) => { href } | {
+onOpen }` makes each row open its entry.
 
 A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
-=> { key, head, meta?, count? }` (tinted group rows), `sort: { column,
+=> { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
 direction }` (an arrow in that head), `phone(row) => { lines, avatar?, time?
 }` (on the phone each row becomes a two-line row instead).
 
@@ -162,8 +163,8 @@ line with `end` (such as a print button).
 ### Text
 
 `type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
-`strong` (600), `medium` (500, a state or amount that stands out a
-little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
+`weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
+out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
 In a column it is a block with the text edge; in a bar or row it runs
@@ -171,7 +172,8 @@ inline. Emphasis is a weight, never a size.
 
 ### Prose
 
-Reading text (14/22, measure 720): `html` (sanitised by you) or children.
+Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
+safe links only) or children.
 
 ### Inline
 
@@ -204,9 +206,9 @@ in a `Bar start`.
   after a failed save.
 - `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
   `max`, `onInput`; `label` when it stands without a `Field` (a search).
-- `Select`: `options` (strings or `{ value, label }`), `value`,
+- `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
-- `DateInput`: `value`, `placeholder`.
+- `DateInput`: `value`, `onInput`, `placeholder`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`.
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -220,8 +222,8 @@ in a `Bar start`.
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there).
-- `Tabs`: `label`, `items: { label, icon?, count?, href?, current?, menu?
-  }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
+- `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
+  current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
   value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
@@ -235,8 +237,6 @@ in a `Bar start`.
   the page.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
-- `toast(message, { action?, icon?, duration? })`: one short sentence at
-  the bottom with at most one deed ("Rückgängig"); `Workspace` shows it.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"

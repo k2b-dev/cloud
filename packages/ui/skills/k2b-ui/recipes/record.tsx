@@ -121,7 +121,7 @@ export default function CustomerOverview() {
                     state: { icon: "gavel", label: "Läuft" },
                     text: (
                       <>
-                        8 Artikel laufen, die Auktion endet <Text strong>morgen</Text>.
+                        8 Artikel laufen, die Auktion endet <Text weight="strong">morgen</Text>.
                       </>
                     ),
                   },

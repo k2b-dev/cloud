@@ -72,7 +72,6 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
 | the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
-| "done, undo?" after an action | `toast(message, { action })` | – |
 | the newest few on a first page | `Digest` | `record.tsx` |
 | labels with values | `Facts` (`inline` for one line) | `record.tsx` |
 | something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
@@ -129,13 +128,13 @@ default (framed) button.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`, `toast()`.
+  `RecordHead`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-`Dialog`, `Menu`, `Popover`, `Tooltip` (their behaviour exists inside
-`@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
+`Dialog`, `Menu`, `Popover`, `Tooltip`, `Toast` (their behaviour exists
+inside `@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
 error states of a whole pane, a search field and filter components, a
 `required` mark on `Field`, the mail and chat composer (comes from
 `@k2b/editor`), an assistant message or answer card, and a phone form for

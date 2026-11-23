@@ -179,7 +179,11 @@ export default function MailScreen() {
                 </>
               }
             />
-            <Prose html="<p>Guten Tag Frau Solberg,</p><p>die 14 Platten können wir in KW 49 liefern. Bitte bestätigen Sie bis Freitag.</p><p>Viele Grüße<br>Jonas Brandt</p>" />
+            <Prose
+              markdown={
+                "Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern. Bitte bestätigen Sie bis Freitag.\n\nViele Grüße  \nJonas Brandt"
+              }
+            />
             <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
           </Band>
         </Pane>

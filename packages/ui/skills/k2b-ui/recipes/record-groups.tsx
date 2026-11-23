@@ -59,7 +59,7 @@ export default function CustomerDeliveries() {
             state={<Chip yours>Du bist dran</Chip>}
             actions={[{ label: "Öffnen" }]}
           >
-            <Text type="body" strong>
+            <Text type="body" weight="strong">
               10 Artikel sind ausgelaufen.
             </Text>
             <Steps
@@ -75,12 +75,14 @@ export default function CustomerDeliveries() {
               label="Abrechnung"
               rows={settlements}
               columns={[
-                { title: "Auslauftag", cell: (row) => [row.day, row.items] },
+                { title: "Auslauftag", cell: (row) => ({ lines: [row.day, row.items] }) },
                 {
                   title: "Abrechnung",
-                  cell: (row) => [row.when, <Progress value={row.workday} of={22} label={`Arbeitstag ${row.workday} von 22`} />],
+                  cell: (row) => ({
+                    lines: [row.when, <Progress value={row.workday} of={22} label={`Arbeitstag ${row.workday} von 22`} />],
+                  }),
                 },
-                { title: "Auszahlung", align: "end", cell: (row) => [row.amount, row.estimate ? "geschätzt" : ""] },
+                { title: "Auszahlung", align: "end", cell: (row) => ({ lines: [row.amount, row.estimate ? "geschätzt" : ""] }) },
               ]}
             />
             <Facts
