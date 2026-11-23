@@ -236,6 +236,23 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
+    "K5: the controls of a field row stand on one line, with a hint, an error or a note in the label line",
+    async () => {
+      const page = await open("controls");
+      try {
+        const rows = await page.$$eval(".k2-frow", (frows) =>
+          frows.map((row) => [...row.querySelectorAll(".k2-input")].map((control) => control.getBoundingClientRect().top)),
+        );
+        expect(rows.length).toBeGreaterThan(1);
+        for (const tops of rows) expect(new Set(tops).size).toBe(1);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "rule 9: no line under a section head or between its entries, none inside a group; one line at the end of a section",
     async () => {
       const page = await open("structure");
