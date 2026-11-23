@@ -90,7 +90,7 @@ suiteFor("database", "nats")("application mail log access and indexed search", (
   });
   test("each app reads only its own mail, also with a grant an older Core stored (access model F2)", async () => {
     const own = await insert("reader");
-    const source = await insert("source");
+    const source = await insert("source", "Foreign reminder");
     await insert("other");
     await insert("core");
     // A row an older Core wrote before the migration emptied the table grants nothing.
@@ -102,6 +102,9 @@ suiteFor("database", "nats")("application mail log access and indexed search", (
     for (const apps of [["source"], ["reader", "source"], ["core"]])
       expect(await mail.list({ apps })).toMatchObject({ ok: false, error: { code: "app_not_allowed", status: 403 } });
     expect(JSON.stringify(await list())).not.toContain(source);
+    // Neither its ID nor a search for its subject reaches another app's mail.
+    expect((await list({ ids: [source] })).total).toBe(0);
+    expect((await list({ q: "foreign reminder" })).total).toBe(0);
     identity("reader", false);
     expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
     // Core reads only its own mail too.

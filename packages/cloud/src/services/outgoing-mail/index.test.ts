@@ -216,7 +216,7 @@ test("log filters bound and normalize search, app sets, recipients and timestamp
   for (const q of ["...", "%_%", "---", "___", "a.b.c", "x@y.de", "ab 12"]) expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
   for (const q of ["abc", "Müller", "@example.org", "50%_off", "RE: 123", "发票通知"])
     expect(MailFilterSchema.safeParse({ q }).success).toBe(true);
-  // An app passes everything readableApps() returns: itself and up to 100 grants. App IDs are as registered.
+  // The schema still accepts as many app IDs as older servers allowed (101); the service then refuses all but the caller.
   for (const apps of [[], [""], ["reader", "reader"], Array.from({ length: 102 }, (_, i) => `app-${i}`)])
     expect(MailFilterSchema.safeParse({ apps }).success).toBe(false);
   expect(MailFilterSchema.safeParse({ apps: Array.from({ length: 101 }, (_, i) => `app-${i}`), q: "x".repeat(200) }).success).toBe(true);

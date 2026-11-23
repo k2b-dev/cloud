@@ -21,8 +21,10 @@ mail. The grants that let it do so are removed: the command
 dialog and its **Send log** column in **Administration → Outgoing mail → Apps**,
 and `PUT /api/admin/core/outgoing-mail/apps/:appId/log-access`. Every start of
 Core empties the stored grants, so applications on an older `@k2b/cloud` read
-only their own mail too. The send log in the administration still shows the
-mail of all applications, and opening a text is audited.
+only their own mail too. Do not change grants while a rolling update still
+runs, because an old Core replica could store one again. The send log in the
+administration still shows the mail of all applications, and opening a text is
+audited.
 
 For application authors: `mail.readableApps()` returns only your application
 ID, `filter.apps` that names another application returns `app_not_allowed`,

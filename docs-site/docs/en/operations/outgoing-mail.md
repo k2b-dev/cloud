@@ -623,8 +623,10 @@ then on. The table stays until no application library reads it. Before you
 upgrade, check which applications had grants with
 `cld admin outgoing-mail apps list --json` on the old release (`logApps`): an
 application that showed other applications' mail to its users needs those
-applications to offer the information themselves. A rollback restores neither
-the commands nor the grants.
+applications to offer the information themselves. Do not change grants with the
+old commands while a rolling update still runs: an old Core replica could store
+a grant again, and only the next start of a new Core empties it. A rollback
+brings back the commands and the dialog, but not the emptied grants.
 
 Core adds the send log access table during setup and then builds two search
 indexes on recipients and subjects in the background. Core starts and sends
