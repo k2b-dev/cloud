@@ -284,13 +284,20 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           const cells = [...document.querySelectorAll(".k2-table tbody tr")].map((row) => row.getBoundingClientRect().height);
           const cut = document.querySelector<HTMLElement>(".k2-table tbody td .k2-cell-line:not([data-wrap])")!;
           const wrap = document.querySelector<HTMLElement>(".k2-table tbody td .k2-cell-line[data-wrap]")!;
+          // #4076: a chip is taller than the cut line it stands in, and still shows whole: the line cuts sideways only
+          const chip = document.querySelector(".k2-table tbody td .k2-cell-line .k2-chip")!.getBoundingClientRect();
+          const line = document.querySelector(".k2-table tbody td .k2-cell-line:has(.k2-chip)")!;
+          const shown = line.getBoundingClientRect();
+          const clipsBelow = getComputedStyle(line).overflowY !== "visible";
           return {
             heads,
             cells,
             cut: cut.scrollWidth > cut.clientWidth,
             wrapLines: Math.round(wrap.getBoundingClientRect().height / 20),
+            chip: [chip.height > shown.height, clipsBelow ? chip.top >= shown.top && chip.bottom <= shown.bottom : true],
           };
         });
+        expect(table.chip).toEqual([true, true]);
         expect(table.heads.slice(0, -1)).toEqual([260, 180, 300, 140]);
         expect(table.heads.at(-1)!).toBeGreaterThanOrEqual(120);
         expect(table.cut).toBe(true);
