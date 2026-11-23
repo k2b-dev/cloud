@@ -11,6 +11,9 @@ import {
   ErrorResponseSchema,
   GroupManagerInputSchema,
   GroupMemberInputSchema,
+  GroupRelationColumnKeySchema,
+  GroupRelationDepthSchema,
+  GroupRelationsSchema,
   MessageResponseSchema,
   PaginationQuerySchema,
   PaginationResponseSchema,
@@ -115,6 +118,57 @@ const app = new Hono<AuthContext>()
         ok({
           groups: groupsPage.items,
           pagination: createPagination(params, groupsPage.total),
+        }),
+      );
+    },
+  )
+  .get(
+    "/relations",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Groups"],
+      summary: "Show group relations",
+      description:
+        "Show which groups contain which, in levels around one group. Without focus, the group with the most direct relations is the focus. " +
+        "Each column lists 10 groups unless its key (u1-u4 for containing groups, d1-d4 for contained groups) is in expand. " +
+        "Edges to groups already shown are back edges; closesCycle marks a membership cycle. view=list adds the top groups for a tree. " +
+        "Names and member counts only, never member names. Personal Linux groups are excluded. " +
+        "truncated and cyclesComplete=false mean the edge read stopped at its limit.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(GroupRelationsSchema, "Group relations"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "Focus group not found"),
+      },
+    }),
+    v(
+      "query",
+      z.object({
+        focus: z.uuid().optional(),
+        selected: z.uuid().optional(),
+        depth: GroupRelationDepthSchema.default(2),
+        managers: z.enum(["true", "false"]).optional(),
+        view: z.enum(["graph", "list"]).default("graph"),
+        expand: z
+          .string()
+          .optional()
+          .transform((value) => (value ? value.split(",") : []))
+          .pipe(z.array(GroupRelationColumnKeySchema).max(8)),
+      }),
+    ),
+    async (c) => {
+      const query = c.req.valid("query");
+      return respond(c, () =>
+        accountsService.group.relations({
+          actor: toAccountsActor(expectUserBackedActor(c)),
+          focus: query.focus,
+          selected: query.selected,
+          depth: query.depth,
+          managers: query.managers === "true",
+          view: query.view,
+          expand: query.expand,
+          signal: c.req.raw.signal,
         }),
       );
     },

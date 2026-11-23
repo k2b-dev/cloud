@@ -98,6 +98,18 @@ type GroupsResponse = {
   pagination: Pagination;
 };
 
+type GroupRelationsResponse = {
+  focus: string | null;
+  nodes: { id: string; name: string; inCycle: boolean }[];
+  columns: {
+    key: string;
+    items: { id: string; via: string }[];
+    backs: { from: string; to: string; closesCycle: boolean }[];
+    hidden: number;
+  }[];
+  cyclesComplete: boolean;
+};
+
 type EntitiesResponse = {
   items: EntityListItem[];
   pagination: Pagination;
@@ -1079,6 +1091,45 @@ export default defineCliCommands({
           { key: "description" },
           { key: "id" },
         ]);
+      },
+    }),
+    command("groups relations", {
+      summary: "Show which groups contain a group and which groups it contains",
+      args: { group: arg.optional({ valueLabel: "group" }) },
+      flags: {
+        depth: flag.int({ default: 2, min: 1, max: 4, description: "Levels in each direction" }),
+        managers: flag.boolean({ description: "Also evaluate which groups manage which" }),
+        all: flag.boolean({ description: "Show every group of each level instead of the first 10" }),
+      },
+      async run({ ctx, args, flags }) {
+        const focus = args.group ? (await resolveGroupRef(ctx, args.group)).id : undefined;
+        const columns = flags.all ? "u1,u2,u3,u4,d1,d2,d3,d4" : undefined;
+        const response = await apiGet<GroupRelationsResponse>(
+          ctx,
+          `/groups/relations${queryString({ focus, depth: flags.depth, managers: flags.managers ? "true" : undefined, expand: columns })}`,
+        );
+        const name = (id: string) => response.nodes.find((node) => node.id === id)?.name ?? id;
+        const rows = response.columns.flatMap((column) => {
+          const level = `${column.key.startsWith("u") ? "contained in" : "contains"} ${column.key.slice(1)}`;
+          return [
+            ...column.items.map((item) => ({
+              level,
+              group: name(item.id),
+              via: name(item.via),
+              cycle: response.nodes.find((node) => node.id === item.id)?.inCycle ? "yes" : "",
+            })),
+            ...column.backs.map((back) => ({
+              level,
+              group: name(back.to),
+              via: name(back.from),
+              cycle: back.closesCycle ? "closes" : "already shown",
+            })),
+            ...(column.hidden > 0 ? [{ level, group: `${column.hidden} more (--all)`, via: "", cycle: "" }] : []),
+          ];
+        });
+        const focusRow = response.focus ? [{ level: "focus", group: name(response.focus), via: "", cycle: "" }] : [];
+        printJsonOrTable(ctx, response, [...focusRow, ...rows], [{ key: "level" }, { key: "group" }, { key: "via" }, { key: "cycle" }]);
+        if (!response.cyclesComplete) ctx.error("Only part of the relations was read; cycles were checked only in part.");
       },
     }),
     command("groups create", {

@@ -5,7 +5,7 @@ section: Identity and access
 order: 305
 description: Five words and three rules explain accounts, permissions, API keys, and applications.
 tags: [identity, accounts, authorization, api-keys]
-updated: 2026-11-03
+updated: 2026-11-23
 ---
 
 # Who may do what
@@ -36,6 +36,19 @@ Cloud uses five words and three rules to explain access.
 The administrator is root: able to repair access, but with no automatic access
 to content. The exception is outgoing app mail in the administrator's
 notification view.
+
+## Groups inside groups
+
+A group can contain other groups. A member of the inner group is also a member
+of every group that contains it, at any depth, so a permission for the outer
+group reaches them too. Local groups refuse a nesting that would lead back to
+the same group. Groups from FreeIPA can form such a cycle; then the members of
+every group in the cycle count in each of them.
+
+Administrators see which groups contain which with
+`cld accounts groups relations <group>` or `GET /api/accounts/groups/relations`.
+The answer shows levels around one group and marks cycles. It shows group names
+and member counts, never member names. Personal Linux groups are left out.
 
 ## If you know Unix
 
