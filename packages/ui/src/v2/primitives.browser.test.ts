@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { gripTolerance, heights, textEdge } from "./tokens";
@@ -41,6 +41,7 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
     `<!doctype html><html lang="de"><head><style>${css}</style><style>${testCss}</style></head>` +
       `<body class="k2-ui"><div class="frame">${markup[name]}</div></body></html>`,
   );
+  await settled(page);
   return page;
 };
 
