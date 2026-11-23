@@ -124,7 +124,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       });
       return `Tabs ${quote(element.getAttribute("aria-label"))}: ${tabs.join(", ")}`;
     }
-    if (name === "RecordHead") return `RecordHead ${quote(element.textContent)}`;
+    if (name === "RecordHead") {
+      // The identifiers stand beside the name, in the same place (its kinds are chips and name themselves).
+      const ids = [...(element.parentElement?.querySelectorAll(":scope > .k2-record-id") ?? [])].map((id) => clip(id.textContent ?? "", 30));
+      return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
+    }
     if (name === "Path")
       return `Path: ${[...element.querySelectorAll("a, b")].map((step) => clip(step.textContent ?? "", 24)).join(" › ")}`;
     if (name === "Steps")
@@ -295,7 +299,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const labels = [...element.querySelectorAll("dt")].map(
           (dt) => `${clip(dt.textContent ?? "", 20)}: ${clip(mainText(dt.nextElementSibling), 28)}`,
         );
-        return `Facts${element.hasAttribute("data-inline") ? " inline" : ""}: ${labels.join(" · ")}${element.querySelector("button") ? " (copy)" : ""}`;
+        const end = element.querySelector(":scope > .k2-facts-end");
+        return `Facts${element.hasAttribute("data-inline") ? " inline" : ""}: ${labels.join(" · ")}${element.querySelector(":scope > .k2-btn") ? " (copy)" : ""}${end ? ` ${words(end).join(" ")}` : ""}`;
       }
       case "Notice": {
         const title = element.querySelector(".k2-notice-title")?.textContent;

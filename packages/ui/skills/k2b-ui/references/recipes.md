@@ -50,7 +50,8 @@ statements. Below them a `Pane.Split`: the main column with
 `Section` + `Facts`.
 
 - What needs a person comes first; history comes after.
-- Area colours (`color`) mark the same area everywhere: tab, cell, section.
+- Area colours (`color`) mark the same area in cells, sections and groups
+  (tabs carry no colour).
 
 ## record-groups.tsx: a record tab with groups
 

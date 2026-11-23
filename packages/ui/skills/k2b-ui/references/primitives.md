@@ -84,15 +84,17 @@ component's root and never in a plain element.
 
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
-`more` (one link at the end: "All deliveries ›"), children. No line under
+`more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
+`Pane side`, where the link becomes a row), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
 
 ### Group
 
 What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
-(head grows to 56), `state` (a `Chip`, or `<Text medium>` with an icon for a
-running state such as "Läuft", or an amount), `actions` (text buttons),
+(head grows to 56), `state` (a `Chip`; for a running state such as "Läuft"
+`state={<Text medium><Icon name="gavel" /> Läuft</Text>}`; or an amount),
+`actions` (text buttons),
 `menu` (more deeds behind "…"), `folded` (head only, with a chevron),
 children. No line inside; never a `Group` in a `Group`. Several groups
 stand in one `Section`. A group's way (arrived → … → paid) is `Steps`

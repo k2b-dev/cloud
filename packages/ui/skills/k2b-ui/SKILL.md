@@ -99,8 +99,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
    `describeV2` name the fix.
 6. **Recipes for whole screens.** Copy one instead of composing from
    scratch.
-7. **Rows and columns stay dense.** Long text is cut with "…"; columns
-   drop on the phone (`drop`), they never shrink into wrapping.
+7. **Rows and columns stay dense.** In a table with column `width`s, long
+   text is cut with "…" and the row keeps its height; columns that matter
+   less `drop` on the phone. A small table without widths (a few rows in a
+   group) wraps its cells instead; keep its texts short.
 8. **Round is what you press; square is what structures.** Buttons, chips,
    inputs and tiles are round; panes, bands, sections, groups are square.
 9. **Lines separate groups, not entries or the parts of one thing.** No
