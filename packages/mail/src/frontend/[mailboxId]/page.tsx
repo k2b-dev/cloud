@@ -3,7 +3,7 @@ import { type AuthContext, getDateConfig, getLocale, REQUEST_IDLE_TIMEOUT_SECOND
 import { appAccessAuthority, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
-import { ssr } from "../../config";
+import { app, ssr } from "../../config";
 import { mailPageHelp } from "../../help";
 import { type MailRequestContext, mailboxAccess } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
@@ -15,6 +15,7 @@ import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-use
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
+import { showsMailV2 } from "../mail-v2-pilot";
 import { mailPageMessages } from "../pages-messages";
 import { pageReadStatus, projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
@@ -47,13 +48,16 @@ export default ssr<AuthContext>(async (c) => {
     // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
     // Started first and never awaited longer than the page's own data: a slow Core only loses the dot.
     const codeAttention = startMailboxCodeAttention(c, mailboxShortId);
-    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation] = await Promise.all([
+    const [internalData, spacesIntegration, sidebar, appUrl, liveDictation, pilot] = await Promise.all([
       loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
       getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
       loadMailSidebarData(context),
       coreSettings.get<string>("app.url"),
       getLiveDictationStatus(c.get("accessSubject")),
+      app.settings.get("mail.ui_v2_pilot"),
     ]);
+    // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
+    const ui = showsMailV2(pilot, user.mail) ? "v2" : undefined;
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
     const dateConfig = getDateConfig(c);
@@ -67,6 +71,7 @@ export default ssr<AuthContext>(async (c) => {
         help={mailPageHelp.mailbox}
         printHint={t.printHint}
         fullPage
+        ui={ui}
         workspaceSidebarCollapsible={false}
         title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail, href: "/app/mail" }, { title: data.mailbox.name }]}
       >
@@ -85,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
           calendarIntegrationAvailable={spacesIntegration.invitations}
           liveDictation={liveDictation.available}
           sidebar={sidebar}
+          ui={ui}
         />
       </Layout>
     );

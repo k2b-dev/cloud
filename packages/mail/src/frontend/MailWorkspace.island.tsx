@@ -143,6 +143,7 @@ import {
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
+import MailWorkspaceV2, { createMailV2Dom, linkNavigation, type MailV2Shell } from "./_components/v2/MailWorkspaceV2";
 import { automationLogHref } from "./automation-log-href";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { assertCursorProgress } from "./pagination";
@@ -196,6 +197,8 @@ type MailWorkspaceProps = {
     /** The one-time notice that Focus is gone; the page leaves it out once the person closed it. */
     focusNoticeOpen?: boolean;
   };
+  /** Provisional pilot: the same mailbox drawn with @k2b/ui v2 (see `mail.ui_v2_pilot`). */
+  ui?: "v2";
 };
 
 type MailboxSession = Pick<MailWorkspaceProps, "data" | "requestPath" | "initialPreferences" | "initialUserPreferences">;
@@ -215,9 +218,49 @@ type MailboxControllerProps = MailWorkspaceProps & {
   onReady: (controls: MailboxSessionControls) => void;
   onNavigationStart: () => void;
   onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
+  /** Where the presentation's parts stand in the DOM; v1's markup when not given. */
+  dom?: MailWorkspaceDom;
 };
 
+/**
+ * The parts of the presentation the controller reaches for focus and keys. v1 and the v2 pilot draw different
+ * markup around the same controller, so each brings its own.
+ */
+export type MailWorkspaceDom = {
+  /** The focusable row of a list entry, by its row key. */
+  row(rowKey: string): HTMLElement | null;
+  /** The whole list entry of an item, which holds its row and its own controls. */
+  entry(item: MailListItem): HTMLElement | null;
+  readerHeading(): HTMLElement | null;
+  listHeading(): HTMLElement | null;
+  selectionTrigger(): HTMLElement | null;
+  /** The list and the reader stand side by side; a phone shows one of them at a time. */
+  sideBySide(): boolean;
+};
+
+const v1WorkspaceDom: MailWorkspaceDom = {
+  row: (rowKey) =>
+    document.querySelector<HTMLElement>(
+      rowKey.startsWith("message:")
+        ? `[data-message-id="${CSS.escape(rowKey.slice("message:".length))}"] .mail-list-row`
+        : `[data-conversation-id="${CSS.escape(rowKey)}"] .mail-list-row`,
+    ),
+  entry: (item) =>
+    document.querySelector<HTMLElement>(
+      item.selectionKind === "message"
+        ? `[data-message-id="${CSS.escape(item.id)}"]`
+        : `[data-conversation-id="${CSS.escape(item.conversationId ?? "")}"]`,
+    ),
+  readerHeading: () => document.querySelector<HTMLElement>("[data-mail-reader-heading]"),
+  listHeading: () => document.querySelector<HTMLElement>("[data-mail-list-heading]"),
+  selectionTrigger: () => document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-trigger]"),
+  sideBySide: () => Boolean(document.querySelector(".mail-workspace .mail-list-handle")?.getClientRects().length),
+};
+
+export type MailboxController = ReturnType<typeof createMailboxController>;
+
 function createMailboxController(props: MailboxControllerProps) {
+  const dom = props.dom ?? v1WorkspaceDom;
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const folderName = createMemo(() => mailFolderNames(locale()));
@@ -1475,13 +1518,7 @@ function createMailboxController(props: MailboxControllerProps) {
   /** `reveal` scrolls the row into view; a list that returns to its remembered place keeps it. */
   const focusConversation = (rowKey: string | null, target: "reader" | "row", reveal = true) => {
     if (disposed) return;
-    const selector = rowKey?.startsWith("message:")
-      ? `[data-message-id="${CSS.escape(rowKey.slice("message:".length))}"] .mail-list-row`
-      : `[data-conversation-id="${CSS.escape(rowKey ?? "")}"] .mail-list-row`;
-    const element =
-      target === "reader"
-        ? document.querySelector<HTMLElement>("[data-mail-reader-heading]")
-        : document.querySelector<HTMLElement>(rowKey ? selector : "[data-mail-list-heading]");
+    const element = target === "reader" ? dom.readerHeading() : rowKey ? dom.row(rowKey) : dom.listHeading();
     element?.focus({ preventScroll: true });
     if (target === "row" && reveal) element?.scrollIntoView({ block: "nearest" });
   };
@@ -1731,7 +1768,7 @@ function createMailboxController(props: MailboxControllerProps) {
     clearConversationSelection(false);
     searchControls.releaseHeight();
     queueMicrotask(() => {
-      if (!disposed) document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-trigger]")?.focus({ preventScroll: true });
+      if (!disposed) dom.selectionTrigger()?.focus({ preventScroll: true });
     });
   };
 
@@ -1748,7 +1785,7 @@ function createMailboxController(props: MailboxControllerProps) {
         )
       )
         return;
-      if (!document.querySelector(".mail-workspace .mail-list-handle")?.getClientRects().length) return;
+      if (!dom.sideBySide()) return;
       event.preventDefault();
       setDensityHintOpen(true);
     };
@@ -1771,7 +1808,7 @@ function createMailboxController(props: MailboxControllerProps) {
         // Older engines have no popover selector; the other guards still apply.
       }
       // Phones go back with the reader's own back step.
-      if (!document.querySelector(".mail-workspace .mail-list-handle")?.getClientRects().length) return;
+      if (!dom.sideBySide()) return;
       event.preventDefault();
       const href = buildMailListHref(mailRouteUrl(requestPath()));
       void closeConversationAt(href, (options) => navigate(href, options));
@@ -2364,13 +2401,7 @@ function createMailboxController(props: MailboxControllerProps) {
           });
           for (const removal of added) savedRemovals.set(`${removal.scope}:${removal.rowKey}`, removal);
           const keys = new Set(added.map((removal) => removal.rowKey));
-          const focused = rows.find((item) => {
-            const selector =
-              item.selectionKind === "message"
-                ? `[data-message-id="${CSS.escape(item.id)}"]`
-                : `[data-conversation-id="${CSS.escape(item.conversationId ?? "")}"]`;
-            return document.querySelector(selector)?.contains(document.activeElement);
-          });
+          const focused = rows.find((item) => dom.entry(item)?.contains(document.activeElement));
           const open = rows.find((item) =>
             item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
           );
@@ -3192,6 +3223,7 @@ function createMailboxController(props: MailboxControllerProps) {
     canWrite,
     clearConversationSelection,
     closeConversation,
+    closeConversationAt,
     composeStarting,
     windowsDocked,
     setWindowsDocked,
@@ -3264,7 +3296,7 @@ function createMailboxController(props: MailboxControllerProps) {
   };
 }
 
-function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSession> & { session: MailboxSession }) {
+function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSession> & { session: MailboxSession; v2?: MailV2Shell }) {
   // One mailbox owns its store, queries, search, actions, effects and live subscription.
   // Changing the committed session disposes that owner before creating the next one,
   // while the presentation below stays mounted and reads the new controller.
@@ -3282,6 +3314,43 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       },
     ),
   );
+
+  /** Drafts open as windows over the workspace; `area` names the surface they keep inside. */
+  const composeWindows = (area: string) => (
+    <Show when={controller()} keyed>
+      {(mailbox) => (
+        <Show when={mailbox.canWrite()}>
+          <MailComposeWindows
+            mailboxId={mailbox.data.mailbox.id}
+            area={() => document.querySelector<HTMLElement>(area) ?? undefined}
+            currentUserId={props.currentUserId}
+            currentUserEmail={props.currentUserEmail}
+            identities={mailbox.data.identities}
+            dateConfig={props.dateConfig}
+            canAdmin={mailbox.canAdmin()}
+            mailboxRecipientSuggestions={!mailbox.assignedOnly()}
+            calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+            liveDictation={props.liveDictation ?? false}
+            returnHref={mailbox.requestPath()}
+            onDraftsChanged={() => void mailbox.requireWorkspaceReconcile().catch(() => undefined)}
+            onDockedChange={mailbox.setWindowsDocked}
+            replyPosition={mailbox.replyPosition}
+            arrangeHint={{ open: () => !mailbox.hintSeen("panes-arrange"), dismiss: () => mailbox.markHintSeen("panes-arrange") }}
+          />
+        </Show>
+      )}
+    </Show>
+  );
+
+  // The v2 pilot draws the same controller with @k2b/ui v2; everything below is v1.
+  const v2 = props.v2;
+  if (v2)
+    return (
+      <>
+        <MailWorkspaceV2 controller={controller} shell={v2} dateConfig={props.dateConfig} />
+        {composeWindows("[data-k2-workspace]")}
+      </>
+    );
 
   /** The Events tab's feed, in the list's place: over the full main area, or beside the open conversation. */
   const eventsFeed = () => (
@@ -3792,29 +3861,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
           </div>
         </AppWorkspace.Main>
       </AppWorkspace.Content>
-      <Show when={controller()} keyed>
-        {(mailbox) => (
-          <Show when={mailbox.canWrite()}>
-            <MailComposeWindows
-              mailboxId={mailbox.data.mailbox.id}
-              area={() => document.querySelector<HTMLElement>(".mail-workspace") ?? undefined}
-              currentUserId={props.currentUserId}
-              currentUserEmail={props.currentUserEmail}
-              identities={mailbox.data.identities}
-              dateConfig={props.dateConfig}
-              canAdmin={mailbox.canAdmin()}
-              mailboxRecipientSuggestions={!mailbox.assignedOnly()}
-              calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-              liveDictation={props.liveDictation ?? false}
-              returnHref={mailbox.requestPath()}
-              onDraftsChanged={() => void mailbox.requireWorkspaceReconcile().catch(() => undefined)}
-              onDockedChange={mailbox.setWindowsDocked}
-              replyPosition={mailbox.replyPosition}
-              arrangeHint={{ open: () => !mailbox.hintSeen("panes-arrange"), dismiss: () => mailbox.markHintSeen("panes-arrange") }}
-            />
-          </Show>
-        )}
-      </Show>
+      {composeWindows(".mail-workspace")}
     </>
   );
 }
@@ -3896,6 +3943,34 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
       }
     }
   };
+
+  if (props.ui === "v2") {
+    // The pilot keeps this owner, its sessions and its mailbox switch; only the drawing differs.
+    const v2 = createMailV2Dom();
+    return (
+      <MailContactDirectoryProvider value={props.contactDirectory}>
+        <MailCloudIdProvider cloudUrl={props.cloudUrl}>
+          <MailboxWorkspace
+            {...props}
+            session={session()}
+            switching={switching}
+            onReady={setControls}
+            onNavigationStart={cancelSwitch}
+            onOpenMailboxHistory={(url, completeScrollRestore) => {
+              void switchMailbox(url, undefined, completeScrollRestore);
+            }}
+            dom={v2.dom}
+            v2={{
+              mailboxes: props.sidebar.mailboxes,
+              preferences: mailboxPreferences,
+              rows: v2.rows,
+              openMailbox: (url, event) => switchMailbox(url, linkNavigation(url, event)),
+            }}
+          />
+        </MailCloudIdProvider>
+      </MailContactDirectoryProvider>
+    );
+  }
 
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>

@@ -44,6 +44,24 @@ export const app = defineApp({
   skills: SKILLS,
   settings: {
     ...MAIL_CONTACT_DIRECTORY_SETTINGS,
+    // Provisional: removed again once the maintainer has accepted Mail on @k2b/ui v2 and v2 is Mail's only screen.
+    "mail.ui_v2_pilot": {
+      kind: "string_list",
+      default: [],
+      label: "UI v2 pilot",
+      description:
+        "Email addresses of the people who see the mailbox in the new interface (preview). Everyone else keeps the current one. * shows it to everyone.",
+      placeholder: "name@example.com",
+      presentation: {
+        translations: {
+          de: {
+            label: "Pilot der Oberfläche v2",
+            description:
+              "E-Mail-Adressen der Personen, die das Postfach in der neuen Oberfläche sehen (Vorschau). Alle anderen behalten die bisherige. * zeigt sie allen.",
+          },
+        },
+      },
+    },
     "mail.workflow_ai_body_max_chars": {
       kind: "number",
       default: 20000,
