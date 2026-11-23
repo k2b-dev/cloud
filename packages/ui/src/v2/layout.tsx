@@ -1,4 +1,4 @@
-import { createContext, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, useContext } from "solid-js";
+import { createContext, createSignal, For, type JSX, onCleanup, onMount, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -116,10 +116,15 @@ export type PaneProps = {
   label?: string;
   /**
    * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
-   * open), it is the page and the list gives way; render it only while something is open.
+   * open), it is the page and the list gives way; render it only while something is open. What is open belongs in
+   * the address, so reload, back and forward show the same. A detail that closes in place hands the focus back to
+   * what opened it, such as the row.
    */
   detail?: boolean;
-  /** The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". */
+  /**
+   * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
+   * `href`: the address of the list without the open entry.
+   */
   back?: Action;
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
@@ -145,10 +150,26 @@ export const Pane = (props: PaneProps) => {
   useContext(SplitContext)?.(entry);
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
+  let section: HTMLElement | undefined;
+  // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
+  // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
+  onMount(() => {
+    if (!props.detail) return;
+    const opener = document.activeElement;
+    if (!(opener instanceof HTMLElement) || opener === document.body || section?.contains(opener)) return;
+    onCleanup(() => {
+      const inside = section?.contains(document.activeElement) ?? false;
+      queueMicrotask(() => {
+        const lost = inside || document.activeElement === null || document.activeElement === document.body;
+        if (lost && opener.isConnected) opener.focus();
+      });
+    });
+  });
   return (
     <section
       ref={(element) => {
         entry.element = element;
+        section = element;
       }}
       class="k2-pane"
       data-k2-part="Pane"

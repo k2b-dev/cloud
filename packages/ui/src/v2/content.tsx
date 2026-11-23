@@ -168,37 +168,49 @@ export type ListProps = { children: JSX.Element; label?: string };
 
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
- * focused row, else the first visible one, keeps its distance to the top of the column. Browsers with CSS scroll
- * anchoring already hold it, so nothing moves there; Safari ships none. At the very top nothing is held, so a new row
- * shows up there. (As v1's `MailConversationList`.)
+ * focused row, else the first visible one, keeps its distance to the top of the column. When that row goes itself,
+ * the row after it takes its place, else the row before it keeps its own. Browsers with CSS scroll anchoring already
+ * hold the place, so nothing moves twice there; Safari ships none. At the very top nothing is held, so a new row shows
+ * up there. (As v1's `MailConversationList`.)
  */
 const keepPlace = (list: HTMLElement) => {
   const scroller = list.closest<HTMLElement>(".k2-scroll");
   if (!scroller || typeof MutationObserver === "undefined") return;
-  let held: { row: HTMLElement; top: number } | null = null;
+  type Place = { row: HTMLElement; top: number };
+  let held: { place: Place; next?: Place; previous?: Place } | null = null;
+  const isRow = (node: Node | null): node is HTMLElement => node instanceof HTMLElement && node.matches(".k2-row");
   const hold = () => {
     const view = scroller.getBoundingClientRect();
+    const placeOf = (row: HTMLElement): Place => ({ row, top: row.getBoundingClientRect().top - view.top });
     const visible = (row: HTMLElement) => {
       const box = row.getBoundingClientRect();
       return box.bottom > view.top && box.top < view.bottom;
     };
     const focused = document.activeElement?.closest<HTMLElement>(".k2-row");
-    const rows = Array.from(list.children).filter(
-      (child): child is HTMLElement => child instanceof HTMLElement && child.matches(".k2-row"),
-    );
     const row =
       scroller.scrollTop <= 0
         ? undefined
         : focused && focused.parentElement === list && visible(focused)
           ? focused
-          : rows.find((each) => each.getBoundingClientRect().top >= view.top);
-    held = row ? { row, top: row.getBoundingClientRect().top - view.top } : null;
+          : Array.from(list.children).find((each) => isRow(each) && each.getBoundingClientRect().top >= view.top);
+    if (!row || !isRow(row)) {
+      held = null;
+      return;
+    }
+    const next = row.nextElementSibling;
+    const previous = row.previousElementSibling;
+    held = {
+      place: placeOf(row),
+      // the row after it would take its place, the row before it keeps its own
+      next: isRow(next) ? { row: next, top: placeOf(row).top } : undefined,
+      previous: isRow(previous) ? placeOf(previous) : undefined,
+    };
   };
   const changed = (records: MutationRecord[]) => {
-    const isRow = (node: Node) => node instanceof HTMLElement && node.matches(".k2-row");
     if (!records.some((record) => [...record.addedNodes, ...record.removedNodes].some(isRow))) return;
-    if (held?.row.isConnected) {
-      const moved = held.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - held.top;
+    const place = [held?.place, held?.next, held?.previous].find((each) => each?.row.isConnected);
+    if (place) {
+      const moved = place.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - place.top;
       if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
     }
     hold();

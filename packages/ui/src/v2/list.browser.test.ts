@@ -24,8 +24,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -67,6 +67,82 @@ test("new entries on top leave the focused entry where it was", async () => {
     await settled(page);
     expect(await topOf(page, "Eintrag 20")).toBe(before);
   });
+});
+
+test("entries taken away above leave the focused entry where it was", async () => {
+  await withPage(async (page) => {
+    await scroller(page).evaluate((element) => element.scrollTo({ top: 600 }));
+    await page.getByRole("button", { name: "Eintrag 20", exact: true }).focus();
+    await settled(page);
+    const before = await topOf(page, "Eintrag 20");
+    await page.evaluate(() => window.__k2Remove?.(["Eintrag 1", "Eintrag 2", "Eintrag 3"]));
+    await page.waitForFunction(() => document.querySelectorAll(".k2-row").length === 37);
+    await settled(page);
+    expect(await topOf(page, "Eintrag 20")).toBe(before);
+  });
+});
+
+test("without a focused entry the first visible entry holds its place", async () => {
+  await withPage(async (page) => {
+    await scroller(page).evaluate((element) => element.scrollTo({ top: 600 }));
+    await settled(page);
+    const first = await page.evaluate(() => {
+      const view = document.querySelector('.k2-pane[aria-label="Liste"] > .k2-scroll')!.getBoundingClientRect();
+      const row = [...document.querySelectorAll(".k2-row")].find((each) => each.getBoundingClientRect().top >= view.top)!;
+      return row.querySelector(".k2-row-title")!.textContent!;
+    });
+    const before = await topOf(page, first);
+    await page.evaluate(() => window.__k2Prepend?.(3));
+    await page.locator(".k2-row", { hasText: "Neu 3" }).waitFor({ state: "attached" });
+    await settled(page);
+    expect(await topOf(page, first)).toBe(before);
+  });
+});
+
+test("when the focused entry goes itself, the entry after it takes its place", async () => {
+  await withPage(async (page) => {
+    await scroller(page).evaluate((element) => element.scrollTo({ top: 600 }));
+    await page.getByRole("button", { name: "Eintrag 20", exact: true }).focus();
+    await settled(page);
+    const before = await topOf(page, "Eintrag 20");
+    // one entry above goes too, so without a place to hold everything would move up by a row
+    await page.evaluate(() => window.__k2Remove?.(["Eintrag 2", "Eintrag 20"]));
+    await page.locator(".k2-row", { hasText: "Eintrag 20" }).waitFor({ state: "detached" });
+    await settled(page);
+    expect(await topOf(page, "Eintrag 21")).toBe(before);
+  });
+});
+
+test("where the browser anchors scrolling itself, the place moves no second time", async () => {
+  await withPage(async (page) => {
+    await page.addStyleTag({ content: ".k2-ui .k2-scroll { overflow-anchor: auto; }" });
+    await scroller(page).evaluate((element) => element.scrollTo({ top: 600 }));
+    await page.getByRole("button", { name: "Eintrag 20", exact: true }).focus();
+    await settled(page);
+    const before = await topOf(page, "Eintrag 20");
+    await page.evaluate(() => window.__k2Prepend?.(3));
+    await page.locator(".k2-row", { hasText: "Neu 3" }).waitFor({ state: "attached" });
+    await settled(page);
+    expect(await topOf(page, "Eintrag 20")).toBe(before);
+  });
+});
+
+test("a detail closed in place gives the focus back to the row that opened it", async () => {
+  await withPage(async (page) => {
+    const row = page.getByRole("button", { name: "Eintrag 3", exact: true });
+    await row.focus();
+    await page.keyboard.press("Enter");
+    // on the phone the detail is the page, with its way back
+    const back = page.getByRole("button", { name: "Liste", exact: true });
+    await back.waitFor();
+    await back.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-pane[data-detail]").waitFor({ state: "detached" });
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.closest(".k2-row")?.querySelector(".k2-row-title")?.textContent)).toBe(
+      "Eintrag 3",
+    );
+  }, 390);
 });
 
 test("at the very top new entries show up", async () => {

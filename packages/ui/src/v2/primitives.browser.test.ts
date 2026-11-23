@@ -409,6 +409,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
                 inside: button.getBoundingClientRect().right <= right + 0.5,
                 whole: button.scrollWidth <= button.clientWidth,
                 words: button.querySelector(".k2-btn-label")!.getBoundingClientRect().width > 1,
+                title: button.getAttribute("title"),
               })),
             };
           });
@@ -418,9 +419,10 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           expect(bar.buttons.map((button) => button.words)).toEqual(
             column >= 600 ? [true, true, true, true] : column >= 400 ? [false, false, false, true] : [false, false, false, false],
           );
-          // every button keeps its name
+          // every button keeps its name, and a hint under the pointer for when only its symbol shows
           expect(await page.getByRole("button", { name: "Archivieren" }).count()).toBe(1);
           expect(await page.getByRole("button", { name: "Auswahl aufheben" }).count()).toBe(1);
+          for (const button of bar.buttons) expect(button.title).toBe(button.name);
         } finally {
           await page.close();
         }

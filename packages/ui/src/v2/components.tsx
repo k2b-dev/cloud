@@ -229,8 +229,8 @@ export const StatusRow = (props: StatusRowProps) => {
               {selection().count}
             </span>
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} />}</For>
-            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" />
+            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
       </Show>
