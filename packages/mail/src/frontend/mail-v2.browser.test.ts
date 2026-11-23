@@ -64,6 +64,10 @@ const open = async (path: string, width = 1440, height = width < 768 ? 844 : 900
 };
 /** A conversation of the list (the reader's message heads are rows too). */
 const row = (page: Page, sender: string) => page.locator('[data-k2-part="List"] > [data-k2-part="Row"]', { hasText: sender });
+/** The row's own link that opens its conversation; it takes the focus. */
+const rowLink = (page: Page, sender: string) => row(page, sender).locator(":scope > a[href]");
+/** The text of the row that holds the focus. */
+const focusedRow = (page: Page) => page.evaluate(() => document.activeElement?.closest('[data-k2-part="Row"]')?.textContent ?? "");
 
 describe("Mail on the v2 pilot", () => {
   for (const [width, path] of [
@@ -102,7 +106,7 @@ describe("Mail on the v2 pilot", () => {
       await page.locator("body").press("Escape");
       await page.waitForURL((url) => !url.searchParams.has("conversation"));
       expect(await page.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(0);
-      expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toContain("Holzwerk Brandt");
+      expect(await focusedRow(page)).toContain("Holzwerk Brandt");
       expect(await page.evaluate(() => "stayed" in window)).toBe(true);
     } finally {
       await page.close();
@@ -112,7 +116,7 @@ describe("Mail on the v2 pilot", () => {
   test("the keyboard opens a row: Tab reaches it, Enter opens it in place", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
-      await row(page, "Jonas Hartwig").focus();
+      await rowLink(page, "Jonas Hartwig").focus();
       await page.keyboard.press("Enter");
       await page.waitForURL(/conversation=Demo02/);
       expect(await row(page, "Jonas Hartwig").getAttribute("aria-current")).toBe("true");
@@ -146,13 +150,13 @@ describe("Mail on the v2 pilot", () => {
         element.scrollTop = 120;
       });
       expect(await list.evaluate((element) => element.scrollTop)).toBe(120);
-      await row(page, "Lackfabrik Nordhaus").focus();
+      await rowLink(page, "Lackfabrik Nordhaus").focus();
       await settled(page);
       const before = await row(page, "Lackfabrik Nordhaus").boundingBox();
       server.arrive();
       await row(page, "Neue Sendung 1").waitFor();
       await settled(page);
-      expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toContain("Lackfabrik Nordhaus");
+      expect(await focusedRow(page)).toContain("Lackfabrik Nordhaus");
       // The new row above pushes nothing out of place: the focused row stays where the person looks.
       const after = await row(page, "Lackfabrik Nordhaus").boundingBox();
       expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);

@@ -40,18 +40,19 @@ const folderIcon = (role: string): string =>
   ({ inbox: "inbox", drafts: "file-pencil", sent: "send", archive: "archive", trash: "trash", junk: "alert-octagon" })[role] ?? "folder";
 
 /**
- * Where the v2 rows stand in the DOM, for the controller's focus and keys. A row is a link to its conversation, so its
- * href names it; the list registers the href of each row key while it renders.
+ * Where the v2 rows stand in the DOM, for the controller's focus and keys. A row opens its conversation through its
+ * own link, so that link's href names it; the list registers the href of each row key while it renders. The link
+ * takes the focus; the whole row holds it.
  */
 export const createMailV2Dom = (): { dom: MailWorkspaceDom; rows: Map<string, string> } => {
   const rows = new Map<string, string>();
-  const byHref = (href: string | undefined) =>
-    href ? document.querySelector<HTMLElement>(`[data-k2-workspace] [data-k2-part="Row"][href="${CSS.escape(href)}"]`) : null;
+  const link = (href: string | undefined) =>
+    href ? document.querySelector<HTMLElement>(`[data-k2-workspace] [data-k2-part="Row"] a[href="${CSS.escape(href)}"]`) : null;
   return {
     rows,
     dom: {
-      row: (rowKey) => byHref(rows.get(rowKey)),
-      entry: (item) => byHref(rows.get(mailListRowKey(item))),
+      row: (rowKey) => link(rows.get(rowKey)),
+      entry: (item) => link(rows.get(mailListRowKey(item)))?.closest<HTMLElement>('[data-k2-part="Row"]') ?? null,
       // The reader's head has no focusable title; its first action takes the focus.
       readerHeading: () =>
         document.querySelector<HTMLElement>(
