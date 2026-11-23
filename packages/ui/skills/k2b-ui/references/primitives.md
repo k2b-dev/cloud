@@ -98,8 +98,9 @@ What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`
 `state={<Text medium><Icon name="gavel" /> Läuft</Text>}`; or an amount),
 `actions` (text buttons),
 `menu` (more deeds behind "…"), `folded` (head only, with a chevron),
-children. No line inside; never a `Group` in a `Group`. Several groups
-stand in one `Section`. A group's way (arrived → … → paid) is `Steps`
+children. No line inside; never a `Group` in a `Group`, and never in a
+`Band` (the band's line would cut the frame). Groups stand in a `Section`
+or directly in a `Pane`. A group's way (arrived → … → paid) is `Steps`
 inside it.
 
 ## Content
@@ -113,7 +114,8 @@ inside it.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right).
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
-  2-line row they add a third line.
+  2-line row they add a third line. The third line shares its width with
+  the marks, so keep it a preview text that may be cut, never an amount.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `selected` (the open one), `yours` (you are
@@ -121,6 +123,10 @@ inside it.
 - `href` or `onOpen` makes the whole row open something.
 
 Rows may also stand directly in a `Section` or `Band`.
+
+A row with an amount, a state and a deed in a narrow column (an invoice in
+a 400 px panel): two lines `[customer, "1.280,00 € · fällig 12. Nov."]`,
+the number as `meta`, the state chip in `end`, the deed as `action`.
 
 ### Table
 

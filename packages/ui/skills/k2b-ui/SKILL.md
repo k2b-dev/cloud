@@ -136,7 +136,10 @@ Not there yet (write a `k2b-ui gap` comment, never a replacement):
 `Dialog`, `Menu`, `Popover`, `Tooltip` (their behaviour exists inside
 `@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
 error states of a whole pane, a search field and filter components, a
-`required` mark on `Field`, the mail composer (comes from `@k2b/editor`).
+`required` mark on `Field`, the mail and chat composer (comes from
+`@k2b/editor`), an assistant message or answer card, and a phone form for
+a narrow panel (the phone form follows the viewport below 768 px, not the
+width of a 400 px side panel).
 How to stand in until then: a dialog is a `Pane detail` (see
 [primitives](references/primitives.md), "Pane.Split"); an empty state is a
 `Band` with `<Text muted>`; filters are a `Button variant="ghost" menu` or
