@@ -12,7 +12,8 @@ test("inside @k2b/ui only the v2 behaviour layer imports @ui-sdk", async () => {
     for await (const path of new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: resolve(packageRoot, root) })) {
       const file = `${root}/${path}`;
       if (file.startsWith("src/v2/behavior/") || file.startsWith("test/v2-behavior/")) continue;
-      if (/from\s+["']@ui-sdk\//.test(await Bun.file(resolve(packageRoot, file)).text())) offenders.push(file);
+      // `from "@ui-sdk/…"`, a side-effect `import "@ui-sdk/…"` and a dynamic `import("@ui-sdk/…")`.
+      if (/(?:from|import)\s*\(?\s*["']@ui-sdk\//.test(await Bun.file(resolve(packageRoot, file)).text())) offenders.push(file);
     }
   }
   expect(offenders).toEqual([]);

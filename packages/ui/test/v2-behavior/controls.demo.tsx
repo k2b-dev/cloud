@@ -1,5 +1,19 @@
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
+import { isServer } from "solid-js/web";
 import { useCheckbox, useSwitch, useTabs, useTooltip } from "../../src/v2/behavior/controls";
+
+/** Counts its mounts and cleanups: content of an inactive panel must neither exist nor outlive its panel. */
+function MountCounter() {
+  if (!isServer) {
+    onMount(() => {
+      window.__panelMounts = (window.__panelMounts ?? 0) + 1;
+    });
+    onCleanup(() => {
+      window.__panelCleanups = (window.__panelCleanups ?? 0) + 1;
+    });
+  }
+  return null;
+}
 
 /** Tabs (controlled), a tooltip, a checkbox and a switch. */
 export function Demo() {
@@ -28,7 +42,10 @@ export function Demo() {
           </tabs.Tab>
         </tabs.List>
         <tabs.Panel value="mail">Postfach</tabs.Panel>
-        <tabs.Panel value="files">Ablage</tabs.Panel>
+        <tabs.Panel value="files">
+          Ablage
+          <MountCounter />
+        </tabs.Panel>
         <tabs.Panel value="chat">Unterhaltungen</tabs.Panel>
         <tabs.Panel value="tasks">Liste</tabs.Panel>
         <output data-testid="tab">{tab()}</output>

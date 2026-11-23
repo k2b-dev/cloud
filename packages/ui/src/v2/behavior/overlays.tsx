@@ -8,6 +8,7 @@ import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
 import type { JSX } from "solid-js";
 import { type PartProps, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { useBehaviorMessages } from "./messages";
 
 export type OverlayOptions = {
   /** Controlled open state; leave out for an uncontrolled overlay. */
@@ -35,7 +36,9 @@ export type DialogParts = {
 
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
 export function useDialog(options: () => OverlayOptions & { modal?: boolean } = () => ({})): DialogParts {
-  const handle = usePrimitive(dialogPrimitive, options);
+  // An async action in the dialog announces that it is waiting; core's own text is English only.
+  const t = useBehaviorMessages();
+  const handle = usePrimitive(dialogPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));
   const Backdrop = popupComponent(handle, "backdrop");
   const Content = popupComponent(handle, "content");
   return {
@@ -65,10 +68,11 @@ export type MenuParts = {
 
 /** An action menu: arrows, Home, End, typeahead, Escape and focus return come from core. */
 export function useMenu(options: () => OverlayOptions & { onAction?: (value: string) => void } = () => ({})): MenuParts {
+  const t = useBehaviorMessages();
   const handle = usePrimitive(menuPrimitive, () => {
     const given = options();
     const onAction = given.onAction;
-    return { ...given, onAction: onAction && ((value: unknown) => onAction(String(value))) };
+    return { ...given, pendingAnnouncement: t().loading, onAction: onAction && ((value: unknown) => onAction(String(value))) };
   });
   return {
     Trigger: slotComponent(handle, "trigger", "button"),

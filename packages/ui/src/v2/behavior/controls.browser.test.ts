@@ -40,6 +40,23 @@ test("server markup: tabs, the selected panel, checkbox and switch carry their r
   // A tooltip's content stays in the page, closed, so its trigger is described before it ever opens. Guard for the
   // boolean attribute class: core writes `hidden: ""`, which Solid 1 dropped as falsy until the adapter made it `true`.
   expect(markup).toMatch(/data-slot="tooltip-content"[^>]*\shidden/);
+  // Inactive panels and their content are not rendered at all.
+  expect(markup).not.toContain("Ablage");
+});
+
+// Guard for eager children: the content of a part that comes and goes was created with the part, so an inactive
+// panel's components mounted on detached DOM and were never disposed.
+test("tabs: an inactive panel's content mounts only when its tab is selected and is disposed when it goes", async () => {
+  await withPage(async (page) => {
+    expect(await page.evaluate(() => window.__panelMounts ?? 0)).toBe(0);
+    await page.getByRole("tab", { name: "Mail" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => window.__panelMounts === 1);
+    expect(await page.evaluate(() => window.__panelCleanups ?? 0)).toBe(0);
+    await page.keyboard.press("Home");
+    await page.waitForFunction(() => window.__panelCleanups === 1);
+    expect(await page.evaluate(() => window.__panelMounts)).toBe(1);
+  });
 });
 
 test("tabs: arrows move and select, a disabled tab takes focus but is never selected, Home and End jump", async () => {

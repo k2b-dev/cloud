@@ -18,6 +18,22 @@ import {
   slotComponent,
   usePrimitive,
 } from "./adapter";
+import { type BehaviorMessages, useBehaviorMessages } from "./messages";
+
+/** What core announces about a list: results after a search, or a value taken out (a chip). */
+type ListChange = { type: "results"; count: number; loading: boolean } | { type: "removed"; label: string };
+
+/** Core's own list announcements are English only ("3 results"); these come from the render locale. */
+const listAnnouncement =
+  (t: () => BehaviorMessages) =>
+  (change: ListChange): string =>
+    change.type === "removed"
+      ? t().listRemoved({ label: change.label })
+      : change.loading
+        ? t().loading
+        : change.count
+          ? t().listResults({ count: change.count })
+          : t().listEmpty;
 
 /** One choice. `value` is the stable key, `label` what the trigger, typeahead and search read. */
 export type ChoiceItem = { value: string; label: string; disabled?: boolean };
@@ -122,7 +138,8 @@ const valueComponent =
 
 /** A select: one value, or several with `multiple`. */
 export function useSelect(options: () => SelectOptions | MultiSelectOptions): SelectParts {
-  const handle = usePrimitive(selectPrimitive, options);
+  const announcement = listAnnouncement(useBehaviorMessages());
+  const handle = usePrimitive(selectPrimitive, () => ({ ...options(), announcement }));
   prepareLabels(handle);
   return {
     Label: slotComponent(handle, "label", "div"),
@@ -149,7 +166,8 @@ export type ComboboxParts = SelectParts & {
 export function useCombobox(
   options: () => (SelectOptions | MultiSelectOptions) & { onQueryChange?: (query: string) => void },
 ): ComboboxParts {
-  const handle = usePrimitive(comboboxPrimitive, options);
+  const announcement = listAnnouncement(useBehaviorMessages());
+  const handle = usePrimitive(comboboxPrimitive, () => ({ ...options(), announcement }));
   prepareLabels(handle);
   // Chips are a feature core adds to an instance on demand, as `@ui-sdk/solid` does when it renders them.
   handle.instance.use(comboboxChips);

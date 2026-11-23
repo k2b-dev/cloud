@@ -8,6 +8,9 @@ declare global {
     __mounted: boolean;
     /** Layout shift summed by the reload contract's observer. */
     __shifts?: number;
+    /** Mounts and cleanups of the content of the controls demo's second tab panel. */
+    __panelMounts?: number;
+    __panelCleanups?: number;
   }
 }
 

@@ -65,6 +65,9 @@ test("server markup: each grip is a focusable vertical separator with its width"
   expect(markup).toContain('aria-valuenow="240"');
   expect(markup).toContain('aria-valuenow="360"');
   expect(markup).toContain('aria-label="Breite: Ordner"');
+  // No `aria-valuemax` (the limit needs the container's width); the width is spoken in px, not as "240 of 100".
+  expect(markup).toContain('aria-valuetext="240 px"');
+  expect(markup).not.toContain("aria-valuemax");
 });
 
 test("keys: arrows 8 px, Shift 64 px, Home and End to the limits, Enter back to the default", async () => {
@@ -107,6 +110,24 @@ const drag = async (page: Page, moves: number[]) => {
   await page.mouse.down();
   for (const dx of moves) await page.mouse.move(start.x + dx, start.y, { steps: 4 });
 };
+
+// Guard: a drag ends a run of keys. Before, the keys' offset survived the drag, so the next key jumped 24 + 8 px.
+test("keys after a pointer drag start from the widths the drag left", async () => {
+  await withPage(async (page) => {
+    const grip = page.locator('[data-grip="0"]');
+    await grip.focus();
+    for (let step = 0; step < 3; step++) await page.keyboard.press("ArrowRight");
+    expect(await until(page, [264, 336, 806])).toBe(true);
+    await drag(page, [40]);
+    await page.mouse.up();
+    expect(await until(page, [304, 296, 806])).toBe(true);
+    expect(await focusedGrip(page)).toBe("0");
+    await page.keyboard.press("ArrowRight");
+    expect(await until(page, [312, 288, 806])).toBe(true);
+  });
+});
+
+const focusedGrip = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.grip);
 
 test("pointer: a drag past the minimum pushes on, the way back unwinds in reverse, the release keeps the last width", async () => {
   await withPage(async (page) => {

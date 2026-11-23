@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
-import { contractCss, demoBundle, focusedName, openDemo, pattern, serverMarkup } from "../../../test/v2-behavior/harness";
+import { contractCss, demoBundle, focusedName, heard, openDemo, pattern, serverMarkup } from "../../../test/v2-behavior/harness";
 
 let browser: Browser;
 let bundle: string;
@@ -135,6 +135,8 @@ test("combobox: typing filters the list, Enter adds the highlighted person as a 
     expect(await shown(page, comboContent)).toBe(true);
     await page.waitForFunction((s) => document.querySelectorAll(`${s} [role="option"]:not([hidden])`).length === 3, comboContent);
     expect(await visibleOptions(page, comboContent)).toEqual(["Anna Berg", "Bernd Kraus", "Dora Ernst"]);
+    // Core's own list announcement is English ("3 results"); ours follows the page's locale.
+    expect(await heard(page, "3 Treffer")).toBe(true);
     expect(await input.getAttribute("aria-expanded")).toBe("true");
     expect(await focusedName(page)).toBe("combobox-input");
     await page.keyboard.press("ArrowDown");
@@ -157,6 +159,7 @@ test("combobox: typing filters the list, Enter adds the highlighted person as a 
 test("combobox: a chip's remove button and Backspace in an empty field take values out", async () => {
   await withPage(async (page) => {
     await page.getByRole("button", { name: "Anna Berg entfernen" }).click();
+    expect(await heard(page, "Anna Berg entfernt")).toBe(true);
     await page.waitForFunction(() => document.querySelectorAll("[data-chip]").length === 0);
     expect(await text(page, "combobox-value")).toBe("");
     const input = page.getByTestId("combobox-input");

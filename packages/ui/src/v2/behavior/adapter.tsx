@@ -225,12 +225,16 @@ export function part<P extends Primitive>(
   );
 
   const [, rest] = splitProps(user, [...taken]);
-  const children = user.children;
 
   // One element's life. Core binds it once it is in the page and unbinds it when it leaves; this runs inside the
   // `Show` of a part that comes and goes, so a panel shown later binds then. A keyed part whose key changes hands the
-  // element over.
+  // element over. The children are created here too, not before: an inactive panel's content does not exist (on the
+  // server either), and whatever it creates is disposed when the part goes.
   const render = () => {
+    const given = untrack(() => user.children);
+    // A children function gets the slot state and runs again only when a state key it reads changes (one memo per
+    // key). Components it creates (a `For` over `state.items`) track their own reads, so they are not recreated.
+    const content = typeof given === "function" && given.length > 0 ? () => given(state) : given;
     let element: HTMLElement | undefined;
     let bound = ref(record, host);
     if (!isServer) {
@@ -255,11 +259,7 @@ export function part<P extends Primitive>(
         element = el;
         user.ref?.(el);
       },
-      get children() {
-        // A reactive child: it runs again only when a state key it reads itself changes (one memo per key). Components
-        // it creates (a `For` over `state.items`) track their own reads, so they are not recreated.
-        return typeof children === "function" && children.length > 0 ? () => children(state) : children;
-      },
+      children: content,
     });
     return <Dynamic component={tag} {...merged} />;
   };

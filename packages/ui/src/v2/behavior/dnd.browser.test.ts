@@ -178,6 +178,35 @@ test.skipIf(webkit)(
   },
 );
 
+test("Escape during a pointer drag cancels it: sorting, drag onto and between lists change nothing", async () => {
+  await withPage("board", async (page) => {
+    const folders = await folderOrder(page);
+    await press(page, await center(page, ".sortable__item >> nth=0"), await below(page, ".sortable__item >> nth=2"));
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    expect(await until(page, '!document.querySelector("[data-drag-preview]")')).toBe(true);
+    expect(await folderOrder(page)).toEqual(folders);
+  });
+  await withPage("board", async (page) => {
+    const mails = await mailIds(page);
+    await press(page, await center(page, "[data-mail] >> nth=0"), await center(page, '[data-drop-target="archive"]'));
+    await page.keyboard.press("Escape");
+    expect(await heard(page, "Abgebrochen")).toBe(true);
+    await page.mouse.up();
+    expect(await mailIds(page)).toEqual(mails);
+    expect(await page.locator("[data-drop-target][data-over]").count()).toBe(0);
+  });
+  await withPage("transfer", async (page) => {
+    const before = await lists(page);
+    const to = await center(page, '[data-item="t4"]');
+    await press(page, await center(page, '[data-item="t1"]'), { x: to.x, y: to.y + 10 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    expect(await until(page, '!document.querySelector("[data-drag-preview]")')).toBe(true);
+    expect(await lists(page)).toEqual(before);
+  });
+});
+
 test("drag onto: releasing outside every target changes nothing", async () => {
   await withPage("board", async (page) => {
     const before = await mailIds(page);

@@ -12,6 +12,7 @@
  */
 import { bindDrag } from "@ui-sdk/core";
 import { createSignal, onCleanup } from "solid-js";
+import { useBehaviorMessages } from "./messages";
 
 export type ColumnSize = { min: number; default: number };
 
@@ -49,6 +50,7 @@ export function createColumnResize(options: {
   label: (index: number) => string;
   onWidthsChange?: (widths: number[]) => void;
 }) {
+  const t = useBehaviorMessages();
   const [widths, setWidths] = createSignal(options.columns.map((column) => column.default));
   const [dragging, setDragging] = createSignal<number | null>(null);
   const mins = () => [...options.columns.map((column) => column.min), options.rest.min];
@@ -92,6 +94,11 @@ export function createColumnResize(options: {
     get "aria-valuemin"() {
       return options.columns[index]?.min;
     },
+    // The maximum depends on the container's width, which the server does not know, so there is no `aria-valuemax`
+    // (ARIA's default of 100 would be read as the limit); the width is spoken in px instead.
+    get "aria-valuetext"() {
+      return t().width({ px: widths()[index] ?? 0 });
+    },
     tabindex: 0,
     get "data-dragging"() {
       return dragging() === index ? "" : undefined;
@@ -101,7 +108,9 @@ export function createColumnResize(options: {
       event.preventDefault();
       const start = current();
       const from = event.clientX;
+      // A pointer move ends a run of keys: the next key starts from the widths the drag left.
       keyStart = undefined;
+      keyDelta = 0;
       stop = bindDrag(event.currentTarget, event, {
         cancelOnEscape: true,
         onStart: () => {

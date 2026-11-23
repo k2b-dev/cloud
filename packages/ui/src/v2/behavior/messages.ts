@@ -18,7 +18,7 @@ const behaviorMessages = i18n.define({
       sortDrop: ({ label, position, total }: Move) => `${label} dropped, position ${position} of ${total}.`,
       sortCancel: ({ label, position, total }: Move) => `Canceled. ${label} stays at position ${position} of ${total}.`,
       transferGrab: ({ label, list, position, total }: ListMove) =>
-        `${label} grabbed, ${list}, position ${position} of ${total}. Left and Right change the list, Up and Down the place, Space drops it.`,
+        `${label} grabbed, ${list}, position ${position} of ${total}. Left and Right change the list, Up and Down the place, Space drops it, Escape cancels.`,
       transferMove: ({ label, list, position, total }: ListMove) => `${label}, ${list}, position ${position} of ${total}.`,
       transferDrop: ({ label, list, position, total }: ListMove) => `${label} dropped in ${list}, position ${position} of ${total}.`,
       transferCancel: ({ label, list, position, total }: ListMove) =>
@@ -31,6 +31,11 @@ const behaviorMessages = i18n.define({
       ontoTarget: ({ target, index, total }: { target: string; index: number; total: number }) => `${target}, ${index} of ${total}.`,
       ontoDrop: ({ label, target }: { label: string; target: string }) => `${label} moved to ${target}.`,
       ontoCancel: "Canceled, nothing changed.",
+      listResults: ({ count }: { count: number }) => (count === 1 ? "1 result" : `${count} results`),
+      listEmpty: "No results",
+      listRemoved: ({ label }: { label: string }) => `${label} removed`,
+      loading: "Loading",
+      width: ({ px }: { px: number }) => `${px} px`,
     },
     de: {
       sortGrab: ({ label, position, total }: Move) =>
@@ -39,7 +44,7 @@ const behaviorMessages = i18n.define({
       sortDrop: ({ label, position, total }: Move) => `${label} abgelegt, Position ${position} von ${total}.`,
       sortCancel: ({ label, position, total }: Move) => `Abgebrochen. ${label} bleibt auf Position ${position} von ${total}.`,
       transferGrab: ({ label, list, position, total }: ListMove) =>
-        `${label} aufgenommen, ${list}, Position ${position} von ${total}. Pfeile links und rechts wechseln die Liste, hoch und runter die Stelle, Leertaste legt ab.`,
+        `${label} aufgenommen, ${list}, Position ${position} von ${total}. Pfeile links und rechts wechseln die Liste, hoch und runter die Stelle, Leertaste legt ab, Escape bricht ab.`,
       transferMove: ({ label, list, position, total }: ListMove) => `${label}, ${list}, Position ${position} von ${total}.`,
       transferDrop: ({ label, list, position, total }: ListMove) => `${label} abgelegt in ${list}, Position ${position} von ${total}.`,
       transferCancel: ({ label, list, position, total }: ListMove) =>
@@ -52,6 +57,11 @@ const behaviorMessages = i18n.define({
       ontoTarget: ({ target, index, total }: { target: string; index: number; total: number }) => `${target}, ${index} von ${total}.`,
       ontoDrop: ({ label, target }: { label: string; target: string }) => `${label} verschoben nach ${target}.`,
       ontoCancel: "Abgebrochen, nichts geändert.",
+      listResults: ({ count }: { count: number }) => (count === 1 ? "1 Treffer" : `${count} Treffer`),
+      listEmpty: "Keine Treffer",
+      listRemoved: ({ label }: { label: string }) => `${label} entfernt`,
+      loading: "Wird geladen",
+      width: ({ px }: { px: number }) => `${px} px`,
     },
   },
 });

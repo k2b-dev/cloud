@@ -340,7 +340,12 @@ export function createDragOnto(options: {
   const label = (target: string | null) => options.targets().find((entry) => entry.id === target)?.label ?? "";
   const accepted = (key: string, target: string) => options.accepts?.(key, target) ?? true;
   let stop: (() => void) | undefined;
-  onCleanup(() => stop?.());
+  // A touch hold still waiting when the owner goes would otherwise start a drag on a removed element.
+  let holding: (() => void) | undefined;
+  onCleanup(() => {
+    holding?.();
+    stop?.();
+  });
 
   const finish = (key: string, target: string | null, by: "drop" | "cancel") => {
     stop = undefined;
@@ -356,8 +361,10 @@ export function createDragOnto(options: {
 
   const targetAt = (key: string, x: number, y: number): string | null => {
     // Geometry, not hit-testing: WebKit's elementsFromPoint misses the target while the copy sits in the top layer.
+    // Only this drag's own targets count, so two boards on one page never take each other's items.
+    const own = new Set(options.targets().map((target) => target.id));
     const el = [...document.querySelectorAll<HTMLElement>("[data-drop-target]")].find((target) => {
-      if (target.closest("[data-drag-preview]")) return false;
+      if (target.closest("[data-drag-preview]") || !own.has(target.dataset.dropTarget ?? "")) return false;
       const rect = target.getBoundingClientRect();
       return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
     });
@@ -425,6 +432,7 @@ export function createDragOnto(options: {
     const start = { x: event.clientX, y: event.clientY };
     const blockScroll = (touch: TouchEvent) => touch.cancelable && touch.preventDefault();
     const quit = () => {
+      holding = undefined;
       clearTimeout(timer);
       el.removeEventListener("pointermove", moved);
       el.removeEventListener("pointerup", quit);
@@ -441,6 +449,7 @@ export function createDragOnto(options: {
       el.addEventListener("pointercancel", release, { once: true });
       startPointerDrag(el, event, key, 0);
     }, TOUCH_HOLD_MS);
+    holding = quit;
     el.addEventListener("pointermove", moved);
     el.addEventListener("pointerup", quit);
     el.addEventListener("pointercancel", quit);
