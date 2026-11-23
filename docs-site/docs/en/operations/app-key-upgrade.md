@@ -104,7 +104,17 @@ metadata and fresh signed work. Review actual deployment configuration and
 representative jobs too; a probe does not exercise every business operation.
 See [App migration status](/en/docs/operations/app-key-status).
 
-## Third-party apps on an older `@k2b/cloud`
+## Third-party apps and older platform versions
+
+Prepare each third-party app on the current release, before Core changes:
+
+1. Create its key: `cld --profile migration admin apps keys create <app> --no-grant --out-dir ./secrets`.
+   Use `--grant oauth:issue` instead only for an app that issues OAuth tokens.
+2. Mount `./secrets/<app>.key` read-only into every replica and set
+   `CLOUD_APP_KEY_FILE` to its path and `CLOUD_CORE_INTERNAL_ORIGIN` to Core's
+   private listener.
+3. Restart the app, check its `/_cloud/ready`, one routed request and one
+   piece of background work, then continue with step 5 above.
 
 A third-party app does not have to update its `@k2b/cloud` at the same time.
 Any version from 0.66 on signs with its mounted key and keeps working against
