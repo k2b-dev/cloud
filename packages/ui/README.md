@@ -128,6 +128,18 @@ that entry, so reload, back, and forward show the same page. On the phone the
 detail is the page and `back` its way to the list. A detail that closes in
 place returns the focus to the row that opened it.
 
+### Agent skill
+
+The package ships the `k2b-ui` agent skill in `skills/k2b-ui`, in the same
+version as the primitives: which primitive to use for what, the rules,
+recipes with code and pictures, the check messages with their fixes, and
+`describeV2`, a short text outline of a rendered screen. Link it into the
+skill folder of your agent, for example:
+
+```bash
+ln -s ../../node_modules/@k2b/ui/skills/k2b-ui .claude/skills/k2b-ui
+```
+
 ## Documentation
 
 - [Getting started and SSR setup](https://cloud.k2b.dev/en/ui/getting-started)

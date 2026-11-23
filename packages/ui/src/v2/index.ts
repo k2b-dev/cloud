@@ -73,6 +73,7 @@ export {
   Select,
   type SelectProps,
 } from "./controls";
+export { type DescribeV2Options, describeV2 } from "./describe";
 // Layer 1: the primitives.
 export {
   Band,

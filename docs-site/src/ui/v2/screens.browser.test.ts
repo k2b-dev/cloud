@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { measureV2Layout } from "../../../../packages/ui/src/v2/testing";
 import { browserName, launchBrowser, settled } from "../../../../packages/ui/test/browser";
-import { measureV2Layout } from "../../../../packages/ui/test/measure-v2-layout";
 import { registerSsrTestPlugin } from "../../../../packages/ui/test/ssr-test-plugin";
 
 // The Fibel demo screens Mail and Kundenakte against the approved mockup (mail.html, akte.html, draft 16): the v2
