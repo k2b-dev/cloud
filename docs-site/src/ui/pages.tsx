@@ -212,6 +212,18 @@ export const uiPages = [
   solidPage({
     html: fibelHtml,
     collection: "ui",
+    path: "/v2/controls",
+    title: "UI v2 · Bedienung",
+    navTitle: "v2 demo: controls",
+    description: "A form with the controls of @k2b/ui/v2 in a realistic screen. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 11,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage names={["form"]} title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
     path: "/charts",
     title: "Charts",
     navTitle: "What to show",
