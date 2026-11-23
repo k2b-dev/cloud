@@ -13,6 +13,19 @@ export type AuthenticatedWorkload = {
   keyId?: string;
 };
 
+const NO_CREDENTIAL = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Core's own app queries. Core is the invocation signer and holds no app key; app keys can never be enrolled
+ * for `core`, so only Core can produce a query token with this subject.
+ */
+export const CORE_WORKLOAD: AuthenticatedWorkload = Object.freeze({
+  appId: "core",
+  serviceAccountId: NO_CREDENTIAL,
+  credentialId: NO_CREDENTIAL,
+  scope: "identity:invoke",
+});
+
 const workloadScopes = new Set<string>(WORKLOAD_SCOPES);
 
 // Retired OAuth credentials must not become ordinary API keys after the hard cut.

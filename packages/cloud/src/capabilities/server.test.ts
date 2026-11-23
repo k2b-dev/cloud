@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { decodeJwt } from "jose";
 import { z } from "zod";
 import { appKeyFixture } from "../../../../scripts/fixtures/app-key-fixtures";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
 import * as dispatcher from "../api/capabilities";
 import { env } from "../config/env";
 import type { RequestAuthority } from "../server";
@@ -284,6 +285,41 @@ describe("server capability client", () => {
     delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     expect((await invokeCapability(query, caller)).ok).toBe(false);
     expect(requests).toHaveLength(1);
+  });
+
+  test("Core's own app queries stay in process without an app key, and no other process can send them", async () => {
+    delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
+    let fetched = false;
+    globalThis.fetch = Object.assign(
+      async () => {
+        fetched = true;
+        return Response.json({ data: {} });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const dispatch = spyOn(dispatcher, "dispatchCapability").mockResolvedValue(Response.json({ data: { readable: [] } }));
+    const query = { appId: "spaces", capabilityId: "item.readable", kind: "query" as const, input: { id: "Abc123", principals: [] } };
+    try {
+      bindProcessApplicationId("core", ["resources:readers"]);
+      expect(await invokeCapability(query, { workload: { appId: "core" } })).toMatchObject({ ok: true });
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+        kind: "queries",
+        appId: "spaces",
+        capabilityId: "item.readable",
+        callingAppId: "core",
+        workload: { appId: "core", scope: "identity:invoke" },
+      });
+      expect(dispatch.mock.calls[0]?.[0].authority).toBeUndefined();
+      clearProcessApplicationId();
+      bindProcessApplicationId("chat", ["resources:readers"]);
+      expect(await invokeCapability(query, { workload: { appId: "core" } })).toMatchObject({ ok: false, error: { status: 503 } });
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(fetched).toBe(false);
+    } finally {
+      clearProcessApplicationId();
+      dispatch.mockRestore();
+    }
   });
 
   test("distinguishes network failure, cancellation, and an unknown non-idempotent Action outcome", async () => {

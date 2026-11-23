@@ -59,6 +59,23 @@ test("checks foreign types under app authority and distinguishes a negative answ
     expect.objectContaining({ workload: { appId: "consumer" } }),
   );
 });
+test("Core checks in process without an app key or internal origin", async () => {
+  clearProcessApplicationId();
+  bindProcessApplicationId("core", ["resources:readers"]);
+  delete process.env.CLOUD_APP_KEY;
+  delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+  expect(await readResourcePrincipals(input)).toEqual({ state: "checked", readable: [] });
+  expect(invoke.mock.calls[0]?.[2]).toMatchObject({ workload: { appId: "core" } });
+  invoke.mockResolvedValue({ ok: true, data: { data: { userIds: [] } } });
+  const managersManifest = compileCapabilityManifest("inventory", {
+    protocolVersion: 2,
+    queries: { "item.read": reader },
+    types: { item: { title: "Item", description: "An item.", reader: "item.read", access: { managers: () => [] } } },
+  });
+  lookup.mockResolvedValue({ ...entry, manifest: managersManifest });
+  expect(await listResourceManagers({ ref: input.ref })).toEqual([]);
+  expect(invoke.mock.calls[1]?.[2]).toMatchObject({ workload: { appId: "core" } });
+});
 test("missing setup is an explicit reason, and temporary failure throws for retry", async () => {
   delete process.env.CLOUD_APP_KEY;
   expect(await readResourcePrincipals(input)).toEqual({ state: "not_configured", reason: "no_credential" });

@@ -54,7 +54,7 @@ describe("owner mandate lifecycle routes", () => {
       return ok(codeEntry);
     };
     const routes = createIdentityMandateRoutes({
-      authenticateWorkload: async () => ({
+      authenticate: async () => ({
         appId: "runner",
         serviceAccountId: SERVICE_ACCOUNT_ID,
         credentialId: CREDENTIAL_ID,

@@ -39,9 +39,11 @@ export const createAppQueryRoutes = (compiled: CompiledCapabilities) =>
         return c.json({ code: "APP_UNAVAILABLE", message: "Invocation verification unavailable" }, 503);
       }
       if (!claims) return deny();
-      // An invocation never outlives the app key or its account binding.
-      const active = await getActiveAppKey({ appId: claims.sub, keyId: claims.credential_id });
-      if (!active || active.serviceAccountId !== claims.service_account_id) return deny();
+      // An invocation never outlives the app key or its account binding. Core signs its own queries and has no key.
+      if (claims.sub !== "core") {
+        const active = await getActiveAppKey({ appId: claims.sub, keyId: claims.credential_id });
+        if (!active || active.serviceAccountId !== claims.service_account_id) return deny();
+      }
       const result = await invokeCompiledCapability({
         compiled,
         kind: "query",

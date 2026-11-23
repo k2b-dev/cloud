@@ -188,9 +188,7 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
     };
     const catalog = spyOn(catalogProvider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: entry });
     const lookup = spyOn(registry, "getCapability").mockResolvedValue(entry);
-    const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
     const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
-    process.env.CLOUD_APP_CREDENTIAL = "fixture-core-workload";
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.test";
     bindProcessApplicationId("core", ["resources:readers"]);
     // Substitute only transport: execute the actual Mail resolver and generated reader against SQL.
@@ -265,8 +263,6 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
       lookup.mockRestore();
       catalog.mockRestore();
       clearProcessApplicationId();
-      if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
-      else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
       if (originalOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
       else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalOrigin;
     }

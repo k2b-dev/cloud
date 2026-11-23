@@ -38,9 +38,12 @@ export const readResourcePrincipals = async (
   ),
 ): Promise<ResourceReadersResult> => {
   const ref = CloudResourceRefSchema.parse(options.ref);
-  if (!env.CLOUD_APP_KEY) return { state: "not_configured", reason: "no_credential" };
-  if (!env.CLOUD_CORE_INTERNAL_ORIGIN) return { state: "not_configured", reason: "no_internal_origin" };
   const callerAppId = getProcessApplicationId();
+  // Core asks in process and holds no app key; every other app signs with its key at Core's internal listener.
+  if (callerAppId !== "core") {
+    if (!env.CLOUD_APP_KEY) return { state: "not_configured", reason: "no_credential" };
+    if (!env.CLOUD_CORE_INTERNAL_ORIGIN) return { state: "not_configured", reason: "no_internal_origin" };
+  }
   if (!callerAppId) return { state: "not_configured", reason: "no_app_identity" };
   options.signal?.throwIfAborted();
   const separator = ref.type.indexOf(".");
@@ -96,7 +99,7 @@ export async function listResourceManagers(options: {
   const ref = CloudResourceRefSchema.parse(options.ref);
   const input = ResourceManagersInputSchema.parse({ id: ref.id, afterId: options.afterId, userId: options.userId, limit: options.limit });
   const callerAppId = getProcessApplicationId();
-  if (!callerAppId || !env.CLOUD_APP_KEY || !env.CLOUD_CORE_INTERNAL_ORIGIN)
+  if (!callerAppId || (callerAppId !== "core" && (!env.CLOUD_APP_KEY || !env.CLOUD_CORE_INTERNAL_ORIGIN)))
     throw new Error("Resource manager workload identity unavailable");
   const separator = ref.type.indexOf(".");
   const appId = ref.type.slice(0, separator),
