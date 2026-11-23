@@ -9,6 +9,7 @@ import HomePage from "./home/HomePage";
 import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
+import { type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 
@@ -121,6 +122,19 @@ app.get("/en/ui/demo/workspace-host", (c) =>
     styles: ["/assets/generated/cloud-ui.css"],
   }),
 );
+// The v2 demo screens on pages of their own, framed like the Cloud shell; the Fibel pages /en/ui/v2/<name> embed them.
+app.get("/en/ui/v2/screen/:name", (c) => {
+  const name = c.req.param("name");
+  if (!(name in v2Screens)) return c.notFound();
+  const screen = v2Screens[name as V2ScreenName];
+  return html(() => <V2ScreenPage name={name as V2ScreenName} />, {
+    title: `${screen.title} — UI v2`,
+    description: screen.description,
+    path: `/en/ui/v2/screen/${name}`,
+    theme: themeFromRequest(c.req.raw),
+    styles: ["/assets/generated/cloud-ui.css"],
+  });
+});
 app.mount("/", fibelApp.fetch, { replaceRequest: false });
 app.notFound((c) => c.text("Not found", 404));
 
