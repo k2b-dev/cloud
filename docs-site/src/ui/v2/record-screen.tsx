@@ -192,8 +192,8 @@ export const RecordScreen = () => (
                 state: { icon: "gavel", label: "Läuft" },
                 text: (
                   <>
-                    8 Artikel laufen, die Auktion endet <Text strong>morgen</Text>. 10 sind am 15. Nov. ausgelaufen: Abrechnung am{" "}
-                    <Text strong>15. Dez.</Text>, ca. 180,00 €.
+                    8 Artikel laufen, die Auktion endet <Text weight="strong">morgen</Text>. 10 sind am 15. Nov. ausgelaufen: Abrechnung am{" "}
+                    <Text weight="strong">15. Dez.</Text>, ca. 180,00 €.
                   </>
                 ),
               },
@@ -206,7 +206,7 @@ export const RecordScreen = () => (
                 text: (
                   <>
                     Abgerechnet am 17. Nov. Aus dieser Einlieferung zahlen wir <Text tone="ai">512,30 €</Text>, fällig ab{" "}
-                    <Text strong>heute</Text>. 2 Artikel sind wieder eingestellt.
+                    <Text weight="strong">heute</Text>. 2 Artikel sind wieder eingestellt.
                   </>
                 ),
               },
@@ -218,7 +218,7 @@ export const RecordScreen = () => (
                 state: { icon: "circle-check", label: "Ausgezahlt", tone: "ok" },
                 text: (
                   <>
-                    Fertig: <Text strong>1.028,30 €</Text> ausgezahlt, zuletzt am 12. Nov.
+                    Fertig: <Text weight="strong">1.028,30 €</Text> ausgezahlt, zuletzt am 12. Nov.
                   </>
                 ),
               },
@@ -288,8 +288,8 @@ export const DeliveriesScreen = () => (
       ]}
       summary={
         <>
-          <Text strong>8 Artikel</Text> laufen bis morgen. <Text strong>38</Text> von 53 Artikeln sind verkauft. Nächste Abrechnung am{" "}
-          <Text strong>15. Dez.</Text>
+          <Text weight="strong">8 Artikel</Text> laufen bis morgen. <Text weight="strong">38</Text> von 53 Artikeln sind verkauft. Nächste
+          Abrechnung am <Text weight="strong">15. Dez.</Text>
         </>
       }
     >
@@ -298,14 +298,14 @@ export const DeliveriesScreen = () => (
         title="EL-2611-00021"
         meta="angekommen am 17. Nov. 2026 · per Post · 2 Pakete"
         state={
-          <Text medium>
+          <Text weight="medium">
             <Icon name="signature" /> Quittung offen
           </Text>
         }
         menu={{ label: "Weitere Aktionen" }}
         actions={[{ label: "Zur Einlieferung", forward: true }]}
       >
-        <Text type="body" strong>
+        <Text type="body" weight="strong">
           Angekommen am 17. Nov. Die Quittung wartet auf Unterschrift, noch ist nichts eingestellt.
         </Text>
         <Steps
@@ -339,14 +339,14 @@ export const DeliveriesScreen = () => (
         title="EL-2611-00009"
         meta="angekommen am 3. Nov. 2026 · Abholung · 18 Artikel"
         state={
-          <Text medium>
+          <Text weight="medium">
             <Icon name="gavel" /> Läuft
           </Text>
         }
         menu={{ label: "Weitere Aktionen" }}
         actions={[{ label: "Zur Einlieferung", forward: true }]}
       >
-        <Text type="body" strong>
+        <Text type="body" weight="strong">
           10 Artikel sind ausgelaufen, 8 laufen bis morgen. Die erste Abrechnung kommt am 15. Dez.
         </Text>
         <Steps
@@ -368,7 +368,7 @@ export const DeliveriesScreen = () => (
               when: "Abrechnung am 15. Dez.",
               progress: <Progress value={5} of={22} label="Arbeitstag 5 von 22" />,
               amount: (
-                <Text medium tone="ai">
+                <Text weight="medium" tone="ai">
                   ca. 180,00 €
                 </Text>
               ),
@@ -384,8 +384,8 @@ export const DeliveriesScreen = () => (
             },
           ]}
           columns={[
-            { title: "Auslauftag", cell: (row) => [<Text strong>{row.day}</Text>, row.items] },
-            { title: "Abrechnung", cell: (row) => [<Text strong>{row.when}</Text>, row.progress] },
+            { title: "Auslauftag", cell: (row) => [<Text weight="strong">{row.day}</Text>, row.items] },
+            { title: "Abrechnung", cell: (row) => [<Text weight="strong">{row.when}</Text>, row.progress] },
             { title: "Auszahlung", align: "end", cell: (row) => (row.amount ? [row.amount, row.note] : ["", row.note]) },
           ]}
         />
@@ -415,10 +415,10 @@ export const DeliveriesScreen = () => (
         folded
         state={
           <>
-            <Text medium>
+            <Text weight="medium">
               <Icon name="file-dollar" /> Teilweise abgerechnet
             </Text>
-            <Text medium tone="ai">
+            <Text weight="medium" tone="ai">
               512,30 €
             </Text>
           </>
@@ -431,10 +431,10 @@ export const DeliveriesScreen = () => (
         folded
         state={
           <>
-            <Text medium tone="ok">
+            <Text weight="medium" tone="ok">
               <Icon name="circle-check" /> Ausgezahlt
             </Text>
-            <Text medium>1.028,30 €</Text>
+            <Text weight="medium">1.028,30 €</Text>
           </>
         }
       />

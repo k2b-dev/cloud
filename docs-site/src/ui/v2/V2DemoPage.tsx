@@ -11,7 +11,8 @@ export type V2Screen = {
   title: string;
   description: string;
   mockup: string;
-  app?: { color: string; ink: string; tint: string };
+  /** The one colour of the app (`--k2-app`); v2 derives its ink and tint in each theme. */
+  app?: string;
   render: () => JSX.Element;
 };
 
@@ -21,7 +22,7 @@ export const v2Screens = {
     description:
       "The inbox: sidebar, a head with views, a status row, rows of three lines, and the reader with a summary, the reply, the message, its attachments and an internal note.",
     mockup: "mail.html",
-    app: { color: "#0f766e", ink: "#0f5f59", tint: "#e8f4f2" },
+    app: "#0f766e",
     render: () => <MailScreen />,
   },
   record: {
@@ -43,7 +44,7 @@ export const v2Screens = {
     description:
       "34 orders of Grids in 11 columns, grouped by state: the head and the first column stay while scrolling, rows and cells answer the pointer, the boxes select rows and turn the status row into the bar of what can be done with them. On the phone every order becomes a row of two lines.",
     mockup: "tabelle-grids.html",
-    app: { color: "#047857", ink: "#065f46", tint: "#ecfdf5" },
+    app: "#047857",
     render: () => <TableScreen />,
   },
   form: {
@@ -51,7 +52,7 @@ export const v2Screens = {
     description:
       "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch; the main action answers with a toast and Rückgängig. Dialog, menu and the open list of a selection follow with the behaviour layer.",
     mockup: "index.html (Field, Button, Menu, Toast)",
-    app: { color: "#047857", ink: "#065f46", tint: "#ecfdf5" },
+    app: "#047857",
     render: () => <FormScreen />,
   },
 } satisfies Record<string, V2Screen>;
@@ -65,19 +66,7 @@ export type V2ScreenName = keyof typeof v2Screens;
 export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   const screen: V2Screen = v2Screens[props.name];
   return (
-    <div
-      class="k2-ui ui-v2-screen"
-      style={
-        screen.app
-          ? {
-              "--k2-app": screen.app.color,
-              // The mockup gives the light ink and tint; in dark both come from the app colour, as v2's own blue does.
-              "--k2-app-ink": `light-dark(${screen.app.ink}, color-mix(in srgb, ${screen.app.color} 55%, white))`,
-              "--k2-app-tint": `light-dark(${screen.app.tint}, color-mix(in srgb, ${screen.app.color} 28%, var(--k2-surface)))`,
-            }
-          : undefined
-      }
-    >
+    <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <div class="ui-v2-screen__card">{screen.render()}</div>
       <V2Inspect />
     </div>

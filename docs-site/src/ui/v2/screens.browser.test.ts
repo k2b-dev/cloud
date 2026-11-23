@@ -26,10 +26,10 @@ const frame = `html, body { margin: 0; height: 100%; }
 @media (max-width: 767px) { .shell { inset: 52px 0 0 0; } }`;
 
 const screens = {
-  mail: { render: MailScreen, app: "--k2-app:#0f766e;--k2-app-ink:#0f5f59;--k2-app-tint:#e8f4f2" },
+  mail: { render: MailScreen, app: "--k2-app:#0f766e" },
   record: { render: RecordScreen, app: "" },
   deliveries: { render: DeliveriesScreen, app: "" },
-  table: { render: TableScreen, app: "--k2-app:#047857;--k2-app-ink:#065f46;--k2-app-tint:#ecfdf5" },
+  table: { render: TableScreen, app: "--k2-app:#047857" },
 } as const;
 
 /** Boxes relative to the workspace, measured in the mockup at 1440 × 900 and 390 × 844 (left,top width×height). */
@@ -76,7 +76,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       groupHead: [".k2-gh", "271,186 1083x56"],
       steps: [".k2-steps", "271,286 1083x72"],
       table: [".k2-group .k2-table", "271,636 1083x124"],
-      facts: [".k2-facts", "271,836 1083x32"],
+      // the inline facts with their end: the part is the line around the list
+      facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
       folded: [".k2-group[data-folded]", "270,897 1085x58"],
     },
     390: {
@@ -85,7 +86,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       groupHead: [".k2-gh", "17,206 356x84"],
       steps: [".k2-steps", "17,354 356x132"],
       table: [".k2-group .k2-table", "17,876 356x204"],
-      facts: [".k2-facts", "17,1160 356x64"],
+      facts: ['[data-k2-part="Facts"]', "17,1160 356x64"],
       folded: [".k2-group[data-folded]", "16,1253 358x102"],
     },
   },

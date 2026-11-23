@@ -146,7 +146,12 @@ const mails = [
   },
 ];
 
-const message = `<p>Guten Tag Frau Solberg,</p><p>die 14 Platten können wir in KW 49 liefern, wenn die Bestellung bis Freitag bei uns ist. Der Preis aus dem Angebot bleibt bis dahin gültig. Die Lieferung kommt auf zwei Paletten, bitte halten Sie die Einfahrt frei.</p><p>Freundliche Grüße<br>Henrik Brandt</p>`;
+// The message as Markdown; a backslash at the end of a line breaks it, as the signature does.
+const message = [
+  "Guten Tag Frau Solberg,",
+  "die 14 Platten können wir in KW 49 liefern, wenn die Bestellung bis Freitag bei uns ist. Der Preis aus dem Angebot bleibt bis dahin gültig. Die Lieferung kommt auf zwei Paletten, bitte halten Sie die Einfahrt frei.",
+  "Freundliche Grüße\\\nHenrik Brandt",
+].join("\n\n");
 
 export const MailScreen = () => (
   <Workspace
@@ -293,7 +298,7 @@ export const MailScreen = () => (
               </>
             }
           />
-          <Prose html={message} />
+          <Prose markdown={message} />
           <Tiles
             label="Anhänge"
             items={[

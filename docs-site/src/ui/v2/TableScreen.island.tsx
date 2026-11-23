@@ -218,7 +218,7 @@ export default function TableScreen() {
             time: order.amount,
           })}
           columns={[
-            { title: "Auftrag", width: { min: 160, default: 260 }, cell: (order) => <Text medium>{order.name}</Text> },
+            { title: "Auftrag", width: { min: 160, default: 260 }, cell: (order) => <Text weight="medium">{order.name}</Text> },
             { title: "Nummer", width: { min: 100, default: 132 }, cell: (order) => order.number },
             { title: "Status", width: { min: 100, default: 120 }, cell: (order) => stateChip[order.state]() },
             {

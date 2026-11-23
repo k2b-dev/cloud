@@ -101,7 +101,11 @@
   inset: 0;
   display: flex;
   padding: 8px 8px 8px 56px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--k2-app) 9%, var(--k2-surface)), color-mix(in srgb, #4f46e5 7%, var(--k2-surface)));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--k2-app, var(--k2-blue)) 9%, var(--k2-surface)),
+    color-mix(in srgb, #4f46e5 7%, var(--k2-surface))
+  );
 }
 .ui-v2-screen__card {
   flex: 1;
