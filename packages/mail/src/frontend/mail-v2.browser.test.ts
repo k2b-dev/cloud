@@ -161,3 +161,88 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 });
+
+// The live states the mockup has no picture of: each measured on its own, so a double line, a line inside one thing
+// or a lost edge shows in the state where it appears (Valentin's findings of 23.11. passed the screens above).
+describe("Mail on the v2 pilot in its live states", () => {
+  /** The lines inside each message: a message's text, attachments and head are one band, closed by its own line. */
+  const linesInsideMessages = (page: Page) =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-k2-part="Pane"][data-detail] [data-k2-part="Band"]')).flatMap((band) =>
+        Array.from(band.querySelectorAll("*"))
+          .filter((element) => !element.parentElement?.closest("[data-k2-canvas]"))
+          .filter((element) => {
+            const style = getComputedStyle(element);
+            const framed = ["Top", "Right", "Bottom", "Left"].filter(
+              (side) => Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0,
+            );
+            // A divider is one side alone; a framed or rounded box (a tile, a button) is no line.
+            return framed.length === 1 && Number.parseFloat(style.borderRadius) === 0;
+          })
+          .map((element) => `${element.getAttribute("data-k2-part") ?? element.tagName.toLowerCase()} in a message`),
+      ),
+    );
+
+  test("a thread of several messages: one line between two messages, none above the attachments", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 2200);
+    try {
+      await settled(page);
+      expect(await page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Band"] [data-k2-part="Tiles"]').count()).toBe(1);
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      expect(await linesInsideMessages(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("the open composer keeps the place of the resting one and draws no second line", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 2200);
+    try {
+      const resting = await page.locator('[data-k2-part="Composer"]').boundingBox();
+      await page.locator(".k2-composer-start").click();
+      await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
+      await settled(page);
+      const open = await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box-frame]').boundingBox();
+      // 8 px from the column's edges and 12 px below the summary, like the resting frame.
+      expect({ left: open?.x, top: open?.y, width: open?.width }).toEqual({ left: resting?.x, top: resting?.y, width: resting?.width });
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      expect(await linesInsideMessages(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  for (const width of [1280, 1024])
+    test(`selection mode in the list at ${width} px keeps the v2 layout`, async () => {
+      const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, width);
+      try {
+        await page.locator('[data-k2-part="StatusRow"]').getByRole("checkbox").click();
+        await page.locator('[data-k2-part="StatusRow"][data-selecting]').waitFor();
+        await settled(page);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+
+  // Known gap of StatusRow (lane C, 23.11.): in a narrow list column the selection's actions run past its edge;
+  // they should turn into icons, then "…", by the column's width. This case turns red once the primitive does it:
+  // then make it a plain test.
+  test.failing("the selection's actions fit a narrow list column (StatusRow gap)", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1024);
+    try {
+      await page.locator('[data-k2-part="StatusRow"]').getByRole("checkbox").click();
+      await page.locator('[data-k2-part="StatusRow"][data-selecting]').waitFor();
+      await settled(page);
+      const overflow = await page.evaluate(() => {
+        const bar = document.querySelector('[data-k2-part="StatusRow"]')!.getBoundingClientRect();
+        return Array.from(document.querySelectorAll('[data-k2-part="StatusRow"] [data-k2-part="Button"]'))
+          .map((button) => button.getBoundingClientRect())
+          .filter((box) => box.right > bar.right + 0.5 || box.left < bar.left - 0.5).length;
+      });
+      expect(overflow).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+});

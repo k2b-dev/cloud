@@ -2,7 +2,7 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { toast, useLocale } from "@k2b/ui";
 import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
-import { type Accessor, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, on, Show } from "solid-js";
 import type { SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
@@ -12,6 +12,7 @@ import { buildMailConversationTimeline } from "../mail-conversation-timeline";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
+import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
 import type { MailV2Text } from "./mail-v2-messages";
 import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
@@ -147,8 +148,7 @@ export default function MailReaderV2(props: {
   controller: MailboxController;
   dateConfig: DateContext;
   text: MailV2Text;
-  /** The reply composer; `request` counts the times a message's Reply asked it to start. */
-  reply?: (request: Accessor<number>) => JSX.Element;
+  session: MailV2Session;
 }) {
   const locale = useLocale();
   const c = () => props.controller;
@@ -156,6 +156,22 @@ export default function MailReaderV2(props: {
   const item = () => c().selectedListItem();
   const listHref = () => buildMailListHref(mailRouteUrl(c().requestPath()));
   const [replyRequest, setReplyRequest] = createSignal(0);
+  // One reply per conversation: another conversation, or another mailbox, starts at rest again.
+  const reply = createMemo(
+    on(
+      () => `${data().mailbox.id}:${data().selectedConversationId ?? ""}`,
+      () =>
+        data().selectedConversationId
+          ? createMailV2Reply({
+              controller: c(),
+              session: props.session,
+              dateConfig: props.dateConfig,
+              text: () => props.text,
+              request: replyRequest,
+            })
+          : null,
+    ),
+  );
   // Newest first, each internal note at the time it was written, as v1's reader with the reply on top.
   const timeline = createMemo(() => buildMailConversationTimeline(data().detailMessages, data().comments).reverse());
   const tags = () => data().conversationLocalTags?.tags ?? item()?.localTags ?? [];
@@ -267,7 +283,16 @@ export default function MailReaderV2(props: {
         )}
       </Show>
       <Show when={data().detailError}>{(error) => <Notice tone="bad">{error()}</Notice>}</Show>
-      {props.reply?.(replyRequest)}
+      <Show when={reply()?.shown() ? reply() : null}>
+        {(open) => (
+          <Show when={open().writing()} fallback={open().rest()}>
+            <Canvas label={open().label()}>
+              {/* Mail's own reply box, framed by itself, keeps the place of the resting composer: 12 px above and below, 8 px from the column's edges. */}
+              <div style={{ padding: "12px 8px" }}>{open().box()}</div>
+            </Canvas>
+          </Show>
+        )}
+      </Show>
       <For each={timeline()}>
         {(entry) =>
           entry.kind === "message" ? (
