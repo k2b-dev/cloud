@@ -141,7 +141,7 @@ export default ssr<AuthContext>(async (c) => {
                     <div class="min-h-[24rem] min-w-0 flex-1 overflow-auto rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
                       <RelationLevels relations={current()} state={state} t={t} />
                     </div>
-                    <aside class="w-full shrink-0 md:w-[17.5rem]" aria-label={t.relations}>
+                    <aside class="w-full shrink-0 md:w-[17.5rem]" aria-label={t.details}>
                       <RelationDetails
                         relations={current()}
                         t={t}

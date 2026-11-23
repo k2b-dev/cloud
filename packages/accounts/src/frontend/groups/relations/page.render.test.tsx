@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { CloudRuntime, GroupRelations, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { accountsAppService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
+import { session } from "@k2b/cloud/services/session";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
@@ -133,6 +134,44 @@ test("an old link to a missing group starts again at the default focus", async (
       expect(response.headers.get("location")).toBe("/app/accounts/groups/relations?depth=3");
     },
   );
+});
+
+test("people without the admin role get no relations page and no Relations tab", async () => {
+  const { default: accountsPages } = await import("../../index");
+  const person = { ...user, roles: ["user"] } satisfies User;
+  const relationsSpy = spyOn(accountsAppService.group, "relations");
+  const signIn = (roles: User["roles"]) =>
+    spyOn(session, "authenticateRequest").mockResolvedValue({
+      user: { ...person, roles },
+      data: { userId: person.id, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
+    });
+  const spies = [
+    stubRailSnapshot(),
+    relationsSpy,
+    spyOn(session, "getToken").mockReturnValue("test-session"),
+    signIn(person.roles),
+    spyOn(coreSettings, "get").mockResolvedValue(false),
+    spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
+    spyOn(accountsAppService.group, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
+  ];
+  const app: App = new Hono();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user: person });
+    c.set("user", person);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.route("/app/accounts", accountsPages);
+  try {
+    const denied = await app.request("/app/accounts/groups/relations", { headers: { "Accept-Language": "en" } });
+    expect(denied.status).toBe(403);
+    expect(relationsSpy).not.toHaveBeenCalled();
+    const list = await app.request("/app/accounts/groups", { headers: { "Accept-Language": "en" } });
+    expect(list.status).toBe(200);
+    expect(await list.text()).not.toContain("/app/accounts/groups/relations");
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
 });
 
 test("no relations and a failed read each say what happened and lead back to the list", async () => {

@@ -94,7 +94,14 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, dark: boolean, view: "graph" | "list", requests: string[] = []) => {
+const open = async (
+  width: number,
+  dark: boolean,
+  view: "graph" | "list",
+  requests: string[] = [],
+  relations: GroupRelations = view === "list" ? tree : graph,
+  pages: string[] = [],
+) => {
   const tab = await browser.newPage({ viewport: { width, height: 900 } });
   const errors = pageErrors(tab);
   await tab.route("https://cloud.example.test/api/accounts/groups/relations**", (route) => {
@@ -119,11 +126,16 @@ const open = async (width: number, dark: boolean, view: "graph" | "list", reques
   await tab.route("https://cloud.example.test/fixture.js", (route) =>
     route.fulfill({ contentType: "text/javascript; charset=utf-8", body: bundle }),
   );
-  await tab.route("https://cloud.example.test/app/accounts/groups/relations", (route) =>
-    route.fulfill({
-      contentType: "text/html; charset=utf-8",
-      body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}"><main id="root" class="p-4"></main><script>window.relationsFixture=${JSON.stringify({ view, relations: view === "list" ? tree : graph })}</script><script src="/fixture.js"></script></body></html>`,
-    }),
+  // Every page the view opens, with its query; a control's page change lands here too.
+  await tab.route(
+    (url) => url.pathname === "/app/accounts/groups/relations",
+    (route) => {
+      pages.push(new URL(route.request().url()).search);
+      return route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}"><main id="root" class="p-4"></main><script>window.relationsFixture=${JSON.stringify({ view, relations })}</script><script src="/fixture.js"></script></body></html>`,
+      });
+    },
   );
   await tab.goto("https://cloud.example.test/app/accounts/groups/relations");
   return { tab, errors };
@@ -170,42 +182,106 @@ for (const width of [390, 1440])
       }
     });
 
-test("relation tree: one tab stop, arrow keys open and move, Enter selects, and a cycle ends in a back row", async () => {
-  const requests: string[] = [];
-  const { tab, errors } = await open(1440, false, "list", requests);
+test("a back edge that closes a cycle arcs from its card to the group it leads back to", async () => {
+  // Engineering at depth 3: On call contains Engineering again, three levels down.
+  const cycle: GroupRelations = {
+    ...graph,
+    depth: 3,
+    columns: [
+      { key: "u1", items: [{ id: all, via: tech }], backs: [], hidden: 0 },
+      { key: "d1", items: [{ id: platform, via: tech }], backs: [], hidden: 0 },
+      { key: "d2", items: [{ id: oncall, via: platform }], backs: [], hidden: 0 },
+      { key: "d3", items: [], backs: [{ from: oncall, to: tech, closesCycle: true }], hidden: 0 },
+    ],
+  };
+  const { tab, errors } = await open(1440, false, "graph", [], cycle);
   try {
-    const items = tab.getByRole("treeitem");
-    await items.first().waitFor();
-    expect(await tab.locator('[role="treeitem"][tabindex="0"]').count()).toBe(1);
-    await items.first().focus();
-    await tab.keyboard.press("ArrowRight");
-    await tab.getByRole("treeitem", { name: /Engineering/ }).waitFor();
-    expect(await items.first().getAttribute("aria-expanded")).toBe("true");
-    await tab.keyboard.press("ArrowDown");
-    await tab.keyboard.press("ArrowDown");
-    await tab.keyboard.press("ArrowRight");
-    await tab.getByRole("treeitem", { name: /Platform/ }).waitFor();
-    await tab.keyboard.press("ArrowDown");
-    await tab.keyboard.press("ArrowRight");
-    await tab.getByRole("treeitem", { name: /On call/ }).waitFor();
-    await tab.keyboard.press("ArrowDown");
-    await tab.keyboard.press("ArrowRight");
-    await tab.getByRole("treeitem", { name: "leads back to Engineering" }).waitFor();
-    expect(await tab.locator('[role="treeitem"][tabindex="0"]').count()).toBe(1);
-    await tab.keyboard.press("Home");
-    await tab.keyboard.press("ArrowDown");
-    await tab.keyboard.press("Enter");
-    await tab.getByRole("heading", { name: "Sales", level: 3 }).waitFor();
-    expect(new URL(tab.url()).searchParams.get("sel")).toBe(sales);
-    // The top groups carry a budget too; the rest opens in place.
-    await tab.getByRole("button", { name: "+ 1 more" }).click();
-    await tab.locator('[role="treeitem"][aria-level="1"]').nth(1).waitFor();
-    expect(await tab.locator('[role="treeitem"][aria-level="1"]').count()).toBe(2);
-    await tab.getByRole("button", { name: "+ 1 more" }).waitFor({ state: "detached" });
-    expect(requests.at(-1)).toContain("expand=roots");
-    expect(requests.some((search) => search.includes("selected=00000000-0000-4000-8000-000000000005"))).toBe(true);
+    const back = tab.getByRole("link", { name: "Engineering: On call contains it again" });
+    await back.waitFor();
+    const arc = await tab.evaluate(() => {
+      const svg = document.querySelector("[data-stage] svg")!;
+      const origin = svg.getBoundingClientRect();
+      const box = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { center: rect.left - origin.left + rect.width / 2, top: rect.top - origin.top };
+      };
+      const path = svg.querySelector(":scope > path[marker-end]");
+      const numbers = (path?.getAttribute("d") ?? "").match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+      const links = [...document.querySelectorAll("[data-stage] a")];
+      const start = box(links.find((link) => link.getAttribute("aria-label")?.startsWith("Engineering:"))!);
+      const end = box(links.find((link) => link.getAttribute("aria-current") === null && link.textContent?.startsWith("Engineering"))!);
+      return { numbers, start, end };
+    });
+    const [x1, y1] = arc.numbers;
+    expect(Math.abs(x1! - arc.start.center)).toBeLessThanOrEqual(1);
+    expect(Math.abs(y1! - arc.start.top)).toBeLessThanOrEqual(1);
+    // The arc ends with "Q … x y V top": its last x is the third number from the end.
+    expect(Math.abs(arc.numbers.at(-3)! - arc.end.center)).toBeLessThanOrEqual(1);
+    expect(Math.abs(arc.numbers.at(-1)! - arc.end.top)).toBeLessThanOrEqual(1);
     expect(errors).toEqual([]);
   } finally {
     await tab.close();
   }
 });
+
+for (const [width, dark] of [
+  [1440, false],
+  [390, true],
+] as const)
+  test(`relation tree ${width} ${dark ? "dark" : "light"}: one tab stop, keys, Enter, cycles end, and controls keep the selection`, async () => {
+    const requests: string[] = [];
+    const pages: string[] = [];
+    const { tab, errors } = await open(width, dark, "list", requests, tree, pages);
+    const focused = () => tab.evaluate(() => document.activeElement?.textContent ?? "");
+    try {
+      const items = tab.getByRole("treeitem");
+      await items.first().waitFor();
+      expect(await tab.locator('[role="treeitem"][tabindex="0"]').count()).toBe(1);
+      await items.first().focus();
+      await tab.keyboard.press("ArrowRight");
+      await tab.getByRole("treeitem", { name: /Engineering/ }).waitFor();
+      expect(await items.first().getAttribute("aria-expanded")).toBe("true");
+      await tab.keyboard.press("ArrowDown");
+      await tab.keyboard.press("ArrowDown");
+      await tab.keyboard.press("ArrowRight");
+      await tab.getByRole("treeitem", { name: /Platform/ }).waitFor();
+      await tab.keyboard.press("ArrowDown");
+      await tab.keyboard.press("ArrowRight");
+      await tab.getByRole("treeitem", { name: /On call/ }).waitFor();
+      await tab.keyboard.press("ArrowDown");
+      await tab.keyboard.press("ArrowRight");
+      await tab.getByRole("treeitem", { name: "leads back to Engineering" }).waitFor();
+      expect(await tab.locator('[role="treeitem"][tabindex="0"]').count()).toBe(1);
+      expect(await tab.locator('[role="treeitem"][aria-level="2"]').first().getAttribute("aria-setsize")).toBe("2");
+      await tab.keyboard.press("End");
+      expect(await focused()).toContain("leads back to Engineering");
+      // From a row without children, the left arrow goes to its parent.
+      await tab.keyboard.press("ArrowLeft");
+      expect(await focused()).toContain("On call");
+      await tab.keyboard.press("Home");
+      await tab.keyboard.press("ArrowDown");
+      await tab.keyboard.press("Enter");
+      await tab.getByRole("heading", { name: "Sales", level: 2 }).waitFor();
+      expect(new URL(tab.url()).searchParams.get("sel")).toBe(sales);
+      // The top groups carry a budget too; the rest opens in place.
+      await tab.getByRole("button", { name: "+ 1 more" }).click();
+      await tab.locator('[role="treeitem"][aria-level="1"]').nth(1).waitFor();
+      expect(await tab.locator('[role="treeitem"][aria-level="1"]').count()).toBe(2);
+      await tab.getByRole("button", { name: "+ 1 more" }).waitFor({ state: "detached" });
+      expect(requests.at(-1)).toContain("expand=roots");
+      expect(requests.some((search) => search.includes("selected=00000000-0000-4000-8000-000000000005"))).toBe(true);
+      // A click keeps the keyboard on the row, also when the row closes.
+      await tab.locator('[role="treeitem"][aria-level="1"]').first().click();
+      expect(await focused()).toContain("All staff");
+      await tab.getByRole("heading", { name: "All staff", level: 2 }).waitFor();
+      // A control opens the next page from the URL as it is now, with the selection made in the tree.
+      await tab.getByRole("link", { name: "Managers" }).click();
+      await tab.waitForFunction(() => location.search.includes("managers=1"));
+      const params = new URLSearchParams(pages.at(-1));
+      expect(params.get("sel")).toBe(all);
+      expect(params.get("managers")).toBe("1");
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.close();
+    }
+  });

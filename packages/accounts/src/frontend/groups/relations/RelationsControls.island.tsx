@@ -3,7 +3,7 @@ import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import { relationsMessages } from "./relations-messages";
-import { type RelationsUrlState, relationsHref } from "./relations-view";
+import { parseRelationsUrl, type RelationsUrlState, relationsHref } from "./relations-view";
 
 type Props = {
   state: RelationsUrlState;
@@ -18,7 +18,21 @@ export default function RelationsControls(props: Props) {
   const locale = useLocale();
   const t = () => relationsMessages.resolve([locale()]).t;
   const { openPage } = usePageSwap();
-  const go = (change: Partial<RelationsUrlState>) => void openPage(relationsHref(props.state, change));
+  // The tree changes the selection in the URL without a new page; a control starts from the URL as it is now.
+  const current = (): RelationsUrlState =>
+    typeof window === "undefined"
+      ? props.state
+      : parseRelationsUrl((name) => new URLSearchParams(window.location.search).get(name) ?? undefined);
+  const go = (change: Partial<RelationsUrlState>) => void openPage(relationsHref(current(), change));
+  /** A link that works without scripts and, with them, keeps what changed since the page loaded. */
+  const link = (change: () => Partial<RelationsUrlState>) => ({
+    href: relationsHref(props.state, change()),
+    onClick: (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      go(change());
+    },
+  });
   return (
     <div class="flex flex-wrap items-center gap-2">
       <div class="min-w-[10rem] flex-[1_1_14rem]">
@@ -50,7 +64,7 @@ export default function RelationsControls(props: Props) {
               icon="ti ti-refresh-alert"
               label={t().cycles({ count: props.cycleCount })}
               active={false}
-              href={relationsHref(props.state, { focus: first(), sel: undefined, expand: [] })}
+              {...link(() => ({ focus: first(), sel: undefined, expand: [] }))}
             />
           )}
         </Show>
@@ -59,7 +73,7 @@ export default function RelationsControls(props: Props) {
         icon="ti ti-user-star"
         label={t().managers}
         active={props.state.managers}
-        href={relationsHref(props.state, { managers: !props.state.managers })}
+        {...link(() => ({ managers: !props.state.managers }))}
       />
       <Show when={props.state.view === "graph"}>
         <div class="flex items-center gap-1.5">

@@ -22,17 +22,17 @@ const { t } = relationsMessages.resolve(["en"]);
 render(
   () => (
     <LocaleProvider locale="en">
-      {view === "list" ? (
-        <RelationsTree relations={relations} state={state} />
-      ) : (
-        <div class="flex flex-col gap-2">
-          <RelationsControls
-            state={state}
-            groupCount={relations.groupCount}
-            cycleCount={relations.cycles.count}
-            firstCycleGroup={relations.cycles.first}
-            cyclesComplete={relations.cyclesComplete}
-          />
+      <div class="flex flex-col gap-2">
+        <RelationsControls
+          state={state}
+          groupCount={relations.groupCount}
+          cycleCount={relations.cycles.count}
+          firstCycleGroup={relations.cycles.first}
+          cyclesComplete={relations.cyclesComplete}
+        />
+        {view === "list" ? (
+          <RelationsTree relations={relations} state={state} />
+        ) : (
           <div class="flex flex-col gap-3 md:flex-row">
             <div
               class="min-h-[24rem] min-w-0 flex-1 overflow-auto rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]"
@@ -44,8 +44,8 @@ render(
               <RelationDetails relations={relations} t={t} pick={(id, name) => <a href={`#${id}`}>{name}</a>} />
             </aside>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </LocaleProvider>
   ),
   root,

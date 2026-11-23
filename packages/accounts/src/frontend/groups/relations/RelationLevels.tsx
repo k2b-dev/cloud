@@ -60,7 +60,7 @@ export default function RelationLevels(props: Props) {
         <For each={layout().columns}>
           {(column) => (
             <section class="flex w-full flex-col gap-[4px] md:w-[172px]" aria-label={title(column)}>
-              <h4 class="h-[20px] truncate text-xs font-semibold leading-[20px] text-dimmed">{title(column)}</h4>
+              <h2 class="h-[20px] truncate text-xs font-semibold leading-[20px] text-dimmed">{title(column)}</h2>
               <For each={column.entries}>
                 {(entry) => (
                   <Switch>

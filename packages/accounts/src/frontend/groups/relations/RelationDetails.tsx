@@ -21,7 +21,7 @@ export default function RelationDetails(props: Props) {
     <Show when={entries}>
       {(current) => (
         <section class="mt-4">
-          <h4 class="mb-1 text-xs font-semibold text-dimmed">{label}</h4>
+          <h3 class="mb-1 text-xs font-semibold text-dimmed">{label}</h3>
           <Show when={current().total > 0} fallback={<p class="text-sm text-dimmed">{props.t.none}</p>}>
             <ul class="flex flex-col">
               <For each={current().ids}>{(id) => <li class="min-w-0">{props.pick(id, name(id))}</li>}</For>
@@ -37,7 +37,7 @@ export default function RelationDetails(props: Props) {
   return (
     <Show when={selected() && node()} fallback={<p class="mt-4 text-sm text-dimmed">{props.t.choose}</p>}>
       <div class="text-sm">
-        <h3 class="truncate text-base font-semibold text-primary">{node()!.name}</h3>
+        <h2 class="truncate text-base font-semibold text-primary">{node()!.name}</h2>
         <p class="text-xs text-dimmed">
           {node()!.provider === "ipa" ? "FreeIPA" : props.t.local} · {props.t.directMembers({ count: node()!.members })}
         </p>
