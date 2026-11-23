@@ -270,6 +270,7 @@ describe("input: keys, focus and a place at the end", () => {
       await page.keyboard.type("Brandt");
       await page.keyboard.press("Enter");
       expect(await seen(page)).toEqual(["search:Brandt"]);
+      await settled(page);
       const geometry = await page.evaluate(() => {
         const field = document.querySelector('[data-k2-part="Input"]:has(> .k2-input-end)')!.getBoundingClientRect();
         const button = document.querySelector(".k2-input-end > .k2-btn")!.getBoundingClientRect();
