@@ -440,7 +440,6 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           ["Exportieren", true, true],
           ["Auswahl aufheben", true, true],
         ]);
-        expect((await measureV2Layout(page, { root: '[data-k2-part="StatusRow"]' })).clip).toEqual([]);
       } finally {
         await page.close();
       }

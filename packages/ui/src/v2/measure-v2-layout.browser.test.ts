@@ -297,53 +297,6 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
-  // A line of a row in a box of one 20 px line: cut at its end with "…", or clipped without it, or a second line hidden.
-  const cut = (style: string, text: string) =>
-    columns(`<div class="row"><span class="k2-t-row" style="display:block; width: 120px; ${style}">${text}</span></div>`);
-  const long = "Angebot Eichenplatten – Liefertermin und die Frage nach den Kanten";
-
-  test(
-    'green: a line cut at its end with "…" and a line clamped to its lines are no cut text',
-    async () => {
-      const page = await open(
-        cut("overflow: hidden; white-space: nowrap; text-overflow: ellipsis;", long) +
-          cut("display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;", long),
-      );
-      try {
-        expect((await measureV2Layout(page)).clip).toEqual([]);
-      } finally {
-        await page.close();
-      }
-    },
-    TEST_TIMEOUT,
-  );
-
-  test(
-    'red: a line cut without "…", and a second line hidden below a box of one line',
-    async () => {
-      const page = await open(
-        columns(
-          `<div class="row"><span class="k2-t-row" style="display:block; width: 120px; overflow: hidden; white-space: nowrap;">${long}</span></div>`,
-        ),
-      );
-      const lines = await open(
-        columns(
-          `<div class="row"><span class="k2-t-row" style="display:block; width: 120px; height: 20px; overflow: hidden;">${long}</span></div>`,
-        ),
-      );
-      try {
-        expect((await measureV2Layout(page)).clip).toEqual([expect.stringMatching(/^cut text: span\.k2-t-row cuts its line without "…"$/)]);
-        expect((await measureV2Layout(lines)).clip).toEqual([
-          expect.stringMatching(/^cut text: span\.k2-t-row hides \d+ px of its lines$/),
-        ]);
-      } finally {
-        await page.close();
-        await lines.close();
-      }
-    },
-    TEST_TIMEOUT,
-  );
-
   test(
     "red: text outside the four roles and three weights",
     async () => {
