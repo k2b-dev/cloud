@@ -273,6 +273,94 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  for (const column of [360, 480, 640])
+    test(
+      `the bar of a selection in a column of ${column} px: nothing is cut, words give way to symbols first`,
+      async () => {
+        const page = await open("messages");
+        try {
+          // the window stays wide; only the column narrows (the frame is cut until the bar is `column` wide), so the
+          // bar measures its column, not the window
+          await page.evaluate((width) => {
+            const frame = document.querySelector<HTMLElement>(".frame")!;
+            const bar = document.querySelector('[data-k2-part="StatusRow"]')!;
+            frame.style.right = "auto";
+            frame.style.boxSizing = "border-box";
+            frame.style.width = `${frame.getBoundingClientRect().width}px`;
+            const short = bar.getBoundingClientRect().width - width;
+            frame.style.width = `${frame.getBoundingClientRect().width - short}px`;
+          }, column);
+          await settled(page);
+          const bar = await page.evaluate(() => {
+            const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+            const edge = Number.parseFloat(getComputedStyle(row).paddingRight);
+            const right = row.getBoundingClientRect().right - edge;
+            return {
+              width: Math.round(row.getBoundingClientRect().width),
+              buttons: [...row.querySelectorAll(".k2-btn")].map((button) => ({
+                name: button.textContent?.trim(),
+                inside: button.getBoundingClientRect().right <= right + 0.5,
+                whole: button.scrollWidth <= button.clientWidth,
+                words: button.querySelector(".k2-btn-label")!.getBoundingClientRect().width > 1,
+              })),
+            };
+          });
+          expect(bar.width).toBe(column);
+          for (const button of bar.buttons) expect([button.name, button.inside, button.whole]).toEqual([button.name, true, true]);
+          // 640: all words; 480: the actions are symbols, the way out keeps its words; 360: the way out is its × too
+          expect(bar.buttons.map((button) => button.words)).toEqual(
+            column >= 600 ? [true, true, true, true] : column >= 400 ? [false, false, false, true] : [false, false, false, false],
+          );
+          // every button keeps its name
+          expect(await page.getByRole("button", { name: "Archivieren" }).count()).toBe(1);
+          expect(await page.getByRole("button", { name: "Auswahl aufheben" }).count()).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  test(
+    "two messages in a row: one line between their bands, none inside a band, the tiles framed on their own",
+    async () => {
+      const page = await open("messages");
+      try {
+        const lines = await page.evaluate(() => {
+          const bands = [...document.querySelectorAll(".k2-band")];
+          // a structural line: a box with a top or bottom border that is not round (tiles and buttons are round)
+          const inside = bands.flatMap((band) =>
+            [...band.querySelectorAll("*")]
+              .filter((element) => {
+                const style = getComputedStyle(element);
+                const line = Number.parseFloat(style.borderTopWidth) > 0 || Number.parseFloat(style.borderBottomWidth) > 0;
+                return line && Number.parseFloat(style.borderTopLeftRadius) === 0;
+              })
+              .map((element) => element.className),
+          );
+          const [first, second] = bands.map((band) => band.getBoundingClientRect());
+          const own = bands.map((band) => [
+            Number.parseFloat(getComputedStyle(band).borderTopWidth),
+            Number.parseFloat(getComputedStyle(band).borderBottomWidth),
+          ]);
+          return { inside, touching: second!.top - first!.bottom, own, tiles: second ? bands[1]!.querySelectorAll(".k2-tile").length : 0 };
+        });
+        expect(lines.inside).toEqual([]);
+        // the bands touch; each owns its bottom line only, so between them there is exactly one
+        expect(lines.touching).toBe(0);
+        expect(lines.own).toEqual([
+          [0, 1],
+          [0, 1],
+        ]);
+        expect(lines.tiles).toBe(1);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   for (const width of [1440, 390])
     test(
       `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v16), none after the last`,

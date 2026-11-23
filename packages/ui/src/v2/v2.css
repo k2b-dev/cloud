@@ -615,11 +615,14 @@
 .k2-ui .k2-band[data-tone="warn"] {
   background: var(--k2-warn-tint);
 }
-/* a band owns exactly one line; what stands in it draws none */
+/* a band owns exactly one line; what stands in it draws none: its parts are parts of one thing (rule 9) */
 .k2-ui .k2-band > .k2-row {
   border-bottom: 0;
   padding-block: 0;
   min-height: var(--k2-h-control);
+}
+.k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
+  border-block: 0;
 }
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
@@ -2169,6 +2172,47 @@
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
   background: var(--k2-blue-tint);
+}
+/* The bar measures its own column, not the window. Where the words do not fit, the actions keep only their symbols
+   (below 600 px), then the way out keeps only its × (below 400 px); the words stay the buttons' names. The × of the
+   way out shows only then. */
+.k2-ui .k2-bar[data-status-row] {
+  container: k2-status / inline-size;
+}
+.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+  display: none;
+}
+@container k2-status (max-width: 599px) {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) {
+    width: var(--k2-h-control-small);
+    padding: 0;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container k2-status (max-width: 399px) {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] {
+    width: var(--k2-h-control-small);
+    padding: 0;
+    justify-content: center;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+    display: flex;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* StatusRow: one lead statement, key figures; filters on the right */

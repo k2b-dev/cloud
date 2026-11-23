@@ -482,10 +482,55 @@ export const ControlsFixture = () =>
     </Pane>,
   );
 
+/**
+ * A thread of two messages, each a band of its parts (who, the text, the attachments), and a column whose status row
+ * is the bar of a selection, for widths of the column from 360 to 640 px.
+ */
+const MessagesFixture = () => (
+  <Workspace
+    sidebarLabel="Breite der Seitenleiste"
+    sidebar={<Nav title="Mail" icon="mail" groups={[{ items: [{ label: "Posteingang", icon: "inbox", count: 7, current: true }] }]} />}
+  >
+    <Pane
+      label="Auswahl"
+      status={
+        <StatusRow
+          lead="12 Nachrichten"
+          selection={{
+            count: "10 ausgewählt",
+            actions: [
+              { label: "Erledigt", icon: "check" },
+              { label: "Archivieren", icon: "archive" },
+              { label: "Löschen", icon: "trash" },
+            ],
+            clear: { label: "Auswahl aufheben" },
+          }}
+        />
+      }
+    >
+      <Band>
+        <Row
+          avatar={{ name: "Holzwerk Brandt" }}
+          strong
+          lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
+          end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+        />
+        <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
+      </Band>
+      <Band>
+        <Row avatar={{ name: "Mira Solberg" }} strong lines={["Mira Solberg", "an Holzwerk Brandt · gestern"]} />
+        <Prose markdown="Bitte schicken Sie uns das Angebot." />
+        <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} />
+      </Band>
+    </Pane>
+  </Workspace>
+);
+
 export const fixtures = {
   layout: LayoutFixture,
   structure: StructureFixture,
   table: TableFixture,
   grid: GridFixture,
   controls: ControlsFixture,
+  messages: MessagesFixture,
 } as const;
