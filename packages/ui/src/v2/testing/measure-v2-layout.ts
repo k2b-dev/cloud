@@ -27,7 +27,8 @@
  * - **inside:** a band or a group is one thing (rule 9): a horizontal hairline inside it separates its parts and is a
  *   finding at any distance from other lines. A frame, a control's outline and a figure's track are no such line.
  * - **cut:** a control's label never leaves its box and is never clipped; a one-line text (the lines of a row, the
- *   cells of a table with column widths) never wraps, it ends with "…".
+ *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
+ *   whole and cuts a line at its end only with "…".
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -547,6 +548,30 @@ function measureInPage(options: InPage): DomResult {
       for (const r of textBoxes(control))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
       if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
+    }
+    // A box of text that clips (overflow hidden or clip, not a scroller) shows every line of it whole and cuts a line at
+    // its end only with "…". Only boxes of text count: text of their own or inline children. A control's label is
+    // judged above, more strictly.
+    for (const element of elements) {
+      if (!(element instanceof HTMLElement) || !element.textContent?.trim() || element.closest(options.controls)) continue;
+      // Text kept only as a name (a visually hidden label of 1 px) shows nothing to cut.
+      const box = element.getBoundingClientRect();
+      if (box.width <= 1 || box.height <= 1) continue;
+      const style = getComputedStyle(element);
+      // A clamp to a number of lines ends its last line with "…" by itself.
+      if (style.webkitLineClamp !== "none" && style.webkitLineClamp !== "") continue;
+      const clipsX = style.overflowX === "hidden" || style.overflowX === "clip";
+      const clipsY = style.overflowY === "hidden" || style.overflowY === "clip";
+      if (!clipsX && !clipsY) continue;
+      if (!Array.from(element.children).every((child) => getComputedStyle(child).display.startsWith("inline"))) continue;
+      if (clipsY && element.scrollHeight > element.clientHeight + 1)
+        cut.push(
+          `${name(element)} "${labelOf(element)}" hides ${element.scrollHeight - element.clientHeight} px of its text above or below; every line shows whole`,
+        );
+      // A control that sticks out sideways is reported once, at the control; the box above it says nothing new.
+      const holdsControl = Array.from(element.children).some((child) => child.matches(options.controls));
+      if (clipsX && !holdsControl && element.scrollWidth > element.clientWidth + 1 && style.textOverflow !== "ellipsis")
+        cut.push(`${name(element)} "${labelOf(element)}" cuts its line without "…"`);
     }
     for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
       if (!visible(element) || element.parentElement?.closest(options.skip)) continue;

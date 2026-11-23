@@ -48,9 +48,15 @@ const open = async (name: keyof typeof fixtures, { width = 1440, scale = 1 } = {
 const TEST_TIMEOUT = 30_000;
 
 // Known findings, each with its issue; the list shrinks when the issue is fixed and never names a whole primitive.
+// #4076: a chip in a cell of a sized table is cut by 2 px.
+const chipsInCells = ["Gültig", "Wartet"].map(
+  (label) => `span.k2-cell-line "${label}" hides 2 px of its text above or below; every line shows whole`,
+);
 const known: Partial<Record<string, string[]>> = {
   // #4073: on the phone the selecting status row has no room for its clear action.
   "grid 390": ['control button.k2-btn cuts its label "Auswahl aufheben"; it needs the room of its whole label'],
+  "table 1440": chipsInCells,
+  "table 390": chipsInCells,
 };
 
 describe("v2 primitives keep the layout rules", () => {

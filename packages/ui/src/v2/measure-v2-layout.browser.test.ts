@@ -573,6 +573,48 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A line of text in a box of one 20 px line: cut at its end with "…", or clipped without it, or a second line hidden.
+  const textBox = (style: string) =>
+    columns(
+      `<div class="row"><span class="k2-t-row" data-probe="box" style="display:block; width: 120px; ${style}">Angebot Eichenplatten – Liefertermin und die Frage nach den Kanten</span></div>`,
+    );
+
+  test(
+    'green: a box that cuts its line with "…", and a box clamped to its lines',
+    async () => {
+      const page = await open(
+        textBox("overflow: hidden; white-space: nowrap; text-overflow: ellipsis;") +
+          textBox("display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;"),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    'red: a box that cuts its line without "…", and a box that hides its second line',
+    async () => {
+      const page = await open(textBox("overflow: hidden; white-space: nowrap;"));
+      const lines = await open(textBox("height: 20px; overflow: hidden;"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          '[data-probe="box"] "Angebot Eichenplatten – Liefertermin und" cuts its line without "…"',
+        ]);
+        expect((await measureV2Layout(lines)).cut).toEqual([
+          expect.stringMatching(/^\[data-probe="box"\] "Angebot Eichenplatten – Liefertermin und" hides \d+ px of its text above or below/),
+        ]);
+      } finally {
+        await page.close();
+        await lines.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {
