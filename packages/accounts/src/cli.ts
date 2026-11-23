@@ -107,7 +107,13 @@ type GroupRelationsResponse = {
     backs: { from: string; to: string; closesCycle: boolean }[];
     hidden: number;
   }[];
+  selected: {
+    manages: { ids: string[]; total: number } | null;
+    managedBy: { ids: string[]; total: number } | null;
+    managerCycle: { path: string[] } | null;
+  } | null;
   cyclesComplete: boolean;
+  managerCyclesComplete: boolean;
 };
 
 type EntitiesResponse = {
@@ -1098,7 +1104,7 @@ export default defineCliCommands({
       args: { group: arg.optional({ valueLabel: "group" }) },
       flags: {
         depth: flag.int({ default: 2, min: 1, max: 4, description: "Levels in each direction" }),
-        managers: flag.boolean({ description: "Also evaluate which groups manage which" }),
+        managers: flag.boolean({ description: "Also show which groups manage the group, and a management cycle through it" }),
         all: flag.boolean({ description: "Show every group of each level instead of the first 10" }),
       },
       async run({ ctx, args, flags }) {
@@ -1108,7 +1114,8 @@ export default defineCliCommands({
           ctx,
           `/groups/relations${queryString({ focus, depth: flags.depth, managers: flags.managers ? "true" : undefined, expand: columns })}`,
         );
-        const name = (id: string) => response.nodes.find((node) => node.id === id)?.name ?? id;
+        const nodes = new Map(response.nodes.map((node) => [node.id, node]));
+        const name = (id: string) => nodes.get(id)?.name ?? id;
         const rows = response.columns.flatMap((column) => {
           const level = `${column.key.startsWith("u") ? "contained in" : "contains"} ${column.key.slice(1)}`;
           return [
@@ -1116,7 +1123,7 @@ export default defineCliCommands({
               level,
               group: name(item.id),
               via: name(item.via),
-              cycle: response.nodes.find((node) => node.id === item.id)?.inCycle ? "yes" : "",
+              cycle: nodes.get(item.id)?.inCycle ? "yes" : "",
             })),
             ...column.backs.map((back) => ({
               level,
@@ -1128,8 +1135,26 @@ export default defineCliCommands({
           ];
         });
         const focusRow = response.focus ? [{ level: "focus", group: name(response.focus), via: "", cycle: "" }] : [];
-        printJsonOrTable(ctx, response, [...focusRow, ...rows], [{ key: "level" }, { key: "group" }, { key: "via" }, { key: "cycle" }]);
+        // Management is shown for the focus only, like the details of the view.
+        const managed = (level: string, list: { ids: string[]; total: number } | null | undefined) => [
+          ...(list?.ids ?? []).map((id) => ({ level, group: name(id), via: "", cycle: "" })),
+          ...(list && list.total > list.ids.length ? [{ level, group: `${list.total - list.ids.length} more`, via: "", cycle: "" }] : []),
+        ];
+        const managerCycle = response.selected?.managerCycle;
+        const managerRows = [
+          ...managed("manages", response.selected?.manages),
+          ...managed("managed by", response.selected?.managedBy),
+          ...(managerCycle ? [{ level: "management cycle", group: managerCycle.path.map(name).join(" → "), via: "", cycle: "" }] : []),
+        ];
+        printJsonOrTable(
+          ctx,
+          response,
+          [...focusRow, ...rows, ...managerRows],
+          [{ key: "level" }, { key: "group" }, { key: "via" }, { key: "cycle" }],
+        );
         if (!response.cyclesComplete) ctx.error("Only part of the relations was read; cycles were checked only in part.");
+        if (!response.managerCyclesComplete)
+          ctx.error("Only part of the management relations was read; management cycles were checked only in part.");
       },
     }),
     command("groups create", {

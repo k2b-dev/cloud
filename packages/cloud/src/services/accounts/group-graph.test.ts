@@ -39,14 +39,39 @@ describe("group graph", () => {
       ["oncall", "tech"],
     ]);
     const seen = new Set(["tech"]);
-    const down = relationLevels("tech", 4, g.down, seen);
-    const up = relationLevels("tech", 4, g.up, seen);
+    const down = relationLevels("tech", 4, g.down, seen, { budget: () => 10 });
+    const up = relationLevels("tech", 4, g.up, seen, { budget: () => 10 });
     expect(down).toEqual([
-      { items: [{ id: "platform", via: "tech" }], backs: [] },
-      { items: [{ id: "oncall", via: "platform" }], backs: [] },
-      { items: [], backs: [{ from: "oncall", to: "tech" }] },
+      { items: [{ id: "platform", via: "tech" }], backs: [], hidden: 0 },
+      { items: [{ id: "oncall", via: "platform" }], backs: [], hidden: 0 },
+      { items: [], backs: [{ from: "oncall", to: "tech" }], hidden: 0 },
     ]);
-    expect(up).toEqual([{ items: [{ id: "all", via: "tech" }], backs: [{ from: "tech", to: "oncall" }] }]);
+    expect(up).toEqual([{ items: [{ id: "all", via: "tech" }], backs: [{ from: "tech", to: "oncall" }], hidden: 0 }]);
+  });
+
+  test("a budget hides groups, and the next level grows only from the groups shown", () => {
+    const pairs: [string, string][] = [];
+    for (const child of ["a", "b", "c", "d"]) pairs.push(["top", child], [child, `${child}-1`]);
+    const g = graph(pairs);
+    const levels = relationLevels("top", 2, g.down, new Set(["top"]), { budget: (level) => (level === 1 ? 2 : 10) });
+    expect(levels).toEqual([
+      {
+        items: [
+          { id: "a", via: "top" },
+          { id: "b", via: "top" },
+        ],
+        backs: [],
+        hidden: 2,
+      },
+      {
+        items: [
+          { id: "a-1", via: "a" },
+          { id: "b-1", via: "b" },
+        ],
+        backs: [],
+        hidden: 0,
+      },
+    ]);
   });
 
   test("a chain far deeper than the call stack and a dense cycle stay iterative", () => {
@@ -56,6 +81,7 @@ describe("group graph", () => {
     const cycles = cycleComponents(g.nodes, g.down);
     expect(cycles).toHaveLength(1);
     expect(cycles[0]).toHaveLength(200_001);
-    expect(relationLevels("g0", 4, g.down, new Set(["g0"])).map((level) => level.items.length)).toEqual([1, 1, 1, 1]);
+    const levels = relationLevels("g0", 4, g.down, new Set(["g0"]), { budget: () => 10 });
+    expect(levels.map((level) => level.items.length)).toEqual([1, 1, 1, 1]);
   });
 });
