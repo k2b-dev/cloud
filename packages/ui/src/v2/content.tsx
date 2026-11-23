@@ -27,6 +27,8 @@ export type TextProps = {
   children: JSX.Element;
 };
 
+const typeClass = { meta: "k2-t-meta", row: "k2-t-row", body: "k2-t-body", lead: "k2-t-lead" } as const;
+
 /**
  * Text in one of the four type roles. Standing in the flow of a column (a pane, a band, a section, a group) it is a
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
@@ -36,7 +38,7 @@ export const Text = (props: TextProps) => (
   <Dynamic
     component={props.href ? "a" : "span"}
     href={props.href}
-    class={`k2-text${props.type ? ` k2-t-${props.type}` : ""}${props.strong ? " k2-strong" : props.medium ? " k2-medium" : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.strong ? " k2-strong" : props.medium ? " k2-medium" : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
