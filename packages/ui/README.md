@@ -113,8 +113,9 @@ import { typeRoles } from "@k2b/ui/v2";
   structure is square.
 - Text starts 20 px from the column edge (16 px below 768 px), or 24 px
   further in after an icon.
-- For dark mode, put `.k2-ui` inside `.dark`, or set `data-theme="dark"` on
-  the scope.
+- For dark mode, put `.k2-ui` inside `.dark`, or add `.dark` or
+  `data-theme="dark"` to the scope. A scope with `data-theme="light"` stays
+  light inside a dark page.
 
 Primitives own spacing, lines, and type. They take no `class`, `style`,
 `size`, or `gap`, and an application adds no layout CSS of its own; free

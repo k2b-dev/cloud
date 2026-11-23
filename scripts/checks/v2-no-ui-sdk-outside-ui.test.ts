@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { rule, uiSdkDependencies, uiSdkImports } from "./v2-no-ui-sdk-outside-ui";
+import { rule, uiSdkDependencies, uiSdkImports, uiSdkStylesheetImports } from "./v2-no-ui-sdk-outside-ui";
 
 test("finds every way a source can name @ui-sdk/*", () => {
   const source = [
@@ -11,8 +11,13 @@ test("finds every way a source can name @ui-sdk/*", () => {
     'const lazy = await import("@ui-sdk/core");',
     'const old = require("@ui-sdk/core");',
     'type Api = import("@ui-sdk/core").Api;',
+    'const path = require.resolve("@ui-sdk/core");',
+    'const url = import.meta.resolve("@ui-sdk/core/renderer");',
+    'mock.module("@ui-sdk/core", () => ({}));',
+    'vi.mock("@ui-sdk/core");',
     'import { Menu } from "@k2b/ui/v2";',
     'const text = "@ui-sdk/core is only a string here";',
+    'other.module("@ui-sdk/core");',
   ].join("\n");
   expect(uiSdkImports("app.ts", source)).toEqual([
     { line: 1, specifier: "@ui-sdk/core" },
@@ -20,6 +25,25 @@ test("finds every way a source can name @ui-sdk/*", () => {
     { line: 3, specifier: "@ui-sdk/core" },
     { line: 4, specifier: "@ui-sdk/core" },
     { line: 5, specifier: "@ui-sdk/core" },
+    { line: 6, specifier: "@ui-sdk/core" },
+    { line: 7, specifier: "@ui-sdk/core/renderer" },
+    { line: 8, specifier: "@ui-sdk/core" },
+    { line: 9, specifier: "@ui-sdk/core" },
+  ]);
+});
+
+test("finds @ui-sdk/* in a stylesheet, not in a comment", () => {
+  const css = [
+    '@import "@ui-sdk/core/styles.css";',
+    "/* @import '@ui-sdk/core/old.css'; */",
+    "@import url(@ui-sdk/core/theme.css);",
+    '.x { background: url("@ui-sdk/core/grip.svg"); }',
+    '@import "@k2b/ui/v2.css";',
+  ].join("\n");
+  expect(uiSdkStylesheetImports(css)).toEqual([
+    { line: 1, specifier: "@ui-sdk/core/styles.css" },
+    { line: 3, specifier: "@ui-sdk/core/theme.css" },
+    { line: 4, specifier: "@ui-sdk/core/grip.svg" },
   ]);
 });
 

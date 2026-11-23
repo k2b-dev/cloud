@@ -16,7 +16,13 @@ const OWNER = "packages/ui/";
 const sourcePattern = /\.(?:[cm]?[jt]sx?)$/;
 const replacement = "use the matching @k2b/ui/v2 primitive; only packages/ui imports ui-sdk";
 
-/** Every module specifier in one source that names `@ui-sdk/*`: imports, re-exports, `import()`, `require()`, `import("…")` types. */
+/** Calls whose first argument is a module specifier besides `import()` and `require()`: resolution and test mocks. */
+const specifierCalls = new Set(["require.resolve", "import.meta.resolve", "mock.module", "vi.mock", "jest.mock"]);
+
+/**
+ * Every module specifier in one source that names `@ui-sdk/*`: imports, re-exports, `import()`, `require()`,
+ * `import("…")` types, `require.resolve`, `import.meta.resolve` and module mocks (`mock.module`, `vi.mock`, `jest.mock`).
+ */
 export const uiSdkImports = (file: string, source: string): { line: number; specifier: string }[] => {
   const { sourceFile } = parseSource(file, source);
   const found: { line: number; specifier: string }[] = [];
@@ -29,7 +35,9 @@ export const uiSdkImports = (file: string, source: string): { line: number; spec
     else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) add(node.moduleReference.expression);
     else if (
       ts.isCallExpression(node) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
+        (ts.isPropertyAccessExpression(node.expression) && specifierCalls.has(node.expression.getText(sourceFile))))
     )
       add(node.arguments[0]);
     else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) add(node.argument.literal);
@@ -37,6 +45,15 @@ export const uiSdkImports = (file: string, source: string): { line: number; spec
   };
   visit(sourceFile);
   return found;
+};
+
+/** Every `@import` and `url()` of `@ui-sdk/*` in one stylesheet, outside comments. */
+export const uiSdkStylesheetImports = (source: string): { line: number; specifier: string }[] => {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
+  return [...text.matchAll(/@import\s+(?:url\(\s*)?["']?(@ui-sdk\/[^"')\s;]+)|url\(\s*["']?(@ui-sdk\/[^"')\s]+)/g)].map((match) => ({
+    line: text.slice(0, match.index).split("\n").length,
+    specifier: (match[1] ?? match[2])!,
+  }));
 };
 
 /** The `@ui-sdk/*` names a package manifest depends on, in any dependency field. */
@@ -62,6 +79,12 @@ export const rule: Rule = {
         const source = readFileSync(path, "utf8");
         if (!source.includes("@ui-sdk/")) continue;
         for (const { line, specifier } of uiSdkImports(path, source))
+          findings.push({ file: relative(workspaceRoot, path), line, message: `imports ${specifier}; ${replacement}` });
+      }
+      for (const path of listFiles(directory, /\.(?:css|scss)$/).filter(outside)) {
+        const source = readFileSync(path, "utf8");
+        if (!source.includes("@ui-sdk/")) continue;
+        for (const { line, specifier } of uiSdkStylesheetImports(source))
           findings.push({ file: relative(workspaceRoot, path), line, message: `imports ${specifier}; ${replacement}` });
       }
       for (const path of listFiles(directory, /^package\.json$/).filter(outside))

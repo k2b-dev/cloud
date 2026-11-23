@@ -105,8 +105,11 @@
 }
 
 /* Dark: the mockup is light only; the dark values follow the dark surfaces and inks of @k2b/ui v1. The neutral scale
-   turns around, so a fill of n100 stays a step off the surface and n950 stays the strongest ink. */
-.dark .k2-ui,
+   turns around, so a fill of n100 stays a step off the surface and n950 stays the strongest ink.
+   Three ways in, as in v1: a `.dark` page, `.dark` on the scope itself, or `data-theme="dark"` on the scope. A scope
+   with `data-theme="light"` stays light inside a dark page. */
+.dark .k2-ui:not([data-theme="light"]),
+.k2-ui.dark,
 .k2-ui[data-theme="dark"] {
   --k2-n50: #161a20;
   --k2-n100: #20242a;

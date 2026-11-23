@@ -46,7 +46,8 @@ const main = async (): Promise<number> => {
 
   if (flags.has("--help") || flags.has("-h")) {
     console.log("usage: bun scripts/check.ts [rule...] [--fix] [--apps]\n\nrules:");
-    for (const rule of rules) console.log(`  ${rule.name.padEnd(22)} ${rule.description}`);
+    const width = Math.max(...rules.map((rule) => rule.name.length));
+    for (const rule of rules) console.log(`  ${rule.name.padEnd(width)} ${rule.description}`);
     return 0;
   }
 

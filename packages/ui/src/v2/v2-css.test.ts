@@ -60,7 +60,7 @@ test("there is one hairline of 1 px, and the radii and heights are the tokens", 
 });
 
 test("dark mode redefines only colours and shadows, never a measure", () => {
-  const dark = declarations('.dark .k2-ui,\n.k2-ui[data-theme="dark"]');
+  const dark = declarations('.dark .k2-ui:not([data-theme="light"]),\n.k2-ui.dark,\n.k2-ui[data-theme="dark"]');
   expect(dark.size).toBeGreaterThan(20);
   for (const [property, value] of dark) {
     expect(property.startsWith("--k2-")).toBe(true);

@@ -257,6 +257,33 @@ try {
     throw new Error("packed base stylesheet is missing its k2b-base layer");
   }
 
+  // v2 (provisional): the entry resolves to its own server and browser builds, and its stylesheet bundles on its own.
+  const v2Smoke = `
+    const resolved = import.meta.resolve("@k2b/ui/v2");
+    const mode = process.env.V2_BROWSER ? "browser" : "ssr";
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/v2/index.js")) {
+      throw new Error("v2 entry did not resolve inside the packed package: " + resolved);
+    }
+    const v2 = await import("@k2b/ui/v2");
+    if (v2.typeRoles?.row?.size !== 13 || v2.textEdge?.wide !== 20) throw new Error("packed v2 entry has the wrong tokens");
+  `;
+  run([process.execPath, "--no-install", "-e", v2Smoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", v2Smoke], consumer, { ...process.env, V2_BROWSER: "1" });
+  const v2Styles = import.meta.resolve("@k2b/ui/v2.css", join(consumer, "index.ts"));
+  if (!v2Styles.includes("/node_modules/@k2b/ui/dist/v2.css")) {
+    throw new Error(`v2 stylesheet did not resolve from packed dist: ${v2Styles}`);
+  }
+  const v2CssEntry = join(consumer, "v2.css");
+  await Bun.write(v2CssEntry, '@import "@k2b/ui/v2.css";\n');
+  const v2CssBuild = await Bun.build({ entrypoints: [v2CssEntry], outdir: join(consumer, "v2-css-dist") });
+  if (!v2CssBuild.success) {
+    throw new Error(`packed v2 stylesheet build failed\n${v2CssBuild.logs.join("\n")}`);
+  }
+  const v2CssOutput = await Bun.file(join(consumer, "v2-css-dist", "v2.css")).text();
+  if (!/\.k2-ui\b/.test(v2CssOutput) || !v2CssOutput.includes("--k2-t-row") || /\.k2b-ui/.test(v2CssOutput)) {
+    throw new Error("packed v2 stylesheet must carry the .k2-ui scope and its tokens, and nothing of v1");
+  }
+
   const browserEntry = join(consumer, "browser-entry.ts");
   const browserOut = join(consumer, "browser-dist");
   await Bun.write(browserEntry, 'export { Button, DatePicker } from "@k2b/ui";\n');

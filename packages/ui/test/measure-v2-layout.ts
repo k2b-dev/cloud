@@ -37,6 +37,7 @@
  */
 import type { Page } from "playwright";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../src/v2/tokens";
+import { settled } from "./browser";
 
 export type V2LayoutOptions = {
   /** The element to measure; the whole body by default. */
@@ -478,6 +479,8 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
 
 /** Measures the v2 layout rules on the page as it stands. Restores the page before it returns. */
 export async function measureV2Layout(page: Page, options: V2LayoutOptions = {}): Promise<V2Layout> {
+  // Fonts, observers and animations first: a measurement of a page that still moves measures a moment, not the page.
+  await settled(page);
   const roles = Object.values(typeRoles);
   const limits: InPage = {
     root: options.root ?? "body",

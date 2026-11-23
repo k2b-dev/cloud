@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
 import { heights, textEdge, typeRoles } from "./tokens";
 
@@ -44,6 +44,7 @@ const open = async (body: string, { width = 1440, scale = 1, dark = false } = {}
     `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><style>${css}</style><style>${fixtureCss}</style></head>` +
       `<body><div class="k2-ui" id="app">${body}</div></body></html>`,
   );
+  await settled(page);
   return page;
 };
 
@@ -126,6 +127,37 @@ describe("v2.css in a browser", () => {
       expect(dark.color).not.toBe(light.color);
       expect(dark.height).toBe(light.height);
       expect(light.height).toBe(heights.row);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "dark three ways, and a light island in a dark page stays light",
+    async () => {
+      const page = await open(
+        // A light page with a dark scope by class, one by data-theme, and a dark part with a light island in it.
+        '<div class="k2-ui dark" data-probe="class"></div><div class="k2-ui" data-theme="dark" data-probe="theme"></div>' +
+          '<div class="dark"><div class="k2-ui" data-probe="page"></div><div class="k2-ui" data-theme="light" data-probe="island"></div></div>',
+      );
+      try {
+        const surfaces = await page.evaluate(() =>
+          Object.fromEntries(
+            ["#app", '[data-probe="page"]', '[data-probe="class"]', '[data-probe="theme"]', '[data-probe="island"]'].map((selector) => [
+              selector,
+              getComputedStyle(document.querySelector(selector)!).getPropertyValue("--k2-surface").trim(),
+            ]),
+          ),
+        );
+        expect(surfaces).toEqual({
+          "#app": "#ffffff",
+          '[data-probe="page"]': "#11151b",
+          '[data-probe="class"]': "#11151b",
+          '[data-probe="theme"]': "#11151b",
+          '[data-probe="island"]': "#ffffff",
+        });
+      } finally {
+        await page.close();
+      }
     },
     TEST_TIMEOUT,
   );
