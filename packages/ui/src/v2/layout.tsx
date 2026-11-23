@@ -1,4 +1,4 @@
-import { createContext, For, type JSX, children as resolveChildren, Show, useContext } from "solid-js";
+import { createContext, For, type JSX, onCleanup, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { custom, Icon } from "./marks";
@@ -111,7 +111,21 @@ export type PaneProps = {
 
 /** A column that scrolls. It has no padding and no gutter, so every band in it reaches both edges. */
 export const Pane = (props: PaneProps) => {
-  useContext(SplitContext)?.push({ width: props.width, label: props.label });
+  // A pane shown later (a reader that opens) takes its place after the others; one that leaves gives its place back.
+  const split = useContext(SplitContext);
+  const entry: SplitEntry = {
+    get width() {
+      return props.width;
+    },
+    get label() {
+      return props.label;
+    },
+  };
+  split?.push(entry);
+  onCleanup(() => {
+    const index = split?.indexOf(entry) ?? -1;
+    if (index >= 0) split?.splice(index, 1);
+  });
   return (
     <section
       class="k2-pane"
@@ -154,9 +168,12 @@ Pane.Split = (props: { children: JSX.Element }) => {
   );
 };
 
-/** Renders the panes first (each registers its width), then puts a seam between every two of them. */
+/**
+ * Renders the panes first (each registers its width), then puts a seam between every two of them. Panes that come and
+ * go (`<Show>` around a reader) keep the others in place: only the seams are drawn again.
+ */
 const SplitBody = (props: { entries: SplitEntry[]; children: JSX.Element }) => {
-  const panes = resolveChildren(() => props.children).toArray();
+  const resolved = resolveChildren(() => props.children);
   const seam = (index: number) => {
     const left = props.entries[index - 1];
     const right = props.entries[index];
@@ -165,7 +182,7 @@ const SplitBody = (props: { entries: SplitEntry[]; children: JSX.Element }) => {
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
-      {panes.map((pane, index) => (index > 0 ? [seam(index), pane] : pane))}
+      {resolved.toArray().map((pane, index) => (index > 0 ? [seam(index), pane] : pane))}
     </div>
   );
 };
