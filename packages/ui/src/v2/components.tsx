@@ -228,8 +228,9 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
-            <For each={selection().actions}>{(action) => <ActionButton action={action} />}</For>
-            <ActionButton action={selection().clear} variant="text" />
+            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
+            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
       </Show>

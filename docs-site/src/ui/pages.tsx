@@ -13,6 +13,7 @@ import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 import { V2RulesPage } from "./V2RulesPage";
+import { V2DemoPage } from "./v2/V2DemoPage";
 
 export const uiPages = [
   solidPage({
@@ -171,6 +172,54 @@ export const uiPages = [
     order: 7,
     layout: "full",
     component: ({ page }) => <V2RulesPage title={page.meta.title} description={page.meta.description} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/mail",
+    title: "UI v2 · Mail",
+    navTitle: "v2 demo: Mail",
+    description: "Mail as a list with its reader, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 8,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage names={["mail"]} title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/record",
+    title: "UI v2 · Kundenakte",
+    navTitle: "v2 demo: Kundenakte",
+    description: "The customer record of Warenfluss, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 9,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage names={["record", "deliveries"]} title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/table",
+    title: "UI v2 · Große Tabelle",
+    navTitle: "v2 demo: large table",
+    description: "A large table like Grids, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 10,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage names={["table"]} title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/controls",
+    title: "UI v2 · Bedienung",
+    navTitle: "v2 demo: controls",
+    description: "A form with the controls of @k2b/ui/v2 in a realistic screen. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 11,
+    layout: "full",
+    component: ({ page }) => <V2DemoPage names={["form"]} title={page.meta.title} />,
   }),
   solidPage({
     html: fibelHtml,

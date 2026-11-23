@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { measureV2Layout } from "../../test/measure-v2-layout";
+import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
 import { hairline, heights, textEdge } from "./tokens";
@@ -14,42 +15,10 @@ import { hairline, heights, textEdge } from "./tokens";
 // (test/v2-hydration.fixture.tsx) holds the cases of the review of #4058.
 
 const here = import.meta.dir;
-const fixtures = resolve(here, "../../test");
 const css = readFileSync(resolve(here, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
-
-/** A bundle of `entry` with Solid's compiler for the server or the browser, both hydratable. */
-const bundle = async (entry: string, generate: "ssr" | "dom") => {
-  const { transformAsync } = await import("@babel/core");
-  const typescript = (await import("@babel/preset-typescript")).default;
-  const solid = (await import("babel-preset-solid")).default;
-  const build = await Bun.build({
-    entrypoints: [resolve(fixtures, entry)],
-    target: generate === "ssr" ? "bun" : "browser",
-    format: generate === "ssr" ? "esm" : "iife",
-    conditions: generate === "ssr" ? [] : ["browser", "development"],
-    plugins: [
-      {
-        name: "v2-hydration",
-        setup(builder) {
-          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-            const result = await transformAsync(await Bun.file(path).text(), {
-              filename: path,
-              babelrc: false,
-              configFile: false,
-              presets: [typescript, [solid, { generate, hydratable: true }]],
-            });
-            if (!result?.code) throw new Error(`Could not transform ${path}`);
-            return { contents: result.code, loader: "js" };
-          });
-        },
-      },
-    ],
-  });
-  if (!build.success) throw new AggregateError(build.logs, `${entry} bundle failed`);
-  return build.outputs[0]!.text();
-};
+const bundle = bundleV2Entry;
 
 type Server = { html: string; script: string; made: { cells: number; probe: number } };
 
