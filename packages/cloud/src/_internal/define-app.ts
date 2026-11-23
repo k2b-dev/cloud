@@ -649,10 +649,10 @@ export const defineApp = <
             };
       // The inline layer statement fixes the cascade order before any
       // stylesheet declares a layer. Tailwind's `properties` layer resets
-      // `--tw-*` in browsers without `@property` and must stay lowest. Within
-      // a layer the later stylesheet wins at equal specificity, so the app's
-      // own stylesheet follows the shared one: an app utility such as `-mt-1`
-      // beats a shared one such as `m-0` on the same element (#3921).
+      // `--tw-*` in browsers without `@property` and must stay lowest. The
+      // shared stylesheet follows the app's own: an app sheet compiles without
+      // Cloud's theme, so its `grid-cols-1` would otherwise cancel the shared
+      // `md:grid-cols-2` (define-app.css-order.browser.test.ts).
       return `<!DOCTYPE html>
 <html lang="${normalizeLocale(lang)}" class="${resolved ?? "light"}"${fixed ? " data-theme-fixed" : ""}${head.html}>
   <head><meta charset="UTF-8"><meta name="viewport" content="${head.viewport}">
@@ -665,8 +665,8 @@ export const defineApp = <
     ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">${head.styles}
+    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">
+    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">

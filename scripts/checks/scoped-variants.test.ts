@@ -35,6 +35,11 @@ test("reports a plain display next to a breakpoint display in shared UI (UI-28)"
         '    <span class={`hidden ${props.wide ? "a" : "b"} @md:block`} />',
         // Passed under breakpoint-display; `dark:` is as order-dependent as a breakpoint, so it reports now.
         '    <span class="flex items-center md:gap-2 group-hover:hidden dark:hidden" />',
+        // A variant that a substitution adds sits on the same element as the template's static `flex` (LayoutHeader).
+        '    <header class={`paper flex ${props.wide ? "md:hidden" : ""}`} />',
+        // Branches of one condition never meet, and a scoped pair in a substitution passes.
+        '    <span class={`block ${props.wide ? "bg-white" : "dark:bg-zinc-900 not-dark:bg-zinc-100"}`} />',
+        '    <header class={`paper ${props.wide ? "max-md:flex md:hidden" : "flex"}`} />',
         "  </span>",
         ");",
       ].join("\n"),
@@ -48,6 +53,7 @@ test("reports a plain display next to a breakpoint display in shared UI (UI-28)"
     "packages/cloud/src/Row.tsx:4",
     "packages/cloud/src/Row.tsx:5",
     "packages/cloud/src/Row.tsx:6",
+    "packages/cloud/src/Row.tsx:7",
     "packages/ui/src/bar.ts:1",
   ]);
 });

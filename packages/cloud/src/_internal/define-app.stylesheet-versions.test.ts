@@ -96,8 +96,7 @@ test("page-head URLs follow content and Core's release across real process resta
     }
 
     const [development] = await start("sha-0123456789ab", { nodeEnv: "development" });
-    // Exactly the five development hrefs, in the document's order (the app sheet after the shared one, #3921), with one
-    // shared start stamp.
+    // Exactly the five original development hrefs, in their original order, with one shared start stamp.
     const stamp = /\?v=(\d+)$/.exec(development!.faq!.hrefs[0]!)?.[1];
     expect(stamp).toMatch(/^\d+$/);
     for (const id of ["faq", "mail"]) {
@@ -106,8 +105,8 @@ test("page-head URLs follow content and Core's release across real process resta
         `/public/${id}/favicon.svg?v=${stamp}`,
         `/public/fonts.css?v=${stamp}`,
         `/public/tabler-icons.css?v=${stamp}`,
-        `/public/global.css?v=${stamp}`,
         `/public/${id}/app.css?v=${stamp}`,
+        `/public/global.css?v=${stamp}`,
       ]);
     }
     expect(development!.core!.hrefs[0]).toBe("/branding/favicon");

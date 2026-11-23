@@ -31,7 +31,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
   const t = () => platformMessages.resolve([locale()]).t;
   return (
     <header
-      class={`layout-header paper flex min-h-[2.875rem] shrink-0 items-center max-md:px-2 max-md:py-1.5 md:px-3 md:py-2 ${props.authenticated ? "md:hidden" : ""}`}
+      class={`layout-header paper min-h-[2.875rem] shrink-0 items-center max-md:px-2 max-md:py-1.5 md:px-3 md:py-2 ${props.authenticated ? "max-md:flex md:hidden" : "flex"}`}
       style="box-shadow: var(--ui-shadow-surface)"
     >
       {/* A long title must not squeeze the button; `shrink-0` sits on a wrapper because the button's own

@@ -2,16 +2,16 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import type { BunPlugin } from "bun";
-import rawTailwind from "bun-plugin-tailwind";
+import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
-import appTailwind from "../../scripts/tailwind";
 
-// #3921: the shared stylesheet and an app's own both put their utilities in `@layer utilities` at equal
-// specificity, so the later stylesheet wins. An app's own utility must beat a shared one on the same property.
+// An app's own stylesheet compiles without Cloud's theme: it emits theme-free utilities such as `flex` and
+// `grid-cols-1`, but no breakpoint variant such as `md:grid-cols-2`. Those come only from the shared stylesheet. Both
+// sheets put their utilities in `@layer utilities` at equal specificity, so the later sheet wins. The app page links
+// the shared sheet after the app's, or the app's `grid-cols-1` cancels the shared `md:grid-cols-2` on every page.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-css-order-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -28,32 +28,31 @@ const app = defineApp({
 });
 const ssrDocument = new Hono().get("/", ...app.ssr(() => () => "order probe"));
 
-const buildCss = async (name: string, source: string, plugin: BunPlugin): Promise<string> => {
+const buildCss = async (name: string, source: string): Promise<string> => {
   const entry = resolve(root, name);
   writeFileSync(entry, source);
-  const result = await Bun.build({ entrypoints: [entry], outdir: resolve(root, "out"), naming: name, plugins: [plugin] });
+  const result = await Bun.build({ entrypoints: [entry], outdir: resolve(root, "out"), naming: name, plugins: [tailwind] });
   if (!result.success || !result.outputs[0]) throw new AggregateError(result.logs, `${name} build failed`);
   return await result.outputs[0].text();
 };
 
 const tailwindCss = (path: string) => JSON.stringify(Bun.resolveSync(path, import.meta.dir));
+const classes = "flex md:hidden grid grid-cols-1 md:grid-cols-2";
 let globalCss: string;
 let appCss: string;
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 
 beforeAll(async () => {
-  // The shared stylesheet in its real shape: full Tailwind with its theme, built by Core with the plain plugin.
+  // The shared stylesheet in its real shape: full Tailwind with its theme, scanning every package's markup.
   globalCss = await buildCss(
     "global.css",
-    `@import ${tailwindCss("tailwindcss/index.css")} source(none);\n@source inline("m-0 transition");\n`,
-    rawTailwind,
+    `@import ${tailwindCss("tailwindcss/index.css")} source(none);\n@source inline("${classes}");\n`,
   );
-  // An app's stylesheet in the starter's shape: utilities without a theme, built by Cloud's app build.
+  // An app's stylesheet in the shape every app ships: utilities without a theme, scanning only its own markup.
   appCss = await buildCss(
     "app.css",
-    `@import ${tailwindCss("tailwindcss/utilities.css")} layer(utilities) source(none);\n@source inline("mt-[-4px] transition");\n`,
-    appTailwind,
+    `@import ${tailwindCss("tailwindcss/utilities.css")} layer(utilities) source(none);\n@source inline("${classes}");\n`,
   );
   server = Bun.serve({
     port: 0,
@@ -72,33 +71,30 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-test("an app's own utility beats a shared one on the same property, and its transitions keep the shared defaults", async () => {
-  // Guard the premise: each sheet carries its own rule for the property.
-  expect(globalCss).toContain(".m-0");
-  expect(appCss).toContain(".mt-\\[-4px\\]");
-  const page = await browser.newPage();
+test("an app's theme-free utility does not cancel a shared breakpoint variant on a desktop page", async () => {
+  // Guard the premise: the app sheet repeats the plain utilities but cannot build the breakpoint variants.
+  expect(appCss).toContain(".grid-cols-1");
+  expect(appCss).toContain(".flex");
+  expect(appCss).not.toContain("md\\:");
+  expect(globalCss).toContain(".md\\:grid-cols-2");
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(server.url.origin + "/");
     await settled(page);
     const style = await page.evaluate(() => {
-      const probe = Object.assign(document.createElement("div"), { className: "m-0 mt-[-4px] transition" });
-      document.body.append(probe);
-      const computed = getComputedStyle(probe);
+      const probe = (className: string) => {
+        const element = Object.assign(document.createElement("div"), { className });
+        document.body.append(element);
+        return getComputedStyle(element);
+      };
       return {
-        marginTop: computed.marginTop,
-        marginBottom: computed.marginBottom,
-        duration: computed.transitionDuration,
-        easing: computed.transitionTimingFunction,
+        // The phone header in `LayoutHeader`: hidden from `md` on.
+        header: probe("flex md:hidden").display,
+        // Weather's forecast beside the rain radar.
+        columns: probe("grid grid-cols-1 md:grid-cols-2").gridTemplateColumns.split(" ").length,
       };
     });
-    expect(style).toEqual({
-      // The app's `mt-[-4px]` wins over the shared `m-0`; the shared rule still sets the other sides.
-      marginTop: "-4px",
-      marginBottom: "0px",
-      // The app's `transition` points at the shared theme's defaults instead of ending at once.
-      duration: "0.15s",
-      easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-    });
+    expect(style).toEqual({ header: "none", columns: 2 });
   } finally {
     await page.close();
   }
