@@ -2895,21 +2895,23 @@
   }
   .k2-ui .k2-steps {
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    gap: 12px;
   }
   .k2-ui .k2-step {
     flex-direction: row;
     align-items: center;
     gap: 8px;
   }
-  /* the way runs down: a 1 px line joins the circles (mockup v16), so the steps never read as radio buttons */
+  /* the way runs down: a 1 px line in n400 joins the circles across the 12 px between them (mockup v17), so the
+     steps never read as radio buttons */
   .k2-ui .k2-step::before {
     top: 20px;
-    bottom: -8px;
+    bottom: -12px;
     left: 9px;
     right: auto;
     width: 1px;
     height: auto;
+    background: var(--k2-n400);
   }
   .k2-ui .k2-step-label {
     margin-top: 0;

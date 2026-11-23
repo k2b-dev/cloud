@@ -487,7 +487,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
 
   for (const width of [1440, 390])
     test(
-      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v16), none after the last`,
+      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v17), none after the last`,
       async () => {
         const page = await open("structure", { width });
         try {
@@ -496,20 +496,28 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               const line = getComputedStyle(step, "::before");
               const box = step.getBoundingClientRect();
               const px = (value: string) => Math.round(Number.parseFloat(value));
+              const next = step.nextElementSibling?.getBoundingClientRect();
               return {
                 shown: line.display !== "none",
                 line: [px(line.left), px(line.top), px(line.width), px(line.height)],
                 step: [Math.round(box.width), Math.round(box.height)] as const,
+                // the space to the next step: 12 px on the phone (mockup v17)
+                gap: next ? Math.round(next.top - box.bottom) : null,
+                colour: line.backgroundColor,
               };
             }),
           );
           expect(steps.at(-1)!.shown).toBe(false);
-          for (const { shown, line, step } of steps.slice(0, -1)) {
+          for (const { shown, line, step, gap, colour } of steps.slice(0, -1)) {
             expect(shown).toBe(true);
             // desktop: from the circle (20 px) to the end of the step, 9 px down; phone: 9 px in, from below the circle
-            // (20 px) 8 px into the next step
+            // (20 px) across the 12 px between the steps, in n400
             if (width >= textEdge.phoneBelow) expect(line).toEqual([20, 9, step[0] - 20, 1]);
-            else expect(line).toEqual([9, 20, 1, step[1] - 20 + 8]);
+            else {
+              expect(gap).toBe(12);
+              expect(line).toEqual([9, 20, 1, step[1] - 20 + 12]);
+              expect(colour).toBe("rgb(161, 161, 170)");
+            }
           }
         } finally {
           await page.close();
