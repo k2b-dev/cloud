@@ -21,8 +21,13 @@
  *
  * The DOM contract of v2 marks what the rules need: `data-k2-column` (a column), `data-k2-grip` (a grip whose box is
  * its pill), `data-k2-prose` (reading text), `data-k2-figure` (a drawn mark such as the track of steps; its lines are
- * no dividers), `data-k2-canvas` (free drawing, never measured) and `data-k2-avatar` (initials, no type role). The
- * options take other selectors, for the mockup's classes for example.
+ * no dividers), `data-k2-canvas` (free drawing: never measured inside, only the line it draws itself) and
+ * `data-k2-avatar` (initials, no type role). The options take other selectors, for the mockup's classes for example.
+ *
+ * - **inside:** a band or a group is one thing (rule 9): a horizontal hairline inside it separates its parts and is a
+ *   finding at any distance from other lines. A frame, a control's outline and a figure's track are no such line.
+ * - **cut:** a control's label never leaves its box and is never clipped; a one-line text (the lines of a row, the
+ *   cells of a table with column widths) never wraps, it ends with "…".
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -48,8 +53,14 @@ export type V2LayoutOptions = {
   grips?: string;
   /** Reading text, which may also use 16 px and a 22 px line. */
   prose?: string;
-  /** Subtrees that are never measured: free drawing in `Canvas`. */
+  /** Subtrees whose inside is never measured: free drawing in `Canvas`. The line such a surface draws itself counts. */
   skip?: string;
+  /** One thing in one frame or band (rule 9): spacing alone separates its parts, so any line inside is a finding. */
+  unbroken?: string;
+  /** Controls whose label must never be cut: a text that leaves the control's box or is clipped by it. */
+  controls?: string;
+  /** Text that stays on one line and ends with "…" when it is too long; wrapping to a second line is a finding. */
+  oneLine?: string;
   /** Drawn marks whose lines are no dividers, such as the track of steps; their text is still measured. */
   figure?: string;
   /** Text that has no type role, such as initials in an avatar. */
@@ -69,6 +80,10 @@ export type V2GripMeasure = {
 export type V2Layout = {
   edge: string[];
   double: string[];
+  /** Lines inside one thing (a band, a group), whatever their distance to other lines. */
+  inside: string[];
+  /** Cut control labels and one-line texts that wrap. */
+  cut: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -95,6 +110,8 @@ type Rect = { left: number; top: number; width: number; height: number };
 type DomResult = {
   edge: string[];
   double: string[];
+  inside: string[];
+  cut: string[];
   type: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
@@ -104,7 +121,17 @@ type DomResult = {
 
 /** Runs in the page: closes over nothing. */
 function measureInPage(options: InPage): DomResult {
-  const empty: DomResult = { edge: [], double: [], type: [], grip: [], grips: [], pseudo: [], measured: { lines: 0, bands: 0, texts: 0 } };
+  const empty: DomResult = {
+    edge: [],
+    double: [],
+    inside: [],
+    cut: [],
+    type: [],
+    grip: [],
+    grips: [],
+    pseudo: [],
+    measured: { lines: 0, bands: 0, texts: 0 },
+  };
   const root = document.querySelector(options.root);
   if (!root) return { ...empty, edge: [`no element matches ${options.root}`] };
   const round = (value: number) => Math.round(value * 100) / 100;
@@ -140,7 +167,7 @@ function measureInPage(options: InPage): DomResult {
     }
   };
   for (const owner of [root, ...Array.from(root.querySelectorAll("*"))]) {
-    if (owner.closest(options.skip)) continue;
+    if (owner.parentElement?.closest(options.skip)) continue;
     for (const which of ["before", "after"] as const) {
       const style = getComputedStyle(owner, `::${which}`);
       if (style.content === "none" || style.content === "normal" || style.display === "none" || !draws(style)) continue;
@@ -233,7 +260,8 @@ function measureInPage(options: InPage): DomResult {
       return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     };
     const elements = [root, ...Array.from(root.querySelectorAll("*"))].filter(
-      (element) => !element.closest(options.skip) && visible(element),
+      // A skipped surface (a Canvas) is free inside, but the line it draws itself is a divider like any other.
+      (element) => !element.parentElement?.closest(options.skip) && visible(element),
     );
     // What a person sees of an element: the viewport, cut by every ancestor that clips (a scrolled column, the card).
     const clips = new Map<Element, { left: number; right: number; top: number; bottom: number }>();
@@ -439,6 +467,49 @@ function measureInPage(options: InPage): DomResult {
         }
     }
 
+    // 4b. Lines inside one thing: a hairline drawn inside a band or a group, not on its own edge (rule 9).
+    const inside: string[] = [];
+    for (const line of hairlines(horizontal)) {
+      if (line.frame || line.round) continue;
+      const owner = line.element.parentElement?.closest(options.unbroken);
+      if (!owner || !root.contains(owner)) continue;
+      const box = owner.getBoundingClientRect();
+      if (line.across0 <= box.top + 0.5 || line.across1 >= box.bottom - 0.5) continue;
+      inside.push(
+        `line inside ${name(owner)}: ${name(line.element)} ${line.how} at y ${round(line.across0)} separates parts of one thing; spacing alone separates them`,
+      );
+    }
+
+    // 4c. Cut text: a control's label that leaves its box or is clipped, a one-line text that wraps.
+    const cut: string[] = [];
+    const textOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+    for (const control of Array.from(root.querySelectorAll(options.controls))) {
+      if (!visible(control) || control.parentElement?.closest(options.skip)) continue;
+      const box = control.getBoundingClientRect();
+      let clipped = false;
+      for (const part of [control, ...Array.from(control.querySelectorAll("*"))]) {
+        const style = getComputedStyle(part);
+        if (style.overflowX !== "visible" && part.scrollWidth > part.clientWidth + 1) clipped = true;
+      }
+      const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node && !clipped; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const r = range.getBoundingClientRect();
+        if (r.width > 0 && (r.left < box.left - 0.5 || r.right > box.right + 0.5)) clipped = true;
+      }
+      if (clipped) cut.push(`control ${name(control)} cuts its label "${textOf(control)}"; it needs the room of its whole label`);
+    }
+    for (const element of Array.from(root.querySelectorAll(options.oneLine))) {
+      if (!visible(element) || element.parentElement?.closest(options.skip) || !element.textContent?.trim()) continue;
+      const style = getComputedStyle(element);
+      const lineHeight = Number.parseFloat(style.lineHeight);
+      const lines = Number.isFinite(lineHeight) && lineHeight > 0 ? element.getBoundingClientRect().height / lineHeight : 1;
+      if (lines > 1.5)
+        cut.push(`${name(element)} "${textOf(element)}" wraps to ${Math.round(lines)} lines; it stays on one line and ends with "…"`);
+    }
+
     // 5. Type roles: every run of text that a person sees.
     const type = new Map<string, number>();
     let texts = 0;
@@ -501,6 +572,8 @@ function measureInPage(options: InPage): DomResult {
     return {
       edge,
       double,
+      inside,
+      cut,
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
       grip,
       grips,
@@ -571,6 +644,12 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar]",
+    unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
+    controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
+    // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
+    oneLine:
+      options.oneLine ??
+      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
     weights: [...fontWeights],
@@ -626,6 +705,17 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.type, ...grip];
-  return { edge: dom.edge, double: dom.double, type: dom.type, grip, grips, pseudo: dom.pseudo, measured: dom.measured, problems };
+  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+  return {
+    edge: dom.edge,
+    double: dom.double,
+    inside: dom.inside,
+    cut: dom.cut,
+    type: dom.type,
+    grip,
+    grips,
+    pseudo: dom.pseudo,
+    measured: dom.measured,
+    problems,
+  };
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { heights, textEdge, typeRoles } from "./tokens";
 
 // The v2 foundation measured in a browser, and the layout measurement itself proved red and green on small pages
@@ -335,6 +335,147 @@ describe("measureV2Layout", () => {
       },
       TEST_TIMEOUT,
     );
+
+  test(
+    "red: the line a Canvas draws itself is a divider like any other (here on top of a band's line)",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="band">Band</div><div data-k2-canvas data-probe="canvas" style="height:80px;border-top:var(--k2-hairline)"><div class="padded"><div class="row">Drawn</div></div></div>',
+        ),
+      );
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.double).toEqual([
+          expect.stringMatching(/^double line: div\.band border-bottom and \[data-probe="canvas"\] border-top at \d+ px over 1191 px$/),
+        ]);
+        // Inside the canvas everything stays free: the padded row's short line is not reported.
+        expect(result.edge).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // One band (rule 9): two parts told apart by spacing, or by a line between them.
+  const band = (between: string) =>
+    columns(
+      `<section class="band" data-k2-part="Band"><div style="padding-bottom:12px;${between}">Holzwerk Brandt</div><div style="padding-top:12px">Guten Tag</div></section>`,
+    );
+
+  test(
+    "green: the parts of one band are told apart by spacing; the band's own line at its end is fine",
+    async () => {
+      const page = await open(band(""));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.inside).toEqual([]);
+        expect(result.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a line between the parts of one band, 12 px from any other line, is a finding of its own",
+    async () => {
+      const page = await open(band("border-bottom:var(--k2-hairline)"));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.double).toEqual([]);
+        expect(result.inside).toEqual([
+          expect.stringMatching(/^line inside section\.band: div border-bottom at y \d+ separates parts of one thing/),
+        ]);
+        // Drawn inside the band's padding, the same line also stops short of the column edges.
+        expect(result.problems).toEqual([...result.edge, ...result.inside]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A control with too little room for its label, and the lines of v2 rows: a row of three lines cuts each line with
+  // "…" (its stylesheet does); `line` overrides that the way a broken rule would.
+  const cutPage = (room: string, line: string) =>
+    columns(
+      `<div class="row"><button type="button" class="k2-btn" data-k2-part="Button" data-probe="remind" style="${room}">Mahnung senden</button></div>` +
+        `<div class="k2-row" data-lines="3"><span class="k2-row-l1">Holzwerk Brandt</span><span class="k2-row-l2">Angebot</span>` +
+        `<span class="k2-row-l3" data-probe="preview" style="max-width:120px;${line}">Guten Tag Frau Solberg, die Platten können wir liefern</span></div>` +
+        // The title of a two-line row may wrap: it is what the row is about.
+        `<div class="k2-row" data-lines="2"><span class="k2-row-l1" style="max-width:120px">Quittung Q-2611-00021 wartet auf Unterschrift</span><span class="k2-row-l2">seit 18. Nov.</span></div>`,
+    );
+
+  test(
+    "green: a control with room for its label, a cut line of three, a wrapped title of two",
+    async () => {
+      const page = await open(cutPage("", ""));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.cut).toEqual([]);
+        expect(result.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a control that clips its label, and a one-line text that wraps",
+    async () => {
+      const page = await open(cutPage("width:64px;overflow:hidden;white-space:nowrap", "white-space:normal"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="remind"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+          expect.stringMatching(
+            /^\[data-probe="preview"\] "Guten Tag Frau Solberg, die Platten könn" wraps to \d lines; it stays on one line/,
+          ),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "the outline names the same cut texts, before any picture",
+    async () => {
+      const green = await open(cutPage("", ""));
+      const page = await open(cutPage("width:64px;overflow:hidden;white-space:nowrap", "white-space:normal"));
+      try {
+        const clean = await describeV2Page(green);
+        expect(clean).not.toContain("cuts its label");
+        expect(clean).not.toContain("wraps");
+        const outline = await describeV2Page(page);
+        expect(outline).toContain('- Button "Mahnung senden" cuts its label');
+        expect(outline).toContain('- a line of a three-line Row wraps: "Guten Tag Frau Solberg');
+      } finally {
+        await green.close();
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a label that runs out of its control without being clipped",
+    async () => {
+      const page = await open(cutPage("width:64px;white-space:nowrap", ""));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="remind"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 
   test(
     "free drawing in Canvas is never measured",
