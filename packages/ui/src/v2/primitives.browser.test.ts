@@ -236,6 +236,39 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  for (const width of [1440, 390])
+    test(
+      `steps at ${width}: a 1 px line joins the circles (across on the desktop, down on the phone, mockup v16), none after the last`,
+      async () => {
+        const page = await open("structure", { width });
+        try {
+          const steps = await page.$$eval(".k2-step", (items) =>
+            items.map((step) => {
+              const line = getComputedStyle(step, "::before");
+              const box = step.getBoundingClientRect();
+              const px = (value: string) => Math.round(Number.parseFloat(value));
+              return {
+                shown: line.display !== "none",
+                line: [px(line.left), px(line.top), px(line.width), px(line.height)],
+                step: [Math.round(box.width), Math.round(box.height)] as const,
+              };
+            }),
+          );
+          expect(steps.at(-1)!.shown).toBe(false);
+          for (const { shown, line, step } of steps.slice(0, -1)) {
+            expect(shown).toBe(true);
+            // desktop: from the circle (20 px) to the end of the step, 9 px down; phone: 9 px in, from below the circle
+            // (20 px) 8 px into the next step
+            if (width >= textEdge.phoneBelow) expect(line).toEqual([20, 9, step[0] - 20, 1]);
+            else expect(line).toEqual([9, 20, 1, step[1] - 20 + 8]);
+          }
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   test(
     "K5: the controls of a field row stand on one line, with a hint, an error or a note in the label line",
     async () => {

@@ -1970,6 +1970,10 @@
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
 }
+/* a drawing that is a framed box of its own (a composer) stands apart by its frame: no line (rule 9) */
+.k2-ui .k2-canvas[data-framed] {
+  border-bottom: 0;
+}
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */
 
@@ -2795,8 +2799,14 @@
     align-items: center;
     gap: 8px;
   }
+  /* the way runs down: a 1 px line joins the circles (mockup v16), so the steps never read as radio buttons */
   .k2-ui .k2-step::before {
-    display: none;
+    top: 20px;
+    bottom: -8px;
+    left: 9px;
+    right: auto;
+    width: 1px;
+    height: auto;
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
