@@ -67,6 +67,15 @@
 .ui-v2-demo__intro > p {
   margin: 0;
 }
+.ui-v2-demo__screen {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.ui-v2-demo__screen > h2,
+.ui-v2-demo__screen > p {
+  margin: 0;
+}
 .ui-v2-demo__actions {
   display: flex;
   flex-wrap: wrap;

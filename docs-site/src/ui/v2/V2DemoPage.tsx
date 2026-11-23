@@ -1,6 +1,7 @@
-import type { JSX } from "solid-js";
+import { For, type JSX } from "solid-js";
 import { MailScreen } from "./mail-screen";
-import { RecordScreen } from "./record-screen";
+import { DeliveriesScreen, RecordScreen } from "./record-screen";
+import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
 
@@ -23,11 +24,26 @@ export const v2Screens = {
     render: () => <MailScreen />,
   },
   record: {
-    title: "Kundenakte",
+    title: "Kundenakte · Überblick",
     description:
       "One customer record of Warenfluss: the identity in the head, tabs, a pinned note, three statements, what is due, the latest deliveries, the contact history and the info column with its map.",
     mockup: "akte.html",
     render: () => <RecordScreen />,
+  },
+  deliveries: {
+    title: "Kundenakte · Einlieferungen",
+    description:
+      "The tab Einlieferungen of the same record: every delivery in its own framed group with a tinted head and no line inside; the latest two open with their way, run-out days and returns, the older ones folded.",
+    mockup: "akte-einlieferungen.html",
+    render: () => <DeliveriesScreen />,
+  },
+  table: {
+    title: "Große Tabelle",
+    description:
+      "34 orders of Grids in 11 columns, grouped by state: the head and the first column stay while scrolling, rows and cells answer the pointer, the boxes select rows and turn the status row into the bar of what can be done with them. On the phone every order becomes a row of two lines.",
+    mockup: "tabelle-grids.html",
+    app: { color: "#047857", ink: "#065f46", tint: "#ecfdf5" },
+    render: () => <TableScreen />,
   },
 } satisfies Record<string, V2Screen>;
 
@@ -50,11 +66,9 @@ export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   );
 };
 
-/** The Fibel page of a screen: what it shows, where its knowledge lives, and the screen itself in a frame. */
-export const V2DemoPage = (props: { name: V2ScreenName; title: string }) => {
-  const screen: V2Screen = v2Screens[props.name];
-  const frame = `v2-frame-${props.name}`;
-  const src = `/en/ui/v2/screen/${props.name}`;
+/** The Fibel page of one or more screens: what they show, where the knowledge lives, and each screen in a frame. */
+export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: string }) => {
+  const frame = (name: V2ScreenName) => `v2-frame-${name}`;
   return (
     <article class="ui-showcase ui-reference-showcase">
       <header class="ui-reference-heading">
@@ -65,18 +79,30 @@ export const V2DemoPage = (props: { name: V2ScreenName; title: string }) => {
       </header>
       <div class="ui-v2-demo">
         <div class="ui-v2-demo__intro">
-          <p>{screen.description}</p>
           <p>
-            Every part of this screen is a v2 primitive; the screen has no CSS of its own. How to build it is in the agent skill{" "}
-            <code>k2b-ui</code>, which ships with the package. Measured against the approved mockup <code>{screen.mockup}</code> at 1440 and
-            390 px.
+            Every part of {props.names.length > 1 ? "these screens" : "this screen"} is a v2 primitive; there is no CSS of its own. How to
+            build it is in the agent skill <code>k2b-ui</code>, which ships with the package. Each screen is measured against its approved
+            mockup at 1440 and 390 px.
           </p>
           <p class="ui-v2-demo__actions">
-            <V2InspectSwitch frame={frame} />
-            <a href={src}>Open the screen on its own</a>
+            <V2InspectSwitch frames={props.names.map(frame)} />
           </p>
         </div>
-        <iframe id={frame} class="ui-v2-demo__frame" src={src} title={`${screen.title}, built with @k2b/ui/v2`} />
+        <For each={props.names}>
+          {(name) => {
+            const screen: V2Screen = v2Screens[name];
+            const src = `/en/ui/v2/screen/${name}`;
+            return (
+              <section class="ui-v2-demo__screen" aria-label={screen.title}>
+                <h2>{screen.title}</h2>
+                <p>
+                  {screen.description} Mockup: <code>{screen.mockup}</code>. <a href={src}>Open the screen on its own</a>.
+                </p>
+                <iframe id={frame(name)} class="ui-v2-demo__frame" src={src} title={`${screen.title}, built with @k2b/ui/v2`} />
+              </section>
+            );
+          }}
+        </For>
       </div>
     </article>
   );

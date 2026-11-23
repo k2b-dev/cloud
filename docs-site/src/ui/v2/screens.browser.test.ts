@@ -16,7 +16,8 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { MailScreen } = await import("./mail-screen");
-const { RecordScreen } = await import("./record-screen");
+const { RecordScreen, DeliveriesScreen } = await import("./record-screen");
+const { default: TableScreen } = await import("./TableScreen.island");
 const css = readFileSync(resolve(import.meta.dir, "../../../../packages/ui/src/v2/v2.css"), "utf8");
 const plex = resolve(import.meta.dir, "../../../../packages/ui/dist/plex.css");
 const drawings = readFileSync(resolve(import.meta.dir, "../cloud-ui.css"), "utf8").replace(/@import[^;]+;/g, "");
@@ -27,6 +28,8 @@ const frame = `html, body { margin: 0; height: 100%; }
 const screens = {
   mail: { render: MailScreen, app: "--k2-app:#0f766e;--k2-app-ink:#0f5f59;--k2-app-tint:#e8f4f2" },
   record: { render: RecordScreen, app: "" },
+  deliveries: { render: DeliveriesScreen, app: "" },
+  table: { render: TableScreen, app: "--k2-app:#047857;--k2-app-ink:#065f46;--k2-app-tint:#ecfdf5" },
 } as const;
 
 /** Boxes relative to the workspace, measured in the mockup at 1440 × 900 and 390 × 844 (left,top width×height). */
@@ -63,6 +66,43 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       cells: [".k2-cells", "0,238 390x279"],
       section: [".k2-sec", "0,517 390x245"],
       todo: [".k2-sec .k2-row", "0,569 390x92"],
+    },
+  },
+  // akte-einlieferungen.html
+  deliveries: {
+    1440: {
+      section: [".k2-sec", "250,101 1125x945"],
+      group: [".k2-group", "270,185 1085x254"],
+      groupHead: [".k2-gh", "271,186 1083x56"],
+      steps: [".k2-steps", "271,286 1083x72"],
+      table: [".k2-group .k2-table", "271,636 1083x124"],
+      facts: [".k2-facts", "271,836 1083x32"],
+      folded: [".k2-group[data-folded]", "270,897 1085x58"],
+    },
+    390: {
+      section: [".k2-sec", "0,101 390x1389"],
+      group: [".k2-group", "16,205 358x366"],
+      groupHead: [".k2-gh", "17,206 356x84"],
+      steps: [".k2-steps", "17,354 356x132"],
+      table: [".k2-group .k2-table", "17,876 356x204"],
+      facts: [".k2-facts", "17,1160 356x64"],
+      folded: [".k2-group[data-folded]", "16,1253 358x102"],
+    },
+  },
+  // tabelle-grids.html; the table is wider than its column and scrolls sideways
+  table: {
+    1440: {
+      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
+      status: ['[data-k2-part="StatusRow"]', "250,57 1125x52"],
+      firstHead: ["thead th:nth-child(2)", "294,109 260x36"],
+      group: ["tbody tr[data-group]", "250,145 1724x36"],
+      row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
+      personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
+    },
+    390: {
+      status: ['[data-k2-part="StatusRow"]', "0,0 390x52"],
+      phoneGroup: [".k2-table-phone .k2-bar", "0,52 390x36"],
+      phoneRow: [".k2-table-phone .k2-row", "0,88 390x53"],
     },
   },
 };
@@ -110,12 +150,15 @@ describe("v2 demo screens keep the mockup", () => {
                 }),
               );
             }, mockup[name][width]!);
-            // The meta line of the first statement in the record ("alle 4 offenen Belege …") ends within a few px of
-            // its cell: with the Plex build of @k2b/ui it wraps in Chromium as in the mockup, in WebKit it fits. In
-            // WebKit only the parts above it are compared; the mockup's own font wraps in both engines.
-            const wraps = new Set(
-              browserName === "webkit" && name === "record" && width === 1440 ? ["cells", "section", "todo", "facts"] : [],
-            );
+            // Two lines end within a few px of their place: the meta line of the first statement in the record ("alle 4
+            // offenen Belege …") and the inline facts of a delivery on the phone. With the Plex build of @k2b/ui they
+            // break in Chromium as in the mockup, in WebKit at another word; the mockup's own font breaks the same in
+            // both engines. In WebKit only the parts above them are compared.
+            const webkitBreaks: Partial<Record<keyof typeof screens, Record<number, string[]>>> = {
+              record: { 1440: ["cells", "section", "todo", "facts"] },
+              deliveries: { 390: ["facts", "folded", "section"] },
+            };
+            const wraps = new Set(browserName === "webkit" ? (webkitBreaks[name]?.[width] ?? []) : []);
             const expected = Object.fromEntries(Object.entries(mockup[name][width]!).map(([part, [, box]]) => [part, box]));
             for (const part of wraps) {
               delete boxes[part];
