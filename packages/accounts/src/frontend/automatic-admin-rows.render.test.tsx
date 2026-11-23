@@ -35,10 +35,10 @@ const user = {
 } satisfies User;
 const empty = { items: [], page: 1, perPage: 100, total: 0, hasNext: false };
 
-for (const surface of ["service-accounts", "audit"] as const) {
+for (const surface of ["api-keys", "audit"] as const) {
   test(`${surface} renders translated counts and reload-safe toggles while preserving filters`, async () => {
     const list =
-      surface === "service-accounts"
+      surface === "api-keys"
         ? spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue({ ...empty, hiddenAutomaticCount: 32 })
         : spyOn(services.audit, "list").mockResolvedValue({ ...empty, hiddenAutomaticCount: 32 });
     const spies = [
@@ -54,9 +54,9 @@ for (const surface of ["service-accounts", "audit"] as const) {
       c.set("runtime", { apps: [] });
       await next();
     });
-    app.get(`/app/accounts/${surface}`, ...(surface === "service-accounts" ? keysPage : auditPage));
+    app.get(`/app/accounts/${surface}`, ...(surface === "api-keys" ? keysPage : auditPage));
     const filters =
-      surface === "service-accounts"
+      surface === "api-keys"
         ? "search=Runtime&kind=agent&status=revoked&extra=keep"
         : "search=Runtime&actor=Ada&target=Team&action=service_account_credential.create&actionGroup=service_accounts&serviceAccountId=machine&outcome=allowed&provider=local&days=7&extra=keep";
     try {
@@ -82,7 +82,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
         };
         const hidden = await render(`${filters}&page=3`);
         expect(hidden.html).toContain(
-          surface === "service-accounts"
+          surface === "api-keys"
             ? locale === "de"
               ? "32 automatische App-Schlüssel sind ausgeblendet."
               : "32 automatic app keys are hidden."
@@ -99,7 +99,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
         const shown = await render(`${shownParams}&page=4`);
         expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("include");
         expect(shown.html).toContain(
-          surface === "service-accounts"
+          surface === "api-keys"
             ? locale === "de"
               ? "Automatische App-Schlüssel sind sichtbar. Sie rotieren selbst und verschwinden mit der Umstellung auf App-Schlüssel."
               : "Automatic app keys are visible. They rotate automatically and will disappear with the switch to app keys."
@@ -119,7 +119,7 @@ for (const surface of ["service-accounts", "audit"] as const) {
       expect(await zero.text()).not.toContain('<a href="/app/accounts/' + surface + '?automatic=1"');
       const zeroShown = await app.request(`/app/accounts/${surface}?automatic=1`, { headers: { "Accept-Language": "en" } });
       expect(await zeroShown.text()).toContain(
-        surface === "service-accounts" ? "Automatic app keys are visible." : "Automatic app entries are visible.",
+        surface === "api-keys" ? "Automatic app keys are visible." : "Automatic app entries are visible.",
       );
     } finally {
       for (const spy of spies) spy.mockRestore();

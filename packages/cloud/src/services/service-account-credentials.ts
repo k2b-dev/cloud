@@ -557,7 +557,8 @@ export const listOverview = async (config?: {
   filter?: {
     search?: string;
     automatic?: "hide" | "include";
-    serviceAccountKind?: ServiceAccount["kind"];
+    /** One kind, or several, such as both standalone kinds an admin sees as "Agent". */
+    serviceAccountKind?: ServiceAccount["kind"] | readonly ServiceAccount["kind"][];
     credentialStatus?: ServiceAccountCredentialStatus;
     userId?: string;
     appId?: string;
@@ -570,7 +571,11 @@ export const listOverview = async (config?: {
   const perPage = Math.max(1, Math.min(config?.pagination?.perPage ?? 100, 500));
   const offset = (page - 1) * perPage;
   const search = config?.filter?.search?.trim() || null;
-  const serviceAccountKind = config?.filter?.serviceAccountKind ?? null;
+  const kindFilter = config?.filter?.serviceAccountKind;
+  const kindMatches =
+    kindFilter === undefined
+      ? sql`TRUE`
+      : sql`sa.kind = ANY(${toPgTextArray(typeof kindFilter === "string" ? [kindFilter] : [...kindFilter])}::text[])`;
   const credentialStatus = config?.filter?.credentialStatus ?? null;
   const userId = config?.filter?.userId ?? null;
   const appId = config?.filter?.appId ?? null;
@@ -591,7 +596,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND ${kindMatches}
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)
@@ -643,7 +648,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND ${kindMatches}
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)

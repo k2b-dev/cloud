@@ -502,7 +502,7 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
           {(option) => (
             <div class="flex items-center gap-2 rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1.5">
               <i
-                class={`ti ${option.type === "user" ? "ti-user" : option.type === "group" ? "ti-users-group" : option.type === "service_account" ? (option.accountKind === "agent" ? "ti-robot" : "ti-key") : "ti-users"} text-dimmed`}
+                class={`ti ${option.type === "user" ? "ti-user" : option.type === "group" ? "ti-users-group" : option.type === "service_account" ? (option.accountKind === "agent" || option.accountKind === "standalone" ? "ti-robot" : "ti-key") : "ti-users"} text-dimmed`}
                 aria-hidden="true"
               />
               <span class="min-w-0 flex-1 truncate text-sm">{option.label}</span>

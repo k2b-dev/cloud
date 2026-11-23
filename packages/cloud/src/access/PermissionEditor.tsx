@@ -737,7 +737,7 @@ function AccessEntryRow(props: {
                       ? (props.signedInDescription ?? t().signedInPermission({ level: display().label.toLocaleLowerCase(locale()) }))
                       : props.entry.principal.type === "service_account"
                         ? (props.entry.serviceAccountKind && serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label) ||
-                          t().standaloneServiceAccount
+                          t().agentServiceAccount
                         : "")}
               <Show when={props.ownEntry}> · {t().you}</Show>
             </span>

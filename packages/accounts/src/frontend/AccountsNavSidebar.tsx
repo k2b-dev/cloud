@@ -10,7 +10,7 @@ export type AccountsNavActiveKey =
   | "groups"
   | "requests"
   | "audit"
-  | "service-accounts"
+  | "api-keys"
   | "agents"
   | "notifications"
   | "deleted-accounts"
@@ -68,10 +68,10 @@ export default function AccountsNavSidebar(props: Props) {
     },
     { href: "/app/accounts/agents", icon: "ti ti-robot", label: messages().agents, active: props.active === "agents" },
     {
-      href: "/app/accounts/service-accounts",
+      href: "/app/accounts/api-keys",
       icon: "ti ti-user-key",
       label: messages().serviceAccounts,
-      active: props.active === "service-accounts",
+      active: props.active === "api-keys",
     },
     {
       href: "/app/accounts/notifications",

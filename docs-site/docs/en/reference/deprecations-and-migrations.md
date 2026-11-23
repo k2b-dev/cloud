@@ -358,7 +358,7 @@ Explicit scopes are deprecated for new keys but remain accepted unchanged.
 Existing keys, including empty-scope keys, keep their limits. No migration
 widens issued keys. New OAuth clients from `cld admin agents create` also
 include `admin`; existing clients are unchanged. Scopes do not grant roles or
-resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
+resource permissions. See [Agents](/en/docs/identity/service-accounts)
 for issuance and the `cld admin agents keys` commands.
 
 ## Gustav release: major release operator note
@@ -2424,7 +2424,7 @@ client-credentials grant, and its access tokens carry `service_account_kind:
 check constraints widen in place, and existing delegated and resource-bound
 accounts, keys, and clients are unchanged. Operators provision agents with
 `cld admin agents` and revoke them by disabling the account. See
-[Standalone service accounts and agents](/en/docs/identity/service-accounts).
+[Agents](/en/docs/identity/service-accounts).
 
 ## The cloud-cli skill comes from cld
 

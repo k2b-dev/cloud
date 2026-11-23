@@ -17,7 +17,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; aut
   if (params.automatic) query.set("automatic", "1");
   if (params.page && params.page > 1) query.set("page", String(params.page));
   const search = query.toString();
-  return search ? `/app/accounts/service-accounts?${search}` : "/app/accounts/service-accounts";
+  return search ? `/app/accounts/api-keys?${search}` : "/app/accounts/api-keys";
 };
 
 export default function ServiceAccountsFilters(props: Props) {
@@ -28,7 +28,6 @@ export default function ServiceAccountsFilters(props: Props) {
       options: [
         { value: "user_delegated", label: messages().userBound, icon: "ti ti-user-key" },
         { value: "resource_bound", label: messages().resourceBound, icon: "ti ti-key" },
-        { value: "standalone", label: messages().standalone, icon: "ti ti-key" },
         { value: "agent", label: messages().agent, icon: "ti ti-robot" },
       ],
     },

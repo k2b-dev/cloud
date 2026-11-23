@@ -222,7 +222,10 @@ export const getConversationContext = async (params: {
               matchedEmails: contacts.data.matchedEmails,
               nextCursor: contacts.data.nextCursor,
             }
-          : { status: "unavailable", items: [], matchedEmails: [], nextCursor: null },
+          : contacts.status === 403
+            ? // The person may not use the contact app: no matches for them, not an outage.
+              { status: "ready", items: [], matchedEmails: [], nextCursor: null }
+            : { status: "unavailable", items: [], matchedEmails: [], nextCursor: null },
     spaces: linkedSpaces.ok
       ? { status: "ready", items: linkedSpaces.data.items, truncated: linkedSpaces.data.truncated }
       : { status: "unavailable", items: [], truncated: false },
@@ -251,7 +254,8 @@ export const listRelatedMail = async (params: {
     params.request,
     params.contactDirectory.resolve,
   );
-  if (!contact.ok) return { ...contact, status: 503 as const };
+  // A contact the person may not see does not exist for them; only an outage of the contact app is 503.
+  if (!contact.ok) return contact.status === 403 ? fail(err.notFound("Contact")) : { ...contact, status: 503 as const };
   const match = contact.data.items.find((item) => item.contactId === params.contactId && item.bookId === params.bookId);
   if (!match) return fail(err.notFound("Contact"));
   const cursor = decodeHistoryCursor(params.cursor);

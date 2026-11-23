@@ -366,15 +366,13 @@ export function ChatMemberRow(props: {
                 tone="neutral"
                 variant="text"
                 label={
-                  kind() === "agent"
+                  kind() === "agent" || kind() === "standalone"
                     ? t().agentAccount
-                    : kind() === "standalone"
-                      ? t().standaloneAccount
-                      : kind() === "resource_bound"
-                        ? t().resourceAccount
-                        : kind() === "code"
-                          ? t().codeAccount
-                          : t().delegatedAccount
+                    : kind() === "resource_bound"
+                      ? t().resourceAccount
+                      : kind() === "code"
+                        ? t().codeAccount
+                        : t().delegatedAccount
                 }
               />
             )}
