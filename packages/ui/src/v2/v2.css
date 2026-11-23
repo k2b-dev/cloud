@@ -473,6 +473,17 @@
 .k2-ui .k2-pane > * {
   flex: none;
 }
+/* the way back of a detail: a bar of 44 px with a text button on the text edge, on the phone only (below) */
+.k2-ui .k2-pane-back {
+  display: none;
+  align-items: center;
+  height: var(--k2-h-tabs);
+  padding: 0 var(--k2-edge);
+  border-bottom: var(--k2-hairline);
+}
+.k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
+  margin-left: -8px;
+}
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;
   min-height: 0;
@@ -2724,17 +2735,20 @@
     mask-image: none;
     animation: none;
   }
-  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > .k2-pane:first-child {
+  /* a detail that is there (a mail that is open) is the page; the list is the page while no detail is there */
+  .k2-ui .k2-split > .k2-pane[data-detail] {
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
-  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > .k2-pane:first-child > .k2-scroll {
+  .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
     overflow-y: auto;
   }
-  .k2-ui .k2-split > .k2-pane[data-detail],
-  .k2-ui .k2-split > .k2-seam:has(+ .k2-pane[data-detail]) {
+  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
+  }
+  .k2-ui .k2-pane-back {
+    display: flex;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,

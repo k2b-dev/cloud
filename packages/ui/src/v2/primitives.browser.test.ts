@@ -160,7 +160,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     test(
       `${width} px: bars and rows take their height from their place, text starts on the edge`,
       async () => {
-        const page = await open("layout", { width });
+        // on the phone the list is the page while nothing is open
+        const page = await open(width < textEdge.phoneBelow ? "list" : "layout", { width });
         try {
           const numbers = await page.evaluate(() => {
             const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
@@ -175,7 +176,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             return {
               head: box('.k2-ws-main > [data-slot="head"] > .k2-bar').height,
               status: box('[data-k2-part="StatusRow"]').height,
-              bar: box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height,
+              // the plain bar of the reader (there only while something is open)
+              bar: document.querySelector(".k2-pane[data-detail]") ? box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height : 0,
               rows: rows.map((row) => row.getBoundingClientRect().height),
               iconText: textLeft(".k2-list > .k2-row .k2-row-title") - list.left,
               // flow text in a band of the reader on a wide screen; the lead of the status row on the phone
@@ -197,6 +199,40 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           } else expect(numbers.rows.slice(0, 3)).toEqual([60, heights.row2 + hairline.width, heights.row3 + hairline.width]);
           expect(numbers.iconText).toBe(edge + textEdge.afterIcon);
           expect(numbers.bandText).toBe(edge);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  for (const width of [1440, 390])
+    test(
+      `${width} px: an open detail stands beside its list on a wide screen; on the phone it is the page, with the way back`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          const shown = await page.evaluate(() => {
+            const seen = (selector: string) => {
+              const element = document.querySelector(selector);
+              return !!element && element.getBoundingClientRect().width > 0;
+            };
+            const detail = document.querySelector(".k2-pane[data-detail]")!.getBoundingClientRect();
+            const workspace = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
+            const back = document.querySelector(".k2-pane-back");
+            return {
+              list: seen('.k2-pane[aria-label="Breite der Liste"]'),
+              detail: Math.round(detail.width - workspace.width),
+              back: back ? Math.round(back.getBoundingClientRect().height) : 0,
+            };
+          });
+          if (width >= textEdge.phoneBelow) expect([shown.list, shown.back]).toEqual([true, 0]);
+          else {
+            // the detail takes the whole workspace; its way back is a bar of 44 px above its head
+            expect(shown).toEqual({ list: false, detail: 0, back: heights.tabs });
+            expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
+          }
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
         } finally {
           await page.close();
         }

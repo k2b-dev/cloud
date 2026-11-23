@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import {
   Avatar,
   Band,
@@ -65,8 +65,11 @@ const shell = (children: JSX.Element, head?: JSX.Element) => (
   </Workspace>
 );
 
-/** Workspace, Pane, Pane.Split, Bar, Band, Cells, Tiles, Row, List, Notice, Inline, Chip, Avatar, Icon, Text, Prose. */
-export const LayoutFixture = () =>
+/**
+ * Workspace, Pane, Pane.Split, Bar, Band, Cells, Tiles, Row, List, Notice, Inline, Chip, Avatar, Icon, Text, Prose.
+ * `open: false` is the list while nothing is open: no detail, as on the phone's first page.
+ */
+export const LayoutFixture = (props: { open?: boolean }) =>
   shell(
     <Pane.Split>
       <Pane
@@ -107,61 +110,64 @@ export const LayoutFixture = () =>
           />
         </List>
       </Pane>
-      <Pane
-        detail
-        label="Nachricht"
-        head={
-          <Bar
-            start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
-            end={
-              <>
-                <Button icon="check">Erledigt</Button>
-                <Button variant="ghost" icon="x" label="Schließen" />
-              </>
-            }
-          />
-        }
-      >
-        <Bar
-          start={
-            <Inline>
-              <Text type="meta">3 Nachrichten</Text>
-              <Chip status="warn">Wartet auf Antwort</Chip>
-              <Chip icon="plus" onClick={() => undefined}>
-                Tag
-              </Chip>
-            </Inline>
+      <Show when={props.open !== false}>
+        <Pane
+          detail
+          back={{ label: "Posteingang", href: "#posteingang" }}
+          label="Nachricht"
+          head={
+            <Bar
+              start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
+              end={
+                <>
+                  <Button icon="check">Erledigt</Button>
+                  <Button variant="ghost" icon="x" label="Schließen" />
+                </>
+              }
+            />
           }
-          end={<Avatar name="Ada Renz" />}
-        />
-        <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
-          Brandt liefert 14 Eichenplatten in KW 49.
-        </Notice>
-        <Band>
-          <Row
-            avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
-            strong
-            lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
-            end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+        >
+          <Bar
+            start={
+              <Inline>
+                <Text type="meta">3 Nachrichten</Text>
+                <Chip status="warn">Wartet auf Antwort</Chip>
+                <Chip icon="plus" onClick={() => undefined}>
+                  Tag
+                </Chip>
+              </Inline>
+            }
+            end={<Avatar name="Ada Renz" />}
           />
-          <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
-          <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
-        </Band>
-        <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
-          Brandt war bei der letzten Lieferung zwei Tage zu spät.
-        </Notice>
-        <Band tone="note">
-          <Text type="body" weight="strong">
-            Die erste Abrechnung kommt am 15. Dez.
-          </Text>
-          <Text>38 von 53 Artikeln sind verkauft.</Text>
-        </Band>
-        <Cells>
-          <Cells.Cell icon="clock" label="Offen" value={12} />
-          <Cells.Cell icon="check" label="Heute erledigt" value={31} href="#erledigt" />
-          <Cells.Cell icon="currency-euro" color="#8e1b6f" label="Geld" value={<Chip amount="out">532,30 €</Chip>} meta="1 überfällig" />
-        </Cells>
-      </Pane>
+          <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
+            Brandt liefert 14 Eichenplatten in KW 49.
+          </Notice>
+          <Band>
+            <Row
+              avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}
+              strong
+              lines={["Holzwerk Brandt", "an Kontakt · heute, 09:42"]}
+              end={<Button variant="ghost" icon="dots" label="Weitere Aktionen" />}
+            />
+            <Prose markdown={"Guten Tag Frau Solberg,\n\ndie 14 Platten können wir in KW 49 liefern."} />
+            <Tiles items={[{ icon: "file-type-pdf", title: "Angebot-4471.pdf", meta: "212 KB" }]} more={{ label: "Alle herunterladen" }} />
+          </Band>
+          <Notice tone="note" title="Interne Notiz von Ada Renz" meta="gestern, 16:02">
+            Brandt war bei der letzten Lieferung zwei Tage zu spät.
+          </Notice>
+          <Band tone="note">
+            <Text type="body" weight="strong">
+              Die erste Abrechnung kommt am 15. Dez.
+            </Text>
+            <Text>38 von 53 Artikeln sind verkauft.</Text>
+          </Band>
+          <Cells>
+            <Cells.Cell icon="clock" label="Offen" value={12} />
+            <Cells.Cell icon="check" label="Heute erledigt" value={31} href="#erledigt" />
+            <Cells.Cell icon="currency-euro" color="#8e1b6f" label="Geld" value={<Chip amount="out">532,30 €</Chip>} meta="1 überfällig" />
+          </Cells>
+        </Pane>
+      </Show>
     </Pane.Split>,
     <Bar
       start={
@@ -558,6 +564,7 @@ const MessagesFixture = () => (
 
 export const fixtures = {
   layout: LayoutFixture,
+  list: () => <LayoutFixture open={false} />,
   structure: StructureFixture,
   table: TableFixture,
   grid: GridFixture,

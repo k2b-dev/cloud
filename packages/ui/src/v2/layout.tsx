@@ -116,8 +116,13 @@ export type PaneProps = {
   width?: Width;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
-  /** The detail of a list (a reader): beside the list on a wide screen, its own page on the phone. */
+  /**
+   * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
+   * open), it is the page and the list gives way; render it only while something is open.
+   */
   detail?: boolean;
+  /** The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". */
+  back?: Action;
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
   /**
@@ -159,6 +164,14 @@ export const Pane = (props: PaneProps) => {
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
       })}
     >
+      {/* the way back shows only on the phone, above the head of the detail */}
+      <Show when={props.back}>
+        {(back) => (
+          <div class="k2-pane-back">
+            <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" />
+          </div>
+        )}
+      </Show>
       <Show when={head()}>
         <div class="k2-slot" data-slot="head">
           {head()}
