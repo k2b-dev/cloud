@@ -41,7 +41,10 @@
      stands, exactly as the mockup draws it; readers take `var(--k2-app, var(--k2-blue))`. */
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 80%, #000000);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 8%, var(--k2-surface));
-  --k2-app-ink: var(--k2-app-ink-mix, var(--k2-blue-ink));
+  /* The ink of the app colour as text. The platform may set `--k2-app-ink`, a tone that keeps 4.5:1 on the surfaces
+     (`readableTone`); a mix alone does not promise that for every colour. Without it the mix stands, without a
+     colour the blue. v2 never sets `--k2-app-ink` itself, so the platform's value reaches every primitive. */
+  --k2-app-text: var(--k2-app-ink, var(--k2-app-ink-mix, var(--k2-blue-ink)));
   --k2-app-tint: var(--k2-app-tint-mix, var(--k2-blue-tint));
 
   /* tones by meaning */
@@ -120,7 +123,7 @@
    turns around, so a fill of n100 stays a step off the surface and n950 stays the strongest ink.
    Three ways in, as in v1: a `.dark` page, `.dark` on the scope itself, or `data-theme="dark"` on the scope. A scope
    with `data-theme="light"` stays light inside a dark page. */
-.dark .k2-ui:not([data-theme="light"]),
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
 .k2-ui.dark,
 .k2-ui[data-theme="dark"] {
   --k2-n50: #161a20;
@@ -301,7 +304,7 @@
   color: var(--k2-ai);
 }
 .k2-ui .k2-icon[data-tone="app"] {
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-icon[data-tone="muted"] {
   color: var(--k2-muted);
@@ -1048,7 +1051,7 @@
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
    Controls inside the row stand above the stretch, so each keeps its own target. */
-.k2-ui :is(.k2-row, .k2-tile)[data-open] {
+.k2-ui :is(.k2-row, .k2-tile, .k2-cell)[data-open] {
   position: relative;
 }
 .k2-ui .k2-tile > span > .k2-tile-title > .k2-row-open::after {
@@ -1068,7 +1071,13 @@
 .k2-ui .k2-row-open:focus-visible::after {
   box-shadow: inset 0 0 0 2px var(--k2-blue);
 }
-.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open) {
+/* in a row the open element holds nothing and lies over the whole row, outside its grid */
+.k2-ui .k2-row > .k2-row-open {
+  position: absolute;
+  inset: 0;
+}
+.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open),
+.k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open) {
   position: relative;
   z-index: 1;
 }
@@ -1561,7 +1570,7 @@
 }
 .k2-ui .k2-chip[data-kind="control"][data-pressed] {
   background: var(--k2-app-tint);
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
   border-color: transparent;
 }
 .k2-ui .k2-chip[data-kind="control"]:focus-visible {
@@ -1960,19 +1969,16 @@
 }
 
 /* ── Canvas: the one place with its own drawing; its size comes from its place ──────────────────────────────── */
+/* A canvas draws no line of its own: what separates it is the business of the structure around it (rule 9), and a
+   drawing that needs an edge, such as a map from edge to edge, draws it itself. */
 .k2-ui .k2-canvas {
   position: relative;
   display: block;
   min-width: 0;
   overflow: hidden;
-  border-bottom: var(--k2-hairline);
 }
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
-}
-/* a drawing that is a framed box of its own (a composer) stands apart by its frame: no line (rule 9) */
-.k2-ui .k2-canvas[data-framed] {
-  border-bottom: 0;
 }
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */
@@ -1999,7 +2005,7 @@
   flex: none;
 }
 .k2-ui .k2-nav-title > .k2-icon {
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
   font-size: 18px;
 }
 .k2-ui .k2-nav-label {
@@ -2069,12 +2075,12 @@
 }
 .k2-ui .k2-ni[aria-current] {
   background: var(--k2-app-tint);
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
   font-weight: 500;
 }
 .k2-ui .k2-ni[aria-current] > .k2-icon,
 .k2-ui .k2-ni[aria-current] > .k2-ni-count {
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-ni[data-level="2"] {
   padding-left: 32px;
@@ -2130,7 +2136,7 @@
   border-bottom-color: var(--k2-app, var(--k2-blue));
 }
 .k2-ui .k2-tab[aria-current] > .k2-icon {
-  color: var(--k2-app-ink);
+  color: var(--k2-app-text);
 }
 .k2-ui .k2-tab:focus-visible {
   outline: none;

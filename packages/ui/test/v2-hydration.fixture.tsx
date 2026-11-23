@@ -45,10 +45,10 @@ const Probe = () => {
   );
 };
 
-type Order = { id: string; name: string; sum: string };
+type Order = { id: string; name: string; sum: string; done: boolean };
 const orders: Order[] = [
-  { id: "AU-1", name: "Einbauschrank Flur", sum: "180,50 €" },
-  { id: "AU-2", name: "Treppe Haus am Hang", sum: "617,00 €" },
+  { id: "AU-1", name: "Einbauschrank Flur", sum: "180,50 €", done: false },
+  { id: "AU-2", name: "Treppe Haus am Hang", sum: "617,00 €", done: true },
 ];
 
 export function Fixture() {
@@ -85,6 +85,14 @@ export function Fixture() {
               lines={["Jonas Hartwig"]}
               onOpen={() => setOpened("jonas")}
               action={{ label: "Annehmen", onClick: () => setOpened("annehmen") }}
+            />
+            <Row
+              lines={[
+                <>
+                  Einlieferung <Text href="#einlieferung">EL-2611</Text>
+                </>,
+              ]}
+              href="#zeile"
             />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
@@ -123,6 +131,9 @@ export function Fixture() {
             <Field name="notify" label="Benachrichtigung">
               <Check label="Kunde benachrichtigen" />
             </Field>
+            <Field name="partial" label="Teilweise">
+              <Check label="Einige Positionen" checked="mixed" onChange={() => undefined} />
+            </Field>
             <Field name="contact" label="Ansprechperson">
               <Input placeholder="Wer nimmt ab?" />
             </Field>
@@ -135,7 +146,7 @@ export function Fixture() {
           />
           <Prose
             markdown={
-              'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))'
+              'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))\n\n![Pixel](https://example.com/pixel.png) [Datei](ftp://example.com/a) [Seite](https://example.com) [Post](mailto:post@example.com)'
             }
           />
           <Table
@@ -147,7 +158,14 @@ export function Fixture() {
                 title: "Auftrag",
                 cell: (order) => {
                   made().cells++;
-                  return [order.name, order.id];
+                  return { lines: [order.name, order.id] };
+                },
+              },
+              {
+                title: "Stand",
+                cell: (order) => {
+                  made().cells++;
+                  return <Chip status={order.done ? "ok" : "warn"}>{order.done ? "fertig" : "offen"}</Chip>;
                 },
               },
               {
@@ -160,6 +178,13 @@ export function Fixture() {
               },
             ]}
             rows={orders}
+            // the head of a group stands in the table and in the phone list: each place makes its own
+            group={(order) => ({
+              key: order.done ? "done" : "open",
+              head: () => <Chip status={order.done ? "ok" : "warn"}>{order.done ? "Erledigt" : "Offen"}</Chip>,
+              meta: "1",
+            })}
+            phone={(order) => ({ lines: [order.name, order.sum] })}
           />
           <Button>Für sich</Button>
           <Text muted>Geöffnet: {opened()}</Text>

@@ -93,6 +93,5 @@ export {
 } from "./layout";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";
-export { type ToastOptions, toast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, Person, Status, TwoActions, Width } from "./types";

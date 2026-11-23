@@ -1,4 +1,4 @@
-import { createContext, createSignal, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
+import { createContext, createRenderEffect, createSignal, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
 import { Icon } from "./marks";
 
 type FieldIds = {
@@ -277,7 +277,7 @@ export const Check = (props: CheckProps) => {
           role={props.switch ? "switch" : undefined}
           name={props.name ?? field?.name}
           checked={checked() === true}
-          aria-checked={checked() === "mixed" ? "mixed" : undefined}
+          ref={(input) => mixed(input, () => checked() === "mixed")}
           aria-describedby={field?.described}
           disabled={props.disabled}
           onChange={(event) => {
@@ -303,6 +303,16 @@ export const Check = (props: CheckProps) => {
   );
 };
 
+/**
+ * A box that is set for some of a group shows it as the browser's own third state (`indeterminate`), which assistive
+ * technology reads as "mixed"; it is a property of the box, not an attribute, so it follows in the browser.
+ */
+const mixed = (input: HTMLInputElement, when: () => boolean) => {
+  createRenderEffect(() => {
+    input.indeterminate = when();
+  });
+};
+
 /** A box without visible words, named for assistive technology (internal: "select all", "select this row"). */
 export const MarkCheck = (props: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void }) => (
   <span class="k2-mark">
@@ -311,7 +321,7 @@ export const MarkCheck = (props: { label: string; checked?: boolean | "mixed"; o
       type="checkbox"
       aria-label={props.label}
       checked={props.checked === true}
-      aria-checked={props.checked === "mixed" ? "mixed" : undefined}
+      ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
     />
     <span class="k2-check" data-checked={props.checked ? "" : undefined} data-k2-mark="">

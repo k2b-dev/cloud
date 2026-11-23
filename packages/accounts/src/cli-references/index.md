@@ -80,7 +80,7 @@ cld accounts groups managers add "Editors" --user ada.lovelace --yes
 cld accounts requests list --scope open --json
 ```
 
-Group members and managers can be users or groups. A local group's members can also be active standalone or agent accounts. Add or remove one by exact name or ID:
+Group members and managers can be users or groups. A local group's members can also be active agents. Add or remove one by exact name or ID:
 
 ```bash
 cld accounts groups members add "Local editors" --service-account "Publishing agent" --yes
@@ -94,7 +94,7 @@ Resolve a group and principal first, because these changes affect access recursi
 
 `groups list` excludes personal Linux groups, including JSON exports. The `--include-personal` switch is no longer supported, and exact group references do not resolve them. Inspect a user's primary GID with `users linux get <user> --json`. Use ordinary team groups for group-based integrations.
 
-## Audit events and service-account credentials
+## Audit events and API keys
 
 ```bash
 cld accounts audit list --days 30 --search "ada" --json
@@ -103,7 +103,7 @@ cld accounts service-accounts list --kind agent --json
 cld accounts service-accounts revoke <credential-id> --yes
 ```
 
-Use audit events to understand a prior change before making a corrective one. Revoke a service-account credential only after confirming the exact credential ID and its owner. `--kind` is `user_delegated`, `resource_bound`, `standalone`, or `agent`; the list shows API keys only, so an agent that uses just its OAuth client appears through `cld admin agents ls`.
+Use audit events to understand a prior change before making a corrective one. Revoke an API key only after confirming the exact credential ID and its owner. `--kind` takes the technical names: `user_delegated` for personal API keys, `resource_bound` for API keys at a resource, and `agent` or `standalone` for agents. The list shows API keys only, so an agent that uses just its OAuth client appears through `cld admin agents ls`.
 
 ## Complete command catalogue
 
@@ -121,4 +121,4 @@ Run `cld accounts <command> --help` for flags and argument order.
 | Group managers | `groups managers list`, `groups managers add`, `groups managers remove` |
 | Account requests | `requests list`, `requests get`, `requests deny` |
 | Audit | `audit list` |
-| Service-account credentials | `service-accounts list`, `service-accounts revoke` |
+| API keys | `service-accounts list`, `service-accounts revoke` |

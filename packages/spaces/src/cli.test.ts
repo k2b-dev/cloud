@@ -603,12 +603,12 @@ describe("changes", () => {
     const result = await run(["assign", "Item01", "release AGENT"]);
     expect(writes(result.requests)[0]?.body).toEqual({ assigneeIds: [AGENT_ID] });
     expect((await failing(["assign", "Item01", "ADA"])).stderr).toContain(
-      "Use me, an ID, a username, or a service account name with access",
+      "Use me, an ID, a username, or the name of an agent or service account with access",
     );
     // A name that several service accounts share never picks one of them; it asks for the ID and changes nothing.
     const ambiguous = await failing(["assign", "Item01", "Roadmap Sync"]);
     expect(ambiguous.stderr).toContain(
-      `Several service accounts are named "Roadmap Sync" in this space. Use the ID of the one you mean: ${KEY_ID}, ${SYNC_AGENT_ID}.`,
+      `Several accounts are named "Roadmap Sync" in this space. Use the ID of the one you mean: ${KEY_ID}, ${SYNC_AGENT_ID}.`,
     );
     expect(writes(ambiguous.requests)).toEqual([]);
   });

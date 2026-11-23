@@ -11,7 +11,7 @@ Hosts zeigt einen lokalen Spiegel der FreeIPA-Hosts und Hostgruppen. Personen mi
 ## Überblick {icon="layout-grid"}
 
 :::reference
-- **FreeIPA:** FreeIPA ist die maßgebliche Quelle. Die Seite liest aus dem lokalen Spiegel; Änderungen rufen FreeIPA über das Dienstkonto auf.
+- **FreeIPA:** FreeIPA ist die maßgebliche Quelle. Die Seite liest aus dem lokalen Spiegel; Änderungen rufen FreeIPA als FreeIPA-Benutzer aus den Anmelde-Einstellungen auf.
 - **Hostgruppe:** Eine Hostgruppe gruppiert Hosts anhand ihrer FreeIPA-Mitgliedschaft. Verschachtelte Hostgruppen erscheinen als kompakte Badges im Gruppenkopf.
 - **Nicht gruppierter Host:** Ein gespiegelter Host ohne Hostgruppenmitgliedschaft. Die Seite zeigt solche Hosts zuerst, weil sie meist zugeordnet werden müssen.
 - **Synchronisierung:** Eine Synchronisierung aktualisiert den lokalen Spiegel aus FreeIPA. Der Zeitplan verwendet einen fünfteiligen Cron-Ausdruck in der konfigurierten Zeitzone.

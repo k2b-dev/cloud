@@ -287,6 +287,38 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
+    "rule 9: a canvas inside a band draws no line; the band owns its one line below, so two bands in a row show one",
+    async () => {
+      const page = await open("layout");
+      try {
+        const found = await page.evaluate(() => {
+          const band = document.querySelector(".k2-band:has(> .k2-canvas)")!;
+          const lines = (element: Element) => {
+            const style = getComputedStyle(element);
+            return [Number.parseFloat(style.borderTopWidth), Number.parseFloat(style.borderBottomWidth)];
+          };
+          const next = band.nextElementSibling!;
+          return {
+            canvas: lines(band.querySelector(":scope > .k2-canvas")!),
+            band: lines(band),
+            next: [next.className, lines(next)[0]],
+            gap: next.getBoundingClientRect().top - band.getBoundingClientRect().bottom,
+          };
+        });
+        expect(found.canvas).toEqual([0, 0]);
+        expect(found.band).toEqual([0, 1]);
+        // the band after it draws no line on top and touches it: one line between them
+        expect(found.next).toEqual(["k2-band", 0]);
+        expect(found.gap).toBe(0);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).double).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "rule 9: no line under a section head or between its entries, none inside a group; one line at the end of a section",
     async () => {
       const page = await open("structure");

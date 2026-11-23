@@ -230,9 +230,13 @@ A response that sets a cookie receives `Cache-Control: private, no-store`.
 Other application cache directives pass through. The gateway supplies
 `X-Content-Type-Options: nosniff` and
 `Referrer-Policy: strict-origin-when-cross-origin` when the app has not set
-those headers. Applications own CSP, framing policy, indexing, canonical URLs,
-sitemaps, and robots files. App-domain responses have no Cloud telemetry
-headers.
+those headers. An HTML response without a framing policy of its own receives
+`Content-Security-Policy: frame-ancestors 'self'` and
+`X-Frame-Options: SAMEORIGIN`, so only the site itself can frame its pages.
+An app that wants other sites to embed a page sets its own `frame-ancestors`
+directive on that response; the gateway then leaves framing unchanged. Applications own the rest of their CSP, indexing,
+canonical URLs, sitemaps, and robots files. App-domain responses have no Cloud
+telemetry headers.
 
 Cookie-less requests without `Authorization` can receive Brotli or gzip for
 text, JavaScript, JSON, XML, and SVG, including crawler visits and arrivals

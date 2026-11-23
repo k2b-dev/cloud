@@ -4,6 +4,8 @@ import { Fixture } from "./v2-hydration.fixture";
 declare global {
   interface Window {
     __k2Hydrated?: boolean;
+    /** What the server sent, cloned before hydration, for the test to compare with the live page. */
+    __k2Sent?: Node;
   }
 }
 
