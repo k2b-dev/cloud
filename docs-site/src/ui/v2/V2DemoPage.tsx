@@ -25,6 +25,14 @@ export const v2Screens = {
     app: "#0f766e",
     render: () => <MailScreen />,
   },
+  "mail-list": {
+    title: "Mail · nichts offen",
+    description:
+      "The same inbox while no message is open: on the phone the list is the page, and a row opens its message as a page of its own with the way back.",
+    mockup: "mail.html (390 px)",
+    app: "#0f766e",
+    render: () => <MailScreen open={false} />,
+  },
   record: {
     title: "Kundenakte · Überblick",
     description:
