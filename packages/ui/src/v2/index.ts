@@ -28,6 +28,8 @@ export {
   type StatusFact,
   StatusRow,
   type StatusRowProps,
+  type Step,
+  Steps,
   type Tab,
   Tabs,
   type TabsProps,

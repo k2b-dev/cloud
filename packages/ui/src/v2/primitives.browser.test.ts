@@ -124,6 +124,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       "Notice",
       "Digest",
       "RecordHead",
+      "Steps",
     ])
       expect(parts).toContain(part);
   });

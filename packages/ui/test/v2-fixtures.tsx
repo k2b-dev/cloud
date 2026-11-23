@@ -28,6 +28,7 @@ import {
   Section,
   Select,
   StatusRow,
+  Steps,
   Table,
   Tabs,
   Text,
@@ -232,6 +233,29 @@ export const StructureFixture = () =>
               <Text type="body" strong>
                 10 Artikel sind ausgelaufen.
               </Text>
+              <Steps
+                label="Weg der Einlieferung"
+                items={[
+                  { label: "Angekommen", meta: "3. Nov.", state: "done" },
+                  { label: "Ausgelaufen", meta: "10 von 18", state: "now" },
+                  { label: "Ausgezahlt", state: "next" },
+                ]}
+              />
+              <Row
+                icon="signature"
+                strong
+                lines={[
+                  <>
+                    Quittung <Text href="#quittung">Q-2611-00021</Text> wartet
+                  </>,
+                  "per Post gesendet am 18. Nov.",
+                ]}
+                end={
+                  <Button variant="text" forward>
+                    Zur Quittung
+                  </Button>
+                }
+              />
               <Table
                 label="Abrechnung"
                 rows={[
@@ -257,7 +281,18 @@ export const StructureFixture = () =>
                 }
               />
             </Group>
-            <Group icon="package" title="EL-2609-00017" folded state={<Chip status="ok">Ausgezahlt</Chip>} />
+            <Group
+              icon="package"
+              title="EL-2609-00017"
+              meta="ausgezahlt am 12. Nov."
+              folded
+              state={
+                <Text medium tone="ok">
+                  <Icon name="circle-check" /> Ausgezahlt
+                </Text>
+              }
+              menu={{ label: "Weitere Aktionen" }}
+            />
           </Section>
         </Pane>
         <Pane side label="Breite der Angaben" width={{ min: 280, default: 360 }}>

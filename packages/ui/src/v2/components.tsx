@@ -272,6 +272,43 @@ export const Digest = (props: DigestProps) => (
   </div>
 );
 
+// ── Steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export type Step = {
+  label: string;
+  /** A quiet line under the step, such as a date or "10 von 18". */
+  meta?: string;
+  /** Done (grey with a tick), the one running now (a blue ring), or still to come (empty). */
+  state: "done" | "now" | "next";
+};
+
+/** A way of a few steps: done ones grey with a tick, the running one a blue ring, the coming ones empty. */
+export const Steps = (props: { items: readonly Step[]; label: string }) => (
+  <ol
+    class="k2-steps"
+    data-k2-part="Steps"
+    data-k2-figure=""
+    aria-label={props.label}
+    style={custom({ "--k2-steps": String(props.items.length) })}
+  >
+    <For each={props.items}>
+      {(step) => (
+        <li class="k2-step" data-state={step.state} aria-current={step.state === "now" ? "step" : undefined}>
+          <span class="k2-step-mark">
+            <Show when={step.state === "done"}>
+              <Icon name="check" />
+            </Show>
+          </span>
+          <span class="k2-step-label">{step.label}</span>
+          <Show when={step.meta}>
+            <span class="k2-t-meta">{step.meta}</span>
+          </Show>
+        </li>
+      )}
+    </For>
+  </ol>
+);
+
 // ── RecordHead ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type RecordId = { label?: string; value: string; icon?: string; copy?: boolean };

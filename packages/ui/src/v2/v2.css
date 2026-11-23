@@ -237,6 +237,7 @@
   --k2-fields: initial;
   --k2-p: initial;
   --k2-canvas-h: initial;
+  --k2-steps: initial;
   --k2-fade: initial;
 }
 /* Only v2's own elements: everything a primitive draws carries a k2- class. */
@@ -249,7 +250,7 @@
   margin: 0;
   padding: 0;
 }
-.k2-ui :where(.k2-row, .k2-cell, .k2-tile, .k2-ni, .k2-tab, .k2-sec-link, .k2-btn, .k2-chip, .k2-fab) {
+.k2-ui :where(.k2-row, .k2-cell, .k2-tile, .k2-ni, .k2-tab, .k2-sec-link, .k2-btn, .k2-chip, .k2-fab, .k2-link) {
   color: inherit;
   text-decoration: none;
 }
@@ -2113,6 +2114,75 @@
   color: var(--k2-muted);
 }
 
+/* Steps: a way of a few steps; done grey with a tick, the running one a blue ring, the coming ones empty */
+.k2-ui .k2-steps {
+  display: grid;
+  grid-template-columns: repeat(var(--k2-steps, 5), minmax(0, 1fr));
+  margin: 0;
+  padding: 0 var(--k2-edge);
+  list-style: none;
+  min-width: 0;
+}
+.k2-ui .k2-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 12px;
+  min-width: 0;
+}
+.k2-ui .k2-step-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--k2-r-round);
+  border: 1.5px solid var(--k2-n300);
+  background: var(--k2-surface);
+  display: grid;
+  place-items: center;
+  position: relative;
+  z-index: 1;
+}
+.k2-ui .k2-step-mark > .k2-icon {
+  font-size: 12px;
+}
+.k2-ui .k2-step::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 20px;
+  right: 0;
+  height: 1px;
+  background: var(--k2-n300);
+}
+.k2-ui .k2-step:last-child::before {
+  display: none;
+}
+.k2-ui .k2-step[data-state="done"] > .k2-step-mark {
+  background: var(--k2-n500);
+  border-color: var(--k2-n500);
+  color: var(--k2-white);
+}
+.k2-ui .k2-step[data-state="now"] > .k2-step-mark {
+  border: 2px solid var(--k2-blue);
+}
+.k2-ui .k2-step[data-state="now"] > .k2-step-mark::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-blue);
+}
+.k2-ui .k2-step-label {
+  margin-top: 8px;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-step:is([data-state="done"], [data-state="now"]) > .k2-step-label {
+  color: var(--k2-text);
+}
+.k2-ui .k2-step[data-state="now"] > .k2-step-label {
+  font-weight: 600;
+}
+
 /* the main action floats on the phone only (K12) */
 .k2-ui .k2-fab {
   display: none;
@@ -2273,5 +2343,20 @@
   }
   .k2-ui .k2-frow {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .k2-ui .k2-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .k2-ui .k2-step {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .k2-ui .k2-step::before {
+    display: none;
+  }
+  .k2-ui .k2-step-label {
+    margin-top: 0;
   }
 }

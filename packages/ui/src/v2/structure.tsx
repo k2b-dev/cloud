@@ -6,7 +6,7 @@ import type { Action } from "./types";
 const HeadActions = (props: { actions?: readonly Action[] }) => (
   <For each={props.actions?.slice(0, 2)}>
     {(action) => (
-      <Button variant="text" icon={action.icon} href={action.href} onClick={() => action.onClick?.()}>
+      <Button variant="text" icon={action.icon} forward={action.forward} href={action.href} onClick={() => action.onClick?.()}>
         {action.label}
       </Button>
     )}
@@ -81,11 +81,16 @@ export type GroupProps = {
   count?: number | string;
   /** A quiet line under the title; the head grows from 40 to 56 px. */
   meta?: JSX.Element;
-  /** A state at the end of the head, such as a chip. */
+  /** A state at the end of the head, such as `<Text medium><Icon name="gavel" /> Läuft</Text>` or an amount. */
   state?: JSX.Element;
+  /** More deeds of the group behind one "…" button. (The menu opens with the behaviour layer.) */
+  menu?: Action;
   /** Text buttons at the end of the head. */
   actions?: readonly Action[];
-  /** Only the head with its result; the content is hidden. */
+  /**
+   * Only the head with its result; the content is hidden, and a chevron at the end opens it. (Opening comes with the
+   * behaviour layer.)
+   */
   folded?: boolean;
   children?: JSX.Element;
 };
@@ -115,10 +120,16 @@ export const Group = (props: GroupProps) => (
       <Show when={props.meta !== undefined}>
         <span class="k2-gh-meta">{props.meta}</span>
       </Show>
-      <Show when={props.state !== undefined || props.actions?.length}>
+      <Show when={props.state !== undefined || props.actions?.length || props.menu || props.folded}>
         <span class="k2-gh-end">
           {props.state}
+          <Show when={props.menu}>
+            {(menu) => <Button variant="ghost" icon={menu().icon ?? "dots"} label={menu().label} onClick={() => menu().onClick?.()} />}
+          </Show>
           <HeadActions actions={props.actions} />
+          <Show when={props.folded}>
+            <Button variant="ghost" icon="chevron-down" label={props.title} />
+          </Show>
         </span>
       </Show>
     </div>

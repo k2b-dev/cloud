@@ -9,16 +9,20 @@ import type { Action, Person, Status } from "./types";
 
 export type TextProps = {
   /**
-   * One of the four type roles; `row` (13/20) by default. (Named `type`, not `role`, so it never reads as an ARIA
-   * role.)
+   * One of the four type roles. Without one, text takes the role of its place (13/20 in a pane, the role of the
+   * sentence it stands in). (Named `type`, not `role`, so it never reads as an ARIA role.)
    */
   type?: TypeRole;
   /** 600: the one way to stress a word. Emphasis is a weight, never a size. */
   strong?: boolean;
+  /** 500: a state or an amount that stands out a little, such as "Quittung offen". */
+  medium?: boolean;
   /** The muted ink, for a second voice beside the main text. */
   muted?: boolean;
   /** A colour of meaning, never decoration. */
   tone?: Status | "ai" | "draft";
+  /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
+  href?: string;
   children: JSX.Element;
 };
 
@@ -28,14 +32,16 @@ export type TextProps = {
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
 export const Text = (props: TextProps) => (
-  <span
-    class={`k2-text k2-t-${props.type ?? "row"}${props.strong ? " k2-strong" : ""}${props.muted ? " k2-muted" : ""}`}
+  <Dynamic
+    component={props.href ? "a" : "span"}
+    href={props.href}
+    class={`k2-text${props.type ? ` k2-t-${props.type}` : ""}${props.strong ? " k2-strong" : props.medium ? " k2-medium" : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
     data-k2-part="Text"
-    data-type={props.type ?? "row"}
+    data-type={props.type}
     data-tone={props.tone}
   >
     {props.children}
-  </span>
+  </Dynamic>
 );
 
 export type ProseProps = { html: string; children?: never } | { html?: never; children: JSX.Element };
