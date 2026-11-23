@@ -347,6 +347,11 @@ export type CanvasProps = {
   label: string;
   /** The height of the drawing in px; the width comes from its place. */
   height?: number;
+  /**
+   * The drawing is a framed box of its own, such as a composer: it stands apart by its frame, so the canvas draws no
+   * line below it (rule 9). Without it the canvas reaches edge to edge with one line below, like a map.
+   */
+  framed?: boolean;
   children: JSX.Element;
 };
 
@@ -359,6 +364,7 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
+    data-framed={props.framed ? "" : undefined}
     style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
   >
     {props.children}
