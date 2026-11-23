@@ -26,3 +26,8 @@ const server = await startMailV2Server({
   ...(now ? { now: () => Date.parse(now) } : {}),
 });
 console.info(`Mail v2 preview: ${server.url}${MAIL_V2_PATH}?conversation=Demo01`);
+// A stopped preview leaves no island build behind: exiting runs the server module's cleanup.
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    void server.stop().finally(() => process.exit(0));
+  });
