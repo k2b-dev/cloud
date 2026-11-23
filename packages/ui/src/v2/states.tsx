@@ -139,9 +139,9 @@ export const PlaceholderRows = (props: { rows: number; lines: 1 | 2 | 3 }) => (
     {() => (
       <div class="k2-row" data-lines={String(props.lines)} aria-hidden="true">
         <span class="k2-row-lead" />
-        <For each={(["l1", "l2", "l3"] as const).slice(0, props.lines)}>
+        <For each={(["k2-row-l1", "k2-row-l2", "k2-row-l3"] as const).slice(0, props.lines)}>
           {(line) => (
-            <span class={`k2-row-${line}`}>
+            <span class={line}>
               <span class="k2-skel" />
             </span>
           )}
