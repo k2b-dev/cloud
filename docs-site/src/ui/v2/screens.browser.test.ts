@@ -15,24 +15,22 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-screens-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { MailScreen } = await import("./mail-screen");
-const { RecordScreen, DeliveriesScreen } = await import("./record-screen");
-const { default: TableScreen } = await import("./TableScreen.island");
+const { V2ScreenPage } = await import("./V2DemoPage");
 const css = readFileSync(resolve(import.meta.dir, "../../../../packages/ui/src/v2/v2.css"), "utf8");
 const dist = resolve(import.meta.dir, "../../../../packages/ui/dist");
 const origin = "https://v2-screens.test";
-const drawings = readFileSync(resolve(import.meta.dir, "../cloud-ui.css"), "utf8").replace(/@import[^;]+;/g, "");
-const frame = `html, body { margin: 0; height: 100%; }
-.shell { position: fixed; inset: 8px 8px 8px 56px; display: flex; }
-@media (max-width: 767px) { .shell { inset: 52px 0 0 0; } }`;
+// Fibel's own CSS: the frame of the Cloud shell (rail 56 px, card inset 8 px; on the phone the platform's bar of
+// 52 px) and the drawings in a Canvas
+const fibel = readFileSync(resolve(import.meta.dir, "../cloud-ui.css"), "utf8").replace(/@import[^;]+;/g, "");
 
+/** The screens of the Fibel pages, each on its page of its own (`V2ScreenPage`), as /en/ui/v2/screen/<name> shows it. */
 const screens = {
-  mail: { render: MailScreen, app: "--k2-app:#0f766e" },
+  mail: "mail",
   // the inbox while nothing is open: the phone's first page
-  mailList: { render: () => createComponent(MailScreen, { open: false }), app: "--k2-app:#0f766e" },
-  record: { render: RecordScreen, app: "" },
-  deliveries: { render: DeliveriesScreen, app: "" },
-  table: { render: TableScreen, app: "--k2-app:#047857" },
+  mailList: "mail-list",
+  record: "record",
+  deliveries: "deliveries",
+  table: "table",
 } as const;
 
 /** Boxes relative to the workspace, measured in the mockup at 1440 × 900 and 390 × 844 (left,top width×height). */
@@ -135,12 +133,14 @@ type Page = Awaited<ReturnType<Browser["newPage"]>>;
  */
 const show = async (name: keyof typeof screens, width: number, scale = 1): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 }, deviceScaleFactor: scale });
-  const html = renderToString(() => createComponent(screens[name].render, {}));
+  const html = renderToString(() => createComponent(V2ScreenPage, { name: screens[name] }));
   const markup =
     `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="${origin}/plex.css">` +
     `<link rel="stylesheet" href="${origin}/tabler.css">` +
-    `<style>${css}</style><style>${drawings}</style><style>${frame}</style></head>` +
-    `<body class="k2-ui" style="${screens[name].app}"><div class="shell">${html}</div></body></html>`;
+    `<style>${css}</style><style>${fibel}</style><style>html, body { margin: 0; height: 100%; }</style>` +
+    // as every page of @k2b/ssr sends it: an island's host has no box of its own
+    `<style>solid-client, solid-island { display: contents; }</style></head>` +
+    `<body>${html}</body></html>`;
   await page.route(`${origin}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === `/${name}.html`) return route.fulfill({ contentType: "text/html", body: markup });
@@ -231,4 +231,99 @@ describe("v2 demo screens keep the mockup", () => {
       await list.close();
     }
   }, 30_000);
+
+  test("mail at 390 px with a message open: nothing in it is cut, nothing breaks inside", async () => {
+    const page = await show("mail", 390);
+    try {
+      const found = await page.evaluate(() => {
+        const detail = document.querySelector(".k2-pane[data-detail]")!;
+        // the line under the head: the facts of the conversation and who reads along; what has no room wraps
+        const bar = detail.querySelector(":scope > .k2-scroll > .k2-bar")!;
+        const box = bar.getBoundingClientRect();
+        const style = getComputedStyle(bar);
+        const inner = {
+          left: box.left + Number.parseFloat(style.paddingLeft),
+          right: box.right - Number.parseFloat(style.paddingRight),
+          top: box.top + Number.parseFloat(style.paddingTop),
+          bottom: box.bottom - Number.parseFloat(style.paddingBottom),
+        };
+        const things = [...bar.querySelectorAll(".k2-inline > *, .k2-bar-end > *")];
+        const cut = things
+          .filter((thing) => {
+            const r = thing.getBoundingClientRect();
+            // whole inside the bar's padding, and shown by every box around it that clips
+            const clipped = (() => {
+              for (let up = thing.parentElement; up && up !== bar; up = up.parentElement) {
+                const s = getComputedStyle(up);
+                if (s.display === "contents" || s.overflow === "visible") continue;
+                const c = up.getBoundingClientRect();
+                if (r.left < c.left - 0.5 || r.right > c.right + 0.5 || r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5) return true;
+              }
+              return false;
+            })();
+            return (
+              clipped ||
+              r.left < inner.left - 0.5 ||
+              r.right > inner.right + 0.5 ||
+              r.top < inner.top - 0.5 ||
+              r.bottom > inner.bottom + 0.5 ||
+              thing.scrollWidth > thing.clientWidth + 0.5
+            );
+          })
+          .map((thing) => thing.textContent?.trim());
+        // the end follows the last thing on its line when it has room there
+        const lines = new Set(
+          things.map((thing) => {
+            const r = thing.getBoundingClientRect();
+            return Math.round((r.top + r.bottom) / 2);
+          }),
+        ).size;
+        // the composer's head: the recipient and the sender's choices each on one line, inside the box
+        const top = document.querySelector(".ui-v2-composer__top")!.getBoundingClientRect();
+        const parts = [...document.querySelectorAll(".ui-v2-composer__part")].map((part) => {
+          const r = part.getBoundingClientRect();
+          return [r.height, r.right <= top.right + 0.5];
+        });
+        // the sender of the message on one line beside its address
+        const sender = detail.querySelector(".k2-band > .k2-row .k2-row-title")!.getBoundingClientRect().height;
+        return { cut, lines, parts, sender };
+      });
+      expect(found).toEqual({
+        cut: [],
+        lines: 2,
+        parts: [
+          [36, true],
+          [36, true],
+        ],
+        sender: 20,
+      });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  // On the phone the platform's bar (52 px) stands above the app, as the mockup draws it, so the page has no empty
+  // strip at the top: the app's switcher in Mail, the way back to a list in a record and in the table.
+  for (const [name, title] of [
+    ["mail", "Mail"],
+    ["mailList", "Mail"],
+    ["record", "Kunden"],
+    ["table", "Aufträge"],
+  ] as const)
+    test(`${name} at 390 px: the platform's bar stands above the app`, async () => {
+      const page = await show(name, 390);
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector(".ui-v2-phonebar")!.getBoundingClientRect();
+          return {
+            bar: `${bar.left},${bar.top} ${bar.width}x${bar.height}`,
+            app: document.querySelector("[data-k2-workspace]")!.getBoundingClientRect().top,
+            title: document.querySelector(".ui-v2-phonebar__title")!.textContent,
+          };
+        });
+        expect(found).toEqual({ bar: "0,0 390x52", app: 52, title });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
 });

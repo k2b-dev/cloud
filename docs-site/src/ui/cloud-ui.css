@@ -113,10 +113,46 @@
   min-height: 0;
   display: flex;
 }
+/* the platform's bar on the phone, as the mockup draws it (a picture of the shell, not part of v2) */
+.ui-v2-phonebar {
+  display: none;
+}
 @media (max-width: 767px) {
   .ui-v2-screen {
     padding: 52px 0 0;
     background: var(--k2-surface);
+  }
+  .ui-v2-phonebar {
+    position: absolute;
+    inset: 0 0 auto;
+    box-sizing: border-box;
+    height: var(--k2-h-status);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 16px;
+    border-bottom: var(--k2-hairline);
+    color: var(--k2-text);
+  }
+  .ui-v2-phonebar .ti {
+    font-size: 16px;
+    line-height: 1;
+  }
+  .ui-v2-phonebar__title {
+    font: var(--k2-t-lead);
+  }
+  .ui-v2-phonebar__muted {
+    color: var(--k2-muted);
+  }
+  .ui-v2-phonebar__fill {
+    flex: 1;
+  }
+  .ui-v2-phonebar__button {
+    width: var(--k2-h-control);
+    height: var(--k2-h-control);
+    display: grid;
+    place-items: center;
+    color: var(--k2-muted);
   }
 }
 .ui-v2-inspect-toggle {
@@ -178,10 +214,22 @@
 }
 .ui-v2-composer__top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
   min-height: var(--k2-h-bar);
   padding: 4px 11px 0;
+}
+.ui-v2-composer__part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* one line of parts is the bar's 40 px with the 4 px above */
+  min-height: calc(var(--k2-h-bar) - 4px);
+  white-space: nowrap;
+}
+.ui-v2-composer__from {
+  margin-left: auto;
 }
 .ui-v2-composer .ti {
   font-size: 16px;
@@ -190,7 +238,7 @@
 .ui-v2-composer__text .ti {
   font-size: 14px;
 }
-.ui-v2-composer__top > .ti,
+.ui-v2-composer__part > .ti,
 .ui-v2-composer__tool {
   color: var(--k2-muted);
 }
