@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
+import { measureV2Layout } from "./testing";
 import { hairline, heights, textEdge } from "./tokens";
 
 // The primitives rendered on the server and hydrated in the browser, as a page with islands that hydrate would: the

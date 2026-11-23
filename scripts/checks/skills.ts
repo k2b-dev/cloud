@@ -4,6 +4,38 @@ import { isDirectory } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const expectedSkills = ["cloud-cli", "ssr", "stdlib"] as const;
+/** Skills a package ships in its npm tarball, in the same version as the code they describe. */
+const packageSkills = [{ name: "k2b-ui", dir: "packages/ui/skills/k2b-ui" }] as const;
+
+/** Every recipe of a package skill is listed in references/recipes.md and has its picture at 1440 and 390 px. */
+const recipeFindings = (skillDir: string): Finding[] => {
+  const recipesDir = join(skillDir, "recipes");
+  if (!isDirectory(recipesDir)) return [];
+  const index = join(skillDir, "references", "recipes.md");
+  const listed = existsSync(index) ? readFileSync(index, "utf8") : "";
+  const findings: Finding[] = [];
+  const recipes = readdirSync(recipesDir).filter((name) => name.endsWith(".tsx"));
+  // A picture or a description without its recipe teaches a screen that no longer exists.
+  const imagesDir = join(skillDir, "images");
+  for (const image of isDirectory(imagesDir) ? readdirSync(imagesDir) : [])
+    if (!recipes.includes(`${image.replace(/-\d+\.png$/, "")}.tsx`))
+      findings.push({ file: join(imagesDir, image), message: "Picture has no recipe in recipes/; delete it or add the recipe." });
+  for (const match of listed.matchAll(/^## ([\w-]+\.tsx)/gm))
+    if (!recipes.includes(match[1]!))
+      findings.push({ file: index, message: `references/recipes.md describes ${match[1]}, which is not in recipes/.` });
+  for (const entry of recipes) {
+    const name = entry.replace(/\.tsx$/, "");
+    if (!listed.includes(`## ${entry}`))
+      findings.push({ file: join(recipesDir, entry), message: "Recipe is not described in references/recipes.md." });
+    for (const width of [1440, 390])
+      if (!existsSync(join(skillDir, "images", `${name}-${width}.png`)))
+        findings.push({
+          file: join(recipesDir, entry),
+          message: `Recipe has no picture images/${name}-${width}.png; draw it with packages/ui/scripts/v2-preview.ts --png.`,
+        });
+  }
+  return findings;
+};
 
 /** Keep repository skills as compact routers to their bundled references. */
 const MAX_SKILL_LINES = 260;
@@ -159,8 +191,15 @@ export const rule: Rule = {
       }
     }
 
-    for (const skill of expectedSkills) {
-      const skillDir = join(skillsRoot, skill);
+    const checked = [
+      ...expectedSkills.map((skill) => ({ skill: skill as string, skillDir: join(skillsRoot, skill) })),
+      ...packageSkills.map(({ name, dir }) => ({ skill: name as string, skillDir: join(workspaceRoot, dir) })),
+    ];
+    for (const { skillDir } of checked.slice(expectedSkills.length))
+      if (!isDirectory(skillDir)) violations.push({ file: skillDir, message: "Expected package skill folder is missing." });
+      else violations.push(...recipeFindings(skillDir));
+
+    for (const { skill, skillDir } of checked) {
       if (!isDirectory(skillDir)) continue;
 
       const skillMd = join(skillDir, "SKILL.md");

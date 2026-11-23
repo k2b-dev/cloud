@@ -228,11 +228,17 @@ export const rule: Rule = {
 
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.
-    const uiCustomProperties = new Set(
-      readCssFiles(uiStylesRoot).flatMap((file) =>
-        [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
-      ),
-    );
+    const declaredIn = (files: string[]) =>
+      new Set(
+        files.flatMap((file) =>
+          [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
+        ),
+      );
+    const uiCustomProperties = declaredIn(readCssFiles(uiStylesRoot));
+    // @k2b/ui v2 keeps its tokens beside its primitives (`src/v2/v2.css`). Only Cloud's shared stylesheets may read
+    // them, to hand a v2 page its app colour; an app builds v2 with the primitives and reads no v2 token itself.
+    const uiV2CustomProperties = declaredIn(readCssFiles(join(packagesRoot, "ui", "src", "v2")));
+    const shared = new Set(sharedStylesheets);
 
     // The UI workspace controller owns these at runtime: it writes the saved and resized widths inline on each
     // workspace. Applications may each give their own workspace a different starting width below that.
@@ -272,6 +278,14 @@ export const rule: Rule = {
       "--cloud-blocks-image-ratio", // blocks/BlockTree.tsx: the place an Image block declares with its ratio
     ]);
     for (const [property, consumers] of customPropertyReferences) {
+      if (property.startsWith("--k2-")) {
+        for (const consumer of consumers)
+          if (!shared.has(consumer))
+            report(consumer, `${property} is a @k2b/ui v2 token; only Cloud's shared stylesheets read it, an app uses the v2 primitives`);
+        if (!uiV2CustomProperties.has(property) && !customPropertyOwners.has(property))
+          report([...consumers][0]!, `${property} is referenced but has no CSS or documented runtime owner`);
+        continue;
+      }
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;
       if (runtimePropertyPrefixes.some((prefix) => property.startsWith(prefix))) continue;
       if (componentRuntimeProperties.has(property)) continue;
