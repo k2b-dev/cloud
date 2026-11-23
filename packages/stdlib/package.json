@@ -40,8 +40,8 @@
     "dayjs": "1.11.23"
   },
   "peerDependencies": {
-    "solid-js": "",
-    "lean-qr": "",
+    "solid-js": "^1.9.0",
+    "lean-qr": "^2.7.0",
     "zod": "^4.4.3",
     "ibantools": "^4.5.4",
     "libxml2-wasm": "0.6.0",
