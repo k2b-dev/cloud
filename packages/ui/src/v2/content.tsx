@@ -280,7 +280,7 @@ const TableInPlace = <T,>(props: TableProps<T>) => {
   const sized = () => props.columns.some((column) => column.width);
   return (
     <div class="k2-table-scroll" data-k2-part="Table" data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}>
-      <table class="k2-table" data-lines={lines()} aria-label={props.label}>
+      <table class="k2-table" data-lines={lines()} data-sized={sized() ? "" : undefined} aria-label={props.label}>
         <Show when={sized()}>
           <colgroup>
             {/* every column is its default wide; the last one takes the rest of the row, so the lines reach the edge */}
@@ -320,17 +320,20 @@ const TableInPlace = <T,>(props: TableProps<T>) => {
                 <For each={row}>
                   {(value, index) => {
                     const column = props.columns[index()]!;
-                    const line = (content: JSX.Element, first: boolean) =>
-                      typeof content === "string" || typeof content === "number" || !first ? (
-                        <span class="k2-cell-line" data-wrap={first && column.wrap ? "" : undefined}>
-                          {content}
-                        </span>
-                      ) : (
-                        content
-                      );
+                    // A line of text in its own block (cut or wrapped); a single mark such as a chip stands as it is.
+                    const line = (content: JSX.Element, second = false) => (
+                      <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
+                        {content}
+                      </span>
+                    );
+                    const single = value as JSX.Element;
                     return (
                       <td data-align={column.align} data-drop={column.drop ? "" : undefined}>
-                        {isPair(value) ? [line(value[0], true), line(value[1], false)] : line(value as JSX.Element, true)}
+                        {isPair(value)
+                          ? [line(value[0]), line(value[1], true)]
+                          : typeof single === "string" || typeof single === "number"
+                            ? line(single)
+                            : single}
                       </td>
                     );
                   }}

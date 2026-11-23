@@ -888,13 +888,12 @@
   align-items: baseline;
   gap: 8px;
 }
+/* the title wraps (it is what the row is about); the quiet note after it is cut */
 .k2-ui .k2-row-title {
   font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   flex: 0 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-row-l1 > .k2-row-meta {
   font: var(--k2-t-meta);
@@ -1087,18 +1086,25 @@
 .k2-ui .k2-table tr:last-child td {
   border-bottom: 0;
 }
+/* A small table (in a group, on a record) wraps its text like the mockup; a table with column widths keeps one line
+   and cuts with "…" (variant a): cut text never widens its column. */
 .k2-ui .k2-table td > .k2-cell-line {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-table[data-sized] td > .k2-cell-line {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: normal;
   contain: inline-size;
 }
-.k2-ui .k2-table td > .k2-cell-line + .k2-cell-line {
+.k2-ui .k2-table td > .k2-cell-line[data-second] {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-table td > .k2-cell-line[data-wrap] {
+.k2-ui .k2-table[data-sized] td > .k2-cell-line[data-wrap] {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
