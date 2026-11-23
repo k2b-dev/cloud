@@ -93,6 +93,34 @@ stylesheet with the same tokens: semantic elements look like the components in
 light and dark, without classes or JavaScript. See the
 [Base stylesheet](https://cloud.k2b.dev/en/ui/surfaces/base-stylesheet) guide.
 
+## v2 (provisional)
+
+`@k2b/ui/v2` is the next generation of the library, built beside v1. It is
+**provisional until the maintainer approves it**: names, props, and styles may
+change in any release until then.
+
+```ts
+import "@k2b/ui/v2.css";
+import { typeRoles } from "@k2b/ui/v2";
+```
+
+- Styles stay inside `.k2-ui`, with classes named `k2-*` and custom
+  properties named `--k2-*`. A page can load `styles.css` (v1, `.k2b-ui`) and
+  `v2.css` side by side.
+- Text uses four roles: meta 12/16, row 13/20, body 14/20, and lead 18/24,
+  with the weights 400, 500, and 600.
+- There is one hairline. Radii belong to controls, marks, and overlays;
+  structure is square.
+- Text starts 20 px from the column edge (16 px below 768 px), or 24 px
+  further in after an icon.
+- For dark mode, put `.k2-ui` inside `.dark`, or set `data-theme="dark"` on
+  the scope.
+
+Primitives own spacing, lines, and type. They take no `class`, `style`,
+`size`, or `gap`, and an application adds no layout CSS of its own; free
+drawing belongs in `Canvas`. See
+[UI v2 rules](https://cloud.k2b.dev/en/ui/v2/rules).
+
 ## Documentation
 
 - [Getting started and SSR setup](https://cloud.k2b.dev/en/ui/getting-started)

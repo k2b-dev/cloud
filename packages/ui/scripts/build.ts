@@ -157,6 +157,8 @@ await buildTablerPreset(dist);
 
 // The classless page stylesheet ships as written: it targets current engines and stays readable.
 await copyFile(resolve(root, "src/base/base.css"), resolve(dist, "base.css"));
+// v2 (provisional) ships as written too: plain CSS in its own namespace, loaded beside the v1 sheet.
+await copyFile(resolve(root, "src/v2/v2.css"), resolve(dist, "v2.css"));
 
 await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "./plex.css";\n@import "./tabler.css";\n');
 
