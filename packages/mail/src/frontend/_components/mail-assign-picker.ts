@@ -1,4 +1,4 @@
-import { isAgentServiceAccountKind } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts/service-account-kinds";
 import { openSpotlightSearch, type PromptSearchItem, useLocale } from "@k2b/ui";
 import { apiClient } from "../../api/client";
 import type { MailAssignableUser } from "../../service/collaboration";

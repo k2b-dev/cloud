@@ -1,4 +1,4 @@
-import { isAgentServiceAccountKind } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts/service-account-kinds";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,

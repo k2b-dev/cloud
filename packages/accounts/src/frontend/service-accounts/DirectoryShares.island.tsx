@@ -1,6 +1,7 @@
 import { PrincipalPicker } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
-import { isAgentServiceAccountKind, type Principal } from "@k2b/cloud/contracts";
+import type { Principal } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind } from "@k2b/cloud/contracts/service-account-kinds";
 import { principalLabel } from "@k2b/cloud/shared";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
