@@ -147,12 +147,37 @@
   .ui-v2-phonebar__fill {
     flex: 1;
   }
+  .ui-v2-phonebar__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
   .ui-v2-phonebar__button {
     width: var(--k2-h-control);
     height: var(--k2-h-control);
     display: grid;
     place-items: center;
     color: var(--k2-muted);
+  }
+  /* What the Cloud shell does: while an open detail brings its way back (the part `Back`), that way back takes the
+     place of the app's name in the phone bar. The app moves up into the bar's row, the bar keeps only search and more
+     (it lies above, as a picture), and the real, focusable `Back` stands at the name's place. */
+  .ui-v2-screen:has([data-k2-part="Back"]) {
+    padding-top: 0;
+  }
+  .ui-v2-screen:has([data-k2-part="Back"]) .ui-v2-phonebar {
+    z-index: 1;
+    border-bottom: 0;
+    pointer-events: none;
+  }
+  .ui-v2-screen:has([data-k2-part="Back"]) .ui-v2-phonebar__name {
+    visibility: hidden;
+  }
+  .ui-v2-screen [data-k2-part="Back"] {
+    height: var(--k2-h-status);
+    /* room for search and more on the right */
+    padding-right: calc(12px + 2 * var(--k2-h-control) + 8px);
   }
 }
 .ui-v2-inspect-toggle {
