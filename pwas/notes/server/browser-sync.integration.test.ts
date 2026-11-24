@@ -11,6 +11,26 @@ import { NotesStore } from "./store";
 
 const NOW = new Date("2026-10-30T12:00:00Z");
 
+/**
+ * Pins only the page's `Date` to the test instant; timers keep running. Playwright's `clock` would also fake the
+ * timers and replay its log against the time of this process, which `setSystemTime` fakes: 2^31 ms after NOW the
+ * page's timers stop firing and the provider never reconnects (#4099).
+ */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now();
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(RealDate.now() + offset);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 databaseSuite()("Notes browser provider against durable server", () => {
   let database: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let runtime: Awaited<ReturnType<typeof serveNotes>>;
@@ -73,10 +93,10 @@ databaseSuite()("Notes browser provider against durable server", () => {
   const open = async (link: string, client: number, role = "edit") => {
     const context = await browser.newContext({ serviceWorkers: "block" });
     contexts.push(context);
+    await context.addInitScript(pinPageClock, NOW.getTime());
     const page = await context.newPage();
     errors.push(pageErrors(page));
     page.setDefaultTimeout(5_000);
-    await page.clock.setFixedTime(NOW);
     await page.goto(`${options.origin}/client?link=${link}&client=${client}&role=${role}`);
     await live(page);
     return { page, context };
