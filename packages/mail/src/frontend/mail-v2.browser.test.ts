@@ -279,8 +279,7 @@ describe("Mail on the v2 pilot in its live states", () => {
     }
   };
   test("selection mode in the list at 1280 px keeps the v2 layout", () => selectionKeepsLayout(1280), 60_000);
-  // The same 1024 px gap as below: the measure now names it ("Neue Nachricht" cut in the head's Bar).
-  test.failing("selection mode in the list at 1024 px keeps the v2 layout", () => selectionKeepsLayout(1024), 60_000);
+  test("selection mode in the list at 1024 px keeps the v2 layout", () => selectionKeepsLayout(1024), 60_000);
 
   /**
    * What a narrow place cuts: a button or tab past the edge of its column, and a first line of a list row that wraps
@@ -322,9 +321,9 @@ describe("Mail on the v2 pilot in its live states", () => {
     expect(await cutAt(1440, true)).toEqual([]);
   }, 60_000);
 
-  // Known gap of the primitives (lane C, 23.11.); it turns red once the primitives handle it: then make it a plain
-  // test. Bar and Row at 1024 px: the head's end runs past the card, and a row's first line wraps instead of "…".
-  test.failing("at 1024 px nothing is cut (Bar and Row gaps)", async () => {
+  // At 1024 px the head's tabs give way to its actions (the Bar's end keeps its room), and a row's first line ends in
+  // "…" before its note (#4083).
+  test("at 1024 px nothing is cut: the head's actions keep their room, every row's first line on one line", async () => {
     expect(await cutAt(1024, false)).toEqual([]);
   }, 60_000);
 });
