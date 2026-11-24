@@ -59,9 +59,7 @@ export default function FormScreen() {
           }
           end={
             <>
-              <Button onClick={() => setDiscard(true)}>
-                Abbrechen
-              </Button>
+              <Button onClick={() => setDiscard(true)}>Abbrechen</Button>
               <Button variant="primary" icon="check" disabled={quantityError() !== undefined}>
                 Auftrag anlegen
               </Button>
