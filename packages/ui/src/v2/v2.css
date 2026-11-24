@@ -213,7 +213,7 @@
   overflow-wrap: anywhere;
 }
 .k2-ui > .k2-text,
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body) > .k2-text {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body, .k2-pop-body) > .k2-text {
   display: block;
   padding-inline: var(--k2-edge);
 }
@@ -1558,7 +1558,7 @@
 .k2-ui .k2-inline > * {
   flex: none;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
@@ -1874,7 +1874,7 @@
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > :is(.k2-choice, .k2-choices) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-input {
@@ -1959,11 +1959,11 @@
   row-gap: 4px;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-field {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-input {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
   margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {

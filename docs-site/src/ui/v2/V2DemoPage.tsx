@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
@@ -70,6 +71,15 @@ export const v2Screens = {
     app: "#047857",
     phone: { back: "Aufträge" },
     render: () => <FormScreen />,
+  },
+  menus: {
+    title: "Menü · Popover · Toast",
+    description:
+      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view settings toggle in a menu, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
+    mockup: "index.html (Menu · Popover · Toast), 07-formular-menue",
+    app: "#047857",
+    phone: { back: "Aufträge" },
+    render: () => <MenusScreen />,
   },
 } satisfies Record<string, V2Screen>;
 

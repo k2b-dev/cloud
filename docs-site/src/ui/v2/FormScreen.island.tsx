@@ -7,6 +7,7 @@ import {
   Dialog,
   Field,
   Input,
+  Menu,
   Nav,
   Notice,
   Pane,
@@ -14,16 +15,19 @@ import {
   Section,
   Select,
   Text,
+  useToast,
   Workspace,
 } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // A realistic form with the controls of @k2b/ui/v2: a new order in Grids. Fields share one grid, errors stand at the
-// field, and "Abbrechen" asks in a dialog before the order is discarded (a sheet on a phone). Only primitives; an island
-// so the controls answer. The menu, the open list of a selection and the toast that answers the main action follow.
+// field, and "Abbrechen" asks in a dialog before the order is discarded (a sheet on a phone). More deeds wait behind
+// "…" (Verwerfen in red after a line), and a toast with "Rückgängig" answers the main action. Only primitives; an
+// island so the controls answer. The open list of a selection follows.
 
 export default function FormScreen() {
   const [discard, setDiscard] = createSignal(false);
+  const toast = useToast();
   const [quantity, setQuantity] = createSignal("0");
   const [notify, setNotify] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
@@ -59,8 +63,23 @@ export default function FormScreen() {
           }
           end={
             <>
+              <Menu
+                label="Weitere Aktionen"
+                items={[
+                  { label: "Als Vorlage speichern", icon: "template" },
+                  { label: "Auftrag duplizieren", icon: "copy" },
+                  { label: "Verwerfen", icon: "trash", danger: true, onClick: () => setDiscard(true) },
+                ]}
+              />
               <Button onClick={() => setDiscard(true)}>Abbrechen</Button>
-              <Button variant="primary" icon="check" disabled={quantityError() !== undefined}>
+              <Button
+                variant="primary"
+                icon="check"
+                disabled={quantityError() !== undefined}
+                onClick={() =>
+                  toast("Auftrag „Einbauschrank Flur“ angelegt", { status: "ok", undo: () => toast("Auftrag wieder entfernt") })
+                }
+              >
                 Auftrag anlegen
               </Button>
             </>
