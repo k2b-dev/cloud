@@ -1,11 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import ts from "@typescript/typescript6";
 import { listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const BASELINE = "scripts/checks/test-clock.baseline";
 const testClockFiles = /\.(?:browser|behavior|render)\.test\.tsx?$|[.-]browser-(?:fixture|harness|suite)\.tsx?$|^browser-harness\.tsx?$/;
+/** Integration tests may read the real clock, but those that drive a browser pin it like UI tests (#4099). */
+const integrationTestFiles = /\.integration\.test\.tsx?$/;
 const message =
   "Use a fixed date (a fixture constant, bun:test setSystemTime, or a page init script that pins Date), performance.now() for durations, or // real clock: <reason>.";
 
@@ -14,8 +16,11 @@ const listenerMessage =
 const playwrightClockMessage =
   "Playwright's clock.setFixedTime/setSystemTime also installs its fake clock (timers, animation frames, performance); pin only Date with a page script (see pinPageClock in packages/chat/src/frontend/ChatWorkspace.browser.test.ts), or add // playwright clock: <reason> when fake timers are the subject of the test.";
 
-/** Keep strings for clock reads in page scripts; Playwright pins must be in real code. Preserve positions and line numbers. */
-export const checkTestClockSource = (file: string, source: string): Finding[] => {
+/**
+ * Keep strings for clock reads in page scripts; Playwright pins must be in real code. Preserve positions and line numbers.
+ * `pinsOnly` checks only Playwright pins, for integration tests that may read the real clock.
+ */
+export const checkTestClockSource = (file: string, source: string, { pinsOnly = false } = {}): Finding[] => {
   const optOuts = new Set<number>();
   const code = source.replace(
     /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g,
@@ -39,12 +44,14 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
     }
     return { start, end: code.length };
   });
-  const reads = [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\b(?:Date|performance)\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
-    const listener = listeners.some(({ start, end }) => match.index >= start && match.index < end);
-    if (!listener && match[0].startsWith("performance")) return [];
-    const line = code.slice(0, match.index).split("\n").length;
-    return optOuts.has(line) || optOuts.has(line - 1) ? [] : [{ file, line, message: listener ? listenerMessage : message }];
-  });
+  const reads = pinsOnly
+    ? []
+    : [...code.matchAll(/\bnew\s+Date\s*\(\s*\)|\b(?:Date|performance)\s*\.\s*now\s*\(\s*\)/g)].flatMap((match) => {
+        const listener = listeners.some(({ start, end }) => match.index >= start && match.index < end);
+        if (!listener && match[0].startsWith("performance")) return [];
+        const line = code.slice(0, match.index).split("\n").length;
+        return optOuts.has(line) || optOuts.has(line - 1) ? [] : [{ file, line, message: listener ? listenerMessage : message }];
+      });
   if (!source.includes("clock")) return reads;
   // Parse literals so quotes inside regexes cannot swallow later code or turn strings into opt-outs.
   const playwrightChars = source.split("");
@@ -69,11 +76,15 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
   return [...reads, ...pins, ...unparsed];
 };
 
+const checkedFiles = new RegExp(`${testClockFiles.source}|${integrationTestFiles.source}`);
+
 export const collectTestClockFindings = (workspaceRoot: string): Finding[] =>
   ["packages", "pwas", "docs-site/src"]
-    .flatMap((root) => listFiles(join(workspaceRoot, root), testClockFiles))
+    .flatMap((root) => listFiles(join(workspaceRoot, root), checkedFiles))
     .sort()
-    .flatMap((file) => checkTestClockSource(relative(workspaceRoot, file), readFileSync(file, "utf8")));
+    .flatMap((file) =>
+      checkTestClockSource(relative(workspaceRoot, file), readFileSync(file, "utf8"), { pinsOnly: !testClockFiles.test(basename(file)) }),
+    );
 
 const BASELINE_HEADER = [
   "# Known test-clock findings, one per file: <file> | <count>.",
