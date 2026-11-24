@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
-import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-access.client";
+import { bundleV2Entry } from "../../test/v2-bundle";
 import { measureV2Layout } from "./testing";
 
 // What the agent page of Accounts asked of the primitives (#4110), in the browser: an avatar's picture over its
@@ -35,7 +35,9 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     // the pictures are addresses of their own: they load or fail at once
-    await page.waitForFunction(() => [...document.querySelectorAll(".k2-av[data-image]")].every((av) => av.getAttribute("data-image") !== ""));
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-av[data-image]")].every((av) => av.getAttribute("data-image") !== ""),
+    );
     await settled(page);
     await run(page);
     expect(errors).toEqual([]);
@@ -63,7 +65,7 @@ test("an avatar shows its picture over its initials in the same place, and its i
       };
       return {
         head: look(document.querySelector('[data-slot="head"] .k2-av')!),
-        failed: look(document.querySelector('.k2-pane[data-side] > .k2-scroll > .k2-bar .k2-av')!),
+        failed: look(document.querySelector(".k2-pane[data-side] > .k2-scroll > .k2-bar .k2-av")!),
         row: look(document.querySelector(".k2-pane[data-side] .k2-row .k2-av")!),
       };
     });
@@ -151,7 +153,7 @@ test("a busy button keeps its width, its name and the focus, and takes no second
 test("disabled fields, options and the deed of a notice look off and take no input", async () => {
   await withPage(async (page) => {
     const found = await page.evaluate(() => {
-      const input = document.querySelector<HTMLInputElement>('.k2-input[data-disabled] > input')!;
+      const input = document.querySelector<HTMLInputElement>(".k2-input[data-disabled] > input")!;
       const radios = [...document.querySelectorAll<HTMLInputElement>('[data-k2-part="Choice"] input')];
       const check = document.querySelector<HTMLInputElement>('[data-k2-part="Check"] input')!;
       return {
@@ -175,10 +177,11 @@ test("disabled fields, options and the deed of a notice look off and take no inp
     await page.locator('[data-k2-part="Choice"] .k2-choice').last().click({ force: true });
     await settled(page);
     expect((await counts(page)).resume).toBe(0);
-    expect(await page.locator('[data-k2-part="Choice"] input').evaluateAll((radios) => radios.map((radio) => (radio as HTMLInputElement).checked))).toEqual([
-      true,
-      false,
-    ]);
+    expect(
+      await page
+        .locator('[data-k2-part="Choice"] input')
+        .evaluateAll((radios) => radios.map((radio) => (radio as HTMLInputElement).checked)),
+    ).toEqual([true, false]);
   });
 });
 
