@@ -202,9 +202,8 @@ test("an open detail's way back takes the title's place in the phone bar; search
   }
 }, 30_000);
 
-// Known gap of @k2b/ui v2 (lane C builds it, 24.11.): the text button of `Back` does not end a long name in "…" but
-// runs past its bar, on any page. It turns red once `Back` shortens its name: then make it a plain test.
-test.failing("a long list name ends before the bar's controls", async () => {
+// `Back` ends a long name in "…" within its bar (#4088), so the name stops before the bar's controls.
+test("a long list name ends before the bar's controls", async () => {
   const page = await open({ list: "Suchergebnisse für Eichenplatten aus dem Lager Nord" });
   try {
     expect(await barRow(page)).toEqual([
