@@ -44,6 +44,17 @@ export const startMailV2Server = async (options: { port?: number; hostname?: str
   );
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail v2 CSS failed");
   const css = (await Promise.all(builds.flatMap((build) => build.outputs.map((output) => output.text())))).join("\n");
+  // Cloud's shell runtime owns history as on a real page (ShellRuntime): back and forward restore each list's place.
+  const shellEntry = join(root, "shell.ts");
+  const shellBuild = await Bun.build({
+    entrypoints: [shellEntry],
+    files: { [shellEntry]: 'import { installPageSwap } from "@k2b/ssr/nav"; installPageSwap();' },
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+  });
+  if (!shellBuild.success) throw new AggregateError(shellBuild.logs, "Mail v2 shell failed");
+  const shell = await shellBuild.outputs[0]!.text();
   const now = options.now ?? Date.now;
   const subscriptions = new Set<{ socket: { send(data: string): unknown }; id: string }>();
   let arrived = 0;
@@ -68,7 +79,7 @@ export const startMailV2Server = async (options: { port?: number; hostname?: str
   const page = (url: URL) => {
     const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
     const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, now: now() }));
-    return `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mail v2</title><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-v2.css"><style>${frame}</style></head><body class="k2b-ui app-accent-scope" data-theme="light" style="${appAccentStyle("#0f766e")}"><div class="v2-shell"><main class="k2-ui">${html}</main></div><script type="module">
+    return `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mail v2</title><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-v2.css"><style>${frame}</style><script src="/mail-v2-shell.js"></script></head><body class="k2b-ui app-accent-scope" data-theme="light" style="${appAccentStyle("#0f766e")}"><div class="v2-shell"><main class="k2-ui">${html}</main></div><script type="module">
 await document.fonts.ready;
 await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));
 await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -83,6 +94,7 @@ document.documentElement.dataset.mailV2Ready='true';
       const url = new URL(request.url);
       if (url.pathname === "/api/mail/live" && host.upgrade(request, { data: undefined })) return;
       if (url.pathname === "/mail-v2.css") return new Response(css, { headers: { "content-type": "text/css" } });
+      if (url.pathname === "/mail-v2-shell.js") return new Response(shell, { headers: { "content-type": "text/javascript" } });
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {

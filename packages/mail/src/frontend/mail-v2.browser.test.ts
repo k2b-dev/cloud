@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
-import { measureV2Layout } from "../../../ui/test/measure-v2-layout";
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
 
 // Mail's mailbox on the @k2b/ui v2 pilot: the real island and controller with the mockup's data. The boxes of its
@@ -120,6 +120,55 @@ describe("Mail on the v2 pilot", () => {
       await page.keyboard.press("Enter");
       await page.waitForURL(/conversation=Demo02/);
       expect(await row(page, "Jonas Hartwig").getAttribute("aria-current")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // As in v1's mail shell: each mailbox's list keeps its own place in history (the list's `scrollKey`), in place.
+  test("back and forward bring each mailbox's list back where it was", async () => {
+    const page = await open(MAIL_V2_PATH, 1440, 560);
+    try {
+      await page.evaluate(() => Object.assign(window, { stayed: true }));
+      const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
+      const position = () => list.evaluate((element) => element.scrollTop);
+      const scrollTo = async (y: number) => {
+        await list.evaluate((element, y) => {
+          element.scrollTop = y;
+        }, y);
+        await settled(page);
+        expect(await position(), "the list really scrolls").toBe(y);
+      };
+      await scrollTo(120);
+      await page.locator('[data-k2-part="Nav.Item"][href="/app/mail/Box002"]').click();
+      await page.waitForURL(/\/app\/mail\/Box002$/);
+      await settled(page);
+      expect(await position(), "another mailbox starts at its list's top").toBe(0);
+      await scrollTo(60);
+      await page.goBack();
+      await page.waitForURL(/\/app\/mail\/Box001$/);
+      await settled(page);
+      expect(await position(), "Back restores the first mailbox's place").toBe(120);
+      await page.goForward();
+      await page.waitForURL(/\/app\/mail\/Box002$/);
+      await settled(page);
+      expect(await position(), "Forward restores the second mailbox's place").toBe(60);
+      expect(await page.evaluate(() => "stayed" in window)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("on the phone the reader's way back names the list and returns to its row", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
+    try {
+      // The way back is named by the list's title, which the server sends (the fixture's is "All mail").
+      const back = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "All mail", exact: true });
+      await back.waitFor();
+      await back.click();
+      await page.waitForURL((url) => !url.searchParams.has("conversation"));
+      await row(page, "Holzwerk Brandt").waitFor();
+      expect(await focusedRow(page)).toContain("Holzwerk Brandt");
     } finally {
       await page.close();
     }
@@ -264,14 +313,13 @@ describe("Mail on the v2 pilot in its live states", () => {
     expect(await cutAt(1440, false)).toEqual([]);
   }, 60_000);
 
-  // Known gaps of the primitives (lane C, 23.11.). Each case turns red once the primitive handles it: then make it a
-  // plain test.
-  // StatusRow: in the list column the selection's actions run past its edge; they should turn into icons, then "…",
-  // by the column's width.
-  test.failing("the selection's actions fit the list column (StatusRow gap)", async () => {
+  // The StatusRow turns its selection's actions into icons, then "…", by the column's width (#4077).
+  test("with a selection the selection's actions fit the list column", async () => {
     expect(await cutAt(1440, true)).toEqual([]);
   }, 60_000);
-  // Bar and Row at 1024 px: the head's end runs past the card, and a row's first line wraps instead of ending in "…".
+
+  // Known gap of the primitives (lane C, 23.11.); it turns red once the primitives handle it: then make it a plain
+  // test. Bar and Row at 1024 px: the head's end runs past the card, and a row's first line wraps instead of "…".
   test.failing("at 1024 px nothing is cut (Bar and Row gaps)", async () => {
     expect(await cutAt(1024, false)).toEqual([]);
   }, 60_000);

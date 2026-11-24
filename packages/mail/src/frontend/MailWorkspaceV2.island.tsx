@@ -1,7 +1,7 @@
 import { mergeProps } from "solid-js";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
-import MailWorkspaceV2, { createMailV2Dom, linkNavigation } from "./_components/v2/MailWorkspaceV2";
+import MailWorkspaceV2, { createMailV2Dom } from "./_components/v2/MailWorkspaceV2";
 import { createMailboxSessions, MailboxComposeWindows, type MailWorkspaceProps, useMailboxController } from "./mail-workspace";
 
 /**
@@ -36,7 +36,7 @@ export default function MailWorkspacePilot(props: MailWorkspaceProps) {
             mailboxes: props.sidebar.mailboxes,
             preferences: mailboxPreferences,
             rows: v2.rows,
-            openMailbox: (url, event) => switchMailbox(url, linkNavigation(url, event)),
+            openMailbox: (nav) => switchMailbox(nav.url, nav),
           }}
           session={{
             currentUserId: props.currentUserId,

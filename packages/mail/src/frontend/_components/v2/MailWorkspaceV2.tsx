@@ -1,15 +1,8 @@
-import {
-  captureScroll,
-  documentNavigate,
-  type EnhancedNavigateOptions,
-  type LinkNavigateEvent,
-  navigate,
-  restoreScroll,
-} from "@k2b/ssr/nav";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { announce, useLocale } from "@k2b/ui";
-import { Bar, Button, Input, Nav, type NavItem, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
-import { type Accessor, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Bar, Button, Input, Nav, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
@@ -18,14 +11,7 @@ import { buildVisibleMailFolderTree, flattenMailFolderTree } from "../mail-folde
 import { mailListRowKey } from "../mail-list-projection";
 import type { MailboxPreferences } from "../mail-mailbox-preferences";
 import { orderMailboxes } from "../mail-mailbox-preferences";
-import {
-  buildMailListHref,
-  buildMailSearchHref,
-  buildMailSelectionHref,
-  isMailWorkspaceUrl,
-  mailRouteUrl,
-  resolveMailWorkspaceUrl,
-} from "../mail-navigation";
+import { buildMailListHref, buildMailSearchHref, buildMailSelectionHref, mailRouteUrl } from "../mail-navigation";
 import MailListV2 from "./MailListV2";
 import MailReaderV2 from "./MailReaderV2";
 import type { MailV2Session } from "./MailReplyV2";
@@ -60,6 +46,7 @@ export const createMailV2Dom = (): { dom: MailWorkspaceDom; rows: Map<string, st
         ),
       listHeading: () => document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="StatusRow"] input'),
       selectionTrigger: () => document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="StatusRow"] input'),
+      listScroller: () => document.querySelector<HTMLElement>("[data-k2-workspace] [data-scroll-preserve^='mail-list-']"),
       sideBySide: () => window.matchMedia("(min-width: 768px)").matches,
     },
   };
@@ -69,38 +56,8 @@ export type MailV2Shell = {
   mailboxes: MailSidebarMailbox[];
   preferences: MailboxPreferences;
   rows: Map<string, string>;
-  /** Opens another mailbox in place; a failed switch loads its page. */
-  openMailbox: (url: URL, event: MouseEvent) => void | Promise<void>;
-};
-
-/**
- * A plain click on a link that the island opens in place, in the shape `@k2b/ssr/nav`'s `Link` hands its handler:
- * history moves only when the island commits, and a failure loads the page. TEMPORARY: goes with the click delegation
- * below once the v2 primitives take `onNavigate`.
- */
-export const linkNavigation = (url: URL, event: MouseEvent): LinkNavigateEvent => {
-  const scrollSnapshot = captureScroll();
-  const move = (href: string, options: EnhancedNavigateOptions, replace: boolean) =>
-    navigate(href, {
-      ...options,
-      replace,
-      scroll: options.scroll ?? "preserve",
-      scrollSnapshot: options.scrollSnapshot ?? scrollSnapshot,
-      viewTransition: false,
-    });
-  return {
-    event,
-    href: `${url.pathname}${url.search}`,
-    url,
-    replace: false,
-    scroll: "preserve",
-    push: (href = url.href, options = {}) => move(href, options, false),
-    replaceWith: (href = url.href, options = {}) => move(href, options, true),
-    fallback: (href = url.href) => documentNavigate(href),
-    scrollSnapshot,
-    captureScroll,
-    restoreScroll,
-  };
+  /** Opens a mailbox in place (the shown one again at its start); a failed switch loads its page. */
+  openMailbox: OnNavigate;
 };
 
 /**
@@ -118,6 +75,21 @@ export default function MailWorkspaceV2(props: {
   const c = () => props.controller();
   const formatCount = (count: number) => count.toLocaleString(locale());
   const requestUrl = () => mailRouteUrl(c().requestPath());
+  const [search, setSearch] = createSignal(c().data.query);
+
+  // ── Links open in place ────────────────────────────────────────────────────────────────────────────────────────
+  // Rows, tabs and sidebar entries are real links (a new tab, a page before hydration); a plain click opens them in
+  // place through the same controller paths as v1's rows, tabs and sidebar.
+  const openView: OnNavigate = (nav) => c().navigateWorkspace(nav);
+  const openRow = (nav: LinkNavigateEvent, item: MailListItem) =>
+    c().navigateConversation(nav.href, item, nav.event.detail === 0 ? "keyboard" : "pointer");
+  // Enter in the head's search field searches the mailbox, as v1's search field does.
+  const searchKey = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    const query = search().trim();
+    void c().openWorkspaceHref(query ? buildMailSearchHref(requestUrl(), { q: query }) : buildMailListHref(requestUrl(), true));
+  };
 
   // ── Sidebar ────────────────────────────────────────────────────────────────────────────────────────────────────
   const navItems = createMemo((): NavItem[] => {
@@ -129,6 +101,7 @@ export default function MailWorkspaceV2(props: {
       label: mailFolderNames(locale())(folder),
       icon: folderIcon(folder.role),
       href: folder.selectable ? `/app/mail/${openId}?folder=${folder.id}` : undefined,
+      onNavigate: openView,
       nested: true,
       current: data.folderId === folder.id,
       count:
@@ -150,6 +123,7 @@ export default function MailWorkspaceV2(props: {
             label: c().sidebarText().scheduled,
             icon: "calendar-time",
             href: `/app/mail/${openId}?scheduled=1`,
+            onNavigate: openView,
             nested: true,
             current: data.scheduledMode,
             count: data.scheduledCount > 0 ? formatCount(data.scheduledCount) : undefined,
@@ -159,7 +133,7 @@ export default function MailWorkspaceV2(props: {
     const secondary = tree.filter((folder) => SECONDARY_ROLES.has(folder.role)).map(folderItem);
     const own = tree.filter((folder) => !SECONDARY_ROLES.has(folder.role) && !(PRIMARY_ROLES as readonly string[]).includes(folder.role));
     const opened: NavItem[] = [
-      { label: data.mailbox.name, icon: "mail", href: `/app/mail/${openId}`, current: atRoot },
+      { label: data.mailbox.name, icon: "mail", href: `/app/mail/${openId}`, onNavigate: props.shell.openMailbox, current: atRoot },
       ...primary.slice(0, 2),
       ...outbox,
       ...primary.slice(2),
@@ -170,7 +144,9 @@ export default function MailWorkspaceV2(props: {
     const visible = ordered.filter((mailbox) => mailbox.id === openId || !props.shell.preferences.isHidden(mailbox.id));
     if (!visible.some((mailbox) => mailbox.id === openId)) return opened;
     return visible.flatMap((mailbox) =>
-      mailbox.id === openId ? opened : [{ label: mailbox.name, icon: "mail", href: `/app/mail/${mailbox.id}` } satisfies NavItem],
+      mailbox.id === openId
+        ? opened
+        : [{ label: mailbox.name, icon: "mail", href: `/app/mail/${mailbox.id}`, onNavigate: props.shell.openMailbox } satisfies NavItem],
     );
   });
   const hiddenCount = () => props.shell.mailboxes.filter((mailbox) => props.shell.preferences.isHidden(mailbox.id)).length;
@@ -183,8 +159,10 @@ export default function MailWorkspaceV2(props: {
     const further = all.filter((tab) => !HEAD_TABS.has(tab.id));
     const openFurther = further.find((tab) => tab.id === current);
     return [
-      ...shown.map((tab) => ({ label: tab.label, count: tab.count, href: tab.href, current: tab.id === current })),
-      ...(openFurther ? [{ label: openFurther.label, count: openFurther.count, href: openFurther.href, current: true }] : []),
+      ...shown.map((tab) => ({ label: tab.label, count: tab.count, href: tab.href, onNavigate: openView, current: tab.id === current })),
+      ...(openFurther
+        ? [{ label: openFurther.label, count: openFurther.count, href: openFurther.href, onNavigate: openView, current: true }]
+        : []),
       ...(further.length > 0 ? [{ label: text().moreViews, count: `+${further.length}`, menu: true }] : []),
     ];
   });
@@ -195,19 +173,13 @@ export default function MailWorkspaceV2(props: {
     if (!c().composeStarting()) announce(c().t().preparingMessage);
     void c().startCompose({ fallback: () => window.location.assign(composeHref()), progressToast: false });
   };
-  const [search, setSearch] = createSignal(c().data.query);
 
   // ── List ───────────────────────────────────────────────────────────────────────────────────────────────────────
   const items = () => c().listView().items;
-  const rowItems = createMemo(() => {
-    const byHref = new Map<string, MailListItem>();
+  // Where each row's link points, for the controller's focus (createMailV2Dom); kept current before the rows render.
+  createComputed(() => {
     props.shell.rows.clear();
-    for (const item of items()) {
-      const href = buildMailSelectionHref(requestUrl(), item);
-      byHref.set(href, item);
-      props.shell.rows.set(mailListRowKey(item), href);
-    }
-    return byHref;
+    for (const item of items()) props.shell.rows.set(mailListRowKey(item), buildMailSelectionHref(requestUrl(), item));
   });
   const unreadCount = () => {
     const data = c().data;
@@ -218,50 +190,6 @@ export default function MailWorkspaceV2(props: {
   const selectionCount = () => c().selectedConversationIds().size;
   const selecting = () => c().canWrite() && c().selectionMode() && selectionCount() > 0;
   const runOnSelection = (actionId: "archive" | "trash") => void c().runAction(actionId);
-
-  // ── Links open in place ────────────────────────────────────────────────────────────────────────────────────────
-  // Rows, tabs and sidebar entries are real links (a new tab, a page before hydration). A plain click opens them in
-  // place, as v1's rows and tabs do.
-  // TEMPORARY (v2 pilot): this document-wide click delegation and `linkNavigation` stand in for `href` + `onNavigate`
-  // on Row, Tabs and Nav, which @k2b/ui v2 does not have yet (gap reported to lane C, 23.11.). Remove both as soon as
-  // the primitives take `onNavigate`, and hand each primitive its handler instead.
-  onMount(() => {
-    const click = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!anchor || anchor.target || !anchor.closest("[data-k2-workspace]")) return;
-      const href = anchor.getAttribute("href") ?? "";
-      const controller = c();
-      if (resolveMailWorkspaceUrl(href, controller.data.mailbox.id, window.location.origin)) {
-        event.preventDefault();
-        const item = rowItems().get(href);
-        if (item) void controller.navigateConversation(href, item, event.detail === 0 ? "keyboard" : "pointer");
-        else if (controller.hasSelection() && href === buildMailListHref(requestUrl()))
-          void controller.closeConversationAt(href, (options) => navigate(href, options));
-        else void controller.openWorkspaceHref(href);
-        return;
-      }
-      const url = new URL(href, window.location.origin);
-      if (props.shell.mailboxes.some((mailbox) => isMailWorkspaceUrl(url, mailbox.id, window.location.origin))) {
-        event.preventDefault();
-        void props.shell.openMailbox(url, event);
-      }
-    };
-    // Enter in the head's search field searches the mailbox, as v1's search field does.
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof HTMLInputElement)) return;
-      if (event.target.type !== "search" || !event.target.closest('[data-k2-workspace] [data-slot="head"]')) return;
-      event.preventDefault();
-      const query = event.target.value.trim();
-      void c().openWorkspaceHref(query ? buildMailSearchHref(requestUrl(), { q: query }) : buildMailListHref(requestUrl(), true));
-    };
-    document.addEventListener("click", click);
-    document.addEventListener("keydown", keydown);
-    onCleanup(() => {
-      document.removeEventListener("click", click);
-      document.removeEventListener("keydown", keydown);
-    });
-  });
 
   return (
     <Workspace
@@ -280,7 +208,15 @@ export default function MailWorkspaceV2(props: {
           start={<Tabs label={text().views} items={tabs()} />}
           end={
             <>
-              <Input type="search" icon="search" label={text().search} placeholder={text().search} value={search()} onInput={setSearch} />
+              <Input
+                type="search"
+                icon="search"
+                label={text().search}
+                placeholder={text().search}
+                value={search()}
+                onInput={setSearch}
+                onKeyDown={searchKey}
+              />
               <Button variant="ghost" icon="dots" label={text().moreActions} disabled />
               <Show when={c().canWrite() && !c().assignedOnly()}>
                 <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
@@ -296,6 +232,7 @@ export default function MailWorkspaceV2(props: {
         <Pane
           label={text().listWidth}
           width={c().readerOpen() ? { min: 320, default: 432 } : undefined}
+          scrollKey={`mail-list-${c().data.mailbox.id}`}
           status={
             <StatusRow
               select={
@@ -346,6 +283,7 @@ export default function MailWorkspaceV2(props: {
             assigneeNames={c().assigneeNames}
             text={text()}
             label={c().t().conversationList}
+            onOpen={openRow}
             onRetry={() => void c().refreshList()}
             onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
           />

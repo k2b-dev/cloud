@@ -1,6 +1,7 @@
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Band, Button, Chip, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
+import { Avatar, Band, Button, Chip, Empty, Failed, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import type { MailListItem } from "../../../service/workspace";
 import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
@@ -11,7 +12,7 @@ import { mailV2RowTime } from "./mail-v2-time";
 
 /**
  * The conversation list of Mail's v2 pilot: one `Row` of three lines per conversation, as in the mockup. Each row is
- * a real link to its conversation; the workspace opens it in place (see MailWorkspaceV2).
+ * a real link to its conversation, which a plain click opens in place (`onOpen`).
  */
 export default function MailListV2(props: {
   items: readonly MailListItem[];
@@ -24,6 +25,8 @@ export default function MailListV2(props: {
   assigneeNames: (userIds: readonly string[]) => string[];
   text: MailV2Text;
   label: string;
+  /** A plain click on a row opens its conversation in place; the row stays a link for a new tab. */
+  onOpen: (nav: LinkNavigateEvent, item: MailListItem) => void | Promise<void>;
   onRetry: () => void;
   onLoadMore: () => void;
 }) {
@@ -72,7 +75,8 @@ export default function MailListV2(props: {
 
   return (
     <>
-      <Show when={props.error}>
+      {/* A failed refresh keeps the rows it has and says so above them; without rows the failure takes their place. */}
+      <Show when={props.items.length > 0 ? props.error : null}>
         {(error) => (
           <Notice tone="bad" actions={[{ label: props.text.retry, onClick: props.onRetry }]}>
             {error()}
@@ -82,10 +86,8 @@ export default function MailListV2(props: {
       <Show
         when={props.items.length > 0}
         fallback={
-          <Show when={!props.error}>
-            <Band>
-              <Text muted>{props.text.empty}</Text>
-            </Band>
+          <Show when={props.error} fallback={<Empty icon="inbox" text={props.text.empty} />}>
+            {(error) => <Failed text={error()} onRetry={props.onRetry} />}
           </Show>
         }
       >
@@ -94,6 +96,7 @@ export default function MailListV2(props: {
             {(item) => (
               <Row
                 href={buildMailSelectionHref(requestUrl(), item)}
+                onNavigate={(nav) => props.onOpen(nav, item)}
                 lines={[sender(item), item.subject || t().noSubject, item.preview || " "]}
                 meta={item.selectionKind === "conversation" && item.messageCount > 1 ? String(item.messageCount) : undefined}
                 time={mailV2RowTime(item.latestMessageAt, props.dateConfig)}

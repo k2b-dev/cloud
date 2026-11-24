@@ -194,6 +194,7 @@ export default function MailReaderV2(props: {
     <Pane
       detail
       label={props.text.messageText}
+      back={{ label: data().listTitle, href: listHref(), onNavigate: (nav) => c().closeConversation(nav) }}
       head={
         <Bar
           start={<Text type="lead">{data().selectedSubject || c().t().noSubject}</Text>}
@@ -231,7 +232,14 @@ export default function MailReaderV2(props: {
                 </Show>
               </Show>
               <Button variant="ghost" icon="dots" label={props.text.moreActions} disabled />
-              <Button variant="ghost" icon="x" label={props.text.close} href={listHref()} keep />
+              <Button
+                variant="ghost"
+                icon="x"
+                label={props.text.close}
+                href={listHref()}
+                onNavigate={(nav) => c().closeConversation(nav)}
+                keep
+              />
             </>
           }
         />

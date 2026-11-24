@@ -229,6 +229,8 @@ export type MailWorkspaceDom = {
   readerHeading(): HTMLElement | null;
   listHeading(): HTMLElement | null;
   selectionTrigger(): HTMLElement | null;
+  /** The list's scrolling region; another mailbox starts at its top. */
+  listScroller(): HTMLElement | null;
   /** The list and the reader stand side by side; a phone shows one of them at a time. */
   sideBySide(): boolean;
 };
@@ -249,6 +251,7 @@ const v1WorkspaceDom: MailWorkspaceDom = {
   readerHeading: () => document.querySelector<HTMLElement>("[data-mail-reader-heading]"),
   listHeading: () => document.querySelector<HTMLElement>("[data-mail-list-heading]"),
   selectionTrigger: () => document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-trigger]"),
+  listScroller: () => document.querySelector<HTMLElement>(".mail-workspace [data-scroll-preserve^='mail-list-']"),
   sideBySide: () => Boolean(document.querySelector(".mail-workspace .mail-list-handle")?.getClientRects().length),
 };
 
@@ -3304,7 +3307,7 @@ export function useMailboxController(props: MailboxWorkspaceProps): Accessor<Mai
       () => props.session,
       (session) => {
         if (initialized) {
-          const list = document.querySelector<HTMLElement>(".mail-workspace [data-scroll-preserve^='mail-list-']");
+          const list = (props.dom ?? v1WorkspaceDom).listScroller();
           if (list) list.scrollTop = 0;
         }
         initialized = true;
