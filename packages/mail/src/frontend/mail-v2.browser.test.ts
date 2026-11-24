@@ -165,7 +165,7 @@ describe("Mail on the v2 pilot", () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
     try {
       // The way back is named by the list's title, which the server sends.
-      const back = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "Posteingang", exact: true });
+      const back = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "Alle E-Mails", exact: true });
       await back.waitFor();
       await back.click();
       await page.waitForURL((url) => !url.searchParams.has("conversation"));
