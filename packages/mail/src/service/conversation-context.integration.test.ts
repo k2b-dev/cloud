@@ -5,7 +5,7 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import { newShortId } from "../lib/short-id";
 import * as appIntegrations from "./app-integrations";
 import type { MailRequestContext } from "./auth";
-import { listRelatedConversations, listRelatedMail } from "./conversation-context";
+import { getConversationContext, listRelatedConversations, listRelatedMail } from "./conversation-context";
 import { createMailbox } from "./mailboxes";
 import { normalizeMailSubject } from "./message-threading";
 
@@ -110,6 +110,48 @@ suite("related Mail conversations", () => {
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     for (const row of access) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
     await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+  });
+
+  test("a contact app the person may not open reads as no matches; only an outage stays unavailable", async () => {
+    // Build plan 1.3: a 403 from an optional contact lookup is "no matches", never an error state.
+    const spaces = spyOn(appIntegrations, "findSpaceItemsByResource").mockResolvedValue({
+      ok: true,
+      data: { items: [], truncated: false },
+    });
+    const resolveContacts = spyOn(appIntegrations, "resolveContacts");
+    try {
+      const context = () =>
+        getConversationContext({
+          context: contextFor(owner),
+          request: {},
+          contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          mailboxId,
+          conversationId: currentConversationId,
+          query: { contactsLimit: 25 },
+        });
+      const related = () =>
+        listRelatedMail({
+          context: contextFor(owner),
+          request: {},
+          contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          mailboxId,
+          conversationId: currentConversationId,
+          bookId: "Book01",
+          contactId: "Cont01",
+          limit: 5,
+        });
+      resolveContacts.mockResolvedValue({ ok: false, code: "app_access_denied", message: "Not available to you", status: 403 });
+      const refused = await context();
+      expect(refused.ok && refused.data.contacts).toEqual({ status: "ready", items: [], matchedEmails: [], nextCursor: null });
+      expect(await related()).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+      resolveContacts.mockResolvedValue({ ok: false, code: "app_unavailable", message: "Contacts is down", status: 503 });
+      const outage = await context();
+      expect(outage.ok && outage.data.contacts.status).toBe("unavailable");
+      expect(await related()).toMatchObject({ ok: false, status: 503 });
+    } finally {
+      resolveContacts.mockRestore();
+      spaces.mockRestore();
+    }
   });
 
   test("pages related Mail timestamps with microseconds and accepts legacy millisecond cursors", async () => {

@@ -93,7 +93,7 @@ export function CreateMachineKeyDialog(props: {
               return data.items.map((account) => ({
                 value: account.id,
                 label: account.name,
-                description: account.kind === "agent" ? t().agentServiceAccount : t().standaloneServiceAccount,
+                description: t().agentServiceAccount,
               }));
             }}
           />

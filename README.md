@@ -165,6 +165,7 @@ bunx skills add github.com/k2b-dev/cloud
 - [`cloud-cli`](skills/cloud-cli/SKILL.md) — using a Cloud instance from the terminal with `cld`
 - [`ssr`](skills/ssr/SKILL.md) — building SolidJS islands apps with `@k2b/ssr`, developed in [`packages/ssr`](packages/ssr)
 - [`stdlib`](skills/stdlib/SKILL.md) — using the `@k2b/stdlib` utilities, developed in [`packages/stdlib`](packages/stdlib)
+- [`k2b-ui`](packages/ui/skills/k2b-ui/SKILL.md) — building screens with the `@k2b/ui/v2` primitives; ships inside the `@k2b/ui` package
 
 ## Contributing
 

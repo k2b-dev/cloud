@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
-import { measureV2Layout } from "../../test/measure-v2-layout";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { heights, textEdge, typeRoles } from "./tokens";
 
 // The v2 foundation measured in a browser, and the layout measurement itself proved red and green on small pages
@@ -266,7 +266,7 @@ describe("measureV2Layout", () => {
   // A head with tabs: the active tab's 2 px mark reaches 1 px below the tab box onto the head line and covers it.
   const head = (overflow: string) =>
     `<style>.head { display: flex; height: var(--k2-h-tabs); padding: 0 var(--k2-edge); border-bottom: var(--k2-hairline); font: var(--k2-t-row); }` +
-    ` .tabs { display: flex; overflow: ${overflow}; } .tab { display: flex; align-items: center; border-bottom: 2px solid var(--k2-app); margin-bottom: -1px; }</style>` +
+    ` .tabs { display: flex; overflow: ${overflow}; } .tab { display: flex; align-items: center; border-bottom: 2px solid var(--k2-app, var(--k2-blue)); margin-bottom: -1px; }</style>` +
     columns('<div class="head"><div class="tabs"><span class="tab">Inbox</span></div></div>');
 
   test(
@@ -335,6 +335,333 @@ describe("measureV2Layout", () => {
       },
       TEST_TIMEOUT,
     );
+
+  test(
+    "red: the line a Canvas draws itself is a divider like any other (here on top of a band's line)",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="band">Band</div><div data-k2-canvas data-probe="canvas" style="height:80px;border-top:var(--k2-hairline)"><div class="padded"><div class="row">Drawn</div></div></div>',
+        ),
+      );
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.double).toEqual([
+          expect.stringMatching(/^double line: div\.band border-bottom and \[data-probe="canvas"\] border-top at \d+ px over 1191 px$/),
+        ]);
+        // Inside the canvas everything stays free: the padded row's short line is not reported.
+        expect(result.edge).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // One band (rule 9): two parts told apart by spacing, or by a line between them.
+  const band = (between: string) =>
+    columns(
+      `<section class="band" data-k2-part="Band"><div style="padding-bottom:12px;${between}">Holzwerk Brandt</div><div style="padding-top:12px">Guten Tag</div></section>`,
+    );
+
+  test(
+    "green: the parts of one band are told apart by spacing; the band's own line at its end is fine",
+    async () => {
+      const page = await open(band(""));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.inside).toEqual([]);
+        expect(result.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a line between the parts of one band, 12 px from any other line, is a finding of its own",
+    async () => {
+      const page = await open(band("border-bottom:var(--k2-hairline)"));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.double).toEqual([]);
+        expect(result.inside).toEqual([
+          expect.stringMatching(/^line inside section\.band: div border-bottom at y \d+ separates parts of one thing/),
+        ]);
+        // Drawn inside the band's padding, the same line also stops short of the column edges.
+        expect(result.problems).toEqual([...result.edge, ...result.inside]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A control with too little room for its label, and the lines of v2 rows: a row of three lines cuts each line with
+  // "…" (its stylesheet does); `line` overrides that the way a broken rule would.
+  const cutPage = (room: string, line: string) =>
+    columns(
+      `<div class="row"><button type="button" class="k2-btn" data-k2-part="Button" data-probe="remind" style="${room}">Mahnung senden</button></div>` +
+        `<div class="k2-row" data-lines="3"><span class="k2-row-l1">Holzwerk Brandt</span><span class="k2-row-l2">Angebot</span>` +
+        `<span class="k2-row-l3" data-probe="preview" style="max-width:120px;${line}">Guten Tag Frau Solberg, die Platten können wir liefern</span></div>` +
+        // The title of a two-line row may wrap: it is what the row is about.
+        `<div class="k2-row" data-lines="2"><span class="k2-row-l1" style="max-width:120px">Quittung Q-2611-00021 wartet auf Unterschrift</span><span class="k2-row-l2">seit 18. Nov.</span></div>`,
+    );
+
+  test(
+    "green: a control with room for its label, a cut line of three, a wrapped title of two",
+    async () => {
+      const page = await open(cutPage("", ""));
+      try {
+        const result = await measureV2Layout(page);
+        expect(result.cut).toEqual([]);
+        expect(result.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a control that clips its label, and a one-line text that wraps",
+    async () => {
+      const page = await open(cutPage("width:64px;overflow:hidden;white-space:nowrap", "white-space:normal"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="remind"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+          expect.stringMatching(
+            /^\[data-probe="preview"\] "Guten Tag Frau Solberg, die Platten könn" wraps to \d lines; it stays on one line/,
+          ),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "the outline names the same cut texts, before any picture",
+    async () => {
+      const green = await open(cutPage("", ""));
+      const page = await open(cutPage("width:64px;overflow:hidden;white-space:nowrap", "white-space:normal"));
+      try {
+        const clean = await describeV2Page(green);
+        expect(clean).not.toContain("cuts its label");
+        expect(clean).not.toContain("wraps");
+        const outline = await describeV2Page(page);
+        expect(outline).toContain('- Button "Mahnung senden" cuts its label');
+        expect(outline).toContain('- a line of a three-line Row wraps: "Guten Tag Frau Solberg');
+      } finally {
+        await green.close();
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: words that gave way to their symbol and stay only as a visually hidden name are no cut label",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row"><button type="button" class="k2-btn" style="width:28px;padding:0"><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">Auswahl aufheben</span></button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a parent of display: contents has no box, so its overflow cuts no chip (a bar's narrow form)",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip">Wartet auf Antwort</span><span class="k2-chip">Angebot</span></span></div>',
+        ),
+        { width: 390 },
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a label that runs out of its control without being clipped",
+    async () => {
+      const page = await open(cutPage("width:64px;white-space:nowrap", ""));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="remind"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: v2's own Band with a Canvas in it; the band's line closes both",
+    async () => {
+      const page = await open(
+        columns(
+          '<section class="k2-band" data-k2-part="Band"><div class="k2-canvas" data-k2-canvas style="height:80px"></div><span class="k2-text k2-t-row">Karte</span></section>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a line a Canvas draws with a pseudo-element counts like its border",
+    async () => {
+      const page = await open(
+        '<style>.cv::before { content: ""; display: block; height: 1px; background: var(--k2-line); }</style>' +
+          columns('<div class="band">Band</div><div class="cv" data-k2-canvas data-probe="canvas" style="height:80px"></div>'),
+      );
+      try {
+        expect((await measureV2Layout(page)).double).toEqual([
+          expect.stringMatching(/^double line: div\.band border-bottom and \[data-probe="canvas"\]::before box at \d+ px over 1191 px$/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green at 390 px: v2's three-line row cuts a long title with …",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="k2-row" data-lines="3"><span class="k2-row-l1"><span class="k2-row-title">Architekturbüro Winter und Partner, Hamburg</span></span><span class="k2-row-l2">Re: Treppe Haus am Hang</span><span class="k2-row-l3">Danke für die Zeichnung</span></div>',
+        ),
+        { width: 390 },
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a label that ends in … in its own box (the way back to a long name); red: the same cut without …",
+    async () => {
+      const label = "Suchergebnisse für Eichenplatten in allen Postfächern";
+      const button = (probe: string, labelStyle: string) =>
+        `<div style="width:160px;display:flex"><a href="#liste" class="k2-btn" data-probe="${probe}" style="flex:0 1 auto;min-width:0;white-space:nowrap">` +
+        `<span class="k2-t-meta" style="display:block;min-width:0;overflow:hidden;white-space:nowrap;${labelStyle}">${label}</span></a></div>`;
+      const page = await open(columns(button("short", "text-overflow:ellipsis") + button("clipped", "")));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          `control [data-probe="clipped"] cuts its label "${label.slice(0, 40)}"; it needs the room of its whole label`,
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a label cut by a parent that hides what overflows; a scroller does not cut",
+    async () => {
+      const page = await open(
+        columns(
+          '<div style="width:80px;overflow:hidden"><button type="button" class="k2-btn" data-probe="hidden" style="white-space:nowrap">Mahnung senden</button></div>' +
+            '<div style="width:80px;overflow-x:auto"><button type="button" class="k2-btn" data-probe="scroller" style="white-space:nowrap">Mahnung senden</button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          'control [data-probe="hidden"] cuts its label "Mahnung senden"; it needs the room of its whole label',
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: a button in a one-line cell makes the cell taller, not a second line",
+    async () => {
+      const page = await open(
+        columns(
+          '<table class="k2-table" data-sized><tbody><tr><td><span class="k2-cell-line">RE-2611-0042 <button type="button" class="k2-btn">Mahnung</button></span></td></tr></tbody></table>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // A line of text in a box of one 20 px line: cut at its end with "…", or clipped without it, or a second line hidden.
+  const textBox = (style: string) =>
+    columns(
+      `<div class="row"><span class="k2-t-row" data-probe="box" style="display:block; width: 120px; ${style}">Angebot Eichenplatten – Liefertermin und die Frage nach den Kanten</span></div>`,
+    );
+
+  test(
+    'green: a box that cuts its line with "…", and a box clamped to its lines',
+    async () => {
+      const page = await open(
+        textBox("overflow: hidden; white-space: nowrap; text-overflow: ellipsis;") +
+          textBox("display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;"),
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    'red: a box that cuts its line without "…", and a box that hides its second line',
+    async () => {
+      const page = await open(textBox("overflow: hidden; white-space: nowrap;"));
+      const lines = await open(textBox("height: 20px; overflow: hidden;"));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          '[data-probe="box"] "Angebot Eichenplatten – Liefertermin und" cuts its line without "…"',
+        ]);
+        expect((await measureV2Layout(lines)).cut).toEqual([
+          expect.stringMatching(/^\[data-probe="box"\] "Angebot Eichenplatten – Liefertermin und" hides \d+ px of its text above or below/),
+        ]);
+      } finally {
+        await page.close();
+        await lines.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 
   test(
     "free drawing in Canvas is never measured",

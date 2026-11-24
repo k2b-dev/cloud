@@ -77,6 +77,15 @@ try {
   ]) {
     if (!(await Bun.file(join(installedUi, file)).text()).trim()) throw new Error(`missing packed license: ${file}`);
   }
+  // The k2b-ui skill ships in the same version as the primitives it describes, with its recipes and pictures.
+  for (const file of [
+    "skills/k2b-ui/SKILL.md",
+    "skills/k2b-ui/references/recipes.md",
+    "skills/k2b-ui/recipes/mail.tsx",
+    "skills/k2b-ui/images/mail-1440.png",
+  ]) {
+    if (!existsSync(join(installedUi, file))) throw new Error(`packed @k2b/ui misses its skill file: ${file}`);
+  }
   for (const asset of ["IBM Plex Sans Medium/0-255.pbf", "OFL.txt"]) {
     const resolved = import.meta.resolve(`@k2b/ui/map-glyphs/${asset}`, join(consumer, "index.ts"));
     const path = realpathSync(resolved.startsWith("file:") ? new URL(resolved) : resolved);
@@ -92,7 +101,15 @@ try {
     JSON.stringify({
       private: true,
       type: "module",
-      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies, "@k2b/ssr": ssrArchive, "@k2b/stdlib": stdlibArchive },
+      // Optional peers stay out: the package must work without them (Playwright serves only v2/testing).
+      dependencies: {
+        ...manifest.dependencies,
+        ...Object.fromEntries(
+          Object.entries(manifest.peerDependencies ?? {}).filter(([name]) => !manifest.peerDependenciesMeta?.[name]?.optional),
+        ),
+        "@k2b/ssr": ssrArchive,
+        "@k2b/stdlib": stdlibArchive,
+      },
     }),
   );
   // The consumer lives outside the repository and does not inherit its bunfig.toml.
@@ -258,17 +275,42 @@ try {
   }
 
   // v2 (provisional): the entry resolves to its own server and browser builds, and its stylesheet bundles on its own.
+  // The server build runs here; the browser build wires DOM events when it loads, so it is resolved and bundled for
+  // the browser like the v1 entry below, not run.
   const v2Smoke = `
     const resolved = import.meta.resolve("@k2b/ui/v2");
     const mode = process.env.V2_BROWSER ? "browser" : "ssr";
     if (!resolved.includes("/node_modules/@k2b/ui/dist/" + mode + "/v2/index.js")) {
       throw new Error("v2 entry did not resolve inside the packed package: " + resolved);
     }
-    const v2 = await import("@k2b/ui/v2");
-    if (v2.typeRoles?.row?.size !== 13 || v2.textEdge?.wide !== 20) throw new Error("packed v2 entry has the wrong tokens");
+    if (!process.env.V2_BROWSER) {
+      const v2 = await import("@k2b/ui/v2");
+      if (v2.typeRoles?.row?.size !== 13 || v2.textEdge?.wide !== 20) throw new Error("packed v2 entry has the wrong tokens");
+    }
   `;
   run([process.execPath, "--no-install", "-e", v2Smoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", v2Smoke], consumer, { ...process.env, V2_BROWSER: "1" });
+  // v2/testing loads without Playwright installed: Playwright is an optional peer and only a type there.
+  const v2TestingSmoke = `
+    const resolved = import.meta.resolve("@k2b/ui/v2/testing");
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/ssr/v2/testing/index.js")) {
+      throw new Error("v2/testing did not resolve inside the packed package: " + resolved);
+    }
+    const testing = await import("@k2b/ui/v2/testing");
+    for (const name of ["measureV2Layout", "describeV2Page", "settled"])
+      if (typeof testing[name] !== "function") throw new Error("packed v2/testing misses " + name);
+  `;
+  run([process.execPath, "--no-install", "-e", v2TestingSmoke], consumer);
+  const v2BrowserEntry = join(consumer, "v2-browser-entry.ts");
+  await Bun.write(v2BrowserEntry, 'export { typeRoles, Workspace, Row, Table } from "@k2b/ui/v2";\n');
+  const v2BrowserBuild = await Bun.build({
+    entrypoints: [v2BrowserEntry],
+    outdir: join(consumer, "v2-browser-dist"),
+    target: "browser",
+    format: "esm",
+    external: ["solid-js", "solid-js/*"],
+  });
+  if (!v2BrowserBuild.success) throw new Error(`packed v2 browser build failed\n${v2BrowserBuild.logs.join("\n")}`);
   const v2Styles = import.meta.resolve("@k2b/ui/v2.css", join(consumer, "index.ts"));
   if (!v2Styles.includes("/node_modules/@k2b/ui/dist/v2.css")) {
     throw new Error(`v2 stylesheet did not resolve from packed dist: ${v2Styles}`);

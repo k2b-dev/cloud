@@ -409,7 +409,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
     flags: {
       includeServiceAccounts: flag.boolean({
         name: "include-service-accounts",
-        description: "Also show grants of resource-bound service accounts (resource API keys).",
+        description: "Also show grants of API keys.",
       }),
     },
     examples: adapter.examples?.list,

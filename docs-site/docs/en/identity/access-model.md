@@ -5,7 +5,7 @@ section: Identity and access
 order: 305
 description: Five words and three rules explain accounts, permissions, API keys, and applications.
 tags: [identity, accounts, authorization, api-keys]
-updated: 2026-11-03
+updated: 2026-11-23
 ---
 
 # Who may do what
@@ -36,6 +36,33 @@ Cloud uses five words and three rules to explain access.
 The administrator is root: able to repair access, but with no automatic access
 to content. The exception is outgoing app mail in the administrator's
 notification view.
+
+## Groups inside groups
+
+A group can contain other groups. A member of the inner group is also a member
+of every group that contains it, at any depth, so a permission for the outer
+group reaches them too. Local groups refuse a nesting that would lead back to
+the same group. Groups from FreeIPA can form such a cycle; then the members of
+every group in the cycle count in each of them.
+
+Administrators see which groups contain which under **Accounts → Groups →
+Relations**, with `cld accounts groups relations <group>`, or with
+`GET /api/accounts/groups/relations`. The view shows levels around one group:
+the groups that contain it on the left, the groups it contains on the right,
+each group once. A level shows 10 groups until you choose to see more, and the
+next level continues only from the groups shown. Choose a group to see its
+details, or make it the focus. **List** shows the same relations as a tree for
+the keyboard and screen readers. A dashed edge leads back into a cycle; the
+details name one real cycle through the group. **Managers** adds which groups
+manage which; such a circle is allowed and changes no membership. The view shows
+group names and member counts, never member names. Personal Linux groups are
+left out, so a cycle through a personal group does not show.
+
+To stay within a quarter second of server time, one answer reads at most
+20,000 membership edges and 20,000 management edges. If an installation has
+more, the view says so, some groups may be missing, and cycles were checked
+only in the edges that were read (`truncated`, `cyclesComplete: false` in the
+API).
 
 ## If you know Unix
 

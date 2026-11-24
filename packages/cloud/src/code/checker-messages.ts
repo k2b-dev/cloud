@@ -60,7 +60,7 @@ export const codeCheckerMessages = i18n.define({
         "This page is open to all signed-in members except guests and runs with its owner’s permissions. Check c.user in the handler or an earlier app.use if access should be restricted.",
       http_origin_dynamic: 'The origin is dynamic. Declare it with http.allow(["https://api.example.com"]).',
       http_grant_limit: ({ limit }: { limit: number }) =>
-        `Internet origins and operation grants exceed the mandate budget of ${limit} grants. Split the Code.`,
+        `Internet origins and operation grants exceed the limit of ${limit} grants per Code version. Split the Code.`,
       run_entrypoint: "code_run requires a function as its default export.",
       no_entrypoint: "Declare at least one schedule or route at module level.",
       stream: "This write stream has no file metadata input for Code.",
@@ -123,7 +123,7 @@ export const codeCheckerMessages = i18n.define({
         "Diese Seite öffnet sich für alle Angemeldeten ohne Gäste und läuft mit den Rechten des Besitzers. Prüfe c.user im Handler oder in app.use davor, wenn nicht alle sie sehen sollen.",
       http_origin_dynamic: 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).',
       http_grant_limit: ({ limit }) =>
-        `Die Internet-Ursprünge und Operationsfreigaben überschreiten das Mandatsbudget von ${limit} Freigaben. Teile den Code auf.`,
+        `Die Internet-Ursprünge und Operationsfreigaben überschreiten die Grenze von ${limit} Freigaben je Code-Version. Teile den Code auf.`,
       run_entrypoint: "code_run benötigt eine Funktion als default-Export.",
       no_entrypoint: "Lege mindestens einen Zeitplan oder eine Route auf Modulebene an.",
       stream: "Dieser Schreib-Stream deklariert keinen file-Metadateneingang für Code.",

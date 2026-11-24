@@ -1023,7 +1023,7 @@ kind:
 | Kind | Icon | Label |
 | --- | --- | --- |
 | `agent` | `ti-robot` | Agent |
-| `standalone` | `ti-key` | Agent (API key only) |
+| `standalone` | `ti-robot` | Agent |
 | `code` | `ti-code` | Code |
 | `resource_bound` | `ti-key` | API key |
 | `user_delegated` | `ti-user-key` | Personal |

@@ -332,7 +332,7 @@ export default ssr<AuthContext>(async (c) => {
                 <p class="mt-1 text-xs text-dimmed">{t.personalAutomationKeys({ count: apiKeysPage.total })}</p>
               </div>
               <ButtonLink
-                href={`/app/accounts/service-accounts?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`}
+                href={`/app/accounts/api-keys?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`}
                 size="sm"
                 variant="subtle"
               >

@@ -33,7 +33,9 @@ const prepare = spyOn(accountsAppService.group, "makePosix");
 const addMember = spyOn(accountsAppService.group.member, "add");
 const removeMember = spyOn(accountsAppService.group.member, "remove");
 const addManager = spyOn(accountsAppService.group.manager, "add");
+const relations = spyOn(accountsAppService.group, "relations");
 afterEach(() => {
+  relations.mockReset();
   authenticate.mockReset();
   create.mockReset();
   get.mockReset();
@@ -43,6 +45,7 @@ afterEach(() => {
   addManager.mockReset();
 });
 afterAll(() => {
+  relations.mockRestore();
   token.mockRestore();
   authenticate.mockRestore();
   create.mockRestore();
@@ -139,4 +142,25 @@ test("full group managers add and remove named machine recipients, without openi
   });
   expect(granted.status).toBe(200);
   expect(addManager.mock.calls[0]?.[0]).toMatchObject({ id, serviceAccountId: recipient, actor: { userId: id } });
+});
+
+test("group relations are for administrators and pass focus, depth, managers, and columns to the one service", async () => {
+  login(["user", "group-manager"]);
+  expect((await groups.request("/relations")).status).toBe(403);
+  expect(relations).not.toHaveBeenCalled();
+  login(["admin"]);
+  relations.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "Group not found", status: 404 } });
+  const response = await groups.request(`/relations?focus=${id}&depth=3&managers=true&expand=d1,u2`);
+  expect(response.status).toBe(404);
+  expect(relations.mock.calls[0]?.[0]).toMatchObject({
+    focus: id,
+    depth: 3,
+    managers: true,
+    view: "graph",
+    expand: ["d1", "u2"],
+    actor: { userId: id },
+  });
+  expect((await groups.request("/relations?depth=5")).status).toBe(400);
+  expect((await groups.request("/relations?expand=x9")).status).toBe(400);
+  expect(relations).toHaveBeenCalledTimes(1);
 });
