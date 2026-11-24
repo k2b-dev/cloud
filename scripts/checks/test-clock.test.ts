@@ -257,6 +257,23 @@ test("scopes UI tests, fixtures, harnesses and suites across every source root",
   }
 });
 
+test("integration tests report Playwright pins but may read the real clock (#4099)", async () => {
+  const integration = "pwas/demo/server/sync.integration.test.ts";
+  const component = "packages/demo/view.integration.test.tsx";
+  const { root, locations } = await workspace({
+    [integration]: `const started = Date.now();\n${pin}\nnew Date();`,
+    [component]: `// playwright clock: drives fake timers\n${pin}\nnew Date();`,
+  });
+  try {
+    expect(await locations()).toEqual([`${integration}:2`]);
+    expect(checkTestClockSource(integration, `Date.now();\n${pin}`, { pinsOnly: true })).toEqual([
+      { file: integration, line: 2, message: playwrightClockMessage },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("an excess reports every finding in that file and fix never raises its count", async () => {
   const counts = new Map([[file, 1]]);
   const { root, locations } = await workspace({ [file]: "new Date();" }, counts);
