@@ -5,7 +5,7 @@ const messages = i18n.define({
   messages: {
     en: {
       GEO_NOT_CONFIGURED: "An administrator must configure the Geoapify key in Core settings.",
-      GEO_FORBIDDEN: "Sign in with a person, agent, or service account to use geo queries.",
+      GEO_FORBIDDEN: "Geo queries run only for a person, an agent, or a service account.",
       GEO_BUDGET_EXHAUSTED: "The geo budget is exhausted. Wait until resetsAt or ask an administrator to review the budget.",
       budgetNumbers: ({ required, available, missing }: { required: string; available: string; missing: string }) =>
         `Required: ${required} credits; available: ${available}; missing: ${missing}.`,
@@ -23,7 +23,7 @@ const messages = i18n.define({
     },
     de: {
       GEO_NOT_CONFIGURED: "Ein Administrator muss den Geoapify-Schlüssel in den Core-Einstellungen eintragen.",
-      GEO_FORBIDDEN: "Melde dich mit einem Personen-, Agenten- oder Dienstkonto für Geo-Abfragen an.",
+      GEO_FORBIDDEN: "Geo-Abfragen laufen nur für eine Person, einen Agenten oder ein Dienstkonto.",
       GEO_BUDGET_EXHAUSTED: "Das Geo-Budget ist aufgebraucht. Warte bis resetsAt oder bitte einen Administrator, das Budget zu prüfen.",
       budgetNumbers: ({ required, available, missing }: { required: string; available: string; missing: string }) =>
         `Benötigt: ${required} Credits; verfügbar: ${available}; fehlen: ${missing}.`,

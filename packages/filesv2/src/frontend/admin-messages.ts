@@ -23,7 +23,7 @@ export const adminMessages = i18n.define({
       directoryDetails: "Directory details",
       close: "Close",
       unixOwnership: "Unix ownership",
-      cloudOwnership: "New files belong to the Filegate service account. Cloud controls access through account and group membership.",
+      cloudOwnership: "New files belong to the Filegate system user. Cloud controls access through account and group membership.",
       overview: "Overview",
       directories: "Directories",
       archives: "Archive",
@@ -200,7 +200,7 @@ export const adminMessages = i18n.define({
       close: "Schließen",
       unixOwnership: "Unix-Eigentümer",
       cloudOwnership:
-        "Neue Dateien gehören dem Filegate-Dienstkonto. Die Cloud steuert den Zugriff über Konten und Gruppenmitgliedschaften.",
+        "Neue Dateien gehören dem Systembenutzer von Filegate. Die Cloud steuert den Zugriff über Konten und Gruppenmitgliedschaften.",
       overview: "Übersicht",
       directories: "Verzeichnisse",
       archives: "Archiv",

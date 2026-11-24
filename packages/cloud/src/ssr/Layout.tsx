@@ -67,6 +67,11 @@ type LayoutProps = {
    * name. For pages an app hosts for someone else, such as a Code page, whose app name would be an internal detail.
    */
   headTitle?: "app" | "page";
+  /**
+   * The page's content is built with `@k2b/ui/v2` (provisional): the content area becomes the v2 scope, in the app's
+   * colour. The shell around it stays v1.
+   */
+  ui?: "v2";
 }; // ==========================
 // Helpers
 function buildNavLinks(
@@ -222,6 +227,8 @@ export default function Layout(props: LayoutProps) {
   if (!page.title) page.title = pageTitle;
   page.appAccent = currentApp?.appearance?.accent;
   page.appPrimary = currentApp?.appearance?.primary;
+  // The document puts the app's v2 inks on the body beside its accent, so v2 overlays on the body read them too.
+  page.appUi = props.ui;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
   // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
@@ -481,7 +488,8 @@ export default function Layout(props: LayoutProps) {
                 <PageTrailProvider trail={pageTrail} onOwnTitle={() => (content.ownTitle = true)}>
                   <PageTrailRow trail={pageTrail} />
                   <main
-                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                    // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
+                    class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}${props.ui === "v2" ? " k2-ui" : ""}`}
                     data-scroll-preserve={swap ? "cloud-main" : undefined}
                     data-scroll-page={swap ? "" : undefined}
                   >

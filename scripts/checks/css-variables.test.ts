@@ -51,6 +51,8 @@ test("accepts defined tokens, fallbacks, runtime-set properties, template names,
       "packages/app/src/styles/app.css": ".row { --k2b-row-gap: 4px; gap: var(--k2b-row-gap); }\n/* was var(--k2b-danger) */\n",
       "packages/app/src/Lane.ts": `export const lane = (el: HTMLElement) => el.style.setProperty("--k2b-lane-gap", "1px") || "var(--k2b-lane-gap)";\n`,
       "packages/ui/src/styles/hygiene.test.ts": `expect(css).not.toContain("var(--k2b-danger)");\n`,
+      // the one colour of an app comes from the page or the platform, never from a stylesheet
+      "packages/ui/src/v2/v2.css": ".k2-ui { --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 8%, #ffffff); }\n",
     }),
   ).toEqual([]);
 });

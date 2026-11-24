@@ -106,7 +106,8 @@ test.skipIf(isServer)(
         await Bun.sleep(400);
         expect(optionTexts()).toEqual([`${name} ${name}`]);
         expect(options()[0]!.querySelector("img")).toBeNull();
-        expect(options()[0]!.querySelector(id === "agent-01" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+        // An agent shows the robot whether its kind is `agent` or the older `standalone`.
+        expect(options()[0]!.querySelector(".ti-robot")).not.toBeNull();
         search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
         expect(await selected).toEqual({ mode: "add", userId: id, name });
         await closed();

@@ -115,7 +115,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { escapeHtml } from "../shared/markdown/shared";
 import { type CloudThemePreference, readThemePreferenceFromCookieHeader, themeBootstrapScript } from "../shared/theme";
-import { appAccentStyle } from "../ssr/app-appearance";
+import { appAccentStyle, appV2InkStyle } from "../ssr/app-appearance";
 import { validateAppAppearance } from "./app-appearance";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
@@ -167,6 +167,8 @@ type ResolvedPageOptions = PageOptions & {
   performanceRoute?: string;
   themePreference?: CloudThemePreference;
   appAccent?: string;
+  /** `Layout ui="v2"`: the body carries the app's v2 inks beside its accent. */
+  appUi?: "v2";
   appPrimary?: AppAppearance["primary"];
   /** Signed-in pages: the person's screen preferences, for the privacy screen. */
   screen?: ScreenPreferences;
@@ -597,6 +599,7 @@ export const defineApp = <
       performanceRoute,
       pwa,
       appAccent,
+      appUi,
       appPrimary,
       installable: pageInstallable,
     }) => {
@@ -610,7 +613,11 @@ export const defineApp = <
         : opts.id === "core"
           ? undefined
           : publicFileVersion(`/public/${opts.id}/favicon.svg`);
-      const accentStyle = appAccentStyle(appAccent);
+      // A v2 page adds its app's v2 inks beside the accent; every other page keeps exactly the accent's declarations.
+      const accentStyle =
+        appUi === "v2"
+          ? [appAccentStyle(appAccent), appV2InkStyle(appAccent)].filter(Boolean).join(";") || undefined
+          : appAccentStyle(appAccent);
       const fixed = theme !== undefined;
       const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
       // App pages paint the canvas before any stylesheet and give it to the

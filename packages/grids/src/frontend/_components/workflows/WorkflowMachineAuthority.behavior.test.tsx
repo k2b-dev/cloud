@@ -69,19 +69,21 @@ domTest("machine authority loads, recovers from failures, pauses and revokes wit
     await waitFor(() => dom.root.textContent!.includes("Nightly inventory"));
     expect(dom.root.textContent).toContain("Agent");
     expect(dom.root.textContent).toContain("Write ceiling");
-    await click("Pause mandate");
-    await waitFor(() => dom.root.textContent!.includes("Resume mandate"));
+    await click("Pause automatic runs");
+    await waitFor(() => dom.root.textContent!.includes("Resume automatic runs"));
+    expect(dom.root.textContent).not.toContain("mandate");
     expect(writes[0]).toEqual({ action: "pause", expected: { serviceAccountId: accountId, mandate: { id: mandateId, revision: 1 } } });
     writeFails = true;
-    await click("Revoke mandate");
+    await click("End automatic runs");
     await waitFor(() => dom.root.textContent!.includes("Execution authority changed"));
     expect(dom.root.textContent).toContain("Paused");
     writeFails = false;
     await click("Reload authority");
     await waitFor(
-      () => ![...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "Revoke mandate")!.disabled,
+      () =>
+        ![...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === "End automatic runs")!.disabled,
     );
-    await click("Revoke mandate");
+    await click("End automatic runs");
     await waitFor(() => dom.root.textContent!.includes("Blocked"));
     expect(writes.at(-1)).toEqual({
       action: "revoke",

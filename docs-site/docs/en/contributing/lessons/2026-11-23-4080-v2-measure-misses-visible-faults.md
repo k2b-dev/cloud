@@ -1,0 +1,6 @@
+### The v2 layout measure passed screens with faults a person saw at once
+
+- **What happened:** The Mail pilot on v2 passed `measureV2Layout`, yet the maintainer saw double lines in it. Agent tests showed button labels cut by their own button and row lines that wrapped where they should end with "…". The measure reported none of them.
+- **Root cause:** `packages/ui/src/v2/testing/measure-v2-layout.ts` skipped a `Canvas` together with its own border. Its double-line rule only looked at lines at most 1 px apart, so a line between two parts of one band, 12 px from the next line, passed. Nothing compared a control's label with the room of the control, or a one-line text with its line boxes.
+- **Error class:** A layout measurement that only knows the faults it was written for, so a screen passes while a person sees a fault of another kind.
+- **Guard:** `measure-v2-layout.browser.test.ts` holds a red and a green page for each new finding: a canvas's own line, a line inside a band or group at any distance (`inside`), and a cut control label, a one-line text that wraps, or text a box hides (`cut`). A visually hidden name counts as no cut label. The primitives, recipe and Fibel screens tests run the same measure on every v2 screen, and `describeV2` names cut labels and wrapped rows before any picture.

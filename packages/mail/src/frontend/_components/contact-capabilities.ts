@@ -34,9 +34,18 @@ const invokeContactDirectory = async <T>(
     },
     params.dataSchema,
   );
-  if (!result.ok) throw new Error(result.error.message);
+  if (!result.ok)
+    throw result.error.status === 403 ? new ContactDirectoryRefusedError(result.error.message) : new Error(result.error.message);
   return result.data;
 };
+
+/** The person may not use this contact app. For optional lookups this means "no matches", not a failure. */
+export class ContactDirectoryRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ContactDirectoryRefusedError";
+  }
+}
 
 export const suggestContacts = (
   target: ContactDirectoryTarget | null,

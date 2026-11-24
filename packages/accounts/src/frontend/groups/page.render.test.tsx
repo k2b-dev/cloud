@@ -87,7 +87,11 @@ test("a group opened from a paged, filtered list carries the list state only as 
     const response = await app.request("/app/accounts/groups?search=fin&page=2&scope=managed", { headers: { "Accept-Language": "en" } });
     const html = await response.text();
     expect(response.status).toBe(200);
-    const detailHrefs = [...html.matchAll(/href="(\/app\/accounts\/groups\/[^"]+)"/g)].map((match) => match[1]!.replaceAll("&amp;", "&"));
+    // The Relations tab is a view of all groups, not a group detail.
+    const detailHrefs = [...html.matchAll(/href="(\/app\/accounts\/groups\/(?!relations)[^"]+)"/g)].map((match) =>
+      match[1]!.replaceAll("&amp;", "&"),
+    );
+    expect(html).toContain('href="/app/accounts/groups/relations"');
     expect(detailHrefs.length).toBeGreaterThan(0);
     for (const href of detailHrefs) {
       const params = new URL(href, "https://local.invalid").searchParams;

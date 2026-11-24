@@ -44,7 +44,7 @@ for (const kind of ["standalone", "agent"] as const) {
       for (let attempt = 0; attempt < 200 && !dom.root.textContent?.includes("Catalog assistant"); attempt += 1) await Bun.sleep(10);
       expect(dom.root.textContent).toContain("Catalog assistant");
       expect(dom.root.textContent).not.toContain(id);
-      expect(dom.root.querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+      expect(dom.root.querySelector(".ti-robot")).not.toBeNull();
       expect(urls[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
       expect(urls[0]!.searchParams.get("service_account_ids")).toBe(id);
     } finally {

@@ -39,8 +39,8 @@ describe("compression boundaries", () => {
     "/agents/__new_route__",
     "/groups/group",
     "/groups/group/__new_route__",
-    "/service-accounts",
-    "/service-accounts/__new_route__",
+    "/api-keys",
+    "/api-keys/__new_route__",
     "/users",
     "/users/user",
     "/users/__new_route__",
@@ -63,6 +63,17 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
+  test("the old API key list path moves permanently, with sub-path and query", async () => {
+    for (const [from, to] of [
+      ["/service-accounts", "/app/accounts/api-keys"],
+      ["/service-accounts?kind=agent&search=bot", "/app/accounts/api-keys?kind=agent&search=bot"],
+      ["/service-accounts/extra", "/app/accounts/api-keys/extra"],
+    ] as const) {
+      const response = await pages.request(from);
+      expect(response.status).toBe(301);
+      expect(response.headers.get("Location")).toBe(to);
+    }
+  });
   for (const path of ["/groups"]) {
     test(`pages ${path} stays eligible for compression`, async () => {
       const response = await pages.request(path);

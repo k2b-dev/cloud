@@ -285,7 +285,7 @@ redirect chain. Core performs no retries. HTTP is
 recorded as a possible Action so attempt recovery cannot automatically repeat
 an external write.
 
-Internet origins share the existing mandate budget of 50 grants with capability
+Internet origins share the limit of 50 grants per Code version with capability
 operations. The checker rejects origin lists beyond that budget and counts
 personal operation grants when internet access is declared. The check remains a static internet-origin budget; activation creates no
 target grant plan.

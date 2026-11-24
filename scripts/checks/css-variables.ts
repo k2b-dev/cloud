@@ -18,6 +18,13 @@ const use = new RegExp(`var\\(\\s*(${NAME})\\s*(,?)`, "g");
 
 const lineAt = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
+/**
+ * Inputs that come from outside every stylesheet: the page or the platform sets the one colour of an app on the
+ * `@k2b/ui/v2` scope. v2.css reads it without a fallback on purpose: without it, the mixes made from it are invalid
+ * and their readers fall back to the blue of v2.
+ */
+const external = new Set(["--k2-app"]);
+
 export const rule: Rule = {
   name: "css-variables",
   description: "Every var(--k2b-*), var(--k2-*) and var(--ui-*) without a fallback names a custom property that is defined",
@@ -50,7 +57,7 @@ export const rule: Rule = {
         const name = match[1]!;
         // A fallback makes the property optional; a name built in a template, such as `--k2b-lane-${unit}`, is open.
         if (match[2] === "," || /[-$]/.test(source[(match.index ?? 0) + match[0].indexOf(name) + name.length] ?? "")) continue;
-        if (defined.has(name)) continue;
+        if (defined.has(name) || external.has(name)) continue;
         findings.push({
           file,
           line: lineAt(source, match.index ?? 0),
