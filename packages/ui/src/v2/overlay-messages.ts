@@ -5,8 +5,8 @@ import { useLocale } from "../intl/locale";
 const overlayMessages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { moreActions: "More actions", notifications: "Notifications", undo: "Undo" },
-    de: { moreActions: "Weitere Aktionen", notifications: "Meldungen", undo: "Rückgängig" },
+    en: { moreActions: "More actions", undo: "Undo" },
+    de: { moreActions: "Weitere Aktionen", undo: "Rückgängig" },
   },
 });
 
@@ -16,9 +16,5 @@ export const useOverlayMessages = (): (() => OverlayMessages) => {
   const locale = useLocale();
   return () => overlayMessages.resolve([locale()]).t;
 };
-
-/** For code outside a component (`toast`), where no locale is inherited: the page's language. */
-export const pageOverlayMessages = (): OverlayMessages =>
-  overlayMessages.resolve([typeof document === "undefined" ? "en" : document.documentElement.lang || "en"]).t;
 
 export const checkOverlayMessages = () => overlayMessages.check();

@@ -1,8 +1,8 @@
-import { Show } from "solid-js";
-import { render } from "solid-js/web";
-import { toastQueue, useToastRegion } from "./behavior/toast-region";
+import { onCleanup, onMount, Show } from "solid-js";
+import { isServer, render } from "solid-js/web";
+import { type ToastKind, type ToasterParts, useToaster } from "./behavior/toast";
 import { Icon } from "./marks";
-import { pageOverlayMessages, useOverlayMessages } from "./overlay-messages";
+import { useOverlayMessages } from "./overlay-messages";
 
 export type ToastOptions = {
   /** Takes the deed back: the toast offers "Undo" and runs this when pressed. */
@@ -11,61 +11,72 @@ export type ToastOptions = {
   status?: "ok" | "bad";
 };
 
-const statusIcon = { ok: "circle-check", bad: "alert-triangle" } as const;
+/** Shows a toast; returns its id. */
+export type ShowToast = (message: string, options?: ToastOptions) => string;
 
-/** The page's toasts at the bottom in the middle, newest on top, at most three; nothing moves when one comes. */
-const ToastRegion = () => {
-  const t = useOverlayMessages();
-  const region = useToastRegion(() => t().notifications);
+/** The sign of a toast that reports a deed that worked or failed. */
+const statusIcon = (type: ToastKind) =>
+  type === "success" ? ({ name: "circle-check", tone: "ok" } as const) : type === "error" ? ({ name: "alert-triangle", tone: "bad" } as const) : undefined;
+
+/** The toasts of one owner at the bottom in the middle, newest on top, at most three; nothing moves when one comes. */
+const ToastRegion = (props: { parts: ToasterParts }) => {
+  const { Region, Toast, Title, Action } = props.parts;
   return (
-    <region.Region
+    <Region
       class="k2-toasts"
       data-k2-part="Toast"
-      render={(toast) => (
-        <region.Toast id={toast.id} class="k2-toast" data-status={toast.entry.status}>
-          <Show when={toast.entry.status}>{(status) => <Icon name={statusIcon[status()]} tone={status()} />}</Show>
-          <region.Title id={toast.id} class="k2-toast-text">
-            {toast.entry.message}
-          </region.Title>
-          <Show when={toast.entry.action}>
-            {(action) => (
-              <region.Action toast={toast.id} class="k2-btn" data-variant="text">
-                <span class="k2-btn-label">{action().label}</span>
-              </region.Action>
+      side="bottom"
+      align="center"
+      maxVisible={3}
+      toast={(view) => (
+        <Toast id={view().id} class="k2-toast" data-type={view().type}>
+          <Show when={statusIcon(view().type)}>{(icon) => <Icon name={icon().name} tone={icon().tone} />}</Show>
+          <Title id={view().id} class="k2-toast-text">
+            {view().title}
+          </Title>
+          <Show when={view().actionLabel}>
+            {(label) => (
+              <Action id={view().id} class="k2-btn" data-variant="text">
+                <span class="k2-btn-label">{label()}</span>
+              </Action>
             )}
           </Show>
-        </region.Toast>
+        </Toast>
       )}
     />
   );
 };
 
-const hostAttribute = "data-k2-toasts";
-
 /**
- * Shows the region once per page, on the first toast. It lives in its own v2 scope at the end of the page, so a toast
- * needs no setup and every island's toasts land in the same place (the queue is the page's, not a module's).
+ * The toast of the place you are in: one sentence at the bottom of the page for five seconds; hovering or focusing it
+ * pauses the time, a swipe or Escape closes it, `undo` adds "Undo". A toast reports a deed; it never replaces an error
+ * at its place (something that failed to load is `Failed`, something to fix is a `Notice`).
+ *
+ * The toaster belongs to its owner (the component that calls this), never to a module, so a server never shares one
+ * between requests. Its region goes to the end of the page once the page is live, in a v2 scope of its own.
+ * (k2b-ui gap: `Workspace` could own one toaster for all its screens; until then each owner has its own region.)
  */
-const ensureRegion = () => {
-  if (typeof document === "undefined" || document.querySelector(`[${hostAttribute}]`)) return;
-  const host = document.createElement("div");
-  host.className = "k2-ui";
-  host.setAttribute(hostAttribute, "");
-  document.body.append(host);
-  render(() => <ToastRegion />, host);
-};
-
-/**
- * Reports a deed in one sentence at the bottom of the page, for five seconds; hovering or focusing it pauses the time,
- * a swipe or Escape closes it. `undo` adds "Undo". A toast never replaces an error at its place: something that
- * failed to load is `Failed`, something to fix is a `Notice`. Returns the toast's id.
- */
-export const toast = (message: string, options: ToastOptions = {}): string => {
-  ensureRegion();
-  const undo = options.undo;
-  return toastQueue().show({
-    message,
-    status: options.status,
-    action: undo && { label: pageOverlayMessages().undo, onAction: undo },
+export const useToast = (): ShowToast => {
+  const t = useOverlayMessages();
+  const parts = useToaster();
+  onMount(() => {
+    if (isServer) return;
+    const host = document.createElement("div");
+    host.className = "k2-ui";
+    host.setAttribute("data-k2-toasts", "");
+    document.body.append(host);
+    const dispose = render(() => <ToastRegion parts={parts} />, host);
+    onCleanup(() => {
+      dispose();
+      host.remove();
+    });
   });
+  return (message, options = {}) => {
+    const undo = options.undo;
+    return parts.toaster.show({
+      title: message,
+      type: options.status === "bad" ? "error" : options.status === "ok" ? "success" : "default",
+      action: undo && { label: t().undo, onAction: undo },
+    });
+  };
 };

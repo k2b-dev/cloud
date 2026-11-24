@@ -2802,6 +2802,16 @@
   max-width: calc(100vw - 32px);
   pointer-events: none;
 }
+.k2-ui .k2-toasts > ol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .k2-ui .k2-toast {
   display: inline-flex;
   align-items: center;

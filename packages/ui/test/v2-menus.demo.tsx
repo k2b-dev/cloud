@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Text, toast, Workspace } from "../src/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Text, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
 // panel and a hint in the same head, a context menu and a "…" on rows, and a toast with "Undo" after a deed. Each deed
@@ -24,6 +24,7 @@ const orders = [
 export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
+  const toast = useToast();
   const head = (): MenuEntry[] => [
     { label: "Als Vorlage speichern", icon: "template", onClick: did("template") },
     { label: "Auftrag duplizieren", icon: "copy", meta: "⌘ D", onClick: did("duplicate") },
