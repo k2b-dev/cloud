@@ -36,6 +36,11 @@ const behaviorMessages = i18n.define({
       listRemoved: ({ label }: { label: string }) => `${label} removed`,
       loading: "Loading",
       width: ({ px }: { px: number }) => `${px} px`,
+      treeExpanded: ({ label }: { label: string }) => `${label} expanded`,
+      treeCollapsed: ({ label }: { label: string }) => `${label} collapsed`,
+      treeLoading: ({ label }: { label: string }) => `${label} loading`,
+      treeLoadFailed: ({ label }: { label: string }) => `Couldn't load ${label}.`,
+      toasts: "Notifications",
     },
     de: {
       sortGrab: ({ label, position, total }: Move) =>
@@ -62,6 +67,11 @@ const behaviorMessages = i18n.define({
       listRemoved: ({ label }: { label: string }) => `${label} entfernt`,
       loading: "Wird geladen",
       width: ({ px }: { px: number }) => `${px} px`,
+      treeExpanded: ({ label }: { label: string }) => `${label} aufgeklappt`,
+      treeCollapsed: ({ label }: { label: string }) => `${label} zugeklappt`,
+      treeLoading: ({ label }: { label: string }) => `${label} wird geladen`,
+      treeLoadFailed: ({ label }: { label: string }) => `${label} konnte nicht geladen werden.`,
+      toasts: "Benachrichtigungen",
     },
   },
 });
