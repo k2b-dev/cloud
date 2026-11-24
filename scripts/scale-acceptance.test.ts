@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { cloudHostSet, type DomainSnapshot, decideHost } from "../packages/gateway/src/app-domains";
 import {
   assertBothReplicasServed,
   composeEnvironment,
   dockerEnvironment,
   envFileContents,
+  GATEWAY_HOST_HEADER,
   HELP,
   mailAttachmentBytes,
   mailErrorCode,
@@ -125,6 +127,20 @@ describe("scale acceptance configuration", () => {
       for (const key of Object.keys(process.env)) if (!(key in before)) delete process.env[key];
       Object.assign(process.env, before);
     }
+  });
+  test("gateway requests name the Cloud host that the gateway admits", () => {
+    // The gateway of compose.prod.yml serves https://${CLOUD_HOST}; the harness reaches it on a loopback port.
+    const { CLOUD_HOST } = composeEnvironment("scale-test", "deadbeef");
+    const snapshot: DomainSnapshot = {
+      cloudHosts: cloudHostSet(`https://${CLOUD_HOST}`, [`http://cloud-gateway-${CLOUD_HOST}:3000`], false),
+      domains: new Map(),
+      domainsReady: true,
+      apps: new Map(),
+      development: false,
+    };
+    const loopback = (host: string) => new Request("http://127.0.0.1:49152/api/openapi.json", { headers: { host } });
+    expect(decideHost(loopback(GATEWAY_HOST_HEADER.host), snapshot)).toEqual({ kind: "cloud" });
+    expect(decideHost(loopback("127.0.0.1:49152"), snapshot)).toEqual({ kind: "unknown" });
   });
   test("Docker gets only its minimal client environment", () => {
     const allowed = {
