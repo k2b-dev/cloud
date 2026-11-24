@@ -431,7 +431,9 @@ export function createDragOnto(options: {
       if (event.key !== " " && event.key !== "Enter") return;
       // Only the item itself or its grip lifts it; Enter on a link or button inside the item stays theirs.
       const from = event.target;
-      if (from !== el && !(from instanceof Element && from.closest("[data-k2-drag-handle]"))) return;
+      const handle = from instanceof Element ? from.closest("[data-k2-drag-handle]") : null;
+      // The grip must be this item's own, not one of an item around it.
+      if (from !== el && !(handle && el instanceof Element && el.contains(handle))) return;
       event.preventDefault();
       setMoving(key);
       setOver(choices[0]?.id ?? null);
@@ -458,8 +460,9 @@ export function createDragOnto(options: {
   };
 
   /**
-   * Props for one item's element. Call it where the item renders (inside its `For` row), so its bindings end with the
-   * item.
+   * Props for one item's element (`ref` and `onKeyDown`). Call it where the item renders (inside its `For` row), so
+   * its bindings end with the item. Spread it after the item's own props; an item that needs its own `ref` or
+   * `onKeyDown` as well calls `item(key).ref(el)` and `item(key).onKeyDown(event)` from its own handlers.
    */
   const item = (key: string) => {
     let release: (() => void) | undefined;

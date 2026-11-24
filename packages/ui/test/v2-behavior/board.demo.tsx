@@ -80,6 +80,9 @@ export function Demo() {
                 {/* One text node: the server joins interpolated text into one node, the client keeps three, and the
                     shaping across node boundaries differs by subpixels (the reload contract caught it). */}
                 {`${mail.from} – ${mail.subject}`}
+                <button type="button" class="handle" data-testid={`open-${mail.id}`} aria-label={`Öffnen: ${mail.subject}`}>
+                  ›
+                </button>
               </li>
             )}
           </For>
