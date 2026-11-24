@@ -393,6 +393,94 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
+  // A bar in the flow of a column with a line of things (the state of a conversation): below 480 px of its column it
+  // wraps instead of cutting, one line stays 40 px on both sides of 480, and only a second line makes it higher.
+  // 480 and 479: a column of the wide window; 300: a phone, where the open detail is the whole page
+  for (const column of [480, 479, 300])
+    test(
+      `a bar with a line of things in a column of ${column} px: nothing is cut, one line is 40 px`,
+      async () => {
+        const page = await open("layout", { width: column < 400 ? column : 1440 });
+        try {
+          if (column >= 400) await narrowColumn(page, ".k2-pane[data-detail]", column);
+          const found = await page.evaluate(() => {
+            const bar = document.querySelector(".k2-pane[data-detail] > .k2-scroll > .k2-bar")!;
+            const box = bar.getBoundingClientRect();
+            const style = getComputedStyle(bar);
+            const inner = {
+              left: box.left + Number.parseFloat(style.paddingLeft),
+              right: box.right - Number.parseFloat(style.paddingRight),
+              top: box.top + Number.parseFloat(style.paddingTop),
+              bottom: box.bottom - Number.parseFloat(style.paddingBottom),
+            };
+            const things = [...bar.querySelectorAll(".k2-inline > *, .k2-bar-end > *")];
+            const cut = things
+              .filter((thing) => {
+                const r = thing.getBoundingClientRect();
+                // inside the bar's padding and shown by every box around it that clips
+                for (let up = thing.parentElement; up && up !== bar; up = up.parentElement) {
+                  const s = getComputedStyle(up);
+                  if (s.display === "contents" || s.overflow === "visible") continue;
+                  const c = up.getBoundingClientRect();
+                  if (r.left < c.left - 0.5 || r.right > c.right + 0.5 || r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5) return true;
+                }
+                return r.left < inner.left - 0.5 || r.right > inner.right + 0.5 || r.top < inner.top - 0.5 || r.bottom > inner.bottom + 0.5;
+              })
+              .map((thing) => thing.textContent?.trim() || thing.getAttribute("aria-label"));
+            const middles = things
+              .map((thing) => {
+                const r = thing.getBoundingClientRect();
+                return (r.top + r.bottom) / 2;
+              })
+              .sort((a, b) => a - b);
+            return {
+              cut,
+              lines: middles.filter((middle, index) => index === 0 || middle - middles[index - 1]! > 8).length,
+              height: box.height,
+              width: Math.round(box.width),
+            };
+          });
+          // the test frame keeps 8 px around the workspace in a phone window
+          expect(found.width).toBe(column >= 400 ? column : column - 16);
+          expect(found.cut).toEqual([]);
+          if (column >= 400) expect([found.lines, found.height]).toEqual([1, heights.bar]);
+          else {
+            expect(found.lines).toBe(2);
+            expect(found.height).toBeGreaterThan(heights.bar);
+          }
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // A row's note shares the first line with the title in equal parts and takes no more than it needs: a count and a
+  // number stay whole in a narrow column, while a long title is cut (three lines) or breaks (one or two lines).
+  for (const column of [400, 340])
+    test(
+      `a row's count and number stay whole in a column of ${column} px`,
+      async () => {
+        const page = await open("list");
+        try {
+          await narrowColumn(page, '.k2-pane[aria-label="Breite der Liste"]', column);
+          const notes = await page.evaluate(() =>
+            [...document.querySelectorAll(".k2-list > .k2-row .k2-row-meta")].map((meta) => [
+              meta.textContent,
+              meta.scrollWidth <= meta.clientWidth && meta.clientWidth > 0,
+            ]),
+          );
+          expect(notes).toEqual([
+            ["RE-2611-0042", true],
+            ["3", true],
+          ]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   for (const column of [360, 480, 640])
     test(
       `the bar of a selection in a column of ${column} px: nothing is cut, words give way to symbols first`,

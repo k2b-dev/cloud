@@ -7,17 +7,21 @@ import { For } from "solid-js";
 /** The mail composer of the mockup (variant A). */
 export const ComposerDrawing = () => (
   <div class="ui-v2-composer">
+    {/* the recipient and the sender's choices each stay whole; without room the choices take a line of their own */}
     <div class="ui-v2-composer__top">
-      <i class="ti ti-arrow-back-up" />
-      <span class="ui-v2-composer__to">An</span>Holzwerk Brandt
-      <i class="ti ti-x" />
-      <span class="ui-v2-composer__fill" />
-      <span class="ui-v2-composer__text">
-        von Kontakt
-        <i class="ti ti-chevron-down" />
+      <span class="ui-v2-composer__part">
+        <i class="ti ti-arrow-back-up" />
+        <span class="ui-v2-composer__to">An</span>Holzwerk Brandt
+        <i class="ti ti-x" />
       </span>
-      <span class="ui-v2-composer__text">Cc</span>
-      <span class="ui-v2-composer__text">Bcc</span>
+      <span class="ui-v2-composer__part ui-v2-composer__from">
+        <span class="ui-v2-composer__text">
+          von Kontakt
+          <i class="ti ti-chevron-down" />
+        </span>
+        <span class="ui-v2-composer__text">Cc</span>
+        <span class="ui-v2-composer__text">Bcc</span>
+      </span>
     </div>
     <div class="ui-v2-composer__write">
       <span>Antwort an Holzwerk Brandt schreiben …</span>

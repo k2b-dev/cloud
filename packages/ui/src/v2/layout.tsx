@@ -277,6 +277,8 @@ export type BarProps = {
  * A bar of fixed height with a line below. Its height comes from its place: 56 as the head of a workspace or pane,
  * 52 as a status row, 40 on its own. Controls in it take the height that leaves equal air above and below. The
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
+ * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
+ * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  */
 export const Bar = (props: BarProps) => {
   const start = resolveChildren(() => props.start);
