@@ -566,6 +566,25 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: a label that ends in … in its own box (the way back to a long name); red: the same cut without …",
+    async () => {
+      const label = "Suchergebnisse für Eichenplatten in allen Postfächern";
+      const button = (probe: string, labelStyle: string) =>
+        `<div style="width:160px;display:flex"><a href="#liste" class="k2-btn" data-probe="${probe}" style="flex:0 1 auto;min-width:0;white-space:nowrap">` +
+        `<span class="k2-t-meta" style="display:block;min-width:0;overflow:hidden;white-space:nowrap;${labelStyle}">${label}</span></a></div>`;
+      const page = await open(columns(button("short", "text-overflow:ellipsis") + button("clipped", "")));
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([
+          `control [data-probe="clipped"] cuts its label "${label.slice(0, 40)}"; it needs the room of its whole label`,
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: a label cut by a parent that hides what overflows; a scroller does not cut",
     async () => {
       const page = await open(

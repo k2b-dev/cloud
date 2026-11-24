@@ -26,7 +26,8 @@
  *
  * - **inside:** a band or a group is one thing (rule 9): a horizontal hairline inside it separates its parts and is a
  *   finding at any distance from other lines. A frame, a control's outline and a figure's track are no such line.
- * - **cut:** a control's label never leaves its box and is never clipped; a one-line text (the lines of a row, the
+ * - **cut:** a control's label never leaves its box and is never clipped, unless it ends in "…" in its own box (the
+ *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…".
  *
@@ -519,11 +520,12 @@ function measureInPage(options: InPage): DomResult {
       }
       return false;
     };
-    const textBoxes = (element: Element) => {
+    /** The boxes of the text in `element`, without text that `skip` names. */
+    const textBoxes = (element: Element, skip?: (node: Node) => boolean) => {
       const boxes: DOMRect[] = [];
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (!node.textContent?.trim() || hiddenName(node.parentElement)) continue;
+        if (!node.textContent?.trim() || hiddenName(node.parentElement) || skip?.(node)) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
         for (const box of Array.from(range.getClientRects())) if (box.width > 0 && box.height > 0) boxes.push(box);
@@ -554,17 +556,24 @@ function measureInPage(options: InPage): DomResult {
       }
       return { left, right };
     };
+    // A label that ends in "…" in its own box (one line that clips with `text-overflow: ellipsis`) is cut on purpose,
+    // as the way back to a list with a long name: it is no finding, while any other clipped label is.
+    const endsInEllipsis = (element: Element) => {
+      const style = getComputedStyle(element);
+      return style.textOverflow === "ellipsis" && style.overflowX !== "visible" && style.whiteSpace.startsWith("nowrap");
+    };
     for (const control of Array.from(root.querySelectorAll(options.controls))) {
       if (!visible(control) || control.parentElement?.closest(options.skip)) continue;
       const box = control.getBoundingClientRect();
       let clipped = false;
+      const shortened = [control, ...Array.from(control.querySelectorAll("*"))].filter(endsInEllipsis);
       for (const part of [control, ...Array.from(control.querySelectorAll("*"))]) {
         if (part !== control && hiddenName(part)) continue;
         const style = getComputedStyle(part);
-        if (style.overflowX !== "visible" && part.scrollWidth > part.clientWidth + 1) clipped = true;
+        if (style.overflowX !== "visible" && part.scrollWidth > part.clientWidth + 1 && !endsInEllipsis(part)) clipped = true;
       }
       const clip = hardClipX(control);
-      for (const r of textBoxes(control))
+      for (const r of textBoxes(control, (node) => shortened.some((part) => part.contains(node))))
         if (r.left < Math.max(box.left, clip.left) - 0.5 || r.right > Math.min(box.right, clip.right) + 0.5) clipped = true;
       if (clipped) cut.push(`control ${name(control)} cuts its label "${labelOf(control)}"; it needs the room of its whole label`);
     }
