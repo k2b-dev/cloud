@@ -185,6 +185,8 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
   return {
     ...data,
     mailbox: { ...data.mailbox, name: "Kontakt" },
+    // The server names the list in the page's language; the shared fixture's start is English "All mail".
+    listTitle: data.listTitle === "All mail" && url.searchParams.get("locale") !== "en" ? "Posteingang" : data.listTitle,
     folders: data.folders
       .filter((folder) => ["Inbox1", "Drafts1", "Sent1", "Filed1", "Long01"].includes(folder.id))
       .map((folder) => ({

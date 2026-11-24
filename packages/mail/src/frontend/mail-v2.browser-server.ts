@@ -79,7 +79,8 @@ export const startMailV2Server = async (options: { port?: number; hostname?: str
   const page = (url: URL) => {
     const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
     const html = renderToString(() => createComponent(Fixture, { source: `${url.pathname}${url.search}`, locale, now: now() }));
-    return `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mail v2</title><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-v2.css"><style>${frame}</style><script src="/mail-v2-shell.js"></script></head><body class="k2b-ui app-accent-scope" data-theme="light" style="${appAccentStyle("#0f766e")}"><div class="v2-shell"><main class="k2-ui">${html}</main></div><script type="module">
+    // The shell runs once the body is parsed (it appends to it), and before the islands, as the module below waits.
+    return `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mail v2</title><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><link rel="stylesheet" href="/mail-v2.css"><style>${frame}</style><script defer src="/mail-v2-shell.js"></script></head><body class="k2b-ui app-accent-scope" data-theme="light" style="${appAccentStyle("#0f766e")}"><div class="v2-shell"><main class="k2-ui">${html}</main></div><script type="module">
 await document.fonts.ready;
 await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));
 await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));

@@ -54,9 +54,11 @@ afterAll(async () => {
   await server?.stop();
 });
 
+/** The errors each page threw from its start; `pageErrors` collects only from the call on, so `open` keeps its list. */
+const errorsOf = new WeakMap<Page, string[]>();
 const open = async (path: string, width = 1440, height = width < 768 ? 844 : 900): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height } });
-  pageErrors(page);
+  errorsOf.set(page, pageErrors(page));
   await page.addInitScript(pinPageClock, Date.parse(MAIL_V2_NOW));
   await page.goto(`${server.url}${path}`);
   await page.waitForFunction(() => document.documentElement.dataset.mailV2Ready === "true", undefined, { timeout: 30_000 });
@@ -88,7 +90,7 @@ describe("Mail on the v2 pilot", () => {
           );
         }, mockup[width]!);
         expect(boxes).toEqual(Object.fromEntries(Object.entries(mockup[width]!).map(([part, [, box]]) => [part, box])));
-        expect(pageErrors(page)).toEqual([]);
+        expect(errorsOf.get(page)).toEqual([]);
       } finally {
         await page.close();
       }
@@ -162,8 +164,8 @@ describe("Mail on the v2 pilot", () => {
   test("on the phone the reader's way back names the list and returns to its row", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
     try {
-      // The way back is named by the list's title, which the server sends (the fixture's is "All mail").
-      const back = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "All mail", exact: true });
+      // The way back is named by the list's title, which the server sends.
+      const back = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "Posteingang", exact: true });
       await back.waitFor();
       await back.click();
       await page.waitForURL((url) => !url.searchParams.has("conversation"));
