@@ -17,6 +17,8 @@ import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
 
 const minutesAgo = (now: number, minutes: number) => new Date(now - minutes * 60_000).toISOString();
 const DAY = 24 * 60;
+/** The demo's signature, as the mockup shows it under the reply. */
+export const MAIL_V2_SIGNATURE = { id: "DemoSig1", name: "Kontakt", text: "Mira Solberg\nTischlerei Solberg & Kramer" };
 
 const people = [
   { id: "user-mira", displayName: "Mira Solberg" },
@@ -168,6 +170,8 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
       label: "Kontakt",
       displayName: "Kontakt",
       fromAddress: "kontakt@solberg-kramer.example",
+      // The mailbox's signature for this sender (the server renders it, see mail-v2.browser-server.ts).
+      defaultSignatureTemplateId: MAIL_V2_SIGNATURE.id,
     })),
   };
   const items = rows.map(([from, subject, preview, minutes, overrides], index) =>

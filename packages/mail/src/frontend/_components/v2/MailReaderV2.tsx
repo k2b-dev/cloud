@@ -17,6 +17,13 @@ import type { MailV2Text } from "./mail-v2-messages";
 import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
 
+/**
+ * The message frame's defaults on v2 (mockup mail.html): reading text 14/22 in the second text colour (n800), 8 px
+ * between paragraphs and none above the first. The frame cannot read the page's tokens, so the values stand here; each
+ * selector weighs no more than a message's own, which follow and win, so an HTML mail keeps its fonts and spacing.
+ */
+const MAIL_V2_FRAME_STYLE = "body { font-size: 14px; line-height: 22px; color: #27272a; } p { margin: 0 0 8px; }";
+
 const attachmentIcon = (contentType: string, name: string): string => {
   if (contentType === "application/pdf" || name.toLowerCase().endsWith(".pdf")) return "file-type-pdf";
   if (contentType.startsWith("image/")) return "photo";
@@ -98,7 +105,6 @@ function MessageV2(props: {
             <Show when={props.onReply}>
               {(reply) => <Button variant="ghost" icon="arrow-back-up" label={props.text.reply} onClick={() => reply()()} />}
             </Show>
-            <Button variant="ghost" icon="dots" label={props.text.moreActions} disabled />
           </>
         }
       />
@@ -118,6 +124,7 @@ function MessageV2(props: {
                 attachments={props.message.attachments}
                 remoteContent={props.message.remoteContent}
                 linksDisabled={props.message.security?.linksDisabled ?? false}
+                frameStyle={MAIL_V2_FRAME_STYLE}
                 onSelectionChange={() => undefined}
               />
             </div>
@@ -212,7 +219,6 @@ export default function MailReaderV2(props: {
               <Show when={c().canWrite()}>
                 <Button variant="ghost" icon="archive" label={props.text.archive} onClick={() => run("archive")} />
                 <Button variant="ghost" icon="trash" label={props.text.delete} onClick={() => run("trash")} />
-                <Button variant="ghost" icon="clock" label={props.text.later} disabled />
               </Show>
               <Show when={c().assignment()}>
                 <Show
@@ -231,7 +237,6 @@ export default function MailReaderV2(props: {
                   )}
                 </Show>
               </Show>
-              <Button variant="ghost" icon="dots" label={props.text.moreActions} disabled />
               <Button
                 variant="ghost"
                 icon="x"

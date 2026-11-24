@@ -49,6 +49,8 @@
   margin-top: auto;
   font: var(--k2-t-row);
   color: var(--k2-subtle);
+  /* a signature is lines of text: name, company, phone */
+  white-space: pre-line;
 }
 .k2-ui .k2-composer-foot {
   display: flex;

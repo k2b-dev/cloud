@@ -217,7 +217,6 @@ export default function MailWorkspaceV2(props: {
                 onInput={setSearch}
                 onKeyDown={searchKey}
               />
-              <Button variant="ghost" icon="dots" label={text().moreActions} disabled />
               <Show when={c().canWrite() && !c().assignedOnly()}>
                 <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
                   {c().sidebarText().compose}

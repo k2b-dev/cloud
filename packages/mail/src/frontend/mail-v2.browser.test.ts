@@ -182,6 +182,8 @@ describe("Mail on the v2 pilot", () => {
       const composer = page.locator('[data-k2-part="Composer"]');
       await composer.waitFor();
       expect(await composer.textContent()).toContain("Holzwerk Brandt");
+      // The sender's signature, as the server renders it, under the text.
+      await composer.locator(".k2-composer-signature").getByText("Tischlerei Solberg & Kramer").waitFor();
       await composer.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box-frame]').waitFor();
       // Mail's own composer writes there: its editor takes text.

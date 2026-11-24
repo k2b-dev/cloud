@@ -62,6 +62,8 @@ export default function MailMessageBody(props: {
   attachments: Array<{ id: string; contentId: string | null; contentType: string; sizeBytes: number }>;
   remoteContent: MessageRemoteContent;
   linksDisabled?: boolean;
+  /** The host's defaults for the frame's text, after the frame's own; a message's own styles still win (v2 pilot). */
+  frameStyle?: string;
   onSelectionChange: (value: string) => void;
 }) {
   const locale = useLocale();
@@ -134,6 +136,7 @@ export default function MailMessageBody(props: {
       localized.locale,
       { show: localized.t.showQuotedText, hide: localized.t.hideQuotedText },
       untrack(appearanceMode),
+      props.frameStyle,
     );
   });
   let plainBody: HTMLDivElement | undefined;

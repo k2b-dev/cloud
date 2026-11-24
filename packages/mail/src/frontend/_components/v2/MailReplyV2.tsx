@@ -2,7 +2,7 @@ import { Composer } from "@k2b/editor/composer";
 import type { DateContext } from "@k2b/stdlib";
 import { prompts, useLocale } from "@k2b/ui";
 import { Button, Icon, Text } from "@k2b/ui/v2";
-import { type Accessor, createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createResource, createSignal, on, Show } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import MailReplyBox from "../MailReplyBox";
 import { deriveReplyIdentityId, deriveReplyRecipients } from "../mail-compose-derivation";
@@ -10,6 +10,7 @@ import { createMailConversationNotes } from "../mail-conversation-notes";
 import { quoteOriginalOf } from "../mail-quote-original";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import type { MailV2Text } from "./mail-v2-messages";
+import { loadMailV2Signature } from "./mail-v2-signature";
 
 export type MailV2Session = {
   currentUserId: string;
@@ -76,6 +77,11 @@ export function createMailV2Reply(props: {
     });
   };
   const toLabel = () => recipients().join(", ");
+  // The sender's signature, as the reply will start with it; it appears under the text once it is loaded.
+  const [signature] = createResource(
+    () => (typeof window !== "undefined" && c().canWrite() ? sender()?.id : undefined),
+    (senderIdentityId) => loadMailV2Signature(data().mailbox.id, identities(), senderIdentityId).catch(() => null),
+  );
 
   return {
     /** The person may answer this conversation: it is open and has a message. */
@@ -111,6 +117,7 @@ export function createMailV2Reply(props: {
         }
         placeholder={props.text().writeReply({ name: toLabel() })}
         onStart={start}
+        signature={signature.latest ?? undefined}
         tools={
           <>
             <Button variant="ghost" icon="typography" label={props.text().formatting} onClick={start} />

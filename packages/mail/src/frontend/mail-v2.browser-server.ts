@@ -16,7 +16,7 @@ const root = mkdtempSync(join(cache, "mail-v2-browser-"));
 registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: Fixture, mailV2Data } = await import("./mail-v2.browser-fixture");
+const { default: Fixture, mailV2Data, MAIL_V2_SIGNATURE } = await import("./mail-v2.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../ui/dist");
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
 
@@ -132,7 +132,13 @@ document.documentElement.dataset.mailV2Ready='true';
       }
       if (url.pathname.endsWith("/presence")) return Response.json({ participants: [] });
       // The reply box writes into a seed the server derives, as the v1 suite's fixture answers it; nothing is stored.
-      if (url.pathname.endsWith("/compose-templates") || url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
+      if (url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
+      if (url.pathname.endsWith("/compose-templates"))
+        return Response.json([
+          { id: MAIL_V2_SIGNATURE.id, kind: "signature", scope: "mailbox", name: MAIL_V2_SIGNATURE.name, body: MAIL_V2_SIGNATURE.text },
+        ]);
+      if (url.pathname.endsWith("/compose-signature") && request.method === "POST")
+        return Response.json({ html: null, text: MAIL_V2_SIGNATURE.text, mailHtml: null });
       if (url.pathname.endsWith("/draft-seeds") && request.method === "POST") {
         const body: { origin: { input: Record<string, unknown> } } = await request.json();
         const input = body.origin.input;
