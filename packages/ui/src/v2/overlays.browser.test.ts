@@ -158,3 +158,38 @@ test("dialog on a phone: a sheet from the bottom, the whole width, its top corne
     { width: 390, touch: true },
   );
 });
+
+// Dialog.confirm (the concept's question before something that cannot be taken back): an alert dialog in the shape of
+// Dialog, rendered by Workspace. No close button; focus starts on the other button, Escape and that button answer no,
+// a press outside does nothing, the agreeing button answers yes, and it is never a sheet.
+for (const touch of [false, true])
+  test(`Dialog.confirm${touch ? " on a phone" : ""}: an alert dialog that answers yes or no`, async () => {
+    await withPage(
+      async (page) => {
+        const ask = async () => {
+          await page.getByRole("button", { name: "Löschen", exact: true }).click();
+          await page.getByRole("alertdialog", { name: "Auftrag löschen?" }).waitFor();
+          await settled(page);
+        };
+        const answer = () => page.getByText(/^Antwort: /).textContent();
+        await ask();
+        const dialog = page.locator(".k2-dialog[data-alert]");
+        expect(await dialog.getAttribute("data-presentation")).not.toBe("sheet");
+        expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Abbrechen");
+        expect(await page.locator('.k2-dialog[data-alert] > [data-slot="head"] .k2-btn').count()).toBe(0);
+        expect(await problems(page, ".k2-dialog")).toEqual([]);
+        // a press outside does not answer
+        await page.mouse.click(4, 4);
+        await settled(page);
+        expect(await dialog.count()).toBe(1);
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+        expect(await answer()).toBe("Antwort: nein");
+        await ask();
+        await page.getByRole("button", { name: "Löschen", exact: true }).last().click();
+        await page.waitForFunction(() => document.body.textContent?.includes("Antwort: ja"));
+        expect(await answer()).toBe("Antwort: ja");
+      },
+      touch ? { width: 390, touch } : {},
+    );
+  });

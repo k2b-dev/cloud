@@ -94,7 +94,7 @@ export {
 } from "./layout";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
 // The overlays: v2 shapes on the behaviour layer.
-export { Dialog, type DialogProps } from "./overlays";
+export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
