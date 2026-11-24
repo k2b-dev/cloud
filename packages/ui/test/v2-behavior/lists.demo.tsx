@@ -1,5 +1,5 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
-import { useListbox, useTree } from "../../src/v2/behavior/lists";
+import { type TreeParts, useListbox, useTree } from "../../src/v2/behavior/lists";
 
 const mails = [
   { value: "m1", label: "Angebot Eichenplatten" },
@@ -9,7 +9,7 @@ const mails = [
   { value: "m5", label: "Fotos vom Tisch" },
 ];
 
-type Folder = { value: string; label: string; children?: Folder[] };
+type Folder = { value: string; label: string; children?: Folder[]; branch?: boolean };
 const folders: Folder[] = [
   { value: "inbox", label: "Posteingang" },
   {
@@ -48,26 +48,42 @@ export function Demo() {
     onValueChange: (value) => setSelected(Array.isArray(value) ? value : value ? [value] : []),
   }));
   const nav = useTree(() => ({ mode: "none", current: "inbox", onAction: setOpened }));
-  const items = (entries: Folder[]): JSX.Element => (
+  // A second tree: its current page is nested (level 3), so its ancestors are expanded from the start, and one branch
+  // loads its children and fails.
+  const nested = useTree(() => ({
+    mode: "none",
+    current: "spam",
+    defaultExpanded: ["more", "hidden"],
+    loadChildren: (value) => (value === "remote" ? Promise.reject(new Error("offline")) : undefined),
+  }));
+  const tree = (parts: TreeParts, attribute: string, entries: Folder[]): JSX.Element => (
     <For each={entries}>
       {(folder) => (
-        <nav.Item class="tree-item" value={folder.value} label={folder.label} branch={folder.children !== undefined}>
+        <parts.Item class="tree-item" value={folder.value} label={folder.label} branch={folder.branch ?? folder.children !== undefined}>
           <div class="option">
-            <Show when={folder.children}>
-              <nav.Indicator>▸</nav.Indicator>
+            <Show when={folder.branch ?? folder.children}>
+              <parts.Indicator>▸</parts.Indicator>
             </Show>
-            <nav.Label data-folder={folder.value}>{folder.label}</nav.Label>
+            <parts.Label {...{ [attribute]: folder.value }}>{folder.label}</parts.Label>
           </div>
-          <Show when={folder.children}>{(children) => <nav.Group class="tree-group">{items(children())}</nav.Group>}</Show>
-        </nav.Item>
+          <Show when={folder.children}>
+            {(children) => <parts.Group class="tree-group">{tree(parts, attribute, children())}</parts.Group>}
+          </Show>
+        </parts.Item>
       )}
     </For>
   );
+  const items = (entries: Folder[]) => tree(nav, "data-folder", entries);
   return (
     <div class="page">
-      <nav.Root aria-label="Ordner" data-testid="tree">
-        {items(folders)}
-      </nav.Root>
+      <div>
+        <nav.Root aria-label="Ordner" data-testid="tree">
+          {items(folders)}
+        </nav.Root>
+        <nested.Root aria-label="Weitere Ordner" data-testid="nested-tree">
+          {tree(nested, "data-nested", [...folders.slice(2), { value: "remote", label: "Fernordner", branch: true }])}
+        </nested.Root>
+      </div>
       <div>
         <list.Root aria-label="Nachrichten" class="listbox" data-testid="listbox">
           <For each={mails}>

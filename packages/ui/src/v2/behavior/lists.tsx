@@ -62,7 +62,11 @@ export type TreeOptions = {
   onExpandedChange?: (expanded: string[]) => void;
   /** Whether a press on a branch's row expands it (default true); its indicator always does. */
   expandOnPress?: boolean;
-  /** The item of the current page: `aria-current="page"`, the first tab stop, its ancestors expanded. */
+  /**
+   * The item of the current page: `aria-current="page"` and the first tab stop. Core only knows rendered items, and
+   * the children of a collapsed branch are not rendered, so a nested current needs its ancestors in `defaultExpanded`
+   * (or `expanded`).
+   */
   current?: string | null;
   /** A press or Enter on an item, like opening a folder. A Promise marks the item pending until it settles. */
   onAction?: (value: string) => unknown;
@@ -131,11 +135,13 @@ export function useTree(options: () => TreeOptions = () => ({})): TreeParts {
   };
 }
 
-/** A part of the tree item around it: it takes that item's value. */
+/** A part of the tree item around it: it takes that item's value; a group also takes `keepMounted`, `hiddenUntilFound`. */
 const itemPart =
   (handle: Handle<typeof treePrimitive>, slot: "label" | "indicator" | "group", tag: string): SlotComponent =>
   (props) => {
     const item = useContext(ItemContext);
     if (!item) throw new Error(`A tree ${slot} must be inside a tree item.`);
-    return part(handle, slot, () => ({ value: item() }), props, tag);
+    // Slot props go to core, never onto the element as attributes.
+    const [own, rest] = splitProps(props, ["keepMounted", "hiddenUntilFound"]);
+    return part(handle, slot, () => ({ value: item(), keepMounted: own.keepMounted, hiddenUntilFound: own.hiddenUntilFound }), rest, tag);
   };
