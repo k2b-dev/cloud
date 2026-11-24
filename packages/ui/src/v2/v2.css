@@ -937,23 +937,26 @@
 .k2-ui .k2-row-lead > .k2-icon {
   color: var(--k2-c, var(--k2-subtle));
 }
+/* Title and note share the line in equal parts, and each takes no more than it needs: a short note (a count, a
+   number) and a short title always stay whole; only what is longer than its part is cut or breaks. */
 .k2-ui .k2-row-l1 {
   grid-area: l1;
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
+  justify-content: start;
   align-items: baseline;
-  gap: 8px;
+  column-gap: 8px;
 }
 /* in a row of one or two lines the title wraps (it is what the row is about); the quiet note after it is cut */
 .k2-ui .k2-row-title {
   font-weight: 400;
-  flex: 0 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .k2-ui .k2-row-l1 > .k2-row-meta {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
-  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2923,5 +2926,25 @@
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
+  }
+  /* A line of things that has no room wraps, so no chip or action is cut in half (or lost). */
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* A bar in the flow of a column (not a head or a status row, which have their own narrow forms) with such a line:
+     its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
+     line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
+     second line makes it higher. */
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
+    height: auto;
+    min-height: var(--k2-h-bar);
+    padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
+    display: contents;
   }
 }
