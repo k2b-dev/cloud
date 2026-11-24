@@ -42,6 +42,40 @@ export const collectPageErrorFindings = (workspaceRoot: string): Finding[] =>
       return findings;
     });
 
+const unreadMessage =
+  "keep the list pageErrors(page) returns from before the page loads and read that one; it collects only from its call on, so a list made for expect() or thrown away never holds an error";
+
+/**
+ * Every `pageErrors(...)` whose list nobody keeps: made inside `expect(...)` or thrown away. Such a list starts empty at
+ * that moment and stays so, and the check passes while the page threw (Mail's v2 pilot, 24.11.).
+ */
+export const collectUnreadPageErrorFindings = (workspaceRoot: string): Finding[] =>
+  [...workspacePackages(workspaceRoot), "scripts", "tests"]
+    .flatMap((root) => listFiles(join(workspaceRoot, root), sourceFilePattern))
+    .filter((file) => (isTestFile(file) || browserCode.test(file)) && relative(workspaceRoot, file) !== exempt)
+    .sort()
+    .flatMap((file) => {
+      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+      const findings: Finding[] = [];
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "pageErrors") {
+          const parent = node.parent;
+          const unread =
+            ts.isExpressionStatement(parent) ||
+            (ts.isCallExpression(parent) && ts.isIdentifier(parent.expression) && parent.expression.text === "expect");
+          if (unread)
+            findings.push({
+              file: join(workspaceRoot, relative(workspaceRoot, file)),
+              line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+              message: unreadMessage,
+            });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      return findings;
+    });
+
 const BASELINE_HEADER = [
   "# Known page-errors findings, one per file: <file> | <count>.",
   "# Migrations lower counts and remove entries; the rule never raises counts or adds lines.",
@@ -69,7 +103,8 @@ const readBaseline = (path: string): Map<string, number> => {
  */
 export const rule: Rule = {
   name: "page-errors",
-  description: "Browser tests collect page errors with pageErrors(page), not with an own pageerror listener",
+  description:
+    "Browser tests collect page errors with pageErrors(page), not with an own pageerror listener, and read the list they started",
   run: async ({ workspaceRoot, fix }) => {
     const baselinePath = join(workspaceRoot, BASELINE);
     const baseline = readBaseline(baselinePath);
@@ -79,7 +114,8 @@ export const rule: Rule = {
       entries.push(finding);
       byFile.set(finding.file!, entries);
     }
-    const failures: Finding[] = [];
+    // A list nobody reads has no baseline: every one fails.
+    const failures: Finding[] = collectUnreadPageErrorFindings(workspaceRoot);
     for (const [file, findings] of byFile) {
       if (findings.length > (baseline.get(file) ?? 0))
         failures.push(...findings.map((finding) => ({ ...finding, file: join(workspaceRoot, file) })));

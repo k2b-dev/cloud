@@ -104,8 +104,11 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
 });
+/** Each page's errors from its start: `pageErrors` collects only from its call on, so the list starts with the page. */
+const errorsOf = new WeakMap<Page, string[]>();
 async function pinnedPage(width = 390): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 780 : 900 }, reducedMotion: "reduce" });
+  errorsOf.set(page, pageErrors(page));
   // Pin Date only; timers and animation frames keep running normally.
   await page.addInitScript((at) => {
     const RealDate = Date;
@@ -186,7 +189,7 @@ test("one and several pages keep the shared card typography, one icon and no hor
             mkdirSync(shots, { recursive: true });
             await page.screenshot({ path: resolve(shots, `gl-${mode}-${theme}-${width}.png`) });
           }
-          expect(pageErrors(page)).toEqual([]);
+          expect(errorsOf.get(page)).toEqual([]);
         } finally {
           await page.close();
         }
@@ -221,7 +224,7 @@ test("current rights gate a live event; failed reads offer retry and Open naviga
         expect(await card.count()).toBe(0);
       }
       expect(attempts).toBe(status === 500 ? 2 : 1);
-      expect(pageErrors(page)).toEqual([]);
+      expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
     }
@@ -333,7 +336,7 @@ test("a successful initial read shows the finished line once; replaced activatio
         expect(await page.locator("main").boundingBox()).toEqual(before);
         expect(await page.locator(".assistant-code-decision__text").count()).toBe(1);
       }
-      expect(pageErrors(page)).toEqual([]);
+      expect(errorsOf.get(page)).toEqual([]);
     } finally {
       gate.resolve();
       await page.close();
@@ -378,7 +381,7 @@ test("many long page titles at 390 px keep one row, an ellipsis and a counted Co
       await page.setViewportSize({ width: 1440, height: 900 });
       await settled(page);
       expect(await more.evaluate((node) => node.getBoundingClientRect().height)).toBe(metrics.line);
-      expect(pageErrors(page)).toEqual([]);
+      expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
     }
@@ -416,7 +419,7 @@ test("without a Code-page target, many long titles at 390 px keep a text count a
       expect(metrics.ellipsis).toBe("ellipsis");
       expect(metrics.cut).toBe(true);
       expect(metrics.overflow).toBe(false);
-      expect(pageErrors(page)).toEqual([]);
+      expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
     }

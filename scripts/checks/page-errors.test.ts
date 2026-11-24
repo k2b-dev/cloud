@@ -52,6 +52,22 @@ test("reports an own pageerror listener in tests, browser suites, and harnesses"
   ]);
 });
 
+test("reports a pageErrors list made for expect() or thrown away, which never holds an earlier error", async () => {
+  const { found } = await run({
+    // Kept from before the page loads and read later: fine.
+    "packages/demo/src/kept.browser.test.ts": "const errors = pageErrors(page);\nawait page.goto(url);\nexpect(errors).toEqual([]);\n",
+    "packages/demo/src/fresh.browser.test.ts": "await page.goto(url);\nexpect(pageErrors(page)).toEqual([]);\n",
+    "packages/demo/src/dropped.browser.test.ts": "pageErrors(page);\nawait page.goto(url);\n",
+    // A baseline for own listeners does not cover it.
+    "scripts/checks/page-errors.baseline": "packages/demo/src/fresh.browser.test.ts | 1\n",
+  });
+  expect(found).toEqual([
+    "packages/demo/src/dropped.browser.test.ts:1",
+    "packages/demo/src/fresh.browser.test.ts:2",
+    "scripts/checks/page-errors.baseline:-",
+  ]);
+});
+
 test("the baseline keeps known listeners and only shrinks", async () => {
   const known = "packages/demo/src/list.browser.test.ts | 2\n";
   expect(
