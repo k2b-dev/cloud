@@ -82,24 +82,27 @@ export type V2ScreenName = keyof typeof v2Screens;
  */
 export const PhoneBar = (props: V2Screen["phone"]) => (
   <div class="ui-v2-phonebar" aria-hidden="true">
-    <Show
-      when={"back" in props ? props.back : undefined}
-      fallback={
-        <>
-          <span class="ui-v2-phonebar__title">{"app" in props ? props.app : ""}</span>
-          <i class="ti ti-chevron-down ui-v2-phonebar__muted" />
-        </>
-      }
-    >
-      {(back) => (
-        <>
-          <span class="ui-v2-phonebar__button">
-            <i class="ti ti-chevron-left" />
-          </span>
-          <span class="ui-v2-phonebar__title">{back()}</span>
-        </>
-      )}
-    </Show>
+    {/* the name's place: while an open detail brings its own way back (`Back`), that stands here instead */}
+    <span class="ui-v2-phonebar__name">
+      <Show
+        when={"back" in props ? props.back : undefined}
+        fallback={
+          <>
+            <span class="ui-v2-phonebar__title">{"app" in props ? props.app : ""}</span>
+            <i class="ti ti-chevron-down ui-v2-phonebar__muted" />
+          </>
+        }
+      >
+        {(back) => (
+          <>
+            <span class="ui-v2-phonebar__button">
+              <i class="ti ti-chevron-left" />
+            </span>
+            <span class="ui-v2-phonebar__title">{back()}</span>
+          </>
+        )}
+      </Show>
+    </span>
     <span class="ui-v2-phonebar__fill" />
     <span class="ui-v2-phonebar__button">
       <i class="ti ti-search" />

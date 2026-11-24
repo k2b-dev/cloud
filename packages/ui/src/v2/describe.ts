@@ -22,6 +22,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Workspace",
     "Pane",
     "Pane.Split",
+    "Back",
     "Bar",
     "StatusRow",
     "Nav",
@@ -42,6 +43,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Field.Row",
     "Field",
     "Toast",
+    "Empty",
+    "Loading",
+    "Failed",
   ]);
   // Parts that get their own line when they stand in the flow of a column, and are words inside a bar or a row.
   const flowBlocks = new Set(["Text", "Inline", "Tabs", "Check", "Choice", "Progress", "Button", "Steps", "Path"]);
@@ -219,6 +223,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           .map((flag) => ` ${flag}`)
           .join("")}${width ? ` width ${min || "?"}–${width}` : ""}`;
       }
+      case "Back": {
+        // the way back of a detail on the phone: its words, and whether it leads by its address
+        const button = element.querySelector("[data-k2-part='Button']");
+        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
+      }
       case "Bar":
       case "StatusRow": {
         const start = element.querySelector(":scope > .k2-bar-start");
@@ -300,9 +309,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         });
         const dropped =
           options.layout && !(table && hidden(table)) ? heads.filter((th) => hidden(th)).map((th) => clip(th.textContent ?? "", 20)) : [];
-        const rows = element.querySelectorAll("tbody > tr:not([data-group])").length;
+        // While it loads, placeholder rows hold the place of the rows: they are counted apart.
+        const rows = element.querySelectorAll("tbody > tr:not([data-group]):not([data-loading])").length;
+        const placeholders = element.querySelectorAll("tbody > tr[data-loading]").length;
+        const loading = table?.getAttribute("aria-busy") === "true" ? ` loading (${placeholders} placeholder rows)` : "";
         const wrap = element.querySelector("[data-wrap]") ? " wrap" : "";
-        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
+        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${loading}${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
       }
       case "Facts": {
         const labels = [...element.querySelectorAll("dt")].map(
@@ -334,6 +346,17 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      // The three states of a place that shows data, where the data will stand.
+      case "Empty":
+      case "Failed": {
+        const text = element.querySelector(".k2-state-text")?.textContent;
+        const button = element.querySelector("[data-k2-part='Button']");
+        return `${name} ${quote(text)}${button ? ` ${word(button)}` : ""}`;
+      }
+      case "Loading": {
+        const rows = element.querySelectorAll(":scope > .k2-row");
+        return `Loading ${rows.length} placeholder rows of ${rows[0]?.getAttribute("data-lines") ?? "1"} lines`;
+      }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
@@ -405,7 +428,24 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         for (const child of element.children) if (!child.hasAttribute("data-k2-part")) visit(child, next);
         return;
       }
-      if (name === "Canvas" || name === "Table" || name === "Prose" || name === "Nav" || name === "Facts" || name === "Tiles") return;
+      // "Erneut versuchen" stands only in place of data that failed to load once; a connection that retries on its
+      // own says so in the status row without a button, and what a person must fix is a Notice that names the deed.
+      if (name === "Failed" && element.closest("[data-k2-part='StatusRow'], [data-k2-part='Bar']"))
+        problems.push(
+          `Failed ${quote(element.querySelector(".k2-state-text")?.textContent, 30)} stands in a bar: Failed replaces the data that did not load; a connection that retries on its own says so in the StatusRow without a button`,
+        );
+      if (
+        name === "Canvas" ||
+        name === "Table" ||
+        name === "Prose" ||
+        name === "Nav" ||
+        name === "Facts" ||
+        name === "Tiles" ||
+        name === "Empty" ||
+        name === "Failed" ||
+        name === "Loading"
+      )
+        return;
     }
     for (const child of element.children) visit(child, next);
   };
@@ -421,6 +461,24 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     problems.push(
       `${primaries.length} primary buttons (${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per page; make the others secondary`,
     );
+  // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
+  if (options.layout) {
+    for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
+      if (hidden(control)) continue;
+      const box = control.getBoundingClientRect();
+      const label = control.querySelector(".k2-btn-label") ?? control;
+      if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
+        problems.push(
+          `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
+        );
+    }
+    for (const line of root.querySelectorAll(".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3)")) {
+      if (hidden(line)) continue;
+      const height = Number.parseFloat(getComputedStyle(line).lineHeight);
+      if (height > 0 && line.getBoundingClientRect().height > height * 1.5)
+        problems.push(`a line of a three-line Row wraps: ${quote(line.textContent, 30)}; each line stays on one line and ends with "…"`);
+    }
+  }
   // The floating main action of the phone must not cover a control at the end of the page.
   const fab = options.layout ? [...root.querySelectorAll(".k2-fab")].find((button) => !hidden(button)) : undefined;
   if (fab) {

@@ -3,9 +3,18 @@
 Every part marks its root with `data-k2-part="<Name>"`; that name is what
 `describeV2` prints. No part takes `class`, `style`, `size`, `gap`,
 `padding` or `density`. Shared types: `Action = { label, icon?, href?,
-onClick?, meta?, forward? }`, `Width = { min, default }` (px), `Status =
+onNavigate?, onClick?, meta?, forward? }`, `Width = { min, default }` (px), `Status =
 "ok" | "warn" | "bad"`, `Person = { name, initials?, color? }`. Icons are
 Tabler names without `ti-` (`plus`, `package`).
+
+**Links that open in place.** Every `href` stays a real `<a href>`: it works
+before the page is live and opens in a new tab with a modifier key. Beside
+it, `onNavigate` (type `OnNavigate`, the `LinkNavigateEvent` of
+`@k2b/ssr/nav`) opens the page in place on a plain click or Enter; the
+handler moves history with `push` or `replaceWith`, or loads the page with
+`fallback`. It exists on `Row`, `Tabs` and `Nav` items, `Action` (so on
+`Workspace primary` and every action as data), `Button`, `Chip` and the
+`open` target of a `Table`. Never use `onClick` for what has an address.
 
 ## Frame
 
@@ -28,8 +37,16 @@ A column that scrolls, with no padding: everything in it reaches both edges.
 - `head` (a `Bar` or `Tabs`), `status` (a `StatusRow`), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line.
-- `detail`: the reader beside a list. Hidden on the phone; open the entry as
-  its own page there.
+- `detail`: the reader beside a list. What is open belongs in the address:
+  render the detail only while the address names an entry. On the phone
+  the detail is the page.
+- `back` (an `Action` with `href`: the list's address without the open
+  entry, such as "Posteingang"): the way back on the phone, one bar above
+  the detail (the part `Back`). A long name (a search) is cut with "…" on
+  one line; the whole name stays its accessible name and its hint. A detail
+  that closes in place returns the focus to the row that opened it.
+- `scrollKey` (such as "mail-list"): back and forward bring the column
+  back to where it was scrolled.
 - `side`: the info column of a record; quieter sections, a `more` link
   becomes a row.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
@@ -130,7 +147,8 @@ inside it.
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `selected` (the open one), `yours` (you are
   next).
-- `href` or `onOpen` makes the whole row open something.
+- `href` (+ `onNavigate` to open in place) makes the whole row open its
+  entry; `onOpen` only for what has no address.
 
 Rows may also stand directly in a `Section` or `Band`.
 
@@ -158,8 +176,12 @@ direction }` (an arrow in that head), `phone(row) => { lines, avatar?, time?
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
-are cut off at 390 px (the outline reports it). Phone rows take no deed
-yet (gap): a row's action is not reachable there until v2 adds it.
+are cut off at 390 px (the outline reports it). A phone row opens what
+`open(row)` names; a row's other deeds live on the page it opens.
+
+`loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
+rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
+no rows and nothing loading, the empty state stands in place of the table.
 
 ### Facts
 
@@ -203,9 +225,11 @@ lines instead of cutting a thing.
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
-  such as the one a thread is assigned to), `href`,
+  such as the one a thread is assigned to), `href` (+ `onNavigate`),
   `onClick`, `menu` (chevron), `forward`, `disabled`, `type`, `keep` (stays
-  in a head on the phone). Without children it needs `label`.
+  in a head on the phone), `title` (a hint under the pointer, for a button
+  whose words give way to its symbol in a narrow place). Without children
+  it needs `label`.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), one control as child. `Field.Row`
@@ -215,6 +239,10 @@ lines instead of cutting a thing.
   required field shows `error="Pflichtfeld."`.
 - `Input`: `value`, `placeholder`, `type`, `icon`, `multiline`, `min`,
   `max`, `onInput`; `label` when it stands without a `Field` (a search).
+  `onKeyDown` (Enter to search, Escape to clear; while
+  `event.isComposing`, Enter belongs to the input method and must not
+  search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
+  icon button, such as the filter of a search).
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
 - `DateInput`: `value`, `onInput`, `placeholder`.
@@ -254,6 +282,23 @@ lines instead of cutting a thing.
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`.
+
+## States
+
+Each stands where the data will stand, without a box, so the head and the
+status row above it never move.
+
+- `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
+  keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
+  (the one way out).
+- `Loading`: `rows` (3 when not set; give as many as usually come),
+  `lines` (1, 2 or 3, as the rows that will come). It stands where the
+  `List` will stand; a `Table` takes `loading` itself.
+- `Failed`: `text` (what could not be loaded and what stays as it is),
+  `onRetry`; the button says "Erneut versuchen". Only for data that failed
+  to load once, in its place. Never in a status row: a connection that
+  retries on its own says so in the `StatusRow` without a button, and
+  something a person must fix is a `Notice` that names the deed.
 
 ## Tools
 

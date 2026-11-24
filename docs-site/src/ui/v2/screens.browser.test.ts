@@ -201,24 +201,56 @@ describe("v2 demo screens keep the mockup", () => {
 
   // The mockup draws no phone with a message open; the parts come from the v2 rules: the message takes the place of the
   // list, its way back to the inbox a bar of 44 px above its head, and the list's row opens the message by its address.
-  test("mail at 390 px with a message open: the message is the page, with its way back", async () => {
+  // On the phone an open message is the page: the head of the workspace (its views) gives way, and the message's way
+  // back, the part `Back`, stands where the phone bar names the app, as the Cloud shell shows it. It is the one way
+  // back on the page, a link that takes the focus.
+  test("mail at 390 px with a message open: the message is the page, its way back in the phone bar", async () => {
     const page = await show("mail", 390);
     try {
       const found = await page.evaluate(() => {
-        const ws = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
         const box = (selector: string) => {
           const r = document.querySelector(selector)!.getBoundingClientRect();
-          return `${r.left - ws.left},${r.top - ws.top} ${r.width}x${r.height}`;
+          return `${r.left},${r.top} ${r.width}x${r.height}`;
+        };
+        const seen = (element: Element) => {
+          const style = getComputedStyle(element);
+          return element.getClientRects().length > 0 && style.visibility !== "hidden";
         };
         return {
           list: document.querySelector('.k2-pane[aria-label="Breite der Liste"]')!.getBoundingClientRect().width,
+          head: seen(document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!),
+          bar: box(".ui-v2-phonebar"),
+          back: box('.k2-pane[data-detail] > [data-k2-part="Back"]'),
           detail: box(".k2-pane[data-detail]"),
-          back: box(".k2-pane-back"),
+          // the app's name in the bar gives its place to the way back; nothing else leads back
+          name: seen(document.querySelector(".ui-v2-phonebar__name")!),
+          ways: [...document.querySelectorAll("a, button")].filter(
+            (element) => seen(element) && /Posteingang|zurück/i.test(element.textContent ?? element.getAttribute("aria-label") ?? ""),
+          ).length,
         };
       });
-      // the head of the workspace (the views) stays above it, 44 px
-      expect(found).toEqual({ list: 0, detail: `0,44 390x${844 - 52 - 44}`, back: "0,44 390x44" });
-      expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("/en/ui/v2/screen/mail-list");
+      expect(found).toEqual({
+        list: 0,
+        head: false,
+        bar: "0,0 390x52",
+        back: "0,0 390x52",
+        detail: "0,0 390x844",
+        name: false,
+        ways: 1,
+      });
+      const back = page.getByRole("link", { name: "Posteingang" });
+      expect(await back.getAttribute("href")).toBe("/en/ui/v2/screen/mail-list");
+      await back.focus();
+      await settled(page);
+      expect(await page.evaluate(() => document.activeElement?.closest('[data-k2-part="Back"]') !== null)).toBe(true);
+      // it takes the pointer, too: the picture of the bar lies above it but lets clicks through
+      const point = await back.boundingBox();
+      expect(
+        await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-k2-part="Back"]') !== null, [
+          point!.x + point!.width / 2,
+          point!.y + point!.height / 2,
+        ] as const),
+      ).toBe(true);
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
     } finally {
       await page.close();
@@ -305,9 +337,9 @@ describe("v2 demo screens keep the mockup", () => {
   }, 30_000);
 
   // On the phone the platform's bar (52 px) stands above the app, as the mockup draws it, so the page has no empty
-  // strip at the top: the app's switcher in Mail, the way back to a list in a record and in the table.
+  // strip at the top: the app's switcher in Mail, the way back to a list in a record and in the table. (An open
+  // message brings its own way back into the bar, above.)
   for (const [name, title] of [
-    ["mail", "Mail"],
     ["mailList", "Mail"],
     ["record", "Kunden"],
     ["table", "Aufträge"],

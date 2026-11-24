@@ -174,7 +174,9 @@
   --k2-float-large: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.75);
 }
 
-@media (max-width: 767px) {
+/* The phone is every width below 768 px, written as "not at least 768" so a fractional width at zoom (767.5 px)
+   falls on one side of the line, never between two queries. */
+@media not all and (min-width: 768px) {
   .k2-ui {
     --k2-edge: 16px;
   }
@@ -484,8 +486,19 @@
   padding: 0 var(--k2-edge);
   border-bottom: var(--k2-hairline);
 }
+/* a long name of the list (a search, a folder deep down) is cut at its end with "…": the button never leaves its bar
+   and never runs under what stands beside it; the whole name stays its accessible name and its hint */
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
   margin-left: -8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% + 8px);
+}
+.k2-ui .k2-pane-back > .k2-btn[data-variant="text"] > .k2-btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;
@@ -2712,7 +2725,7 @@
 }
 
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
-@media (max-width: 767px) {
+@media not all and (min-width: 768px) {
   .k2-ui .k2-ws {
     border: 0;
     border-radius: 0;
@@ -2760,6 +2773,11 @@
   }
   .k2-ui .k2-pane-back {
     display: flex;
+  }
+  /* while a detail with its way back is the page, the head of the workspace (its views) gives way: the way back is
+     the one thing above the detail, and the platform may show it in its own bar ([data-k2-part="Back"]) */
+  .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
+    display: none;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
