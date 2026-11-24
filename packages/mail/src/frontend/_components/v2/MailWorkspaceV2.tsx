@@ -1,7 +1,8 @@
+import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { announce, useLocale } from "@k2b/ui";
-import { Bar, Button, Input, Nav, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Input, Nav, type NavGroup, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
@@ -150,6 +151,11 @@ export default function MailWorkspaceV2(props: {
     );
   });
   const hiddenCount = () => props.shell.mailboxes.filter((mailbox) => props.shell.preferences.isHidden(mailbox.id)).length;
+  // The sidebar's entries, also in the shell's phone menu ("Mail ⌄"), where the sidebar gives way.
+  const navGroups = createMemo((): NavGroup[] => [{ label: text().mailboxes, items: navItems() }]);
+  const navFoot = createMemo((): NavItem[] | undefined =>
+    hiddenCount() > 0 ? [{ label: text().hidden({ count: hiddenCount() }), icon: "eye-off" }] : undefined,
+  );
 
   // ── Head ───────────────────────────────────────────────────────────────────────────────────────────────────────
   const tabs = createMemo(() => {
@@ -192,105 +198,101 @@ export default function MailWorkspaceV2(props: {
   const runOnSelection = (actionId: "archive" | "trash") => void c().runAction(actionId);
 
   return (
-    <Workspace
-      sidebarLabel={text().sidebarWidth}
-      primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
-      sidebar={
-        <Nav
-          title="Mail"
-          icon="mail"
-          groups={[{ label: text().mailboxes, items: navItems() }]}
-          foot={hiddenCount() > 0 ? [{ label: text().hidden({ count: hiddenCount() }), icon: "eye-off" }] : undefined}
-        />
-      }
-      head={
-        <Bar
-          start={<Tabs label={text().views} items={tabs()} />}
-          end={
-            <>
-              <Input
-                type="search"
-                icon="search"
-                label={text().search}
-                placeholder={text().search}
-                value={search()}
-                onInput={setSearch}
-                onKeyDown={searchKey}
-              />
-              <Show when={c().canWrite() && !c().assignedOnly()}>
-                <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
-                  {c().sidebarText().compose}
-                </Button>
-              </Show>
-            </>
-          }
-        />
-      }
-    >
-      <Pane.Split>
-        <Pane
-          label={text().listWidth}
-          width={c().readerOpen() ? { min: 320, default: 432 } : undefined}
-          scrollKey={`mail-list-${c().data.mailbox.id}`}
-          status={
-            <StatusRow
-              select={
-                c().canWrite() && items().some((item) => item.conversationId)
-                  ? {
-                      label: c().t().selectAllConversations,
-                      checked: selectionCount() === 0 ? false : selectionCount() >= items().length ? true : "mixed",
-                      onChange: () => c().toggleAllConversations(),
-                    }
-                  : undefined
-              }
-              lead={text().unread({ count: formatCount(unreadCount()) })}
-              facts={
-                c().data.listMode === "conversations"
-                  ? [
-                      {
-                        before: text().today,
-                        value: c().data.doneTodayCounts.doneToday,
-                        after: text().done({ automated: c().data.doneTodayCounts.doneByAutomation }),
-                      },
-                    ]
-                  : undefined
-              }
-              selection={
-                selecting()
-                  ? {
-                      count: text().selected({ count: formatCount(selectionCount()) }),
-                      actions: [
-                        { label: text().done_, icon: "check", onClick: () => void c().completeSelection() },
-                        { label: text().archive, icon: "archive", onClick: () => runOnSelection("archive") },
-                        { label: text().delete, icon: "trash", onClick: () => runOnSelection("trash") },
-                      ],
-                      clear: { label: text().clearSelection, onClick: () => c().exitHeadSelection() },
-                    }
-                  : undefined
-              }
-            />
-          }
-        >
-          <MailListV2
-            items={items()}
-            requestPath={c().requestPath()}
-            selectedConversationId={c().data.selectedConversationId}
-            selectedMessageId={c().data.selectedMessageId}
-            dateConfig={props.dateConfig}
-            error={c().data.listError}
-            nextCursor={c().data.nextListCursor}
-            assigneeNames={c().assigneeNames}
-            text={text()}
-            label={c().t().conversationList}
-            onOpen={openRow}
-            onRetry={() => void c().refreshList()}
-            onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
+    <>
+      <V2WorkspaceNavigation label={c().data.mailbox.name} groups={navGroups()} foot={navFoot()} />
+      <Workspace
+        sidebarLabel={text().sidebarWidth}
+        primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
+        sidebar={<Nav title="Mail" icon="mail" groups={navGroups()} foot={navFoot()} />}
+        head={
+          <Bar
+            start={<Tabs label={text().views} items={tabs()} />}
+            end={
+              <>
+                <Input
+                  type="search"
+                  icon="search"
+                  label={text().search}
+                  placeholder={text().search}
+                  value={search()}
+                  onInput={setSearch}
+                  onKeyDown={searchKey}
+                />
+                <Show when={c().canWrite() && !c().assignedOnly()}>
+                  <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
+                    {c().sidebarText().compose}
+                  </Button>
+                </Show>
+              </>
+            }
           />
-        </Pane>
-        <Show when={c().readerOpen()}>
-          <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} session={props.session} />
-        </Show>
-      </Pane.Split>
-    </Workspace>
+        }
+      >
+        <Pane.Split>
+          <Pane
+            label={text().listWidth}
+            width={c().readerOpen() ? { min: 320, default: 432 } : undefined}
+            scrollKey={`mail-list-${c().data.mailbox.id}`}
+            status={
+              <StatusRow
+                select={
+                  c().canWrite() && items().some((item) => item.conversationId)
+                    ? {
+                        label: c().t().selectAllConversations,
+                        checked: selectionCount() === 0 ? false : selectionCount() >= items().length ? true : "mixed",
+                        onChange: () => c().toggleAllConversations(),
+                      }
+                    : undefined
+                }
+                lead={text().unread({ count: formatCount(unreadCount()) })}
+                facts={
+                  c().data.listMode === "conversations"
+                    ? [
+                        {
+                          before: text().today,
+                          value: c().data.doneTodayCounts.doneToday,
+                          after: text().done({ automated: c().data.doneTodayCounts.doneByAutomation }),
+                        },
+                      ]
+                    : undefined
+                }
+                selection={
+                  selecting()
+                    ? {
+                        count: text().selected({ count: formatCount(selectionCount()) }),
+                        actions: [
+                          { label: text().done_, icon: "check", onClick: () => void c().completeSelection() },
+                          { label: text().archive, icon: "archive", onClick: () => runOnSelection("archive") },
+                          { label: text().delete, icon: "trash", onClick: () => runOnSelection("trash") },
+                        ],
+                        clear: { label: text().clearSelection, onClick: () => c().exitHeadSelection() },
+                      }
+                    : undefined
+                }
+              />
+            }
+          >
+            <MailListV2
+              items={items()}
+              requestPath={c().requestPath()}
+              selectedConversationId={c().data.selectedConversationId}
+              selectedMessageId={c().data.selectedMessageId}
+              dateConfig={props.dateConfig}
+              error={c().data.listError}
+              nextCursor={c().data.nextListCursor}
+              assigneeNames={c().assigneeNames}
+              text={text()}
+              label={c().t().conversationList}
+              onOpen={openRow}
+              onRetry={() => void c().refreshList()}
+              onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
+            />
+          </Pane>
+          <Show when={c().readerOpen()}>
+            <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} session={props.session} />
+          </Show>
+        </Pane.Split>
+      </Workspace>
+    </>
   );
 }
