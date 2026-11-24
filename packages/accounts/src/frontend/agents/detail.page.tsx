@@ -9,7 +9,8 @@ import { ssr } from "../../config";
 import AccountsNavigation from "../AccountsNavigation.island";
 import { accountsNavigationItems } from "../accounts-nav";
 import { accountsMessages } from "../messages";
-import AgentScreen, { type AgentKeyView } from "./AgentScreen.island";
+import type { AgentKeyView } from "./AgentKeyDialogs";
+import AgentScreen from "./AgentScreen.island";
 import { agentIdFromPath } from "./agent-id";
 import { type AgentKey, agentKeyOpenFrom, agentKeySortFrom, isAgentKeyExpired, sortAgentKeys } from "./agent-keys";
 
