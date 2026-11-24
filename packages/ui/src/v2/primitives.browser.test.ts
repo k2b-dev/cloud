@@ -250,8 +250,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // On the phone an open detail has one way back: its Back. The × that closes it beside the list gives way in its head,
-  // also when it is kept (`keep`), from 767 px down; from 768 px the × closes the detail and there is no Back.
+  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (without `keep`, as
+  // every head action) gives way in its head from 767 px down; from 768 px the × closes the detail and there is no Back.
   for (const width of [390, 767, 768, 1440])
     test(
       `${width} px: an open detail shows either its way back or its close ×, never both`,

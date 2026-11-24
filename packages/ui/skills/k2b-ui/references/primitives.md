@@ -42,8 +42,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the detail is the page.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`), and the head's close × (an icon button
-  with the symbol `x`) gives way there, also with `keep`. A long name (a search) is cut with "…" on
+  the detail (the part `Back`). With `back`, the head's close × needs no
+  `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
@@ -151,8 +151,10 @@ inside it.
 - `select: { selected, onChange }`: the row stands in a selection (pair it
   with `StatusRow select` and `selection`). A box in the lead, named by the
   title, takes the place of the symbol, person or dot; a selected row is
-  blue, also while it is `current`. Give it to every row of the list while
-  selecting, and to none otherwise.
+  blue, also while it is `current`; `yours` and `selected` share that blue
+  tint on purpose. Give it to every row of the list while selecting, and to
+  none otherwise: turning selection on swaps the lead for the box, so the
+  text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
 

@@ -78,7 +78,7 @@ export function Fixture() {
             head={
               <Bar
                 start={<Text type="lead">Angebot Eichenplatten – Liefertermin</Text>}
-                end={<Button variant="ghost" icon="x" label="Schließen" href="#posteingang" onClick={() => setOpen(false)} keep />}
+                end={<Button variant="ghost" icon="x" label="Schließen" href="#posteingang" onClick={() => setOpen(false)} />}
               />
             }
           >

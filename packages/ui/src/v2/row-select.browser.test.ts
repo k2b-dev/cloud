@@ -157,7 +157,7 @@ test("the box is a checkbox named by the title: a click and the space key change
 });
 
 for (const width of [1440, 390])
-  test(`${width} px: no layout rule broken; the box's target stays inside its row and a tap beside the mark sets it`, async () => {
+  test(`${width} px: no layout rule broken; the box's target stays inside its row, before the title, and a tap beside the mark sets it`, async () => {
     await withPage(
       async (page) => {
         expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
@@ -174,14 +174,16 @@ for (const width of [1440, 390])
           [...document.querySelectorAll('[aria-label="Nachrichten"] > .k2-row')].map((row) => {
             const input = row.querySelector(".k2-mark-input")!.getBoundingClientRect();
             const box = row.getBoundingClientRect();
+            const title = row.querySelector(".k2-row-title")!.getBoundingClientRect();
             return {
               wide: Math.round(input.width),
               high: Math.round(input.height),
               inside: input.top >= box.top - 0.5 && input.bottom <= box.bottom + 0.5 && input.left >= box.left - 0.5,
+              beforeTitle: input.right <= title.left + 0.5,
             };
           }),
         );
-        for (const each of target) expect(each).toEqual({ wide: 40, high: 36, inside: true });
+        for (const each of target) expect(each).toEqual({ wide: 36, high: 36, inside: true, beforeTitle: true });
         // every box stands on one line and every title starts on one edge, the row of a person too
         const edges = await page.evaluate(() =>
           [...document.querySelectorAll('[aria-label="Nachrichten"] > .k2-row')].map((row) => [

@@ -122,8 +122,7 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               end={
                 <>
                   <Button icon="check">Erledigt</Button>
-                  {/* kept on the phone, as Mail keeps it: there the way back takes its place all the same */}
-                  <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" keep />
+                  <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" />
                 </>
               }
             />

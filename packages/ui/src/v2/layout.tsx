@@ -127,8 +127,8 @@ export type PaneProps = {
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. The detail's own close × in its head (an icon button with the symbol `x`, `keep` or not) gives
-   * way on the phone too: the detail has one way back there.
+   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
+   * it, the × gives way on the phone, so the detail has one way back there.
    */
   back?: Action;
   /** The side column of a record (the info column): quieter sections. */

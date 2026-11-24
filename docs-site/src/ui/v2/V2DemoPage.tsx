@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import MailSelectScreen from "./MailSelectScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
@@ -44,7 +45,7 @@ export const v2Screens = {
     mockup: "tabelle-grids.html (selection), mail.html",
     app: "#0f766e",
     phone: { app: "Mail" },
-    render: () => <MailScreen open={false} selecting />,
+    render: () => <MailSelectScreen />,
   },
   record: {
     title: "Kundenakte · Überblick",
