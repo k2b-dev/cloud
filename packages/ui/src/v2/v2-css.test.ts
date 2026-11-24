@@ -22,11 +22,21 @@ const declarations = (selector: string, media?: string): Map<string, string> => 
 };
 
 const scope = declarations(".k2-ui");
-const phone = declarations(".k2-ui", "(max-width: 767px)");
+const phone = declarations(".k2-ui", "not all and (min-width: 768px)");
 
 test("the type roles in v2.css are the roles in tokens.ts", () => {
   for (const [role, { size, lineHeight, weight }] of Object.entries(typeRoles))
     expect(scope.get(`--k2-t-${role}`)).toBe(`${weight} ${size}px/${lineHeight}px var(--k2-font)`);
+});
+
+test("the phone is one query, `not all and (min-width: 768px)`, so a fractional width at zoom has no gap", () => {
+  // `max-width: 767px` leaves 767.5 px between the phone and the wide screen: rules of both sides would miss it
+  const media: string[] = [];
+  root.walkAtRules("media", (rule) => {
+    media.push(rule.params);
+  });
+  expect(media.filter((params) => /width/.test(params))).toEqual(media.filter((params) => params === "not all and (min-width: 768px)"));
+  expect(media.filter((params) => /max-width/.test(params))).toEqual([]);
 });
 
 test("the text edge is 20 px, 16 px below 768 px, and 24 px further in after an icon", () => {

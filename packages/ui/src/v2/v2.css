@@ -174,7 +174,9 @@
   --k2-float-large: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.75);
 }
 
-@media (max-width: 767px) {
+/* The phone is every width below 768 px, written as "not at least 768" so a fractional width at zoom (767.5 px)
+   falls on one side of the line, never between two queries. */
+@media not all and (min-width: 768px) {
   .k2-ui {
     --k2-edge: 16px;
   }
@@ -2723,7 +2725,7 @@
 }
 
 /* ── Phone: below 768 px. Columns become pages; rows ≥ 60; the main action floats ───────────────────────────── */
-@media (max-width: 767px) {
+@media not all and (min-width: 768px) {
   .k2-ui .k2-ws {
     border: 0;
     border-radius: 0;
