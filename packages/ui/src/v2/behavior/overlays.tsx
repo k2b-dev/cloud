@@ -34,8 +34,14 @@ export type DialogParts = {
   Close: SlotComponent;
 };
 
+/**
+ * How a dialog presents: `"sheet"` slides up from the bottom of the screen and can be swiped away; `"auto"` does that
+ * on small touch screens (decided by core each time it opens; the server renders the dialog).
+ */
+export type Presentation = "auto" | "dialog" | "sheet";
+
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
-export function useDialog(options: () => OverlayOptions & { modal?: boolean } = () => ({})): DialogParts {
+export function useDialog(options: () => OverlayOptions & { modal?: boolean; presentation?: Presentation } = () => ({})): DialogParts {
   // An async action in the dialog announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
   const handle = usePrimitive(dialogPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));

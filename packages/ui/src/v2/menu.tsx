@@ -17,8 +17,8 @@ export type MenuItem = {
   /** Red, for a deed that destroys; the menu puts a line before the first one. */
   danger?: boolean;
   disabled?: boolean;
-  /** The key that does the same, shown quietly at the end, such as "⌘ D". */
-  shortcut?: string;
+  /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
+  meta?: string;
   /** An entry that toggles: `onClick` flips it. */
   checked?: boolean;
   /** A submenu, opened to the side. */
@@ -109,7 +109,7 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
       </span>
     </Show>
     <span class="k2-mi-label">{props.item.label}</span>
-    <Show when={props.item.shortcut}>{(keys) => <span class="k2-mi-meta">{keys()}</span>}</Show>
+    <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
     {props.end}
   </>
 );
@@ -188,6 +188,8 @@ const MenuRoot = (props: MenuProps) => {
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}
         data-menu={iconOnly() ? undefined : ""}
+        // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
+        data-keep={iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
       >
