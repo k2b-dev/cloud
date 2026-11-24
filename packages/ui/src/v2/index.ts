@@ -96,7 +96,7 @@ export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, P
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
-export { Dialog, type DialogProps } from "./overlays";
+export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";

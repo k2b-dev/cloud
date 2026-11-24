@@ -4,6 +4,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
+import { ConfirmDialog } from "./overlays";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -97,6 +98,8 @@ export const Workspace = (props: WorkspaceProps) => {
           </Dynamic>
         )}
       </Show>
+      {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
+      <ConfirmDialog />
     </div>
   );
 };

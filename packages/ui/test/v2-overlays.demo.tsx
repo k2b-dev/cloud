@@ -7,6 +7,17 @@ import { Bar, Button, Dialog, Field, Pane, Section, Select, Text, Workspace } fr
 export function Demo() {
   const [open, setOpen] = createSignal(false);
   const [kind, setKind] = createSignal("Neubau");
+  const [answer, setAnswer] = createSignal("keine");
+  const remove = async () =>
+    setAnswer(
+      (await Dialog.confirm({
+        title: "Auftrag löschen?",
+        description: "Der Auftrag und seine Positionen werden gelöscht.",
+        confirm: "Löschen",
+      }))
+        ? "ja"
+        : "nein",
+    );
   const long = document.documentElement.dataset.long !== undefined;
   return (
     <Workspace
@@ -18,9 +29,14 @@ export function Demo() {
             </Text>
           }
           end={
-            <Button keep onClick={() => setOpen(true)}>
-              Abbrechen
-            </Button>
+            <>
+              <Button keep onClick={remove}>
+                Löschen
+              </Button>
+              <Button keep onClick={() => setOpen(true)}>
+                Abbrechen
+              </Button>
+            </>
           }
         />
       }
@@ -30,6 +46,7 @@ export function Demo() {
           <Field name="kind" label="Art">
             <Select options={["Neubau", "Reparatur", "Montage"]} value={kind()} onChange={setKind} />
           </Field>
+          <Text>Antwort: {answer()}</Text>
         </Section>
       </Pane>
       <Dialog
