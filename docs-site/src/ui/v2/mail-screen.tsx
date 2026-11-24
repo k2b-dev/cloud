@@ -158,7 +158,11 @@ const message = [
 // Only Brandt's row opens, since the demo has one message to read.
 const screen = "/en/ui/v2/screen";
 
-export const MailScreen = (props: { open?: boolean }) => (
+// "mail-select" shows the list in a selection, with nothing open: every row has its box, two are chosen, and
+// the status row is the bar of what can be done with them. A fixed state: the boxes do not change here.
+const chosen = new Set(["Holzwerk Brandt", "Stadtwerke Auental"]);
+
+export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => (
   <Workspace
     sidebarLabel="Breite der Seitenleiste"
     primary={{ label: "Neu", icon: "pencil" }}
@@ -220,9 +224,22 @@ export const MailScreen = (props: { open?: boolean }) => (
         width={{ min: 320, default: 432 }}
         status={
           <StatusRow
-            select={{ label: "Alle auswählen" }}
+            select={{ label: "Alle auswählen", checked: props.selecting ? "mixed" : undefined }}
             lead="7 ungelesen"
             facts={[{ before: "Heute", value: 12, after: "erledigt · 5 davon automatisch" }]}
+            selection={
+              props.selecting
+                ? {
+                    count: `${chosen.size} ausgewählt`,
+                    actions: [
+                      { label: "Erledigt", icon: "check" },
+                      { label: "Archivieren", icon: "archive" },
+                      { label: "Löschen", icon: "trash" },
+                    ],
+                    clear: { label: "Auswahl aufheben", href: `${screen}/mail` },
+                  }
+                : undefined
+            }
           />
         }
       >
@@ -234,9 +251,10 @@ export const MailScreen = (props: { open?: boolean }) => (
                 meta={mail.count}
                 time={mail.at}
                 unread={mail.unread}
-                selected={mail.selected && props.open !== false}
+                current={mail.selected && props.open !== false}
                 href={mail.selected ? `${screen}/mail` : undefined}
                 marks={mail.marks?.()}
+                select={props.selecting ? { selected: chosen.has(mail.from), onChange: () => undefined } : undefined}
               />
             )}
           </For>
