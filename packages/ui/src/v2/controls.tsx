@@ -9,6 +9,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { type ChoiceItem, useSelect } from "./behavior/select";
 import { Icon } from "./marks";
 
 type FieldIds = {
@@ -23,6 +24,11 @@ type FieldIds = {
   described?: string;
   /** A control of several choices (Check, Choice) makes the field a named group instead of a labelled control. */
   group: () => void;
+  /**
+   * A control whose id the behaviour layer owns (Select) is named by the label line through `aria-labelledby`, so the
+   * label line points at no id with `for`.
+   */
+  named: () => void;
 };
 const FieldContext = createContext<FieldIds>();
 
@@ -55,6 +61,7 @@ export const Field = (props: FieldProps) => {
   // The control is made first, so the field knows whether it labels one control or names a group of choices; the
   // order is the same on the server and in the browser.
   let grouped = false;
+  let named = false;
   const content = (
     <FieldContext.Provider
       value={{
@@ -74,6 +81,9 @@ export const Field = (props: FieldProps) => {
         },
         group: () => {
           grouped = true;
+        },
+        named: () => {
+          named = true;
         },
       }}
     >
@@ -100,6 +110,14 @@ export const Field = (props: FieldProps) => {
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
     <div class="k2-field" data-k2-part="Field" role="group" aria-labelledby={label}>
+      <span class="k2-field-label" id={label}>
+        {labelLine}
+      </span>
+      {content}
+      {messageLine}
+    </div>
+  ) : named ? (
+    <div class="k2-field" data-k2-part="Field">
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
@@ -212,58 +230,76 @@ export const Input = (props: InputProps) => {
   );
 };
 
+export type SelectOption = { value: string; label: string; disabled?: boolean };
+
 export type SelectProps = {
-  options: readonly (string | { value: string; label: string })[];
+  options: readonly (string | SelectOption)[];
   /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
+  /** A name for the selection when it stands without a Field. */
   label?: string;
 };
 
 /**
- * The closed shape of a selection: the value and a chevron in the round field. (The list opens with the behaviour
- * layer; until then it is a native select laid over the shape, so it works with the keyboard and in forms.) The
- * shape always shows the value that is chosen now.
+ * One value from a list: the round field shows it with a chevron, and the list opens below it with the keyboard,
+ * typeahead and a check at the chosen option (the behaviour layer on the ui-sdk core). The list is at least as wide as
+ * its field. The value reaches a form through a hidden input.
  */
 export const Select = (props: SelectProps) => {
   const field = useField();
-  const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
-  const [chosen, setChosen] = createSignal(props.value);
-  const value = () => (props.onChange ? props.value : chosen());
-  const current = () => options().find((option) => option.value === value());
+  // the behaviour layer owns the trigger's id, so the field names it through aria-labelledby
+  field?.named();
+  const items = (): ChoiceItem[] => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  const [chosen, setChosen] = createSignal<string | null>(props.value ?? null);
+  const value = () => (props.onChange ? (props.value ?? null) : chosen());
+  const select = useSelect(() => ({
+    items: items(),
+    value: value(),
+    onValueChange: (next: string | null) => {
+      if (next === null) return;
+      setChosen(next);
+      props.onChange?.(next);
+    },
+    placeholder: props.placeholder,
+    required: field?.required,
+  }));
   return (
-    <span class="k2-input" data-k2-part="Select" data-select="" data-invalid={field?.invalid ? "" : undefined}>
-      <span class="k2-input-value" data-placeholder={current() ? undefined : ""}>
-        {current()?.label ?? props.placeholder ?? ""}
-      </span>
-      <Icon name="chevron-down" />
-      <select
-        class="k2-native-select"
-        id={field?.control}
-        name={props.name ?? field?.name}
+    <>
+      <select.Trigger
+        class="k2-input"
+        data-k2-part="Select"
+        data-select=""
+        data-invalid={field?.invalid ? "" : undefined}
+        aria-labelledby={field?.label}
         aria-label={field ? undefined : props.label}
-        aria-invalid={field?.invalid ? "true" : undefined}
         aria-describedby={field?.described}
-        required={field?.required || undefined}
-        onChange={(event) => {
-          setChosen(event.currentTarget.value);
-          props.onChange?.(event.currentTarget.value);
-        }}
+        aria-invalid={field?.invalid ? "true" : undefined}
       >
-        <Show when={!current()}>
-          <option value="">{props.placeholder ?? ""}</option>
-        </Show>
-        <For each={options()}>
-          {(option) => (
-            <option value={option.value} selected={option.value === value()}>
-              {option.label}
-            </option>
-          )}
-        </For>
-      </select>
-    </span>
+        <span class="k2-input-value" data-placeholder={value() === null ? "" : undefined}>
+          <select.Value placeholder={props.placeholder ?? ""} />
+        </span>
+        <Icon name="chevron-down" />
+      </select.Trigger>
+      <Show when={props.name ?? field?.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
+      <select.Popup
+        class="k2-menu"
+        data-listbox=""
+        sideOffset={4}
+        collisionPadding={8}
+        option={(item: ChoiceItem) => (
+          <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
+            {item.label}
+            <select.ItemIndicator item={item.value} class="k2-mi-meta">
+              <Icon name="check" />
+            </select.ItemIndicator>
+          </select.Item>
+        )}
+      />
+    </>
   );
 };
 

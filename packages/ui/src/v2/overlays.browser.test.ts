@@ -135,6 +135,46 @@ test("in a narrow window without touch the dialog keeps 16 px to the edges of th
   );
 });
 
+// The open list of a selection (Bausteine 09): exactly as wide as its field, an option per row of 32 px, a check at the
+// chosen option; the keyboard and the form work.
+for (const width of [1440, 390]) {
+  test(`select at ${width}: the list is as wide as its field, the chosen option has the check, the choice reaches the form`, async () => {
+    await withPage(
+      async (page) => {
+        const trigger = page.locator('[data-k2-part="Select"]');
+        expect((await box(trigger)).height).toBe(heights.control);
+        // the field's label names the selection (the behaviour layer owns the trigger's id, so it is aria-labelledby)
+        expect(await page.getByRole("combobox", { name: "Art" }).count()).toBe(1);
+        expect(await page.locator('.k2-field-label[for]:has-text("Art")').count()).toBe(0);
+        await trigger.click();
+        const list = page.locator(".k2-menu[data-listbox]");
+        await list.waitFor();
+        await settled(page);
+        const [field, popup] = [await box(trigger), await box(list)];
+        expect([popup.x, popup.width]).toEqual([field.x, field.width]);
+        expect(await list.locator(".k2-mi").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))).toEqual([
+          32, 32, 32,
+        ]);
+        // the check stands only at the chosen option, at the end of its row
+        const checks = await list.locator(".k2-mi").evaluateAll((items) =>
+          items.map((item) => {
+            const mark = item.querySelector(".k2-mi-meta");
+            return !!mark && mark.getClientRects().length > 0;
+          }),
+        );
+        expect(checks).toEqual([true, false, false]);
+        expect(await problems(page, "body")).toEqual([]);
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
+        await list.waitFor({ state: "hidden" });
+        expect(await trigger.textContent()).toContain("Reparatur");
+        expect(await page.locator('input[type="hidden"][name="kind"]').inputValue()).toBe("Reparatur");
+      },
+      { width },
+    );
+  });
+}
+
 // The mockup: "a dialog, on the phone a sheet". On a small touch screen core presents it as a sheet from the bottom:
 // the whole width, its top corners round, at the bottom of the window; Escape still closes it.
 test("dialog on a phone: a sheet from the bottom, the whole width, its top corners round", async () => {
