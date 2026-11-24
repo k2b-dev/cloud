@@ -1,4 +1,4 @@
-import { children as resolveChildren, createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, Index, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -88,16 +88,19 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[] }) => {
   // every entry keeps the place of the symbol once one entry has a symbol, so the words line up
   const lead = () => props.entries.some((entry) => entry !== "separator" && entry.icon);
+  // By place, not by object: new data for an open menu (a tick that flipped) updates its entries in place, so the
+  // highlight and the focus stay where they are.
   return (
-    <For each={menuEntries(props.entries)}>
-      {(entry, index) =>
-        entry === "separator" ? (
-          <props.level.Separator class="k2-msep" />
-        ) : (
-          <Entry level={props.level} item={entry} value={String(index())} lead={lead()} />
-        )
-      }
-    </For>
+    <Index each={menuEntries(props.entries)}>
+      {(entry, index) => (
+        <Show
+          when={((current) => (current === "separator" ? undefined : current))(entry())}
+          fallback={<props.level.Separator class="k2-msep" />}
+        >
+          {(item) => <Entry level={props.level} item={item()} value={String(index)} lead={lead()} />}
+        </Show>
+      )}
+    </Index>
   );
 };
 
@@ -114,46 +117,65 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
   </>
 );
 
+/** One entry. Its kind (submenu, tick, link, deed) is fixed when it is made; its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; item: MenuItem; value: string; lead: boolean }) => {
-  const item = props.item;
-  const common = {
+  const shared = {
     class: "k2-mi",
-    "data-danger": item.danger ? "" : undefined,
-    value: props.value,
-    label: item.label,
-    disabled: item.disabled,
+    get "data-danger"() {
+      return props.item.danger ? "" : undefined;
+    },
+    get disabled() {
+      return props.item.disabled;
+    },
   };
-  if (item.items) {
+  const keyed = {
+    ...shared,
+    value: props.value,
+    get label() {
+      return props.item.label;
+    },
+  };
+  const kind = untrack(() => (props.item.items ? "submenu" : props.item.checked !== undefined ? "tick" : props.item.href ? "link" : "deed"));
+  if (kind === "submenu") {
     const sub = props.level.useSubmenu();
-    const entries = item.items;
     return (
       <>
-        <sub.Trigger {...common} value={undefined} label={undefined}>
-          <EntryFace item={item} lead={props.lead} end={<Icon name="chevron-right" />} />
+        <sub.Trigger {...shared}>
+          <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
         <sub.Popup class="k2-menu" data-k2-part="Menu" sideOffset={4} collisionPadding={8}>
-          <Entries level={sub} entries={entries} />
+          <Entries level={sub} entries={props.item.items ?? []} />
         </sub.Popup>
       </>
     );
   }
-  if (item.checked !== undefined) {
+  if (kind === "tick") {
     return (
-      <props.level.CheckboxItem {...common} checked={item.checked} onCheckedChange={() => item.onClick?.()}>
-        <EntryFace item={item} lead={props.lead} end={<span class="k2-mi-tick">{item.checked ? <Icon name="check" /> : null}</span>} />
+      <props.level.CheckboxItem {...keyed} checked={props.item.checked ?? false} onCheckedChange={() => props.item.onClick?.()}>
+        <EntryFace
+          item={props.item}
+          lead={props.lead}
+          end={
+            <span class="k2-mi-tick">
+              <Show when={props.item.checked}>
+                <Icon name="check" />
+              </Show>
+            </span>
+          }
+        />
       </props.level.CheckboxItem>
     );
   }
-  if (item.href !== undefined && !item.disabled) {
+  if (kind === "link") {
     return (
-      <props.level.LinkItem {...common} href={item.href}>
-        <EntryFace item={item} lead={props.lead} />
+      <props.level.LinkItem {...keyed} href={props.item.disabled ? undefined : props.item.href}>
+        <EntryFace item={props.item} lead={props.lead} />
       </props.level.LinkItem>
     );
   }
   return (
-    <props.level.Item {...common} onSelect={() => item.onClick?.()}>
-      <EntryFace item={item} lead={props.lead} />
+    <props.level.Item {...keyed} onSelect={() => props.item.onClick?.()}>
+      <EntryFace item={props.item} lead={props.lead} />
     </props.level.Item>
   );
 };
