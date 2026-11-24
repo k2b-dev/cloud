@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { type AccessSort, AccessScreen } from "./v2-access.fixture";
+import { AccessScreen, type AccessSort } from "./v2-access.fixture";
 
 // The access screen in the browser: the heads sort in place, "Bild ändern" turns busy on a press until the test ends
 // it, and the hooks count what the screen asked for.
