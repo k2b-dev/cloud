@@ -1,4 +1,14 @@
-import { createContext, createRenderEffect, createSignal, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
+import {
+  createContext,
+  createRenderEffect,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  children as resolveChildren,
+  Show,
+  useContext,
+} from "solid-js";
 import { Icon } from "./marks";
 
 type FieldIds = {
@@ -130,11 +140,31 @@ export type InputProps = {
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
   onInput?: (value: string) => void;
+  /**
+   * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
+   * `event.isComposing` is true the key belongs to an input method (Japanese, Chinese, …): Enter then confirms the
+   * characters and must not search.
+   */
+  onKeyDown?: (event: KeyboardEvent) => void;
+  /**
+   * The text field itself, to focus it (`input.focus()`) or select its text: `let input; <Input ref={input} />` or a
+   * function that takes it.
+   */
+  ref?: HTMLInputElement | HTMLTextAreaElement | ((element: HTMLInputElement | HTMLTextAreaElement) => void);
+  /** At the end inside the field: a symbol, or a ghost icon button such as the filter of a search. */
+  end?: JSX.Element;
+};
+
+/** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
+const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLTextAreaElement) => {
+  if (typeof ref === "function") ref(element);
 };
 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  // the end is made once, here (reading the prop twice would make its JSX twice)
+  const end = resolveChildren(() => props.end);
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
@@ -159,14 +189,24 @@ export const Input = (props: InputProps) => {
         fallback={
           <input
             {...shared()}
+            ref={(element) => forwardRef(props.ref, element)}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
             onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onKeyDown={(event) => props.onKeyDown?.(event)}
           />
         }
       >
-        <textarea {...shared()} onInput={(event) => props.onInput?.(event.currentTarget.value)} />
+        <textarea
+          {...shared()}
+          ref={(element) => forwardRef(props.ref, element)}
+          onInput={(event) => props.onInput?.(event.currentTarget.value)}
+          onKeyDown={(event) => props.onKeyDown?.(event)}
+        />
+      </Show>
+      <Show when={end() !== undefined}>
+        <span class="k2-input-end">{end()}</span>
       </Show>
     </span>
   );

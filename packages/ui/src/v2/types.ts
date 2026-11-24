@@ -1,3 +1,14 @@
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+
+/**
+ * Opens a link's page in place, beside the real link (`href`): the contract of `@k2b/ssr/nav`'s `Link`, which the
+ * primitive renders. A plain same-origin click (the main button, no modifier key, no other target) reaches it; the
+ * link has then taken the click and cancelled a pending page swap, and the handler moves history with `push` or
+ * `replaceWith`, or loads the page with `fallback`. A click with a modifier key, "open in new tab" and a click before
+ * the page is live stay the browser's.
+ */
+export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
+
 /** The width of a column that can be dragged: its minimum and its default, in CSS px. Nothing else. */
 export type Width = { min: number; default: number };
 
@@ -10,6 +21,8 @@ export type Action = {
   /** A Tabler icon name without the `ti-` prefix, such as `plus`. */
   icon?: string;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   onClick?: () => void;
   /** A quiet summary after the label where the place shows one, such as "Bank, Person, Portal". */
   meta?: string;
