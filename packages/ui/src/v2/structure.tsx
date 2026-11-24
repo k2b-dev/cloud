@@ -7,7 +7,15 @@ import type { Action, TwoActions } from "./types";
 const HeadActions = (props: { actions?: TwoActions }) => (
   <For each={props.actions}>
     {(action) => (
-      <Button variant="text" icon={action.icon} forward={action.forward} href={action.href} onClick={() => action.onClick?.()}>
+      <Button
+        variant="text"
+        icon={action.icon}
+        forward={action.forward}
+        href={action.href}
+        onNavigate={action.onNavigate}
+        onClick={() => action.onClick?.()}
+        disabled={action.disabled}
+      >
         {action.label}
       </Button>
     )}

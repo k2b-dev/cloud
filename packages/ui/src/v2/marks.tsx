@@ -1,4 +1,4 @@
-import { type JSX, Show } from "solid-js";
+import { createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
@@ -33,25 +33,61 @@ export const Icon = (props: IconProps) => (
   />
 );
 
-export type AvatarProps = Person;
+export type AvatarProps = Person & {
+  /**
+   * The name stands right beside the avatar (a record head, a button with words): the avatar is then decoration and
+   * says nothing a second time. The places that show the name set it themselves.
+   */
+  decorative?: boolean;
+};
 
 /**
- * A person as initials on a colour. The place sets the size: 24 px by default, 32 px leading a row of two or three
- * lines and in a record head (soft there), 20 px among the marks of a row and in a button.
+ * A person as a picture, or as initials on a colour. The place sets the size: 24 px by default, 32 px leading a row
+ * of two or three lines and in a record head (soft there), 20 px among the marks of a row and in a button. A picture
+ * lies over the initials in the same place: while it loads, and when it fails, the initials show.
  */
-export const Avatar = (props: AvatarProps) => (
-  <span
-    class="k2-av"
-    data-k2-part="Avatar"
-    data-k2-avatar=""
-    role="img"
-    aria-label={props.name}
-    // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
-    style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
-  >
-    {initialsOf(props)}
-  </span>
-);
+export const Avatar = (props: AvatarProps) => {
+  // What became of which picture: shown (the initials under it then leave, as a picture may be transparent) or
+  // failed. It belongs to its address, so a new picture (one just changed) is tried afresh.
+  const [outcome, setOutcome] = createSignal<{ src: string; state: "shown" | "failed" }>();
+  const picture = () => {
+    const seen = outcome();
+    return seen && seen.src === props.image ? seen.state : undefined;
+  };
+  const settle = (image: HTMLImageElement, state: "shown" | "failed") => setOutcome({ src: image.getAttribute("src") ?? "", state });
+  // a picture the browser had before the page came alive fired its events before anyone listened
+  const settled = (image: HTMLImageElement) => {
+    if (image.complete) settle(image, image.naturalWidth > 0 ? "shown" : "failed");
+  };
+  return (
+    <span
+      class="k2-av"
+      data-k2-part="Avatar"
+      data-k2-avatar=""
+      data-image={props.image ? (picture() ?? "") : undefined}
+      role="img"
+      aria-label={props.name}
+      aria-hidden={props.decorative ? "true" : undefined}
+      // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
+      style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
+    >
+      {initialsOf(props)}
+      {/* the avatar itself carries the name; the picture adds none (a failed one then draws nothing over the initials) */}
+      <Show when={picture() !== "failed" && props.image}>
+        {(image) => (
+          <img
+            src={image()}
+            alt=""
+            decoding="async"
+            ref={(element) => queueMicrotask(() => settled(element))}
+            onLoad={(event) => settle(event.currentTarget, "shown")}
+            onError={(event) => settle(event.currentTarget, "failed")}
+          />
+        )}
+      </Show>
+    </span>
+  );
+};
 
 export type ChipProps = {
   children: JSX.Element;
