@@ -13,6 +13,7 @@ import { describeV2 } from "./describe";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-describe-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 const { fixtures } = await import("../../test/v2-fixtures");
+const { Fixture: StatesFixture } = await import("../../test/v2-states-navigation.fixture");
 
 const windows: Window[] = [];
 afterAll(async () => {
@@ -95,6 +96,29 @@ describe("describeV2", () => {
         `<span class="k2-input" data-k2-part="Select"><span class="k2-input-value" data-placeholder="">Bitte wählen</span><select></select></span></div>`,
     );
     expect(text).toContain('Field "Land": Select placeholder "Bitte wählen"');
+  });
+
+  test("names a place that loads, and a table that keeps its head while it loads", () => {
+    const text = outline(renderToString(() => createComponent(StatesFixture, {})));
+    expect(text).toContain("Loading 3 placeholder rows of 3 lines");
+    expect(text).toMatch(/Table "[^"]+" \d+ columns × 0 rows loading \(\d+ placeholder rows\)/);
+    expect(text).not.toContain("Problems");
+  });
+
+  test("names the empty and the failed state, and a failed state in a bar as a problem", () => {
+    const state = (part: string, text: string, button: string) =>
+      `<div class="k2-state" data-k2-part="${part}"><span class="k2-sign"></span><span class="k2-state-text">${text}</span>` +
+      `<button class="k2-btn" data-k2-part="Button"><span class="k2-btn-label">${button}</span></button></div>`;
+    const text = outline(
+      `<section class="k2-pane" data-k2-part="Pane" aria-label="Liste"><div class="k2-scroll">` +
+        state("Empty", "Keine Unterhaltungen in diesem Ordner.", "Filter zurücksetzen") +
+        state("Failed", "Unterhaltungen konnten nicht geladen werden.", "Erneut versuchen") +
+        `<div class="k2-bar" data-k2-part="StatusRow">${state("Failed", "Verbindung unterbrochen.", "Erneut versuchen")}</div>` +
+        `</div></section>`,
+    );
+    expect(text).toContain('Empty "Keine Unterhaltungen in diesem Ordner." ["Filter zurücksetzen"]');
+    expect(text).toContain('Failed "Unterhaltungen konnten nicht geladen werden." ["Erneut versuchen"]');
+    expect(text).toContain('- Failed "Verbindung unterbrochen." stands in a bar: Failed replaces the data that did not load');
   });
 
   test("says so when nothing on the page is v2", () => {

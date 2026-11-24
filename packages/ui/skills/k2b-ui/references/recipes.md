@@ -93,7 +93,9 @@ sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
 button at the end; `Table` with widths, a status `Chip`, an amount column
 `align: "end"`, one text button per row, `drop` on the columns that matter
 least, and `phone(row)` so the phone shows two-line rows instead of a cut
-table. With no rows: a `Band` with `Text muted`.
+table. `open(row)` gives each row the address of its invoice (on the phone
+too); `empty` says "Keine offenen Rechnungen." in place of the table, and
+`loading` would hold its place while the rows load.
 
 - The lead says the one thing; the rest are facts, which leave on the phone.
 - A deed per row is a `Button variant="text"` in its own last column.

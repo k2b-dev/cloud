@@ -42,6 +42,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Field.Row",
     "Field",
     "Toast",
+    "Empty",
+    "Loading",
+    "Failed",
   ]);
   // Parts that get their own line when they stand in the flow of a column, and are words inside a bar or a row.
   const flowBlocks = new Set(["Text", "Inline", "Tabs", "Check", "Choice", "Progress", "Button", "Steps", "Path"]);
@@ -300,9 +303,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         });
         const dropped =
           options.layout && !(table && hidden(table)) ? heads.filter((th) => hidden(th)).map((th) => clip(th.textContent ?? "", 20)) : [];
-        const rows = element.querySelectorAll("tbody > tr:not([data-group])").length;
+        // While it loads, placeholder rows hold the place of the rows: they are counted apart.
+        const rows = element.querySelectorAll("tbody > tr:not([data-group]):not([data-loading])").length;
+        const placeholders = element.querySelectorAll("tbody > tr[data-loading]").length;
+        const loading = table?.getAttribute("aria-busy") === "true" ? ` loading (${placeholders} placeholder rows)` : "";
         const wrap = element.querySelector("[data-wrap]") ? " wrap" : "";
-        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
+        return `Table ${quote(table?.getAttribute("aria-label"))} ${heads.length} columns × ${rows} rows${loading}${wrap}${extras.length ? ` (${extras.join(", ")})` : ""}: ${columns.join(", ")}${dropped.length ? ` — hidden at this width: ${dropped.join(", ")}` : ""}`;
       }
       case "Facts": {
         const labels = [...element.querySelectorAll("dt")].map(
@@ -334,6 +340,17 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      // The three states of a place that shows data, where the data will stand.
+      case "Empty":
+      case "Failed": {
+        const text = element.querySelector(".k2-state-text")?.textContent;
+        const button = element.querySelector("[data-k2-part='Button']");
+        return `${name} ${quote(text)}${button ? ` ${word(button)}` : ""}`;
+      }
+      case "Loading": {
+        const rows = element.querySelectorAll(":scope > .k2-row");
+        return `Loading ${rows.length} placeholder rows of ${rows[0]?.getAttribute("data-lines") ?? "1"} lines`;
+      }
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
@@ -405,7 +422,24 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         for (const child of element.children) if (!child.hasAttribute("data-k2-part")) visit(child, next);
         return;
       }
-      if (name === "Canvas" || name === "Table" || name === "Prose" || name === "Nav" || name === "Facts" || name === "Tiles") return;
+      // "Erneut versuchen" stands only in place of data that failed to load once; a connection that retries on its
+      // own says so in the status row without a button, and what a person must fix is a Notice that names the deed.
+      if (name === "Failed" && element.closest("[data-k2-part='StatusRow'], [data-k2-part='Bar']"))
+        problems.push(
+          `Failed ${quote(element.querySelector(".k2-state-text")?.textContent, 30)} stands in a bar: Failed replaces the data that did not load; a connection that retries on its own says so in the StatusRow without a button`,
+        );
+      if (
+        name === "Canvas" ||
+        name === "Table" ||
+        name === "Prose" ||
+        name === "Nav" ||
+        name === "Facts" ||
+        name === "Tiles" ||
+        name === "Empty" ||
+        name === "Failed" ||
+        name === "Loading"
+      )
+        return;
     }
     for (const child of element.children) visit(child, next);
   };

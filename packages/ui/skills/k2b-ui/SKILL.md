@@ -82,7 +82,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | attachments, like things to press | `Tiles` | `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
-| nothing to show yet | `Band` with `<Text muted>` (gap: no `Empty` yet) | `table.tsx` |
+| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |
+| data still loading | `Loading` where the list will stand; a table takes `loading` | – |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
+| a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
+| a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
 
 ## The rules, and why
 
@@ -116,6 +120,16 @@ without a head action has its "Save" as the one primary in its footer
 `Bar`; a form shown beside a page that has a head primary saves with a
 default (framed) button.
 
+What a list has open belongs in the address: render the `Pane detail` only
+while the address names an entry, give its `back` an `href` to the list
+without that entry, and make rows open with `href` (plus `onNavigate` to
+open in place). Reload, back and forward then show the same page.
+
+"Erneut versuchen" belongs to one place only: `Failed`, standing where data
+that failed to load once would stand. A connection that retries on its own
+says so in the `StatusRow` without a button; something a person must fix is
+a `Notice` that names the deed.
+
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -129,21 +143,19 @@ default (framed) button.
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`.
+- **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 `Dialog`, `Menu`, `Popover`, `Tooltip`, `Toast` (their behaviour exists
-inside `@k2b/ui`, the v2 components follow), an empty state (`Empty`), loading and
-error states of a whole pane, a search field and filter components, the
-mail and chat composer (comes from
-`@k2b/editor`), an assistant message or answer card, and a phone form for
-a narrow panel (the phone form follows the viewport below 768 px, not the
-width of a 400 px side panel).
+inside `@k2b/ui`, the v2 components follow), filter components, the mail
+and chat composer (comes from `@k2b/editor`), and an assistant message or
+answer card.
 How to stand in until then: a dialog is a `Pane detail` (see
-[primitives](references/primitives.md), "Pane.Split"); an empty state is a
-`Band` with `<Text muted>`; filters are a `Button variant="ghost" menu` or
-pressed `Chip`s in `StatusRow filters`.
+[primitives](references/primitives.md), "Pane.Split"); filters are a
+`Button variant="ghost" menu` or pressed `Chip`s in `StatusRow filters`,
+or a ghost icon button in a search field's `end`.
 
 ## See what you built
 

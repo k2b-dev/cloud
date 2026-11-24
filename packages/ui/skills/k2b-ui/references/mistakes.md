@@ -95,6 +95,13 @@ columns (often the amount and the deed) are cut off. Give the table
 `phone(row)`; `drop` alone is rarely enough. The same happens at 1440 px
 when a `Pane detail` beside the table has no `width`.
 
+### `Failed "…" stands in a bar` (outline)
+
+"Erneut versuchen" belongs only where data that failed to load once would
+stand. In a status row or bar, a connection that retries on its own says so
+in words (`StatusRow lead` or a fact) without a button; something a person
+must fix is a `Notice` that names the deed.
+
 ### A line under a section head, between entries, inside a group
 
 Rule 9. You drew it with your own element or a `Bar` between entries.
@@ -129,8 +136,17 @@ Rule 9. You drew it with your own element or a `Bar` between entries.
   the head `Bar start`, the lead statement in `StatusRow lead`.
 - Building a list from `Band`s: many like things are a `List` of `Row`s
   or a `Table`.
-- A "Retry" button of your own after an error: use `Notice tone="bad"`
-  with an action.
+- A "Retry" button of your own after an error: data that failed to load
+  once is `Failed` in its place; a connection that retries on its own says
+  so in the `StatusRow` without a button; something a person must fix is a
+  `Notice tone="bad"` whose action names the deed.
+- An empty list as a `Band` with muted text, or nothing at all: use `Empty`
+  (or `Table empty`) with one sentence and one way out.
+- A spinner or a blank pane while data loads: use `Loading` (or `Table
+  loading`) with as many rows as usually come, so nothing moves.
+- An open entry kept only in state: the detail is lost on reload. Put it
+  in the address, give `Pane detail` a `back` with `href`, open rows by
+  `href` and `onNavigate`.
 - Colour without a word: a red dot alone says nothing; `Chip status="bad"`
   carries the word.
 - `marks` on a two-line `Row`: they add a third line. Use `end` or three
