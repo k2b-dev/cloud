@@ -8,6 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, openDemo, serverMarkup } from "../../../test/v2-behavior/harness";
+import { cascade } from "./resize-cascade";
 
 const webkit = browserName === "webkit";
 let browser: Browser;
@@ -75,14 +76,40 @@ test("keys: arrows 8 px, Shift 64 px, End and Home to the limits with the push, 
     // End pushes past the minimum of the next column into the rest: both stop at their minimum.
     await page.keyboard.press("End");
     expect(await until(page, [726, 280, 400])).toBe(true);
-    // Each key starts from the current widths (core): back by 64 px, the next column takes it.
+    // The concept: a run of keys is one move from its start, so the way back unwinds in reverse — the rest grows
+    // again first, then the middle column. (Core's own keys would step from the current widths: 662, 344, 400.)
     await page.keyboard.press("Shift+ArrowLeft");
-    expect(await until(page, [662, 344, 400])).toBe(true);
+    expect(await until(page, [662, 280, 464])).toBe(true);
     await page.keyboard.press("Home");
-    expect(await until(page, [160, 846, 400])).toBe(true);
-    // Enter (ours): the column left of the grip goes back to its default; core's Enter would collapse it.
+    expect(await until(page, [160, 440, 806])).toBe(true);
+    // Enter puts the column left of the grip back to its default; core's Enter would collapse it.
     await page.keyboard.press("Enter");
-    expect(await until(page, [240, 766, 400])).toBe(true);
+    expect(await until(page, [240, 360, 806])).toBe(true);
+  });
+});
+
+test("cascade: the losing side gives way nearest first, each column down to its minimum", () => {
+  const mins = [160, 280, 400];
+  expect(cascade([240, 360, 806], mins, 0, 100)).toEqual([340, 280, 786]);
+  expect(cascade([240, 360, 806], mins, 0, 1000)).toEqual([726, 280, 400]);
+  expect(cascade([240, 360, 806], mins, 1, -200)).toEqual([160, 280, 966]);
+  expect(cascade([240, 360, 806], mins, 0, -1000)).toEqual([160, 440, 806]);
+});
+
+// Guard for the styling contract: core sizes panels in percent of the whole group but measures its space as the sum
+// of the panels, so a grip that takes layout width makes every fixed column too wide (240 would render as ~242).
+test("grips take no layout width: the panels fill the group exactly", async () => {
+  await withPage(async (page) => {
+    await settled(page);
+    const { panels, group } = await page.evaluate(() => {
+      const root = document.querySelector('[data-slot="resizable"]');
+      const sum = [...(root?.querySelectorAll(':scope > [data-slot="resizable-panel"]') ?? [])].reduce(
+        (total, panel) => total + panel.getBoundingClientRect().width,
+        0,
+      );
+      return { panels: sum, group: root?.clientWidth ?? -1 };
+    });
+    expect(Math.abs(panels - group)).toBeLessThan(0.5);
   });
 });
 
