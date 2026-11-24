@@ -1,11 +1,29 @@
-import { Bar, Button, Check, Choice, DateInput, Field, Input, Nav, Notice, Pane, Path, Section, Select, Workspace } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Check,
+  Choice,
+  DateInput,
+  Dialog,
+  Field,
+  Input,
+  Nav,
+  Notice,
+  Pane,
+  Path,
+  Section,
+  Select,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // A realistic form with the controls of @k2b/ui/v2: a new order in Grids. Fields share one grid, errors stand at the
-// field. Only primitives; an island so the controls answer. Dialog, menu, the open list of a selection and the toast
-// that answers the main action come with the behaviour layer.
+// field, and "Abbrechen" asks in a dialog before the order is discarded (a sheet on a phone). Only primitives; an island
+// so the controls answer. The menu, the open list of a selection and the toast that answers the main action follow.
 
 export default function FormScreen() {
+  const [discard, setDiscard] = createSignal(false);
   const [quantity, setQuantity] = createSignal("0");
   const [notify, setNotify] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
@@ -41,7 +59,9 @@ export default function FormScreen() {
           }
           end={
             <>
-              <Button>Abbrechen</Button>
+              <Button onClick={() => setDiscard(true)}>
+                Abbrechen
+              </Button>
               <Button variant="primary" icon="check" disabled={quantityError() !== undefined}>
                 Auftrag anlegen
               </Button>
@@ -99,6 +119,21 @@ export default function FormScreen() {
           <Check name="urgent" switch label="Eilig" checked={urgent()} onChange={setUrgent} />
         </Section>
       </Pane>
+      <Dialog
+        title="Auftrag verwerfen?"
+        open={discard()}
+        onOpenChange={setDiscard}
+        foot={
+          <>
+            <Button onClick={() => setDiscard(false)}>Weiter bearbeiten</Button>
+            <Button variant="primary" onClick={() => setDiscard(false)}>
+              Verwerfen
+            </Button>
+          </>
+        }
+      >
+        <Text>Die Angaben zu diesem Auftrag gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.</Text>
+      </Dialog>
     </Workspace>
   );
 }
