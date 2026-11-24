@@ -2277,6 +2277,44 @@
 .k2b-ui .mail-reply-box[hidden] {
   display: none;
 }
+/* The Mail v2 pilot draws the open draft in the composer frame of @k2b/editor (MailReplyFrameV2), which brings its
+   own place: 12 px above and below, 8 px from the column's edges. The reader keeps that place around the whole box
+   for its other states (note, scheduled, in a window), so the frame and the resting composer it stands in for take
+   it back and stand exactly where the resting composer stood. */
+.k2b-ui .mail-reply-box-frame[data-presentation="frame"] {
+  margin-block-end: 0;
+}
+.k2b-ui .mail-reply-box-frame[data-presentation="frame"] > :is(.mail-reply-frame, [data-mail-reply-box="pending"]:not(section)) {
+  margin: -0.75rem -0.5rem;
+}
+.k2b-ui .mail-reply-frame {
+  position: relative;
+}
+.k2b-ui .mail-reply-frame[hidden] {
+  display: none;
+}
+/* The frame's one menu has no trigger of its own; it opens beside the frame's buttons and takes no room. */
+.k2b-ui .mail-reply-frame-menus {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+/* In the frame the text starts on the frame's own edge and as high as the resting composer's words: two lines to
+   write in above the signature, the same height as at rest. A long text scrolls inside, the head and foot stay. */
+.k2b-ui .mail-reply-frame .mail-compose-body.mail-reply-frame-body {
+  --mail-compose-inset: 0px;
+  max-height: max(14rem, calc(100cqh - 18rem));
+  padding-block-start: 0;
+}
+.k2b-ui .mail-reply-frame-body .mail-inline-draft-text,
+.k2b-ui .mail-reply-frame-body .mail-inline-text-editor .k2b-ste-host {
+  min-height: 2.75rem;
+}
+.k2b-ui .mail-reply-frame-body > .mail-inline-draft-space {
+  min-height: 0;
+  flex-basis: 0;
+}
 .k2b-ui .mail-reply-box-pending,
 .k2b-ui .mail-reply-box-note,
 .k2b-ui .mail-reply-box-state {

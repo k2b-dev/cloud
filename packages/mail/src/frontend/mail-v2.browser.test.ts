@@ -186,9 +186,161 @@ describe("Mail on the v2 pilot", () => {
       await composer.locator(".k2-composer-signature").getByText("Tischlerei Solberg & Kramer").waitFor();
       await composer.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box-frame]').waitFor();
-      // Mail's own composer writes there: its editor takes text.
-      await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
-      expect(await composer.count()).toBe(0);
+      // Mail's own composer writes there, in the same frame: its editor takes text, the head and the foot stay v2's.
+      await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="mail"] [contenteditable="true"]').first().waitFor();
+      expect(await composer.count()).toBe(1);
+      expect(await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').count()).toBe(1);
+      const send = composer.locator('[data-k2-part="Button"][data-variant="primary"]');
+      expect(await send.textContent()).toBe("Senden");
+      // v1's green split button and its tool row are not drawn in the frame.
+      expect(await composer.locator(".k2b-split-button, .mail-reply-box-foot").count()).toBe(0);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  /** Answers the reply's draft, lease, review and send as Mail's API does, and keeps what the page asked. */
+  const answerReplyApi = async (page: Page, options: { sendFails?: boolean } = {}) => {
+    const calls: string[] = [];
+    const commands: unknown[] = [];
+    // Each send the page makes resolves the next waiting promise, so a test waits for exactly the send it caused.
+    let next = Promise.withResolvers<unknown>();
+    const stamp = MAIL_V2_NOW;
+    let draft: Record<string, unknown> | null = null;
+    await page.route("**/api/mail/mailboxes/Box001/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname.replace("/api/mail/mailboxes/Box001", "");
+      const method = request.method();
+      calls.push(`${method} ${path}`);
+      if (method === "POST" && path === "/draft-seeds/materialize") {
+        const body = request.postDataJSON();
+        draft = {
+          id: "DrfNew",
+          mailboxId: "Box001",
+          conversationId: body.origin.input.conversationId,
+          intent: body.origin.input.intent,
+          sourceMessageId: body.origin.input.sourceMessageId,
+          derivedFromMessageId: null,
+          derivationKind: null,
+          ...body.draft,
+          attachments: [],
+          createdBy: { kind: "user", userId: "Usr001" },
+          lastEditedBy: { kind: "user", userId: "Usr001" },
+          lastEditedByDisplayName: "Mira Solberg",
+          recoveryCopyCount: 0,
+          revision: 1,
+          state: "draft",
+          deliveryClass: "normal",
+          suggestion: false,
+          createdAt: stamp,
+          updatedAt: stamp,
+        };
+        return route.fulfill({ json: { ...draft, creationOutcome: "created" } });
+      }
+      if (method === "POST" && path === "/commands") {
+        const body = request.postDataJSON();
+        commands.push(body);
+        next.resolve(body);
+        next = Promise.withResolvers<unknown>();
+        if (options.sendFails)
+          return route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "Der Mailserver antwortet nicht." } });
+        return route.fulfill({
+          json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Demo01", outboxSubmissionId: "Dlv001" } },
+        });
+      }
+      const drafted = /^\/drafts\/DrfNew(\/.*)?$/.exec(path);
+      if (drafted && draft) {
+        const rest = drafted[1] ?? "";
+        if (rest === "/lease" && (method === "POST" || method === "PUT"))
+          return route.fulfill({
+            json: {
+              holder: { kind: "user", id: "Usr001", displayName: "Mira Solberg", avatarHash: null },
+              acquiredAt: stamp,
+              expiresAt: new Date(Date.parse(stamp) + 10 * 60_000).toISOString(),
+              token: "00000000-0000-4000-8000-0000000000c1",
+            },
+          });
+        if (rest === "/lease" && method === "DELETE") return route.fulfill({ status: 204, body: "" });
+        if (rest === "/lease") return route.fulfill({ json: null });
+        if (rest === "/attachment-uploads") return route.fulfill({ json: [] });
+        if (rest === "" && method === "PUT") {
+          draft = { ...draft, ...request.postDataJSON().draft, revision: Number(draft.revision) + 1 };
+          return route.fulfill({ json: draft });
+        }
+        if (rest === "" && method === "GET") return route.fulfill({ json: draft });
+        if (rest === "/safety-review")
+          return route.fulfill({ json: { revision: draft.revision, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) } });
+      }
+      return route.fallback();
+    });
+    return { calls, commands, nextSend: () => next.promise };
+  };
+  /** Opens the reply of the first conversation and types into Mail's editor in the frame. */
+  const openReply = async (page: Page, text: string) => {
+    await page.locator(".k2-composer-start").click();
+    const editor = page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="mail"] [contenteditable="true"]').first();
+    await editor.waitFor();
+    await editor.click();
+    await page.keyboard.type(text);
+    return page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]');
+  };
+
+  test("the open reply sends what was typed through Mail's own send, from the frame's Send", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const api = await answerReplyApi(page);
+      const composer = await openReply(page, "Danke, KW 49 passt uns.");
+      const sent = api.nextSend();
+      await composer.locator('[data-k2-part="Button"][data-variant="primary"]').click();
+      const command = (await sent) as { draftId?: string };
+      // The draft that was sent is the one the seed became, with the typed text saved before the send.
+      expect(command.draftId).toBe("DrfNew");
+      expect(api.calls).toContain("POST /draft-seeds/materialize");
+      expect(api.calls).toContain("POST /drafts/DrfNew/safety-review");
+      expect(api.commands).toHaveLength(1);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("a failed send keeps the reply open with its text, and Send repeats it", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const api = await answerReplyApi(page, { sendFails: true });
+      const composer = await openReply(page, "Danke, KW 49 passt uns.");
+      const send = composer.locator('[data-k2-part="Button"][data-variant="primary"]');
+      const first = api.nextSend();
+      await send.click();
+      await first;
+      await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="mail"][data-send-failed]').waitFor();
+      // The reason is said, and the text waits in the same frame for the next try.
+      await page.getByText("Der Mailserver antwortet nicht.").first().waitFor();
+      expect(await composer.locator('[contenteditable="true"]').first().textContent()).toContain("Danke, KW 49 passt uns.");
+      await settled(page);
+      const again = api.nextSend();
+      await send.click();
+      // The same draft goes out again through the same command.
+      expect(((await again) as { draftId?: string }).draftId).toBe("DrfNew");
+      expect(api.commands).toHaveLength(2);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("Cc and Bcc of the open reply open Mail's recipient rows in the frame", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      await answerReplyApi(page);
+      const composer = await openReply(page, "Hallo");
+      await composer.locator('[data-k2-part="Button"]', { hasText: /^Cc$/ }).click();
+      await composer.locator(".mail-inline-draft-rows").waitFor();
+      expect(await composer.locator(".mail-inline-draft-rows input").count()).toBe(2);
+      // Cc and Bcc have their rows now; the head no longer offers them.
+      expect(await composer.locator('[data-k2-part="Button"]', { hasText: /^(Cc|Bcc)$/ }).count()).toBe(0);
+      expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
     }
@@ -259,9 +411,11 @@ describe("Mail on the v2 pilot in its live states", () => {
       await page.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
       await settled(page);
-      const open = await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box-frame]').boundingBox();
-      // 8 px from the column's edges and 12 px below the summary, like the resting frame.
+      const open = await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').boundingBox();
+      // 8 px from the column's edges and 12 px below the summary, like the resting frame, and as high: opening moves
+      // the thread below by no more than the editor's own line.
       expect({ left: open?.x, top: open?.y, width: open?.width }).toEqual({ left: resting?.x, top: resting?.y, width: resting?.width });
+      expect(Math.abs((open?.height ?? 0) - (resting?.height ?? 0))).toBeLessThanOrEqual(24);
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await linesInsideMessages(page)).toEqual([]);
     } finally {

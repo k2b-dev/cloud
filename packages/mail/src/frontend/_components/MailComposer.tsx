@@ -90,7 +90,7 @@ import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from 
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { createDefaultMailComposerPanesLayout, reconcileLargeMailComposerPanes, reconcileMailComposerPanes } from "./mail-composer-panes";
-import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-composer-signature";
+import { defaultSignatureTemplateId, type MailComposerSignatures, signatureOptions } from "./mail-composer-signature";
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { showDeliveryToast } from "./mail-delivery-toast";
@@ -101,6 +101,7 @@ import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-jou
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { quoteOriginalOf } from "./mail-quote-original";
+import type { MailReplyFrame, MailReplyFrameMenu, MailReplyFrameParts } from "./mail-reply-frame";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSendLaterPresets } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
@@ -177,6 +178,8 @@ export type MailReplyBoxHost = {
   detach: (draftId: string, options?: { large?: boolean; selection?: DraftTextSelection }) => void;
   /** The text typed while `holdCreate` is true, for the box to keep per conversation. */
   buffer: (text: string) => void;
+  /** Another presentation of the open draft (the Mail v2 pilot), with the box's mode menu; without it the box draws v1. */
+  frame?: MailReplyFrame & { mode: MailReplyFrameParts["mode"] };
 };
 
 /**
@@ -2331,15 +2334,24 @@ export default function MailComposer(props: {
     );
     if (host.box) {
       const box = host.box;
-      // The box is as high as its content; only the person's own input measures it again (Höhenmodell A).
-      const composeFit = createComposeFit({
-        surface,
-        body: composeBody,
-        content: composeContent,
-        frame: () => [composeHead()].filter((part) => part !== undefined),
-      });
+      // The box is as high as its content; only the person's own input measures it again (Höhenmodell A). A frame
+      // grows with its text inside its own bounds and measures nothing.
+      const composeFit = box.frame
+        ? null
+        : createComposeFit({
+            surface,
+            body: composeBody,
+            content: composeContent,
+            frame: () => [composeHead()].filter((part) => part !== undefined),
+          });
       // An upload is always the person's own: its row may arrive long after the click that chose the file.
-      createEffect(on(() => uploads().length, composeFit.fitAfterOwnAction, { defer: true }));
+      createEffect(
+        on(
+          () => uploads().length,
+          () => composeFit?.fitAfterOwnAction(),
+          { defer: true },
+        ),
+      );
       const r = () => mailReplyBoxMessages.resolve([locale()]).t;
       const surfaceId = createUniqueId();
       /** A failed "Write large" keeps the box with its text and says so in place, with a way to try again. */
@@ -2578,6 +2590,325 @@ export default function MailComposer(props: {
         },
         ...sharedDraftItems(),
       ];
+      if (box.frame) {
+        const frame = box.frame;
+        // One menu for the frame's buttons: each opens its entries beside itself, and the focus returns to it.
+        const [frameMenu, setFrameMenu] = createSignal<{ menu: MailReplyFrameMenu; place: "head" | "foot" } | null>(null);
+        let openFrameMenuAt: ((anchor: HTMLElement, focus: HTMLElement) => void) | undefined;
+        const openMenu = (menu: MailReplyFrameMenu, anchor: HTMLElement, place: "head" | "foot") => {
+          setFrameMenu({ menu, place });
+          openFrameMenuAt?.(anchor, anchor);
+        };
+        return (
+          <section
+            ref={setSurface}
+            class="mail-reply-frame"
+            data-mail-inline-draft
+            data-mail-reply-box="mail"
+            data-intent={composerIntent()}
+            data-suggestion={suggestionUntouched() ? "" : undefined}
+            data-send-failed={sendFailure() ? "" : undefined}
+            hidden={box.suspended()}
+            inert={box.suspended() ? true : undefined}
+          >
+            <FileDropTarget
+              for={surface()}
+              label={t().dropFiles}
+              disabled={!editable() || box.suspended()}
+              onDrop={(files) => {
+                if (files.length > 0 && !disposed) void attachments.addFiles(files);
+              }}
+            />
+            <div class="mail-reply-frame-menus">
+              <Dropdown.Root
+                items={frameMenu()?.menu.items() ?? []}
+                label={frameMenu()?.menu.label()}
+                position={() => (frameMenu()?.place === "head" ? "bottom-left" : "top-left")}
+                openAt={(open) => {
+                  openFrameMenuAt = open;
+                }}
+              />
+            </div>
+            {frame.render({
+              label: () => t().inlineDraftLabel({ intent: inlineIntentLabel() }),
+              openMenu,
+              editable,
+              mode: frame.mode,
+              to: (
+                <div class="mail-inline-draft-recipients mail-reply-box-recipients mail-reply-frame-to">
+                  <MailRecipientInput
+                    register={registerRecipientField}
+                    mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                    required
+                    placeholder={t().recipients}
+                    value={to}
+                    onChange={setTo}
+                    disabled={fieldsDisabled()}
+                    readOnly={paused()}
+                  />
+                </div>
+              ),
+              sender: () => {
+                const identity = selectedIdentity();
+                if (!identity) return null;
+                return {
+                  text: identity.label,
+                  menu:
+                    verifiedIdentities().length > 1
+                      ? {
+                          label: () => t().changeSender({ label: identity.label, address: identity.fromAddress }),
+                          items: identityMenuItems,
+                          disabled: () => !editable(),
+                        }
+                      : null,
+                };
+              },
+              peers: (
+                <Show when={sharedPeers().length > 0}>
+                  <span class="mail-inline-draft-peers" data-mail-draft-peers role="status">
+                    {t().writingAlong({
+                      names: sharedPeers()
+                        .map((peer) => peer.name)
+                        .join(", "),
+                      count: sharedPeers().length,
+                    })}
+                  </span>
+                </Show>
+              ),
+              ccShown: showCc,
+              showCc: () => setShowCc(true),
+              top: (
+                <div class="mail-compose-head mail-reply-frame-top" ref={setComposeHead}>
+                  <Show when={suggestionUntouched()}>
+                    <div class="mail-reply-box-suggestion" data-mail-reply-suggestion>
+                      <i class="ti ti-sparkles" aria-hidden="true" />
+                      <strong>{r().suggestionLead({ name: draft()?.suggestedBy ?? draft()?.lastEditedByDisplayName ?? "" })}</strong>
+                      <span class="mail-reply-box-suggestion-hint">{r().suggestionHint}</span>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        type="button"
+                        class="ml-auto"
+                        disabled={!editable() || discard.loading()}
+                        onClick={() => void discardDraft()}
+                      >
+                        {r().discardSuggestion}
+                      </Button>
+                    </div>
+                  </Show>
+                  {box.banner?.()}
+                  <Show when={showCc()}>
+                    <div class="mail-inline-draft-rows mail-inline-draft-recipients">
+                      <span class="mail-inline-draft-field-label">Cc</span>
+                      <MailRecipientInput
+                        register={registerRecipientField}
+                        mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                        placeholder={t().ccRecipients}
+                        value={cc}
+                        onChange={setCc}
+                        disabled={fieldsDisabled()}
+                        readOnly={paused()}
+                      />
+                      <span class="mail-inline-draft-field-label">Bcc</span>
+                      <MailRecipientInput
+                        register={registerRecipientField}
+                        mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                        placeholder={t().bccRecipients}
+                        value={bcc}
+                        onChange={setBcc}
+                        disabled={fieldsDisabled()}
+                        readOnly={paused()}
+                      />
+                    </div>
+                  </Show>
+                  <Show when={subjectOpen() || composerIntent() === "new"}>
+                    <div class="mail-inline-draft-meta">
+                      <span class="mail-inline-draft-meta-subject">
+                        <span class="shrink-0 text-dimmed">{t().subject}</span>
+                        <TextInput
+                          class="mail-inline-draft-subject"
+                          aria-label={t().subject}
+                          value={subject}
+                          onValueChange={setSubject}
+                          maxLength={998}
+                          disabled={fieldsDisabled()}
+                          readOnly={paused()}
+                        />
+                      </span>
+                    </div>
+                  </Show>
+                  <DraftNotices />
+                  <Show when={largeFailed()}>
+                    <div class="mail-inline-draft-notice" data-tone="danger" role="alert" data-mail-write-large-failed>
+                      <span class="min-w-0 flex-1">{r().writeLargeFailed}</span>
+                      <Button size="sm" variant="secondary" type="button" disabled={!editable()} onClick={() => void detachDraft(true)}>
+                        {r().retry}
+                      </Button>
+                    </div>
+                  </Show>
+                  <Show when={inlinePreview()}>
+                    <div class="mail-reply-box-previewing" role="status">
+                      <i class="ti ti-eye" aria-hidden="true" />
+                      <span class="min-w-0 flex-1">{r().previewing}</span>
+                      <Button variant="ghost" size="xs" type="button" onClick={() => setInlinePreview(false)}>
+                        {r().backToWriting}
+                      </Button>
+                    </div>
+                  </Show>
+                </div>
+              ),
+              body: (
+                <ScrollArea class="mail-compose-body mail-reply-frame-body" data-mail-compose-body ref={setComposeBody}>
+                  <div class="mail-compose-content" ref={setComposeContent}>
+                    <MailComposerEditor
+                      hintMount={hintSlot}
+                      shared={shared}
+                      sharedState={sharedState}
+                      onTableCheck={setTableNeedsCheck}
+                      format={format}
+                      body={body}
+                      onBodyInput={setBody}
+                      editable={editable}
+                      paused={paused}
+                      completions={slashCompletion}
+                      panes={currentComposerPanes}
+                      onPanesChange={updateComposerPanes}
+                      preview={preview}
+                      previewError={previewError}
+                      previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
+                      onRetryPreview={retryPreview}
+                      onEditorReady={editorReady}
+                      liveDictation={props.liveDictation}
+                      onAttachImages={() => void chooseAttachments()}
+                      onDroppedImages={(files) => {
+                        if (editable()) void attachments.addFiles(files);
+                      }}
+                      inline={{ preview: inlinePreview, formatting: inlineFormatting, placeholder: frame.placeholder }}
+                    />
+                    <MailComposerAttachments
+                      attachments={() => draft()?.attachments ?? props.initialSeed?.attachments ?? []}
+                      uploads={uploads}
+                      editable={editable}
+                      canShare={Boolean(props.canShareAttachments)}
+                      shareLoading={attachments.shareLoading}
+                      onInsertLink={(attachmentId) => void attachments.insertAttachmentLink(attachmentId)}
+                      onRemove={(attachmentId) => void attachments.removeAttachment(attachmentId)}
+                      onRetryUpload={(upload) => void attachments.retryUpload(upload)}
+                      onCancelUpload={(upload) => void attachments.cancelUpload(upload).catch((error) => prompts.error(error.message))}
+                    />
+                    <Show when={!inlinePreview()}>
+                      <MailInlineSignature
+                        mailboxId={props.mailboxId}
+                        senderIdentityId={identityId}
+                        signatureTemplateId={signatureTemplateId}
+                        format={format}
+                      />
+                    </Show>
+                    {quoteCard()}
+                  </div>
+                  <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
+                </ScrollArea>
+              ),
+              hint: <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />,
+              tools: {
+                formatting: () =>
+                  format() === "markdown"
+                    ? {
+                        label: t().formatting,
+                        pressed: inlineFormatting(),
+                        disabled: !editable() || inlinePreview(),
+                        toggle: () => setInlineFormatting((value) => !value),
+                      }
+                    : null,
+                attach: { label: () => t().attachFiles, run: () => void chooseAttachments() },
+                signature: () => {
+                  if (!signatureChoiceVisible()) return null;
+                  const name = signatureTemplateId()
+                    ? (props.signatures.templates.find((template) => template.id === signatureTemplateId())?.name ??
+                      t().unavailableSignature)
+                    : t().noSignatureShort;
+                  return {
+                    label: () => t().chooseSignature({ name }),
+                    disabled: () => !editable(),
+                    items: () =>
+                      signatureOptions(props.signatures, signatureTemplateId(), senderDefaultSignatureId(), {
+                        none: t().noSignature,
+                        default: t().defaultSignature,
+                        unavailable: t().unavailableSignature,
+                      }).map((option) => ({
+                        label: option.label,
+                        description: option.description,
+                        choice: "radio" as const,
+                        checked: () => option.value === (signatureTemplateId() ?? ""),
+                        action: () => setSignatureTemplateId(option.value || null),
+                      })),
+                  };
+                },
+                assistant: {
+                  label: () => t().writeWithAi,
+                  disabled: () => !editable() || uploads().length > 0 || composeWithAi.loading(),
+                  run: () =>
+                    void composeWithAi
+                      .mutate()
+                      .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed)),
+                },
+                more: {
+                  label: () => r().moreTools,
+                  // Send later, then v1's tools: on a frame every tool beyond the mockup's four waits here.
+                  items: () => [
+                    ...sendLaterItems(),
+                    {
+                      items: [
+                        { label: r().insertLink, icon: "ti ti-link", disabled: !editable(), action: () => void insertLink() },
+                        {
+                          label: r().emoji,
+                          icon: "ti ti-mood-smile",
+                          disabled: !editable(),
+                          action: () => setEmojiAnchor(composeBody() ?? null),
+                        },
+                        { label: r().image, icon: "ti ti-photo", disabled: !editable(), action: () => void chooseAttachments() },
+                        {
+                          label: r().writeLarge,
+                          icon: "ti ti-arrows-maximize",
+                          disabled: !editable() || uploadsInProgress(),
+                          action: () => void detachDraft(true),
+                        },
+                      ],
+                    },
+                    ...moreItems().map((section) =>
+                      "items" in section
+                        ? { ...section, items: section.items.filter((item) => !item.class?.includes("mail-reply-box-phone-only")) }
+                        : section,
+                    ),
+                  ],
+                },
+              },
+              status: () => {
+                const current = boxStatus();
+                return current ? { icon: current.icon.replace(/^ti-/, ""), text: current.text, busy: current.tone === "busy" } : null;
+              },
+              discard: {
+                label: () => r().discardReply,
+                disabled: () => !editable() || discard.loading() || (!draft() && !changedHere()),
+                run: () => void discardDraft(),
+              },
+              send: {
+                label: () => t().send,
+                run: () => void sendDraft(sendFailure() ? currentDelivery : {}),
+                busy: () => send.loading(),
+                disabled: () => sendHeld() || send.loading(),
+                blocked: sendBlockedReason,
+              },
+            })}
+            <EmojiPicker.Popover
+              anchor={emojiAnchor()}
+              label={r().emoji}
+              onPick={(emoji) => insertAtCaret(emoji)}
+              onClose={() => setEmojiAnchor(null)}
+            />
+          </section>
+        );
+      }
       return (
         <section
           ref={setSurface}

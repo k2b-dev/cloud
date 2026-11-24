@@ -9,6 +9,8 @@ import { deriveReplyIdentityId, deriveReplyRecipients } from "../mail-compose-de
 import { createMailConversationNotes } from "../mail-conversation-notes";
 import { quoteOriginalOf } from "../mail-quote-original";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
+import type { MailReplyFrame } from "../mail-reply-frame";
+import { MailReplyFrameV2 } from "./MailReplyFrameV2";
 import type { MailV2Text } from "./mail-v2-messages";
 import { loadMailV2Signature } from "./mail-v2-signature";
 
@@ -22,8 +24,10 @@ export type MailV2Session = {
 /**
  * The reply of the v2 pilot, for one open conversation. At rest it is the composer of the mockup, from @k2b/editor:
  * to whom, from which sender, the start of the text and Send. A click starts Mail's own reply box with its shared
- * draft, which then writes and sends as in v1. The reader places both: the resting composer as it is, the reply box
- * in a `Canvas` of its column, because its drawing is v1's until the composer is rebuilt on v2.
+ * draft, which then writes, saves and sends as in v1, drawn in the same composer frame (`MailReplyFrameV2`): while
+ * its draft loads the resting composer keeps the place, so opening moves nothing. The reader places the resting
+ * composer as it is and the open box in a `Canvas` of its column, because the recipient chips, the editor and the
+ * box's other states (note, scheduled, in a window) are still drawn by v1.
  */
 export function createMailV2Reply(props: {
   controller: MailboxController;
@@ -77,10 +81,62 @@ export function createMailV2Reply(props: {
     });
   };
   const toLabel = () => recipients().join(", ");
+  const frame: MailReplyFrame = {
+    render: (parts) => <MailReplyFrameV2 parts={parts} text={props.text()} />,
+    placeholder: () => props.text().writeReply({ name: toLabel() }),
+    pending: () => rest(),
+  };
   // The sender's signature, as the reply will start with it; it appears under the text once it is loaded.
   const [signature] = createResource(
     () => (typeof window !== "undefined" && c().canWrite() ? sender()?.id : undefined),
     (senderIdentityId) => loadMailV2Signature(data().mailbox.id, identities(), senderIdentityId).catch(() => null),
+  );
+
+  const rest = () => (
+    <Composer
+      label={props.text().replyTo({ name: toLabel() })}
+      head={
+        <>
+          <Icon name="arrow-back-up" tone="muted" />
+          <Text type="meta">{props.text().to}</Text>
+          <Text>{toLabel()}</Text>
+        </>
+      }
+      headEnd={
+        <>
+          <Show when={sender()}>
+            {(identity) => (
+              <Button variant="text" menu onClick={start}>
+                {props.text().from({ name: identity().label })}
+              </Button>
+            )}
+          </Show>
+          <Button variant="text" onClick={start}>
+            Cc
+          </Button>
+          <Button variant="text" onClick={start}>
+            Bcc
+          </Button>
+        </>
+      }
+      placeholder={props.text().writeReply({ name: toLabel() })}
+      onStart={start}
+      signature={signature.latest ?? undefined}
+      tools={
+        <>
+          <Button variant="ghost" icon="typography" label={props.text().formatting} onClick={start} />
+          <Button variant="ghost" icon="paperclip" label={props.text().attach} onClick={start} />
+          <Button variant="ghost" icon="signature" label={props.text().signature} onClick={start} />
+          <Button variant="ghost" icon="sparkles" label={props.text().assistant} onClick={start} />
+        </>
+      }
+      actions={
+        // Nothing is written yet: Send starts the reply, it never sends an empty one.
+        <Button variant="primary" icon="send" onClick={start}>
+          {props.text().send}
+        </Button>
+      }
+    />
   );
 
   return {
@@ -88,52 +144,7 @@ export function createMailV2Reply(props: {
     shown: () => Boolean(c().canWrite() && data().selectedConversationId && latest()),
     writing,
     label: () => props.text().replyTo({ name: toLabel() }),
-    rest: () => (
-      <Composer
-        label={props.text().replyTo({ name: toLabel() })}
-        head={
-          <>
-            <Icon name="arrow-back-up" tone="muted" />
-            <Text type="meta">{props.text().to}</Text>
-            <Text>{toLabel()}</Text>
-          </>
-        }
-        headEnd={
-          <>
-            <Show when={sender()}>
-              {(identity) => (
-                <Button variant="text" menu onClick={start}>
-                  {props.text().from({ name: identity().label })}
-                </Button>
-              )}
-            </Show>
-            <Button variant="text" onClick={start}>
-              Cc
-            </Button>
-            <Button variant="text" onClick={start}>
-              Bcc
-            </Button>
-          </>
-        }
-        placeholder={props.text().writeReply({ name: toLabel() })}
-        onStart={start}
-        signature={signature.latest ?? undefined}
-        tools={
-          <>
-            <Button variant="ghost" icon="typography" label={props.text().formatting} onClick={start} />
-            <Button variant="ghost" icon="paperclip" label={props.text().attach} onClick={start} />
-            <Button variant="ghost" icon="signature" label={props.text().signature} onClick={start} />
-            <Button variant="ghost" icon="sparkles" label={props.text().assistant} onClick={start} />
-          </>
-        }
-        actions={
-          // Nothing is written yet: Send starts the reply, it never sends an empty one.
-          <Button variant="primary" icon="send" onClick={start}>
-            {props.text().send}
-          </Button>
-        }
-      />
-    ),
+    rest,
     box: () => (
       <MailReplyBox
         mailboxId={data().mailbox.id}
@@ -164,6 +175,7 @@ export function createMailV2Reply(props: {
         onReconcile={c().requireWorkspaceReconcile}
         onExplainSenderUnavailable={() => void explainSenderUnavailable()}
         register={() => undefined}
+        frame={frame}
       />
     ),
   };
