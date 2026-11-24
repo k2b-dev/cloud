@@ -57,6 +57,8 @@ const normalized = (page: Page, html?: string) =>
       }
       if (node instanceof HTMLElement && node.getAttribute("data-slot") === "resizable-panel")
         node.style.removeProperty("--resizable-panel-size");
+      // Core measures an open tree group for its expand animation once it binds (`--tree-group-height`).
+      if (node instanceof HTMLElement && node.getAttribute("data-slot") === "tree-group") node.style.removeProperty("--tree-group-height");
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]
