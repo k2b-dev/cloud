@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.23.1...npm-ssr-v0.23.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **deps:** raise seroval, the MCP SDK, body-parser and undici past their high advisories ([#4098](https://github.com/k2b-dev/cloud/issues/4098)) ([2fe5d7f](https://github.com/k2b-dev/cloud/commit/2fe5d7f07911ebd414c262c82a60485aa0320059))
+
 ## [0.23.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.23.0...npm-ssr-v0.23.1) (2026-11-22)
 
 
