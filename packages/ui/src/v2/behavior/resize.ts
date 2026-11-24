@@ -13,31 +13,12 @@
 import { bindDrag } from "@ui-sdk/core";
 import { createSignal, onCleanup } from "solid-js";
 import { useBehaviorMessages } from "./messages";
+import { cascade } from "./resize-cascade";
 
 export type ColumnSize = { min: number; default: number };
 
 const STEP_PX = 8;
 const LARGE_STEP_PX = 64;
-
-/**
- * The widths after moving the grip right of column `grip` by `delta` px, from `start` (every column, the last
- * included). Columns beyond the grip on the losing side give way nearest first, each down to its minimum.
- */
-export const cascade = (start: readonly number[], mins: readonly number[], grip: number, delta: number): number[] => {
-  const widths = [...start];
-  const loser = delta > 0 ? (index: number) => grip + 1 + index : (index: number) => grip - index;
-  const gainer = delta > 0 ? grip : grip + 1;
-  let left = Math.abs(delta);
-  for (let step = 0; left > 0; step++) {
-    const index = loser(step);
-    if (index < 0 || index >= widths.length) break;
-    const give = Math.min(left, Math.max(0, (widths[index] ?? 0) - (mins[index] ?? 0)));
-    widths[index] = (widths[index] ?? 0) - give;
-    left -= give;
-  }
-  widths[gainer] = (widths[gainer] ?? 0) + Math.abs(delta) - left;
-  return widths;
-};
 
 /**
  * Widths of resizable columns and the behaviour of the grips between them. Render column `i` with `widths()[i]` px
