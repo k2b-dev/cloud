@@ -1,7 +1,8 @@
-import { createContext, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, useContext } from "solid-js";
+import { createContext, createSignal, For, type JSX, onCleanup, onMount, children as resolveChildren, Show, useContext } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
+import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import type { Action, Width } from "./types";
 
@@ -83,11 +84,12 @@ export const Workspace = (props: WorkspaceProps) => {
       <Show when={props.primary}>
         {(action) => (
           <Dynamic
-            component={action().href !== undefined ? "a" : "button"}
+            component={linkOr(action().href, "button")}
             type={action().href !== undefined ? undefined : "button"}
             class="k2-btn k2-fab"
             data-variant="primary"
             href={action().href}
+            onNavigate={action().href !== undefined ? action().onNavigate : undefined}
             onClick={() => action().onClick?.()}
           >
             <Show when={action().icon}>{(name) => <Icon name={name()} />}</Show>
@@ -114,10 +116,25 @@ export type PaneProps = {
   width?: Width;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
-  /** The detail of a list (a reader): beside the list on a wide screen, its own page on the phone. */
+  /**
+   * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
+   * open), it is the page and the list gives way; render it only while something is open. What is open belongs in
+   * the address, so reload, back and forward show the same. A detail that closes in place hands the focus back to
+   * what opened it, such as the row.
+   */
   detail?: boolean;
+  /**
+   * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
+   * `href`: the address of the list without the open entry.
+   */
+  back?: Action;
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
+  /**
+   * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
+   * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
+   */
+  scrollKey?: string;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -135,10 +152,26 @@ export const Pane = (props: PaneProps) => {
   useContext(SplitContext)?.(entry);
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
+  let section: HTMLElement | undefined;
+  // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
+  // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
+  onMount(() => {
+    if (!props.detail) return;
+    const opener = document.activeElement;
+    if (!(opener instanceof HTMLElement) || opener === document.body || section?.contains(opener)) return;
+    onCleanup(() => {
+      const inside = section?.contains(document.activeElement) ?? false;
+      queueMicrotask(() => {
+        const lost = inside || document.activeElement === null || document.activeElement === document.body;
+        if (lost && opener.isConnected) opener.focus();
+      });
+    });
+  });
   return (
     <section
       ref={(element) => {
         entry.element = element;
+        section = element;
       }}
       class="k2-pane"
       data-k2-part="Pane"
@@ -152,6 +185,14 @@ export const Pane = (props: PaneProps) => {
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
       })}
     >
+      {/* the way back shows only on the phone, above the head of the detail */}
+      <Show when={props.back}>
+        {(back) => (
+          <div class="k2-pane-back">
+            <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" />
+          </div>
+        )}
+      </Show>
       <Show when={head()}>
         <div class="k2-slot" data-slot="head">
           {head()}
@@ -162,7 +203,9 @@ export const Pane = (props: PaneProps) => {
           {status()}
         </div>
       </Show>
-      <div class="k2-scroll">{props.children}</div>
+      <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
+        {props.children}
+      </div>
     </section>
   );
 };
@@ -234,6 +277,8 @@ export type BarProps = {
  * A bar of fixed height with a line below. Its height comes from its place: 56 as the head of a workspace or pane,
  * 52 as a status row, 40 on its own. Controls in it take the height that leaves equal air above and below. The
  * stylesheet reads the place from the slot the bar stands in, so a bar built ahead and passed on behaves the same.
+ * In a column narrower than 480 px, a bar in the flow whose start is an `Inline` wraps instead of cutting: its things
+ * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  */
 export const Bar = (props: BarProps) => {
   const start = resolveChildren(() => props.start);

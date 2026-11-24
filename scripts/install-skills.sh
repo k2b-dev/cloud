@@ -10,7 +10,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE_DIR="$ROOT_DIR/skills"
+# Repository skills, and the skills a package ships in its npm tarball (k2b-ui in @k2b/ui).
+SKILL_DIRS=("$ROOT_DIR"/skills/* "$ROOT_DIR"/packages/ui/skills/*)
 
 # Codex and other agents read ~/.agents/skills; Claude reads ~/.claude/skills.
 TARGET_DIRS=(
@@ -22,7 +23,7 @@ status=0
 for target_dir in "${TARGET_DIRS[@]}"; do
   mkdir -p "$target_dir"
 
-  for skill_dir in "$SOURCE_DIR"/*; do
+  for skill_dir in "${SKILL_DIRS[@]}"; do
     [ -d "$skill_dir" ] || continue
 
     skill_name="$(basename "$skill_dir")"

@@ -1,8 +1,9 @@
 import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { linkOr } from "./link";
 import { Avatar, Icon } from "./marks";
-import type { Action, Person } from "./types";
+import type { Action, OnNavigate, Person } from "./types";
 
 type ButtonBase = {
   /**
@@ -16,6 +17,8 @@ type ButtonBase = {
   avatar?: Person;
   /** A link that looks like a button. */
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`); a disabled link never calls it. */
+  onNavigate?: OnNavigate;
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   /** The button opens a menu: a chevron after the label. */
   menu?: boolean;
@@ -25,6 +28,11 @@ type ButtonBase = {
   type?: "button" | "submit";
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
+  /**
+   * A hint under the pointer, for a button whose words give way to its symbol in a narrow place (the bar of a
+   * selection). An icon button shows its label as the hint by itself.
+   */
+  title?: string;
 };
 
 export type ButtonProps = ButtonBase &
@@ -43,14 +51,16 @@ export const Button = (props: ButtonProps) => {
   const label = resolveChildren(() => props.children);
   const iconOnly = () => label() === undefined;
   return (
+    // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
-      component={props.href ? "a" : "button"}
+      component={props.disabled && props.href !== undefined ? "a" : linkOr(props.href, "button")}
       href={props.disabled ? undefined : props.href}
+      onNavigate={props.disabled || props.href === undefined ? undefined : props.onNavigate}
       type={props.href ? undefined : (props.type ?? "button")}
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={props.href && props.disabled ? "true" : undefined}
       aria-label={iconOnly() ? props.label : undefined}
-      title={iconOnly() ? props.label : undefined}
+      title={iconOnly() ? props.label : props.title}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={props.onClick}
       class="k2-btn"
@@ -79,7 +89,7 @@ export const Button = (props: ButtonProps) => {
 };
 
 /** An action as data turned into a button of the given weight; without an icon it always shows its label. */
-export const ActionButton = (props: { action: Action; variant?: ButtonProps["variant"]; iconOnly?: boolean }) => (
+export const ActionButton = (props: { action: Action; variant?: ButtonProps["variant"]; iconOnly?: boolean; titled?: boolean }) => (
   <Show
     when={props.iconOnly && props.action.icon}
     fallback={
@@ -87,7 +97,9 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         variant={props.variant}
         icon={props.action.icon}
         forward={props.action.forward}
+        title={props.titled ? props.action.label : undefined}
         href={props.action.href}
+        onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
       >
         {props.action.label}
@@ -100,6 +112,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         icon={icon()}
         label={props.action.label}
         href={props.action.href}
+        onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
       />
     )}

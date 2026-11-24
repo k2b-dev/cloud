@@ -11,6 +11,7 @@ import AccountsWorkspace from "../AccountsWorkspace";
 import { buildGroupDetailUrl, buildGroupsPageBaseUrl, buildGroupsUrl, parseGroupsListState } from "../lib/url-state";
 import { accountsMessages } from "../messages";
 import GroupsScopeFilter from "./GroupsScopeFilter.island";
+import GroupsViewTabs from "./GroupsViewTabs";
 import NewGroup from "./NewGroup.island";
 
 /** Groups page - nav sidebar + full-page list. */
@@ -67,6 +68,8 @@ export default ssr<AuthContext>(async (c) => {
               {listState.search ? t.resultCount({ count: groupsPage.total }) : t.groupCount({ count: groupsPage.total })}
             </p>
           </div>
+
+          {isAdmin ? <GroupsViewTabs current="list" locale={locale} /> : null}
 
           <div style="view-transition-name: accounts-groups-search">
             <SearchBar action={buildGroupsUrl({ ...listState, page: 1 }, { defaultScope })} value={listState.search} />

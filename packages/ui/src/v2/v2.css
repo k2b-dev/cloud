@@ -476,6 +476,17 @@
 .k2-ui .k2-pane > * {
   flex: none;
 }
+/* the way back of a detail: a bar of 44 px with a text button on the text edge, on the phone only (below) */
+.k2-ui .k2-pane-back {
+  display: none;
+  align-items: center;
+  height: var(--k2-h-tabs);
+  padding: 0 var(--k2-edge);
+  border-bottom: var(--k2-hairline);
+}
+.k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
+  margin-left: -8px;
+}
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;
   min-height: 0;
@@ -618,11 +629,14 @@
 .k2-ui .k2-band[data-tone="warn"] {
   background: var(--k2-warn-tint);
 }
-/* a band owns exactly one line; what stands in it draws none */
+/* a band owns exactly one line; what stands in it draws none: its parts are parts of one thing (rule 9) */
 .k2-ui .k2-band > .k2-row {
   border-bottom: 0;
   padding-block: 0;
   min-height: var(--k2-h-control);
+}
+.k2-ui .k2-band > :is(.k2-bar, .k2-notice, .k2-cells, .k2-sec, .k2-facts-line, .k2-table-scroll) {
+  border-block: 0;
 }
 
 /* ── Cells: two to four equal cells with a line between them ────────────────────────────────────────────────── */
@@ -911,26 +925,38 @@
   place-items: center;
   min-width: 16px;
 }
+/* A row without a symbol, a person or a dot has no lead: its text starts on the text edge. In a list where another
+   row has a lead, the empty lead keeps its place, so the text of all rows starts in one line (Mail). */
+.k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "l1 time" "l2 end" "l3 marks";
+}
+.k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) > .k2-row-lead {
+  display: none;
+}
 .k2-ui .k2-row-lead > .k2-icon {
   color: var(--k2-c, var(--k2-subtle));
 }
+/* Title and note share the line in equal parts, and each takes no more than it needs: a short note (a count, a
+   number) and a short title always stay whole; only what is longer than its part is cut or breaks. */
 .k2-ui .k2-row-l1 {
   grid-area: l1;
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
+  justify-content: start;
   align-items: baseline;
-  gap: 8px;
+  column-gap: 8px;
 }
-/* the title wraps (it is what the row is about); the quiet note after it is cut */
+/* in a row of one or two lines the title wraps (it is what the row is about); the quiet note after it is cut */
 .k2-ui .k2-row-title {
   font-weight: 400;
-  flex: 0 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .k2-ui .k2-row-l1 > .k2-row-meta {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
-  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -938,6 +964,15 @@
 }
 .k2-ui .k2-row-l2 {
   grid-area: l2;
+}
+/* Line 2 reaches the end of the row while nothing stands beside it: only an end beside line 2 (a row with a time and
+   two or three lines), or the marks of a row of two lines, keep it in its column. */
+.k2-ui .k2-row > .k2-row-l2 {
+  grid-column-end: -1;
+}
+.k2-ui .k2-row[data-time]:not([data-lines="1"]):has(> .k2-row-end) > .k2-row-l2,
+.k2-ui .k2-row[data-lines="2"]:has(> .k2-row-marks):not(:has(> .k2-row-end)) > .k2-row-l2 {
+  grid-column-end: auto;
 }
 .k2-ui .k2-row-l3 {
   grid-area: l3;
@@ -948,6 +983,8 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* a row of three lines cuts each line with "…", its title too: the row keeps its 72 px */
+.k2-ui .k2-row[data-lines="3"] > .k2-row-l1 > .k2-row-title,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l2,
 .k2-ui .k2-row[data-lines="3"] > .k2-row-l3 {
   overflow: hidden;
@@ -1158,8 +1195,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a cut line clips sideways only: a chip of 24 px on its 20 px line stays whole above and below */
 .k2-ui .k2-table[data-sized] td > .k2-cell-line {
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow-wrap: normal;
@@ -1170,6 +1209,7 @@
   color: var(--k2-subtle);
 }
 .k2-ui .k2-table[data-sized] td > .k2-cell-line[data-wrap] {
+  overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -1909,6 +1949,10 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-field {
   padding: 0 var(--k2-edge);
 }
+/* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-input {
+  margin-inline: var(--k2-edge);
+}
 .k2-ui .k2-field-label {
   display: flex;
   align-items: center;
@@ -2167,6 +2211,47 @@
 .k2-ui .k2-bar[data-selecting] {
   background: var(--k2-blue-tint);
 }
+/* The bar measures its own column, not the window. Where the words do not fit, the actions keep only their symbols
+   (below 600 px), then the way out keeps only its × (below 400 px); the words stay the buttons' names. The × of the
+   way out shows only then. */
+.k2-ui .k2-bar[data-status-row] {
+  container: k2-status / inline-size;
+}
+.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+  display: none;
+}
+@container k2-status (max-width: 599px) {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) {
+    width: var(--k2-h-control-small);
+    padding: 0;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container k2-status (max-width: 399px) {
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] {
+    width: var(--k2-h-control-small);
+    padding: 0;
+    justify-content: center;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
+    display: flex;
+  }
+  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 
 /* StatusRow: one lead statement, key figures; filters on the right */
 .k2-ui .k2-status-lead {
@@ -2200,6 +2285,10 @@
 .k2-ui .k2-notice > .k2-icon {
   grid-row: 1 / span 2;
   justify-self: center;
+}
+/* with a title the sign stands beside the title, with or without deeds at the end */
+.k2-ui .k2-notice[data-title] > .k2-icon {
+  grid-row: 1;
 }
 .k2-ui .k2-notice-title {
   font-weight: 600;
@@ -2629,6 +2718,7 @@
     border-radius: 0;
     flex-direction: column;
   }
+  /* on the phone no column is dragged wider (a table's columns follow their own pane, below) */
   .k2-ui .k2-ws > .k2-ws-side,
   .k2-ui .k2-ws > .k2-seam,
   .k2-ui .k2-grip {
@@ -2656,17 +2746,20 @@
     mask-image: none;
     animation: none;
   }
-  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > .k2-pane:first-child {
+  /* a detail that is there (a mail that is open) is the page; the list is the page while no detail is there */
+  .k2-ui .k2-split > .k2-pane[data-detail] {
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
-  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > .k2-pane:first-child > .k2-scroll {
+  .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
     overflow-y: auto;
   }
-  .k2-ui .k2-split > .k2-pane[data-detail],
-  .k2-ui .k2-split > .k2-seam:has(+ .k2-pane[data-detail]) {
+  .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
+  }
+  .k2-ui .k2-pane-back {
+    display: flex;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
@@ -2697,15 +2790,6 @@
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end {
     display: none;
   }
-  /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
-  .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
-    display: none;
-  }
-  .k2-ui .k2-table-phone {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
   /* tabs that share a head with actions stand closer */
   .k2-ui .k2-bar-start > .k2-tabs-nav > .k2-tabs {
     gap: 20px;
@@ -2719,6 +2803,10 @@
   .k2-ui .k2-row[data-action] {
     grid-template-areas: "lead l1" "lead l2" "lead time";
     grid-template-columns: auto minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1" "l2" "time";
+    grid-template-columns: minmax(0, 1fr);
   }
   .k2-ui .k2-row[data-action] > .k2-row-end {
     grid-area: time;
@@ -2764,16 +2852,6 @@
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
     display: none;
   }
-  .k2-ui .k2-cells {
-    grid-auto-flow: row;
-  }
-  .k2-ui .k2-cell + .k2-cell {
-    border-left: 0;
-    border-top: var(--k2-hairline);
-  }
-  .k2-ui .k2-table [data-drop] {
-    display: none;
-  }
   .k2-ui .k2-row[data-digest] {
     grid-template-columns: 16px minmax(0, 1fr) auto;
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
@@ -2793,28 +2871,184 @@
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {
     padding: 6px 0;
   }
+}
+
+/* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
+   What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
+   fields of a row, cells and the way of steps stand one under the other, and no column of a table is dragged. What
+   is about touch and the page (rows of 60 px, the phone bar, columns as pages, the text edge) stays with the window. */
+.k2-ui .k2-pane {
+  container: k2-pane / inline-size;
+}
+@container k2-pane (max-width: 479px) {
+  /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
+    display: none;
+  }
+  .k2-ui .k2-table-phone {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .k2-ui .k2-table [data-drop],
+  .k2-ui .k2-cgrip {
+    display: none;
+  }
+  .k2-ui .k2-cells {
+    grid-auto-flow: row;
+  }
+  .k2-ui .k2-cell + .k2-cell {
+    border-left: 0;
+    border-top: var(--k2-hairline);
+  }
   .k2-ui .k2-frow {
     grid-auto-flow: row;
   }
   .k2-ui .k2-steps {
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    gap: 12px;
   }
   .k2-ui .k2-step {
     flex-direction: row;
     align-items: center;
     gap: 8px;
   }
-  /* the way runs down: a 1 px line joins the circles (mockup v16), so the steps never read as radio buttons */
+  /* the way runs down: a 1 px line in n400 joins the circles across the 12 px between them (mockup v17), so the
+     steps never read as radio buttons */
   .k2-ui .k2-step::before {
     top: 20px;
-    bottom: -8px;
+    bottom: -12px;
     left: 9px;
     right: auto;
     width: 1px;
     height: auto;
+    background: var(--k2-n400);
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
   }
+  /* A line of things that has no room wraps, so no chip or action is cut in half (or lost). */
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  /* A bar in the flow of a column (not a head or a status row, which have their own narrow forms) with such a line:
+     its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
+     line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
+     second line makes it higher. */
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
+    height: auto;
+    min-height: var(--k2-h-bar);
+    padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
+    display: contents;
+  }
+}
+
+/* ── States: empty, loading, failed (design guide "Zustände"; mockup Notice · Empty, tabelle.html "Lädt") ──────── */
+/* Empty and Failed: no box; a round sign, one sentence, one way out, on the text edge where the data would stand */
+.k2-ui .k2-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 560px;
+  padding: 32px var(--k2-edge);
+  font: var(--k2-t-row);
+}
+.k2-ui .k2-state-text {
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-state > .k2-btn {
+  height: var(--k2-h-control-small);
+}
+.k2-ui .k2-sign {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n100);
+  color: var(--k2-muted);
+  display: grid;
+  place-items: center;
+}
+.k2-ui .k2-sign > .k2-icon {
+  font-size: 20px;
+}
+.k2-ui .k2-sign[data-tone="bad"] {
+  background: var(--k2-bad-tint);
+  color: var(--k2-bad);
+}
+/* Loading: square placeholders, each exactly one text line of its place high (20 in a row, 16 for a quiet line), so a
+   placeholder row is as high as the row that replaces it; the bar of 12 px sits in the middle of that line */
+.k2-ui .k2-skel {
+  display: block;
+  width: 60%;
+  height: 1lh;
+  background: linear-gradient(var(--k2-n100) 0 0) left center / 100% 12px no-repeat;
+}
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n + 2) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-table tr[data-loading]:nth-child(3n + 2) .k2-skel {
+  width: 45%;
+}
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-table tr[data-loading]:nth-child(3n) .k2-skel {
+  width: 75%;
+}
+.k2-ui .k2-loading > .k2-row > :is(.k2-row-l2, .k2-row-l3) > .k2-skel {
+  width: 85%;
+}
+.k2-ui .k2-table td[data-align="end"] .k2-skel {
+  margin-left: auto;
+}
+/* words for assistive technology only, such as "loading" beside the placeholders */
+.k2-ui .k2-hidden-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* the placeholder of a box stands where the box will stand */
+.k2-ui .k2-table .k2-skel[data-box] {
+  width: 16px;
+  background-size: 16px 16px;
+}
+
+/* ── Input: a place at the end, such as the filter of a search (mail.html) ─────────────────────────────────────── */
+.k2-ui .k2-input-end {
+  margin-left: auto;
+  margin-right: -8px;
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-input-end > .k2-btn {
+  height: var(--k2-h-control-small);
+}
+.k2-ui .k2-input-end > .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  padding: 0;
+}
+.k2-ui .k2-input-end > .k2-btn[data-variant="ghost"] {
+  color: var(--k2-subtle);
+}
+/* a button at the end leaves 3 px above and below inside the field: 28 in a field of 36, 20 in the field of 28 of a
+   bar of 40 */
+.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
+  height: 20px;
+}
+.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
+  width: 20px;
+}
+.k2-ui .k2-input-end > .k2-icon {
+  margin-right: 8px;
 }

@@ -1,4 +1,14 @@
-import { createContext, createRenderEffect, createSignal, createUniqueId, For, type JSX, Show, useContext } from "solid-js";
+import {
+  createContext,
+  createRenderEffect,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  children as resolveChildren,
+  Show,
+  useContext,
+} from "solid-js";
 import { Icon } from "./marks";
 
 type FieldIds = {
@@ -7,6 +17,7 @@ type FieldIds = {
   /** The id of the label line. */
   label: string;
   invalid: boolean;
+  required: boolean;
   name?: string;
   /** The id of the hint or error, while there is one. */
   described?: string;
@@ -25,6 +36,11 @@ export type FieldProps = {
   error?: string;
   /** "Optional" or a unit, quiet at the end of the label line. */
   optional?: string;
+  /**
+   * The form is not sent without a value here: the control says so to the browser and to assistive technology. The
+   * label line shows nothing for it; the fields that may stay empty say "optional" instead (as the mockup does).
+   */
+  required?: boolean;
   children: JSX.Element;
 };
 
@@ -46,6 +62,9 @@ export const Field = (props: FieldProps) => {
         label,
         get invalid() {
           return !!props.error;
+        },
+        get required() {
+          return props.required === true;
         },
         get name() {
           return props.name;
@@ -121,11 +140,31 @@ export type InputProps = {
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
   onInput?: (value: string) => void;
+  /**
+   * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
+   * `event.isComposing` is true the key belongs to an input method (Japanese, Chinese, …): Enter then confirms the
+   * characters and must not search.
+   */
+  onKeyDown?: (event: KeyboardEvent) => void;
+  /**
+   * The text field itself, to focus it (`input.focus()`) or select its text: `let input; <Input ref={input} />` or a
+   * function that takes it.
+   */
+  ref?: HTMLInputElement | HTMLTextAreaElement | ((element: HTMLInputElement | HTMLTextAreaElement) => void);
+  /** At the end inside the field: a symbol, or a ghost icon button such as the filter of a search. */
+  end?: JSX.Element;
+};
+
+/** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
+const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLTextAreaElement) => {
+  if (typeof ref === "function") ref(element);
 };
 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  // the end is made once, here (reading the prop twice would make its JSX twice)
+  const end = resolveChildren(() => props.end);
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
@@ -134,6 +173,7 @@ export const Input = (props: InputProps) => {
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
     "aria-describedby": field?.described,
+    required: field?.required || undefined,
   });
   return (
     <span
@@ -149,14 +189,24 @@ export const Input = (props: InputProps) => {
         fallback={
           <input
             {...shared()}
+            ref={(element) => forwardRef(props.ref, element)}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
             onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onKeyDown={(event) => props.onKeyDown?.(event)}
           />
         }
       >
-        <textarea {...shared()} onInput={(event) => props.onInput?.(event.currentTarget.value)} />
+        <textarea
+          {...shared()}
+          ref={(element) => forwardRef(props.ref, element)}
+          onInput={(event) => props.onInput?.(event.currentTarget.value)}
+          onKeyDown={(event) => props.onKeyDown?.(event)}
+        />
+      </Show>
+      <Show when={end() !== undefined}>
+        <span class="k2-input-end">{end()}</span>
       </Show>
     </span>
   );
@@ -196,6 +246,7 @@ export const Select = (props: SelectProps) => {
         aria-label={field ? undefined : props.label}
         aria-invalid={field?.invalid ? "true" : undefined}
         aria-describedby={field?.described}
+        required={field?.required || undefined}
         onChange={(event) => {
           setChosen(event.currentTarget.value);
           props.onChange?.(event.currentTarget.value);
@@ -239,6 +290,7 @@ export const DateInput = (props: DateInputProps) => {
         aria-label={field ? undefined : props.label}
         aria-invalid={field?.invalid ? "true" : undefined}
         aria-describedby={field?.described}
+        required={field?.required || undefined}
         onInput={(event) => props.onInput?.(event.currentTarget.value)}
       />
       <Icon name="calendar" />
@@ -279,6 +331,7 @@ export const Check = (props: CheckProps) => {
           checked={checked() === true}
           ref={(input) => mixed(input, () => checked() === "mixed")}
           aria-describedby={field?.described}
+          required={field?.required || undefined}
           disabled={props.disabled}
           onChange={(event) => {
             setOwn(event.currentTarget.checked);
@@ -336,13 +389,26 @@ export type ChoiceProps = {
   name: string;
   options: readonly (string | { value: string; label: string })[];
   value?: string;
-  /** A name for the group when it stands without a Field. */
+  /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
   onChange?: (value: string) => void;
 };
 
-/** A few visible options, one of which is chosen: round points, each on one 20 px text line. */
+/**
+ * A few visible options, one of which is chosen: round points, each on one 20 px text line. With a `label` and no
+ * Field around it, it stands in a field of its own, so its question is visible and names the group.
+ */
 export const Choice = (props: ChoiceProps) => {
+  if (!useField() && props.label !== undefined)
+    return (
+      <Field label={props.label}>
+        <ChoiceGroup {...props} />
+      </Field>
+    );
+  return <ChoiceGroup {...props} />;
+};
+
+const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
@@ -367,6 +433,7 @@ export const Choice = (props: ChoiceProps) => {
                 name={props.name}
                 value={option.value}
                 checked={option.value === value()}
+                required={field?.required || undefined}
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);

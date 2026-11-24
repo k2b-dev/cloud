@@ -4,16 +4,19 @@
 @import "@k2b/ui/v2.css";
 @plugin "@tailwindcss/typography";
 
-/* A v2 page inside Cloud (`Layout ui="v2"`) speaks in its app's colour: the ink and the tint come from the accent as
-   in the v2 mockup, towards black on light and towards white on dark. */
+/* A v2 page inside Cloud (`Layout ui="v2"`) speaks in its app's colour. Cloud sets the colour and the readable ink of
+   each theme (4.5:1 on the v2 surface and tint, from `appV2Ink`, on the body beside `--app-accent`, so overlays a v2
+   page places on the body read the same); v2 derives the tint. Without an ink, v2 mixes one. The dark ink follows the
+   three ways into v2's dark theme, as v2.css names them: a dark page, `.dark` or `data-theme="dark"` on the scope;
+   a scope with `data-theme="light"` keeps the light ink inside a dark page. */
 .app-accent-scope .k2-ui {
   --k2-app: var(--app-accent, var(--k2-blue));
-  --k2-app-ink: color-mix(in srgb, var(--k2-app) 80%, #000000);
-  --k2-app-tint: color-mix(in srgb, var(--k2-app) 9%, var(--k2-surface));
+  --k2-app-ink: var(--app-v2-ink-light);
 }
-.dark .app-accent-scope .k2-ui {
-  --k2-app-ink: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
-  --k2-app-tint: color-mix(in srgb, var(--k2-app) 22%, var(--k2-surface));
+.dark .app-accent-scope .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui),
+.app-accent-scope .k2-ui.dark,
+.app-accent-scope .k2-ui[data-theme="dark"] {
+  --k2-app-ink: var(--app-v2-ink-dark);
 }
 
 /* global.css carries the Cloud shell, integration surfaces, and shared app

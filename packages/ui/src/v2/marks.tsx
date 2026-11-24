@@ -1,6 +1,8 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { initialsOf, type Person, type Status } from "./types";
+import { personColor } from "../surfaces/person-color";
+import { linkOr } from "./link";
+import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
@@ -38,7 +40,15 @@ export type AvatarProps = Person;
  * lines and in a record head (soft there), 20 px among the marks of a row and in a button.
  */
 export const Avatar = (props: AvatarProps) => (
-  <span class="k2-av" data-k2-part="Avatar" data-k2-avatar="" role="img" aria-label={props.name} style={custom({ "--k2-c": props.color })}>
+  <span
+    class="k2-av"
+    data-k2-part="Avatar"
+    data-k2-avatar=""
+    role="img"
+    aria-label={props.name}
+    // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
+    style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
+  >
     {initialsOf(props)}
   </span>
 );
@@ -52,6 +62,8 @@ export type ChipProps = {
    */
   onClick?: () => void;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   /** A pressable chip that is on, such as an active filter: in the tint of the app. */
   pressed?: boolean;
 } & (
@@ -112,9 +124,10 @@ export const Chip = (props: ChipProps) => {
                 : "plain";
   return (
     <Dynamic
-      component={props.href ? "a" : props.onClick ? "button" : "span"}
+      component={linkOr(props.href, props.onClick ? "button" : "span")}
       href={props.href}
-      type={props.onClick && !props.href ? "button" : undefined}
+      onNavigate={props.href !== undefined ? props.onNavigate : undefined}
+      type={props.onClick && props.href === undefined ? "button" : undefined}
       onClick={() => props.onClick?.()}
       class="k2-chip"
       data-k2-part="Chip"
