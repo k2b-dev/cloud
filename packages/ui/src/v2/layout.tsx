@@ -125,7 +125,9 @@ export type PaneProps = {
   detail?: boolean;
   /**
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
-   * `href`: the address of the list without the open entry.
+   * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
+   * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
+   * own bar instead.
    */
   back?: Action;
   /** The side column of a record (the info column): quieter sections. */
@@ -185,10 +187,10 @@ export const Pane = (props: PaneProps) => {
         "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
       })}
     >
-      {/* the way back shows only on the phone, above the head of the detail */}
+      {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
       <Show when={props.back}>
         {(back) => (
-          <div class="k2-pane-back">
+          <div class="k2-pane-back" data-k2-part="Back">
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" />
           </div>
         )}

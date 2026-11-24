@@ -22,6 +22,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Workspace",
     "Pane",
     "Pane.Split",
+    "Back",
     "Bar",
     "StatusRow",
     "Nav",
@@ -218,6 +219,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `Pane${label ? ` ${quote(label)}` : ""}${flags(element, ["detail", "side"])
           .map((flag) => ` ${flag}`)
           .join("")}${width ? ` width ${min || "?"}–${width}` : ""}`;
+      }
+      case "Back": {
+        // the way back of a detail on the phone: its words, and whether it leads by its address
+        const button = element.querySelector("[data-k2-part='Button']");
+        return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
       }
       case "Bar":
       case "StatusRow": {

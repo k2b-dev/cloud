@@ -2761,6 +2761,11 @@
   .k2-ui .k2-pane-back {
     display: flex;
   }
+  /* while a detail with its way back is the page, the head of the workspace (its views) gives way: the way back is
+     the one thing above the detail, and the platform may show it in its own bar ([data-k2-part="Back"]) */
+  .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
+    display: none;
+  }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child {
