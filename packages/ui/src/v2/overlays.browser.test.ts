@@ -233,3 +233,48 @@ for (const touch of [false, true])
       touch ? { width: 390, touch } : {},
     );
   });
+
+// The first field of a dialog takes the focus, not the close button of its head; without a field the first action of
+// its foot does.
+test("dialog: the first field takes the focus; without a field the first action of the foot", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Zugang anlegen" }).click();
+    await page.locator('.k2-dialog:has-text("Zugang erstellt")').waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.value)).toBe("k2b_live_7Q4mX9");
+    await page.getByRole("button", { name: "Fertig" }).click();
+    await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+    await openDialog(page);
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Weiter bearbeiten");
+  });
+});
+
+// `dismissible={false}` (a secret shown once): a press outside, on the phone a tap on the backdrop, does not close it;
+// Escape and its own buttons do, and the focus returns.
+for (const touch of [false, true])
+  test(`dialog that is not dismissible${touch ? " on a phone" : ""}: an outside press keeps it, Escape closes it`, async () => {
+    await withPage(
+      async (page) => {
+        const open = async () => {
+          await page.getByRole("button", { name: "Zugang anlegen" }).click();
+          await page.locator('.k2-dialog:has-text("Zugang erstellt")').waitFor();
+          await settled(page);
+        };
+        await open();
+        expect(await page.locator(".k2-dialog").getAttribute("data-presentation")).toBe(touch ? "sheet" : "dialog");
+        if (touch) await page.touchscreen.tap(195, 20);
+        else await page.mouse.click(8, 8);
+        await settled(page);
+        expect(await page.locator(".k2-dialog").count()).toBe(1);
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+        expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Zugang anlegen");
+        // the default dialog still closes on a press outside
+        await openDialog(page);
+        if (touch) await page.touchscreen.tap(195, 20);
+        else await page.mouse.click(8, 8);
+        await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+      },
+      touch ? { width: 390, touch } : {},
+    );
+  });
