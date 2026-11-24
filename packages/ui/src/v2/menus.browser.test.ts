@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menus.demo";
 import { heights } from "./tokens";
@@ -149,6 +149,26 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
     // the same element: new data for an open menu updates its entries in place
     expect(await page.evaluate((el) => el?.isConnected, element)).toBe(true);
     expect(await deeds(page)).toEqual(["open-only:false"]);
+    // an entry that came in stands where the tick stood: it is a plain deed with its own handler, not the old tick
+    const added = page.getByRole("menuitem", { name: "Alle zeigen" });
+    expect(await added.getAttribute("aria-checked")).toBeNull();
+    expect(await page.getByRole("menuitemcheckbox", { name: "Nur offene zeigen" }).getAttribute("aria-checked")).toBe("false");
+    await added.click();
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["open-only:false", "show-all"]);
+  });
+});
+
+test("menu: the '…' at the end of a row stays where it is while its menu is open", async () => {
+  await withPage(async (page) => {
+    const button = page.getByRole("button", { name: "Aktionen für Küchenfront" });
+    const before = await box(button);
+    await button.click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    expect(await box(button)).toEqual(before);
+    await page.keyboard.press("Escape");
+    await closed(page, menu);
   });
 });
 
@@ -165,6 +185,9 @@ test("context menu: a right-click on a row opens the row's menu at the pointer; 
     // at the pointer: core leaves a gap of a few px so the pointer does not rest on the first entry
     expect(Math.abs(m.x - (r.x + 200))).toBeLessThanOrEqual(4);
     expect(Math.abs(m.y - (r.y + 10))).toBeLessThanOrEqual(4);
+    // the menu stands outside the list: a list holds only its rows
+    expect(await page.locator(menu).evaluate((el) => el.closest(".k2-list, [role=list]") === null)).toBe(true);
+    expect(await page.locator(".k2-list > *").count()).toBe(3);
     await page.getByRole("menuitem", { name: "Duplizieren" }).click();
     await closed(page, menu);
     expect(await deeds(page)).toEqual(["duplicate:A-1043"]);
@@ -172,6 +195,24 @@ test("context menu: a right-click on a row opens the row's menu at the pointer; 
     await page.getByRole("button", { name: "Aktionen für Regal Archiv" }).click();
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     expect(await deeds(page)).toEqual(["duplicate:A-1043", "delete:A-1044"]);
+  });
+});
+
+test("context menu: Shift+F10 opens it at the row; a long press shows no link preview of the system", async () => {
+  await withPage(async (page) => {
+    const row = page.locator(".k2-list > .k2-row").nth(2);
+    // iOS opens its own preview on a long press unless the area says no; core says it while the area is bound (only
+    // WebKit knows the property, so only WebKit can read it back)
+    if (browserName === "webkit") {
+      expect(await row.evaluate((el) => el.style.getPropertyValue("-webkit-touch-callout"))).toBe("none");
+    }
+    await row.locator("button, a").first().focus();
+    await page.keyboard.press("Shift+F10");
+    await page.locator(menu).waitFor();
+    await settled(page);
+    expect(await focused(page)).toBe("Öffnen");
+    await page.keyboard.press("Escape");
+    await closed(page, menu);
   });
 });
 
@@ -208,6 +249,9 @@ test("tip: hovering the button shows its hint above it after a moment; the butto
     // above the button, or below it where the button stands at the top of the window; never on it
     expect(h.y + h.height <= b.y || h.y >= b.y + b.height).toBe(true);
     expect(await button.getAttribute("aria-describedby")).toBe(await tip.getAttribute("id"));
+    // one hint: the browser's own (`title`) gives way while the tip is bound, and the tip is not in the head's bar
+    expect(await button.getAttribute("title")).toBeNull();
+    expect(await tip.evaluate((el) => el.closest(".k2-bar") === null)).toBe(true);
     await page.mouse.move(700, 600);
     await page.waitForFunction(() => !document.querySelector(".k2-tip:not([hidden])"));
   });

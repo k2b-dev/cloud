@@ -37,6 +37,8 @@ export function Demo() {
         { label: "Archiv", disabled: true, onClick: did("move:archiv") },
       ],
     },
+    // an entry that comes and goes: while closed orders show, it stands where the tick stood before
+    ...(openOnly() ? [] : [{ label: "Alle zeigen", icon: "list", onClick: did("show-all") }]),
     {
       label: "Nur offene zeigen",
       checked: openOnly(),

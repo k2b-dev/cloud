@@ -3,6 +3,7 @@ import { usePopover } from "./behavior/overlays";
 import { useTip } from "./behavior/tip";
 import { alignTo, TriggerFace, type TriggerProps } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { PageLayer } from "./page-layer";
 
 export type PopoverPanelProps = TriggerProps & {
   /** The heading of the panel, which also names it for assistive technology. */
@@ -65,16 +66,28 @@ const Panel = (props: PopoverPanelProps) => {
 const Tip = (props: PopoverTipProps) => {
   const tip = useTip();
   const resolved = resolveChildren(() => props.children);
+  const element = () => resolved.toArray().find((node): node is HTMLElement => node instanceof HTMLElement);
   createEffect(() => {
-    const element = resolved.toArray().find((node): node is HTMLElement => node instanceof HTMLElement);
-    if (element) onCleanup(tip.bindTrigger(element));
+    const trigger = element();
+    if (!trigger) return;
+    // the browser's own hint (an icon button names itself in `title`) would show beside the tip; it comes back after
+    const title = trigger.getAttribute("title");
+    trigger.removeAttribute("title");
+    const unbind = tip.bindTrigger(trigger);
+    onCleanup(() => {
+      unbind();
+      if (title !== null) trigger.setAttribute("title", title);
+    });
   });
+  // the tip stands at the end of the page, so the thing stays the last child of its place (see PageLayer)
   return (
     <>
       {resolved()}
-      <tip.Popup class="k2-tip" data-k2-part="Popover" side="top" sideOffset={6} collisionPadding={8}>
-        {props.tip}
-      </tip.Popup>
+      <PageLayer from={element}>
+        <tip.Popup class="k2-tip" data-k2-part="Popover" side="top" sideOffset={6} collisionPadding={8}>
+          {props.tip}
+        </tip.Popup>
+      </PageLayer>
     </>
   );
 };

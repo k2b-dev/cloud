@@ -35,10 +35,12 @@ const firstSolidModule = (file: string, seen = new Set<string>()): string[] | un
   return undefined;
 };
 
-test("no test of the v2 behaviour layer reaches a Solid module through a static import", async () => {
+test("no test of v2 reaches a Solid module through a static import", async () => {
   const offenders: string[] = [];
-  for await (const path of new Bun.Glob("*.test.ts").scan({ cwd: here })) {
-    const chain = firstSolidModule(resolve(here, path));
+  // every test of v2, not only the behaviour layer's: the same trap waits in src/v2/*.browser.test.ts
+  const v2 = resolve(here, "..");
+  for await (const path of new Bun.Glob("**/*.test.ts").scan({ cwd: v2 })) {
+    const chain = firstSolidModule(resolve(v2, path));
     if (chain) offenders.push(`${path} → ${chain.join(" → ")}`);
   }
   expect(offenders).toEqual([]);

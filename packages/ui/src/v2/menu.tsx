@@ -1,7 +1,8 @@
-import { createEffect, createSignal, Index, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
+import { PageLayer } from "./page-layer";
 
 /**
  * One entry of a menu, as data. `onClick` runs it; a Promise keeps the menu open and the entry busy until it settles.
@@ -88,21 +89,47 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[] }) => {
   // every entry keeps the place of the symbol once one entry has a symbol, so the words line up
   const lead = () => props.entries.some((entry) => entry !== "separator" && entry.icon);
-  // By place, not by object: new data for an open menu (a tick that flipped) updates its entries in place, so the
-  // highlight and the focus stay where they are.
+  // Keyed by kind and words, not by object or place: new data for an open menu (a tick that flipped, an entry that
+  // came in before it) keeps every entry's element, so the highlight and the focus stay. An entry that turns into
+  // another kind gets a new key and is made anew, with the right role and handler.
+  const keyed = createMemo(() => {
+    const seen = new Map<string, number>();
+    return menuEntries(props.entries).map((entry, index) => {
+      const base = entry === "separator" ? `separator:${index}` : `${kindOf(entry)}:${entry.label}`;
+      const count = seen.get(base) ?? 0;
+      seen.set(base, count + 1);
+      return { key: count ? `${base}#${count}` : base, entry };
+    });
+  });
   return (
-    <Index each={menuEntries(props.entries)}>
-      {(entry, index) => (
-        <Show
-          when={((current) => (current === "separator" ? undefined : current))(entry())}
-          fallback={<props.level.Separator class="k2-msep" />}
-        >
-          {(item) => <Entry level={props.level} item={item()} value={String(index)} lead={lead()} />}
-        </Show>
-      )}
-    </Index>
+    <For each={keyed().map((each) => each.key)}>
+      {(key) => {
+        const entry = () => keyed().find((each) => each.key === key)?.entry ?? "separator";
+        const kind = untrack(() => kindOf(entry()));
+        return kind === "separator" ? (
+          <props.level.Separator class="k2-msep" />
+        ) : (
+          <Entry level={props.level} kind={kind} item={itemOf(entry())} value={key} lead={lead()} />
+        );
+      }}
+    </For>
   );
 };
+
+type EntryKind = "separator" | "submenu" | "tick" | "link" | "deed";
+
+const kindOf = (entry: MenuEntry): EntryKind =>
+  entry === "separator"
+    ? "separator"
+    : entry.items
+      ? "submenu"
+      : entry.checked !== undefined
+        ? "tick"
+        : entry.href !== undefined && !entry.disabled
+          ? "link"
+          : "deed";
+
+const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" ? { label: "" } : entry);
 
 const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
   <>
@@ -117,8 +144,8 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
   </>
 );
 
-/** One entry. Its kind (submenu, tick, link, deed) is fixed when it is made; its words and states follow the data. */
-const Entry = (props: { level: MenuLevelParts; item: MenuItem; value: string; lead: boolean }) => {
+/** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
+const Entry = (props: { level: MenuLevelParts; kind: Exclude<EntryKind, "separator">; item: MenuItem; value: string; lead: boolean }) => {
   const shared = {
     class: "k2-mi",
     get "data-danger"() {
@@ -135,9 +162,7 @@ const Entry = (props: { level: MenuLevelParts; item: MenuItem; value: string; le
       return props.item.label;
     },
   };
-  const kind = untrack(() =>
-    props.item.items ? "submenu" : props.item.checked !== undefined ? "tick" : props.item.href ? "link" : "deed",
-  );
+  const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
     return (
@@ -170,7 +195,7 @@ const Entry = (props: { level: MenuLevelParts; item: MenuItem; value: string; le
   }
   if (kind === "link") {
     return (
-      <props.level.LinkItem {...keyed} href={props.item.disabled ? undefined : props.item.href}>
+      <props.level.LinkItem {...keyed} href={props.item.href}>
         <EntryFace item={props.item} lead={props.lead} />
       </props.level.LinkItem>
     );
@@ -240,17 +265,22 @@ export type MenuContextProps = {
 const MenuContext = (props: MenuContextProps) => {
   const level = useMenuLevels();
   const resolved = resolveChildren(() => props.children);
+  const element = () => resolved.toArray().find((node): node is HTMLElement => node instanceof HTMLElement);
   createEffect(() => {
-    const element = resolved.toArray().find((node): node is HTMLElement => node instanceof HTMLElement);
-    if (!element || props.disabled) return;
-    onCleanup(level.bindContext(element));
+    const area = element();
+    if (!area || props.disabled) return;
+    onCleanup(level.bindContext(area));
   });
+  // The menu stands at the end of the page, not beside the thing: a role="menu" inside a list is no list item, and
+  // a sibling after a row would end the list's last-row rules while the menu is open.
   return (
     <>
       {resolved()}
-      <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
-      </level.Popup>
+      <PageLayer from={element}>
+        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={8}>
+          <Entries level={level} entries={props.items} />
+        </level.Popup>
+      </PageLayer>
     </>
   );
 };
