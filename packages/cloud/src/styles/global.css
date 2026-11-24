@@ -430,6 +430,25 @@ solid-island {
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     border-top-color: var(--k2b-border);
   }
+  /* An open v2 detail brings its way back (the part `Back`, such as "‹ Posteingang"); it takes the title's place in
+     the phone bar. The bar keeps only its controls and stands over the card's first row, where the way back is; the
+     card starts at the top. The `:has()` asks from the bar, not from the shell (css-has-scope). A banner between the
+     bar and the content keeps the bar and the way back each in their own row. Apps change nothing. */
+  .cloud-app-canvas[data-layout-authenticated] .layout-header:has(+ .layout-page-head + .layout-content-main [data-k2-part="Back"]) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 1;
+    & :is(.layout-header-title, .layout-header-title-menu) {
+      display: none;
+    }
+  }
+  /* The way back is as high as the bar's row, and its name ends before the bar's search, help and app menu (three
+     2 rem buttons, their gaps and the bar's edge). */
+  .cloud-app-canvas[data-layout-authenticated] .layout-header + .layout-page-head + .layout-content-main [data-k2-part="Back"] {
+    height: 2.875rem;
+    padding-right: 7.5rem;
+  }
 }
 
 /* Phone overviews: object navigation sits on the shell before the card.
