@@ -3,6 +3,39 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.86.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.85.0...cloud-v0.86.0) (2026-11-24)
+
+
+### Features
+
+* **accounts:** administrators see which groups contain which ([#4063](https://github.com/k2b-dev/cloud/issues/4063)) ([dc30f9e](https://github.com/k2b-dev/cloud/commit/dc30f9eb2655839f6344e9bcc8d946e73c9d637a))
+* **accounts:** agents, API keys, and service accounts keep their own names ([#4055](https://github.com/k2b-dev/cloud/issues/4055)) ([f9b3ba4](https://github.com/k2b-dev/cloud/commit/f9b3ba46302e5fb44f2824b089e475251ab0c6bb))
+* **accounts:** group relations view for administrators ([#4066](https://github.com/k2b-dev/cloud/issues/4066)) ([75fd155](https://github.com/k2b-dev/cloud/commit/75fd1558900e8ab5bee13d4455f9d78f91988efe))
+* **cloud:** on the phone an open v2 detail's way back stands in the phone bar ([#4087](https://github.com/k2b-dev/cloud/issues/4087)) ([e5d4320](https://github.com/k2b-dev/cloud/commit/e5d4320b67646a6c2289816f3755d979b34bdbd0))
+* **cloud:** pages can opt into the v2 root and app accent ([#4078](https://github.com/k2b-dev/cloud/issues/4078)) ([c55b217](https://github.com/k2b-dev/cloud/commit/c55b217084513ac051309af2e226326470f7bbde))
+* **docs:** Fibel shows the v2 demo screens built from @k2b/ui/v2 ([#4059](https://github.com/k2b-dev/cloud/issues/4059)) ([0089bce](https://github.com/k2b-dev/cloud/commit/0089bceb7b41d2a6efc6e792789b88c08f8fc7a8))
+* **gateway:** Cloud pages can only be framed by Cloud itself ([#4070](https://github.com/k2b-dev/cloud/issues/4070)) ([795714a](https://github.com/k2b-dev/cloud/commit/795714a428aff8c73bb145bcd603eddf6b300315))
+* **ui:** @k2b/ui ships the k2b-ui skill for building v2 screens ([#4079](https://github.com/k2b-dev/cloud/issues/4079)) ([842609e](https://github.com/k2b-dev/cloud/commit/842609e34f9e8ef7ecd340666b32eaa130db510d))
+* **ui:** @k2b/ui/v2 brings its primitives ([#4058](https://github.com/k2b-dev/cloud/issues/4058)) ([5976e51](https://github.com/k2b-dev/cloud/commit/5976e513408c2de52dc551f261b083750225fe7f))
+* **ui:** @k2b/ui/v2 brings the v2 tokens, styles and layout rules ([#4052](https://github.com/k2b-dev/cloud/issues/4052)) ([39c7f34](https://github.com/k2b-dev/cloud/commit/39c7f34f137535faccaa89a5cde3c7b7f545f781))
+* **ui:** an open v2 detail has one way back on the phone, the part Back ([#4085](https://github.com/k2b-dev/cloud/issues/4085)) ([6256a3f](https://github.com/k2b-dev/cloud/commit/6256a3fcd118133c0af4b3e1f9a9eb129dde7ce8))
+* **ui:** the k2b-ui skill teaches empty, loading and failed, links that open in place, and the way back ([#4086](https://github.com/k2b-dev/cloud/issues/4086)) ([8183f5d](https://github.com/k2b-dev/cloud/commit/8183f5db41b19511b89979407e47dc876cedc8eb))
+* **ui:** v2 places show empty, loading and failed in place, the search field takes keys and focus, and links open in place ([#4081](https://github.com/k2b-dev/cloud/issues/4081)) ([e5c225f](https://github.com/k2b-dev/cloud/commit/e5c225f1a17217e4d9480fa1ca3c81302abff206))
+* **ui:** v2 primitives carry the Mail pilot on the phone and in narrow panes ([#4077](https://github.com/k2b-dev/cloud/issues/4077)) ([6b1b531](https://github.com/k2b-dev/cloud/commit/6b1b531bb4a6f1f1be675862ddaabe1df50de45c))
+
+
+### Bug Fixes
+
+* **ci:** the nightly scale acceptance names the Cloud host and keeps two Core replicas ([#4096](https://github.com/k2b-dev/cloud/issues/4096)) ([f120d31](https://github.com/k2b-dev/cloud/commit/f120d31f4a30086c239eaf5522c62eea4385ee92))
+* **cloud:** the BlockTree picture-state test stays within its time in WebKit ([#4089](https://github.com/k2b-dev/cloud/issues/4089)) ([ec42121](https://github.com/k2b-dev/cloud/commit/ec4212135da54fddd3c43972ac4fea8d7987757f))
+* **deps:** raise seroval, the MCP SDK, body-parser and undici past their high advisories ([#4098](https://github.com/k2b-dev/cloud/issues/4098)) ([2fe5d7f](https://github.com/k2b-dev/cloud/commit/2fe5d7f07911ebd414c262c82a60485aa0320059))
+* **mail:** a contact app that refuses the person means no matches, not an outage ([#4067](https://github.com/k2b-dev/cloud/issues/4067)) ([3c1de73](https://github.com/k2b-dev/cloud/commit/3c1de73e4e12e86c5feffba5fe1968aef8576e54))
+* **notes:** the browser sync test keeps the page's timers running after its pinned date ([#4100](https://github.com/k2b-dev/cloud/issues/4100)) ([8442fe3](https://github.com/k2b-dev/cloud/commit/8442fe3d040fbf567c74d3384879a1be5ee9c9be))
+* **ui:** the v2 layout measure clips each axis on its own ([#4060](https://github.com/k2b-dev/cloud/issues/4060)) ([8d932a6](https://github.com/k2b-dev/cloud/commit/8d932a6b4479b9a8658dab09a654b7b7b6682ac1))
+* **ui:** the v2 layout measure reports lines inside one thing, cut labels and cut or hidden text ([#4080](https://github.com/k2b-dev/cloud/issues/4080)) ([f63dc31](https://github.com/k2b-dev/cloud/commit/f63dc312a0c9ab7090545af6a8e9021b672e6253))
+* **ui:** the v2 way back cuts a long name and shows at every phone width ([#4088](https://github.com/k2b-dev/cloud/issues/4088)) ([8d0769d](https://github.com/k2b-dev/cloud/commit/8d0769d2a676949768d25a4adae970303927c639))
+* **ui:** v2 screens on the phone cut nothing and break no part ([#4083](https://github.com/k2b-dev/cloud/issues/4083)) ([9665abf](https://github.com/k2b-dev/cloud/commit/9665abfba08c675494c7aef75644cbe5100ae1a2))
+
 ## [0.85.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.84.0...cloud-v0.85.0) (2026-11-23)
 
 
