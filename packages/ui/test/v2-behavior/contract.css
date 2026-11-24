@@ -50,4 +50,10 @@ button, input { font: inherit; color: inherit; }
 .column:last-child { flex: 1; border-right: 0; }
 .grip { flex: none; width: 13px; margin: 0 -7px 0 -6px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; }
 .grip:focus-visible { outline: 2px solid var(--accent); }
+.tree-group { padding-left: 16px; }
+/* Styling contract: the toast region is out of the flow before it mounts too (core moves it into the top layer once
+   it binds); in the flow, the empty region of the server markup would take a gap the mount then takes away. */
+.toasts { position: fixed; right: 16px; bottom: 16px; margin: 0; padding: 0; border: 0; background: transparent; width: 360px; overflow: visible; }
+.toasts ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.toast { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 @media (max-width: 720px) { .transfer { grid-template-columns: 1fr; } .page { grid-template-columns: 1fr; } }

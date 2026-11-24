@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
@@ -65,11 +66,20 @@ export const v2Screens = {
   form: {
     title: "Bedienung · Neuer Auftrag",
     description:
-      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Dialog, menu, the open list of a selection and the toast with Rückgängig after the main action follow with the behaviour layer.",
+      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Als Vorlage speichern opens a dialog with a field, a sheet from the bottom on a phone; Abbrechen asks with Dialog.confirm before the order is discarded. The menu, the open list of a selection and the toast with Rückgängig after the main action follow.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
     phone: { back: "Aufträge" },
     render: () => <FormScreen />,
+  },
+  menus: {
+    title: "Menü · Popover · Toast",
+    description:
+      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view settings toggle in a menu, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
+    mockup: "index.html (Menu · Popover · Toast), 07-formular-menue",
+    app: "#047857",
+    phone: { back: "Aufträge" },
+    render: () => <MenusScreen />,
   },
 } satisfies Record<string, V2Screen>;
 
