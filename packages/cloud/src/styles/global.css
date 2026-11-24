@@ -430,6 +430,37 @@ solid-island {
   .dark .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     border-top-color: var(--k2b-border);
   }
+  /* The room of the phone bar's search, help and app menu at its end: three 2 rem buttons, their gaps and the bar's
+     edge. Set on the canvas, so the bar and the content below it read the same width. */
+  .cloud-app-canvas[data-layout-authenticated] {
+    --cloud-phone-bar-controls: 7.5rem;
+  }
+  /* An open v2 detail brings its way back (the part `Back`, such as "‹ Posteingang"); it takes the title's place in
+     the phone bar. The bar keeps only its controls and stands over the card's first row, where the way back is; the
+     card starts at the top. The chain is Layout's own order: the bar, the page trail's data, the row of the way up,
+     the content. The `:has()` asks from the bar, not from the shell (css-has-scope). A banner between the bar and the
+     content breaks the chain: the bar and the way back then keep their own rows. The bar stays inside the canvas's
+     safe area, like the card. Apps change nothing. */
+  .cloud-app-canvas[data-layout-authenticated]
+    .layout-header:has(+ [data-k2b-page-trail] + .layout-page-head + .layout-content-main [data-k2-part="Back"]) {
+    position: absolute;
+    top: env(safe-area-inset-top, 0px);
+    right: env(safe-area-inset-right, 0px);
+    z-index: 1;
+    & :is(.layout-header-title, .layout-header-title-menu) {
+      display: none;
+    }
+  }
+  /* The way back is as high as the bar's row, and its name ends before the bar's controls. */
+  .cloud-app-canvas[data-layout-authenticated]
+    .layout-header
+    + [data-k2b-page-trail]
+    + .layout-page-head
+    + .layout-content-main
+    [data-k2-part="Back"] {
+    height: 2.875rem;
+    padding-right: var(--cloud-phone-bar-controls);
+  }
 }
 
 /* Phone overviews: object navigation sits on the shell before the card.
