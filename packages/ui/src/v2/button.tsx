@@ -25,6 +25,11 @@ type ButtonBase = {
   /** The button leads further, to a page with more: a chevron to the right after the label. */
   forward?: boolean;
   disabled?: boolean;
+  /**
+   * The deed of the button is under way, such as a save that waits for the server: a turning sign over the label, the
+   * width kept, pressed no second time. Its name stays; it says "busy" to assistive technology.
+   */
+  busy?: boolean;
   type?: "button" | "submit";
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
@@ -50,21 +55,30 @@ export const Button = (props: ButtonProps) => {
   // the label is made once and read from here (reading `children` again would make its JSX again)
   const label = resolveChildren(() => props.children);
   const iconOnly = () => label() === undefined;
+  // A busy button takes no second press, as a disabled one, but keeps its look under the turning sign and keeps the
+  // focus a press gave it (a native `disabled` would drop it): it says "disabled" and refuses the click, which also
+  // stops a form being sent twice.
+  const off = () => props.disabled || props.busy;
   return (
     // a disabled link is an anchor without an address: it leads nowhere and takes no `onNavigate`
     <Dynamic
-      component={props.disabled && props.href !== undefined ? "a" : linkOr(props.href, "button")}
-      href={props.disabled ? undefined : props.href}
-      onNavigate={props.disabled || props.href === undefined ? undefined : props.onNavigate}
+      component={off() && props.href !== undefined ? "a" : linkOr(props.href, "button")}
+      href={off() ? undefined : props.href}
+      onNavigate={off() || props.href === undefined ? undefined : props.onNavigate}
       type={props.href ? undefined : (props.type ?? "button")}
       disabled={props.href ? undefined : props.disabled}
-      aria-disabled={props.href && props.disabled ? "true" : undefined}
+      aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
+      aria-busy={props.busy ? "true" : undefined}
       aria-label={iconOnly() ? props.label : undefined}
       title={iconOnly() ? props.label : props.title}
       aria-haspopup={props.menu ? "menu" : undefined}
-      onClick={props.onClick}
+      onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
+        if (off()) event.preventDefault();
+        else props.onClick?.(event);
+      }}
       class="k2-btn"
       data-k2-part="Button"
+      data-busy={props.busy ? "" : undefined}
       data-variant={props.variant && props.variant !== "secondary" ? props.variant : undefined}
       data-icon-only={iconOnly() ? "" : undefined}
       data-menu={props.menu ? "" : undefined}
@@ -72,7 +86,7 @@ export const Button = (props: ButtonProps) => {
     >
       <>
         <Show when={props.avatar} fallback={<Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>}>
-          {(person) => <Avatar {...person()} />}
+          {(person) => <Avatar {...person()} decorative />}
         </Show>
         <Show when={!iconOnly()}>
           <span class="k2-btn-label">{label()}</span>
@@ -82,6 +96,12 @@ export const Button = (props: ButtonProps) => {
         </Show>
         <Show when={props.forward}>
           <Icon name="chevron-right" />
+        </Show>
+        {/* the sign turns over the label, which keeps its place (and the button its width) unseen */}
+        <Show when={props.busy}>
+          <span class="k2-btn-busy" aria-hidden="true">
+            <Icon name="loader-2" />
+          </span>
         </Show>
       </>
     </Dynamic>
@@ -101,6 +121,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         href={props.action.href}
         onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
+        disabled={props.action.disabled}
       >
         {props.action.label}
       </Button>
@@ -114,6 +135,7 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
         href={props.action.href}
         onNavigate={props.action.onNavigate}
         onClick={() => props.action.onClick?.()}
+        disabled={props.action.disabled}
       />
     )}
   </Show>

@@ -772,3 +772,29 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 });
+
+describe("v2 heads that sort lead to an address", () => {
+  test(
+    "without a deed in place, a head that sorts is a link to the page sorted so; the server markup says the order",
+    async () => {
+      const page = await open("access");
+      try {
+        const heads = await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-table th")].map((th) => [
+            th.getAttribute("aria-sort"),
+            th.querySelector("a.k2-th-sort")?.getAttribute("href") ?? null,
+          ]),
+        );
+        // the sorted column leads to its other direction, another column to its first
+        expect(heads).toEqual([
+          ["ascending", "?sort=-0"],
+          [null, "?sort=1"],
+          [null, null],
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
