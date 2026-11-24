@@ -18,7 +18,6 @@ export const directoryMessages = i18n.define({
       previous: "Previous",
       next: "Next",
       agent: "Agent",
-      service: "Agent (API key only)",
     },
     de: {
       title: "Verzeichniszugriff",
@@ -36,7 +35,6 @@ export const directoryMessages = i18n.define({
       previous: "Zurück",
       next: "Weiter",
       agent: "Agent",
-      service: "Agent (nur API Key)",
     },
   },
 });

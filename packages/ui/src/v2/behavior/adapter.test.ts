@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import { toSolidAttrs } from "./adapter";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { registerSsrTestPlugin } from "../../../test/ssr-test-plugin";
+
+// The adapter is a Solid module (`.tsx`): it is compiled by the registered plugin, so it is imported after it.
+const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-v2-adapter-tests-"));
+registerSsrTestPlugin({ dev: true, rootDir: root });
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+const { toSolidAttrs } = await import("./adapter");
 
 // Error class: core writes boolean attributes as "" the HTML way; Solid 1 sets them as properties (client) or drops
 // falsy ones (server), so `hidden: ""` showed a closed tooltip.

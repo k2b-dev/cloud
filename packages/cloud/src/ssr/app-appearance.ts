@@ -1,5 +1,5 @@
 import type { AppAppearance } from "../contracts/app";
-import { appCanvasTone, appColorStyle, appColorSurfaces, mixHex } from "./app-color";
+import { appCanvasTone, appColorStyle, appColorSurfaces, appV2Ink, mixHex } from "./app-color";
 import { resolveRuntimeRoute } from "./app-navigation";
 import { helpPageAppId } from "./layout-help-url";
 import type { RuntimeContext } from "./runtime";
@@ -85,6 +85,13 @@ export const appBarIconStyle = (tone: string | undefined, grounds: ReturnType<ty
   if (!isHexColor(tone)) return undefined;
   const { light, dark } = appCanvasTone(tone, grounds);
   return `--app-bar-icon-light:${light};--app-bar-icon-dark:${dark}`;
+};
+
+/** The v2 app ink of each theme for a `Layout ui="v2"` page; `global.css` picks the theme's one as `--k2-app-ink`. */
+export const appV2InkStyle = (accent: string | undefined): string | undefined => {
+  if (!isHexColor(accent)) return undefined;
+  const { light, dark } = appV2Ink(accent);
+  return `--app-v2-ink-light:${light};--app-v2-ink-dark:${dark}`;
 };
 
 export const appAccentStyle = (accent: string | undefined): string | undefined =>

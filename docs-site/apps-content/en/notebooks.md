@@ -218,7 +218,7 @@ Revoking its grant removes the access that its existing tokens received from
 that grant. Resource API keys remain confined to their own notebook.
 
 To hand management over, grant the new manager first, then lower or remove
-the old manager's entry. Standalone service accounts and agents can be the
+the old manager's entry. Agents can be the
 remaining manager. A change that removes the last manager returns
 `LAST_MANAGER` (HTTP 409); grant another manager before retrying.
 [Resource authorization](/en/docs/identity/authorization#keep-at-least-one-manager)
