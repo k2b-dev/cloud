@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.66.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.65.0...npm-ui-v0.66.0) (2026-11-24)
+
+
+### Features
+
+* **ui:** @k2b/ui ships the k2b-ui skill for building v2 screens ([#4079](https://github.com/k2b-dev/cloud/issues/4079)) ([842609e](https://github.com/k2b-dev/cloud/commit/842609e34f9e8ef7ecd340666b32eaa130db510d))
+* **ui:** @k2b/ui/v2 brings its primitives ([#4058](https://github.com/k2b-dev/cloud/issues/4058)) ([5976e51](https://github.com/k2b-dev/cloud/commit/5976e513408c2de52dc551f261b083750225fe7f))
+* **ui:** @k2b/ui/v2 brings the v2 tokens, styles and layout rules ([#4052](https://github.com/k2b-dev/cloud/issues/4052)) ([39c7f34](https://github.com/k2b-dev/cloud/commit/39c7f34f137535faccaa89a5cde3c7b7f545f781))
+* **ui:** an open v2 detail has one way back on the phone, the part Back ([#4085](https://github.com/k2b-dev/cloud/issues/4085)) ([6256a3f](https://github.com/k2b-dev/cloud/commit/6256a3fcd118133c0af4b3e1f9a9eb129dde7ce8))
+* **ui:** the k2b-ui skill teaches empty, loading and failed, links that open in place, and the way back ([#4086](https://github.com/k2b-dev/cloud/issues/4086)) ([8183f5d](https://github.com/k2b-dev/cloud/commit/8183f5db41b19511b89979407e47dc876cedc8eb))
+* **ui:** v2 places show empty, loading and failed in place, the search field takes keys and focus, and links open in place ([#4081](https://github.com/k2b-dev/cloud/issues/4081)) ([e5c225f](https://github.com/k2b-dev/cloud/commit/e5c225f1a17217e4d9480fa1ca3c81302abff206))
+* **ui:** v2 primitives carry the Mail pilot on the phone and in narrow panes ([#4077](https://github.com/k2b-dev/cloud/issues/4077)) ([6b1b531](https://github.com/k2b-dev/cloud/commit/6b1b531bb4a6f1f1be675862ddaabe1df50de45c))
+
+
+### Bug Fixes
+
+* **deps:** raise seroval, the MCP SDK, body-parser and undici past their high advisories ([#4098](https://github.com/k2b-dev/cloud/issues/4098)) ([2fe5d7f](https://github.com/k2b-dev/cloud/commit/2fe5d7f07911ebd414c262c82a60485aa0320059))
+* **ui:** the v2 layout measure clips each axis on its own ([#4060](https://github.com/k2b-dev/cloud/issues/4060)) ([8d932a6](https://github.com/k2b-dev/cloud/commit/8d932a6b4479b9a8658dab09a654b7b7b6682ac1))
+* **ui:** the v2 layout measure reports lines inside one thing, cut labels and cut or hidden text ([#4080](https://github.com/k2b-dev/cloud/issues/4080)) ([f63dc31](https://github.com/k2b-dev/cloud/commit/f63dc312a0c9ab7090545af6a8e9021b672e6253))
+* **ui:** the v2 way back cuts a long name and shows at every phone width ([#4088](https://github.com/k2b-dev/cloud/issues/4088)) ([8d0769d](https://github.com/k2b-dev/cloud/commit/8d0769d2a676949768d25a4adae970303927c639))
+* **ui:** v2 screens on the phone cut nothing and break no part ([#4083](https://github.com/k2b-dev/cloud/issues/4083)) ([9665abf](https://github.com/k2b-dev/cloud/commit/9665abfba08c675494c7aef75644cbe5100ae1a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.23.1 to 0.23.2
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 || ^0.23.0 to ^0.23.2
+
 ## [0.65.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.64.0...npm-ui-v0.65.0) (2026-11-23)
 
 

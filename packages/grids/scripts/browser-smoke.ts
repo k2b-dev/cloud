@@ -10,7 +10,7 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { type Browser, type BrowserContext, type BrowserContextOptions, chromium, type Page, type Request } from "playwright";
-import { relayGridsLiveSocket, watchGridsLiveSocket } from "./browser-smoke-live";
+import { relayGridsLiveSocket, sendMutationsFromPublicOrigin, watchGridsLiveSocket } from "./browser-smoke-live";
 
 const { values: options } = parseArgs({
   args: Bun.argv.slice(2),
@@ -332,6 +332,7 @@ const createWatchedPages = async (browser: Browser, options: BrowserContextOptio
   await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: BASE_URL, sameSite: "Lax" }]);
   if (sessionToken) await addSessionCookie(context, sessionToken);
   await relayGridsLiveSocket(context, BASE_URL, APP_ORIGIN, sessionToken, log);
+  await sendMutationsFromPublicOrigin(context, BASE_URL, APP_ORIGIN);
   const errors: string[] = [];
   const pages = await Promise.all(Array.from({ length: pageCount }, () => context.newPage()));
   for (const page of pages) {
@@ -377,9 +378,10 @@ const assertNoBrowserErrors = (errors: string[]) => {
 };
 
 const browserMutation = async <T>(page: Page, config: { method: string; path: string; body?: unknown; expected?: number }): Promise<T> => {
+  // The browser's cookies authenticate this request, so it needs the public origin as well.
   const response = await page.context().request.fetch(config.path, {
     method: config.method,
-    headers: config.body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: { Origin: APP_ORIGIN, ...(config.body === undefined ? {} : { "Content-Type": "application/json" }) },
     data: config.body === undefined ? undefined : JSON.stringify(config.body),
   });
   const text = await response.text();
