@@ -98,6 +98,24 @@ type GroupsResponse = {
   pagination: Pagination;
 };
 
+type GroupRelationsResponse = {
+  focus: string | null;
+  nodes: { id: string; name: string; inCycle: boolean }[];
+  columns: {
+    key: string;
+    items: { id: string; via: string }[];
+    backs: { from: string; to: string; closesCycle: boolean }[];
+    hidden: number;
+  }[];
+  selected: {
+    manages: { ids: string[]; total: number } | null;
+    managedBy: { ids: string[]; total: number } | null;
+    managerCycle: { path: string[] } | null;
+  } | null;
+  cyclesComplete: boolean;
+  managerCyclesComplete: boolean;
+};
+
 type EntitiesResponse = {
   items: EntityListItem[];
   pagination: Pagination;
@@ -601,12 +619,12 @@ const relationEntities = async (
 
 export default defineCliCommands({
   name: "accounts",
-  summary: "Manage accounts, groups, requests, audit events, and service-account credentials.",
+  summary: "Manage accounts, groups, requests, audit events, and API keys.",
   groupSummaries: {
     audit: "Inspect account administration audit events",
     groups: "Create, inspect, and manage groups",
     requests: "Review and resolve account requests",
-    "service-accounts": "Inspect and revoke service-account credentials",
+    "service-accounts": "Inspect and revoke API keys",
     users: "Create, inspect, and manage user accounts",
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
@@ -1081,6 +1099,64 @@ export default defineCliCommands({
         ]);
       },
     }),
+    command("groups relations", {
+      summary: "Show which groups contain a group and which groups it contains",
+      args: { group: arg.optional({ valueLabel: "group" }) },
+      flags: {
+        depth: flag.int({ default: 2, min: 1, max: 4, description: "Levels in each direction" }),
+        managers: flag.boolean({ description: "Also show which groups manage the group, and a management cycle through it" }),
+        all: flag.boolean({ description: "Show every group of each level instead of the first 10" }),
+      },
+      async run({ ctx, args, flags }) {
+        const focus = args.group ? (await resolveGroupRef(ctx, args.group)).id : undefined;
+        const columns = flags.all ? "u1,u2,u3,u4,d1,d2,d3,d4" : undefined;
+        const response = await apiGet<GroupRelationsResponse>(
+          ctx,
+          `/groups/relations${queryString({ focus, depth: flags.depth, managers: flags.managers ? "true" : undefined, expand: columns })}`,
+        );
+        const nodes = new Map(response.nodes.map((node) => [node.id, node]));
+        const name = (id: string) => nodes.get(id)?.name ?? id;
+        const rows = response.columns.flatMap((column) => {
+          const level = `${column.key.startsWith("u") ? "contained in" : "contains"} ${column.key.slice(1)}`;
+          return [
+            ...column.items.map((item) => ({
+              level,
+              group: name(item.id),
+              via: name(item.via),
+              cycle: nodes.get(item.id)?.inCycle ? "yes" : "",
+            })),
+            ...column.backs.map((back) => ({
+              level,
+              group: name(back.to),
+              via: name(back.from),
+              cycle: back.closesCycle ? "closes" : "already shown",
+            })),
+            ...(column.hidden > 0 ? [{ level, group: `${column.hidden} more (--all)`, via: "", cycle: "" }] : []),
+          ];
+        });
+        const focusRow = response.focus ? [{ level: "focus", group: name(response.focus), via: "", cycle: "" }] : [];
+        // Management is shown for the focus only, like the details of the view.
+        const managed = (level: string, list: { ids: string[]; total: number } | null | undefined) => [
+          ...(list?.ids ?? []).map((id) => ({ level, group: name(id), via: "", cycle: "" })),
+          ...(list && list.total > list.ids.length ? [{ level, group: `${list.total - list.ids.length} more`, via: "", cycle: "" }] : []),
+        ];
+        const managerCycle = response.selected?.managerCycle;
+        const managerRows = [
+          ...managed("manages", response.selected?.manages),
+          ...managed("managed by", response.selected?.managedBy),
+          ...(managerCycle ? [{ level: "management cycle", group: managerCycle.path.map(name).join(" → "), via: "", cycle: "" }] : []),
+        ];
+        printJsonOrTable(
+          ctx,
+          response,
+          [...focusRow, ...rows, ...managerRows],
+          [{ key: "level" }, { key: "group" }, { key: "via" }, { key: "cycle" }],
+        );
+        if (!response.cyclesComplete) ctx.error("Only part of the relations was read; cycles were checked only in part.");
+        if (!response.managerCyclesComplete)
+          ctx.error("Only part of the management relations was read; management cycles were checked only in part.");
+      },
+    }),
     command("groups create", {
       summary: "Create a group",
       args: { name: arg.required({ valueLabel: "name" }) },
@@ -1343,7 +1419,7 @@ export default defineCliCommands({
     }),
 
     command("service-accounts list", {
-      summary: "List service-account API keys",
+      summary: "List API keys",
       flags: {
         ...paginationFlags({ defaultPerPage: 50, maxPerPage: 100 }),
         search: flag.string({ aliases: ["q"] }),
@@ -1378,11 +1454,11 @@ export default defineCliCommands({
       },
     }),
     command("service-accounts revoke", {
-      summary: "Revoke a service-account API key",
+      summary: "Revoke an API key",
       args: { credential: arg.required({ valueLabel: "credential-id" }) },
-      flags: { yes: confirmFlag("Confirm revoking this service-account API key") },
+      flags: { yes: confirmFlag("Confirm revoking this API key") },
       async run({ ctx, args, flags }) {
-        if (!flags.yes) throw new Error("Refusing to revoke a service-account API key without --yes.");
+        if (!flags.yes) throw new Error("Refusing to revoke an API key without --yes.");
         const result = await apiJson<MessageResponse>(ctx, "DELETE", `/service-accounts/credentials/${encode(args.credential)}`);
         printMessage(ctx, result, "API key revoked.");
       },

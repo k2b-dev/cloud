@@ -7,7 +7,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, openDemo, serverMarkup } from "../../../test/v2-behavior/harness";
-import { cascade } from "./resize";
+import { cascade } from "./resize-cascade";
 
 const webkit = browserName === "webkit";
 let browser: Browser;

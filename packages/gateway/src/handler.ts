@@ -5,6 +5,7 @@ import { publishRequestTelemetry } from "@k2b/cloud/services";
 import { type DomainSnapshot, decideHost } from "./app-domains";
 import type { Availability } from "./availability";
 import type { ClientAddress } from "./client-address";
+import { defaultFraming } from "./framing";
 import { bypassesMaintenance, bypassLinkAnswer, splitBypassParam, takeBypassCookie } from "./maintenance-bypass";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { type ProxyAvailability, type ProxyStats, proxyRequest } from "./proxy";
@@ -76,8 +77,21 @@ const bypassLink = (
   return response;
 };
 
-/** One authority decision owns every path, including storage, probes and sockets. */
-export const createGatewayHandler =
+/**
+ * One authority decision owns every path, including storage, probes and sockets. Every answer, proxied or the
+ * gateway's own, leaves here, so this is where an HTML answer without a framing policy of its own gets the default.
+ */
+export const createGatewayHandler = (dependencies: GatewayDependencies) => {
+  const handle = decide(dependencies);
+  return async (req: Request, server: GatewayServer, client: ClientAddress | null): Promise<Response | undefined> => {
+    const response = await handle(req, server, client);
+    // A 304 replaces the stored headers of the cached page; a default here would replace that page's own policy.
+    if (response && response.status !== 304) defaultFraming(response.headers);
+    return response;
+  };
+};
+
+const decide =
   (dependencies: GatewayDependencies) =>
   async (req: Request, server: GatewayServer, client: ClientAddress | null): Promise<Response | undefined> => {
     stripPublicHeaders(req.headers);

@@ -36,7 +36,8 @@ suite("Spaces local-group machine assignees", () => {
               kind: "service_account",
               serviceAccountKind: kind,
               displayName: account.name,
-              description: `${kind === "agent" ? "agent" : "service account"} · via ${parent.name}`,
+              // Both standalone kinds are agents.
+              description: `agent · via ${parent.name}`,
             }),
           ]);
           expect(
@@ -63,9 +64,7 @@ suite("Spaces local-group machine assignees", () => {
           expect(await list()).toEqual([]);
           await db`UPDATE auth.service_accounts SET kind = ${kind}, delegated_user_id = NULL WHERE id = ${account.id}::uuid`;
           // Direct and inherited access can coexist without duplicates or misleading provenance.
-          expect(await list()).toEqual([
-            expect.objectContaining({ id: account.id, description: `${kind === "agent" ? "agent" : "service account"} · direct access` }),
-          ]);
+          expect(await list()).toEqual([expect.objectContaining({ id: account.id, description: "agent · direct access" })]);
           expect(await listServiceAccountsWithAccess({ ...params, search: parent.name })).toHaveLength(1);
           await db`DELETE FROM auth.access WHERE id = ${direct.id}::uuid`;
           await db`DELETE FROM auth.group_groups_v2 WHERE parent_group_id = ${parent.id}::uuid AND child_group_id = ${child.id}::uuid`;

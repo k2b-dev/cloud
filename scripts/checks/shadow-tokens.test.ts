@@ -24,6 +24,11 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
       "packages/ui/src/styles/index.css": [
         ".k2b-ui { --k2b-shadow-raised: 0 1px 2px rgb(15 23 19 / 0.05); --k2b-hover-depth: inset 0 -8px 12px rgb(0 0 0 / 0.1); }",
       ].join("\n"),
+      "packages/ui/src/v2/v2.css": [
+        ".k2-ui { --k2-float: 0 12px 32px rgb(9 9 11 / 0.28); }",
+        ".k2-ui { --k2-lift: 0 2px 4px rgb(0 0 0 / 0.2); }",
+        ".k2-ui .k2-fab { box-shadow: var(--k2-float); }",
+      ].join("\n"),
       "packages/demo/src/app.css": [
         ".card { box-shadow: var(--k2b-island-shadow); }",
         ".chip { box-shadow: inset 0 0 0 2px var(--k2b-border); }",
@@ -73,6 +78,7 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
       "packages/demo/src/page.tsx:7",
       "packages/demo/src/page.tsx:9",
       "packages/ui/src/styles/index.css:1",
+      "packages/ui/src/v2/v2.css:2",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

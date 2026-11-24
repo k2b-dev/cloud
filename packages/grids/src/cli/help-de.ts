@@ -21,8 +21,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Add a comment to a record": "Einen Kommentar zu einem Datensatz hinzufügen",
   "Allow live or deleted records": "Aktive oder gelöschte Datensätze zulassen",
   "Allowed sources: all, none, or direct,form,workflow": "Erlaubte Quellen: all, none oder direct,form,workflow",
-  "Also show grants of resource-bound service accounts in text output.":
-    "Freigaben ressourcengebundener Dienstkonten zusätzlich in der Textausgabe anzeigen.",
+  "Also show grants of API keys in text output.": "Zugriff von API Keys zusätzlich in der Textausgabe anzeigen.",
   "Already destroyed bytes cannot be recovered.": "Bereits vernichtete Bytes können nicht wiederhergestellt werden.",
   "Anyone with the link, including anonymous users": "Alle mit dem Link, auch anonyme Personen",
   "App name": "Name der App",
@@ -409,8 +408,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Published App public ID from its URL; no base access required":
     "Öffentliche ID der veröffentlichten App aus ihrer URL; kein Zugriff auf die Base erforderlich",
   "Published Combined table public id": "Öffentliche ID der veröffentlichten kombinierten Tabelle",
-  "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including standalone and agent account grants.":
-    "Direkter Grids-Zugriff wird auf einer Base gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff, auch für eigenständige Dienstkonten und Agentenkonten.",
+  "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including grants to agents.":
+    "Direkter Grids-Zugriff wird auf einer Base gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff, auch für Agenten.",
   "Read an evidence export status, hashes and coverage": "Status, Hashes und Abdeckung eines Nachweisexports lesen",
   "Read and interact with published Grids Apps": "Veröffentlichte Grids Apps lesen und mit ihnen interagieren",
   "Read and manage comments in published Apps": "Kommentare in veröffentlichten Apps lesen und verwalten",

@@ -14,14 +14,14 @@ export const serviceAccountKindDisplay = (
   t: ReturnType<typeof accessMessages.resolve>["t"],
 ): { icon: string; label?: string } => {
   switch (kind) {
+    // Both standalone kinds are agents in the model; one word, one icon.
     case "agent":
+    case "standalone":
       return { icon: "ti-robot", label: t.agentServiceAccount };
     case "user_delegated":
       return { icon: "ti-user-key", label: t.userBoundServiceAccount };
     case "resource_bound":
       return { icon: "ti-key", label: t.resourceBoundServiceAccount };
-    case "standalone":
-      return { icon: "ti-key", label: t.standaloneServiceAccount };
     case "code":
       return { icon: "ti-code", label: t.codeServiceAccount };
     default:

@@ -177,7 +177,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
             state: "Genauer Threadstatus; all umfasst jeden nicht gelöschten Thread.",
-            author: "UUID des Hauptautors (Benutzer oder Dienstkonto) oder me für den angemeldeten Akteur.",
+            author: "UUID des Hauptautors (Benutzer, Agent oder Dienstkonto) oder me für den angemeldeten Akteur.",
             cursor: "Undurchsichtiger nextCursor oder repliesNextCursor der vorherigen Seite.",
             limit: "Höchstzahl der Kommentare oder Antworten pro Seite, 1 bis 30; Bytegrenzen können die Seite kürzen.",
           },

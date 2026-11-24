@@ -83,6 +83,13 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+/** Serves the compiled stylesheet and harness over HTTP: several megabytes through Playwright's route channel cost each page about a second in WebKit (#4082). */
+let assets: ReturnType<typeof Bun.serve>;
+const ASSETS = ["/styles.css", "/harness.js"];
+/** Every other request of a page is answered through the route: the HTML, the icon font and the pictures. */
+const fixtureRequest = (url: URL) => !ASSETS.includes(url.pathname);
+/** Every address the asset server answered, in order. */
+const served: string[] = [];
 beforeAll(async () => {
   const [bundle, styles] = await Promise.all([
     buildHarness(),
@@ -96,10 +103,22 @@ beforeAll(async () => {
   const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
   if (!font) throw new Error("The Tabler preset references no WOFF2 file.");
   icons = { css: source.replace(font, "/tabler.woff2"), font: resolve(dirname(iconCss), font) };
+  assets = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      served.push(path);
+      if (path === "/harness.js") return new Response(harness, { headers: { "content-type": "text/javascript" } });
+      if (path === "/styles.css") return new Response(css, { headers: { "content-type": "text/css" } });
+      return new Response("Not found", { status: 404 });
+    },
+  });
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
+  assets?.stop(true);
 });
 
 /** Every picture address the harness asked for, with its query, in order. */
@@ -117,12 +136,11 @@ const open = async (
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
   // A fake clock holds frames too, so the caller settles the page once it lets time run again.
   if (clock) await tab.clock.install();
-  await tab.route("**/*", async (route) => {
+  await tab.route(fixtureRequest, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith(".svg")) imageRequests.push(`${url.pathname}${url.search}`);
     if (url.pathname === "/tabler.woff2")
       return route.fulfill({ body: Buffer.from(await Bun.file(icons.font).arrayBuffer()), contentType: "font/woff2" });
-    if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript", body: harness });
     // A picture still being drawn never answers while the test looks; a refused one answers like a missing one.
     if (url.pathname.endsWith("/waiting.svg")) return;
     if (url.pathname.endsWith("/missing.svg"))
@@ -136,12 +154,12 @@ const open = async (
     return route.fulfill({
       contentType: "text/html",
       body:
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${icons.css}</style></head>` +
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/styles.css"><style>${icons.css}</style></head>` +
         `<body class="k2b-ui">${MAIN}${drawn === "server" ? render(scene) : ""}</main>` +
         `${drawn === "browser" ? '<script type="module" src="/harness.js"></script>' : ""}</body></html>`,
     });
   });
-  await tab.goto(`http://blocks.test/?scene=${scene.name}&host=${host}`);
+  await tab.goto(`${assets.url.origin}/?scene=${scene.name}&host=${host}`);
   if (drawn === "browser") {
     await tab.locator(".cloud-blocks").first().waitFor();
     // Tables and key figures are drawn once their code has arrived and nothing waits any more.
@@ -165,6 +183,17 @@ describe("BlockTree", () => {
   test("every fixture is a valid bound result view of its app", () => {
     for (const scene of scenes)
       expect(() => validateBlocks(scene.blocks, "result", { appId: scene.app.slice(1), appPrefixes: [scene.app] })).not.toThrow();
+  });
+
+  // Guards #4082: the compiled assets passed through the route channel, so a test opening three pages ran out of time in WebKit.
+  test("each page receives the compiled stylesheet and harness over HTTP, outside Playwright's route channel", async () => {
+    served.length = 0;
+    const tab = await open(scenes[0]!, 1440);
+    try {
+      expect(served.toSorted()).toEqual(ASSETS.toSorted());
+    } finally {
+      await tab.close();
+    }
   });
 
   for (const width of [1440, 390])
