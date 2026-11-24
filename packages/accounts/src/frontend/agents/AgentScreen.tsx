@@ -1,27 +1,12 @@
-import {
-  Band,
-  Bar,
-  Button,
-  Canvas,
-  Chip,
-  Facts,
-  Failed,
-  Notice,
-  Pane,
-  RecordHead,
-  Section,
-  StatusRow,
-  Table,
-  Text,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Band, Bar, Button, Chip, Facts, Failed, Notice, Pane, RecordHead, Section, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
+import { useAccountsMessages } from "../messages";
 import { type AgentKeyView, accessLabel, NewKeyDialog, OpenKey } from "./AgentKeyDialogs";
-import AgentPictureTrigger from "./AgentPictureTrigger";
-import { AGENT_KEY_SORTS, type AgentKeyOpen, type AgentKeySort, agentPageHref } from "./agent-keys";
-import { type AgentMessages, useAgentMessages } from "./messages";
+import { type AgentKeyOpen, type AgentKeySort, agentPageHref } from "./agent-keys";
+import { useAgentPictureChange } from "./agent-picture";
+import { useAgentMessages } from "./messages";
 
 export type { AgentKeyView } from "./AgentKeyDialogs";
 
@@ -29,7 +14,8 @@ export type AgentView = {
   id: string;
   name: string;
   active: boolean;
-  avatarHash: string | null;
+  /** The address of the agent's picture, its photo or its robot. */
+  image: string | undefined;
   created: string;
   createdBy: { name: string; href: string } | null;
 };
@@ -46,7 +32,6 @@ type Props = {
   pendingRequests: number;
 };
 
-const sortLabel = (t: AgentMessages, sort: AgentKeySort) => (sort === "name" ? t.sortName : sort === "used" ? t.sortUsed : t.sortCreated);
 /**
  * An agent's page on v2: its name and picture, and its access: the API keys in the chosen order, each of which opens
  * beside the list. What is open (the dialog for a new key, one key) and the order live in the address. A new key's token
@@ -54,11 +39,17 @@ const sortLabel = (t: AgentMessages, sort: AgentKeySort) => (sort === "name" ? t
  */
 export default function AgentScreen(props: Props) {
   const t = useAgentMessages();
+  const accounts = useAccountsMessages();
   const { showChanges, openPage } = usePageSwap();
+  const changePicture = useAgentPictureChange(() => props.agent);
   const href = (open?: string) => agentPageHref(props.agent.id, { sort: props.sort, open });
   const status = () => (props.agent.active ? t().active : t().disabled);
   // What is open stays open when the order changes.
   const openParam = () => (props.open.kind === "new" ? "new" : props.open.kind === "key" ? props.open.id : undefined);
+  // A column head sorts by its column; pressed again, the list goes back to the newest first.
+  const sortBy = (sort: AgentKeySort) => ({
+    href: agentPageHref(props.agent.id, { sort: props.sort === sort ? "created" : sort, open: openParam() }),
+  });
   const openKey = () => {
     const open = props.open;
     return open.kind === "key" ? (props.keys?.find((entry) => entry.id === open.id) ?? null) : null;
@@ -69,7 +60,13 @@ export default function AgentScreen(props: Props) {
       sidebar={<AccountsNav active="agents" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={<RecordHead name={props.agent.name} kinds={[t().agent, status()]} />}
+          start={
+            <RecordHead
+              name={props.agent.name}
+              avatar={{ name: props.agent.name, image: props.agent.image }}
+              kinds={[t().agent, status()]}
+            />
+          }
           // A disabled agent gets no key: no action, and the notice on the page says why.
           end={
             props.agent.active ? (
@@ -86,21 +83,7 @@ export default function AgentScreen(props: Props) {
         <Pane
           label={t().keys}
           scrollKey="accounts-agent-keys"
-          status={
-            <StatusRow
-              lead={props.keys ? t().keysCount({ count: props.keysTotal }) : t().keys}
-              filters={
-                // k2b-ui gap: a table head cannot be pressed to sort; the order is a row of pressed chips, which leaves on the phone
-                <>
-                  {AGENT_KEY_SORTS.map((sort) => (
-                    <Chip href={agentPageHref(props.agent.id, { sort, open: openParam() })} pressed={props.sort === sort}>
-                      {sortLabel(t(), sort)}
-                    </Chip>
-                  ))}
-                </>
-              }
-            />
-          }
+          status={<StatusRow lead={props.keys ? t().keysCount({ count: props.keysTotal }) : t().keys} />}
         >
           <Show when={!props.agent.active}>
             <Notice tone="warn" icon="alert-triangle">
@@ -118,7 +101,7 @@ export default function AgentScreen(props: Props) {
                 rowKey={(entry) => entry.id}
                 current={openKey()?.id}
                 open={(entry) => ({ href: href(entry.id) })}
-                // the newest first has no column of its own; the created date stands in the open key
+                // the newest first has no column of its own: pressing a sorted head again goes back to it
                 sort={
                   props.sort === "name"
                     ? { column: 0, direction: "ascending" }
@@ -140,12 +123,14 @@ export default function AgentScreen(props: Props) {
                 columns={[
                   {
                     title: t().name,
+                    sort: sortBy("name"),
                     width: { min: 160, default: 200 },
                     cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
                   },
                   { title: t().keyAccess, width: { min: 150, default: 170 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
                   {
                     title: t().lastUsed,
+                    sort: sortBy("used"),
                     width: { min: 120, default: 140 },
                     cell: (entry) => entry.lastUsed ?? t().neverUsed,
                     drop: true,
@@ -163,15 +148,10 @@ export default function AgentScreen(props: Props) {
           when={props.open.kind === "key"}
           fallback={
             <Pane side label={t().details} width={{ min: 260, default: 320 }}>
-              {/* k2b-ui gap: RecordHead and Avatar show initials only; the agent's picture (robot or photo) and its
-                  change button stand in a Canvas until a v2 avatar takes a picture */}
-              <Canvas label={t().picture} height={96}>
-                {/* the picture stands on the column's text edge, below the pane's top, like the facts under it */}
-                <div style={{ padding: "16px var(--k2-edge) 16px" }}>
-                  <AgentPictureTrigger id={props.agent.id} name={props.agent.name} avatarHash={props.agent.avatarHash} />
-                </div>
-              </Canvas>
-              <Section title={t().agent}>
+              <Section
+                title={t().agent}
+                actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}
+              >
                 <Facts
                   items={[
                     { label: t().created, value: props.agent.created },

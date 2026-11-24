@@ -1,3 +1,4 @@
+import { cloudAvatarImage } from "@k2b/cloud/account/ui";
 import { isLegacyLimitedApiKey, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
@@ -92,7 +93,7 @@ export default ssr<AuthContext>(async (c) => {
           id: account.id,
           name: account.name,
           active: account.status === "active",
-          avatarHash: picture?.avatarHash ?? null,
+          image: cloudAvatarImage({ kind: "service_account", userId: account.id, avatarHash: picture?.avatarHash }),
           created: dates.formatDateTime(account.createdAt, { locale }),
           createdBy: creator ? { name: creator.displayName || creator.uid, href: `/app/accounts/users/${creator.id}` } : null,
         }}

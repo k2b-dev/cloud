@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderAvatarSvg } from "@k2b/cloud/shared";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
@@ -22,6 +23,18 @@ const shots = process.env.CLOUD_AGENT_SCREENS_SHOTS;
 const t = agentMessages.resolve(["de"]).t;
 const TOKEN = "k2b_sa_test_4f7c1e0b9a2d4c6e8f00112233445566";
 const keysPath = `/api/admin/identity/service-accounts/${AGENT_ID}/api-keys`;
+// the agent's robot, as the avatar route serves it
+const robot = renderAvatarSvg({
+  v: 1,
+  kind: "robot",
+  head: "square",
+  antenna: "ball",
+  eyes: "round",
+  mouth: "grill",
+  body: "light",
+  color: "teal",
+  bg: "sand",
+});
 
 const buildHarness = async (): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -139,6 +152,7 @@ const open = async (
         body: page(stateOf(url, options.state ?? {}), Boolean(options.dark)),
       });
     }
+    if (url.pathname === `/api/accounts/users/${AGENT_ID}/avatar`) return route.fulfill({ contentType: "image/svg+xml", body: robot });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
@@ -166,21 +180,17 @@ const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `agents-v2-${name}.png`) });
 };
 
-// k2b-ui gap: on the phone the side column stacks under the table, and its seam doubles the last row's line; the
-// primitives own both lines, so this one finding is named here until Pane.Split or Table drops one of them.
-const knownPhoneSeam = (problem: string) => /^double line: div\.k2-row border-bottom and div\.k2-seam/.test(problem);
-
 // k2b-ui gap: describeV2 does not know an open Dialog as a layer of its own; it counts the dialog's main button and the
 // page's as two primaries. With the create dialog open this one finding is named here until describeV2 knows dialogs.
 const dialogPrimary = /^- 2 primary buttons \("API Key anlegen", "Anlegen"\)/m;
 
-const expectClean = async (tab: Page, view: View, options: { dialog?: boolean } = {}) => {
+const expectClean = async (tab: Page, options: { dialog?: boolean } = {}) => {
   const outline = await describeV2Page(tab, "#root");
   const [, problems = ""] = outline.split(/\nProblems \(\d+\):\n/);
   const left = problems.split("\n").filter((line) => line && !(options.dialog && dialogPrimary.test(line)));
   expect(left).toEqual([]);
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
-  expect(layout.problems.filter((problem) => !(view === phone && knownPhoneSeam(problem)))).toEqual([]);
+  expect(layout.problems).toEqual([]);
   return outline;
 };
 
@@ -199,22 +209,20 @@ describe("an agent's API keys on v2", () => {
       ] as const) {
         const { context, tab, errors } = await open(view, address, api(), options);
         try {
-          const outline = await expectClean(tab, view);
+          const outline = await expectClean(tab);
           if (name === "list-empty") expect(outline).toContain(t.noAgents.slice(0, 30));
           if (name === "detail-empty") expect(outline).toContain(t.noKeys.slice(0, 30));
           if (name === "detail-failed") expect(outline).toContain(t.retry);
           if (name === "detail-disabled") expect(outline).toContain(t.agentDisabledNotice.slice(0, 30));
           // the phone row says that a key has expired
           if (name === "detail" && view === phone) expect(outline).toContain(`${t.legacyLimited} · ${t.expired}`);
-          // a change of order keeps the open key open
-          if (name === "detail-key")
-            expect(await tab.locator("[data-k2-part='StatusRow'] a", { hasText: t.sortName }).getAttribute("href")).toBe(
-              `/app/accounts/agents/${AGENT_ID}?sort=name&key=${KEY_IDS[0]}`,
-            );
+          // a column head sorts and keeps the open key open; pressed again, it goes back to the newest first
+          const nameHead = tab.locator("thead th", { hasText: t.name }).locator("a");
+          if (name === "detail-key" && view === desktop)
+            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/agents/${AGENT_ID}?sort=name&key=${KEY_IDS[0]}`);
           if (name === "detail-sorted" && view === desktop) {
-            // the server sorts (unit test); the page names the order with the pressed chip and the column's arrow
-            expect(await tab.locator("[data-k2-part='StatusRow'] [data-pressed]").textContent()).toBe(t.sortName);
-            expect(await tab.locator("[aria-sort='ascending']").textContent()).toContain(t.name);
+            expect(await tab.locator("thead th[aria-sort='ascending']").textContent()).toContain(t.name);
+            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/agents/${AGENT_ID}`);
           }
           await shoot(tab, `${name}-${view.name}`);
           expect(errors).toEqual([]);
@@ -351,7 +359,7 @@ describe("an agent's API keys on v2", () => {
     for (const address of [`/app/accounts/agents/${AGENT_ID}`, `/app/accounts/agents/${AGENT_ID}?key=new`]) {
       const { context, tab, errors } = await open(desktop, address, api(), { dark: true });
       try {
-        await expectClean(tab, desktop, { dialog: address.endsWith("new") });
+        await expectClean(tab, { dialog: address.endsWith("new") });
         await shoot(tab, address.endsWith("new") ? "create-dark-1280" : "detail-dark-1280");
         expect(errors).toEqual([]);
       } finally {

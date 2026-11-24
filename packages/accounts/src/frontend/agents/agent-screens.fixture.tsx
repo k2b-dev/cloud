@@ -11,7 +11,7 @@ export const agent: AgentView = {
   id: AGENT_ID,
   name: "Wochenbericht",
   active: true,
-  avatarHash: null,
+  image: `/api/accounts/users/${AGENT_ID}/avatar`,
   created: "22.09.2026, 09:14",
   createdBy: { name: "Jana Berger", href: "/app/accounts/users/7a3c0000-0000-4000-8000-000000000001" },
 };

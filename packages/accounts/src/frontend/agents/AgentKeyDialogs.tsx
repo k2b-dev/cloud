@@ -91,9 +91,14 @@ export function NewKeyDialog(props: {
               <Button onClick={close} disabled={busy()}>
                 {t().cancel}
               </Button>
-              {/* k2b-ui gap: a v2 button has no busy state; the label says it and the button rests disabled */}
-              <Button variant="primary" icon="key" onClick={() => void create()} disabled={busy() || uncertain() || !props.agent.active}>
-                {busy() ? t().creating : t().create}
+              <Button
+                variant="primary"
+                icon="key"
+                onClick={() => void create()}
+                busy={busy()}
+                disabled={uncertain() || !props.agent.active}
+              >
+                {t().create}
               </Button>
             </>
           }
@@ -115,6 +120,7 @@ export function NewKeyDialog(props: {
             </Show>
             <Field name="name" label={t().keyName} hint={t().keyNameHint} error={nameError()} required>
               <Input
+                disabled={busy() || uncertain()}
                 value={name()}
                 onInput={setName}
                 onKeyDown={(event) => {
@@ -125,6 +131,7 @@ export function NewKeyDialog(props: {
             <Show when={props.modelsAvailable}>
               <Field name="access" label={t().keyAccess} hint={access() === "models" ? t().modelsOnlyHint : t().fullAccessHint}>
                 <Choice
+                  disabled={busy() || uncertain()}
                   name="access"
                   value={access()}
                   onChange={(value) => setAccess(value === "models" ? "models" : "full")}
@@ -153,7 +160,7 @@ export function NewKeyDialog(props: {
             <Facts
               items={[
                 { label: t().keyName, value: name().trim() },
-                { label: t().token, value: value(), copy: value() },
+                { label: t().token, value: value(), copy: value(), mono: true },
                 { label: t().keyAccess, value: accessLabel(t(), access()) },
               ]}
             />
@@ -198,7 +205,7 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
       <Section title={t().details}>
         <Facts
           items={[
-            { label: t().prefix, value: `${props.entry.tokenPrefix}…` },
+            { label: t().prefix, value: `${props.entry.tokenPrefix}…`, mono: true },
             { label: t().keyAccess, value: accessLabel(t(), props.entry.access) },
             { label: t().created, value: props.entry.created },
             { label: t().lastUsed, value: props.entry.lastUsedExact ?? t().neverUsed, hint: props.entry.lastUsed ?? undefined },
@@ -211,9 +218,8 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
       </Section>
       <Bar
         end={
-          // k2b-ui gap: a v2 button has no busy state; the label says it and the button rests disabled
-          <Button icon="key-off" onClick={() => void revoke()} disabled={busy()}>
-            {busy() ? t().revoking : t().revoke}
+          <Button icon="key-off" onClick={() => void revoke()} busy={busy()}>
+            {t().revoke}
           </Button>
         }
       />
