@@ -89,7 +89,7 @@
   border: 1px solid var(--k2b-border, #e4e4e7);
   border-radius: 14px;
 }
-@media (max-width: 767px) {
+@media not all and (min-width: 768px) {
   .ui-v2-demo__frame {
     height: 844px;
     border-radius: 0;
@@ -117,7 +117,8 @@
 .ui-v2-phonebar {
   display: none;
 }
-@media (max-width: 767px) {
+/* the phone of v2: every width below 768 px, also a fractional one at zoom */
+@media not all and (min-width: 768px) {
   .ui-v2-screen {
     padding: 52px 0 0;
     background: var(--k2-surface);

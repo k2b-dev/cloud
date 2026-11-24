@@ -67,9 +67,10 @@ const shell = (children: JSX.Element, head?: JSX.Element) => (
 
 /**
  * Workspace, Pane, Pane.Split, Bar, Band, Cells, Tiles, Row, List, Notice, Inline, Chip, Avatar, Icon, Text, Prose.
- * `open: false` is the list while nothing is open: no detail, as on the phone's first page.
+ * `open: false` is the list while nothing is open: no detail, as on the phone's first page. `back` names the list the
+ * open detail leads back to.
  */
-export const LayoutFixture = (props: { open?: boolean }) =>
+export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
   shell(
     <Pane.Split>
       <Pane
@@ -113,7 +114,7 @@ export const LayoutFixture = (props: { open?: boolean }) =>
       <Show when={props.open !== false}>
         <Pane
           detail
-          back={{ label: "Posteingang", href: "#posteingang" }}
+          back={{ label: props.back ?? "Posteingang", href: "#posteingang" }}
           label="Nachricht"
           head={
             <Bar
@@ -571,6 +572,8 @@ const MessagesFixture = () => (
 export const fixtures = {
   layout: LayoutFixture,
   list: () => <LayoutFixture open={false} />,
+  // the way back to a list with a long name, such as a search
+  longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
   grid: GridFixture,

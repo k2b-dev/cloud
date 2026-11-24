@@ -42,8 +42,9 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the detail is the page.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`). A detail that closes in place returns the
-  focus to the row that opened it.
+  the detail (the part `Back`). A long name (a search) is cut with "…" on
+  one line; the whole name stays its accessible name and its hint. A detail
+  that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
 - `side`: the info column of a record; quieter sections, a `more` link
