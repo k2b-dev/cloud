@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, BrowserContext } from "playwright";
 import { launchBrowser } from "../../ui/test/browser";
-import { relayGridsLiveSocket, watchGridsLiveSocket } from "./browser-smoke-live";
+import { relayGridsLiveSocket, sendMutationsFromPublicOrigin, watchGridsLiveSocket } from "./browser-smoke-live";
 
 const publicOrigin = "https://cloud.nightly-smoke.test";
 const sessionToken = "smoke-fixture-session";
@@ -156,4 +156,60 @@ test("an upstream transport failure is visible and closes the browser socket", a
   expect(diagnostics).toContain("grids live upstream transport error");
   expect(diagnostics.join()).not.toContain(privatePayload);
   expect(diagnostics.join()).not.toContain(sessionToken);
+});
+
+type SeenRequest = { method: string; origin: string | null; authenticated: boolean; body: string };
+const mutationProbe = async (relay: "public" | "same" | null) => {
+  const seen: SeenRequest[] = [];
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/") {
+        return new Response("<!doctype html><html><body>Origin probe</body></html>", { headers: { "Content-Type": "text/html" } });
+      }
+      seen.push({
+        method: request.method,
+        origin: request.headers.get("origin"),
+        authenticated: request.headers.get("cookie") === `session_token=${sessionToken}`,
+        body: await request.text(),
+      });
+      return Response.json({ answered: request.method }, { status: request.method === "POST" ? 201 : 200 });
+    },
+  });
+  const context = await browser.newContext();
+  try {
+    await context.addCookies([{ name: "session_token", value: sessionToken, url: server.url.origin, httpOnly: true }]);
+    if (relay) await sendMutationsFromPublicOrigin(context, server.url.origin, relay === "public" ? publicOrigin : server.url.origin);
+    const page = await context.newPage();
+    await page.goto(server.url.origin);
+    const answers = await page.evaluate(async (payload) => {
+      const post = await fetch("/api/grids/rows", { method: "POST", headers: { "content-type": "application/json" }, body: payload });
+      const read = await fetch("/api/grids/rows");
+      return [post.status, await post.json(), read.status];
+    }, privatePayload);
+    return { answers, seen, loopback: server.url.origin };
+  } finally {
+    await context.close();
+    await server.stop(true);
+  }
+};
+
+test("a loopback page sends its mutations with its own origin, which Cloud refuses", async () => {
+  const { seen, loopback } = await mutationProbe(null);
+  expect(seen.find((request) => request.method === "POST")?.origin).toBe(loopback);
+});
+
+test("the page's mutations reach Cloud from the public origin with session and body; reads pass unchanged", async () => {
+  const { answers, seen } = await mutationProbe("public");
+  expect(answers).toEqual([201, { answered: "POST" }, 200]);
+  expect(seen).toEqual([
+    { method: "POST", origin: publicOrigin, authenticated: true, body: privatePayload },
+    { method: "GET", origin: null, authenticated: true, body: "" },
+  ]);
+});
+
+test("a same-origin stack keeps the page's own mutations", async () => {
+  const { seen, loopback } = await mutationProbe("same");
+  expect(seen.find((request) => request.method === "POST")?.origin).toBe(loopback);
 });

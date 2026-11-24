@@ -21,6 +21,28 @@ export const watchGridsLiveSocket = (page: Page, report: (message: string) => vo
   });
 };
 
+const readMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Cloud accepts a cookie-authenticated mutation only from its public origin. When Nightly reaches Cloud over loopback,
+ * the page sends the loopback origin, and Chromium keeps a page's real Origin even when a route overrides it. So the
+ * smoke sends the page's own mutations itself with the public origin, as the operator's TLS proxy would; reads and
+ * other hosts pass unchanged.
+ */
+export const sendMutationsFromPublicOrigin = async (context: BrowserContext, baseUrl: string, appOrigin: string) => {
+  const base = new URL(baseUrl).origin;
+  if (appOrigin === base) return;
+  await context.route(
+    (url) => url.origin === base,
+    async (route) => {
+      const request = route.request();
+      if (readMethods.has(request.method())) return route.fallback();
+      const response = await route.fetch({ headers: { ...(await request.allHeaders()), origin: appOrigin }, maxRedirects: 0 });
+      await route.fulfill({ response });
+    },
+  );
+};
+
 /** Match Chat's public-origin relay when Nightly reaches Cloud over loopback. */
 export const relayGridsLiveSocket = async (
   context: BrowserContext,
