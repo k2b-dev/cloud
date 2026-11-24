@@ -19,8 +19,9 @@ export const accessLabel = (t: AgentMessages, access: AgentKey["access"]) =>
 const ErrorSchema = z.object({ message: z.string() });
 const CreatedSchema = z.object({ token: z.string().min(1) });
 
-const errorMessage = async (response: { json: () => Promise<unknown> } | null, fallback: string) => {
-  const parsed = ErrorSchema.safeParse(response ? await response.json().catch(() => null) : null);
+/** A refusal names its reason (4xx); a server fault or a lost answer gets the page's own sentence. */
+const errorMessage = async (response: { status: number; json: () => Promise<unknown> } | null, fallback: string) => {
+  const parsed = ErrorSchema.safeParse(response && response.status < 500 ? await response.json().catch(() => null) : null);
   return parsed.success ? parsed.data.message : fallback;
 };
 
