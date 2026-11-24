@@ -215,11 +215,12 @@ export const uiPages = [
     path: "/v2/controls",
     title: "UI v2 · Bedienung",
     navTitle: "v2 demo: controls",
-    description: "A form with the controls of @k2b/ui/v2 in a realistic screen. Provisional until the maintainer approves v2.",
+    description:
+      "A form with the controls of @k2b/ui/v2, and its menus, popovers and toasts, in realistic screens. Provisional until the maintainer approves v2.",
     section: "Start",
     order: 11,
     layout: "full",
-    component: ({ page }) => <V2DemoPage names={["form"]} title={page.meta.title} />,
+    component: ({ page }) => <V2DemoPage names={["form", "menus"]} title={page.meta.title} />,
   }),
   solidPage({
     html: fibelHtml,

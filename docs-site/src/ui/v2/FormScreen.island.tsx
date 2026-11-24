@@ -1,11 +1,40 @@
-import { Bar, Button, Check, Choice, DateInput, Field, Input, Nav, Notice, Pane, Path, Section, Select, Workspace } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Check,
+  Choice,
+  DateInput,
+  Dialog,
+  Field,
+  Input,
+  Menu,
+  Nav,
+  Notice,
+  Pane,
+  Path,
+  Section,
+  Select,
+  Text,
+  useToast,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // A realistic form with the controls of @k2b/ui/v2: a new order in Grids. Fields share one grid, errors stand at the
-// field. Only primitives; an island so the controls answer. Dialog, menu, the open list of a selection and the toast
-// that answers the main action come with the behaviour layer.
+// field. More deeds wait behind "…": "Als Vorlage speichern" opens a dialog with a field (a sheet on a phone), and
+// "Verwerfen" (red, after a line) asks with `Dialog.confirm`, as "Abbrechen" does. A toast with "Rückgängig" answers the
+// main action. Only primitives; an island so the controls answer. The open list of a selection follows.
 
 export default function FormScreen() {
+  const toast = useToast();
+  const [template, setTemplate] = createSignal(false);
+  const discard = () =>
+    void Dialog.confirm({
+      title: "Auftrag verwerfen?",
+      description: "Die Angaben zu diesem Auftrag gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.",
+      confirm: "Verwerfen",
+      cancel: "Weiter bearbeiten",
+    });
   const [quantity, setQuantity] = createSignal("0");
   const [notify, setNotify] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
@@ -41,8 +70,23 @@ export default function FormScreen() {
           }
           end={
             <>
-              <Button>Abbrechen</Button>
-              <Button variant="primary" icon="check" disabled={quantityError() !== undefined}>
+              <Menu
+                label="Weitere Aktionen"
+                items={[
+                  { label: "Als Vorlage speichern", icon: "template", onClick: () => setTemplate(true) },
+                  { label: "Auftrag duplizieren", icon: "copy" },
+                  { label: "Verwerfen", icon: "trash", danger: true, onClick: discard },
+                ]}
+              />
+              <Button onClick={discard}>Abbrechen</Button>
+              <Button
+                variant="primary"
+                icon="check"
+                disabled={quantityError() !== undefined}
+                onClick={() =>
+                  toast("Auftrag „Einbauschrank Flur“ angelegt", { status: "ok", undo: () => toast("Auftrag wieder entfernt") })
+                }
+              >
                 Auftrag anlegen
               </Button>
             </>
@@ -99,6 +143,24 @@ export default function FormScreen() {
           <Check name="urgent" switch label="Eilig" checked={urgent()} onChange={setUrgent} />
         </Section>
       </Pane>
+      <Dialog
+        title="Als Vorlage speichern"
+        open={template()}
+        onOpenChange={setTemplate}
+        foot={
+          <>
+            <Button onClick={() => setTemplate(false)}>Abbrechen</Button>
+            <Button variant="primary" onClick={() => setTemplate(false)}>
+              Speichern
+            </Button>
+          </>
+        }
+      >
+        <Text>Neue Aufträge können mit diesen Angaben beginnen.</Text>
+        <Field name="template" label="Name der Vorlage">
+          <Input value="Einbauschrank" />
+        </Field>
+      </Dialog>
     </Workspace>
   );
 }

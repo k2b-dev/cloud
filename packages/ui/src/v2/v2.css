@@ -213,7 +213,7 @@
   overflow-wrap: anywhere;
 }
 .k2-ui > .k2-text,
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-text {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body, .k2-pop-body) > .k2-text {
   display: block;
   padding-inline: var(--k2-edge);
 }
@@ -1560,7 +1560,7 @@
 .k2-ui .k2-inline > * {
   flex: none;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
@@ -1876,7 +1876,7 @@
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-choice, .k2-choices) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-input {
@@ -1961,11 +1961,11 @@
   row-gap: 4px;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-field {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-input {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
   margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {
@@ -2582,16 +2582,39 @@
   flex-direction: column;
   border: 0;
   padding: 0;
+  /* a modal sits in the middle of the window, in the top layer */
+  position: fixed;
+  inset: 0;
+  height: fit-content;
+  margin: auto;
+  z-index: 70;
 }
-.k2-ui .k2-dialog > .k2-bar {
+.k2-ui .k2-dialog > .k2-slot > .k2-bar {
   border-bottom: 0;
   position: relative;
   z-index: 1;
   background: var(--k2-surface);
   height: var(--k2-h-head);
 }
-.k2-ui .k2-dialog > .k2-bar:last-child {
+.k2-ui .k2-dialog > [data-slot="foot"] > .k2-bar {
   justify-content: flex-end;
+}
+/* the close button in the head is small and stands with its icon on the edge */
+.k2-ui .k2-dialog > [data-slot="head"] .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  margin-right: -10px;
+}
+/* On a small touch screen the dialog is a sheet (core's presentation "auto"): the whole width at the bottom, its top
+   corners round, as high as its content up to most of the screen; a swipe down closes it. */
+.k2-ui .k2-dialog[data-presentation="sheet"] {
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  inset: auto 0 0;
+  margin: 0;
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .k2-ui .k2-dialog-title {
   font: var(--k2-t-body);
@@ -2608,12 +2631,10 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
-.k2-ui .k2-dialog[data-more="above"] > .k2-bar:first-child,
-.k2-ui .k2-dialog[data-more="both"] > .k2-bar:first-child {
+.k2-ui .k2-dialog:is([data-more="above"], [data-more="both"]) > [data-slot="head"] > .k2-bar {
   box-shadow: 0 1px 0 var(--k2-line);
 }
-.k2-ui .k2-dialog[data-more="below"] > .k2-bar:last-child,
-.k2-ui .k2-dialog[data-more="both"] > .k2-bar:last-child {
+.k2-ui .k2-dialog:is([data-more="below"], [data-more="both"]) > [data-slot="foot"] > .k2-bar {
   box-shadow: 0 -1px 0 var(--k2-line);
 }
 /* a tinted notice in a dialog needs no line: the tint is its edge */
@@ -2623,99 +2644,220 @@
 .k2-ui .k2-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 69;
   background: rgb(9 9 11 / 0.32);
 }
-/* Menu: entries 32 px, 4 px inside the menu of 8 px radius; a separator reaches the menu's edges */
-.k2-ui .k2-menu {
-  width: 232px;
+/* Menu, popover, tip: floating surfaces of 8 px radius with the one shadow and the one hairline. They sit in the top
+   layer and the behaviour layer places them, so the stylesheet resets what the browser gives a popover. A closed tip
+   stays in the page with `hidden`, which wins over every display rule here. */
+.k2-ui :is(.k2-menu, .k2-pop, .k2-tip)[hidden] {
+  display: none;
+}
+.k2-ui :is(.k2-menu, .k2-pop) {
+  margin: 0;
   background: var(--k2-surface);
   color: var(--k2-text);
   border-radius: var(--k2-r-overlay);
   box-shadow: var(--k2-float);
+  border: var(--k2-hairline);
+  overscroll-behavior: contain;
+}
+/* Menu: entries 32 px, 4 px inside the menu; a line between groups reaches the menu's edges. The menu is as wide as
+   its longest entry, at least 232 px; a menu taller than the screen scrolls inside. */
+.k2-ui .k2-menu {
+  min-width: 232px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
   padding: 4px;
   display: flex;
   flex-direction: column;
-  border: var(--k2-hairline);
+  outline: none;
 }
 .k2-ui .k2-mi {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
+  width: 100%;
   height: var(--k2-h-dense);
   padding: 0 8px;
+  border: 0;
   border-radius: var(--k2-r-mark);
+  background: none;
   color: var(--k2-text-2);
+  font: var(--k2-t-row);
+  text-align: start;
+  text-decoration: none;
+  cursor: default;
   outline: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.k2-ui .k2-mi > .k2-icon:first-child {
+.k2-ui .k2-mi-lead {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
   color: var(--k2-subtle);
 }
-.k2-ui .k2-mi > .k2-mi-meta {
-  margin-left: auto;
+.k2-ui .k2-mi-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-mi-meta {
+  flex: none;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-mi:is(:hover, [data-highlighted], :focus-visible) {
+/* the tick of an entry that toggles stands at its end, where a selection puts it; its place stays when unticked */
+.k2-ui .k2-mi-tick {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  color: var(--k2-blue);
+}
+.k2-ui .k2-mi > .k2-icon:last-child {
+  flex: none;
+  color: var(--k2-subtle);
+}
+/* the pointer, the keys and an open submenu mark the same entry with the same fill */
+.k2-ui .k2-mi:is([data-highlighted], [data-open]) {
   background: var(--k2-n100);
 }
 .k2-ui .k2-mi[data-danger],
-.k2-ui .k2-mi[data-danger] > .k2-icon:first-child {
+.k2-ui .k2-mi[data-danger] .k2-icon {
   color: var(--k2-bad);
 }
+.k2-ui .k2-mi:is([data-disabled], [aria-disabled="true"]) {
+  color: var(--k2-n400);
+}
+.k2-ui .k2-mi:is([data-disabled], [aria-disabled="true"]) .k2-icon {
+  color: inherit;
+}
+.k2-ui .k2-mi[data-pending] {
+  cursor: progress;
+}
 .k2-ui .k2-msep {
+  flex: none;
   height: 1px;
   background: var(--k2-line);
   margin: 4px -4px;
 }
-/* Tooltip and popover */
+/* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
+  margin: 0;
+  border: 0;
   display: inline-block;
-  max-width: 360px;
+  max-width: min(360px, calc(100vw - 16px));
   background: var(--k2-n950);
   color: var(--k2-surface);
   font: var(--k2-t-meta);
   padding: 4px 8px;
   border-radius: var(--k2-r-mark);
   overflow-wrap: anywhere;
+  pointer-events: none;
 }
+/* Popover: a panel of 280 px; inside, the text edge of a group (16 px), and the primitives own their spacing */
 .k2-ui .k2-pop {
+  --k2-edge: 16px;
   width: 280px;
-  background: var(--k2-surface);
-  color: var(--k2-text);
-  border-radius: var(--k2-r-overlay);
-  box-shadow: var(--k2-float);
-  border: var(--k2-hairline);
-  overflow: hidden;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  outline: none;
 }
-/* Toast: one sentence and at most one deed such as "Undo", at the bottom */
+.k2-ui .k2-pop-title {
+  margin: 0;
+  padding: 0 var(--k2-edge);
+  font: var(--k2-t-body);
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-pop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
+   nothing that is already shown moves when another comes */
+/* The region is a popover in the top layer (core's popover="manual"), so its inset, margin and box are set here in
+   full. Like core's defaults it centres with `translate` and keeps clear of the safe area. */
 .k2-ui .k2-toasts {
+  --k2-toasts-bottom: 16px;
   position: fixed;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  inset: auto auto calc(var(--k2-toasts-bottom) + env(safe-area-inset-bottom, 0px)) 50%;
+  translate: -50% 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   z-index: 60;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   pointer-events: none;
+}
+.k2-ui .k2-toasts > ol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .k2-ui .k2-toast {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  max-width: 100%;
   min-height: 44px;
-  padding: 0 8px 0 16px;
+  padding: 0 16px;
   background: var(--k2-n950);
   color: var(--k2-surface);
   border-radius: var(--k2-r-overlay);
   box-shadow: var(--k2-float);
+  font: var(--k2-t-row);
   pointer-events: auto;
+  outline: none;
+}
+.k2-ui .k2-toast:focus-visible {
+  box-shadow: 0 0 0 2px var(--k2-blue), var(--k2-float);
+}
+.k2-ui .k2-toast:has(> .k2-btn) {
+  padding-right: 8px;
+}
+.k2-ui .k2-toast-text {
+  min-width: 0;
+  padding-block: 12px;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-toast > .k2-icon {
+  flex: none;
   color: var(--k2-surface);
 }
+.k2-ui .k2-toast > .k2-icon[data-tone="ok"] {
+  color: var(--k2-ok-dot);
+}
+.k2-ui .k2-toast > .k2-icon[data-tone="bad"] {
+  color: var(--k2-bad-dot);
+}
 .k2-ui .k2-toast .k2-btn[data-variant="text"] {
+  flex: none;
   color: var(--k2-surface);
   font: var(--k2-t-row);
   font-weight: 500;
@@ -2786,7 +2928,8 @@
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child {
     border-bottom: 0;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > :not([data-keep]) {
+  /* a menu or popover that opens from a kept button renders beside it and is in the top layer (core's popover="manual") */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > :not([data-keep], [popover]) {
     display: none;
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
@@ -2846,6 +2989,10 @@
     border-radius: var(--k2-r-round);
     box-shadow: var(--k2-float);
     z-index: 4;
+  }
+  /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
+  .k2-ui .k2-toasts {
+    --k2-toasts-bottom: 72px;
   }
   .k2-ui .k2-notice {
     grid-template-columns: 16px minmax(0, 1fr);
