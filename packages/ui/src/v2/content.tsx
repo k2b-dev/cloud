@@ -1,3 +1,4 @@
+import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
@@ -16,8 +17,9 @@ import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { Avatar, custom, Dot, Icon } from "./marks";
+import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, Person, Status } from "./types";
+import type { Action, OnNavigate, Person, Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -277,6 +279,8 @@ export type RowProps = {
   end?: JSX.Element;
   /** The row opens this link … */
   href?: string;
+  /** … in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
+  onNavigate?: OnNavigate;
   /** … or calls this. */
   onOpen?: () => void;
 };
@@ -285,7 +289,7 @@ export type RowProps = {
  * What opens an entry: the title becomes a link or a button, stretched over the whole entry. It is never the entry
  * itself, so buttons and links inside the entry stay buttons and links of their own (no control inside a control).
  */
-export const RowOpen = (props: { href?: string; onOpen?: () => void; children: JSX.Element }) => (
+export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?: () => void; children: JSX.Element }) => (
   <Show when={props.href !== undefined || props.onOpen} fallback={props.children}>
     <Show
       when={props.href !== undefined}
@@ -295,9 +299,9 @@ export const RowOpen = (props: { href?: string; onOpen?: () => void; children: J
         </button>
       }
     >
-      <a class="k2-row-open" href={props.href} onClick={() => props.onOpen?.()}>
+      <Link class="k2-row-open" href={props.href ?? ""} onNavigate={props.onNavigate} onClick={() => props.onOpen?.()}>
         {props.children}
-      </a>
+      </Link>
     </Show>
   </Show>
 );
@@ -337,8 +341,15 @@ export const Row = (props: RowProps) => {
           when={props.href !== undefined}
           fallback={<button type="button" class="k2-row-open" aria-labelledby={title} onClick={() => props.onOpen?.()} />}
         >
-          {/* biome-ignore lint/a11y/useAnchorContent: the row's title names it through aria-labelledby; holding the title would put a link of the title inside this one. */}
-          <a class="k2-row-open" href={props.href} aria-labelledby={title} onClick={() => props.onOpen?.()} />
+          {/* The row's title names the link through aria-labelledby; holding the title would put a link of the title
+              inside this one. */}
+          <Link
+            class="k2-row-open"
+            href={props.href ?? ""}
+            aria-labelledby={title}
+            onNavigate={props.onNavigate}
+            onClick={() => props.onOpen?.()}
+          />
         </Show>
       </Show>
       <span class="k2-row-lead">
@@ -415,7 +426,9 @@ export type Column<T> = {
 };
 
 /** Where an entry leads: a page (a real link, also before the page is live) or a deed in place. */
-export type OpenTarget = { href: string; onOpen?: () => void } | { href?: undefined; onOpen: () => void };
+export type OpenTarget =
+  | { href: string; onNavigate?: OnNavigate; onOpen?: () => void }
+  | { href?: undefined; onNavigate?: undefined; onOpen: () => void };
 
 type TableBase<T> = {
   columns: readonly Column<T>[];
@@ -430,6 +443,13 @@ type TableBase<T> = {
   open?: (row: T) => OpenTarget;
   /** On the phone each row becomes a row of two lines instead (rule 7). */
   phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element };
+  /**
+   * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
+   * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
+   */
+  loading?: boolean | { rows?: number; lines?: 1 | 2 };
+  /** No rows and nothing loading: the empty state stands in place of the table, such as "Keine Aufträge mit diesem Filter." */
+  empty?: EmptyProps;
 };
 
 /** A table whose rows are told apart: selection, the open row and groups need the stable key of a row. */
@@ -484,7 +504,13 @@ export const Table = <T,>(props: TableProps<T>) => {
   const sized = () => grid() || props.columns.some((column) => column.width);
   // Every cell is made once: what `cell` returns is placed, never rendered a second time.
   const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
-  const lines = () => (values().some((row) => row.some(isPair)) ? "2" : "1");
+  // the shape of the placeholders while the rows load
+  const loading = () => {
+    const shape = props.loading;
+    return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
+  };
+  const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
+  const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -501,7 +527,16 @@ export const Table = <T,>(props: TableProps<T>) => {
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
   const openRow = (event: MouseEvent & { currentTarget: HTMLTableRowElement }) => {
     if (!(event.target instanceof Element) || event.target.closest("a, button, input, label, select, textarea")) return;
-    event.currentTarget.querySelector<HTMLElement>(".k2-row-open")?.click();
+    const open = event.currentTarget.querySelector<HTMLElement>(".k2-row-open");
+    if (!open || event.altKey) return;
+    // With Ctrl, Cmd or Shift a link opens elsewhere, as on the link itself. A click handed on loses that in WebKit,
+    // which follows it in this tab, so the row opens the link's address in a new tab itself.
+    if (open instanceof HTMLAnchorElement && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      window.open(open.href, "_blank", "noopener");
+      return;
+    }
+    // a plain click is handed on to the link or button, which decides (`onNavigate`, `onOpen`, or the browser)
+    open.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, detail: event.detail }));
   };
   const all = (): boolean | "mixed" => {
     const count = props.select?.selected.length ?? 0;
@@ -527,7 +562,7 @@ export const Table = <T,>(props: TableProps<T>) => {
     const first = (content: JSX.Element) =>
       line(
         target ? (
-          <RowOpen href={target.href} onOpen={target.onOpen}>
+          <RowOpen href={target.href} onNavigate={target.onNavigate} onOpen={target.onOpen}>
             {content}
           </RowOpen>
         ) : (
@@ -537,7 +572,7 @@ export const Table = <T,>(props: TableProps<T>) => {
     return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
   };
 
-  return (
+  const table = () => (
     <>
       <div
         class="k2-table-scroll"
@@ -545,12 +580,17 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
       >
+        {/* said outside the table, which is busy while its rows load */}
+        <Show when={loading()}>
+          <LoadingStatus />
+        </Show>
         <table
           class="k2-table"
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
           aria-label={props.label}
+          aria-busy={loading() ? "true" : undefined}
         >
           <Show when={sized()}>
             <colgroup>
@@ -609,7 +649,42 @@ export const Table = <T,>(props: TableProps<T>) => {
             </tr>
           </thead>
           <tbody>
-            <For each={items()}>
+            <Show when={loading()}>
+              {(shape) => (
+                <For each={Array.from({ length: shape().rows }, (_, index) => index)}>
+                  {() => (
+                    <tr data-loading="" aria-hidden="true">
+                      <Show when={props.select}>
+                        {/* the placeholder of the box stands where the box will stand */}
+                        <td data-select="" data-sticky={props.sticky ? "" : undefined}>
+                          <span class="k2-skel" data-box="" />
+                        </td>
+                      </Show>
+                      <For each={props.columns}>
+                        {(column, columnIndex) => (
+                          <td
+                            data-align={column.align}
+                            data-drop={column.drop ? "" : undefined}
+                            data-sticky={firstSticky(columnIndex())}
+                            style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                          >
+                            <span class="k2-cell-line">
+                              <span class="k2-skel" />
+                            </span>
+                            <Show when={shape().lines === 2}>
+                              <span class="k2-cell-line" data-second="">
+                                <span class="k2-skel" />
+                              </span>
+                            </Show>
+                          </td>
+                        )}
+                      </For>
+                    </tr>
+                  )}
+                </For>
+              )}
+            </Show>
+            <For each={loading() ? [] : items()}>
               {(item) =>
                 "group" in item ? (
                   <tr data-group="">
@@ -667,41 +742,51 @@ export const Table = <T,>(props: TableProps<T>) => {
       <Show when={props.phone}>
         {(phone) => (
           <div class="k2-table-phone">
-            <List label={props.label}>
-              <For each={items()}>
-                {(item) =>
-                  "group" in item ? (
-                    <div class="k2-bar" role="presentation">
-                      <div class="k2-bar-start">
-                        {item.group.head()}
-                        <Show when={item.group.count ?? item.group.meta}>
-                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
-                        </Show>
+            {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
+            <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
+              <List label={props.label}>
+                <For each={items()}>
+                  {(item) =>
+                    "group" in item ? (
+                      <div class="k2-bar" role="presentation">
+                        <div class="k2-bar-start">
+                          {item.group.head()}
+                          <Show when={item.group.count ?? item.group.meta}>
+                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                          </Show>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    (() => {
-                      const form = phone()(item.row);
-                      const target = props.open?.(item.row);
-                      return (
-                        <Row
-                          lines={form.lines}
-                          avatar={form.avatar}
-                          time={form.time}
-                          strong
-                          href={target?.href}
-                          onOpen={target?.onOpen}
-                          selected={props.current !== undefined && props.current === key(item.row, item.index)}
-                        />
-                      );
-                    })()
-                  )
-                }
-              </For>
-            </List>
+                    ) : (
+                      (() => {
+                        const form = phone()(item.row);
+                        const target = props.open?.(item.row);
+                        return (
+                          <Row
+                            lines={form.lines}
+                            avatar={form.avatar}
+                            time={form.time}
+                            strong
+                            href={target?.href}
+                            onNavigate={target?.onNavigate}
+                            onOpen={target?.onOpen}
+                            selected={props.current !== undefined && props.current === key(item.row, item.index)}
+                          />
+                        );
+                      })()
+                    )
+                  }
+                </For>
+              </List>
+            </Show>
           </div>
         )}
       </Show>
     </>
+  );
+
+  return (
+    <Show when={empty()} fallback={table()}>
+      {(state) => <Empty {...state()} />}
+    </Show>
   );
 };

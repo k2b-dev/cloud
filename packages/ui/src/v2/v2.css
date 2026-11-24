@@ -2948,3 +2948,107 @@
     display: contents;
   }
 }
+
+/* ── States: empty, loading, failed (design guide "Zustände"; mockup Notice · Empty, tabelle.html "Lädt") ──────── */
+/* Empty and Failed: no box; a round sign, one sentence, one way out, on the text edge where the data would stand */
+.k2-ui .k2-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 560px;
+  padding: 32px var(--k2-edge);
+  font: var(--k2-t-row);
+}
+.k2-ui .k2-state-text {
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-state > .k2-btn {
+  height: var(--k2-h-control-small);
+}
+.k2-ui .k2-sign {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n100);
+  color: var(--k2-muted);
+  display: grid;
+  place-items: center;
+}
+.k2-ui .k2-sign > .k2-icon {
+  font-size: 20px;
+}
+.k2-ui .k2-sign[data-tone="bad"] {
+  background: var(--k2-bad-tint);
+  color: var(--k2-bad);
+}
+/* Loading: square placeholders, each exactly one text line of its place high (20 in a row, 16 for a quiet line), so a
+   placeholder row is as high as the row that replaces it; the bar of 12 px sits in the middle of that line */
+.k2-ui .k2-skel {
+  display: block;
+  width: 60%;
+  height: 1lh;
+  background: linear-gradient(var(--k2-n100) 0 0) left center / 100% 12px no-repeat;
+}
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n + 2) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-table tr[data-loading]:nth-child(3n + 2) .k2-skel {
+  width: 45%;
+}
+.k2-ui .k2-loading > .k2-row:nth-of-type(3n) > .k2-row-l1 > .k2-skel,
+.k2-ui .k2-table tr[data-loading]:nth-child(3n) .k2-skel {
+  width: 75%;
+}
+.k2-ui .k2-loading > .k2-row > :is(.k2-row-l2, .k2-row-l3) > .k2-skel {
+  width: 85%;
+}
+.k2-ui .k2-table td[data-align="end"] .k2-skel {
+  margin-left: auto;
+}
+/* words for assistive technology only, such as "loading" beside the placeholders */
+.k2-ui .k2-hidden-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* the placeholder of a box stands where the box will stand */
+.k2-ui .k2-table .k2-skel[data-box] {
+  width: 16px;
+  background-size: 16px 16px;
+}
+
+/* ── Input: a place at the end, such as the filter of a search (mail.html) ─────────────────────────────────────── */
+.k2-ui .k2-input-end {
+  margin-left: auto;
+  margin-right: -8px;
+  display: flex;
+  align-items: center;
+  flex: none;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-input-end > .k2-btn {
+  height: var(--k2-h-control-small);
+}
+.k2-ui .k2-input-end > .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  padding: 0;
+}
+.k2-ui .k2-input-end > .k2-btn[data-variant="ghost"] {
+  color: var(--k2-subtle);
+}
+/* a button at the end leaves 3 px above and below inside the field: 28 in a field of 36, 20 in the field of 28 of a
+   bar of 40 */
+.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
+  height: 20px;
+}
+.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
+  width: 20px;
+}
+.k2-ui .k2-input-end > .k2-icon {
+  margin-right: 8px;
+}

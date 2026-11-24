@@ -3,8 +3,9 @@ import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
+import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import type { Action, Person, Status, TwoActions } from "./types";
+import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -14,6 +15,8 @@ export type NavItem = {
   label: string;
   icon: string;
   href?: string;
+  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   onClick?: () => void;
   count?: number | string;
   /** The open one. */
@@ -37,9 +40,10 @@ export type NavProps = {
 
 const NavEntry = (props: { item: NavItem }) => (
   <Dynamic
-    component={props.item.href !== undefined ? "a" : "button"}
+    component={linkOr(props.item.href, "button")}
     type={props.item.href !== undefined ? undefined : "button"}
     href={props.item.href}
+    onNavigate={props.item.href !== undefined ? props.item.onNavigate : undefined}
     onClick={() => props.item.onClick?.()}
     class="k2-ni"
     data-k2-part="Nav.Item"
@@ -91,6 +95,8 @@ export type Tab = {
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
+  /** … opens it in place on a plain click, while the link still opens in a new tab (see `OnNavigate`) … */
+  onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
   current?: boolean;
@@ -110,10 +116,11 @@ export const Tabs = (props: TabsProps) => (
       <For each={props.items}>
         {(tab) => (
           <Dynamic
-            component={tab.href !== undefined ? "a" : "button"}
+            component={linkOr(tab.href, "button")}
             type={tab.href !== undefined ? undefined : "button"}
             class="k2-tab"
             href={tab.href}
+            onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
             onClick={() => tab.onClick?.()}
             aria-current={tab.current ? "page" : undefined}
           >
