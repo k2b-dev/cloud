@@ -484,8 +484,19 @@
   padding: 0 var(--k2-edge);
   border-bottom: var(--k2-hairline);
 }
+/* a long name of the list (a search, a folder deep down) is cut at its end with "…": the button never leaves its bar
+   and never runs under what stands beside it; the whole name stays its accessible name and its hint */
 .k2-ui .k2-pane-back > .k2-btn[data-variant="text"] {
   margin-left: -8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% + 8px);
+}
+.k2-ui .k2-pane-back > .k2-btn[data-variant="text"] > .k2-btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;

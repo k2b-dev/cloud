@@ -191,7 +191,8 @@ export const Pane = (props: PaneProps) => {
       <Show when={props.back}>
         {(back) => (
           <div class="k2-pane-back" data-k2-part="Back">
-            <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" />
+            {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
+            <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
           </div>
         )}
       </Show>
