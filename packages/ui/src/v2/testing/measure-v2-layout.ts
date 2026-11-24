@@ -536,7 +536,13 @@ function measureInPage(options: InPage): DomResult {
       let left = Number.NEGATIVE_INFINITY;
       let right = Number.POSITIVE_INFINITY;
       for (let node: Element | null = element; node; node = node.parentElement) {
-        const overflow = getComputedStyle(node).overflowX;
+        const nodeStyle = getComputedStyle(node);
+        // A box of `display: contents` has no box of its own, so its overflow cuts nothing.
+        if (nodeStyle.display === "contents") {
+          if (node === root) break;
+          continue;
+        }
+        const overflow = nodeStyle.overflowX;
         // Inside a scroller everything can be scrolled into view; what lies beyond it is no cut of this control.
         if (node !== element && ["auto", "scroll"].includes(overflow)) break;
         if (["hidden", "clip"].includes(overflow)) {

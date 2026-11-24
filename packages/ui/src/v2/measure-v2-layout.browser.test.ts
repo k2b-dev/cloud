@@ -480,6 +480,24 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "green: a parent of display: contents has no box, so its overflow cuts no chip (a bar's narrow form)",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip">Wartet auf Antwort</span><span class="k2-chip">Angebot</span></span></div>',
+        ),
+        { width: 390 },
+      );
+      try {
+        expect((await measureV2Layout(page)).cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: a label that runs out of its control without being clipped",
     async () => {
       const page = await open(cutPage("width:64px;white-space:nowrap", ""));
