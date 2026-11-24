@@ -8,7 +8,9 @@ import { type AgentMessages, useAgentMessages } from "./messages";
 /** A key as the page shows it: dates come formatted from the server, so the first paint and the live page agree. */
 export type AgentKeyView = Pick<AgentKey, "id" | "name" | "tokenPrefix" | "access"> & {
   created: string;
+  /** When it was last used, relative to the page's time ("vor 2 Stunden"); the exact time stands in the open key. */
   lastUsed: string | null;
+  lastUsedExact: string | null;
   expires: string | null;
   expired: boolean;
 };
@@ -16,14 +18,11 @@ export type AgentKeyView = Pick<AgentKey, "id" | "name" | "tokenPrefix" | "acces
 export const accessLabel = (t: AgentMessages, access: AgentKey["access"]) =>
   access === "models" ? t.modelsOnly : access === "legacy" ? t.legacyLimited : t.fullAccess;
 
-const ErrorSchema = z.object({ message: z.string() });
 const CreatedSchema = z.object({ token: z.string().min(1) });
 
-/** A refusal names its reason (4xx); a server fault or a lost answer gets the page's own sentence. */
-const errorMessage = async (response: { status: number; json: () => Promise<unknown> } | null, fallback: string) => {
-  const parsed = ErrorSchema.safeParse(response && response.status < 500 ? await response.json().catch(() => null) : null);
-  return parsed.success ? parsed.data.message : fallback;
-};
+/** The app owns the final words: a known refusal gets its own sentence, anything else the deed's fallback. */
+const errorMessage = (t: AgentMessages, status: number | undefined, refused: string, gone: string, fallback: string) =>
+  status === 400 ? refused : status === 403 ? t.noRight : status === 404 ? gone : fallback;
 
 /**
  * The dialog for a new key: a name and the access, then the key itself, once, with a copy button. The token lives
@@ -57,7 +56,7 @@ export function NewKeyDialog(props: {
         .$post({ param: { id: props.agent.id }, json: { name: name().trim(), access: access(), expiresAt: null } })
         .catch(() => null);
       if (response && !response.ok && response.status < 500) {
-        setError(await errorMessage(response, t().createFailed));
+        setError(errorMessage(t(), response.status, t().createRefused, t().agentGone, t().createFailed));
         return;
       }
       const created = CreatedSchema.safeParse(response?.ok ? await response.json().catch(() => null) : null);
@@ -80,7 +79,9 @@ export function NewKeyDialog(props: {
       title={token() ? t().created_ : t().createKeyFor({ name: props.agent.name })}
       open={props.open}
       onOpenChange={(open) => {
-        if (!open) close();
+        // While the token shows, only "Fertig" closes: an outside press or a swipe would lose the one copy.
+        // TODO(lane C): replace this guard with `dismissible={false}` once the v2 Dialog takes it.
+        if (!open && token() === null) close();
       }}
       foot={
         <Show
@@ -91,13 +92,15 @@ export function NewKeyDialog(props: {
                 {t().cancel}
               </Button>
               {/* k2b-ui gap: a v2 button has no busy state; the label says it and the button rests disabled */}
-              <Button icon="key" onClick={() => void create()} disabled={busy() || uncertain() || !props.agent.active}>
+              <Button variant="primary" icon="key" onClick={() => void create()} disabled={busy() || uncertain() || !props.agent.active}>
                 {busy() ? t().creating : t().create}
               </Button>
             </>
           }
         >
-          <Button onClick={close}>{t().done}</Button>
+          <Button variant="primary" onClick={close}>
+            {t().done}
+          </Button>
         </Show>
       }
     >
@@ -182,7 +185,7 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
         .$delete({ param: { id: props.agentId, credentialId: props.entry.id } })
         .catch(() => null);
       if (!response?.ok) {
-        setError(await errorMessage(response, t().revokeFailed));
+        setError(errorMessage(t(), response?.status, t().revokeFailed, t().keyNotFound, t().revokeFailed));
         return;
       }
       props.revoked();
@@ -198,7 +201,7 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
             { label: t().prefix, value: `${props.entry.tokenPrefix}…` },
             { label: t().keyAccess, value: accessLabel(t(), props.entry.access) },
             { label: t().created, value: props.entry.created },
-            { label: t().lastUsed, value: props.entry.lastUsed ?? t().neverUsed },
+            { label: t().lastUsed, value: props.entry.lastUsedExact ?? t().neverUsed, hint: props.entry.lastUsed ?? undefined },
             {
               label: t().expires,
               value: props.entry.expired ? <Chip status="warn">{t().expired}</Chip> : (props.entry.expires ?? t().never),

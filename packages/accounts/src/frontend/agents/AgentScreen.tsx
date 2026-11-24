@@ -38,6 +38,8 @@ type Props = {
   agent: AgentView;
   /** The keys in the chosen order; null when they could not be loaded. */
   keys: readonly AgentKeyView[] | null;
+  /** How many active keys the agent has; the page lists at most the service's page of them. */
+  keysTotal: number;
   sort: AgentKeySort;
   open: AgentKeyOpen;
   modelsAvailable: boolean;
@@ -55,6 +57,8 @@ export default function AgentScreen(props: Props) {
   const { showChanges, openPage } = usePageSwap();
   const href = (open?: string) => agentPageHref(props.agent.id, { sort: props.sort, open });
   const status = () => (props.agent.active ? t().active : t().disabled);
+  // What is open stays open when the order changes.
+  const openParam = () => (props.open.kind === "new" ? "new" : props.open.kind === "key" ? props.open.id : undefined);
   const openKey = () => {
     const open = props.open;
     return open.kind === "key" ? (props.keys?.find((entry) => entry.id === open.id) ?? null) : null;
@@ -84,12 +88,12 @@ export default function AgentScreen(props: Props) {
           scrollKey="accounts-agent-keys"
           status={
             <StatusRow
-              lead={props.keys ? t().keysCount({ count: props.keys.length }) : t().keys}
+              lead={props.keys ? t().keysCount({ count: props.keysTotal }) : t().keys}
               filters={
                 // k2b-ui gap: a table head cannot be pressed to sort; the order is a row of pressed chips, which leaves on the phone
                 <>
                   {AGENT_KEY_SORTS.map((sort) => (
-                    <Chip href={agentPageHref(props.agent.id, { sort })} pressed={props.sort === sort}>
+                    <Chip href={agentPageHref(props.agent.id, { sort, open: openParam() })} pressed={props.sort === sort}>
                       {sortLabel(t(), sort)}
                     </Chip>
                   ))}
@@ -130,19 +134,19 @@ export default function AgentScreen(props: Props) {
                 phone={(entry) => ({
                   lines: [
                     entry.name,
-                    `${accessLabel(t(), entry.access)} · ${entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
+                    `${accessLabel(t(), entry.access)} · ${entry.expired ? t().expired : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
                   ],
                 })}
                 columns={[
                   {
                     title: t().name,
-                    width: { min: 160, default: 220 },
+                    width: { min: 160, default: 200 },
                     cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
                   },
-                  { title: t().keyAccess, width: { min: 110, default: 130 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
+                  { title: t().keyAccess, width: { min: 150, default: 170 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
                   {
                     title: t().lastUsed,
-                    width: { min: 130, default: 150 },
+                    width: { min: 120, default: 140 },
                     cell: (entry) => entry.lastUsed ?? t().neverUsed,
                     drop: true,
                   },
@@ -161,13 +165,15 @@ export default function AgentScreen(props: Props) {
             <Pane side label={t().details} width={{ min: 260, default: 320 }}>
               {/* k2b-ui gap: RecordHead and Avatar show initials only; the agent's picture (robot or photo) and its
                   change button stand in a Canvas until a v2 avatar takes a picture */}
-              <Canvas label={t().picture} height={88}>
-                <AgentPictureTrigger id={props.agent.id} name={props.agent.name} avatarHash={props.agent.avatarHash} />
+              <Canvas label={t().picture} height={96}>
+                {/* the picture stands on the column's text edge, below the pane's top, like the facts under it */}
+                <div style={{ padding: "16px var(--k2-edge) 16px" }}>
+                  <AgentPictureTrigger id={props.agent.id} name={props.agent.name} avatarHash={props.agent.avatarHash} />
+                </div>
               </Canvas>
               <Section title={t().agent}>
                 <Facts
                   items={[
-                    { label: t().status, value: <Chip status={props.agent.active ? "ok" : "bad"}>{status()}</Chip> },
                     { label: t().created, value: props.agent.created },
                     {
                       label: t().createdBy,
@@ -199,7 +205,7 @@ export default function AgentScreen(props: Props) {
                 </Notice>
               }
             >
-              {(entry) => <OpenKey agentId={props.agent.id} entry={entry()} revoked={() => void openPage(href())} />}
+              {(entry) => <OpenKey agentId={props.agent.id} entry={entry()} revoked={() => void openPage(href(), { replace: true })} />}
             </Show>
           </Pane>
         </Show>
@@ -208,8 +214,8 @@ export default function AgentScreen(props: Props) {
         agent={props.agent}
         modelsAvailable={props.modelsAvailable}
         open={props.open.kind === "new"}
-        // Closing drops `?key=new` from the address; the list then shows a key that was created.
-        close={() => void openPage(href())}
+        // Closing drops `?key=new` from the address in place, so Back never reopens it; the list shows a created key.
+        close={() => void openPage(href(), { replace: true })}
       />
     </Workspace>
   );

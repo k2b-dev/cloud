@@ -66,7 +66,9 @@ export default ssr<AuthContext>(async (c) => {
         tokenPrefix: key.tokenPrefix,
         access: key.access,
         created: dates.formatDateTime(key.createdAt, { locale }),
-        lastUsed: formatted(key.lastUsedAt),
+        // relative to the time of this answer, so the server and the first paint agree
+        lastUsed: key.lastUsedAt ? dates.formatDateTimeRelative(key.lastUsedAt, { locale, base: now }) : null,
+        lastUsedExact: formatted(key.lastUsedAt),
         expires: formatted(key.expiresAt),
         expired: isAgentKeyExpired(key, now),
       }))
@@ -95,6 +97,7 @@ export default ssr<AuthContext>(async (c) => {
           createdBy: creator ? { name: creator.displayName || creator.uid, href: `/app/accounts/users/${creator.id}` } : null,
         }}
         keys={keys}
+        keysTotal={credentials?.total ?? 0}
         sort={sort}
         open={open}
         modelsAvailable={modelsAvailable === true}

@@ -53,6 +53,9 @@ export const agentMessages = i18n.define({
       oneTime: "Copy the key now. Cloud shows it only this once and keeps no copy.",
       token: "API key",
       createFailed: "The API key could not be created.",
+      createRefused: "The key was not created. The name needs 1 to 120 characters, and the agent must be active.",
+      noRight: "You lack the right for this. Sign in as an administrator with write access.",
+      agentGone: "This agent no longer exists. Reload the page.",
       createUncertain: "The answer was lost, so the key may exist. Close this panel and check the list before you create another one.",
       agentDisabledNotice: "This agent is disabled. Its keys stop working, and it gets no new key until it is enabled again.",
       prefix: "Begins with",
@@ -118,6 +121,9 @@ export const agentMessages = i18n.define({
       oneTime: "Kopiere den Key jetzt. Cloud zeigt ihn nur dieses eine Mal und behält keine Kopie.",
       token: "API Key",
       createFailed: "Der API Key konnte nicht angelegt werden.",
+      createRefused: "Der Key wurde nicht angelegt. Der Name braucht 1 bis 120 Zeichen, und der Agent muss aktiv sein.",
+      noRight: "Dafür fehlt dir das Recht. Melde dich als Administrator mit Schreibrecht an.",
+      agentGone: "Diesen Agenten gibt es nicht mehr. Lade die Seite neu.",
       createUncertain:
         "Die Antwort ging verloren, der Key kann also bestehen. Schließe dieses Feld und prüfe die Liste, bevor du einen weiteren anlegst.",
       agentDisabledNotice:

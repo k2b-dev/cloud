@@ -16,7 +16,11 @@ export const usePageSwap = () => {
       disposed
         ? Promise.resolve()
         : swapPage(`${window.location.pathname}${window.location.search}`, { replace: true, scroll: "preserve" }),
-    /** Opens another Accounts page, such as a filtered list or the list after a deletion, in the content column. */
-    openPage: (href: string): Promise<void> => (disposed ? Promise.resolve() : swapPage(href)),
+    /**
+     * Opens another Accounts page, such as a filtered list or the list after a deletion, in the content column. With
+     * `replace`, the new address takes the current entry's place, so Back skips a state that is gone (a closed dialog).
+     */
+    openPage: (href: string, options?: { replace?: boolean }): Promise<void> =>
+      disposed ? Promise.resolve() : swapPage(href, { replace: options?.replace ?? false }),
   };
 };
