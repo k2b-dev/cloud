@@ -78,10 +78,10 @@ export function NewKeyDialog(props: {
     <Dialog
       title={token() ? t().created_ : t().createKeyFor({ name: props.agent.name })}
       open={props.open}
+      // While the token shows, an outside press or a swipe would lose the one copy: only "Fertig", × and Escape close.
+      dismissible={token() === null}
       onOpenChange={(open) => {
-        // While the token shows, only "Fertig" closes: an outside press or a swipe would lose the one copy.
-        // TODO(lane C): replace this guard with `dismissible={false}` once the v2 Dialog takes it.
-        if (!open && token() === null) close();
+        if (!open) close();
       }}
       foot={
         <Show
