@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.78.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.77.0...npm-cloud-v0.78.0) (2026-11-24)
+
+
+### Features
+
+* **accounts:** administrators see which groups contain which ([#4063](https://github.com/k2b-dev/cloud/issues/4063)) ([dc30f9e](https://github.com/k2b-dev/cloud/commit/dc30f9eb2655839f6344e9bcc8d946e73c9d637a))
+* **accounts:** agents, API keys, and service accounts keep their own names ([#4055](https://github.com/k2b-dev/cloud/issues/4055)) ([f9b3ba4](https://github.com/k2b-dev/cloud/commit/f9b3ba46302e5fb44f2824b089e475251ab0c6bb))
+* **cloud:** on the phone an open v2 detail's way back stands in the phone bar ([#4087](https://github.com/k2b-dev/cloud/issues/4087)) ([e5d4320](https://github.com/k2b-dev/cloud/commit/e5d4320b67646a6c2289816f3755d979b34bdbd0))
+* **cloud:** pages can opt into the v2 root and app accent ([#4078](https://github.com/k2b-dev/cloud/issues/4078)) ([c55b217](https://github.com/k2b-dev/cloud/commit/c55b217084513ac051309af2e226326470f7bbde))
+* **ui:** @k2b/ui/v2 brings the v2 tokens, styles and layout rules ([#4052](https://github.com/k2b-dev/cloud/issues/4052)) ([39c7f34](https://github.com/k2b-dev/cloud/commit/39c7f34f137535faccaa89a5cde3c7b7f545f781))
+
+
+### Bug Fixes
+
+* **cloud:** the BlockTree picture-state test stays within its time in WebKit ([#4089](https://github.com/k2b-dev/cloud/issues/4089)) ([ec42121](https://github.com/k2b-dev/cloud/commit/ec4212135da54fddd3c43972ac4fea8d7987757f))
+* **deps:** raise seroval, the MCP SDK, body-parser and undici past their high advisories ([#4098](https://github.com/k2b-dev/cloud/issues/4098)) ([2fe5d7f](https://github.com/k2b-dev/cloud/commit/2fe5d7f07911ebd414c262c82a60485aa0320059))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.23.1 to 0.23.2
+    * @k2b/ui bumped from 0.65.0 to 0.66.0
+    * @k2b/editor bumped from 0.15.0 to 0.15.1
+
 ## [0.77.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.76.0...npm-cloud-v0.77.0) (2026-11-23)
 
 

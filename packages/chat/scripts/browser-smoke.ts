@@ -52,12 +52,24 @@ const BASE_URL = options["base-url"];
 const APP_ORIGIN = new URL(options["app-url"] ?? BASE_URL).origin;
 const TIMEOUT = Number(options["timeout-ms"]);
 /**
- * Session sockets must come from the public origin. Nightly reaches its stack on another address, and Chromium sends
- * no Origin header that a test sets on a socket, so there the smoke relays the live socket itself with the public
- * origin. Everything the page sends and receives still passes unchanged.
+ * Session sockets and cookie-authenticated mutations must come from the public origin. Nightly reaches its stack on
+ * another address, and the browser keeps its real Origin even when a test sets one, so there the smoke relays the live
+ * socket and sends the page's mutations itself with the public origin. Everything the page sends and receives still
+ * passes unchanged.
  */
 const relayLiveSocket = async (context: BrowserContext, sessionToken: string) => {
   if (APP_ORIGIN === new URL(BASE_URL).origin) return;
+  // As in the Grids smoke (`sendMutationsFromPublicOrigin`): reads and other hosts pass unchanged.
+  const base = new URL(BASE_URL).origin;
+  await context.route(
+    (url) => url.origin === base,
+    async (route) => {
+      const request = route.request();
+      if (["GET", "HEAD", "OPTIONS"].includes(request.method())) return route.fallback();
+      const response = await route.fetch({ headers: { ...(await request.allHeaders()), origin: APP_ORIGIN }, maxRedirects: 0 });
+      await route.fulfill({ response });
+    },
+  );
   await context.routeWebSocket(/\/api\/chat\/live$/, (route) => {
     const upstream = new WebSocket(route.url(), { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } });
     const waiting: string[] = [];

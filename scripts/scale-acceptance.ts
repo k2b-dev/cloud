@@ -20,6 +20,11 @@ type App = (typeof SCALED_APPS)[number];
 const APPS = ["gateway", ...SCALED_APPS];
 const HOST = "cloud.scale-acceptance.test";
 const ORIGIN = `https://${HOST}`;
+/**
+ * The gateway answers a host it does not serve with 421. The harness reaches it on a published loopback port, so
+ * every gateway request names the Cloud host, as the operator's reverse proxy does in production.
+ */
+export const GATEWAY_HOST_HEADER = { host: HOST } as const;
 export const HELP = `Usage: bun --no-env-file scripts/scale-acceptance.ts [options]
 
 Boot a disposable Compose project with two Core, Mail, Chat and Notebooks replicas.
@@ -380,6 +385,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     return value;
   };
   const served = (app: App, target: Replica) => pair(app).served.add(target.id);
+  // Set once Compose published the gateway port; replica URLs never match it.
+  let gateway = "";
   const http = async (
     base: string,
     path: string,
@@ -392,6 +399,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       method,
       headers: {
         origin: ORIGIN,
+        ...(base === gateway ? GATEWAY_HOST_HEADER : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -525,7 +533,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     await compose(["up", "-d", "--wait", "--scale", `${devServiceName("core")}=${options.replicas}`, "gateway", devServiceName("core")]);
     const [gatewayContainer] = await containers(devServiceName("gateway"));
     check(gatewayContainer, "Gateway container missing");
-    const gateway = port(gatewayContainer, 3000);
+    gateway = port(gatewayContainer, 3000);
     await poll("Core admin route", async () => {
       await http(gateway, "/api/openapi.json");
       return true;
@@ -535,7 +543,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       const signedIn: { session_token: string; user: { id: string } } = await response.json();
       check(signedIn.session_token && signedIn.user.id, "Admin sign-in returned no session");
       const continued = await fetch(`${gateway}/auth/continue`, {
-        headers: { cookie: `session_token=${signedIn.session_token}` },
+        headers: { ...GATEWAY_HOST_HEADER, cookie: `session_token=${signedIn.session_token}` },
         signal: AbortSignal.timeout(10_000),
         redirect: "manual",
       });
@@ -563,11 +571,13 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       await chmod(enrolled.file, 0o644);
     }
 
+    // Without --no-deps, Compose reconciles the Core dependency back to one replica.
     await compose([
       "up",
       "-d",
       "--wait",
       "--no-recreate",
+      "--no-deps",
       ...applications.flatMap((app) => ["--scale", `${devServiceName(app)}=${options.replicas}`]),
       ...applications.map(devServiceName),
     ]);
@@ -968,7 +978,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       draftPath = `${mailboxPath}/drafts/${draft.id}`;
       const composerPath = `/app/mail/${mailbox.id}/compose/${draft.id}`;
       const page = await fetch(`${gateway}${composerPath}`, {
-        headers: { cookie: `session_token=${token}` },
+        headers: { ...GATEWAY_HOST_HEADER, cookie: `session_token=${token}` },
         redirect: "manual",
         signal: AbortSignal.timeout(10_000),
       });
@@ -1575,7 +1585,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         await retire(a, "original-stop");
         currentPhase = "surge-start";
         const service = devServiceName("chat");
-        await compose(["up", "-d", "--wait", "--no-recreate", "--scale", `${service}=3`, service], 240_000);
+        await compose(["up", "-d", "--wait", "--no-recreate", "--no-deps", "--scale", `${service}=3`, service], 240_000);
         const resolved = await containers(service);
         check(resolved.length === 3 && resolved.some((container) => container.Id === b.id), "Chat surge must keep B and add two replicas");
         const surge = resolved.map((container) => ({
