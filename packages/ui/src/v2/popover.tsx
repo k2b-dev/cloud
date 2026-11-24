@@ -1,7 +1,7 @@
-import { children as resolveChildren, createEffect, createSignal, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup, children as resolveChildren, Show } from "solid-js";
 import { usePopover } from "./behavior/overlays";
 import { useTip } from "./behavior/tip";
-import { alignTo, type TriggerProps, TriggerFace } from "./menu";
+import { alignTo, TriggerFace, type TriggerProps } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 
 export type PopoverPanelProps = TriggerProps & {

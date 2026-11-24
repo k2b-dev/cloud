@@ -1,6 +1,6 @@
 import { onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
-import { type ToastKind, type ToasterParts, useToaster } from "./behavior/toast";
+import { type ToasterParts, type ToastKind, useToaster } from "./behavior/toast";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 
@@ -16,7 +16,11 @@ export type ShowToast = (message: string, options?: ToastOptions) => string;
 
 /** The sign of a toast that reports a deed that worked or failed. */
 const statusIcon = (type: ToastKind) =>
-  type === "success" ? ({ name: "circle-check", tone: "ok" } as const) : type === "error" ? ({ name: "alert-triangle", tone: "bad" } as const) : undefined;
+  type === "success"
+    ? ({ name: "circle-check", tone: "ok" } as const)
+    : type === "error"
+      ? ({ name: "alert-triangle", tone: "bad" } as const)
+      : undefined;
 
 /** The toasts of one owner at the bottom in the middle, newest on top, at most three; nothing moves when one comes. */
 const ToastRegion = (props: { parts: ToasterParts }) => {

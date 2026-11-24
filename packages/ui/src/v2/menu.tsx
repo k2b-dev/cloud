@@ -135,7 +135,9 @@ const Entry = (props: { level: MenuLevelParts; item: MenuItem; value: string; le
       return props.item.label;
     },
   };
-  const kind = untrack(() => (props.item.items ? "submenu" : props.item.checked !== undefined ? "tick" : props.item.href ? "link" : "deed"));
+  const kind = untrack(() =>
+    props.item.items ? "submenu" : props.item.checked !== undefined ? "tick" : props.item.href ? "link" : "deed",
+  );
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
     return (

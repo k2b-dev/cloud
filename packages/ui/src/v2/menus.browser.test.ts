@@ -82,13 +82,17 @@ test("menu: under the end of its button, entries of 32 px, at least 232 px, a li
       expect(height).toBe(heights.dense);
     }
     // the line stands right before "Verwerfen", reaching the menu's edges
-    const order = await page.locator(`${menu} > *`).evaluateAll((all) => all.map((el) => (el.classList.contains("k2-msep") ? "—" : el.textContent?.trim())));
+    const order = await page
+      .locator(`${menu} > *`)
+      .evaluateAll((all) => all.map((el) => (el.classList.contains("k2-msep") ? "—" : el.textContent?.trim())));
     expect(order.at(-2)).toBe("—");
     expect(order.at(-1)).toBe("Verwerfen");
     const line = await box(page.locator(`${menu} > .k2-msep`));
     expect([line.x, line.width, line.height]).toEqual([m.x + 1, m.width - 2, 1]);
     // the words of every entry start at the same x, with or without a symbol
-    const starts = await page.locator(`${menu} .k2-mi-label`).evaluateAll((all) => [...new Set(all.map((el) => el.getBoundingClientRect().left))]);
+    const starts = await page
+      .locator(`${menu} .k2-mi-label`)
+      .evaluateAll((all) => [...new Set(all.map((el) => el.getBoundingClientRect().left))]);
     expect(starts.length).toBe(1);
     expect(await page.locator(`${menu} .k2-mi[data-danger]`).evaluate((el) => getComputedStyle(el).color)).toBe("rgb(185, 28, 28)");
     await page.getByRole("menuitem", { name: "Auftrag duplizieren" }).click();
@@ -130,9 +134,11 @@ test("menu: keys open it, walk it, open the submenu to the side, skip nothing di
   });
 });
 
-test("menu: a tick flips in place, its entry keeps the highlight, the tick stands at the end", async () => {
+test("menu: a tick flips in place (the same element) and stands at the end of its entry", async () => {
   await withPage(async (page) => {
     await headMenu(page).click();
+    await page.locator(menu).waitFor();
+    await settled(page);
     const tick = page.getByRole("menuitemcheckbox", { name: "Nur offene zeigen" });
     expect(await tick.getAttribute("aria-checked")).toBe("true");
     const [entry, mark] = [await box(tick), await box(tick.locator(".k2-mi-tick"))];

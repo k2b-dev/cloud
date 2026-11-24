@@ -49,7 +49,13 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
     CheckboxItem: (props) => {
       const [own, element] = splitProps(props, ["value", "label", "checked", "disabled", "onCheckedChange", "closeOnSelect"]);
       const slotProps = () => {
-        const given = { label: own.label, checked: own.checked, disabled: own.disabled, onCheckedChange: own.onCheckedChange, closeOnSelect: own.closeOnSelect };
+        const given = {
+          label: own.label,
+          checked: own.checked,
+          disabled: own.disabled,
+          onCheckedChange: own.onCheckedChange,
+          closeOnSelect: own.closeOnSelect,
+        };
         return keyed(handle, String(own.value), Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined)));
       };
       return part(handle, "checkbox-item", slotProps, element, "div");
