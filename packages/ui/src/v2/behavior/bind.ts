@@ -4,7 +4,7 @@
  * Core attaches its listeners itself (`by: "core"`); the slot's attributes are written onto the element and kept
  * current. An attribute the element already has stays the author's.
  *
- * k2b-ui gap: this belongs in the adapter beside `part` ("a slot on an element the author renders"); it lives here
+ * k2b-ui gap (#4112): this belongs in the adapter beside `part` ("a slot on an element the author renders"); it lives here
  * until the adapter has it.
  */
 import type { Primitive, SlotName } from "@ui-sdk/core";

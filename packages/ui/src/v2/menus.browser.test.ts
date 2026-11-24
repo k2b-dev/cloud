@@ -270,6 +270,10 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
     expect(await toast.locator(".k2-toast-text").textContent()).toBe("Auftrag gespeichert");
     // a landmark while it holds toasts, named in the page's language
     expect(await page.getByRole("region", { name: "Benachrichtigungen" }).count()).toBe(1);
+    // an open on-screen keyboard: core writes its height on the region, and the toast stays above it
+    await page.locator(".k2-toasts").evaluate((el) => (el as HTMLElement).style.setProperty("--keyboard-inset", "300px"));
+    await settled(page);
+    expect(Math.round(900 - ((await box(toast)).y + t.height))).toBe(316);
     await page.getByRole("button", { name: "Rückgängig" }).click();
     await closed(page, ".k2-toast");
     expect(await deeds(page)).toEqual(["save", "undo"]);

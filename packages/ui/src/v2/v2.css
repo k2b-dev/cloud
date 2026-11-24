@@ -2796,11 +2796,12 @@
 /* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
    nothing that is already shown moves when another comes */
 /* The region is a popover in the top layer (core's popover="manual"), so its inset, margin and box are set here in
-   full. Like core's defaults it centres with `translate` and keeps clear of the safe area. */
+   full. Like core's defaults it centres with `translate` and keeps clear of the safe area and of an open on-screen
+   keyboard (`--keyboard-inset`, which core writes on the region from the visual viewport). */
 .k2-ui .k2-toasts {
   --k2-toasts-bottom: 16px;
   position: fixed;
-  inset: auto auto calc(var(--k2-toasts-bottom) + env(safe-area-inset-bottom, 0px)) 50%;
+  inset: auto auto calc(var(--k2-toasts-bottom) + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px)) 50%;
   translate: -50% 0;
   margin: 0;
   padding: 0;
