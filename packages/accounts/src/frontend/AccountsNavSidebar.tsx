@@ -1,35 +1,16 @@
 import { AppWorkspace } from "@k2b/ui";
 import AccountsNavigation from "./AccountsNavigation.island";
 import AccountsSearchButton from "./AccountsSearchButton.island";
+import { type AccountsNavActiveKey, accountsNavItems, accountsNavigationItems, type NavItem } from "./accounts-nav";
 import { useAccountsMessages } from "./messages";
 
-export type AccountsNavActiveKey =
-  | "dashboard"
-  | "users"
-  | "duplicate-emails"
-  | "groups"
-  | "requests"
-  | "audit"
-  | "api-keys"
-  | "agents"
-  | "notifications"
-  | "deleted-accounts"
-  | "reminders"
-  | null;
+export type { AccountsNavActiveKey } from "./accounts-nav";
 
 type Props = {
   active: AccountsNavActiveKey;
   ancestor?: boolean;
   isAdmin: boolean;
   pendingRequests: number;
-};
-
-type NavItem = {
-  href: string;
-  icon: string;
-  label: string;
-  active: boolean;
-  badge?: string;
 };
 
 const renderItem = (item: NavItem, ancestor: boolean) => (
@@ -46,64 +27,11 @@ const renderItem = (item: NavItem, ancestor: boolean) => (
 
 export default function AccountsNavSidebar(props: Props) {
   const messages = useAccountsMessages();
-  const generalItems = (): NavItem[] => [
-    { href: "/app/accounts", icon: "ti ti-layout-dashboard", label: messages().dashboard, active: props.active === "dashboard" },
-    { href: "/app/accounts/groups", icon: "ti ti-users-group", label: messages().groups, active: props.active === "groups" },
-  ];
-
-  const adminItems = (): NavItem[] => [
-    {
-      href: "/app/accounts/requests",
-      icon: "ti ti-user-plus",
-      label: messages().requests,
-      active: props.active === "requests",
-      badge: props.pendingRequests > 0 ? String(props.pendingRequests) : undefined,
-    },
-    { href: "/app/accounts/users", icon: "ti ti-users", label: messages().users, active: props.active === "users" },
-    {
-      href: "/app/accounts/duplicate-emails",
-      icon: "ti ti-copy",
-      label: messages().duplicateEmails,
-      active: props.active === "duplicate-emails",
-    },
-    { href: "/app/accounts/agents", icon: "ti ti-robot", label: messages().agents, active: props.active === "agents" },
-    {
-      href: "/app/accounts/api-keys",
-      icon: "ti ti-user-key",
-      label: messages().serviceAccounts,
-      active: props.active === "api-keys",
-    },
-    {
-      href: "/app/accounts/notifications",
-      icon: "ti ti-mail-share",
-      label: messages().notifications,
-      active: props.active === "notifications",
-    },
-    { href: "/app/accounts/audit", icon: "ti ti-clipboard-list", label: messages().auditLog, active: props.active === "audit" },
-    {
-      href: "/app/accounts/deleted-accounts",
-      icon: "ti ti-user-off",
-      label: messages().deletedAccounts,
-      active: props.active === "deleted-accounts",
-    },
-    {
-      href: "/app/accounts/reminders",
-      icon: "ti ti-mail-share",
-      label: messages().reminderHistory,
-      active: props.active === "reminders",
-    },
-  ];
+  const { general: generalItems, admin: adminItems } = accountsNavItems(messages, props);
 
   return (
     <>
-      <AccountsNavigation
-        items={[
-          ...generalItems().map((item) => ({ ...item, id: item.href })),
-          ...(props.isAdmin
-            ? [{ id: "admin", label: messages().admin, children: adminItems().map((item) => ({ ...item, id: item.href })) }]
-            : []),
-        ]}
-      />
+      <AccountsNavigation items={accountsNavigationItems(messages(), props)} />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="accounts-sidebar">

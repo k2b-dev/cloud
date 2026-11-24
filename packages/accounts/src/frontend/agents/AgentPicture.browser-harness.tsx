@@ -1,6 +1,6 @@
 import { LocaleProvider, Tag } from "@k2b/ui";
 import { render } from "solid-js/web";
-import AgentPictureTrigger from "./AgentPictureTrigger.island";
+import AgentPictureTrigger from "./AgentPictureTrigger";
 
 /** The head of an agent's page for a browser test, which answers the administration API itself. */
 const host = document.getElementById("root");
