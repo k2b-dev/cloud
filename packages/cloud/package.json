@@ -205,7 +205,7 @@
     "postcss": "8.5.32",
     "reflect-metadata": "0.2.2",
     "sanitize-html": "2.18.1",
-    "seroval": "1.6.7",
+    "seroval": "1.6.12",
     "tailwindcss": "4.3.5",
     "web-push": "3.6.7",
     "web-vitals": "6.2.3",
