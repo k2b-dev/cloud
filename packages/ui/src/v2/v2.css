@@ -2623,69 +2623,149 @@
   inset: 0;
   background: rgb(9 9 11 / 0.32);
 }
-/* Menu: entries 32 px, 4 px inside the menu of 8 px radius; a separator reaches the menu's edges */
-.k2-ui .k2-menu {
-  width: 232px;
+/* Menu, popover, tip: floating surfaces of 8 px radius with the one shadow and the one hairline. They sit in the top
+   layer and the behaviour layer places them, so the stylesheet resets what the browser gives a popover. A closed tip
+   stays in the page with `hidden`, which wins over every display rule here. */
+.k2-ui :is(.k2-menu, .k2-pop, .k2-tip)[hidden] {
+  display: none;
+}
+.k2-ui :is(.k2-menu, .k2-pop) {
+  margin: 0;
   background: var(--k2-surface);
   color: var(--k2-text);
   border-radius: var(--k2-r-overlay);
   box-shadow: var(--k2-float);
+  border: var(--k2-hairline);
+  overscroll-behavior: contain;
+}
+/* Menu: entries 32 px, 4 px inside the menu; a line between groups reaches the menu's edges. The menu is as wide as
+   its longest entry, at least 232 px; a menu taller than the screen scrolls inside. */
+.k2-ui .k2-menu {
+  min-width: 232px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
   padding: 4px;
   display: flex;
   flex-direction: column;
-  border: var(--k2-hairline);
+  outline: none;
 }
 .k2-ui .k2-mi {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
+  width: 100%;
   height: var(--k2-h-dense);
   padding: 0 8px;
+  border: 0;
   border-radius: var(--k2-r-mark);
+  background: none;
   color: var(--k2-text-2);
+  font: var(--k2-t-row);
+  text-align: start;
+  text-decoration: none;
+  cursor: default;
   outline: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.k2-ui .k2-mi > .k2-icon:first-child {
+.k2-ui .k2-mi-lead {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
   color: var(--k2-subtle);
 }
-.k2-ui .k2-mi > .k2-mi-meta {
-  margin-left: auto;
+.k2-ui .k2-mi-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-mi-meta {
+  flex: none;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-mi:is(:hover, [data-highlighted], :focus-visible) {
+/* the tick of an entry that toggles stands at its end, where a selection puts it; its place stays when unticked */
+.k2-ui .k2-mi-tick {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  color: var(--k2-blue);
+}
+.k2-ui .k2-mi > .k2-icon:last-child {
+  flex: none;
+  color: var(--k2-subtle);
+}
+/* the pointer, the keys and an open submenu mark the same entry with the same fill */
+.k2-ui .k2-mi:is([data-highlighted], [data-open]) {
   background: var(--k2-n100);
 }
 .k2-ui .k2-mi[data-danger],
-.k2-ui .k2-mi[data-danger] > .k2-icon:first-child {
+.k2-ui .k2-mi[data-danger] .k2-icon {
   color: var(--k2-bad);
 }
+.k2-ui .k2-mi:is([data-disabled], [aria-disabled="true"]) {
+  color: var(--k2-n400);
+}
+.k2-ui .k2-mi:is([data-disabled], [aria-disabled="true"]) .k2-icon {
+  color: inherit;
+}
+.k2-ui .k2-mi[data-pending] {
+  cursor: progress;
+}
 .k2-ui .k2-msep {
+  flex: none;
   height: 1px;
   background: var(--k2-line);
   margin: 4px -4px;
 }
-/* Tooltip and popover */
+/* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
+  margin: 0;
+  border: 0;
   display: inline-block;
-  max-width: 360px;
+  max-width: min(360px, calc(100vw - 16px));
   background: var(--k2-n950);
   color: var(--k2-surface);
   font: var(--k2-t-meta);
   padding: 4px 8px;
   border-radius: var(--k2-r-mark);
   overflow-wrap: anywhere;
+  pointer-events: none;
 }
+/* Popover: a panel of 280 px; inside, the text edge of a group (16 px), and the primitives own their spacing */
 .k2-ui .k2-pop {
+  --k2-edge: 16px;
   width: 280px;
-  background: var(--k2-surface);
-  color: var(--k2-text);
-  border-radius: var(--k2-r-overlay);
-  box-shadow: var(--k2-float);
-  border: var(--k2-hairline);
-  overflow: hidden;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  outline: none;
 }
-/* Toast: one sentence and at most one deed such as "Undo", at the bottom */
+.k2-ui .k2-pop-title {
+  margin: 0;
+  padding: 0 var(--k2-edge);
+  font: var(--k2-t-body);
+  font-weight: 600;
+  color: var(--k2-text);
+}
+.k2-ui .k2-pop-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
+   nothing that is already shown moves when another comes */
 .k2-ui .k2-toasts {
   position: fixed;
   left: 50%;
@@ -2696,24 +2776,48 @@
   align-items: center;
   gap: 8px;
   z-index: 60;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   pointer-events: none;
 }
 .k2-ui .k2-toast {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  max-width: 100%;
   min-height: 44px;
-  padding: 0 8px 0 16px;
+  padding: 0 16px;
   background: var(--k2-n950);
   color: var(--k2-surface);
   border-radius: var(--k2-r-overlay);
   box-shadow: var(--k2-float);
+  font: var(--k2-t-row);
   pointer-events: auto;
+  outline: none;
+}
+.k2-ui .k2-toast:focus-visible {
+  box-shadow: 0 0 0 2px var(--k2-blue), var(--k2-float);
+}
+.k2-ui .k2-toast:has(> .k2-btn) {
+  padding-right: 8px;
+}
+.k2-ui .k2-toast-text {
+  min-width: 0;
+  padding-block: 12px;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-toast > .k2-icon {
+  flex: none;
   color: var(--k2-surface);
 }
+.k2-ui .k2-toast > .k2-icon[data-tone="ok"] {
+  color: var(--k2-ok-dot);
+}
+.k2-ui .k2-toast > .k2-icon[data-tone="bad"] {
+  color: var(--k2-bad-dot);
+}
 .k2-ui .k2-toast .k2-btn[data-variant="text"] {
+  flex: none;
   color: var(--k2-surface);
   font: var(--k2-t-row);
   font-weight: 500;
@@ -2844,6 +2948,10 @@
     border-radius: var(--k2-r-round);
     box-shadow: var(--k2-float);
     z-index: 4;
+  }
+  /* a toast stands above the floating main action, never on it */
+  :root:has(.k2-fab) .k2-ui .k2-toasts {
+    bottom: 72px;
   }
   .k2-ui .k2-notice {
     grid-template-columns: 16px minmax(0, 1fr);

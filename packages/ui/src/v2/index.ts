@@ -93,6 +93,10 @@ export {
   type WorkspaceProps,
 } from "./layout";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
+// Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
+export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type TriggerProps } from "./menu";
+export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
+export { type ToastOptions, toast } from "./toast";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
