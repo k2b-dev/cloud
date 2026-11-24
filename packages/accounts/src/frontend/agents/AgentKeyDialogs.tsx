@@ -1,5 +1,5 @@
 import { coreClient } from "@k2b/cloud/clients/core";
-import { Bar, Button, Chip, Choice, Dialog, Facts, Field, Input, Notice, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Choice, Dialog, Facts, Field, Input, Notice, Section } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { z } from "zod";
 import type { AgentKey } from "./agent-keys";
@@ -164,11 +164,17 @@ export function NewKeyDialog(props: {
 /** One key beside the list: its facts, and "Revoke", which asks once more in a dialog. */
 export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: () => void }) {
   const t = useAgentMessages();
-  const [asking, setAsking] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const revoke = async () => {
     if (busy()) return;
+    const agreed = await Dialog.confirm({
+      title: t().revokeTitle({ name: props.entry.name }),
+      description: t().revokeConsequence,
+      confirm: t().revoke,
+      cancel: t().cancel,
+    });
+    if (!agreed || busy()) return;
     setBusy(true);
     setError(null);
     try {
@@ -179,7 +185,6 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
         setError(await errorMessage(response, t().revokeFailed));
         return;
       }
-      setAsking(false);
       props.revoked();
     } finally {
       setBusy(false);
@@ -203,38 +208,19 @@ export function OpenKey(props: { agentId: string; entry: AgentKeyView; revoked: 
       </Section>
       <Bar
         end={
-          <Button icon="key-off" onClick={() => setAsking(true)}>
-            {t().revoke}
+          // k2b-ui gap: a v2 button has no busy state; the label says it and the button rests disabled
+          <Button icon="key-off" onClick={() => void revoke()} disabled={busy()}>
+            {busy() ? t().revoking : t().revoke}
           </Button>
         }
       />
-      {/* k2b-ui gap: no alert dialog yet (lane C brings it); a Dialog asks, its last button revokes */}
-      <Dialog
-        title={t().revokeTitle({ name: props.entry.name })}
-        open={asking()}
-        onOpenChange={(open) => {
-          if (!busy()) setAsking(open);
-        }}
-        foot={
-          <>
-            <Button onClick={() => setAsking(false)} disabled={busy()}>
-              {t().cancel}
-            </Button>
-            <Button icon="key-off" onClick={() => void revoke()} disabled={busy()}>
-              {busy() ? t().revoking : t().revoke}
-            </Button>
-          </>
-        }
-      >
-        <Text>{t().revokeConsequence}</Text>
-        <Show when={error()}>
-          {(message) => (
-            <Notice tone="bad" icon="alert-circle">
-              {message()}
-            </Notice>
-          )}
-        </Show>
-      </Dialog>
+      <Show when={error()}>
+        {(message) => (
+          <Notice tone="bad" icon="alert-circle">
+            {message()}
+          </Notice>
+        )}
+      </Show>
     </>
   );
 }

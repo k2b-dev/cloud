@@ -128,10 +128,16 @@ const open = async (
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/app/accounts/agents")
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page({ screen: "agents", ...options.list }, Boolean(options.dark)) });
+      return route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: page({ screen: "agents", ...options.list }, Boolean(options.dark)),
+      });
     if (url.pathname === `/app/accounts/agents/${AGENT_ID}`) {
       answers.pages.push(`${url.pathname}${url.search}`);
-      return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(stateOf(url, options.state ?? {}), Boolean(options.dark)) });
+      return route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: page(stateOf(url, options.state ?? {}), Boolean(options.dark)),
+      });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
@@ -269,14 +275,29 @@ describe("an agent's API keys on v2", () => {
       const answers = api("token", [500, 200]);
       const { context, tab, errors } = await open(view, `/app/accounts/agents/${AGENT_ID}?key=${KEY_IDS[0]}`, answers);
       try {
-        await tab.getByRole("button", { name: t.revoke }).click();
-        const dialog = tab.locator("[data-k2-part='Dialog']");
-        await dialog.getByRole("heading", { name: t.revokeTitle({ name: "Laptop Jana" }) }).waitFor();
-        await settled(tab);
+        const pane = tab.locator("[data-k2-part='Pane'][aria-label='Laptop Jana']");
+        const ask = async () => {
+          await pane.getByRole("button", { name: t.revoke }).click();
+          const question = tab.getByRole("alertdialog", { name: t.revokeTitle({ name: "Laptop Jana" }) });
+          await question.waitFor();
+          await settled(tab);
+          return question;
+        };
+        // the question starts on "Abbrechen"; Escape answers no and sends nothing
+        let question = await ask();
+        await question.getByText(t.revokeConsequence).waitFor();
+        expect(await tab.evaluate(() => document.activeElement?.textContent?.trim())).toBe(t.cancel);
         await shoot(tab, `revoke-${view.name}`);
-        await dialog.getByRole("button", { name: t.revoke }).click();
-        await dialog.getByText(t.revokeFailed).waitFor();
-        await dialog.getByRole("button", { name: t.revoke }).click();
+        await tab.keyboard.press("Escape");
+        await question.waitFor({ state: "detached" });
+        expect(answers.deletes).toEqual([]);
+        // a failed revoke says so beside the key, which stays
+        question = await ask();
+        await question.getByRole("button", { name: t.revoke }).click();
+        await pane.getByText(t.revokeFailed).waitFor();
+        await shoot(tab, `revoke-failed-${view.name}`);
+        question = await ask();
+        await question.getByRole("button", { name: t.revoke }).click();
         await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}`);
         expect(answers.deletes).toEqual([`${keysPath}/${KEY_IDS[0]}`, `${keysPath}/${KEY_IDS[0]}`]);
         expect(errors).toEqual([]);

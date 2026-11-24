@@ -66,10 +66,13 @@ export default function AgentScreen(props: Props) {
       head={
         <Bar
           start={<RecordHead name={props.agent.name} kinds={[t().agent, status()]} />}
+          // A disabled agent gets no key: no action, and the notice on the page says why.
           end={
-            <Button variant="primary" icon="plus" href={href("new")} disabled={!props.agent.active}>
-              {t().createKey}
-            </Button>
+            props.agent.active ? (
+              <Button variant="primary" icon="plus" href={href("new")}>
+                {t().createKey}
+              </Button>
+            ) : undefined
           }
         />
       }
