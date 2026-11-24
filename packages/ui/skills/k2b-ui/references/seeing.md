@@ -9,7 +9,7 @@ and fix what the cheaper one finds before you pay for the next.
 | types | free with the build | wrong or missing props, an icon button without a name, two `Chip` kinds |
 | rule `v2-app-layout-css` | ~1 s | `class`, `style`, spreads, `innerHTML`, stylesheets outside `Canvas`; a `Canvas` in the wrong place |
 | outline (`describeV2`) | ~30 lines of text | the structure, every text, counts, hidden parts, `Problems` |
-| layout (`measureV2Layout`) | a browser | lines short of the edge, double lines, text off the four type roles, grips off their line |
+| layout (`measureV2Layout`) | a browser | lines short of the edge, double lines, a line inside one band or group, cut control labels, wrapped one-line texts, text off the four type roles, grips off their line |
 | screenshot | an image per width | everything else; only when in doubt |
 
 ## In the Cloud monorepo

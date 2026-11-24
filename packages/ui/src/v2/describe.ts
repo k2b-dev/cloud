@@ -421,6 +421,24 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     problems.push(
       `${primaries.length} primary buttons (${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per page; make the others secondary`,
     );
+  // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
+  if (options.layout) {
+    for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
+      if (hidden(control)) continue;
+      const box = control.getBoundingClientRect();
+      const label = control.querySelector(".k2-btn-label") ?? control;
+      if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
+        problems.push(
+          `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
+        );
+    }
+    for (const line of root.querySelectorAll(".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3)")) {
+      if (hidden(line)) continue;
+      const height = Number.parseFloat(getComputedStyle(line).lineHeight);
+      if (height > 0 && line.getBoundingClientRect().height > height * 1.5)
+        problems.push(`a line of a three-line Row wraps: ${quote(line.textContent, 30)}; each line stays on one line and ends with "…"`);
+    }
+  }
   // The floating main action of the phone must not cover a control at the end of the page.
   const fab = options.layout ? [...root.querySelectorAll(".k2-fab")].find((button) => !hidden(button)) : undefined;
   if (fab) {

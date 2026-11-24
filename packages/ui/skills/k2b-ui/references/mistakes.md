@@ -109,6 +109,15 @@ Rule 9. You drew it with your own element or a `Bar` between entries.
 - `double line: … and … at … px`: two parts draw a line at the same place,
   usually a `Bar` right under a `Bar`, or a `Band` before a `Section` end.
   Drop one of them.
+- `line inside …: … separates parts of one thing`: a line between the
+  parts of one band or group, at any distance (rule 9). Remove the element
+  that draws it; spacing alone separates the parts.
+- `control … cuts its label`: a button, chip or tab without the room for
+  its whole label. Shorten the label, give the place more room (a `width`
+  on the pane), or move the action where it has room.
+- `… wraps to 2 lines; it stays on one line and ends with "…"`: a line of
+  a three-line row or a cell of a table with widths wraps. Report it as a
+  primitive gap; the primitive owns the cut.
 - `text outside the type roles: 15px/22px 500`: own font sizes. Use
   `Text type`; emphasis is `weight`, never a size.
 - `grip …: pill centre … px off its line`: a primitive bug. Report it.
