@@ -2788,11 +2788,19 @@
 }
 /* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
    nothing that is already shown moves when another comes */
+/* The region is a popover in the top layer (core's popover="manual"), so its inset, margin and box are set here in
+   full. Like core's defaults it centres with `translate` and keeps clear of an open keyboard and the safe area. */
 .k2-ui .k2-toasts {
+  --k2-toasts-bottom: 16px;
   position: fixed;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  inset: auto auto calc(var(--k2-toasts-bottom) + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px)) 50%;
+  translate: -50% 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2984,7 +2992,7 @@
   }
   /* a toast stands above the floating main action, never on it */
   :root:has(.k2-fab) .k2-ui .k2-toasts {
-    bottom: 72px;
+    --k2-toasts-bottom: 72px;
   }
   .k2-ui .k2-notice {
     grid-template-columns: 16px minmax(0, 1fr);

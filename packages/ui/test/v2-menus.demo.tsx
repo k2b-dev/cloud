@@ -41,8 +41,9 @@ export function Demo() {
       label: "Nur offene zeigen",
       checked: openOnly(),
       onClick: () => {
-        setOpenOnly(!openOnly());
-        did(`open-only:${!openOnly()}`)();
+        const next = !openOnly();
+        setOpenOnly(next);
+        did(`open-only:${next}`)();
       },
     },
     { label: "Exportieren", icon: "download", disabled: true, onClick: did("export") },

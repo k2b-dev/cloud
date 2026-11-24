@@ -6,7 +6,8 @@
  */
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { menuCheckable, menuContextTrigger } from "@ui-sdk/core/renderer";
-import { type Handle, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { splitProps } from "solid-js";
+import { type Handle, keyed, part, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 import { bindSlot } from "./bind";
 import { useBehaviorMessages } from "./messages";
 import type { OverlayOptions } from "./overlays";
@@ -44,7 +45,15 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
     Popup: popupComponent(handle, "content"),
     Item: slotComponent(handle, "item", "div"),
     LinkItem: slotComponent(handle, "item", "a"),
-    CheckboxItem: slotComponent(handle, "checkbox-item", "div"),
+    // A feature's slot is not in the primitive's own schema, so its props are named here instead of looked up.
+    CheckboxItem: (props) => {
+      const [own, element] = splitProps(props, ["value", "label", "checked", "disabled", "onCheckedChange", "closeOnSelect"]);
+      const slotProps = () => {
+        const given = { label: own.label, checked: own.checked, disabled: own.disabled, onCheckedChange: own.onCheckedChange, closeOnSelect: own.closeOnSelect };
+        return keyed(handle, String(own.value), Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined)));
+      };
+      return part(handle, "checkbox-item", slotProps, element, "div");
+    },
     Separator: slotComponent(handle, "separator", "div"),
     bindContext: (element) => {
       handle.instance.use(menuContextTrigger);
