@@ -81,13 +81,36 @@ describe("list query URL", () => {
   test("a full state round-trips without loss in a stable order", () => {
     const params = articles.serialize(full);
     expect(params.toString()).toBe(
-      "view=own-7&status=consigned%2Cphotographed&location=store&price=500..&consignor=c-1001%2Cc-0042" +
+      "view=own-7&status=consigned,photographed&location=store&price=500..&consignor=c-1001,c-0042" +
         "&received=2026-11-01..2026-11-30&twofa=no&request=7f3a9c&q=Kommode&sort=price.desc&group=location",
     );
     const parsed = articles.parse(params);
     expect(parsed.issues).toEqual([]);
     expect(parsed.state).toEqual(full);
     expect(articles.serialize(parsed.state).toString()).toBe(params.toString());
+  });
+
+  test("commas, colons, slashes and @ stay readable; everything else stays encoded and round-trips", () => {
+    const state = must(articles.set(articles.reset(), "consignor", ["a@b.example", "x/y", "t:1"]));
+    expect(articles.serialize(state).toString()).toBe("consignor=a@b.example,x/y,t:1");
+    expect(articles.parse(articles.serialize(state).toString()).state).toEqual(state);
+
+    // A value that must stay encoded: a literal "%2C", form characters, a hash, a space and non-ASCII text.
+    const tricky = "%2C & = + # ? ; ä";
+    const searched = must(articles.set(articles.reset(), "q", tricky));
+    const text = articles.serialize(searched).toString();
+    expect(text).toBe("q=%252C+%26+%3D+%2B+%23+%3F+%3B+%C3%A4");
+    expect(articles.parse(text)).toEqual({ state: searched, issues: [] });
+    expect(articles.parse(new URL(`https://example.test/articles?${text}`).searchParams).state).toEqual(searched);
+
+    // Page parameters from base read the same way; the result stays URLSearchParams.
+    const params = articles.serialize(state, "selected=a,b");
+    expect(params).toBeInstanceOf(URLSearchParams);
+    expect(`${params}`).toBe("selected=a,b&consignor=a@b.example,x/y,t:1");
+    expect(params.get("selected")).toBe("a,b");
+    const url = new URL("https://example.test/articles");
+    url.search = params.toString();
+    expect(url.search).toBe("?selected=a,b&consignor=a@b.example,x/y,t:1");
   });
 
   test("the URL order follows the declaration, not the input", () => {
@@ -167,7 +190,7 @@ describe("list query URL", () => {
 
     const custom = logs.parse("time=2026-11-24T08:00Z..2026-11-24T09:30Z");
     expect(custom.state.filters.time).toEqual({ kind: "range", from: "2026-11-24T08:00Z", to: "2026-11-24T09:30Z" });
-    expect(logs.serialize(custom.state).toString()).toBe("time=2026-11-24T08%3A00Z..2026-11-24T09%3A30Z");
+    expect(logs.serialize(custom.state).toString()).toBe("time=2026-11-24T08:00Z..2026-11-24T09:30Z");
 
     for (const raw of ["2026-11-24T24:00Z..", "2026-11-24..", "last-2h"]) {
       const parsed = logs.parse(new URLSearchParams({ time: raw }));
