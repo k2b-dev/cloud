@@ -1189,6 +1189,11 @@
 .k2-ui .k2-row-marks .k2-chip[data-kind="tag"] {
   max-width: calc(12ch + 16px);
 }
+/* a state line under a head holds the state of one thing: a tag there says at most about 16 letters (all on hover),
+   so a long tag never pushes the line onto more lines (break-ui 25.11.: 170 px of state above the text) */
+.k2-ui [data-slot="status"] .k2-chip[data-kind="tag"] {
+  max-width: min(100%, calc(16ch + 16px));
+}
 .k2-ui .k2-row-marks .k2-av,
 .k2-ui .k2-btn .k2-av {
   width: 20px;
