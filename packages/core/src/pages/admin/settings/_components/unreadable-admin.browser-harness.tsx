@@ -5,7 +5,7 @@ import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-a
 import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
 import { adminNavFixture } from "../../admin-v2.fixture";
-import { RetentionDialog } from "../../outgoing-mail/SendLog";
+import RetentionDialog from "../../outgoing-mail/RetentionDialog";
 import { linuxQuery } from "../../signin/linux-query";
 import { LinuxScreen } from "../../signin/SigninScreen";
 
@@ -29,7 +29,12 @@ render(
         </main>
       )}
       <main class="mx-auto max-w-3xl p-4">
-        {surface === "outgoing" && <RetentionDialog retention={views.outgoing} close={close} onSaved={() => {}} />}
+        {surface === "outgoing" && (
+          // The retention dialog is a v2 dialog: it lives in a v2 scope and stays open until it saves.
+          <div class="k2-ui">
+            <RetentionDialog open retention={views.outgoing} onClose={close} onSaved={() => {}} />
+          </div>
+        )}
         {surface === "logs" && (
           <>
             <SettingsSaveStatus />

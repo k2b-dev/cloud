@@ -15,7 +15,12 @@ import appsAccessPage from "./admin/apps/page";
 import { cliPage, generalPage, legalPage, pdfPage, placesPage } from "./admin/base/page";
 import codeAdminPage from "./admin/code/page";
 import maintenanceAdminPage from "./admin/maintenance/page";
-import outgoingMailPage from "./admin/outgoing-mail/page";
+import {
+  appsPage as outgoingMailAppsPage,
+  logPage as outgoingMailLogPage,
+  profilesPage as outgoingMailPage,
+  templatesPage as outgoingMailTemplatesPage,
+} from "./admin/outgoing-mail/page";
 import adminPage from "./admin/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
@@ -124,6 +129,9 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     // App credentials now live with each app under Keys › Tokens for host operation; the old address says so.
     .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=credentials", 302))
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
+    .get("/admin/outgoing-mail/apps", auth.requireRole("admin", ssr.access), ...outgoingMailAppsPage)
+    .get("/admin/outgoing-mail/log", auth.requireRole("admin", ssr.access), ...outgoingMailLogPage)
+    .get("/admin/outgoing-mail/templates", auth.requireRole("admin", ssr.access), ...outgoingMailTemplatesPage)
     .get("/admin/storage", auth.requireRole("admin", ssr.access), ...storageAdminPage)
     .get("/admin/base", auth.requireRole("admin", ssr.access), ...generalPage)
     .get("/admin/base/legal", auth.requireRole("admin", ssr.access), ...legalPage)

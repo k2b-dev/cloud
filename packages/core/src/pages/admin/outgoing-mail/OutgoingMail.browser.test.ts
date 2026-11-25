@@ -1,372 +1,150 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import type { AdminMailApp, AdminMailProfile } from "@k2b/cloud/contracts";
-import { LocaleProvider } from "@k2b/ui";
-import tailwind from "bun-plugin-tailwind";
-import type { Browser } from "playwright";
-import { createComponent, type JSX } from "solid-js";
-import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../../../ui/test/browser";
-import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
-import type { OutgoingMailState } from "./OutgoingMail.island";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
+import { outgoingMailBrowserFixture } from "./OutgoingMail.browser-fixture";
 
-// The outgoing mail page must stay flat and fit a phone: its tables scroll inside themselves, never the page.
-const root = mkdtempSync(join(tmpdir(), "core-outgoing-mail-browser-"));
-registerSsrTestPlugin({ dev: true, rootDir: root });
-
-process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: OutgoingMail, AccessDialog, LogAccessDialog } = await import("./OutgoingMail.island.tsx");
-const { MessageDialog } = await import("./SendLog.tsx");
-const { buildFontAssets } = await import("../../../../scripts/font-assets");
-const { buildTablerIconAssets } = await import("../../../../scripts/tabler-assets");
-const publicDir = join(root, "public");
-const origin = "https://cloud.example.test";
-
-const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
-  key: "noreply",
-  name: "No-reply",
-  fromAddress: "noreply@example.org",
-  fromName: null,
-  smtpHost: "smtp.example.org",
-  smtpPort: 587,
-  smtpSecure: false,
-  smtpUser: "noreply@example.org",
-  hasPassword: true,
-  imap: null,
-  bounces: null,
-  pacePerMinute: 60,
-  dailyRecipientLimit: null,
-  maxAttachmentBytes: 15 * 1024 * 1024,
-  isDefault: true,
-  revision: 1,
-  createdAt: "2026-10-07T10:00:00.000Z",
-  updatedAt: "2026-10-07T10:00:00.000Z",
-  updatedBy: null,
-  appCount: 3,
-  ...overrides,
-});
-const state: OutgoingMailState = {
-  profiles: [
-    profile({}),
-    profile({
-      key: "billing",
-      name: "Billing",
-      fromAddress: "billing@example.org",
-      fromName: "Example Billing",
-      smtpHost: "mail.provider.example",
-      smtpPort: 465,
-      smtpSecure: true,
-      isDefault: false,
-      dailyRecipientLimit: 500,
-      imap: { host: "imap.provider.example", port: 993, secure: true, user: "billing@example.org", folder: "INBOX", hasPassword: true },
-      bounces: { checkedAt: "2026-10-07T10:00:00.000Z", error: "open_failed" },
-    }),
-  ],
-  apps: {
-    defaultProfile: "noreply",
-    items: [
-      { appId: "core", name: "Cloud", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
-      {
-        appId: "invoices",
-        name: "Invoices",
-        registered: true,
-        declared: true,
-        mode: "selected",
-        profiles: ["billing", "noreply"],
-        readDeclared: true,
-        logApps: ["files"],
-      },
-      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [], readDeclared: false, logApps: [] },
-    ],
-  },
-  log: {
-    filter: {},
-    retention: { contentDays: 90, recordDays: 365 },
-    page: {
-      items: [
-        {
-          id: "0b1f4d43-34c9-4f0e-9a39-6c4c7b2c5f10",
-          appId: "invoices",
-          profile: "billing",
-          to: ["a-very-long-recipient-address-for-layout@customer-domain.example.org", "grace@example.org"],
-          subject: "Invoice 2026-104 for the order placed on 6 October with a long subject line",
-          attachments: [{ filename: "invoice.pdf", contentType: "application/pdf", size: 48213, sha256: "ab".repeat(32) }],
-          status: "sent",
-          failures: [{ recipient: "grace@example.org", reason: "550 5.1.1 Mailbox unavailable", at: "2026-10-07T10:00:01.000Z" }],
-          attempts: 1,
-          ref: { scope: "invoice", id: "2026-104" },
-          response: "250 2.0.0 OK queued as 4F2A1",
-          createdAt: "2026-10-07T10:00:00.000Z",
-          sentAt: "2026-10-07T10:00:01.000Z",
-        },
-        {
-          id: "7d0c1c55-3f43-4f6b-a2a3-1d1f3f0c9e21",
-          appId: "files",
-          profile: "noreply",
-          to: ["ada@example.org"],
-          subject: "Shared folder",
-          attachments: [],
-          status: "queued",
-          error: "451 4.7.1 Try again later",
-          failures: [],
-          attempts: 2,
-          createdAt: "2026-10-07T09:58:00.000Z",
-        },
-      ],
-      page: 1,
-      perPage: 25,
-      total: 2,
-      hasNext: true,
-      nextCursor: "next",
-    },
-  },
-};
-
+// Outgoing mail on v2: sender profiles open as a form beside the list and save the whole profile, an app's sending and
+// send log access save apart, and the send log keeps its filters in the address and opens a message beside it.
 let browser: Browser;
-let css: string;
+let fixture: Awaited<ReturnType<typeof outgoingMailBrowserFixture>>;
+let page: Page;
+let errors: string[];
+
+const goto = async (path: string, width = 1440) => {
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto(`${fixture.url}${path}${path.includes("?") ? "&" : "?"}locale=en`);
+  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+};
+const button = (name: string) => page.getByRole("button", { name, exact: true }).filter({ visible: true });
+const sent = (method: string, path: string) => fixture.requests.filter((request) => request.method === method && request.path === path);
+
 beforeAll(async () => {
-  const styles = [resolve(import.meta.dir, "../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../styles.css")];
-  const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
-  for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
-  await buildFontAssets(publicDir);
-  await buildTablerIconAssets(publicDir);
+  fixture = await outgoingMailBrowserFixture();
   browser = await launchBrowser();
-}, 60_000);
+}, 120_000);
+beforeEach(async () => {
+  if (page) await page.close();
+  fixture.reset();
+  page = await browser.newPage();
+  page.setDefaultTimeout(8000);
+  errors = pageErrors(page);
+});
 afterAll(async () => {
   await browser?.close();
+  fixture?.close();
 });
 
-type View = { width: number; height: number; touch: boolean };
-const phone: View = { width: 390, height: 844, touch: true };
-const desktop: View = { width: 1280, height: 900, touch: false };
+test("every section keeps the v2 rules at every width, with no loader in the first picture", async () => {
+  for (const path of [
+    "/admin/outgoing-mail",
+    "/admin/outgoing-mail?profile=system",
+    "/admin/outgoing-mail/apps?app=invoices",
+    "/admin/outgoing-mail/log",
+  ])
+    for (const width of [1440, 1024, 390]) {
+      await goto(path, width);
+      expect({ path, width, problems: (await measureV2Layout(page, { root: "main.k2-ui" })).problems }).toEqual({
+        path,
+        width,
+        problems: [],
+      });
+      expect(await page.locator('main [data-k2-part="Loading"], main [aria-busy="true"]').count()).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  expect(errors).toEqual([]);
+}, 120_000);
 
-const open = async (
-  view: View,
-  dark: boolean,
-  locale: string,
-  content: () => JSX.Element = () => createComponent(OutgoingMail, { initial: state }),
-  frame = "",
-) => {
-  const body = renderToString(() =>
-    createComponent(LocaleProvider, {
-      locale,
-      get children() {
-        return content();
-      },
-    }),
-  );
-  const tab = await browser.newPage({
-    javaScriptEnabled: false,
-    viewport: { width: view.width, height: view.height },
-    deviceScaleFactor: 1,
-    isMobile: view.touch,
-    hasTouch: view.touch,
-  });
-  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-  await tab.setContent(
-    `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" data-app-id="core">` +
-      `<main class="layout-content-main min-h-0 min-w-0 flex-1 p-4"><div class="app-rows"><div style="${frame}">${body}</div></div></main></div></body></html>`,
-  );
-  await tab.evaluate(() => document.fonts.ready);
-  return tab;
-};
+test("a profile saves as a whole: the stored password stays unless replaced, and IMAP stays off without a host", async () => {
+  await goto("/admin/outgoing-mail?profile=newsletter");
+  const save = button("Save");
+  expect(await save.isDisabled()).toBe(true);
+  await page
+    .getByRole("textbox", { name: /^Display name|^Sender name|^From name/ })
+    .first()
+    .fill("Unser Rundbrief");
+  await save.click();
+  await page.waitForFunction(() => !location.search.includes("profile="));
+  const [request] = sent("PUT", "/api/admin/core/outgoing-mail/profiles/newsletter");
+  const body = request?.body as Record<string, unknown>;
+  expect(body.fromName).toBe("Unser Rundbrief");
+  expect(body).not.toHaveProperty("smtpPassword");
+  expect(body.imap).toBeNull();
+  expect(body.revision).toBe(3);
+  expect(errors).toEqual([]);
+}, 30_000);
 
-describe("outgoing mail page in a browser", () => {
-  test("fits a phone and a desktop in light and dark without page overflow", async () => {
-    for (const view of [phone, desktop])
-      for (const dark of [false, true])
-        for (const locale of ["en", "de"]) {
-          const tab = await open(view, dark, locale);
-          try {
-            const failed = locale === "de" ? "Prüfung auf unzustellbare Mails fehlgeschlagen:" : "Bounce check failed:";
-            const layout = await tab.evaluate(
-              (failed) => ({
-                overflow: document.documentElement.scrollWidth - window.innerWidth,
-                tables: document.querySelectorAll("table").length,
-                headings: Array.from(document.querySelectorAll("h1, h2")).map((heading) => heading.textContent),
-                // A failed bounce check and its reason stay readable at every width: visible, wrapped
-                // inside its cell instead of cut off, and without a tooltip.
-                bounceFailures: Array.from(document.querySelectorAll("p"))
-                  .filter((line) => line.textContent?.startsWith(failed) && line.getClientRects().length > 0)
-                  .map((line) => {
-                    const cell = line.closest("td")!.getBoundingClientRect();
-                    const box = line.getBoundingClientRect();
-                    return line.scrollWidth <= line.clientWidth + 1 && box.left >= cell.left - 1 && box.right <= cell.right + 1;
-                  }),
-              }),
-              failed,
-            );
-            expect(layout.bounceFailures).toEqual([true]);
-            expect({ width: view.width, dark, locale, overflow: Math.max(0, layout.overflow), tables: layout.tables }).toEqual({
-              width: view.width,
-              dark,
-              locale,
-              overflow: 0,
-              tables: 3,
-            });
-            expect(layout.headings).toHaveLength(4);
-          } finally {
-            await tab.close();
-          }
-        }
-  }, 60_000);
+test("a refused save keeps the draft with the reason, and a changed draft asks before it is left", async () => {
+  await goto("/admin/outgoing-mail?profile=newsletter");
+  const name = page.getByRole("textbox", { name: /^Name/ }).first();
+  await name.fill("Fehler");
+  await button("Save").click();
+  await page
+    .locator('main [data-k2-part="Notice"]')
+    .filter({ hasText: /changed|conflict|geändert/i })
+    .waitFor();
+  expect(await name.inputValue()).toBe("Fehler");
+  await button("Cancel").click();
+  const question = page.getByRole("alertdialog");
+  await question.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(await name.inputValue()).toBe("Fehler");
+  expect(errors).toEqual([]);
+}, 30_000);
 
-  // The dialog is centered, so any height change moves every control in it.
-  test("the access dialog keeps one height through every mode and selection", async () => {
-    const app = (mode: AdminMailApp["mode"], profiles: string[]): AdminMailApp => ({
-      appId: "invoices",
-      name: "Invoices",
-      registered: true,
-      declared: true,
-      readDeclared: false,
-      logApps: [],
-      mode,
-      profiles,
-    });
-    const modes = [
-      { mode: "default", app: app("default", []) },
-      { mode: "selected", app: app("selected", ["billing"]) },
-      { mode: "none", app: app("selected", []) },
-    ];
-    const dialog = (value: AdminMailApp) => () =>
-      createComponent(AccessDialog, { app: value, profiles: state.profiles, close: () => {}, onSaved: () => {} });
-    // Same width as a prompt dialog: 28rem, or the phone width minus its margins.
-    const frame = "width: min(calc(100vw - 2rem), 28rem); padding: 1rem";
-    for (const view of [phone, desktop])
-      for (const locale of ["en", "de"]) {
-        const layouts = [];
-        for (const entry of modes) {
-          const tab = await open(view, false, locale, dialog(entry.app), frame);
-          try {
-            const layout = await tab.evaluate(() => {
-              const form = document.querySelector("form")!;
-              const top = form.getBoundingClientRect().top;
-              return {
-                children: Array.from(form.children).map((child) => {
-                  const box = child.getBoundingClientRect();
-                  return [Math.round(box.top - top), Math.round(box.height)];
-                }),
-                visibleHints: Array.from(document.querySelectorAll<HTMLElement>("[data-access-hint]"))
-                  .filter((hint) => getComputedStyle(hint).visibility === "visible")
-                  .map((hint) => hint.dataset.accessHint),
-                checked: Array.from(form.querySelectorAll<HTMLInputElement>("input[type=checkbox]")).map((box) => box.checked),
-              };
-            });
-            expect(layout.visibleHints).toEqual([entry.mode]);
-            layouts.push({ width: view.width, locale, children: layout.children, checked: layout.checked });
-          } finally {
-            await tab.close();
-          }
-        }
-        // Default shows the default profile as used; selected shows the grant; none shows nothing.
-        expect(layouts.map((layout) => layout.checked)).toEqual([
-          [true, false],
-          [false, true],
-          [false, false],
-        ]);
-        for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
-      }
-  }, 60_000);
+test("a test mail goes from the profile's menu; making another profile the default asks first", async () => {
+  await goto("/admin/outgoing-mail?profile=newsletter");
+  await page
+    .getByRole("button", { name: /Newsletter/ })
+    .filter({ visible: true })
+    .last()
+    .click();
+  await page.getByRole("menuitem", { name: /test/i }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("ich@example.test");
+  await dialog.getByRole("button", { name: /Send/ }).click();
+  await dialog.waitFor({ state: "detached" });
+  expect(sent("POST", "/api/admin/core/outgoing-mail/profiles/newsletter/test")[0]?.body).toEqual({ recipient: "ich@example.test" });
+  expect(errors).toEqual([]);
+}, 30_000);
 
-  test("every app's action menu stays in view on a phone and a desktop", async () => {
-    for (const view of [phone, desktop])
-      for (const locale of ["en", "de"]) {
-        const tab = await open(view, false, locale);
-        try {
-          const label = locale === "de" ? "Aktionen für " : "Actions for ";
-          const triggers = await tab.evaluate((label) => {
-            const section = document.querySelector('[aria-labelledby="outgoing-mail-apps"]')!;
-            const scroller = section.querySelector("table")!.parentElement!.getBoundingClientRect();
-            return Array.from(section.querySelectorAll<HTMLElement>(`[aria-label^="${label}"]`)).map((trigger) => {
-              const box = trigger.getBoundingClientRect();
-              return box.width > 0 && box.left >= scroller.left - 1 && box.right <= Math.min(scroller.right, window.innerWidth) + 1;
-            });
-          }, label);
-          // Core's row has no actions; Invoices and Files each keep their menu reachable without scrolling the table.
-          expect({ width: view.width, locale, triggers }).toEqual({ width: view.width, locale, triggers: [true, true] });
-        } finally {
-          await tab.close();
-        }
-      }
-  }, 60_000);
+test("an app's sending access and its send log access save apart; a refused grant says so in place", async () => {
+  await goto("/admin/outgoing-mail/apps?app=backoffice");
+  await page.getByRole("radio", { name: "Selected profiles" }).check();
+  await page.getByRole("checkbox", { name: /Newsletter/ }).check();
+  await page.locator('[data-k2-part="Section"]').first().getByRole("button", { name: "Save", exact: true }).click();
+  await page.waitForFunction(() => location.search.includes("app=backoffice"));
+  expect(sent("PUT", "/api/admin/core/outgoing-mail/apps/backoffice")[0]?.body).toEqual({ mode: "selected", profiles: ["newsletter"] });
 
-  test("the send log access dialog keeps one height whichever apps are chosen", async () => {
-    const invoices = state.apps.items.find((app) => app.appId === "invoices")!;
-    const apps = [...state.apps.items, { ...invoices, appId: "crm", name: "Customer relationships", logApps: [] }];
-    const selections = [[], ["files"], ["crm", "files"]];
-    const frame = "width: min(calc(100vw - 2rem), 28rem); padding: 1rem";
-    for (const view of [phone, desktop])
-      for (const dark of [false, true])
-        for (const locale of ["en", "de"]) {
-          const layouts = [];
-          for (const logApps of selections) {
-            const dialog = () =>
-              createComponent(LogAccessDialog, {
-                app: { ...invoices, logApps, logContentApps: logApps.length === 2 ? ["files"] : [] },
-                apps,
-                close: () => {},
-                onSaved: () => {},
-              });
-            const tab = await open(view, dark, locale, dialog, frame);
-            try {
-              layouts.push(
-                await tab.evaluate(() => {
-                  const form = document.querySelector("form")!;
-                  const top = form.getBoundingClientRect().top;
-                  return {
-                    overflow: document.documentElement.scrollWidth - window.innerWidth,
-                    children: Array.from(form.children).map((child) => {
-                      const box = child.getBoundingClientRect();
-                      return [Math.round(box.top - top), Math.round(box.height)];
-                    }),
-                    levels: Array.from(form.querySelectorAll("[role=combobox]")).map((box) => box.textContent?.trim()),
-                  };
-                }),
-              );
-            } finally {
-              await tab.close();
-            }
-          }
-          // Core and the app itself are never offered: Customer relationships and Files remain.
-          expect(layouts.map((layout) => layout.levels)).toEqual([
-            [locale === "de" ? "Kein Zugriff" : "No access", locale === "de" ? "Kein Zugriff" : "No access"],
-            [locale === "de" ? "Kein Zugriff" : "No access", locale === "de" ? "Metadaten" : "Metadata"],
-            [locale === "de" ? "Metadaten" : "Metadata", locale === "de" ? "Inhalt" : "Content"],
-          ]);
-          for (const layout of layouts) expect(Math.max(0, layout.overflow)).toBe(0);
-          for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
-        }
-  }, 60_000);
+  await goto("/admin/outgoing-mail/apps?app=backoffice");
+  await page.locator('[data-k2-part="Section"]').nth(1).getByRole("button", { name: "Save", exact: true }).click();
+  await page.locator('[data-k2-part="Section"]').nth(1).locator('[data-k2-part="Notice"]').filter({ hasText: /log/i }).waitFor();
+  expect(errors).toEqual([]);
+}, 30_000);
 
-  test("a send log entry fits a phone and a desktop without horizontal overflow", async () => {
-    const entry = state.log.page.items[0]!;
-    // A queued batch member carries the most footer actions.
-    const queued = { ...entry, status: "queued" as const, batchId: "6f1c7a52-8f35-4d6f-9a3e-1b2c3d4e5f60" };
-    const sent = { ...queued, status: "sent" as const };
-    for (const record of [entry, queued, sent])
-      for (const view of [phone, desktop])
-        for (const dark of [false, true]) {
-          const dialog = () => createComponent(MessageDialog, { record, appName: "Invoices", close: () => {}, onChanged: () => {} });
-          const tab = await open(view, dark, "de", dialog, "width: min(calc(100vw - 2rem), 40rem)");
-          try {
-            const layout = await tab.evaluate(() => ({
-              overflow: document.documentElement.scrollWidth - window.innerWidth,
-              text: document.body.textContent ?? "",
-            }));
-            expect({ width: view.width, dark, overflow: Math.max(0, layout.overflow) }).toEqual({ width: view.width, dark, overflow: 0 });
-            expect(layout.text).toContain("Inhalt anzeigen");
-            expect(layout.text).toContain("550 5.1.1 Mailbox unavailable");
-            expect(layout.text.includes("Stapel abbrechen")).toBe(!!record.batchId);
-            expect(layout.text.includes("Mail abbrechen")).toBe(record.status === "queued");
-          } finally {
-            await tab.close();
-          }
-        }
-  }, 60_000);
-});
+test("the send log opens a message beside it, shows its text on request, and cancels a queued one after a question", async () => {
+  await goto("/admin/outgoing-mail/log");
+  await page.getByRole("link", { name: "Mahnung 2026-099" }).first().click();
+  await page.waitForURL(/message=/);
+  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+  await button("Cancel mail").click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel mail", exact: true }).click();
+  await page.getByText("Mail cancelled.").waitFor();
+  expect(sent("POST", "/api/admin/core/outgoing-mail/messages/aaaaaaaa-0000-4000-8000-000000000002/cancel")).toHaveLength(1);
+
+  await goto("/admin/outgoing-mail/log?message=aaaaaaaa-0000-4000-8000-000000000001");
+  await page.getByRole("button", { name: /Show/ }).filter({ visible: true }).first().click();
+  await page.getByText("Guten Tag, anbei Ihre Rechnung.").waitFor();
+  expect(errors).toEqual([]);
+}, 30_000);
+
+test("the send log's old addresses keep their filters, and the retention saves both periods", async () => {
+  await goto("/admin/outgoing-mail/log?app=invoices");
+  expect(await page.locator('[data-k2-part="FilterBar"]').innerText()).toContain("Invoices");
+  await button("Retention").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("spinbutton", { name: /Keep text for \(days\)/ }).fill("60");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  expect(sent("PUT", "/api/admin/core/outgoing-mail/retention")[0]?.body).toMatchObject({ contentDays: 60 });
+  expect(errors).toEqual([]);
+}, 30_000);
