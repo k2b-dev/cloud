@@ -284,7 +284,9 @@ describe("the log list on v2", () => {
     const { context, tab, errors, calls } = await open({ width: 390, height: 844, touch: true }, "/admin/observability/logs?time=last-15m");
     try {
       // the level stands as a chip at the end of each phone row
-      const first = tab.locator('[data-k2-part="Row"]', { hasText: "Upstream mail: Zeitüberschreitung nach 30 s" }).filter({ visible: true });
+      const first = tab
+        .locator('[data-k2-part="Row"]', { hasText: "Upstream mail: Zeitüberschreitung nach 30 s" })
+        .filter({ visible: true });
       expect(await first.locator('[data-k2-part="Chip"]').innerText()).toBe("Error");
       const search = tab.getByRole("searchbox", { name: "Search messages" });
       await search.tap();

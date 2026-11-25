@@ -275,6 +275,7 @@ export const legacyLogsHref = (params: URLSearchParams): string | null => {
     ),
   ];
   if (names.length > 0) next.set("source", names.join(","));
-  const text = next.toString();
+  // As the list's own addresses (`serialize`): `,` `:` `/` and `@` stay readable, every other sign stays encoded.
+  const text = next.toString().replace(/%(?:2C|3A|2F|40)/gi, (escape) => decodeURIComponent(escape));
   return text ? `${LOGS_PAGE_PATH}?${text}` : LOGS_PAGE_PATH;
 };

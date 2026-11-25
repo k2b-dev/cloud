@@ -37,9 +37,8 @@ describe("the log list address", () => {
       request: "7f3a9c",
     });
     expect(address).toMatchObject({ page: 2, entry: "9001", liveOff: true });
-    // k2b-ui gap: 6 – serialize writes commas as %2C; the concept shows plain commas.
     expect(logsHref(query, address.state, { page: 2, entry: "9001", liveOff: true })).toBe(
-      `/admin/observability/logs?${search.replaceAll(",", "%2C")}&page=2&entry=9001&live=off`,
+      `/admin/observability/logs?${search}&page=2&entry=9001&live=off`,
     );
   });
 
@@ -104,6 +103,12 @@ describe("addresses from before v2", () => {
     ["window=7d&time=last-1h&search=old&q=new", { time: "last-1h", q: "new" }],
     ["level=all&view=errors&colour=red", { view: "errors", colour: "red" }],
   ];
+  test("the redirect keeps commas and colons readable, as the list's own addresses do", () => {
+    expect(legacyLogsHref(new URLSearchParams("source=auth:ipa:sync&source=mail&window=7d"))).toBe(
+      "/admin/observability/logs?time=last-7d&source=auth:ipa:sync,mail",
+    );
+  });
+
   for (const [before, after] of cases) {
     test(`${before} redirects to the same list`, () => {
       const href = legacyLogsHref(new URLSearchParams(before));
