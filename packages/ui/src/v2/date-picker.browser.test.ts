@@ -49,7 +49,13 @@ const withPage = async (
   bundle: () => string,
   path: string,
   run: (page: Page) => Promise<void>,
-  { width = 1440, height = 900, touch = false, timezoneId }: { width?: number; height?: number; touch?: boolean; timezoneId?: string } = {},
+  {
+    width = 1440,
+    height = 900,
+    touch = false,
+    timezoneId,
+    lang = "de",
+  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: "de" | "en-US" } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch, timezoneId });
   page.setDefaultTimeout(2000);
@@ -58,7 +64,7 @@ const withPage = async (
   await page.route(`${origin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     }),
   );
   try {
@@ -170,35 +176,56 @@ test("with a time a pressed day is only chosen until “Übernehmen”; days bef
       await moment.locator('[data-value="2026-11-26"]').click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T09:00");
       expect(await moment.locator('[data-value="2026-11-26"]').getAttribute("aria-selected")).toBe("true");
-      const time = moment.getByRole("textbox", { name: "Uhrzeit" });
-      // a text field in the locale's clock, not the browser's time field
-      expect(await time.getAttribute("type")).toBe("text");
-      expect(await time.inputValue()).toBe("09:00");
-      // typed digits are read when the field is left, written as the locale writes a time
-      await time.fill("1430");
-      await time.blur();
-      expect(await time.inputValue()).toBe("14:30");
-      // the arrows turn the part the caret stands in, round the clock
-      await time.press("Home");
-      await time.press("ArrowUp");
-      expect(await time.inputValue()).toBe("15:30");
-      await time.press("End");
-      await time.press("ArrowDown");
-      expect(await time.inputValue()).toBe("15:29");
+      // core's time input: hour and minute as spinbuttons on the German 24-hour clock, never the browser's time field
+      const time = moment.getByRole("group", { name: "Uhrzeit" });
+      const hour = time.getByRole("spinbutton", { name: "Stunde" });
+      const minute = time.getByRole("spinbutton", { name: "Minute" });
+      expect(await moment.locator('input[type="time"]').count()).toBe(0);
+      expect(await time.locator('[data-type="dayPeriod"]').count()).toBe(0);
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["09", "00"]);
+      // typed digits fill the hour, then the minute
+      await hour.focus();
+      await page.keyboard.type("1430");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["14", "30"]);
+      // the arrows step the segment that has the focus
+      await hour.press("ArrowUp");
+      await minute.press("ArrowDown");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["15", "29"]);
       await moment.getByRole("button", { name: "Übernehmen" }).click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:29");
-      // Enter in the time applies too; a time that is none marks the field and applies nothing
-      await time.fill("9.05");
-      await time.press("Enter");
-      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
-      expect(await time.inputValue()).toBe("09:05");
-      await time.fill("2:30 pm");
-      await time.press("Enter");
-      expect(await time.getAttribute("aria-invalid")).toBe("true");
-      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
+      // Enter in a segment applies too
+      await minute.focus();
+      await page.keyboard.type("05");
+      await minute.press("Enter");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:05");
+      // an emptied segment is no time: "Übernehmen" is off and Enter gives nothing
+      await minute.press("Backspace");
+      await minute.press("Backspace");
+      expect(await minute.inputValue()).toBe("");
+      expect(await moment.getByRole("button", { name: "Übernehmen" }).isDisabled()).toBe(true);
+      await hour.press("Enter");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:05");
       await moment.getByRole("button", { name: "Leeren" }).click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("");
     },
+  );
+});
+
+test("the time follows the @k2b/ui locale: American English has twelve hours and AM/PM", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const time = page.getByTestId("moment").getByRole("group", { name: "Time" });
+      const value = (type: string) => time.locator(`[data-type="${type}"]`).inputValue();
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["09", "00", "AM"]);
+      await time.locator(`[data-type="hour"]`).focus();
+      await page.keyboard.type("0230p");
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["02", "30", "PM"]);
+      await page.getByTestId("moment").getByRole("button", { name: "Apply" }).click();
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T14:30");
+    },
+    { lang: "en-US" },
   );
 });
 
@@ -268,7 +295,7 @@ test("a day outside `min` and `max` is never picked, also when it is the value a
       const moment = page.getByTestId("locked-moment");
       expect(await moment.locator('[data-value="2026-11-02"]').getAttribute("aria-selected")).toBe("true");
       expect(await moment.getByRole("button", { name: "Übernehmen" }).isDisabled()).toBe(true);
-      await moment.getByRole("textbox", { name: "Uhrzeit" }).press("Enter");
+      await moment.getByRole("spinbutton", { name: "Minute" }).press("Enter");
       // without a time: a press on the locked chosen day gives nothing either
       const day = page.getByTestId("locked-day");
       await day.locator('[data-value="2026-11-02"]').click({ force: true });

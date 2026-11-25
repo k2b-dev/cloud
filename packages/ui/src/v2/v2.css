@@ -3236,6 +3236,34 @@
   height: var(--k2-h-dense);
   font-variant-numeric: tabular-nums;
 }
+/* The time: hour and minute as segments in one field, each as wide as two digits; the focused one is marked like a
+   selection, the separator stays quiet. */
+.k2-ui .k2-time {
+  gap: 0;
+  cursor: text;
+}
+.k2-ui .k2-time > .k2-time-seg {
+  flex: none;
+  width: 2.4ch;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--k2-r-mark);
+  text-align: center;
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  caret-color: transparent;
+}
+.k2-ui .k2-time > .k2-time-seg:focus {
+  background: var(--k2-blue-tint);
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-time > .k2-time-seg::placeholder {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-time > .k2-time-sep {
+  color: var(--k2-subtle);
+  font: var(--k2-t-row);
+}
 .k2-ui .k2-dpick-error {
   margin: 0;
   font: var(--k2-t-meta);

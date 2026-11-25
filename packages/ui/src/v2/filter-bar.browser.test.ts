@@ -617,6 +617,13 @@ const openBound = async (page: Page, index: number) => {
   await page.locator(".k2-dpop").waitFor();
 };
 
+/** The time a bound's calendar shows, as `HH:MM` from its hour and minute segments. */
+const shownTime = async (page: Page) => {
+  const time = page.locator(".k2-dpop").getByRole("group", { name: "Uhrzeit" });
+  return `${await time.getByRole("spinbutton", { name: "Stunde" }).inputValue()}:${await time.getByRole("spinbutton", { name: "Minute" }).inputValue()}`;
+};
+const minuteSegment = (page: Page) => page.locator(".k2-dpop").getByRole("spinbutton", { name: "Minute" });
+
 test("daylight saving: both bounds applied unchanged keep their instants, also a wall time that comes twice", async () => {
   // 00:30Z is 02:30 summer time in Berlin; 02:30 comes twice that night. 03:00Z is 04:00 winter time.
   const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
@@ -624,11 +631,10 @@ test("daylight saving: both bounds applied unchanged keep their instants, also a
     await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
     expect(await page.locator(".k2-fpop .k2-fed-bounds .k2-mi").allTextContents()).toEqual(["Von25.10., 02:30", "Bis25.10., 04:00"]);
     const cascade = page.locator(".k2-dpop");
-    const time = cascade.getByRole("textbox", { name: "Uhrzeit" });
     for (const index of [1, 0]) {
       await openBound(page, index);
-      expect(await time.inputValue()).toBe(index === 0 ? "02:30" : "04:00");
-      await time.press("Enter");
+      expect(await shownTime(page)).toBe(index === 0 ? "02:30" : "04:00");
+      await minuteSegment(page).press("Enter");
       await cascade.waitFor({ state: "detached" });
       expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
     }
@@ -641,10 +647,10 @@ test("daylight saving: a wall time the clocks jump over is refused at its calend
   await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
     await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
     await openBound(page, 0);
-    const time = page.locator(".k2-dpop").getByRole("textbox", { name: "Uhrzeit" });
-    expect(await time.inputValue()).toBe("01:30");
-    await time.fill("02:30");
-    await time.press("Enter");
+    expect(await shownTime(page)).toBe("01:30");
+    await page.locator(".k2-dpop").getByRole("spinbutton", { name: "Stunde" }).focus();
+    await page.keyboard.type("0230");
+    await minuteSegment(page).press("Enter");
     await page.locator(".k2-dpop").getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
     expect(new URL(page.url()).searchParams.get("seen")).toBe(seen.slice(5));
   });

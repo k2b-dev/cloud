@@ -14,6 +14,7 @@ const dateMessages = i18n.define({
       clear: "Clear",
       openCalendar: "Open calendar",
       unreadable: "Not a date. Type it as on the calendar, such as 24.11.2026.",
+      empty: "Empty",
     },
     de: {
       calendar: "Kalender",
@@ -24,6 +25,7 @@ const dateMessages = i18n.define({
       clear: "Leeren",
       openCalendar: "Kalender öffnen",
       unreadable: "Kein Datum. Schreib es wie im Kalender, etwa 24.11.2026.",
+      empty: "leer",
     },
   },
 });

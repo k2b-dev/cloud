@@ -298,9 +298,10 @@ lines instead of cutting a thing.
   PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
   the week; six weeks, so its height never changes). `value`, `onPick`,
   `min`, `max`, `timeZone` (which day is today), `label`, `error`,
-  `onClear` ("Leeren"), `autoFocus`; `time` adds hour and minute as text in
-  the locale's clock (24 hours in German; arrows turn the part under the
-  caret; never the browser's time field), applied
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
   with "Übernehmen". Use it inside a popover or sheet; a form field is
   `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,

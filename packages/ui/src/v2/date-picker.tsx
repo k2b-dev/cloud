@@ -1,11 +1,11 @@
-import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onMount, Show } from "solid-js";
 import { dateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCalendar } from "./behavior/calendar";
+import { type TimeSegment, useTimeInput } from "./behavior/time-input";
 import { Button } from "./button";
 import { useDateMessages } from "./date-messages";
 import { Icon } from "./marks";
-import { caretInHour, formatTime, parseTime, stepTime, usesDayPeriods } from "./time-text";
 
 export type DatePickerProps = {
   /** The chosen day as a date key ("2026-11-24"); with `time` the wall time of a minute ("2026-11-24T09:00"). */
@@ -36,6 +36,12 @@ export type DatePickerProps = {
 
 const monthOf = (key: string) => key.slice(0, 7);
 
+/** The clock of a locale: 24 hours in German, twelve with AM and PM in American English (the browser's never counts). */
+const hourCycleOf = (locale: string): 12 | 24 => {
+  const cycle = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
+  return cycle === "h11" || cycle === "h12" ? 12 : 24;
+};
+
 /**
  * A month of days to pick one from: the month and year in the words of the locale, the arrows for the month before
  * and after, six weeks so turning the month never changes the height, and with `time` hour and minute below. The keys
@@ -53,30 +59,18 @@ export const DatePicker = (props: DatePickerProps) => {
   // with `time` a pressed day is a draft until "Übernehmen"; without, it is the pick
   const [chosen, setChosen] = createSignal(day());
   createEffect(on(day, (key) => setChosen(key), { defer: true }));
-  // the time as `HH:MM`, and as the field writes it in the locale; what is typed is read on Enter or when it is left
+  // the time as `HH:MM`, or `null` while a segment is empty or partly typed; a value set from elsewhere shows its time
   const initialTime = () => props.value?.slice(11, 16) || props.defaultTime || "00:00";
-  const [clock, setClock] = createSignal(initialTime());
-  const [typed, setTyped] = createSignal(formatTime(initialTime(), locale()));
-  const [unreadable, setUnreadable] = createSignal(false);
-  const show = (hhmm: string) => {
-    setClock(hhmm);
-    setTyped(formatTime(hhmm, locale()));
-    setUnreadable(false);
-  };
+  const [clock, setClock] = createSignal<string | null>(initialTime());
   createEffect(
     on(
       () => props.value,
-      () => show(initialTime()),
+      () => setClock(initialTime()),
       { defer: true },
     ),
   );
-  /** Reads what is typed; an unreadable text marks the field and keeps the last time. */
-  const read = (): string | undefined => {
-    const hhmm = parseTime(typed(), locale());
-    if (hhmm === undefined) setUnreadable(true);
-    else show(hhmm);
-    return hhmm;
-  };
+  const time = useTimeInput(() => ({ value: clock(), onValueChange: setClock, locale: locale(), hourCycle: hourCycleOf(locale()) }));
+  const timeLabel = createUniqueId();
   const calendar = useCalendar(() => ({
     value: chosen() ?? null,
     month: month(),
@@ -95,11 +89,11 @@ export const DatePicker = (props: DatePickerProps) => {
   const pickable = (key: string | undefined): key is string =>
     key !== undefined && !(props.min && key < props.min) && !(props.max && key > props.max);
   const pickDay = (key: string) => pickable(key) && props.onPick(key);
-  const ready = createMemo(() => pickable(chosen()) && !unreadable());
+  const ready = createMemo(() => pickable(chosen()) && clock() !== null);
   const apply = () => {
     const key = chosen();
-    const hhmm = read();
-    if (!pickable(key) || hhmm === undefined) return;
+    const hhmm = clock();
+    if (!pickable(key) || hhmm === null) return;
     props.onPick(`${key}T${hhmm}`);
   };
   onMount(() => {
@@ -157,44 +151,44 @@ export const DatePicker = (props: DatePickerProps) => {
         </calendar.Grid>
       </calendar.Root>
       <Show when={props.time}>
-        <label class="k2-dpick-time">
-          <span class="k2-dpick-label">{t().time}</span>
-          {/* text in the locale's own clock (24 hours in German), never the browser's time field: no AM/PM from an
-              English browser, no spinners; the arrows turn the hour or the minute the caret stands in */}
-          <span class="k2-input" data-invalid={unreadable() ? "" : undefined}>
-            <input
-              type="text"
-              autocomplete="off"
-              inputmode={usesDayPeriods(locale()) ? "text" : "decimal"}
-              spellcheck={false}
-              placeholder={formatTime("00:00", locale())}
-              value={typed()}
-              aria-invalid={unreadable() ? "true" : undefined}
-              onInput={(event) => {
-                setTyped(event.currentTarget.value);
-                setUnreadable(false);
-              }}
-              onChange={() => read()}
-              onKeyDown={(event) => {
-                if (event.isComposing) return;
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  apply();
-                  return;
-                }
-                if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-                event.preventDefault();
-                const input = event.currentTarget;
-                const part = caretInHour(input.value, input.selectionStart ?? 0) ? "hour" : "minute";
-                show(stepTime(parseTime(input.value, locale()) ?? clock(), part, event.key === "ArrowUp" ? 1 : -1));
-                // the caret stays in the part it turns
-                const text = formatTime(clock(), locale());
-                const end = text.search(/\d\D/) + 1;
-                queueMicrotask(() => input.setSelectionRange(part === "hour" ? end : text.length, part === "hour" ? end : text.length));
-              }}
-            />
+        <div class="k2-dpick-time">
+          <span class="k2-dpick-label" id={timeLabel}>
+            {t().time}
           </span>
-        </label>
+          {/* core's time input: hour and minute as spinbuttons in the locale's clock (24 hours in German), never the
+              browser's time field. Typing, the arrows and Backspace are core's; Enter applies, as "Übernehmen" does. The
+              handlers run as native listeners on the segments, so they also work in a panel that stops keys. */}
+          <time.Root class="k2-input k2-time" data-invalid={clock() === null ? "" : undefined} aria-labelledby={timeLabel}>
+            {(state: { segments?: TimeSegment[] }) => (
+              <For each={(state.segments ?? []).map((segment) => segment.key)}>
+                {(key) => {
+                  const segment = () => (state.segments ?? []).find((each) => each.key === key);
+                  return (
+                    <Show
+                      when={segment()?.editable}
+                      fallback={
+                        <time.Literal segment={segment()} class="k2-time-sep">
+                          {segment()?.text}
+                        </time.Literal>
+                      }
+                    >
+                      <time.Segment
+                        segment={segment()}
+                        class="k2-time-seg"
+                        aria-valuetext={segment()?.empty ? t().empty : undefined}
+                        onKeyDown={(event: KeyboardEvent) => {
+                          if (event.key !== "Enter" || event.isComposing) return;
+                          event.preventDefault();
+                          apply();
+                        }}
+                      />
+                    </Show>
+                  );
+                }}
+              </For>
+            )}
+          </time.Root>
+        </div>
       </Show>
       <Show when={props.error}>
         {(message) => (
