@@ -180,7 +180,6 @@ export function OverviewFixture(props: ComponentProps<typeof SpacesOverview>) {
       {/* Islands serialize only explicit props, so nothing is spread. */}
       <SpacesOverview
         spaces={props.spaces}
-        sidebarHint={props.sidebarHint}
         initialView={props.initialView}
         initialPinnedSpaceIds={props.initialPinnedSpaceIds}
         initialWork={props.initialWork}

@@ -1,40 +1,18 @@
 import { openCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { listenPopState, navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
-import {
-  type ActivityEntry,
-  ActivityList,
-  AppWorkspace,
-  Button,
-  createNavigation,
-  DetailPanel,
-  dialogCore,
-  IconButton,
-  LoadMore,
-  PanelDialog,
-  Placeholder,
-  panelDialogOptions,
-  useLocale,
-  ViewTabs,
-} from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, Empty, Failed, List, Loading, Pane, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
-import SpacesSidebarList from "./[id]/_components/sidebar/SpacesSidebarList";
-import {
-  createNewSpace,
-  createPinnedSpaces,
-  createSpacesNavigationItems,
-  listenSpacesNavigationHints,
-  type SidebarSpace,
-} from "./[id]/_components/sidebar/spaces-navigation";
+import SpacesNav, { useSpacesNav } from "./_components/spaces-nav";
+import { listenSpacesNavigationHints, type SidebarSpace } from "./[id]/_components/sidebar/spaces-navigation";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
-import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { overviewMessages } from "./overview-messages";
 import { createSpaceCommands } from "./space-commands";
@@ -55,7 +33,6 @@ type ActivityPage = { data: ActivityItem[]; nextCursor: string | null };
 type Props = {
   spaces: SidebarSpace[];
   canCreate?: boolean;
-  sidebarHint?: boolean;
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
   initialWork: OverviewWork;
@@ -66,94 +43,41 @@ type Props = {
   now: string;
 };
 
-const activityIcon = (action: string) =>
-  action.includes("completed")
-    ? "ti ti-check"
-    : action.includes("comment")
-      ? "ti ti-message-circle"
-      : action.includes("created")
-        ? "ti ti-plus"
-        : action.includes("deleted")
-          ? "ti ti-trash"
-          : action.includes("moved")
-            ? "ti ti-arrows-move"
-            : "ti ti-pencil";
+const VIEWS = ["mine", "today", "upcoming"] as const;
+const viewHref = (view: OverviewView) => (view === "mine" ? "/app/spaces" : `/app/spaces?view=${view}`);
+const priorityStatus = { urgent: "bad", high: "warn" } as const;
 
+/**
+ * Spaces home on v2: the work that waits for this person in three views, and what changed lately in their Spaces
+ * beside it (below it on the phone). The address holds the view; reload and back show the same.
+ */
 export default function SpacesOverview(props: Props) {
   createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
-  const { t } = overviewMessages.resolve([locale()]);
-  const activityDescription = (entry: ActivityItem) => {
-    const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
-    const params = { title, space: entry.space.name };
-    const labels: Record<string, string> = {
-      "space.created": t.activityCreatedSpace({ space: entry.space.name }),
-      "space.updated": t.activityUpdatedSpace({ space: entry.space.name }),
-      "task.created": t.activityCreatedTask(params),
-      "event.created": t.activityCreatedEvent(params),
-      "task.updated": t.activityUpdatedTask(params),
-      "event.updated": t.activityUpdatedEvent(params),
-      "task.completed": t.activityCompletedTask(params),
-      "task.claimed": t.activityClaimed(params),
-      "task.released": t.activityReleased(params),
-      "task.taken_over": t.activityTakenOver({
-        ...params,
-        from: typeof entry.metadata.fromName === "string" ? entry.metadata.fromName : t.activityFormerHolder,
-      }),
-      "task.progress": t.activityProgress(params),
-      "task.reopened": t.activityReopenedTask(params),
-      "event.completed": t.activityCompletedEvent(params),
-      "event.reopened": t.activityReopenedEvent(params),
-      "task.deleted": t.activityDeletedTask(params),
-      "event.deleted": t.activityDeletedEvent(params),
-      "item.moved": t.activityMoved(params),
-      "comment.created": t.activityCommented(params),
-      "item.assignees.updated": t.activityAssignees(params),
-      "item.tags.updated": t.activityTags(params),
-      "comment.updated": t.activityCommentUpdated(params),
-      "comment.deleted": t.activityCommentDeleted(params),
-      "checklist.created": t.activityChecklistCreated(params),
-      "checklist.updated": t.activityChecklistUpdated(params),
-      "checklist.completed": t.activityChecklistCompleted(params),
-      "checklist.reopened": t.activityChecklistReopened(params),
-      "checklist.deleted": t.activityChecklistDeleted(params),
-    };
-    return labels[entry.action] ?? t.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
-  };
+  const t = () => overviewMessages.resolve([locale()]).t;
+  const toast = useToast();
   const [view, setView] = createSignal<OverviewView>(props.initialView);
   const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
-  const canCreate = () => props.canCreate ?? true;
-  const create = createNewSpace(t);
-  const [pinned] = createPinnedSpaces(props.initialPinnedSpaceIds);
-  const navigation = createNavigation({
-    items: () =>
-      createSpacesNavigationItems({
-        spaces: props.spaces,
-        pinnedSpaceIds: pinned(),
-        current: { kind: "overview" },
-        canCreate: canCreate(),
-        myWorkLabel: t.myWork,
-        calendarLabel: t.calendar,
-        newSpaceLabel: t.newSpace,
-      }),
-    onAction: async (action) => {
-      if (action === "new-space") await create();
-    },
-  });
   const work = queries.create<OverviewView, OverviewWork>({
     source: view,
     initial: { source: props.initialView, data: props.initialWork },
-    load: async (view, { abortSignal }) => {
-      const response = await apiClient.overview.work.$get({ query: { view } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readResponseError(response, t.workLoadFailed));
+    load: async (next, { abortSignal }) => {
+      const response = await apiClient.overview.work.$get({ query: { view: next } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await readResponseError(response, t().workLoadFailed));
       return response.json();
     },
   });
   const activeWork = () => (work.data()?.view === view() ? work.data() : undefined);
-  const workItems = () => activeWork()?.items ?? [];
   const counts = () => work.data()?.counts ?? props.initialWork.counts;
-  const priorityLabel = (priority: NonNullable<WorkItem["priority"]>) =>
-    ({ urgent: t.urgent, high: t.high, medium: t.medium, low: t.low })[priority];
+  const nav = useSpacesNav({
+    spaces: props.spaces,
+    pinnedSpaceIds: props.initialPinnedSpaceIds,
+    get myWorkCount() {
+      return counts().mine;
+    },
+    current: { kind: "overview" },
+    canCreate: props.canCreate ?? true,
+  });
 
   const activity = queries.createInfinite<string, ActivityPage, string>({
     source: () => "spaces",
@@ -163,15 +87,15 @@ export default function SpacesOverview(props: Props) {
         { query: { limit: "30", ...(cursor ? { cursor } : {}) } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, t.activityLoadFailed));
+      if (!response.ok) throw new Error(await readResponseError(response, t().activityLoadFailed));
       setInitialActivityError(null);
       return response.json();
     },
     getNextCursor: (page) => page.nextCursor,
   });
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
-  // A failed older page keeps the loaded rows and says so at the list's end, where "Load more" was; any other failure
-  // stands above the list (or alone without rows) with "Reload".
+  // A failed older page keeps the loaded rows and says so where "Load more" stood; any other failure stands in place of
+  // the rows.
   const [failedPage, setFailedPage] = createSignal<Error | null>(null);
   const loadMoreActivity = async () => {
     const before = activity.error();
@@ -184,19 +108,15 @@ export default function SpacesOverview(props: Props) {
     return failed && failed === failedPage() ? failed.message : null;
   };
   const activityError = () => (pageError() ? null : (activity.error()?.message ?? initialActivityError()));
+  const reloadActivity = () => {
+    setInitialActivityError(null);
+    void activity.refresh();
+  };
 
-  const workViewOptions = () =>
-    (["mine", "today", "upcoming"] as const).map((id) => ({
-      id,
-      label: id === "mine" ? t.forMe : id === "today" ? t.today : t.upcomingView,
-      href: `/app/spaces?view=${id}`,
-      count: counts()[id],
-    }));
-  let tabsHost: HTMLDivElement | undefined;
   const selectView = (next: OverviewView) => {
     if (view() === next) return;
     setView(next);
-    navigate(next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`, { scroll: "preserve" });
+    navigate(viewHref(next), { scroll: "preserve" });
   };
   onMount(() => {
     onCleanup(
@@ -204,18 +124,6 @@ export default function SpacesOverview(props: Props) {
         await Promise.all([work.refresh(), activity.refresh()]);
       }),
     );
-    // Delegate native link clicks, including keyboard activation, without changing their semantics.
-    const onTabClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
-      if (!anchor) return;
-      const next = new URL(anchor.href).searchParams.get("view");
-      if (next !== "mine" && next !== "today" && next !== "upcoming") return;
-      event.preventDefault();
-      selectView(next);
-    };
-    tabsHost?.addEventListener("click", onTabClick);
-    onCleanup(() => tabsHost?.removeEventListener("click", onTabClick));
     onCleanup(listenSpacesNavigationHints(document, props.spaces));
     onCleanup(
       listenPopState(({ url }) => {
@@ -224,214 +132,199 @@ export default function SpacesOverview(props: Props) {
       }),
     );
   });
-  const retryToast = createRetryToasts();
-  /** A failed command (the Space no longer allows it, or the request failed) says so and offers the same step again. */
+
+  /** A failed command (the Space no longer allows it, or the request failed) says so; the person starts it again. */
   const composeTask = (): Promise<void> =>
     openCommand("spaces.task.compose", {})
       .then(() => undefined)
-      .catch((error: unknown) =>
-        retryToast(
-          error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed,
-          t.retry,
-          composeTask,
-        ),
-      );
+      .catch((error: unknown) => {
+        toast(error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed, {
+          status: "bad",
+        });
+      });
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
+  const viewLabel = (id: OverviewView) => (id === "mine" ? t().forMe : id === "today" ? t().today : t().upcomingView);
+  const emptyText = () => (view() === "mine" ? t().nothingAssigned : view() === "today" ? t().nothingToday : t().nothingUpcoming);
+  const priorityLabel = (priority: NonNullable<WorkItem["priority"]>) =>
+    ({ urgent: t().urgent, high: t().high, medium: t().medium, low: t().low })[priority];
+  const when = (item: WorkItem) =>
+    item.startsAt
+      ? `${dates.formatDateRelative(item.startsAt, props.dateConfig)}, ${dates.formatTime(item.startsAt, props.dateConfig)}`
+      : item.deadline
+        ? formatDeadline(item.deadline, props.dateConfig)
+        : undefined;
+
+  const activityDescription = (entry: ActivityItem) => {
+    const text = t();
+    const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
+    const params = { title, space: entry.space.name };
+    const labels: Record<string, string> = {
+      "space.created": text.activityCreatedSpace({ space: entry.space.name }),
+      "space.updated": text.activityUpdatedSpace({ space: entry.space.name }),
+      "task.created": text.activityCreatedTask(params),
+      "event.created": text.activityCreatedEvent(params),
+      "task.updated": text.activityUpdatedTask(params),
+      "event.updated": text.activityUpdatedEvent(params),
+      "task.completed": text.activityCompletedTask(params),
+      "task.claimed": text.activityClaimed(params),
+      "task.released": text.activityReleased(params),
+      "task.taken_over": text.activityTakenOver({
+        ...params,
+        from: typeof entry.metadata.fromName === "string" ? entry.metadata.fromName : text.activityFormerHolder,
+      }),
+      "task.progress": text.activityProgress(params),
+      "task.reopened": text.activityReopenedTask(params),
+      "event.completed": text.activityCompletedEvent(params),
+      "event.reopened": text.activityReopenedEvent(params),
+      "task.deleted": text.activityDeletedTask(params),
+      "event.deleted": text.activityDeletedEvent(params),
+      "item.moved": text.activityMoved(params),
+      "comment.created": text.activityCommented(params),
+      "item.assignees.updated": text.activityAssignees(params),
+      "item.tags.updated": text.activityTags(params),
+      "comment.updated": text.activityCommentUpdated(params),
+      "comment.deleted": text.activityCommentDeleted(params),
+      "checklist.created": text.activityChecklistCreated(params),
+      "checklist.updated": text.activityChecklistUpdated(params),
+      "checklist.completed": text.activityChecklistCompleted(params),
+      "checklist.reopened": text.activityChecklistReopened(params),
+      "checklist.deleted": text.activityChecklistDeleted(params),
+    };
+    return labels[entry.action] ?? text.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
+  };
   const activityHref = (entry: ActivityItem) =>
     entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`;
-  // The sentence links to the Space or item; the actor and avatar start the sentence, "Automatic" for the system.
-  const activityEntries = (): ActivityEntry[] =>
-    activityItems().map(
-      (entry): ActivityEntry => ({
-        id: entry.id,
-        at: entry.lastOccurredAt,
-        icon: activityIcon(entry.action),
-        tone: entry.action.endsWith(".completed") ? "success" : "neutral",
-        text: activityDescription(entry),
-        href: activityHref(entry),
-        actor: entry.actor.kind === "system" ? null : entry.actor.displayName,
-        avatar: {
-          name: entry.actor.displayName,
-          kind:
-            entry.actor.kind === "service_account"
-              ? "service"
-              : entry.actor.kind === "user"
-                ? entry.actor.id
-                  ? "person"
-                  : "deleted"
-                : "system",
-          src:
-            entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
-              ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
-              : undefined,
-        },
-      }),
+  const avatarSrc = (entry: ActivityItem) =>
+    entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
+      ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
+      : undefined;
+  const ActivityRow = (rowProps: { entry: ActivityItem }) => {
+    const entry = rowProps.entry;
+    const lines: [string, string] = [activityDescription(entry), entry.actor.displayName];
+    const time = dates.formatDateTimeRelative(entry.lastOccurredAt, { ...props.dateConfig, base: props.now });
+    return entry.actor.kind === "user" ? (
+      <Row
+        avatar={{ name: entry.actor.displayName, image: avatarSrc(entry) }}
+        lines={lines}
+        time={time}
+        meta={entry.occurrenceCount > 1 ? `×${entry.occurrenceCount}` : undefined}
+        href={activityHref(entry)}
+      />
+    ) : (
+      <Row
+        icon={entry.actor.kind === "system" ? "settings" : "robot"}
+        lines={lines}
+        time={time}
+        meta={entry.occurrenceCount > 1 ? `×${entry.occurrenceCount}` : undefined}
+        href={activityHref(entry)}
+      />
     );
-  const reloadActivity = () => {
-    setInitialActivityError(null);
-    void activity.refresh();
   };
-  const activityFeed = () => (
-    <Show
-      when={activityItems().length > 0}
-      fallback={
-        <Show
-          when={activityError()}
-          fallback={
-            <Show when={activity.loading()} fallback={<ActivityList.Empty text={t.noActivityDescription} />}>
-              <ActivityList.Loading label={t.loadingActivity} />
-            </Show>
-          }
-        >
-          {(message) => <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />}
-        </Show>
-      }
-    >
-      <Show when={activityError()}>
-        {(message) => (
-          <div class="spaces-overview-activity-alert">
-            <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />
-          </div>
-        )}
-      </Show>
-      <ActivityList
-        entries={activityEntries()}
-        now={props.now}
-        dateConfig={props.dateConfig}
-        label={t.recentActivity}
-        more={activity.hasMore()}
-      />
-      <LoadMore
-        hasMore={activity.hasMore()}
-        onLoadMore={loadMoreActivity}
-        auto={false}
-        loading={activity.loadingMore()}
-        error={pageError()}
-        label={t.loadMore}
-        loadingLabel={t.loadingMoreActivity}
-      />
-    </Show>
-  );
-  const openMobileActivity = () =>
-    void dialogCore.open<void>(
-      (close) => (
-        <PanelDialog>
-          <PanelDialog.Header title={t.activity} subtitle={t.activityDescription} close={close} />
-          <PanelDialog.Body>{activityFeed()}</PanelDialog.Body>
-        </PanelDialog>
-      ),
-      panelDialogOptions,
-    );
-
-  const workList = () => (
-    <Show
-      when={workItems().length > 0}
-      fallback={
-        <Placeholder
-          state={work.error() ? "error" : !activeWork() ? "loading" : "empty"}
-          title={
-            work.error()
-              ? t.workLoadFailed
-              : !activeWork()
-                ? t.loadingWork
-                : view() === "mine"
-                  ? t.nothingAssigned
-                  : view() === "today"
-                    ? t.nothingToday
-                    : t.nothingUpcoming
-          }
-          description={work.error()?.message ?? (activeWork() ? t.allCaughtUp : undefined)}
-          action={
-            work.error() ? (
-              <Button variant="secondary" size="sm" onClick={() => void work.refresh()}>
-                {t.retry}
-              </Button>
-            ) : undefined
-          }
-          icon="ti ti-circle-check"
-          class="min-h-64"
-        />
-      }
-    >
-      <div class="spaces-overview-work-list">
-        <For each={workItems()}>
-          {(item) => (
-            <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>
-              <span
-                class="spaces-overview-space-mark"
-                style={{ "background-color": item.spaceColor ?? "var(--ui-app-accent-border)" }}
-                aria-hidden="true"
-              />
-              <span class="spaces-overview-work-copy">
-                <strong>{item.title}</strong>
-                <span>{item.spaceName}</span>
-              </span>
-              <Show when={item.priority}>
-                <span class={`spaces-overview-priority is-${item.priority}`}>{priorityLabel(item.priority!)}</span>
-              </Show>
-              <Show when={item.startsAt || item.deadline}>
-                <time datetime={item.startsAt ?? item.deadline ?? undefined}>
-                  {item.startsAt
-                    ? dates.formatDateTimeRelative(item.startsAt, props.dateConfig)
-                    : formatDeadline(item.deadline!, props.dateConfig)}
-                </time>
-              </Show>
-              <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />
-            </a>
-          )}
-        </For>
-      </div>
-    </Show>
-  );
 
   return (
-    <AppWorkspace mobileSurface="flush" flat class="spaces-overview-workspace">
-      <WorkspaceNavigationProvider label="Spaces" navigation={navigation} />
-      <h1 class="sr-only">Spaces</h1>
-      <AppWorkspace.Sidebar label="Spaces" collapsible>
-        <AppWorkspace.SidebarDesktop>
-          <SpacesSidebarList
-            spaces={props.spaces}
-            pinnedSpaceIds={props.initialPinnedSpaceIds}
-            myWorkCount={counts().mine}
-            current={{ kind: "overview" }}
-            canCreate={canCreate()}
-            hint={{ id: "spaces.overview-sidebar", open: Boolean(props.sidebarHint) && canCreate() }}
-          />
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
-      <AppWorkspace.Head
-        views={
-          <div ref={tabsHost}>
-            <ViewTabs label={t.workView} current={view()} items={workViewOptions()} />
-          </div>
-        }
-        actions={
-          <>
-            <IconButton label={t.searchTitle} onClick={() => void openSearch()}>
-              <i class="ti ti-search" aria-hidden="true" />
-            </IconButton>
-            <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
-              <i class="ti ti-history" aria-hidden="true" /> {t.activity}
-            </Button>
-          </>
-        }
-        primary={{ label: t.newTask, icon: "ti ti-plus", onClick: () => void composeTask() }}
-      />
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="spaces-overview-main" width="content" aria-busy={work.loading()}>
-          <div class="spaces-overview-page">
-            <div class="spaces-overview-list">{workList()}</div>
-          </div>
-        </AppWorkspace.Main>
-        <AppWorkspace.Detail id="spaces-overview-activity" open width="md" resizable={false} class="spaces-overview-activity">
-          <DetailPanel>
-            <DetailPanel.Header title={t.activity} subtitle={t.activityDescription} />
-            <DetailPanel.Body scrollPreserveKey="spaces-overview-activity">{activityFeed()}</DetailPanel.Body>
-          </DetailPanel>
-        </AppWorkspace.Detail>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+    <Workspace
+      sidebar={<SpacesNav nav={nav} />}
+      head={
+        <Bar
+          start={
+            <Tabs
+              label={t().workView}
+              items={VIEWS.map((id) => ({
+                label: viewLabel(id),
+                count: counts()[id],
+                href: viewHref(id),
+                current: view() === id,
+                onNavigate: () => selectView(id),
+              }))}
+            />
+          }
+          end={
+            <>
+              <Button variant="ghost" icon="search" label={t().searchTitle} keep onClick={() => void openSearch()} />
+              <Button variant="primary" icon="plus" onClick={() => void composeTask()}>
+                {t().newTask}
+              </Button>
+            </>
+          }
+        />
+      }
+      primary={{ label: t().newTask, icon: "plus", onClick: () => void composeTask() }}
+    >
+      <Pane.Split>
+        <Pane label={t().myWork} scrollKey="spaces-overview-work">
+          <Show
+            when={activeWork()}
+            fallback={
+              <Show when={work.error()} fallback={<Loading rows={5} lines={2} />}>
+                {(error) => <Failed text={`${t().workLoadFailed}: ${error().message}`} onRetry={() => void work.refresh()} />}
+              </Show>
+            }
+          >
+            {(current) => (
+              <Show when={current().items.length > 0} fallback={<Empty icon="circle-check" text={`${emptyText()}. ${t().allCaughtUp}`} />}>
+                <List label={viewLabel(view())}>
+                  <For each={current().items}>
+                    {(item) => (
+                      <Row
+                        icon={item.startsAt ? "calendar-event" : "checkbox"}
+                        // k2b-ui gap: a Row takes a data colour only with an icon; the Space's colour tints the symbol.
+                        color={item.spaceColor ?? undefined}
+                        lines={[item.title, item.spaceName]}
+                        time={when(item)}
+                        end={
+                          item.priority ? (
+                            item.priority === "urgent" || item.priority === "high" ? (
+                              <Chip status={priorityStatus[item.priority]}>{priorityLabel(item.priority)}</Chip>
+                            ) : (
+                              <Chip>{priorityLabel(item.priority)}</Chip>
+                            )
+                          ) : undefined
+                        }
+                        href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}
+                      />
+                    )}
+                  </For>
+                </List>
+              </Show>
+            )}
+          </Show>
+        </Pane>
+        <Pane side label={t().activity} width={{ min: 300, default: 380 }} scrollKey="spaces-overview-activity">
+          <Section icon="history" title={t().activity} summary={t().activityDescription}>
+            <Show
+              when={activityItems().length > 0}
+              fallback={
+                <Show
+                  when={activityError()}
+                  fallback={
+                    <Show when={activity.loading()} fallback={<Empty icon="history" text={t().noActivityDescription} />}>
+                      <Loading rows={6} lines={2} />
+                    </Show>
+                  }
+                >
+                  {(message) => <Failed text={`${t().couldNotLoadActivity}: ${message()}`} onRetry={reloadActivity} />}
+                </Show>
+              }
+            >
+              <Show when={activityError()}>
+                {(message) => <Failed text={`${t().couldNotLoadActivity}: ${message()}`} onRetry={reloadActivity} />}
+              </Show>
+              <For each={activityItems()}>{(entry) => <ActivityRow entry={entry} />}</For>
+              <Show when={pageError()}>{(message) => <Failed text={message()} onRetry={() => void loadMoreActivity()} />}</Show>
+              <Show when={activity.hasMore() && !pageError()}>
+                <Bar
+                  end={
+                    <Button busy={activity.loadingMore()} onClick={() => void loadMoreActivity()}>
+                      {t().loadMore}
+                    </Button>
+                  }
+                />
+              </Show>
+            </Show>
+          </Section>
+        </Pane>
+      </Pane.Split>
+    </Workspace>
   );
 }

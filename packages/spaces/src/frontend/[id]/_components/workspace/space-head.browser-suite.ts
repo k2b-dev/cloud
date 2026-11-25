@@ -309,7 +309,7 @@ const snapshot = (view: View): SpacesViewSnapshot =>
   view === "kanban"
     ? { kind: "kanban", buckets, wormholes: [] }
     : { kind: "list", currentView: view === "table" ? "table" : "list", itemsResult };
-const hintIds = ["spaces.sidebar-switch", "spaces.view-tabs", "spaces.space-menu", "spaces.overview-sidebar"];
+const hintIds = ["spaces.sidebar-switch", "spaces.view-tabs", "spaces.space-menu"];
 let css = "";
 let controller = "";
 let browser: Browser;
@@ -339,7 +339,6 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
       ? renderToString(() =>
           createComponent(OverviewFixture, {
             spaces: overviewSpaces,
-            sidebarHint: hint === "spaces.overview-sidebar",
             initialView: "mine",
             initialPinnedSpaceIds: ["Space1"],
             initialWork: overviewWork,
@@ -732,7 +731,7 @@ describe(`Spaces shared head in ${browserName}`, () => {
   for (const id of hintIds)
     for (const usePath of [false, true]) {
       test(`${id}: ${usePath ? "using the path" : "Got it"} persists across reload`, async () => {
-        const path = id === "spaces.overview-sidebar" ? "/app/spaces" : "/app/spaces/Space1";
+        const path = "/app/spaces/Space1";
         const page = await open(`${path}?view=list&hint=${id}`);
         try {
           const hint = page.locator(".k2b-moved-hint");
@@ -753,62 +752,6 @@ describe(`Spaces shared head in ${browserName}`, () => {
         }
       }, 30_000);
     }
-  /** Resolves with the handle's value once it passes `than` in the given direction. */
-  const resizedPast = (target: ReturnType<Page["locator"]>, direction: "above" | "below", than: number) =>
-    target.evaluate(
-      (handle, [way, limit]) =>
-        new Promise<number>((resolve, reject) => {
-          const started = performance.now();
-          const check = () => {
-            const now = Number(handle.getAttribute("aria-valuenow"));
-            if (way === "above" ? now > limit : now < limit) resolve(now);
-            else if (performance.now() - started > 5000)
-              reject(
-                new Error(
-                  `aria-valuenow stayed ${now}, focus on ${document.activeElement?.tagName}.${document.activeElement?.getAttribute("role")}`,
-                ),
-              );
-            else requestAnimationFrame(check);
-          };
-          check();
-        }),
-      [direction, than] as const,
-    );
-  test("overview sidebar resizes by pointer", async () => {
-    const page = await open("/app/spaces?view=mine");
-    try {
-      await capture(page, "overview-light-1440.png");
-      const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
-      const before = Number(await target.getAttribute("aria-valuenow"));
-      const box = await target.boundingBox();
-      if (!box) throw new Error("Missing overview sidebar resize handle");
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2);
-      await page.mouse.up();
-      expect(await resizedPast(target, "above", before)).toBeGreaterThan(before);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
-  for (const [key, direction] of [
-    ["ArrowRight", "above"],
-    ["ArrowLeft", "below"],
-  ] as const)
-    test(`overview sidebar resizes by ${key}`, async () => {
-      // One key per page: a second key right after the first is sometimes lost in WebKit under load (#1525).
-      const page = await open("/app/spaces?view=mine");
-      try {
-        const target = page.locator('[role="separator"][data-app-workspace-resize="sidebar"]');
-        const before = Number(await target.getAttribute("aria-valuenow"));
-        await target.focus();
-        await page.keyboard.press(key);
-        const after = await resizedPast(target, direction, before);
-        expect(direction === "above" ? after > before : after < before).toBe(true);
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
   test("every + opens one menu with the templates, moves nothing, and keeps the head link", async () => {
     const plusShots = join(tmpdir(), "spaces-plus-templates", browserName);
     mkdirSync(plusShots, { recursive: true });
@@ -881,14 +824,9 @@ describe(`Spaces shared head in ${browserName}`, () => {
   test("review screenshots of the white surface", async () => {
     for (const theme of ["light", "dark"] as const)
       for (const width of [1920, 1440, 1194, 834, 390])
-        for (const path of [
-          "/app/spaces/Space1?view=kanban",
-          "/app/spaces/Space1?view=list",
-          "/app/spaces/Space1?view=table",
-          "/app/spaces",
-        ]) {
+        for (const path of ["/app/spaces/Space1?view=kanban", "/app/spaces/Space1?view=list", "/app/spaces/Space1?view=table"]) {
           if (theme === "dark" && path !== "/app/spaces/Space1?view=kanban" && width !== 1440) continue;
-          const name = path === "/app/spaces" ? "overview" : new URL(path, server.url).searchParams.get("view");
+          const name = new URL(path, server.url).searchParams.get("view");
           const filename = `${name}-${theme}-${width}.png`;
           if (capturedShots.has(filename)) continue;
           const page = await open(`${path}${path.includes("?") ? "&" : "?"}theme=${theme}`, width);
@@ -898,6 +836,6 @@ describe(`Spaces shared head in ${browserName}`, () => {
             await page.context().close();
           }
         }
-    expect(capturedShots.size).toBe(28);
+    expect(capturedShots.size).toBe(22);
   }, 180_000);
 });

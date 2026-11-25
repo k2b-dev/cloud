@@ -15,6 +15,9 @@ const loadOverview = async () => {
   }
 };
 const SpacesOverview = isServer ? undefined : await loadOverview();
+/** The work column and the activity column of the v2 page. */
+const work = () => document.querySelector('[data-k2-part="Pane"]:not([data-side])');
+const activity = () => document.querySelector('[data-k2-part="Pane"][data-side]');
 
 const snapshot = (view: OverviewView): OverviewWork => ({
   view,
@@ -86,8 +89,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
   try {
     await Bun.sleep(30);
     expect(requests).toHaveLength(0);
-    expect(dom.root.querySelector(".k2b-activity__avatar .ti-settings")).not.toBeNull();
-    expect(dom.root.querySelector(".k2b-activity__avatar [data-tint]")).toBeNull();
+    expect(activity()?.querySelector('[data-k2-part="Row"] [data-k2-part="Avatar"]')).toBeNull();
     await invalidateSpacesData(["detail"]);
     expect(requests).toHaveLength(0);
 
@@ -98,9 +100,9 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     await Bun.sleep(30);
     expect(requests.map(({ url }) => url.pathname).sort()).toEqual(["/api/spaces/overview/activity", "/api/spaces/overview/work"]);
     expect(covered).toBe(false);
-    expect(dom.root.querySelector(".spaces-overview-work-list")?.textContent).toContain("mine task");
-    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("Created “mine task” in Example");
-    expect(dom.root.textContent).not.toContain("Loading work");
+    expect(work()?.textContent).toContain("mine task");
+    expect(activity()?.textContent).toContain("Created “mine task” in Example");
+    expect(work()?.querySelector('[data-k2-part="Loading"]')).toBeNull();
     expect(dom.root.textContent).not.toContain("No activity yet");
 
     const workRequest = requests.find(({ url }) => url.pathname.endsWith("/overview/work"));
@@ -108,8 +110,8 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     workRequest?.resolve(Response.json(updatedWork));
     await Bun.sleep(30);
     expect(covered).toBe(false);
-    expect(dom.root.querySelector(".spaces-overview-work-list")?.textContent).toContain("Created task");
-    expect(Array.from(dom.root.querySelectorAll(".k2b-view-tabs__tab"), (tab) => tab.textContent?.trim())).toEqual([
+    expect(work()?.textContent).toContain("Created task");
+    expect(Array.from(dom.root.querySelectorAll('[data-k2-part="Tabs"] a'), (tab) => tab.textContent?.trim())).toEqual([
       "For me2",
       "Today2",
       "Upcoming2",
@@ -124,7 +126,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
       );
     await refresh;
     expect(covered).toBe(true);
-    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("Created “Created task” in Example");
+    expect(activity()?.textContent).toContain("Created “Created task” in Example");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
@@ -168,7 +170,7 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
   const settle = () => Bun.sleep(30);
   const labels: Record<string, string> = { today: "Today", upcoming: "Upcoming" };
   const select = (view: string) => {
-    const option = Array.from(dom.root.querySelectorAll<HTMLAnchorElement>(".k2b-view-tabs__tab")).find((link) =>
+    const option = Array.from(dom.root.querySelectorAll<HTMLAnchorElement>('[data-k2-part="Tabs"] a')).find((link) =>
       link.textContent?.startsWith(labels[view]!),
     );
     expect(option).toBeDefined();
@@ -182,7 +184,7 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
     await settle();
     expect(dom.window.location.search).toBe("?view=today");
     expect(dom.root.textContent).not.toContain("mine task");
-    expect(dom.root.textContent).toContain("Loading work");
+    expect(work()?.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
     select("upcoming");
     await settle();
     expect(requests[0]!.signal?.aborted).toBe(true);
@@ -255,23 +257,27 @@ test.skipIf(isServer)("a failed older page keeps the rows and says so where Load
     dom.root,
   );
   try {
-    const edge = () => dom.root.querySelector<HTMLElement>(".k2b-load-more")!;
-    // The edge waits for the reader instead of loading by itself.
+    const button = (label: string) =>
+      Array.from(activity()?.querySelectorAll("button") ?? []).find((entry) => entry.textContent?.trim() === label);
+    const failed = () => activity()?.querySelectorAll('[data-k2-part="Failed"]') ?? [];
+    // The rows wait for the reader instead of loading by themselves.
     await Bun.sleep(30);
     expect(pages).toEqual([]);
-    edge().querySelector("button")!.click();
+    button("Load more")!.click();
     await Bun.sleep(30);
     expect(pages).toEqual(["next"]);
-    expect(edge().dataset.state).toBe("error");
-    expect(edge().textContent).toContain("Older activity is unavailable");
-    expect(dom.root.querySelector(".spaces-overview-activity-alert")).toBeNull();
-    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("newer task");
+    // The failure stands where "Load more" was, once; the loaded rows stay.
+    expect(failed()).toHaveLength(1);
+    expect(failed()[0]!.textContent).toContain("Older activity is unavailable");
+    expect(button("Load more")).toBeUndefined();
+    expect(activity()?.textContent).toContain("newer task");
 
-    edge().querySelector("button")!.click();
+    failed()[0]!.querySelector("button")!.click();
     await Bun.sleep(30);
     expect(pages).toEqual(["next", "next"]);
-    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("older task");
-    expect(edge().dataset.state).toBe("done");
+    expect(activity()?.textContent).toContain("older task");
+    expect(failed()).toHaveLength(0);
+    expect(button("Load more")).toBeUndefined();
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
