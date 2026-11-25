@@ -821,10 +821,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* the end gives way only after the start: it leaves the start at least a few letters, then is cut itself */
-.k2-ui .k2-cut > span + span {
+/* the start keeps a few letters (a start of four or fewer stays whole); only then the end gives way too */
+.k2-ui .k2-cut > span:first-child:not(:last-child) {
+  min-width: 4ch;
+}
+.k2-ui .k2-cut > span[data-whole] {
   flex: none;
-  max-width: calc(100% - 4ch);
+  min-width: auto;
+}
+.k2-ui .k2-cut > span + span {
+  flex-shrink: 0.001;
 }
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */

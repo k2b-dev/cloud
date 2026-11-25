@@ -102,9 +102,13 @@ export const cutTail = (text: string, keep: CutProps["keep"]): number => {
  */
 export const Cut = (props: CutProps) => {
   const split = () => props.text.length - cutTail(props.text, props.keep);
+  const head = () => props.text.slice(0, split());
   return (
     <span class="k2-cut" title={props.text}>
-      <span>{props.text.slice(0, split())}</span>
+      {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
+      <Show when={head()}>
+        <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
+      </Show>
       <Show when={split() < props.text.length}>
         <span>{props.text.slice(split())}</span>
       </Show>
