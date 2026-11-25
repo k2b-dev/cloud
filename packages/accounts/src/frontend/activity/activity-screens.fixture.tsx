@@ -44,7 +44,9 @@ export const AuditFixture = (props: { worst?: boolean; huge?: boolean }) => {
   const query = auditQuery(locale);
   const address = parseAuditAddress(query, new URLSearchParams(location.search));
   const outcome = address.state.filters.outcome;
-  const events = (props.huge ? worstEvents(100) : props.worst ? worstEvents() : AUDIT_EVENTS).filter((event) => !outcome || event.outcome === outcome);
+  const events = (props.huge ? worstEvents(100) : props.worst ? worstEvents() : AUDIT_EVENTS).filter(
+    (event) => !outcome || event.outcome === outcome,
+  );
   return (
     <AuditScreen
       state={address.state}
@@ -101,14 +103,14 @@ export const NotificationFixture = (props: { status?: "draft" | "running" | "com
   const filter = address.state.filters.status;
   const source =
     props.worst || props.huge
-    ? Array.from({ length: props.huge ? 100 : 30 }, (_, index) =>
-        recipient(index, index % 4 === 0 ? "error" : "sent", index % 4 === 0 ? "failed" : "sent", {
-          displayName: `${LONG} ${index}`,
-          recipient: UNBROKEN,
-          error: `${UNBROKEN} ${LONG}`,
-        }),
-      )
-    : RECIPIENTS;
+      ? Array.from({ length: props.huge ? 100 : 30 }, (_, index) =>
+          recipient(index, index % 4 === 0 ? "error" : "sent", index % 4 === 0 ? "failed" : "sent", {
+            displayName: `${LONG} ${index}`,
+            recipient: UNBROKEN,
+            error: `${UNBROKEN} ${LONG}`,
+          }),
+        )
+      : RECIPIENTS;
   const recipients = source.filter((entry) => !filter || entry.status === filter);
   const current = batch(0, { status, subject: props.worst ? LONG : "Wartungsfenster heute Nacht", errorCount: status === "draft" ? 0 : 2 });
   return (
@@ -157,7 +159,7 @@ export const NotificationFixture = (props: { status?: "draft" | "running" | "com
                       bad: entry.outgoingMailStatus !== "queued",
                     }
                   : null,
-              attempts: number(entry.attemptCount),
+              attempts: entry.attemptCount,
               sent: entry.sentAt ? when(entry.sentAt) : "–",
               error: entry.error,
             }))

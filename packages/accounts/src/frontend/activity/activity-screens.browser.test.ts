@@ -183,8 +183,8 @@ describe("the activity page on v2", () => {
       for (const view of [wide, narrow, phone]) {
         const { context, tab, errors } = await open(view, address, state);
         try {
-          await expectClean(tab);
           await shoot(tab, `${name}-light-${view.name}`);
+          await expectClean(tab);
           expect(errors).toEqual([]);
         } finally {
           await context.close();
@@ -201,9 +201,13 @@ describe("the activity page on v2", () => {
     ] as const) {
       const { context, tab, errors } = await open(wide, address, { huge: true });
       try {
-        await tab.locator("[data-k2-part=Table] tbody tr").first().waitFor({ state: "attached" }).catch(async () => {
-          throw new Error(`no rows: ${JSON.stringify(errors)} ${(await tab.locator("#root").textContent())?.slice(0, 400)}`);
-        });
+        await tab
+          .locator("[data-k2-part=Table] tbody tr")
+          .first()
+          .waitFor({ state: "attached" })
+          .catch(async () => {
+            throw new Error(`no rows: ${JSON.stringify(errors)} ${(await tab.locator("#root").textContent())?.slice(0, 400)}`);
+          });
         // the page was ready (its rows rendered) within 1.5 s of the navigation
         const ready = await tab.evaluate(() => performance.getEntriesByType("navigation")[0]?.duration ?? performance.now());
         expect(ready).toBeLessThan(1_500);
@@ -212,7 +216,10 @@ describe("the activity page on v2", () => {
         expect(elements).toBeLessThan(8_000);
         // the way to the other pages stands under the rows
         await tab.getByRole("link", { name: "Weiter" }).first().waitFor();
-        await shoot(tab, `huge-${address.includes("kind=") ? "notifications" : address.includes("/notifications/") ? "batch" : "audit"}-light-1440`);
+        await shoot(
+          tab,
+          `huge-${address.includes("kind=") ? "notifications" : address.includes("/notifications/") ? "batch" : "audit"}-light-1440`,
+        );
         expect(errors).toEqual([]);
       } finally {
         await context.close();
@@ -300,9 +307,22 @@ describe("the activity page on v2", () => {
     }
     const sent = await open(wide, `/app/accounts/activity/notifications/${BATCH_ID}`);
     try {
+      // the failed recipient's deeds: its delivery error, then sending it again
+      const name = RECIPIENTS[3]!.displayName;
+      await sent.tab.getByRole("button", { name: `Aktionen für ${name}` }).click();
+      await sent.tab.getByRole("menuitem", { name: "Zustellungsfehler" }).click();
+      const error = sent.tab.locator("[data-k2-part=Dialog]");
+      await error.waitFor().catch(async (failure) => {
+        await shoot(sent.tab, "debug-error-dialog");
+        throw failure;
+      });
+      expect(await error.textContent()).toContain("550 5.1.1 mailbox unavailable");
+      await shoot(sent.tab, "batch-error-light-1440");
+      await error.getByRole("button", { name: "Schließen" }).first().click();
+      await sent.tab.getByRole("button", { name: `Aktionen für ${name}` }).click();
       // a sent-again recipient shows the batch again from the server (here: the same page)
       const retry = sent.tab.waitForRequest((request) => request.url().includes("/retry"));
-      await sent.tab.getByRole("button", { name: "Erneut senden" }).first().click();
+      await sent.tab.getByRole("menuitem", { name: "Erneut senden" }).click();
       await retry;
       expect(sent.seen.retried).toEqual([`/api/accounts/notifications/batches/${BATCH_ID}/recipients/${RECIPIENTS[3]!.userId}/retry`]);
       expect(sent.errors).toEqual([]);

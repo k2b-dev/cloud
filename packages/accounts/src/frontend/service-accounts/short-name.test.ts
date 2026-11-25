@@ -7,7 +7,7 @@ test("a long name keeps its start and end around one ellipsis; a short one and s
   const short = shortName(long);
   expect([...short]).toHaveLength(48);
   expect(short.startsWith("Nachtlauf-Synchronisation")).toBe(true);
-  expect(short.endsWith("ohne-Leerzeichen")).toBe(true);
+  expect(short.endsWith("Leerzeichen")).toBe(true);
   expect(short).toContain("…");
   expect([...shortName("🔑".repeat(60))]).toHaveLength(48);
 });

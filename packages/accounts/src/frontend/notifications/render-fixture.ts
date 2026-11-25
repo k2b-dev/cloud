@@ -27,6 +27,8 @@ export const ADMIN = {
   managesGroupIds: [],
 } satisfies User;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export const BATCH_ID = "22222222-2222-4222-8222-222222222222";
 
 const SUBJECTS = [
@@ -51,8 +53,8 @@ export const batch = (index: number, patch: Partial<NotificationBatch> = {}): No
     status,
     createdBy: ADMIN.id,
     finalizedBy: status === "draft" ? null : ADMIN.id,
-    createdAt: `2026-11-${String(20 - index).padStart(2, "0")}T07:00:00.000Z`,
-    finalizedAt: status === "draft" ? null : `2026-11-${String(20 - index).padStart(2, "0")}T07:05:00.000Z`,
+    createdAt: new Date(Date.UTC(2026, 10, 20, 7) - index * DAY_MS).toISOString(),
+    finalizedAt: status === "draft" ? null : new Date(Date.UTC(2026, 10, 20, 7, 5) - index * DAY_MS).toISOString(),
     startedAt: null,
     completedAt: null,
     targetCount: 12,

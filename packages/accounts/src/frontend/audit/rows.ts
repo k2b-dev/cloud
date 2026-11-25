@@ -42,7 +42,11 @@ export const auditRows = (
   return events.map((event) => ({
     id: String(event.id),
     time: dates.formatDateTime(event.createdAt, { locale, timeZone }),
-    actor: { label: actorLabel(event.actor), userId: event.actor.userId, provider: event.actor.provider },
+    actor: {
+      label: actorLabel(event.actor),
+      userId: event.actor.userId,
+      provider: event.actor.provider === "ipa" ? "FreeIPA" : event.actor.provider === "local" ? t.local : event.actor.provider,
+    },
     action: { label: actionLabel(event.action, t), code: event.action },
     target: {
       label: targetLabel(event.target),

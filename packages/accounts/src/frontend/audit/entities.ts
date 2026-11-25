@@ -55,3 +55,30 @@ export const entityLookup = (kinds: readonly EntityKind[]) => ({
     return values.map((value) => named.find((item) => item.value === value) ?? { value, label: value });
   },
 });
+
+/**
+ * One lookup over users and groups, such as the audience of a notification: a value is `user:<id>` or `group:<id>`,
+ * so one list can hold both kinds and the chosen ones split back into user and group IDs.
+ */
+export const audienceLookup = () => {
+  const users = entityLookup(["user"]);
+  const groups = entityLookup(["group"]);
+  const tag = (kind: "user" | "group", items: readonly LookupItem[]) => items.map((item) => ({ ...item, value: `${kind}:${item.value}` }));
+  const ids = (kind: "user" | "group", values: readonly string[]) =>
+    values.filter((value) => value.startsWith(`${kind}:`)).map((value) => value.slice(kind.length + 1));
+  return {
+    load: async (text: string, context: { signal: AbortSignal; limit: number }): Promise<LookupLoadResult> => {
+      const half = { ...context, limit: Math.max(1, Math.ceil(context.limit / 2)) };
+      const [people, teams] = await Promise.all([users.load(text, half), groups.load(text, half)]);
+      return { items: [...tag("user", people.items), ...tag("group", teams.items)] };
+    },
+    resolve: async (values: readonly string[], context: { signal: AbortSignal }): Promise<readonly LookupItem[]> => {
+      const [people, teams] = await Promise.all([
+        users.resolve(ids("user", values), context),
+        groups.resolve(ids("group", values), context),
+      ]);
+      return [...tag("user", people), ...tag("group", teams)];
+    },
+    ids,
+  };
+};

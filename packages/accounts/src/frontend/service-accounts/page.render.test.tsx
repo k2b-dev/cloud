@@ -121,7 +121,7 @@ test("the address filters the keys on the server, and the first picture comes wi
       expect(html).toContain(locale === "de" ? "32 automatische App-Schlüssel sind ausgeblendet." : "32 automatic app keys are hidden.");
       expect(html.replaceAll("&amp;", "&")).toContain('href="/app/accounts/api-keys?kind=agent&status=revoked&automatic=1&q=export"');
       // an agent's legacy key says what it is and how to replace it
-      expect(html).toContain(locale === "de" ? "Ersetzen" : "Replace");
+      expect(html).toContain(locale === "de" ? "Alt, begrenzt" : "Legacy, limited");
     }
     const shown = await app.request("/app/accounts/api-keys?automatic=1", { headers: { "Accept-Language": "en" } });
     expect(list.mock.calls.at(-1)?.[0]?.filter?.automatic).toBe("include");

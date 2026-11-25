@@ -136,6 +136,12 @@ export const useNewBatchForm = () => {
     previewing,
     previewFailed: () => Boolean(preview.error()),
     previewText,
+    /** The chosen users and groups as one list of `user:<id>` and `group:<id>`, for the audience lookup. */
+    audience: () => [...userIds().map((id) => `user:${id}`), ...groupIds().map((id) => `group:${id}`)],
+    setAudience: (values: readonly string[]) => {
+      setUserIds(values.filter((value) => value.startsWith("user:")).map((value) => value.slice(5)));
+      setGroupIds(values.filter((value) => value.startsWith("group:")).map((value) => value.slice(6)));
+    },
     refreshPreview: () => void preview.refresh(),
     create,
   };

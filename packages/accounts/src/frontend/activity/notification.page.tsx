@@ -172,7 +172,7 @@ export default ssr<AuthContext>(async (c) => {
                     bad: ["failed", "bounced", "cancelled"].includes(entry.outgoingMailStatus),
                   }
                 : null,
-            attempts: number(entry.attemptCount),
+            attempts: entry.attemptCount,
             sent: entry.sentAt ? dates.formatDateTime(entry.sentAt, { locale, timeZone }) : "–",
             error: entry.error,
           })) ?? null

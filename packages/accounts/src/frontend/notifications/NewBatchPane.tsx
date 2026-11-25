@@ -1,12 +1,11 @@
 import { Band, Bar, Button, Field, Input, Lookup, Notice, Pane, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import { entityLookup } from "../audit/entities";
+import { audienceLookup } from "../audit/entities";
 import { useAccountsMessages } from "../messages";
 import { useNotificationMessages } from "./messages";
 import { useNewBatchForm } from "./new-batch";
 
-const users = entityLookup(["user"]);
-const groups = entityLookup(["group"]);
+const audience = audienceLookup();
 
 /**
  * A new notification batch beside the list of batches: the message, who gets it, and the recipient preview, then
@@ -18,7 +17,7 @@ export default function NewBatchPane(props: { closeHref: string }) {
   const words = useNotificationMessages();
   const form = useNewBatchForm();
   const required = (value: string) => (form.tried() && !value.trim() ? words().required : undefined);
-  const audience = () => (form.tried() && !form.hasAudience() ? words().audienceRequired : undefined);
+  const audienceError = () => (form.tried() && !form.hasAudience() ? words().audienceRequired : undefined);
   return (
     <Pane
       detail
@@ -48,23 +47,14 @@ export default function NewBatchPane(props: { closeHref: string }) {
         </Field>
       </Band>
       <Band>
-        <Field name="users" label={t().selectedUsers} hint={t().selectedUsersDescription} error={audience()}>
+        {/* one search over users and groups, as the v1 dialog searched them; members of chosen groups are included */}
+        <Field name="audience" label={t().audience} hint={words().audienceHint} error={audienceError()}>
           <Lookup
-            label={t().users}
-            value={form.userIds()}
-            onChange={form.setUserIds}
-            load={users.load}
-            resolve={users.resolve}
-            minChars={2}
-          />
-        </Field>
-        <Field name="groups" label={t().selectedGroups} hint={t().selectedGroupsDescription}>
-          <Lookup
-            label={t().groups}
-            value={form.groupIds()}
-            onChange={form.setGroupIds}
-            load={groups.load}
-            resolve={groups.resolve}
+            label={t().recipients}
+            value={form.audience()}
+            onChange={form.setAudience}
+            load={audience.load}
+            resolve={audience.resolve}
             minChars={2}
           />
         </Field>

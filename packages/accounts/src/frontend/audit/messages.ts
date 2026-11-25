@@ -15,7 +15,6 @@ export const auditMessages = i18n.define({
       eventsOf: ({ count, total }: { count: string; total: string }) => `${count} of ${total} events`,
       noMatches: "No audit event matches these filters.",
       loadFailed: "The audit log could not be loaded.",
-      automatic: "Automatic app entries",
     },
     de: {
       last7d: "letzte 7 Tage",
@@ -26,7 +25,6 @@ export const auditMessages = i18n.define({
       eventsOf: ({ count, total }) => `${count} von ${total} Einträgen`,
       noMatches: "Kein Audit-Eintrag passt zu diesen Filtern.",
       loadFailed: "Das Audit-Protokoll konnte nicht geladen werden.",
-      automatic: "Automatische App-Einträge",
     },
   },
 });

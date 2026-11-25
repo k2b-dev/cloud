@@ -10,11 +10,9 @@ import {
   Facts,
   Failed,
   FilterBar,
-  Inline,
   Menu,
   Notice,
   Pane,
-  Popover,
   Prose,
   RecordHead,
   Row,
@@ -74,7 +72,7 @@ export type RecipientRow = {
   status: "pending" | "sending" | "sent" | "skipped" | "error";
   /** The mail's own state where it differs from the recipient's, such as a bounce. */
   mail: { label: string; bad: boolean } | null;
-  attempts: string;
+  attempts: number;
   sent: string;
   error: string | null;
 };
@@ -132,7 +130,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
   const [refreshing, setRefreshing] = createSignal(false);
   const [busy, setBusy] = createSignal<"finalize" | "retry" | "delete" | null>(null);
   const [preview, setPreview] = createSignal<Preview | null>(null);
-  const [retrying, setRetrying] = createSignal<string | null>(null);
+  const [errorOf, setErrorOf] = createSignal<RecipientRow | null>(null);
   const draft = () => props.batch.status === "draft";
   const number = (value: number) => formatNumber(value, { locale: locale() });
   const statusLabel = () => batchStatusLabel(t(), props.batch.status);
@@ -192,7 +190,6 @@ export default function NotificationScreen(props: NotificationScreenProps) {
     }
   };
   const retryRecipient = async (row: RecipientRow) => {
-    setRetrying(row.userId);
     try {
       const res = await apiClient.notifications.batches[":id"].recipients[":userId"].retry.$post({
         param: { id: props.batch.id, userId: row.userId },
@@ -202,8 +199,6 @@ export default function NotificationScreen(props: NotificationScreenProps) {
       void showChanges();
     } catch (error) {
       fail(error);
-    } finally {
-      setRetrying(null);
     }
   };
 
@@ -314,7 +309,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                     marks: recipientChip(row.status, recipientStatusLabel(t(), row.status)),
                   })}
                   columns={[
-                    { title: t().user, width: { min: 160, default: 200 }, cell: (row) => ({ lines: [row.name, row.uid] }) },
+                    { title: t().user, width: { min: 160, default: 190 }, cell: (row) => ({ lines: [row.name, row.uid] }) },
                     {
                       title: t().email,
                       width: { min: 180, default: 240 },
@@ -331,46 +326,25 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                           : chip;
                       },
                     },
-                    { title: t().attempts, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.attempts, drop: true },
-                    { title: t().sent, width: { min: 130, default: 150 }, cell: (row) => row.sent, drop: true },
+                    {
+                      title: t().sent,
+                      width: { min: 150, default: 160 },
+                      cell: (row) =>
+                        row.attempts > 1 ? { lines: [row.sent, words().attempts({ count: number(row.attempts) })] } : row.sent,
+                      drop: true,
+                    },
                     {
                       title: "",
+                      // a failed recipient's deeds: read the delivery error, send it again
                       cell: (row) => (
                         <Show when={row.status === "error"}>
-                          <Inline>
-                            <Popover
-                              variant="text"
-                              icon="alert-circle"
-                              label={t().deliveryError}
-                              title={t().deliveryError}
-                              content={
-                                <>
-                                  <Text type="meta">{t().deliveryErrorDescription}</Text>
-                                  <Facts
-                                    items={[
-                                      {
-                                        label: t().error,
-                                        value: row.error || t().noDeliveryError,
-                                        mono: Boolean(row.error),
-                                        copy: row.error ?? undefined,
-                                      },
-                                    ]}
-                                  />
-                                </>
-                              }
-                            >
-                              {t().error}
-                            </Popover>
-                            <Button
-                              variant="text"
-                              icon="refresh"
-                              busy={retrying() === row.userId}
-                              disabled={retrying() !== null && retrying() !== row.userId}
-                              onClick={() => void retryRecipient(row)}
-                            >
-                              {t().sendAgain}
-                            </Button>
-                          </Inline>
+                          <Menu
+                            label={words().recipientActions({ name: row.name })}
+                            items={[
+                              { label: t().deliveryError, icon: "alert-circle", onClick: () => setErrorOf(row) },
+                              { label: t().sendAgain, icon: "refresh", onClick: () => retryRecipient(row) },
+                            ]}
+                          />
                         </Show>
                       ),
                       drop: true,
@@ -444,6 +418,27 @@ export default function NotificationScreen(props: NotificationScreenProps) {
           </Section>
         </Pane>
       </Pane.Split>
+      <Dialog
+        title={t().deliveryError}
+        open={errorOf() !== null}
+        onOpenChange={(open) => {
+          if (!open) setErrorOf(null);
+        }}
+        foot={<Button onClick={() => setErrorOf(null)}>{t().close}</Button>}
+      >
+        <Text>{t().deliveryErrorDescription}</Text>
+        <Facts
+          items={[
+            { label: t().user, value: errorOf()?.name ?? "" },
+            {
+              label: t().error,
+              value: errorOf()?.error || t().noDeliveryError,
+              mono: Boolean(errorOf()?.error),
+              copy: errorOf()?.error ?? undefined,
+            },
+          ]}
+        />
+      </Dialog>
       <Show when={preview()}>
         {(current) => (
           <FinalizeDialog

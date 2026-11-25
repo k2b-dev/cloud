@@ -84,7 +84,14 @@ const page = (state: State) =>
 
 type Seen = { pages: string[]; denied: { id: string; body: unknown }[] };
 
-const open = async (view: View, address: string, state: State = {}, deny: { status: number; message?: string } = { status: 200 }) => {
+const open = async (
+  view: View,
+  address: string,
+  state: State = {},
+  deny: { status: number; message?: string } = { status: 200 },
+  // a script that runs in the page before its own, such as a watch for the moment the rows stand
+  init?: { script: (rows: number) => void; arg: number },
+) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -94,6 +101,7 @@ const open = async (view: View, address: string, state: State = {}, deny: { stat
     colorScheme: "light",
   });
   const tab = await context.newPage();
+  if (init) await tab.addInitScript(init.script, init.arg);
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
   const seen: Seen = { pages: [], denied: [] };
@@ -201,14 +209,22 @@ describe("the request list on v2", () => {
 
   /** Opens the list with `count` rows and returns how long the page took from navigation to its last row, and its nodes. */
   const measure = async (state: State, count: number, clean = true) => {
-    const { context, tab, errors } = await open(wide, "/app/accounts/requests", state);
+    // marks the moment the last row stands, measured from the start of the navigation (the browser's own start left out)
+    const watch = (rows: number) => {
+      const observer = new MutationObserver(() => {
+        if (document.querySelectorAll("[data-k2-part=Table] tbody tr").length < rows) return;
+        performance.mark("rows-ready");
+        observer.disconnect();
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    };
+    const { context, tab, errors } = await open(wide, "/app/accounts/requests", state, undefined, { script: watch, arg: count });
     try {
       await tab
         .locator("[data-k2-part=Table] tbody tr")
         .nth(count - 1)
         .waitFor({ state: "attached" });
-      // from the start of the navigation to the last row, the browser's own start left out
-      const ready = await tab.evaluate(() => performance.now());
+      const ready = await tab.evaluate(() => performance.getEntriesByName("rows-ready")[0]?.startTime ?? performance.now());
       const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
       await tab.mouse.wheel(0, 20_000);
       if (clean) await expectClean(tab);

@@ -80,7 +80,7 @@ export default function RequestsScreen(props: RequestsScreenProps) {
       <Pane
         label={t().requests}
         scrollKey="accounts-requests"
-        status={<StatusRow lead={t().requestCount({ count: props.total, status: props.status === "all" ? undefined : props.status })} />}
+        status={<StatusRow lead={r().lead({ count: props.total, status: props.status })} />}
       >
         {/* k2b-ui gap: virtualized list (lane MW). Until it lands the page bounds the rows to 100 per page. */}
         <Table
@@ -91,7 +91,8 @@ export default function RequestsScreen(props: RequestsScreenProps) {
           // k2b-ui gap: a Table opens every row or none; only pending requests have a page to open (the new-user form
           // with the request). In the pending view every row opens it, so the phone keeps "create" and "deny" there.
           open={props.status === "pending" && props.freeIpaEnabled ? (request) => ({ href: requestHref(request.id) }) : undefined}
-          empty={{ icon: "user-plus", text: t().noRequests }}
+          empty={{ icon: "user-plus", text: props.status === "pending" ? r().emptyPending : t().noRequests }}
+          // k2b-ui gap: on the phone an address without a break point runs a few signs past the edge of the second line.
           phone={(request) => ({
             lines: [request.name, `${request.email} · ${request.requested}`],
             marks: <Chip status={statusTone[request.status]}>{statusLabel(request.status)}</Chip>,

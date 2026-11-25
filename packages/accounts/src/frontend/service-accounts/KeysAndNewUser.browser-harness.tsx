@@ -30,6 +30,7 @@ type State =
   | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
+document.documentElement.dataset.start = String(performance.now());
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const state = JSON.parse(document.documentElement.dataset.state ?? "{}") as State;

@@ -157,7 +157,6 @@ export default function AuditScreen(props: AuditScreenProps) {
           <Notice
             tone="note"
             icon="robot"
-            title={words().automatic}
             actions={[{ label: props.automatic.shown ? t().hideAutomatic : t().showAutomatic, href: props.automatic.href }]}
           >
             {props.automatic.shown ? t().automaticAppAuditShown : t().automaticAppAuditHidden({ count: props.automatic.hidden })}
@@ -181,12 +180,13 @@ export default function AuditScreen(props: AuditScreenProps) {
                   : { icon: "clipboard-list", text: t().noAuditEvents }
               }
               phone={(row) => ({
-                lines: [row.action.label, `${row.actor.label} → ${row.target.label}`],
+                // k2b-ui gap: a phone row's second line wraps and lets an unbroken word run past the edge; it stays one short name
+                lines: [row.action.label, row.actor.label],
                 time: row.time,
                 marks: outcome(row),
               })}
               columns={[
-                { title: t().time, width: { min: 130, default: 150 }, cell: (row) => row.time },
+                { title: t().time, width: { min: 160, default: 170 }, cell: (row) => row.time },
                 {
                   title: t().actor,
                   width: { min: 150, default: 190 },

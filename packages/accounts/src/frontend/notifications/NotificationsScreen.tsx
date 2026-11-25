@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, FilterBar, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, type Column, Failed, FilterBar, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { BATCH_PATH, kindHref } from "../activity/kind";
@@ -82,14 +82,17 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
       head={
         <Bar
           start={<Text type="body">{activity().activity}</Text>}
+          // while the form is open, it stands for the deed; on the phone it is the page and keeps its own buttons
           end={
-            <Button variant="primary" icon="plus" href={newHref()}>
-              {t().newNotification}
-            </Button>
+            props.creating ? undefined : (
+              <Button variant="primary" icon="plus" href={newHref()}>
+                {t().newNotification}
+              </Button>
+            )
           }
         />
       }
-      primary={{ label: t().newNotification, icon: "plus", href: newHref() }}
+      primary={props.creating ? undefined : { label: t().newNotification, icon: "plus", href: newHref() }}
     >
       <Pane.Split>
         <Pane
@@ -141,24 +144,28 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                   lines: [row.subject, `${row.recipients} · ${row.created}`],
                   marks: batchChip(row.status, batchStatusLabel(t(), row.status)),
                 })}
-                columns={[
-                  { title: t().subject, width: { min: 200, default: 300 }, cell: (row) => ({ lines: [row.subject, row.note] }) },
-                  {
-                    title: t().status,
-                    width: { min: 140, default: 150 },
-                    cell: (row) => batchChip(row.status, batchStatusLabel(t(), row.status)),
-                  },
-                  { title: t().recipients, width: { min: 140, default: 170 }, cell: (row) => row.recipients, drop: true },
-                  { title: t().sent, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.sent, drop: true },
-                  {
-                    title: t().errors,
-                    width: { min: 80, default: 90 },
-                    align: "end",
-                    cell: (row) => (row.hasErrors ? <Text tone="bad">{row.errors}</Text> : row.errors),
-                    drop: true,
-                  },
-                  { title: t().created, cell: (row) => row.created, drop: true },
-                ]}
+                columns={(
+                  [
+                    { title: t().subject, width: { min: 200, default: 300 }, cell: (row) => ({ lines: [row.subject, row.note] }) },
+                    {
+                      title: t().status,
+                      width: { min: 140, default: 150 },
+                      cell: (row) => batchChip(row.status, batchStatusLabel(t(), row.status)),
+                    },
+                    { title: t().recipients, width: { min: 140, default: 170 }, cell: (row) => row.recipients, drop: true },
+                    { title: t().sent, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.sent, drop: true },
+                    {
+                      title: t().errors,
+                      width: { min: 80, default: 90 },
+                      align: "end",
+                      cell: (row) => (row.hasErrors ? <Text tone="bad">{row.errors}</Text> : row.errors),
+                      drop: true,
+                    },
+                    { title: t().created, cell: (row) => row.created, drop: true },
+                  ] satisfies Column<BatchRow>[]
+                )
+                  // beside the open form the list keeps what tells the batches apart; the rest is a press away
+                  .filter((_, index) => !props.creating || index < 2)}
               />
             )}
           </Show>

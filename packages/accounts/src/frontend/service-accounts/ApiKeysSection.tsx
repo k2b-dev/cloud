@@ -63,8 +63,11 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
   const [creating, setCreating] = createSignal(false);
   const [opened, setOpened] = createSignal<AccountKey | null>(null);
   const [replacing, setReplacing] = createSignal<Replacing | null>(null);
+  // a first page the server could not read shows its failure in place; "Erneut versuchen" then asks the API
+  const [unread, setUnread] = createSignal(props.first === null);
   const keys = query.create({
     source: () => page(),
+    enabled: () => !unread(),
     initial: props.first ? { source: 1, data: props.first } : undefined,
     load: async (number, { abortSignal }) => {
       const owner = props.account;
@@ -144,7 +147,18 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
             {t().legacyLimitedKeyHint}
           </Notice>
         </Show>
-        <Show when={!keys.error()} fallback={<Failed text={words().keysFailed} onRetry={() => keys.refresh()} />}>
+        <Show
+          when={!keys.error() && !unread()}
+          fallback={
+            <Failed
+              text={words().keysFailed}
+              onRetry={() => {
+                if (unread()) setUnread(false);
+                else void keys.refresh();
+              }}
+            />
+          }
+        >
           <Show when={current()} fallback={<Loading rows={5} lines={2} />}>
             {(shown) => (
               <Show
