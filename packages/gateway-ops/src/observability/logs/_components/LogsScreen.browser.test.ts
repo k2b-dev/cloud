@@ -199,12 +199,13 @@ describe("the log list on v2", () => {
       await editor.waitFor();
       await settled(tab);
       // seen once: the editor's head names the field; the field's own label is there for assistive technology only
-      const seen = await editor.evaluate((root) =>
-        [...root.querySelectorAll("*")].filter((node) => {
-          const own = [...node.childNodes].some((child) => child.nodeType === 3 && child.textContent?.trim() === "Request ID");
-          const box = node.getBoundingClientRect();
-          return own && box.width > 2 && box.height > 2;
-        }).length,
+      const seen = await editor.evaluate(
+        (root) =>
+          [...root.querySelectorAll("*")].filter((node) => {
+            const own = [...node.childNodes].some((child) => child.nodeType === 3 && child.textContent?.trim() === "Request ID");
+            const box = node.getBoundingClientRect();
+            return own && box.width > 2 && box.height > 2;
+          }).length,
       );
       expect(seen).toBe(1);
       // the field keeps its name for assistive technology
