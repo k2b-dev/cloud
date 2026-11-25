@@ -129,6 +129,7 @@ test("the sort reads in words: “Sortieren nach” the fields, “Reihenfolge�
       "Niedrigster zuerst",
     ]);
     // one choice: the tick at the end of the chosen row, in both sections
+    await settled(page);
     expect(await tickPlaces(page, ".k2-menu .k2-mi")).toEqual(["end", "none", "none", "end"]);
   });
 });
@@ -296,6 +297,7 @@ test("LookupSelect multiple: each press ticks a box first and the list stays ope
     await page.getByRole("option", { name: /Haus Bergmann/ }).click();
     await page.getByRole("option", { name: /Stadtwerke Auental/ }).click();
     expect(await page.locator(".k2-lpop").isVisible()).toBe(true);
+    await settled(page);
     expect((await tickPlaces(page, ".k2-lpop .k2-opt")).slice(0, 2)).toEqual(["start", "start"]);
     await page.keyboard.press("Escape");
     expect(await people.textContent()).toBe("Haus Bergmann, Stadtwerke Auental");
