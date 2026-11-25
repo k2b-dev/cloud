@@ -15,7 +15,7 @@ import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
-import { RowOpen } from "./content";
+import { Cut, RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
@@ -652,7 +652,10 @@ export const Tiles = (props: TilesProps) => (
           <Icon name={tile.icon} />
           <span>
             <span class="k2-tile-title">
-              <RowOpen href={tile.href}>{tile.title}</RowOpen>
+              {/* a long name is cut in the middle, so its extension and version stay readable */}
+              <RowOpen href={tile.href}>
+                <Cut text={tile.title} keep="extension" />
+              </RowOpen>
             </span>
             <Show when={tile.meta}>
               <span class="k2-t-meta">{tile.meta}</span>
