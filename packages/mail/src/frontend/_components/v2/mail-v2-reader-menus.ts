@@ -1,8 +1,8 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { type DropdownAction, type DropdownItem, prompts, toast, useLocale } from "@k2b/ui";
-import type { MenuEntry } from "@k2b/ui/v2";
-import { createMemo, onCleanup } from "solid-js";
+import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
+import { createMemo, createSignal, onCleanup } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import { useMailCloudId } from "../mail-cloud-id";
 import { createMailConversationLinks } from "../mail-conversation-links";
@@ -11,6 +11,7 @@ import { createMailConversationState } from "../mail-conversation-state";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
 import { createMailSummaryEdit } from "../mail-summary-edit";
+import { mailV2LaterTimes } from "./mail-v2-later";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
@@ -86,33 +87,55 @@ export function createMailV2ReaderMenus(props: {
   const workStatus = () => c().selectedWorkStatus();
   const collaboration = () => (c().hasSelection() ? data().collaborationState : null);
 
+  // The offered times follow the clock: a menu opened after 17:00 no longer offers today.
+  const [now, setNow] = createSignal(Date.now());
+  if (typeof window !== "undefined") {
+    const tick = window.setInterval(() => setNow(Date.now()), 60_000);
+    onCleanup(() => window.clearInterval(tick));
+  }
+  /**
+   * A submenu of times for "Später anzeigen" and "Erinnere mich": the offered times, then any date and time.
+   * k2b-ui gap: "Datum und Uhrzeit …" opens v1's form until the v2 date picker can stand in a submenu.
+   */
+  const timeItems = (choose: (at: string) => void, pick: () => void): MenuEntry[] => [
+    ...mailV2LaterTimes(props.dateConfig, v2Text(), now()).map(
+      (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), onClick: () => choose(time.at) }),
+    ),
+    "separator",
+    { label: v2Text().laterPick, onClick: pick },
+  ];
+  const showLaterItem = (disabled: boolean): MenuItem => ({
+    label: v2Text().showLater,
+    icon: "clock",
+    ...(disabled ? { disabled } : {}),
+    items: timeItems(
+      (at) => conversationState.snooze(at),
+      () => void showLater(),
+    ),
+  });
+
   // "Later" as in v1's reader: the conversation comes back at a time for everyone; the reminder reaches only you.
-  const laterItems = (): DropdownItem[] => {
-    const until = snoozedUntil() && Date.parse(snoozedUntil()!) > Date.now() ? snoozedUntil() : null;
+  const laterItems = (): MenuEntry[] => {
+    const until = snoozedUntil() && Date.parse(snoozedUntil()!) > now() ? snoozedUntil() : null;
     return [
       ...(c().canWrite() && collaboration()
         ? [
-            {
-              items: [
-                { label: readerText().showLater, icon: "ti ti-clock", disabled: workStatus() === "done", action: () => void showLater() },
-                ...(until ? [{ label: readerText().showNow, icon: "ti ti-clock-off", action: () => conversationState.snooze(null) }] : []),
-              ],
-            },
+            showLaterItem(workStatus() === "done"),
+            ...(until ? [{ label: readerText().showNow, icon: "clock-off", onClick: () => conversationState.snooze(null) }] : []),
+            "separator" as const,
           ]
         : []),
       {
-        sectionLabel: readerText().reminderOnlyForYou,
-        items: [
-          {
-            label: conversationState.reminderDueAt() ? readerText().changeReminder : readerText().remindMe,
-            icon: "ti ti-bell",
-            action: () => void remindMe(),
-          },
-          ...(conversationState.reminderDueAt()
-            ? [{ label: readerText().removeReminder, icon: "ti ti-bell-off", action: () => conversationState.setReminder(null) }]
-            : []),
-        ],
+        label: conversationState.reminderDueAt() ? v2Text().changeReminder : v2Text().remindMe,
+        icon: "bell",
+        items: timeItems(
+          (at) => conversationState.setReminder(at),
+          () => void remindMe(),
+        ),
       },
+      ...(conversationState.reminderDueAt()
+        ? [{ label: readerText().removeReminder, icon: "bell-off", onClick: () => conversationState.setReminder(null) }]
+        : []),
     ];
   };
 
@@ -289,8 +312,14 @@ export function createMailV2ReaderMenus(props: {
   };
 
   return {
-    later: (): MenuEntry[] => mailV2MenuEntries(laterItems()),
-    more: (): MenuEntry[] => mailV2MenuEntries(moreItems()),
+    later: laterItems,
+    // On the phone "…" also holds "Später anzeigen", with the same times as the head's "Später".
+    more: (): MenuEntry[] =>
+      mailV2MenuEntries(moreItems()).map((entry) =>
+        entry !== "separator" && "label" in entry && entry.label === readerText().showLater
+          ? showLaterItem(Boolean(entry.disabled))
+          : entry,
+      ),
     /** What other apps linked to the open conversation, for the head's "n verknüpft". */
     linked: () => links.items(),
     /** Writing the open conversation's summary, also from the summary's own "Bearbeiten". */

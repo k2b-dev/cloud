@@ -202,7 +202,7 @@ describe("Mail on the v2 pilot", () => {
     try {
       const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
       await head.getByRole("button", { name: "Später" }).click();
-      await page.getByRole("menuitem", { name: "Erinnere mich …" }).waitFor();
+      await page.getByRole("menuitem", { name: "Erinnere mich", exact: true }).waitFor();
       await page.keyboard.press("Escape");
       await head.getByRole("button", { name: "Weitere Aktionen" }).click();
       await page.getByRole("menuitem", { name: /^Als (un)?gelesen markieren$/ }).waitFor();
