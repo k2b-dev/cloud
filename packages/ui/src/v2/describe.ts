@@ -25,6 +25,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Back",
     "Bar",
     "StatusRow",
+    "FilterBar",
     "Nav",
     "Band",
     "Cells",
@@ -229,6 +230,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         // the way back of a detail on the phone: its words, and whether it leads by its address
         const button = element.querySelector("[data-k2-part='Button']");
         return `Back ${quote(button?.getAttribute("aria-label") ?? button?.textContent)}${button?.tagName === "A" ? " link" : ""}`;
+      }
+      case "FilterBar": {
+        // the statements as they read, whether the state differs from its view, and whether views can be saved
+        const statements = [...element.querySelectorAll(".k2-fbar-flow [data-k2-part='Statement'] > .k2-stmt-b")].map((words) =>
+          quote(words.textContent, 50),
+        );
+        const reset = element.querySelector(".k2-fbar-reset") ? " · reset" : "";
+        const views = element.querySelector(".k2-fbar-end") ? " | view menu" : "";
+        return `FilterBar: ${statements.join(" and ") || "no filters"}${reset}${views}`;
       }
       case "Bar":
       case "StatusRow": {
