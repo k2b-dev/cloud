@@ -688,11 +688,28 @@ export default defineCliCommands({
         search: flag.string({ aliases: ["q"], description: "Search uid, display name, name, or email" }),
         provider: flag.enum(PROVIDERS),
         profile: flag.enum(PROFILES),
+        role: flag.string({ description: "Roles, comma-separated: admin, member, guest" }),
+        group: flag.string({ description: "Direct members of these groups, comma-separated group IDs" }),
+        status: flag.string({ description: "States, comma-separated: active, invited (never signed in), expired" }),
+        login: flag.string({ description: "Last sign-in: last-7d, last-30d, older-90d, never, or YYYY-MM-DD..YYYY-MM-DD" }),
+        passkey: flag.enum(["yes", "no"] as const, { description: "Whether the account has a passkey" }),
+        sort: flag.string({ description: "name.asc (default), name.desc, login.desc, or login.asc" }),
       },
       async run({ ctx, flags }) {
         const response = await apiGet<UsersResponse>(
           ctx,
-          `/users${queryString({ ...pageQuery(flags), search: flags.search, provider: flags.provider, profile: flags.profile })}`,
+          `/users${queryString({
+            ...pageQuery(flags),
+            search: flags.search,
+            provider: flags.provider,
+            profile: flags.profile,
+            role: flags.role,
+            "member-of": flags.group,
+            status: flags.status,
+            login: flags.login,
+            passkey: flags.passkey,
+            sort: flags.sort,
+          })}`,
         );
         printJsonOrTable(ctx, response, userRows(response.users), [
           { key: "uid" },
