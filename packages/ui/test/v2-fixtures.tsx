@@ -583,4 +583,5 @@ export const fixtures = {
   // a picture, heads that sort, busy and disabled, and a side column under the table on the phone
   access: () => <AccessScreen sort={{ column: 0, direction: "ascending" }} />,
   accessBusy: () => <AccessScreen sort={{ column: 1, direction: "descending" }} busy />,
+  accessGrid: () => <AccessScreen sort={{ column: 0, direction: "ascending" }} grid />,
 } as const;

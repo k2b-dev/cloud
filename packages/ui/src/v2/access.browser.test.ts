@@ -150,6 +150,18 @@ test("a busy button keeps its width, its name and the focus, and takes no second
   });
 });
 
+test("Enter in a field does not send a form whose submit button is busy; it sends one whose button is not", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("textbox", { name: "Name beim Speichern" }).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "Name", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await settled(page);
+    const { sentBusy, sentIdle } = await counts(page);
+    expect({ sentBusy, sentIdle }).toEqual({ sentBusy: 0, sentIdle: 1 });
+  });
+});
+
 test("disabled fields, options and the deed of a notice look off and take no input", async () => {
   await withPage(async (page) => {
     const found = await page.evaluate(() => {
@@ -163,6 +175,11 @@ test("disabled fields, options and the deed of a notice look off and take no inp
         options: [...document.querySelectorAll('[data-k2-part="Choice"] > .k2-choice')].map((option) => getComputedStyle(option).opacity),
         check: [check.disabled, getComputedStyle(check.closest(".k2-choice")!).opacity],
         notice: document.querySelector<HTMLButtonElement>(".k2-notice .k2-btn")!.disabled,
+        // the way at the end of a section: an anchor without an address
+        more: (() => {
+          const link = document.querySelector(".k2-sec-link")!;
+          return [link.localName, link.getAttribute("href"), link.getAttribute("aria-disabled"), getComputedStyle(link).opacity];
+        })(),
       };
     });
     expect(found).toEqual({
@@ -172,6 +189,7 @@ test("disabled fields, options and the deed of a notice look off and take no inp
       options: ["0.5", "0.5"],
       check: [true, "0.5"],
       notice: true,
+      more: ["a", null, "true", "0.5"],
     });
     await page.locator(".k2-notice .k2-btn").click({ force: true });
     await page.locator('[data-k2-part="Choice"] .k2-choice').last().click({ force: true });

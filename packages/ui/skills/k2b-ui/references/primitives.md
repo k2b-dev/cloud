@@ -164,7 +164,9 @@ numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, grip in the head), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
-`{ onSort }` for a deed). The last column takes the rest. Chips,
+`{ onSort }` for a deed). The phone rows have no heads: a sort given by
+`href` stays in the address there; offer another order on the phone in the
+page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 
@@ -189,7 +191,9 @@ no rows and nothing loading, the empty state stands in place of the table.
 ### Facts
 
 `items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
-per row; the label column is as wide as the longest label (80–160 px).
+per row; the label column is as wide as the longest label of that list
+(80–160 px), so two `Facts` lists may start their values at different
+edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one

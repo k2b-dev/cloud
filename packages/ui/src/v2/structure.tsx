@@ -1,6 +1,7 @@
 import { For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Button } from "./button";
+import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import type { Action, TwoActions } from "./types";
 
@@ -72,13 +73,19 @@ export const Section = (props: SectionProps) => {
       {props.children}
       <Show when={props.more}>
         {(more) => (
-          // One link: a quiet text button at the end of a section; a row with its summary in a side column.
+          // One link: a quiet text button at the end of a section; a row with its summary in a side column. A disabled
+          // link is an anchor without an address, as in `Button`.
           <Dynamic
-            component={more().href !== undefined ? "a" : "button"}
+            component={more().disabled && more().href !== undefined ? "a" : linkOr(more().href, "button")}
             type={more().href !== undefined ? undefined : "button"}
             class="k2-sec-link"
-            href={more().href}
-            onClick={() => more().onClick?.()}
+            href={more().disabled ? undefined : more().href}
+            onNavigate={more().href !== undefined && !more().disabled ? more().onNavigate : undefined}
+            disabled={more().href === undefined ? more().disabled : undefined}
+            aria-disabled={more().href !== undefined && more().disabled ? "true" : undefined}
+            onClick={() => {
+              if (!more().disabled) more().onClick?.();
+            }}
           >
             <b>{more().label}</b>
             <Show when={more().meta}>
@@ -146,7 +153,17 @@ export const Group = (props: GroupProps) => {
           <span class="k2-gh-end">
             {state()}
             <Show when={props.menu}>
-              {(menu) => <Button variant="ghost" icon={menu().icon ?? "dots"} label={menu().label} onClick={() => menu().onClick?.()} />}
+              {(menu) => (
+                <Button
+                  variant="ghost"
+                  icon={menu().icon ?? "dots"}
+                  label={menu().label}
+                  href={menu().href}
+                  onNavigate={menu().onNavigate}
+                  onClick={() => menu().onClick?.()}
+                  disabled={menu().disabled}
+                />
+              )}
             </Show>
             <HeadActions actions={props.actions} />
             <Show when={props.folded}>
