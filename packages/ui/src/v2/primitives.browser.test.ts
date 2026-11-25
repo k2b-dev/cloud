@@ -299,7 +299,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             const bar = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar')!;
             const title = bar.querySelector<HTMLElement>(".k2-bar-start > .k2-text")!;
             // a subject longer than one line of a phone in every engine's font
-            title.textContent = "Angebot Eichenplatten – Liefertermin und Kantenbearbeitung";
+            title.textContent = "Angebot Eichenplatten – Liefertermin KW 49";
             const more = bar.querySelector('[aria-label="Weitere Aktionen"]')!.getBoundingClientRect();
             const box = title.getBoundingClientRect();
             return {
