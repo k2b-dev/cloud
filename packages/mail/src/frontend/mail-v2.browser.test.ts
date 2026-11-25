@@ -218,7 +218,7 @@ describe("Mail on the v2 pilot", () => {
       await page.keyboard.press("Escape");
       // The head's "…": the open mailbox's rare deeds, led by pinning and hiding it (v1's mailbox menu).
       await page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen" }).click();
-      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.getByRole("menuitem", { name: "Ausblenden", exact: true }).waitFor();
       await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
       await page.keyboard.press("Escape");
       // The head's filter menu at the search field, v1's (F9).
@@ -370,8 +370,8 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Gelöschte Postfächer" }).waitFor();
       await page.keyboard.press("Escape");
       await nav.getByRole("button", { name: "Aktionen für Kontakt" }).click();
-      await page.getByRole("menuitem", { name: "Kontakt lösen" }).waitFor();
-      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.getByRole("menuitem", { name: "Nicht mehr anheften" }).waitFor();
+      await page.getByRole("menuitem", { name: "Ausblenden", exact: true }).waitFor();
       await page.keyboard.press("Escape");
       await page
         .locator('[data-k2-workspace] [data-k2-part="Tabs"]')
@@ -600,7 +600,7 @@ describe("Mail on the v2 pilot", () => {
           const composer = Array.from(document.querySelectorAll('[data-k2-part="Composer"]')).at(-1)!;
           const head = composer.querySelector(".k2-composer-head")!;
           const x = (element: Element | null | undefined) => (element ? Math.round(element.getBoundingClientRect().x * 10) / 10 : null);
-          const name = head.querySelector(".mail-recipient-pill") ?? head.querySelector(":scope > .k2-text:not(.k2-t-meta)");
+          const name = head.querySelector(".mail-recipient-pill") ?? head.querySelector(".k2-composer-to > .k2-text:not(.k2-t-meta)");
           const from = Array.from(head.querySelectorAll('[data-k2-part="Button"]')).find((button) =>
             button.textContent?.startsWith("von "),
           );
@@ -609,8 +609,8 @@ describe("Mail on the v2 pilot", () => {
             composer.querySelector('[data-k2-part="Composer"] .k2-composer-start, .k2-composer-start');
           const style = words ? getComputedStyle(words) : null;
           return {
-            mode: x(head.querySelector(":scope > .k2-icon")),
-            to: x(head.querySelector(":scope > .k2-t-meta")),
+            mode: x(head.querySelector(".k2-composer-to > .k2-icon")),
+            to: x(head.querySelector(".k2-composer-to > .k2-t-meta")),
             name: x(name),
             nameText: name?.textContent?.trim(),
             from: x(from),
