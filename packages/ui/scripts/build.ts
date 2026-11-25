@@ -157,8 +157,12 @@ await buildTablerPreset(dist);
 
 // The classless page stylesheet ships as written: it targets current engines and stays readable.
 await copyFile(resolve(root, "src/base/base.css"), resolve(dist, "base.css"));
-// v2 (provisional) ships as written too: plain CSS in its own namespace, loaded beside the v1 sheet.
-await copyFile(resolve(root, "src/v2/v2.css"), resolve(dist, "v2.css"));
+// v2 (provisional) ships as written too: plain CSS in its own namespace, loaded beside the v1 sheet. The chart's own
+// stylesheet follows it, so a chart sizes and styles itself in a page that loads only v2.css (styles.css has it too).
+await writeFile(
+  resolve(dist, "v2.css"),
+  `${await readFile(resolve(root, "src/v2/v2.css"), "utf8")}\n${await readFile(resolve(root, "src/styles/chart.css"), "utf8")}`,
+);
 
 await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "./plex.css";\n@import "./tabler.css";\n');
 

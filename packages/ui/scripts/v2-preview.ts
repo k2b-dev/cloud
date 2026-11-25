@@ -144,7 +144,8 @@ try {
   process.exit(1);
 }
 
-const css = readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8");
+// v2.css as it ships: the v2 sheet, then the chart's own stylesheet (see scripts/build.ts)
+const css = `${readFileSync(join(uiRoot, "src/v2/v2.css"), "utf8")}\n${readFileSync(join(uiRoot, "src/styles/chart.css"), "utf8")}`;
 const fontFace = (weight: number) => {
   const path = join(uiRoot, `node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff2`);
   return existsSync(path)
