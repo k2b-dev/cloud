@@ -189,17 +189,19 @@ jobs:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min for unit/integration;
       # WebKit reserves more headroom as described below.
-      # Unit timings from run 44443688140 (#3715), with @k2b/cloud SSR and AI
-      # split into test:part:* suites. Their weights include measured file-group
-      # times plus the old process overhead for each new part. Twelve shards
-      # need at most 14.11 min (@k2b/cloud rest alone; the others <= 12.85 min).
-      # 12 leave room for growth below the 15-min target.
+      # Unit timings are maxima from runs 45486435794 (main merge queue) and
+      # 45498231860 (#4105, slow), with @k2b/cloud SSR, AI and code split into
+      # test:part:* suites. The code and rest weights come from the file-group
+      # times of @k2b/cloud rest in run 45486435794 (src/code 262.9 s of
+      # 983.6 s, plus 1 s process overhead for the new part). Thirteen shards
+      # need at most 14.65 min (@k2b/cloud-app-notebooks alone; the others
+      # <= 13.80 min); twelve need 15.14 min and miss the 15-min target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -237,12 +239,11 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Refreshed from runs 43605465168, 43604064299, 43600763560,
-  # 43593953102, 43588358082 and 43563379904, including failed runs.
-  # The table covers all 443 files. Nineteen shards need 609.5 s (10.16 min),
-  # leaving 50.5 s below the 11-min target; eighteen need 643.6 s, leaving too
-  # little room, and seventeen need 681.5 s and fail it.
-  # Ten extra unmeasured files (median 11.9 s) still fit at 616.2 s.
+  # locally. Refreshed from runs 45486435794 and 45498231860, including a
+  # failed run. The table covers all 514 files. Twenty-two shards need 626.1 s
+  # (10.44 min), leaving 33.9 s below the 11-min target; twenty-one need
+  # 655.9 s, leaving too little room, and nineteen need 724.8 s and fail it.
+  # Ten extra unmeasured files (median 11.6 s) still fit at 631.3 s.
   # The 11-min target reserves the full 2-min warm-up plus the measured p95
   # 1.61x slowdown:
   # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
@@ -256,7 +257,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
