@@ -1,9 +1,9 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
-import { toast, useLocale } from "@k2b/ui";
+import { prompts, toast, useLocale } from "@k2b/ui";
 import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Menu, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, on, Show } from "solid-js";
-import type { SenderIdentity } from "../../../contracts";
+import type { DraftDerivationKind, SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
 import MailMessageBody from "../MailMessageBody";
@@ -13,10 +13,12 @@ import { isOutgoingMessage } from "../mail-conversation-history";
 import { type MailRespondIntent, mailConversationMenuItems } from "../mail-conversation-menu";
 import { buildMailConversationTimeline } from "../mail-conversation-timeline";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
+import { deriveMailMessage } from "../mail-derive-message";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import { mailReaderMessages } from "../mail-reader-messages";
+import { senderUnavailableDetail } from "../mail-sender-identity-status";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import type { MailV2Text } from "./mail-v2-messages";
@@ -59,6 +61,8 @@ function MessageV2(props: {
   onReply?: () => void;
   /** Answers this message in the conversation's reply: Reply, Reply all or Forward from the message's "…". */
   onRespond?: (intent: MailRespondIntent, message: MailWorkspaceMessage) => void;
+  /** "Use as new" of the message's "…": its draft belongs to this person (absent where they cannot write). */
+  currentUserId?: string;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailMessageMessages.resolve([locale()]).t);
@@ -112,6 +116,22 @@ function MessageV2(props: {
       return c().data.detailMessages;
     },
     onReassignMessage: (messageId) => c().reassignMessage(messageId),
+    get onDeriveMessage() {
+      const userId = props.currentUserId;
+      if (!userId) return undefined;
+      return (kind: DraftDerivationKind, message: MailWorkspaceMessage) =>
+        void deriveMailMessage({
+          kind,
+          message,
+          mailboxId: props.mailboxId,
+          identities: props.identities,
+          currentUserId: userId,
+          returnHref: c().requestPath(),
+          t: mailConversationUiMessages.resolve([locale()]).t,
+          explainSenderUnavailable: () => prompts.error(senderUnavailableDetail(props.identities, locale())),
+          stillCurrent: () => c().data.detailMessages.some((shown) => shown.id === message.id),
+        });
+    },
     onSplitMessage: (messageId) => c().splitMessage(messageId),
     // Reply, Reply all and Forward lead, as in v1's message menu (MailMessageCard's response actions).
     get primaryActions() {
@@ -414,6 +434,7 @@ export default function MailReaderV2(props: {
               text={props.text}
               onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
               onRespond={reply()?.shown() ? (intent, message) => reply()?.respond(intent, message) : undefined}
+              currentUserId={c().canWrite() ? props.session.currentUserId : undefined}
             />
           ) : (
             <Notice

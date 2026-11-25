@@ -213,6 +213,7 @@ describe("Mail on the v2 pilot", () => {
       await message.getByRole("button", { name: "Nachrichtenaktionen" }).click();
       await page.getByRole("menuitem", { name: "Technische Details" }).waitFor();
       await page.getByRole("menuitem", { name: "Antworten" }).waitFor();
+      await page.getByRole("menuitem", { name: "Als neue Nachricht verwenden" }).waitFor();
       await page.keyboard.press("Escape");
       // The head's "…": the open mailbox's rare deeds, led by pinning and hiding it (v1's mailbox menu).
       await page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen" }).click();
