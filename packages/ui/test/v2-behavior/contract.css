@@ -46,8 +46,9 @@ button, input { font: inherit; color: inherit; }
 .transfer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px; }
 .transfer__col { border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
 .columns { display: flex; height: 300px; border: 1px solid var(--line); margin: 16px; overflow: hidden; }
-.column { flex: none; min-width: 0; overflow: hidden; border-right: 1px solid var(--line); }
-.column:last-child { flex: 1; border-right: 0; }
-.grip { flex: none; width: 13px; margin: 0 -7px 0 -6px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; }
+/* Core's Resizable sets the flex of the group, the panels and the grips inline; the look only adds lines and size. */
+.column { overflow: hidden; border-right: 1px solid var(--line); }
+.column:last-child { border-right: 0; }
+.grip { width: 13px; margin: 0 -7px 0 -6px; position: relative; z-index: 1; cursor: col-resize; touch-action: none; }
 .grip:focus-visible { outline: 2px solid var(--accent); }
 @media (max-width: 720px) { .transfer { grid-template-columns: 1fr; } .page { grid-template-columns: 1fr; } }
