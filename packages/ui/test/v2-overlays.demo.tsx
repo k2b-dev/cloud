@@ -12,6 +12,10 @@ declare global {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
     __k2Shorten?: () => void;
+    /** Opens the stepwise dialog "Gerät koppeln" (a code, then a short confirmation). */
+    __k2Pair?: () => void;
+    /** Asks a dangerous question ("Gerät entfernen?") from the page. */
+    __k2AskDanger?: () => void;
   }
 }
 
@@ -57,6 +61,16 @@ function Order() {
     );
   const [long, setLong] = createSignal(document.documentElement.dataset.long !== undefined);
   window.__k2Shorten = () => setLong(false);
+  const [pair, setPair] = createSignal(false);
+  const [step, setStep] = createSignal(1);
+  window.__k2Pair = () => {
+    setStep(1);
+    setPair(true);
+  };
+  window.__k2AskDanger = () =>
+    void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
+      document.body.dataset.answer = String(answer);
+    });
   return (
     <Workspace
       head={
@@ -151,6 +165,27 @@ function Order() {
         <Field name="key" label="Schlüssel">
           <Input value="k2b_live_7Q4mX9" />
         </Field>
+      </Dialog>
+      {/* steps in one place: the long first step sets the height, the short second keeps it */}
+      <Dialog
+        title="Gerät koppeln"
+        open={pair()}
+        onOpenChange={setPair}
+        stepwise
+        foot={
+          <Show when={step() === 1} fallback={<Button onClick={() => setPair(false)}>Fertig</Button>}>
+            <Button variant="primary" onClick={() => setStep(2)}>
+              Weiter
+            </Button>
+          </Show>
+        }
+      >
+        <Show when={step() === 1} fallback={<Text>Gekoppelt.</Text>}>
+          <Text>Öffne die App auf dem anderen Gerät.</Text>
+          <Text>Tippe dort auf „Mit Cloud koppeln“.</Text>
+          <Text>Scanne den Code oder gib ihn ein.</Text>
+          <Text>Vergleiche dann die Zahlen auf beiden Geräten.</Text>
+        </Show>
       </Dialog>
     </Workspace>
   );

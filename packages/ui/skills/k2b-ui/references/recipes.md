@@ -82,6 +82,21 @@ in its words. Its footer `Bar` saves with a default button.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
+## pairing.tsx: pairing a device
+
+![pairing at 1440 px](../images/pairing-1440.png)
+![pairing at 390 px](../images/pairing-390.png)
+
+A `Section` with `id` (a link target) holds the steps as `Text`, a
+`QrCode` (the app makes its SVG with `@k2b/stdlib/qr`) and the code to
+compare as `CodeDisplay`; the wait for the other device is a
+`Notice tone="warn"`, which assistive technology hears politely.
+"Gerät entfernen" asks with `Dialog.confirm({ …, danger: true })`.
+
+- Steps of a pairing in a dialog: `Dialog stepwise`, so a shorter step
+  does not make it jump.
+- States: `paired`.
+
 ## record.tsx: a record, first tab
 
 ![record at 1440 px](../images/record-1440.png)

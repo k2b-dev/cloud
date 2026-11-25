@@ -880,3 +880,46 @@ export const Table = <T,>(props: TableProps<T>) => {
     </Show>
   );
 };
+
+// ── QrCode, CodeDisplay ──────────────────────────────────────────────────────────────────────────────────────────
+
+export type QrCodeProps = {
+  /** The QR code as SVG markup, such as `qr.toSvg(link)` from `@k2b/stdlib/qr`; dark on light in both themes. */
+  svg: string;
+  /** What the code is for, for assistive technology, such as "QR-Code zum Koppeln". */
+  label: string;
+};
+
+/**
+ * A QR code to scan with another device: 192 px on a white well with its quiet zone, in the middle of its column, white
+ * also in the dark theme so every camera reads it. The SVG is shown as a picture, so markup in it never runs.
+ */
+export const QrCode = (props: QrCodeProps) => (
+  <span class="k2-qr" data-k2-part="QrCode">
+    <img src={`data:image/svg+xml,${encodeURIComponent(props.svg)}`} alt={props.label} width="192" height="192" />
+  </span>
+);
+
+export type CodeDisplayProps = {
+  /** The code as both devices show it, such as "482 913"; spaces group it. */
+  value: string;
+  /** What to do with it, for assistive technology, such as "Vergleichscode". */
+  label: string;
+};
+
+/**
+ * A code a person compares between two devices or reads aloud: large monospaced figures in the middle of its column.
+ * Assistive technology hears its label and the characters one by one, not as one large number.
+ */
+export const CodeDisplay = (props: CodeDisplayProps) => (
+  <p
+    class="k2-bigcode"
+    data-k2-part="CodeDisplay"
+    // figures to compare at a glance across a room: the one text of v2 larger than the type roles
+    data-k2-untyped=""
+    role="img"
+    aria-label={`${props.label}: ${[...props.value.replace(/\s+/g, "")].join(" ")}`}
+  >
+    {props.value}
+  </p>
+);

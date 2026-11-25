@@ -93,6 +93,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
+| pairing a device: a QR code to scan, a code to compare | `QrCode` (SVG from `@k2b/stdlib/qr`), `CodeDisplay`; steps in a `Dialog stepwise` | – |
+| a question before a deed that destroys | `Dialog.confirm({ …, danger: true })` | – |
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
@@ -159,7 +161,7 @@ a `Notice` that names the deed.
 - **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
+  `Steps`, `QrCode`, `CodeDisplay`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,

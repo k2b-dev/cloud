@@ -117,6 +117,15 @@ drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
 inside the `Canvas`: with a `height` it keeps that height, so nothing
 moves.
 
+### QrCode and CodeDisplay
+
+Pairing a device. `QrCode`: `svg` (from `qr.toSvg(link)` of
+`@k2b/stdlib/qr`) and `label`; 192 px on a white well in the middle of
+its column, white in the dark theme too, shown as a picture so markup in
+the SVG never runs. `CodeDisplay`: `value` (spaces group it, "482 913")
+and `label`; large monospaced figures in the middle, heard character by
+character. Both stand in a `Band`, a `Section` or a `Dialog`.
+
 ## Structure
 
 ### Section
@@ -124,7 +133,8 @@ moves.
 A titled part: `icon`, `color` (icon on a tinted tile), `title`, `count`,
 `actions` (≤ 2 text buttons in the head), `summary` (one sentence),
 `more` (one link at the end: "All deliveries ›"; its `meta` shows only in a
-`Pane side`, where the link becomes a row), children. No line under
+`Pane side`, where the link becomes a row), `id` (an anchor for a link
+such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
 
@@ -337,7 +347,9 @@ lines instead of cutting a thing.
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
   now, and the sentence says why), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
-  buttons of your own.
+  buttons of your own. `bad` is an alert, `warn` a polite status (heard
+  when it appears or changes, such as "Wartet auf das andere Gerät"),
+  `note` and `ai` are read with the page.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
@@ -369,11 +381,14 @@ lines instead of cutting a thing.
   Escape and the close button close it, focus returns to what opened it.
   `dismissible={false}`: a press outside, a swipe and the back gesture do
   not close it; Escape, the close button and the foot still do.
-- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `stepwise`: steps in one place (a code, then its confirmation) keep the
+  height of the tallest step while open, so the foot does not jump.
+- `Dialog.confirm({ title, confirm, description?, cancel?, danger? })`: resolves
   `true` when the person agrees. An alert dialog without a close button,
   never a sheet; focus starts on the other button, Escape answers no, a
-  press outside does nothing. Call it from a menu entry with `void`, so the
-  menu closes while it asks.
+  press outside does nothing. `danger` makes the agreeing button red, for
+  a deed that destroys (delete, revoke, remove a device). Call it from a
+  menu entry with `void`, so the menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the

@@ -61,6 +61,8 @@
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
+  /* the fill of a button whose deed destroys (white words on it, in both themes) */
+  --k2-danger: #b91c1c;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
   --k2-note: #fef9c3;
@@ -159,6 +161,8 @@
   --k2-bad-tint: #450a0a;
   --k2-bad: #fca5a5;
   --k2-bad-dot: #ef4444;
+  /* the fill of a button whose deed destroys (white words on it, in both themes) */
+  --k2-danger: #dc2626;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
   --k2-note: #3f3a0c;
@@ -1932,6 +1936,11 @@
   border-color: var(--k2-blue);
   color: var(--k2-white);
 }
+/* the agreeing button of a question whose deed destroys (Dialog.confirm `danger`) */
+.k2-ui .k2-btn[data-variant="primary"][data-danger] {
+  background: var(--k2-danger);
+  border-color: var(--k2-danger);
+}
 .k2-ui .k2-btn[data-variant="ghost"] {
   border-color: transparent;
   background: transparent;
@@ -2916,6 +2925,8 @@
   width: 480px;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 64px);
+  /* the height of its tallest step so far while open (overlays.tsx), never past the window */
+  min-height: min(var(--k2-dialog-kept, 0px), calc(100dvh - 64px));
   background: var(--k2-surface);
   color: var(--k2-text);
   border-radius: var(--k2-r-overlay);
@@ -2969,6 +2980,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* a shorter step fills the kept height, so the foot stays where it stood */
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -3544,6 +3557,39 @@
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
+  }
+}
+
+/* ── QR code and a code to compare: the middle of their column, a size of their own (pairing a device) ──────── */
+.k2-ui .k2-qr {
+  align-self: center;
+  display: block;
+  padding: 12px;
+  background: #fff;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  line-height: 0;
+}
+.k2-ui .k2-qr > img {
+  width: 192px;
+  height: 192px;
+  image-rendering: pixelated;
+}
+.k2-ui .k2-bigcode {
+  align-self: center;
+  margin: 0;
+  padding: 0 var(--k2-edge);
+  font: 600 40px/48px var(--k2-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: var(--k2-text);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-bigcode {
+    font-size: 32px;
+    line-height: 40px;
   }
 }
 

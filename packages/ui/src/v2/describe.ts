@@ -43,6 +43,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Canvas",
     "Field.Row",
     "Field",
+    "QrCode",
+    "CodeDisplay",
     "Toast",
     "Empty",
     "Loading",
@@ -361,6 +363,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Field.Row":
         return "Field.Row";
+      case "QrCode":
+        return `QrCode ${quote(element.querySelector("img")?.getAttribute("alt"))}`;
+      case "CodeDisplay":
+        return `CodeDisplay ${quote(element.textContent)}`;
       // The three states of a place that shows data, where the data will stand.
       case "Empty":
       case "Failed": {
