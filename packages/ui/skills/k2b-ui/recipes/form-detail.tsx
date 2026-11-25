@@ -65,7 +65,7 @@ export default function NewAppointment(props: Props) {
         >
           <Band>
             <Field name="customer" label="Kunde" required error={errors.customer}>
-              <Select options={customers} value={values.customer} placeholder="Kunde wählen" />
+              <Select options={customers} value={values.customer || undefined} placeholder="Kunde wählen" />
             </Field>
             <Field.Row>
               <Field name="day" label="Tag" required hint="TT.MM.JJJJ" error={errors.day}>

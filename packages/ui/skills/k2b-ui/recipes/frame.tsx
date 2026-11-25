@@ -42,8 +42,9 @@ export default function WorkshopOrders(props: Props) {
   const open = ready && props.open !== null ? rows.find((order) => order.id === (props.open ?? "a2")) : undefined;
   return (
     <Workspace
-      // a detail opens beside the list: the frame keeps its room, so the sidebar does not jump between column and drawer
-      detail
+      // a detail of at least 440 px opens beside the list; the frame keeps its room, so the sidebar does not jump between
+      // column and drawer (on a 1024 px tablet it is a drawer)
+      detail={440}
       detailEmpty={{ icon: "tool", text: "Kein Auftrag ausgewählt" }}
       sidebarLabel="Breite der Seitenleiste"
       sidebar={
@@ -110,7 +111,7 @@ export default function WorkshopOrders(props: Props) {
       <Pane.Split>
         <Pane
           label="Aufträge"
-          width={{ min: 320, default: 400 }}
+          width={{ min: 360, default: 400 }}
           scrollKey="werkstatt-auftraege"
           status={
             <StatusRow
