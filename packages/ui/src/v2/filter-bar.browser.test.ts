@@ -328,8 +328,9 @@ test("at the length limit of the address a change is refused and every filter st
   await withPage(search, async (page) => {
     expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("option", { name: /Fotografiert/ }).click();
-    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    // a value that would not fit is locked where it is offered; pressing it changes nothing
+    expect(await page.getByRole("option", { name: /Fotografiert/ }).getAttribute("aria-disabled")).toBe("true");
+    await page.getByRole("option", { name: /Fotografiert/ }).click({ force: true });
     expect(new URL(page.url()).searchParams.get("status")).toBe("consigned");
     expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
     expect(await page.getByRole("option", { name: /Fotografiert/ }).getAttribute("aria-selected")).toBe("false");

@@ -175,9 +175,11 @@ Filters, sorts and groups have exactly one way: declare them once with
 `defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
 lives in the address through that declaration; the server reads it with
 `parse`, and the app filters itself, on its server, with its own access
-checks (`@k2b/ui` filters nothing and stores nothing). Never parse search
-parameters yourself, keep filter state of your own, or build filter chips by
-hand. Read [list queries](references/list-queries.md).
+checks (`@k2b/ui` filters nothing and stores nothing). In the island,
+keep one signal that mirrors that state: start it with what the server parsed
+and set it in `onChange`, as the recipe does. Never parse search parameters
+yourself, keep filter state the address does not hold, or build filter chips
+by hand. Read [list queries](references/list-queries.md).
 
 ## See what you built
 
@@ -209,7 +211,7 @@ Details, the outline format and use outside the monorepo:
 | Finding | Fix |
 | --- | --- |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
-| own `URLSearchParams` or signals for filters, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
+| own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |
 | `Button … stands alone in Pane` | move it into a `Bar end`, `Row action`, `Section actions` or `Notice actions` |

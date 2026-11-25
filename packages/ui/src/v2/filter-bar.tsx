@@ -75,12 +75,44 @@ const listParts = (labels: readonly { text: string; missing?: boolean }[], t: Fi
 
 type Formats = { number: (value: number) => string; day: (text: string) => string; minute: (text: string) => string };
 
-const useFormats = (): (() => Formats) => {
+/**
+ * The wall time of a moment in a time zone, as a datetime field holds it ("2026-11-24T09:00"), and back: the zone is
+ * explicit, so the server and every browser read the same minute the same way.
+ */
+const wallTime = (moment: number, timeZone: string): string => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(new Date(moment))
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+};
+const fromWallTime = (wall: string, timeZone: string): number => {
+  const guess = Date.parse(`${wall}:00Z`);
+  const offset = (moment: number) => Date.parse(`${wallTime(moment, timeZone)}:00Z`) - moment;
+  return guess - offset(guess - offset(guess));
+};
+
+const useFormats = (timeZone: () => string): (() => Formats) => {
   const locale = useLocale();
   return createMemo(() => {
     const number = new Intl.NumberFormat(locale());
     const day = new Intl.DateTimeFormat(locale(), { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
-    const minute = new Intl.DateTimeFormat(locale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const minute = new Intl.DateTimeFormat(locale(), {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timeZone(),
+    });
     return {
       number: (value: number) => number.format(value),
       day: (text: string) => {
@@ -201,8 +233,11 @@ export type FilterBarViews = {
    * another can be written (it is named, locked, with the reason). With one writable store the dialog asks no scope.
    */
   stores: readonly ViewStore[];
-  /** The view the state started from, when it is a saved one or one in code (`scope` undefined): its name and store. */
-  current?: { key: string; label: string; scope?: ViewStore["scope"] };
+  /**
+   * The view the state started from, when it is a saved one or one in code (`scope` undefined): its name, the query
+   * it holds (renaming keeps it; updating replaces it with the state shown) and its store.
+   */
+  current?: { key: string; label: string; query: string; scope?: ViewStore["scope"] };
   /** After a save, an update, a rename or a delete: the app lists its views again (tabs) and opens the saved one. */
   onSaved?: (view: SavedListView, store: ViewStore) => void;
   onRemoved?: (key: string, store: ViewStore) => void;
@@ -224,8 +259,16 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
   icons?: Partial<Record<keyof F & string, string>>;
   /** Counts per value of the fields declared with `counts`, from the server, counted with the other filters. */
   counts?: Partial<Record<keyof F & string, Readonly<Record<string, number>>>>;
-  /** Names of lookup values the server resolved (`resolve`) for the codes of the address, so the first picture shows names. */
-  names?: readonly LookupItem[];
+  /**
+   * Names of lookup values per field, which the server resolved (`resolve`) for the codes of the address, so the first
+   * picture shows names. Per field, because two lookups may use the same code for different things.
+   */
+  names?: Partial<Record<keyof F & string, readonly LookupItem[]>>;
+  /**
+   * The time zone points in time (`timeRange`) are read and entered in, such as the person's own ("Europe/Berlin");
+   * "UTC" by default. Give the same zone on the server and in the browser, so the first picture and the island agree.
+   */
+  timeZone?: string;
   /** Saved views; without it there is no "Ansicht ▾" and no saving. */
   views?: FilterBarViews;
   /** What the list shows, such as "9 Artikel": the phone sheet's button reads "9 Artikel zeigen". */
@@ -241,18 +284,33 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
  */
 export const FilterBar = <F extends Fields, S extends string, G extends string>(props: FilterBarProps<F, S, G>) => {
   const t = useFilterMessages();
-  const format = useFormats();
+  const timeZone = () => props.timeZone ?? "UTC";
+  const format = useFormats(timeZone);
   const fields = createMemo(() => Object.entries(props.query.fields));
   const filters = (): Readonly<Record<string, unknown>> => props.state.filters;
   const base = () => props.base ?? props.query.reset();
   const changed = createMemo(() => stateText(props.query, props.state) !== stateText(props.query, base()));
-  const [names, setNames] = createSignal<ReadonlyMap<string, LookupItem>>(new Map((props.names ?? []).map((item) => [item.value, item])));
-  const remember = (items: readonly LookupItem[]) =>
+  // Names of lookup codes, per field and code: two lookups may use the same code for different things. A list that
+  // brings nothing new leaves the map as it is, so nothing that reads it runs again.
+  const nameKey = (field: string, code: string) => `${field}\u0000${code}`;
+  const given: Readonly<Record<string, readonly LookupItem[] | undefined>> = props.names ?? {};
+  const [names, setNames] = createSignal<ReadonlyMap<string, LookupItem>>(
+    new Map(Object.entries(given).flatMap(([field, items]) => (items ?? []).map((item) => [nameKey(field, item.value), item] as const))),
+  );
+  const remember = (field: string, items: readonly LookupItem[]) =>
     setNames((before) => {
+      const fresh = items.filter((item) => {
+        const known = before.get(nameKey(field, item.value));
+        return !known || known.label !== item.label || known.meta !== item.meta;
+      });
+      if (fresh.length === 0) return before;
       const next = new Map(before);
-      for (const item of items) next.set(item.value, item);
+      for (const item of fresh) next.set(nameKey(field, item.value), item);
       return next;
     });
+  /** The names of one field, by code. */
+  const namesOf = (field: string): ReadonlyMap<string, LookupItem> =>
+    new Map([...names()].flatMap(([key, item]) => (key.startsWith(`${field}\u0000`) ? [[item.value, item] as const] : [])));
 
   // A field is active when the state holds a value; a required field always is. A field added from "+ Filter" without
   // a value yet is the draft: a dashed statement that does not apply.
@@ -263,7 +321,10 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   // The sheet opens in the task after the press that asks for it: WebKit can deliver the end of a tap after its click,
   // and the sheet, open by then, would take it for a press outside and close again.
   const openSheet = (place: { field?: string; display?: "sort" | "group" }) => setTimeout(() => setSheet(place));
-  const [saving, setSaving] = createSignal<{ mode: "new" | "rename"; view?: { key: string; label: string; store: ViewStore } }>();
+  const [saving, setSaving] = createSignal<{
+    mode: "new" | "rename";
+    view?: { key: string; label: string; query: string; store: ViewStore };
+  }>();
 
   // The address: one history entry per open editor, one per other change; back and forward lead the state.
   let pushed = false;
@@ -282,10 +343,14 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
     addEventListener("popstate", back);
     onCleanup(() => removeEventListener("popstate", back));
   });
+  // an editor session (a popover or the phone's sheet) starts a new history entry with its first change
   createEffect(
-    on(open, (key) => {
-      if (key !== undefined) pushed = false;
-    }),
+    on(
+      () => open() !== undefined || sheet() !== undefined,
+      (editing) => {
+        if (editing) pushed = false;
+      },
+    ),
   );
   /** Applies new address text for one field, sort or group; inside an editor the first change makes the entry. */
   // The view the state started from stays in the address: its tab stays current and counts as changed.
@@ -308,40 +373,52 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
     return applied;
   };
   const removeField = (key: string) => apply((params) => params.delete(key));
+  /** Whether the address could hold this value of a field: what cannot is offered locked. */
+  const canSet = (key: string, value: unknown) => {
+    const definition = props.query.fields[key];
+    if (!definition) return false;
+    const text = encode(definition, value);
+    return follow(props.query, props.state, (params) => (text === undefined ? params.delete(key) : params.set(key, text))) !== undefined;
+  };
+  const canEdit = (edit: (params: URLSearchParams) => void) => follow(props.query, props.state, edit) !== undefined;
   const reset = () => write(base(), true);
 
-  const values = (key: string, definition: ListQueryField) => valueParts(definition, filters()[key], t(), format(), names());
+  const values = (key: string, definition: ListQueryField) => valueParts(definition, filters()[key], t(), format(), namesOf(key));
   const sentence = (key: string, definition: ListQueryField) => statementParts(definition, values(key, definition), t());
   const isDefault = (key: string, definition: ListQueryField) =>
     definition.required !== undefined && encode(definition, filters()[key]) === encode(definition, definition.required);
 
-  // Names for lookup codes of the address the server did not name: resolved once in the browser.
-  createEffect(
-    on(
-      () =>
-        active().flatMap(([key, definition]) =>
-          definition.kind === "lookup"
-            ? codes(filters()[key])
-                .filter((code) => !names().has(code))
-                .map((code) => [key, code] as const)
-            : [],
-        ),
-      (missing) => {
-        const byField = new Map<string, string[]>();
-        for (const [key, code] of missing) byField.set(key, [...(byField.get(key) ?? []), code]);
-        for (const [key, list] of byField) {
-          const definition = props.query.fields[key];
-          if (definition?.kind !== "lookup") continue;
-          const controller = new AbortController();
-          onCleanup(() => controller.abort());
-          definition.resolve(list, { signal: controller.signal }).then(
-            (found) => !controller.signal.aborted && remember(found),
-            () => undefined,
-          );
-        }
-      },
-    ),
-  );
+  // Names for lookup codes of the address the server did not name: each code is asked for once in the browser. A code
+  // the app cannot name (deleted, or the load failed) stays a code with a warning; opening its editor asks again.
+  const asked = new Set<string>();
+  const resolving = new Set<AbortController>();
+  onCleanup(() => {
+    for (const controller of resolving) controller.abort();
+  });
+  createEffect(() => {
+    const byField = new Map<string, string[]>();
+    for (const [key, definition] of active()) {
+      if (definition.kind !== "lookup") continue;
+      for (const code of codes(filters()[key])) {
+        if (names().has(nameKey(key, code)) || asked.has(nameKey(key, code))) continue;
+        asked.add(nameKey(key, code));
+        byField.set(key, [...(byField.get(key) ?? []), code]);
+      }
+    }
+    for (const [key, list] of byField) {
+      const definition = props.query.fields[key];
+      if (definition?.kind !== "lookup") continue;
+      const controller = new AbortController();
+      resolving.add(controller);
+      definition.resolve(list, { signal: controller.signal }).then(
+        (found) => {
+          resolving.delete(controller);
+          if (!controller.signal.aborted) remember(key, found);
+        },
+        () => resolving.delete(controller),
+      );
+    }
+  });
 
   const openField = (key: string) => {
     if (isPhone()) {
@@ -419,8 +496,10 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
                         definition={field()}
                         value={filters()[key]}
                         counts={props.counts?.[key]}
-                        names={names()}
-                        onNames={remember}
+                        names={namesOf(key)}
+                        onNames={(items) => remember(key, items)}
+                        timeZone={timeZone()}
+                        possible={(value) => canSet(key, value)}
                         onChange={(value) => setField(key, value)}
                         onRemove={
                           field().required === undefined
@@ -464,6 +543,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
               onUpdate={async (view) => {
                 const saved = await view.store.save({ key: view.key, label: view.label, query: stateText(props.query, props.state) });
                 views().onSaved?.(saved, view.store);
+                return saved;
               }}
             />
           </div>
@@ -478,8 +558,11 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         state={props.state}
         icons={props.icons}
         counts={props.counts}
-        names={names()}
+        namesOf={namesOf}
         onNames={remember}
+        timeZone={timeZone()}
+        canSet={canSet}
+        canEdit={canEdit}
         changed={changed()}
         results={props.results}
         canSave={(props.views?.stores.some((store) => store.writable) ?? false) && changed()}
@@ -628,6 +711,10 @@ type EditorProps = {
   counts?: Readonly<Record<string, number>>;
   names: ReadonlyMap<string, LookupItem>;
   onNames: (items: readonly LookupItem[]) => void;
+  /** The zone points in time are entered in. */
+  timeZone: string;
+  /** Whether the address could hold this value: what could not is offered locked. */
+  possible: (value: unknown) => boolean;
   /** Applies a value; `false` when the address cannot hold it (the editor then shows why, and nothing changes). */
   onChange: (value: unknown) => boolean;
   /** Takes the filter out; a required field has none. */
@@ -700,6 +787,11 @@ const EditorBody = (props: EditorProps) => {
           multiple={definition.multiple}
           value={codes(props.value)}
           counts={definition.counts ? props.counts : undefined}
+          possible={(code) => {
+            const chosen = codes(props.value);
+            if (!definition.multiple) return props.possible(code);
+            return props.possible(chosen.includes(code) ? chosen.filter((other) => other !== code) : [...chosen, code]);
+          }}
           onChange={(next) => props.onChange(definition.multiple ? next : next[0])}
         />
       );
@@ -728,7 +820,15 @@ const EditorBody = (props: EditorProps) => {
       return <RangeEditor definition={definition} value={isRange(props.value) ? props.value : undefined} onChange={props.onChange} />;
     case "dateRange":
     case "timeRange":
-      return <PeriodEditor definition={definition} value={isPeriod(props.value) ? props.value : undefined} onChange={props.onChange} />;
+      return (
+        <PeriodEditor
+          definition={definition}
+          value={isPeriod(props.value) ? props.value : undefined}
+          timeZone={props.timeZone}
+          possible={props.possible}
+          onChange={props.onChange}
+        />
+      );
     case "bool":
       return (
         <Options
@@ -739,6 +839,7 @@ const EditorBody = (props: EditorProps) => {
           ]}
           multiple={false}
           value={typeof props.value === "boolean" ? [props.value ? "yes" : "no"] : []}
+          possible={(code) => props.possible(code === "yes")}
           onChange={(next) => props.onChange(next[0] === undefined ? undefined : next[0] === "yes")}
         />
       );
@@ -754,13 +855,16 @@ const Options = (props: {
   multiple: boolean;
   value: readonly string[];
   counts?: Readonly<Record<string, number>>;
+  /** Whether choosing (or, with several, ticking) this value is possible; an impossible one is locked. */
+  possible?: (value: string) => boolean;
   onChange: (value: string[]) => void;
 }) => {
   const t = useFilterMessages();
   const list = useListbox(() => ({
     multiple: props.multiple,
     value: props.multiple ? [...props.value] : (props.value[0] ?? null),
-    onValueChange: (next) => props.onChange(Array.isArray(next) ? next : next ? [next] : []),
+    // "" is a value of its own ("Keine Gruppen"), not "nothing chosen"
+    onValueChange: (next) => props.onChange(Array.isArray(next) ? next : next === null || next === undefined ? [] : [next]),
   }));
   return (
     <>
@@ -773,6 +877,7 @@ const Options = (props: {
                 class="k2-opt"
                 value={option.value}
                 label={option.label}
+                disabled={props.possible ? !props.value.includes(option.value) && !props.possible(option.value) : false}
                 data-zero={props.counts?.[option.value] === 0 ? "" : undefined}
               >
                 <Show
@@ -814,7 +919,8 @@ const EditField = (props: {
   type: "text" | "number" | "date" | "datetime-local";
   unit?: string;
   invalid?: boolean;
-  onCommit: (value: string) => void;
+  /** `unreadable`: the browser could not read what was typed (such as "1e" in a number field), which it shows as "". */
+  onCommit: (value: string, unreadable: boolean) => void;
 }) => (
   <label class="k2-fed-field">
     <span class="k2-fed-label">{props.label}</span>
@@ -824,9 +930,9 @@ const EditField = (props: {
         value={props.value}
         inputmode={props.type === "number" ? "decimal" : undefined}
         aria-invalid={props.invalid ? "true" : undefined}
-        onChange={(event) => props.onCommit(event.currentTarget.value)}
+        onChange={(event) => props.onCommit(event.currentTarget.value, event.currentTarget.validity.badInput)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.isComposing) props.onCommit(event.currentTarget.value);
+          if (event.key === "Enter" && !event.isComposing) props.onCommit(event.currentTarget.value, event.currentTarget.validity.badInput);
         }}
       />
       <Show when={props.unit}>
@@ -842,10 +948,23 @@ const RangeEditor = (props: {
   onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
-  const format = useFormats();
+  const format = useFormats(() => "UTC");
   const [min, setMin] = createSignal(props.value?.min?.toString() ?? "");
   const [max, setMax] = createSignal(props.value?.max?.toString() ?? "");
   const [rejected, setRejected] = createSignal(false);
+  // The fields follow the filter when it changes elsewhere (Zurücksetzen, back, a preset); what is typed and not yet
+  // applied stays until then.
+  createEffect(
+    on(
+      () => `${props.value?.min ?? ""}..${props.value?.max ?? ""}`,
+      () => {
+        setMin(props.value?.min?.toString() ?? "");
+        setMax(props.value?.max?.toString() ?? "");
+        setRejected(false);
+      },
+      { defer: true },
+    ),
+  );
   const number = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
   const invalid = () => {
     const low = number(min());
@@ -898,7 +1017,8 @@ const RangeEditor = (props: {
           value={min()}
           unit={props.definition.unit}
           invalid={invalid() || rejected()}
-          onCommit={(text) => {
+          onCommit={(text, unreadable) => {
+            if (unreadable) return setRejected(true);
             setMin(text);
             commit();
           }}
@@ -912,7 +1032,8 @@ const RangeEditor = (props: {
           value={max()}
           unit={props.definition.unit}
           invalid={invalid() || rejected()}
-          onCommit={(text) => {
+          onCommit={(text, unreadable) => {
+            if (unreadable) return setRejected(true);
             setMax(text);
             commit();
           }}
@@ -930,30 +1051,42 @@ const RangeEditor = (props: {
 const PeriodEditor = (props: {
   definition: Extract<ListQueryField, { kind: "dateRange" | "timeRange" }>;
   value?: PeriodValue;
+  timeZone: string;
+  possible: (value: unknown) => boolean;
   onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
   const day = props.definition.kind === "dateRange";
   const custom = () => props.definition.kind === "dateRange" || props.definition.custom;
-  // a minute of the address (UTC) shows as the local time a datetime field takes, and back
+  // a minute of the address (UTC) shows as the wall time of the app's zone a datetime field takes, and back
   const toField = (text: string | undefined) => {
     if (!text) return "";
     if (day) return text;
-    const date = new Date(text.replace(/Z$/, ":00Z"));
-    if (Number.isNaN(date.getTime())) return "";
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-    return local.toISOString().slice(0, 16);
+    const moment = Date.parse(text.replace(/Z$/, ":00Z"));
+    return Number.isNaN(moment) ? "" : wallTime(moment, props.timeZone);
   };
   const fromField = (text: string) => {
     if (!text) return undefined;
     if (day) return text;
-    const date = new Date(text);
-    return Number.isNaN(date.getTime()) ? undefined : `${date.toISOString().slice(0, 16)}Z`;
+    const moment = fromWallTime(text, props.timeZone);
+    return Number.isNaN(moment) ? undefined : `${new Date(moment).toISOString().slice(0, 16)}Z`;
   };
   const range = () => (props.value?.kind === "range" ? props.value : undefined);
   const [from, setFrom] = createSignal(toField(range()?.from));
   const [to, setTo] = createSignal(toField(range()?.to));
   const [rejected, setRejected] = createSignal(false);
+  // the fields follow the filter when it changes elsewhere; what is typed and not yet applied stays until then
+  createEffect(
+    on(
+      () => `${range()?.from ?? ""}..${range()?.to ?? ""}`,
+      () => {
+        setFrom(toField(range()?.from));
+        setTo(toField(range()?.to));
+        setRejected(false);
+      },
+      { defer: true },
+    ),
+  );
   const invalid = () => {
     const low = fromField(from());
     const high = fromField(to());
@@ -973,9 +1106,10 @@ const PeriodEditor = (props: {
         options={props.definition.presets}
         multiple={false}
         value={props.value?.kind === "preset" ? [props.value.preset] : []}
+        possible={(preset) => props.possible({ kind: "preset", preset })}
         onChange={(next) => {
-          if (next[0]) props.onChange({ kind: "preset", preset: next[0] });
-          else if (props.definition.required === undefined) props.onChange(undefined);
+          if (next[0]) setRejected(!props.onChange({ kind: "preset", preset: next[0] }));
+          else if (props.definition.required === undefined) setRejected(!props.onChange(undefined));
         }}
       />
       <Show when={custom()}>
@@ -986,7 +1120,8 @@ const PeriodEditor = (props: {
             type={day ? "date" : "datetime-local"}
             value={from()}
             invalid={invalid() || rejected()}
-            onCommit={(text) => {
+            onCommit={(text, unreadable) => {
+              if (unreadable) return setRejected(true);
               setFrom(text);
               commit();
             }}
@@ -999,17 +1134,19 @@ const PeriodEditor = (props: {
             type={day ? "date" : "datetime-local"}
             value={to()}
             invalid={invalid() || rejected()}
-            onCommit={(text) => {
+            onCommit={(text, unreadable) => {
+              if (unreadable) return setRejected(true);
               setTo(text);
               commit();
             }}
           />
         </div>
-        <Show when={invalid() || rejected()}>
-          <p class="k2-fed-error" role="alert">
-            {invalid() ? t().rangeInvalid : t().valueRejected}
-          </p>
-        </Show>
+      </Show>
+      {/* also without a custom range: a preset the address cannot hold says so here */}
+      <Show when={invalid() || rejected()}>
+        <p class="k2-fed-error" role="alert">
+          {invalid() ? t().rangeInvalid : t().valueRejected}
+        </p>
       </Show>
     </div>
   );
@@ -1025,7 +1162,7 @@ const TextEditor = (props: { label: string; value: string; onChange: (value: unk
         type="text"
         value={props.value}
         invalid={rejected()}
-        onCommit={(text) => setRejected(!props.onChange(text.trim() || undefined))}
+        onCommit={(text, unreadable) => setRejected(unreadable || !props.onChange(text.trim() || undefined))}
       />
       <Show when={rejected()}>
         <p class="k2-fed-error" role="alert">
@@ -1050,9 +1187,10 @@ const orderWords = <F extends Fields, S extends string, G extends string>(
 ): OrderWords => {
   const sort = query.sort;
   const groups: Readonly<Record<string, { label: string }>> = query.group ?? {};
+  const options: Readonly<Record<string, { label: string }>> = sort.fixed ? {} : sort.options;
   const sortLabel = sort.fixed
     ? sort.fixed.label
-    : `${(sort.options as Readonly<Record<string, { label: string }>>)[state.sort.field]?.label ?? state.sort.field} ${directionWord(state.sort.direction)}`;
+    : `${options[state.sort.field]?.label ?? state.sort.field} ${directionWord(state.sort.direction)}`;
   return { sort: sortLabel, group: state.group !== undefined ? (groups[state.group]?.label ?? state.group) : undefined };
 };
 
@@ -1193,8 +1331,8 @@ const ViewMenu = (props: {
   views: FilterBarViews;
   changed: boolean;
   onSave: () => void;
-  onRename: (view: { key: string; label: string; store: ViewStore }) => void;
-  onUpdate: (view: { key: string; label: string; store: ViewStore }) => Promise<void>;
+  onRename: (view: { key: string; label: string; query: string; store: ViewStore }) => void;
+  onUpdate: (view: { key: string; label: string; query: string; store: ViewStore }) => Promise<SavedListView>;
 }) => {
   const t = useFilterMessages();
   const toast = useToast();
@@ -1202,9 +1340,17 @@ const ViewMenu = (props: {
   const own = () => {
     const view = current();
     const store = view?.scope ? props.views.stores.find((candidate) => candidate.scope === view.scope) : undefined;
-    return view && store ? { key: view.key, label: view.label, store } : undefined;
+    return view && store ? { key: view.key, label: view.label, query: view.query, store } : undefined;
   };
   const writable = () => props.views.stores.some((store) => store.writable);
+  /** Runs a deed on a store; when it fails, a toast says what stays and offers to run it again. */
+  const attempt = async (deed: () => Promise<unknown>, failed: string): Promise<void> => {
+    try {
+      await deed();
+    } catch {
+      toast(failed, { status: "bad", retry: () => attempt(deed, failed) });
+    }
+  };
   const items = (): MenuEntry[] => {
     const view = current();
     const mine = own();
@@ -1223,7 +1369,7 @@ const ViewMenu = (props: {
         icon: "device-floppy",
         disabled: !props.changed || !mine.store.writable,
         meta: !mine.store.writable ? t().notAllowed : props.changed ? undefined : t().nothingChanged,
-        onClick: () => props.onUpdate(mine),
+        onClick: () => attempt(() => props.onUpdate(mine), t().updateFailed({ name: mine.label })),
       });
     }
     deeds.push({
@@ -1246,11 +1392,15 @@ const ViewMenu = (props: {
           label: t().deleteView({ name: mine.label }),
           icon: "trash",
           danger: true,
-          onClick: async () => {
-            await mine.store.remove(mine.key);
-            props.views.onRemoved?.(mine.key, mine.store);
-            toast(t().deleted({ name: mine.label }));
-          },
+          onClick: () =>
+            attempt(
+              async () => {
+                await mine.store.remove(mine.key);
+                props.views.onRemoved?.(mine.key, mine.store);
+                toast(t().deleted({ name: mine.label }));
+              },
+              t().deleteFailed({ name: mine.label }),
+            ),
         },
       );
     }
@@ -1273,7 +1423,7 @@ const scopeWords = (scope: ViewStore["scope"], t: FilterMessages) =>
 const SaveDialog = (props: {
   open: boolean;
   mode: "new" | "rename";
-  view?: { key: string; label: string; store: ViewStore };
+  view?: { key: string; label: string; query: string; store: ViewStore };
   stores: readonly ViewStore[];
   summary: readonly string[];
   order: OrderWords;
@@ -1310,7 +1460,8 @@ const SaveDialog = (props: {
     setError(undefined);
     try {
       const saved = await target.save(
-        props.mode === "rename" && props.view ? { key: props.view.key, label, query: props.query } : { label, query: props.query },
+        // renaming changes the name only: the view keeps the query it holds, whatever the list shows now
+        props.mode === "rename" && props.view ? { key: props.view.key, label, query: props.view.query } : { label, query: props.query },
       );
       toast(t().saved({ name: saved.label }));
       props.onSaved(saved, target);
@@ -1410,16 +1561,19 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   state: ListQueryState<F, S, G>;
   icons?: Partial<Record<keyof F & string, string>>;
   counts?: Partial<Record<keyof F & string, Readonly<Record<string, number>>>>;
-  names: ReadonlyMap<string, LookupItem>;
-  onNames: (items: readonly LookupItem[]) => void;
+  namesOf: (field: string) => ReadonlyMap<string, LookupItem>;
+  onNames: (field: string, items: readonly LookupItem[]) => void;
+  timeZone: string;
+  canSet: (key: string, value: unknown) => boolean;
+  canEdit: (edit: (params: URLSearchParams) => void) => boolean;
   changed: boolean;
   results?: string;
   canSave: boolean;
   onSave: () => void;
   sentence: (key: string, definition: ListQueryField) => string;
   onField: (key: string, value: unknown) => boolean;
-  onSort: (value: string) => void;
-  onGroup: (value: string) => void;
+  onSort: (value: string) => boolean;
+  onGroup: (value: string) => boolean;
   onReset: () => void;
 }) => {
   const t = useFilterMessages();
@@ -1442,15 +1596,32 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
       <Icon name="chevron-right" />
     </button>
   );
-  const Single = (single: { label: string; options: readonly ListQueryOption[]; value: string; onChange: (value: string) => void }) => (
-    <Options
-      label={single.label}
-      options={single.options}
-      multiple={false}
-      value={[single.value]}
-      onChange={(next) => next[0] !== undefined && single.onChange(next[0])}
-    />
-  );
+  const Single = (single: {
+    label: string;
+    options: readonly ListQueryOption[];
+    value: string;
+    possible: (value: string) => boolean;
+    onChange: (value: string) => boolean;
+  }) => {
+    const [refused, setRefused] = createSignal(false);
+    return (
+      <>
+        <Options
+          label={single.label}
+          options={single.options}
+          multiple={false}
+          value={[single.value]}
+          possible={single.possible}
+          onChange={(next) => next[0] !== undefined && setRefused(!single.onChange(next[0]))}
+        />
+        <Show when={refused()}>
+          <p class="k2-fed-error" data-flush="" role="alert">
+            {t().valueRejected}
+          </p>
+        </Show>
+      </>
+    );
+  };
   return (
     <Dialog
       title={title()}
@@ -1518,8 +1689,10 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
                 definition={current().definition}
                 value={filters()[current().key]}
                 counts={props.counts?.[current().key]}
-                names={props.names}
-                onNames={props.onNames}
+                names={props.namesOf(current().key)}
+                onNames={(items) => props.onNames(current().key, items)}
+                timeZone={props.timeZone}
+                possible={(value) => props.canSet(current().key, value)}
                 onChange={(value) => props.onField(current().key, value)}
               />
             )}
@@ -1529,11 +1702,18 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               label={t().sort}
               options={sortEntries(props.query, t())}
               value={`${props.state.sort.field}.${props.state.sort.direction}`}
+              possible={(value) => props.canEdit((params) => params.set("sort", value))}
               onChange={props.onSort}
             />
           </Show>
           <Show when={props.place?.display === "group"}>
-            <Single label={t().group} options={groupEntries(props.query, t())} value={props.state.group ?? ""} onChange={props.onGroup} />
+            <Single
+              label={t().group}
+              options={groupEntries(props.query, t())}
+              value={props.state.group ?? ""}
+              possible={(value) => props.canEdit((params) => (value ? params.set("group", value) : params.delete("group")))}
+              onChange={props.onGroup}
+            />
           </Show>
         </Show>
       </div>
