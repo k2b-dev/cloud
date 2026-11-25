@@ -317,6 +317,7 @@ export default function UsersScreen(props: UsersScreenProps) {
             label={t().users}
             rows={rows()}
             rowKey={(row) => row.key}
+            sticky
             group={grouped() ? groupOf : undefined}
             open={(row) => ({ href: userDetailHref(row.entry.id, context()) })}
             empty={

@@ -46,8 +46,8 @@ export const listMessages = i18n.define({
       usersOf: ({ count, total }: { count: string; total: string }) => `${count} of ${total} users`,
       inSeveralGroups: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
-          one: "1 of them in several groups, shown in each",
-          other: `${count} of them in several groups, shown in each`,
+          one: "1 of them in several groups",
+          other: `${count} of them in several groups`,
         }),
       groupedOnPage: "Groups arrange the users of this page.",
       noUsers: "No users yet.",
@@ -124,8 +124,8 @@ export const listMessages = i18n.define({
       usersOf: ({ count, total }) => `${count} von ${total} Benutzern`,
       inSeveralGroups: ({ count }) =>
         i18n.plural(count, "de", {
-          one: "1 davon in mehreren Gruppen, steht mehrfach",
-          other: `${count} davon in mehreren Gruppen, sie stehen mehrfach`,
+          one: "1 davon in mehreren Gruppen",
+          other: `${count} davon in mehreren Gruppen`,
         }),
       groupedOnPage: "Die Gruppen ordnen die Benutzer dieser Seite.",
       noUsers: "Noch keine Benutzer.",

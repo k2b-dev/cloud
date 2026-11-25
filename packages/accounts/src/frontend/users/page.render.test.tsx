@@ -123,7 +123,7 @@ test("the address filters, sorts and groups the list on the server, and a row le
   expect(html).toContain("Gruppe ist Verkauf");
   // grouped by group: Milan stands under both of his groups, and the status row says so
   expect(html.match(/Milan Horvat/g)?.length).toBeGreaterThanOrEqual(2);
-  expect(html).toContain("1 davon in mehreren Gruppen, steht mehrfach");
+  expect(html).toContain("1 davon in mehreren Gruppen");
   expect(html).toContain(`/app/accounts/users/${people[1]!.id}?list=${encodeURIComponent(list)}`);
 });
 

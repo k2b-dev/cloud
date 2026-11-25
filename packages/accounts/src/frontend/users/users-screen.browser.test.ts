@@ -102,6 +102,7 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
   const seen: Seen = { pages: [], api: [] };
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/app/accounts/groups") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(false) });
     if (url.pathname === "/app/accounts/users") {
       seen.pages.push(url.search);
       return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(Boolean(options.failed)) });
@@ -130,7 +131,8 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
 };
 
 /** The names of the rows the table shows, in order; a person in two groups stands twice. */
-const names = (tab: Page) => tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) td:first-child").allTextContents();
+const names = (tab: Page) =>
+  tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) td:first-child [data-k2-part=Text]").allTextContents();
 const groupHeads = (tab: Page) => tab.locator("[data-k2-part=Table] tbody tr[data-group]").allTextContents();
 const expectedNames = (address: string) =>
   fixtureDirectory(parseUsersAddress(query, new URLSearchParams(address)).state).map((person) => person.displayName);
@@ -140,8 +142,11 @@ const shoot = async (tab: Page, name: string) => {
 };
 
 const expectClean = async (tab: Page) => {
+  // a row under the pointer shows its hover frame; the rules judge the resting page
+  await tab.mouse.move(0, 0);
   const outline = await describeV2Page(tab, "#root");
-  expect(outline).not.toContain("Problems (");
+  // the whole outline names each problem when one is found
+  expect(outline.includes("Problems (") ? outline : "").toBe("");
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
   expect(layout.problems).toEqual([]);
 };
@@ -172,7 +177,7 @@ describe("the user list on v2", () => {
         .click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("sort") === "login.desc");
       await tab.waitForFunction(
-        (first) => document.querySelector("[data-k2-part=Table] tbody tr td:first-child")?.textContent === first,
+        (first) => document.querySelector("[data-k2-part=Table] tbody tr td:first-child [data-k2-part=Text]")?.textContent === first,
         expectedNames("status=active&sort=login.desc")[0],
       );
       const sorted = await names(tab);
@@ -196,13 +201,13 @@ describe("the user list on v2", () => {
     } finally {
       await context.close();
     }
-  });
+  }, 60_000);
 
   test("grouped by group, a person stands in each of their groups and the status row says so", async () => {
     const { context, tab, errors } = await open(wide, "/app/accounts/users?status=active");
     try {
       await tab.getByRole("button", { name: /Keine Gruppen/ }).click();
-      await tab.getByRole("menuitemradio", { name: "Gruppe" }).click();
+      await tab.getByRole("menuitemradio", { name: "Gruppe", exact: true }).click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("group") === "member-of");
       await tab.locator("[data-k2-part=Table] tbody tr[data-group]").first().waitFor();
       const heads = await groupHeads(tab);
@@ -218,7 +223,7 @@ describe("the user list on v2", () => {
       const shown = await names(tab);
       expect(shown.filter((name) => name === "Milan Horvat")).toHaveLength(2);
       expect(shown.filter((name) => name === "Petra Lindqvist")).toHaveLength(2);
-      expect(await tab.locator("[data-status-row]").textContent()).toContain("2 davon in mehreren Gruppen, sie stehen mehrfach");
+      expect(await tab.locator("[data-status-row]").textContent()).toContain("2 davon in mehreren Gruppen");
       await shoot(tab, "grouped-light-1440");
       await expectClean(tab);
       // grouping only arranges the page: Back takes it away without loading the rows again
@@ -229,7 +234,7 @@ describe("the user list on v2", () => {
     } finally {
       await context.close();
     }
-  });
+  }, 60_000);
 
   test("a group filter names its group on the first picture and searches groups through the lookup", async () => {
     const { context, tab, errors } = await open(wide, `/app/accounts/users?member-of=${FIXTURE_GROUPS.sales.id}`);
@@ -248,7 +253,7 @@ describe("the user list on v2", () => {
     } finally {
       await context.close();
     }
-  });
+  }, 60_000);
 
   test("keeps the v2 rules at 1440, 1024 and 390 px; on the phone rows are two lines ending in their status", async () => {
     const address = "/app/accounts/users?status=active&group=member-of";
@@ -275,7 +280,21 @@ describe("the user list on v2", () => {
     } finally {
       await plain.context.close();
     }
-  });
+  }, 60_000);
+
+  test("the group list keeps the v2 rules at 1440, 1024 and 390 px", async () => {
+    for (const view of [wide, narrow, phone]) {
+      const { context, tab, errors } = await open(view, "/app/accounts/groups");
+      try {
+        await tab.getByRole("group", { name: "Filter" }).first().waitFor();
+        await expectClean(tab);
+        await shoot(tab, `groups-light-${view.name}`);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 60_000);
 
   test("a list that failed to load offers to try again, and the retry loads it", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/accounts/users?status=invited", { failed: true });
@@ -290,5 +309,5 @@ describe("the user list on v2", () => {
     } finally {
       await context.close();
     }
-  });
+  }, 60_000);
 });

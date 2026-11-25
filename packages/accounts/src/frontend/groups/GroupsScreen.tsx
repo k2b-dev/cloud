@@ -165,6 +165,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
           label={t().groups}
           rows={props.groups}
           rowKey={(group) => group.id}
+          sticky
           open={(group) => ({ href: group.href })}
           empty={
             changed() || state().search
