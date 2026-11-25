@@ -32,8 +32,8 @@ import {
   USER_VIEWS,
   USERS_PAGE_MAX,
   USERS_PER_PAGE,
-  type UserView,
   type UsersState,
+  type UserView,
   userDetailHref,
   usersHref,
   usersQuery,
@@ -206,7 +206,8 @@ export default function UsersScreen(props: UsersScreenProps) {
       .slice(0, 3)
       .map((group) => group.name)
       .join(", ") + (entry.groupCount > 3 ? ` ${t().moreGroups({ count: entry.groupCount - 3 })}` : "");
-  const login = (entry: UserDirectoryEntry) => lastLoginText(entry.lastLogin, t(), { locale: locale(), timeZone: props.timeZone, now: now() });
+  const login = (entry: UserDirectoryEntry) =>
+    lastLoginText(entry.lastLogin, t(), { locale: locale(), timeZone: props.timeZone, now: now() });
   const groupOf = (row: UserRow) => {
     const members = rows().filter((other) => other.group?.id === row.group?.id).length;
     return {
@@ -279,7 +280,14 @@ export default function UsersScreen(props: UsersScreenProps) {
               state={state()}
               onChange={change}
               base={base()}
-              icons={{ role: "id-badge-2", "member-of": "users-group", status: "circle-dot", login: "login", passkey: "key", provider: "building" }}
+              icons={{
+                role: "id-badge-2",
+                "member-of": "users-group",
+                status: "circle-dot",
+                login: "login",
+                passkey: "key",
+                provider: "building",
+              }}
               names={{ "member-of": props.groupNames }}
               timeZone={props.timeZone}
               results={t().usersCount({ count: number(total()) })}
@@ -337,7 +345,12 @@ export default function UsersScreen(props: UsersScreenProps) {
               { title: t().role, width: { min: 90, default: 110 }, cell: (row) => roleWord(row.entry), drop: true },
               { title: t().groups, width: { min: 140, default: 220 }, cell: (row) => groupWords(row.entry) || "–", drop: true },
               { title: t().status, width: { min: 110, default: 120 }, cell: (row) => statusChip(t(), row.entry) },
-              { title: t().passkey, width: { min: 90, default: 110 }, cell: (row) => (row.entry.passkey ? t().passkeyYes : t().passkeyNo), drop: true },
+              {
+                title: t().passkey,
+                width: { min: 90, default: 110 },
+                cell: (row) => (row.entry.passkey ? t().passkeyYes : t().passkeyNo),
+                drop: true,
+              },
               { title: t().lastActive, width: { min: 110, default: 130 }, align: "end", cell: (row) => login(row.entry) },
             ]}
           />

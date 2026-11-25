@@ -1,12 +1,28 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, FilterBar, Icon, Inline, Input, ListOrder, Notice, Pane, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Chip,
+  FilterBar,
+  Icon,
+  Inline,
+  Input,
+  ListOrder,
+  Notice,
+  Pane,
+  StatusRow,
+  Table,
+  Tabs,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
-import { RELATIONS_PATH } from "./relations/relations-view";
 import { useNewGroup } from "./new-group";
 import { GROUPS_PAGE_PATH, type GroupScope, type GroupsState, groupsHref, groupsQuery } from "./query";
+import { RELATIONS_PATH } from "./relations/relations-view";
 
 /** One group as the list shows it; the server words the name and builds the link with the list's context. */
 export type GroupListEntry = {

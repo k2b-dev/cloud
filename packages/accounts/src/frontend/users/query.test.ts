@@ -51,7 +51,9 @@ describe("the user list's address", () => {
 
   test("the views in code are plain addresses", () => {
     expect(usersHref(query, USER_VIEWS["no-passkey"](query))).toBe("/app/accounts/users?view=no-passkey&status=active&passkey=no");
-    expect(usersHref(query, USER_VIEWS["inactive-admins"](query))).toBe("/app/accounts/users?view=inactive-admins&role=admin&login=older-90d");
+    expect(usersHref(query, USER_VIEWS["inactive-admins"](query))).toBe(
+      "/app/accounts/users?view=inactive-admins&role=admin&login=older-90d",
+    );
   });
 });
 

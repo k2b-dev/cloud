@@ -297,10 +297,18 @@ test("admin updates pass an explicit null to remove an email", async () => {
 });
 
 test("the user list reads the list's address: filters, search and sort reach the one directory query", async () => {
-  const directory = spyOn(accountsAppService.user, "directory").mockResolvedValue({ items: [], page: 1, perPage: 50, total: 0, hasNext: false });
+  const directory = spyOn(accountsAppService.user, "directory").mockResolvedValue({
+    items: [],
+    page: 1,
+    perPage: 50,
+    total: 0,
+    hasNext: false,
+  });
   try {
     const group = "33333333-3333-4333-8333-333333333333";
-    const res = await users.request(`/?role=admin,guest&member-of=${group}&status=invited&passkey=no&q=ada&sort=login.asc&group=member-of&per_page=50`);
+    const res = await users.request(
+      `/?role=admin,guest&member-of=${group}&status=invited&passkey=no&q=ada&sort=login.asc&group=member-of&per_page=50`,
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ users: [], pagination: expect.objectContaining({ total: 0, per_page: 50 }) });
     expect(directory).toHaveBeenLastCalledWith({

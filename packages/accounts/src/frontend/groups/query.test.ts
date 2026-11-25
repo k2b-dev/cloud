@@ -14,7 +14,9 @@ test("the scope is mandatory: at the person's default it stays out of the addres
 });
 
 test("addresses from before v2 lead to the same list; the former personal-groups filter falls away", () => {
-  expect(legacyGroupsHref(query, new URLSearchParams("personal=1&scope=all&search=Design"))).toBe("/app/accounts/groups?scope=all&q=Design");
+  expect(legacyGroupsHref(query, new URLSearchParams("personal=1&scope=all&search=Design"))).toBe(
+    "/app/accounts/groups?scope=all&q=Design",
+  );
   expect(legacyGroupsHref(query, new URLSearchParams("search=fin&page=2&scope=managed"))).toBe(
     "/app/accounts/groups?scope=managed&q=fin&page=2",
   );

@@ -28,8 +28,8 @@ suite("the administration's user list (integration)", () => {
     const day = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
     const ada = await user("Ada", { admin: true, login: day(2) });
     const ben = await user("Ben", { login: day(120) });
-    const cleo = await user("Cleo", { profile: "guest" });
-    const dora = await user("Dora", { login: day(40), expires: day(1) });
+    await user("Cleo", { profile: "guest" });
+    await user("Dora", { login: day(40), expires: day(1) });
     const sales = await group("sales");
     const board = await group("board");
     const personal = await group("ada-personal");
@@ -48,7 +48,9 @@ suite("the administration's user list (integration)", () => {
       VALUES (${ben}::uuid, 'key', ${`dir-cred-${tag}`}, '\\x00'::bytea)
     `;
     const list = (query: Omit<Parameters<typeof accountsAppService.user.directory>[0], "search"> = {}) =>
-      accountsAppService.user.directory({ search: tag, ...query }).then((page) => page.items.map((entry) => entry.displayName.split(" ")[0]));
+      accountsAppService.user
+        .directory({ search: tag, ...query })
+        .then((page) => page.items.map((entry) => entry.displayName.split(" ")[0]));
 
     try {
       // what a row shows: role, state, groups without the personal one, the passkey

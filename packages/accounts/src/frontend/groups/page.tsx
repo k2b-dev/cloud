@@ -48,7 +48,9 @@ export default ssr<AuthContext>(async (c) => {
   const words = listMessages.resolve([locale]).t;
   const ignored =
     address.issues.length > 0
-      ? words.ignoredPartsDetail({ params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", ") })
+      ? words.ignoredPartsDetail({
+          params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
+        })
       : null;
   const groups = groupsPage.items.map((group) => ({
     id: group.id,

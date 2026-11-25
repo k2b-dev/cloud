@@ -35,9 +35,9 @@ import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import RemoveMember from "../../groups/detail/RemoveMember.island";
 import { getSupplementalRoles } from "../../lib/account-badges";
-import { userDetailHref, usersListContext, usersListHref, usersQuery } from "../query";
 import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
+import { userDetailHref, usersListContext, usersListHref, usersQuery } from "../query";
 import AddToGroup from "./AddToGroup.island";
 import AppDevicesSection from "./AppDevicesSection";
 import LinuxIdentity from "./LinuxIdentity.island";
@@ -291,12 +291,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
-              <UserActions
-                user={user}
-                listHref={listHref}
-                freeIpaEnabled={freeIpaEnabled}
-                localEmailOptional={localEmailOptional}
-              />
+              <UserActions user={user} listHref={listHref} freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} />
               {approvalConfig?.enabled && approvalConfig.adminPairing && !isExpired && categoryPolicy[accountCategory(user)].enabled && (
                 <ButtonLink href={`/me/security/pair?userId=${user.id}`} variant="secondary" size="sm">
                   <i class="ti ti-device-mobile" />

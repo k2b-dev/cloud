@@ -73,7 +73,8 @@ test("old personal-group list URLs use normal discovery and retain ordinary list
     // The former filter falls away on the way to the v2 address; the ordinary filters stay.
     const old = await server().request("/app/accounts/groups?personal=1&scope=all&search=Design");
     expect(old.status).toBe(302);
-    expect(old.headers.get("location")).toBe("/app/accounts/groups?scope=all&q=Design");
+    // all groups is an administrator's default scope, so the address leaves it out
+    expect(old.headers.get("location")).toBe("/app/accounts/groups?q=Design");
     const response = await server().request(old.headers.get("location")!, { headers: { "Accept-Language": "en" } });
     const html = await response.text();
     expect(response.status, html).toBe(200);

@@ -7,7 +7,16 @@ import AccountsNavigation from "../AccountsNavigation.island";
 import { accountsNavigationItems } from "../accounts-nav";
 import { listMessages } from "../list-messages";
 import { accountsMessages } from "../messages";
-import { directoryQueryOf, isUserView, legacyUsersHref, parseUsersAddress, USER_VIEWS, USERS_PER_PAGE, usersHref, usersQuery } from "./query";
+import {
+  directoryQueryOf,
+  isUserView,
+  legacyUsersHref,
+  parseUsersAddress,
+  USER_VIEWS,
+  USERS_PER_PAGE,
+  usersHref,
+  usersQuery,
+} from "./query";
 import UsersScreen from "./UsersScreen.island";
 
 /** The users of this Cloud on v2. The address is the whole list state: the declaration in `query.ts` reads it. */
@@ -46,7 +55,9 @@ export default ssr<AuthContext>(async (c) => {
   const words = listMessages.resolve([locale]).t;
   const ignored =
     address.issues.length > 0
-      ? words.ignoredPartsDetail({ params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", ") })
+      ? words.ignoredPartsDetail({
+          params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
+        })
       : null;
   return () => (
     <Layout

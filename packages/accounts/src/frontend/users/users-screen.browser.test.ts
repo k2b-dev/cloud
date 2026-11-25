@@ -109,7 +109,9 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
     if (url.pathname === "/api/accounts/users") {
       seen.api.push(url.search);
       const users = fixtureDirectory(parseUsersAddress(query, url.searchParams).state);
-      return route.fulfill({ json: { users, pagination: { page: 1, per_page: 100, total: users.length, total_pages: 1, has_next: false } } });
+      return route.fulfill({
+        json: { users, pagination: { page: 1, per_page: 100, total: users.length, total_pages: 1, has_next: false } },
+      });
     }
     if (url.pathname === "/api/accounts/groups") {
       const ids = url.searchParams.get("ids")?.split(",");
@@ -164,7 +166,10 @@ describe("the user list on v2", () => {
 
       // sort by last activity, newest first
       await tab.getByRole("button", { name: /Name/ }).first().click();
-      await tab.getByRole("menuitemradio", { name: /Zuletzt aktiv/ }).first().click();
+      await tab
+        .getByRole("menuitemradio", { name: /Zuletzt aktiv/ })
+        .first()
+        .click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("sort") === "login.desc");
       await tab.waitForFunction(
         (first) => document.querySelector("[data-k2-part=Table] tbody tr td:first-child")?.textContent === first,
@@ -201,7 +206,14 @@ describe("the user list on v2", () => {
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("group") === "member-of");
       await tab.locator("[data-k2-part=Table] tbody tr[data-group]").first().waitFor();
       const heads = await groupHeads(tab);
-      expect(heads.map((head) => head.replace(/\d+$/, ""))).toEqual(["Aushilfen", "Büro", "Geschäftsführung", "Lager", "Verkauf", "Werkstatt"]);
+      expect(heads.map((head) => head.replace(/\d+$/, ""))).toEqual([
+        "Aushilfen",
+        "Büro",
+        "Geschäftsführung",
+        "Lager",
+        "Verkauf",
+        "Werkstatt",
+      ]);
       // Milan Horvat (Geschäftsführung, Verkauf) and Petra Lindqvist (Verkauf, Werkstatt) stand twice
       const shown = await names(tab);
       expect(shown.filter((name) => name === "Milan Horvat")).toHaveLength(2);
