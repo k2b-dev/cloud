@@ -2,6 +2,7 @@ import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import notebookAttachmentsPage from "./[id]/attachments/page";
+import notebookNotesPage from "./[id]/notes/page";
 import notebookDetailPage from "./[id]/page";
 import notebookTagPage from "./[id]/tags/[tag]/page";
 import notebooksAdminPage from "./admin";
@@ -21,5 +22,6 @@ export default new Hono<AuthContext>()
   // handler reads both shape variants from `c.req.param(...)`.
   .get("/:id", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebookDetailPage)
   .get("/:id/notes/:noteId", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebookDetailPage)
+  .get("/:id/notes", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebookNotesPage)
   .get("/:id/attachments", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebookAttachmentsPage)
   .get("/:id/tags/:tag", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notebookTagPage);

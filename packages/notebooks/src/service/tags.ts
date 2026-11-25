@@ -93,7 +93,7 @@ const PREVIEW_CHARS = 240;
 /** Strip frontmatter + heading markers + code fences from a markdown
  *  body so the preview reads like prose. KISS — full markdown→text
  *  parsing would be overkill for a 240-char snippet. */
-const buildPreview = (md: string | null): string | null => {
+export const buildPreview = (md: string | null): string | null => {
   if (!md) return null;
   let stripped = md;
   // Drop YAML/TOML frontmatter at the head of the doc

@@ -16,6 +16,7 @@ import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import * as pageList from "./page-list";
 import * as pageTemplates from "./page-templates";
 import * as presence from "./presence";
 import { reindexRuntime } from "./reindex-scheduler";
@@ -276,6 +277,10 @@ export const notebooksService = {
     noteFavoriteChanged: workspaceEvents.noteFavoriteChanged,
     noteCommentsChanged: workspaceEvents.noteCommentsChanged,
     invalidated: workspaceEvents.invalidated,
+  },
+  /** The pages as one list a person filters: all, favorites, a tag, a search (replaces the tag page). */
+  pages: {
+    list: pageList.listPages,
   },
   tag: {
     listForNotebook: tags.listForNotebook,
