@@ -282,5 +282,7 @@ export function createMailV2ReaderMenus(props: {
   return {
     later: (): MenuEntry[] => mailV2MenuEntries(laterItems()),
     more: (): MenuEntry[] => mailV2MenuEntries(moreItems()),
+    /** What other apps linked to the open conversation, for the head's "n verknüpft". */
+    linked: () => links.items(),
   };
 }

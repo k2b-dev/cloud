@@ -229,6 +229,18 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  test("the reader names what other apps linked to the conversation, and one link opens it", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const linked = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("link", { name: "1 verknüpft" });
+      await linked.waitFor();
+      expect(await linked.getAttribute("href")).toBe("/app/spaces/tasks/DemoTask1");
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   // As v1's sidebar: the hidden mailboxes fold into one quiet entry, which opens them below itself.
   test("the sidebar's Hidden entry opens the hidden mailboxes below itself", async () => {
     const page = await open(MAIL_V2_PATH);

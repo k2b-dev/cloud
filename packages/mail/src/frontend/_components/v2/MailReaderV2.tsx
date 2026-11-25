@@ -16,6 +16,7 @@ import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
+import { mailReaderMessages } from "../mail-reader-messages";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import type { MailV2Text } from "./mail-v2-messages";
@@ -221,6 +222,7 @@ export default function MailReaderV2(props: {
   session: MailV2Session;
 }) {
   const locale = useLocale();
+  const readerText = createMemo(() => mailReaderMessages.resolve([locale()]).t);
   const c = () => props.controller;
   const data = () => c().data;
   const item = () => c().selectedListItem();
@@ -334,6 +336,28 @@ export default function MailReaderV2(props: {
                 </Chip>
               )}
             </For>
+            {/* What other apps linked to the conversation: one item opens directly, several in a menu (v1's chip). */}
+            <Show when={menus.linked().length > 0}>
+              <Show
+                when={menus.linked().length === 1 ? menus.linked()[0] : null}
+                fallback={
+                  <Menu
+                    icon="link"
+                    items={menus
+                      .linked()
+                      .map((linked) => ({ label: linked.title, icon: linked.icon.replace(/^ti\s+ti-/, ""), href: linked.href }))}
+                  >
+                    {readerText().linkedCount({ count: menus.linked().length })}
+                  </Menu>
+                }
+              >
+                {(only) => (
+                  <Chip icon="link" href={only().href}>
+                    {readerText().linkedCount({ count: 1 })}
+                  </Chip>
+                )}
+              </Show>
+            </Show>
             <Show when={c().canWrite() && item()}>
               {(open) => (
                 <Chip icon="plus" onClick={() => void c().manageConversationTags(open())}>

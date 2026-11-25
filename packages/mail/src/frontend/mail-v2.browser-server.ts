@@ -137,6 +137,29 @@ document.documentElement.dataset.mailV2Ready='true';
         });
       }
       if (url.pathname.endsWith("/presence")) return Response.json({ participants: [] });
+      // What other apps linked to the conversation: the mockup's offer has one task ("1 verknüpft").
+      const context = /\/conversations\/([^/]+)\/context$/.exec(url.pathname);
+      if (context)
+        return Response.json({
+          conversationId: context[1],
+          participants: [],
+          contacts: { status: "absent", items: [], matchedEmails: [], nextCursor: null },
+          spaces: {
+            status: "ready",
+            truncated: false,
+            items:
+              context[1] === "Demo01"
+                ? [
+                    {
+                      ref: { app: "spaces", type: "task", id: "DemoTask1" },
+                      title: "Angebot 4471 prüfen",
+                      icon: "ti ti-checkbox",
+                      links: [{ rel: "open", href: "/app/spaces/tasks/DemoTask1" }],
+                    },
+                  ]
+                : [],
+          },
+        });
       // The reply box writes into a seed the server derives, as the v1 suite's fixture answers it; nothing is stored.
       if (url.pathname.endsWith("/compose-signature-defaults")) return Response.json([]);
       if (url.pathname.endsWith("/compose-templates"))
