@@ -9,10 +9,10 @@ import type { PublicStatus } from "../../contracts";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { venueMessages } from "../../messages";
 import { venueService } from "../../service";
-import VenueWorkspace from "../_components/VenueWorkspace.island";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { venueDashboardRouteScope } from "../dashboard-query";
 import { CALENDAR_VIEW_COOKIE, parseCalendarView, parseShiftSelection } from "../schedule-url";
+import VenueScreen from "../screens/VenueScreen.island";
 
 const log = logger("venue:workspace");
 
@@ -151,9 +151,9 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/venue" }, { title: venue.name }]}
       fullWidth
-      fullPage
+      ui="v2"
     >
-      <VenueWorkspace
+      <VenueScreen
         dashboard={dashboard}
         dashboardSource={dashboardScope.source}
         userId={user.id}

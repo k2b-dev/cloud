@@ -4,7 +4,7 @@ import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { venueMessages } from "../messages";
 import { venueService } from "../service";
-import VenueOverview from "./_components/VenueOverview.island";
+import VenueOverviewScreen from "./screens/VenueOverviewScreen.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = venueMessages.resolve([getLocale(c)]);
@@ -14,8 +14,8 @@ export default ssr<AuthContext>(async (c) => {
   const initialQuery = (c.req.query("q") ?? "").trim();
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <VenueOverview venues={publicVenues} templates={templates} initialQuery={initialQuery} />
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
+      <VenueOverviewScreen venues={publicVenues} templates={templates} initialQuery={initialQuery} />
     </Layout>
   );
 });

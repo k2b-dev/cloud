@@ -222,12 +222,13 @@ suite("Venue shift detail", () => {
 
       const asAdmin = await page(admin, selected);
       expect(asAdmin.status).toBe(200);
-      expect(asAdmin.text).toContain("k2b-app-workspace__detail venue-shift-detail");
-      expect(asAdmin.text).toContain(`aria-label="Remove ${staff.name}"`);
+      // The open shift stands beside the calendar as the v2 detail pane, with the admin's Remove for the person.
+      expect(asAdmin.text).toContain('data-k2-part="Pane"');
+      expect(asAdmin.text).toContain(`Remove ${staff.name}`);
 
       const asColleague = await page(colleague, selected);
       expect(asColleague.text).toContain(staff.name);
-      expect(asColleague.text).not.toContain(`aria-label="Remove ${staff.name}"`);
+      expect(asColleague.text).not.toContain(`Remove ${staff.name}`);
 
       // Without `cv`, the view this browser used last; an unknown view falls back to the week.
       const remembered = await page(reader, `?cd=${tomorrow}`, "; venue_calendar_view=mobile-month");

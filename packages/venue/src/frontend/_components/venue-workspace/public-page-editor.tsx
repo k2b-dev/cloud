@@ -79,7 +79,7 @@ export function PublicPageEditor(props: {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
   const venue = () => props.dashboard.venue;
-  const actions = createActionKeys();
+  const actions = createActionKeys((message) => void prompts.error(message));
   let disposed = false;
   let list: HTMLDivElement | undefined;
 
