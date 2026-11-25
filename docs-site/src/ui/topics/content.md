@@ -14,7 +14,7 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 ## Files as pictures, dragged onto folders
 
-The grid view of Files: each file a tile with its picture in a box of a fixed shape, in the size the person chose (`size`, kept in the address). The symbol of its kind stands in the box while the picture loads, when it fails and when there is none, so nothing moves. The grid is one Tab stop: arrows go to the nearest tile, Space selects, Enter opens. A tile, or all selected ones, drags onto a folder of the grid or of the sidebar's tree (`drag`, one `scope`); a closed folder the pointer rests on opens, a folder that does not take them says so, and a place at the bottom says "Hier loslassen: nichts passiert". Files from the computer drop onto a folder (`onFiles`). Dragging is a shortcut: keys and touch move through the tile's menu.
+The grid view of Files: each file a tile with its picture in a box of a fixed shape, in the size the person chose (`size`, kept in the address). The symbol of its kind stands in the box while the picture loads, when it fails and when there is none, so nothing moves. The grid is one Tab stop: arrows go to the nearest tile, Space selects, Enter opens. A tile, or all selected ones, drags onto a folder of the grid or of the sidebar's tree (`drag`, one `scope`); a closed folder the pointer rests on opens, a folder that does not take them says so, and a place at the bottom says "Hier loslassen: nichts passiert". Files from the computer drop onto a folder (`onFiles`). Dragging is a shortcut: give each tile a menu entry "Verschieben nach …" for keys and touch, and move nothing before `onDrop`.
 
 <Example recipe="file-grid" height="560" default="Medium" />
 
@@ -89,7 +89,6 @@ Until they ship, use the nearest part and write `// k2b-ui gap: …` at that pla
 - Give a key or an ID `mono` and `copy` in `Facts`.
 - Stand a drawing in a `Canvas` with a `label` and a `height`, directly in its `Section`.
 - Show `Empty` in place of a chart that has no data.
-- Give every draggable entry a menu entry that does the same ("Verschieben nach …").
 
 ### Don't
 
@@ -97,7 +96,6 @@ Until they ship, use the nearest part and write `// k2b-ui gap: …` at that pla
 - Render a user's Markdown or HTML yourself with `innerHTML`.
 - Wrap a `Canvas` in a plain element or make it the root of a component.
 - Draw your own frame or line around a chart.
-- Move anything while the pointer is still down; move on `onDrop`.
 
 ## Next
 

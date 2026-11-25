@@ -98,6 +98,7 @@ export function Demo() {
           rows={entries()}
           rowKey={(entry) => entry.key}
           select={{ selected: selected(), onChange: setSelected, all: "Alle Dateien", row: (entry) => entry.name }}
+          current={current()}
           open={(entry) => ({ onOpen: () => setCurrent(entry.key) })}
           drag={drag}
         />

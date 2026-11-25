@@ -499,7 +499,8 @@ export function createDragOnto(options: {
         if (event.button !== 0 || moving() || event.pointerType === "touch") return;
         // a press on a control inside the item (its "…", a box) is that control's
         const from = event.target instanceof Element ? event.target : null;
-        if (from?.closest("button, input, select, textarea") && !from.closest("[data-k2-drag-handle]")) return;
+        // (the link or button that opens the item is the item's own and drags it)
+        if (from?.closest("button:not(.k2-row-open), input, select, textarea") && !from.closest("[data-k2-drag-handle]")) return;
         startPointerDrag(el, event, key, MOUSE_THRESHOLD_PX);
       };
       // After the hold, a non-passive touchmove keeps the page from scrolling under the dragged finger.

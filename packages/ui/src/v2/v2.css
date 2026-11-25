@@ -851,6 +851,10 @@
   user-select: none;
   -webkit-user-drag: none;
 }
+/* the tile itself opens on a press (and drags), so its name is not stretched over it */
+.k2-ui .k2-tiles[data-size] .k2-row-open::after {
+  content: none;
+}
 .k2-ui .k2-tiles[data-size] > .k2-tile > .k2-tile-text {
   display: flex;
   flex-direction: column;
@@ -916,7 +920,7 @@
   box-shadow: inset 0 2px 0 var(--k2-app), inset 0 -2px 0 var(--k2-app);
 }
 .k2-ui [data-drop-refused],
-.k2-ui [data-drop-refused] * {
+.k2-ui [data-drop-refused] :is(.k2-row-open, .k2-ni-name) {
   cursor: not-allowed;
 }
 .k2-ui.k2-drag-chip {

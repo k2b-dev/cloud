@@ -61,7 +61,7 @@ const dragTo = async (page: Page, from: Locator, to: Locator, rest = 0) => {
 };
 
 test("server markup: picture tiles stand in a grid of their size, each picture over its symbol", () => {
-  expect(markup).toMatch(/class="k2-tiles"[^>]*data-size="m"/);
+  expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-size="m"/);
   expect(markup).toMatch(/<span class="k2-tile-pic"><i[^>]*ti-photo[^>]*><\/i><img[^>]*loading="lazy"/);
 });
 
