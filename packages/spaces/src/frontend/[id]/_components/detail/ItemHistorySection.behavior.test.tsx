@@ -64,12 +64,14 @@ describe.skipIf(isServer)("A card's history", () => {
         nextCursor: null,
       })) as unknown as typeof fetch;
     const dom = mount();
+    // The history waits behind one press, so the open item shows without loading.
+    Array.from(dom.document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Verlauf anzeigen")!
+      .click();
     await settle();
-    const links = Array.from(dom.document.querySelectorAll("a")).map((link) => [link.textContent, link.getAttribute("href")]);
-    expect(links).toEqual([
-      ["Code von info@", "/app/mail/m1/code"],
-      ["Lauf öffnen", "/app/mail/m1/code?tab=runs&run=r1"],
-    ]);
+    // The row opens the work, the run opens beside it; a work the viewer may not follow opens nothing.
+    const links = Array.from(dom.document.querySelectorAll("a")).map((link) => link.getAttribute("href"));
+    expect(links).toEqual(["/app/mail/m1/code", "/app/mail/m1/code?tab=runs&run=r1"]);
     expect(dom.document.body.textContent).toContain("Angelegt von Code (gelöscht)");
     expect(dom.document.body.textContent).toContain("Angelegt von Code von info@ (Lieferungen eintragen)");
     expect(dom.document.body.textContent).toContain("Angelegt von Code von info@ (legacyJob)");
@@ -82,11 +84,15 @@ describe.skipIf(isServer)("A card's history", () => {
       return calls === 1 ? json({ message: "down" }, 503) : json({ data: [entry("1", "Ben hat die Aufgabe erstellt")], nextCursor: null });
     }) as unknown as typeof fetch;
     const dom = mount();
+    // The history waits behind one press, so the open item shows without loading.
+    Array.from(dom.document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Verlauf anzeigen")!
+      .click();
     await settle();
-    expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("Der Verlauf konnte nicht geladen werden.");
-    dom.document.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+    expect(dom.document.querySelector('[data-k2-part="Failed"]')?.textContent).toContain("Der Verlauf konnte nicht geladen werden.");
+    dom.document.querySelector<HTMLButtonElement>('[data-k2-part="Failed"] button')!.click();
     await settle();
     expect(dom.document.body.textContent).toContain("Ben hat die Aufgabe erstellt");
-    expect(dom.document.querySelector('[role="alert"]')).toBeNull();
+    expect(dom.document.querySelector('[data-k2-part="Failed"]')).toBeNull();
   });
 });

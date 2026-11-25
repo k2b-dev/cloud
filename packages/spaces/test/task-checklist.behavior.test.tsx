@@ -87,25 +87,48 @@ describe("Spaces task checklist", () => {
       dom.root,
     );
 
-    dom.root.querySelector<HTMLInputElement>('[aria-label="Complete Review copy"]')!.click();
+    Object.assign(globalThis, {
+      HTMLInputElement: dom.window.HTMLInputElement,
+      HTMLSlotElement: dom.window.HTMLSlotElement,
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+    const check = (label: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>('[data-k2-part="Check"]'))
+        .find((entry) => entry.textContent?.trim() === label)
+        ?.querySelector("input");
+    const button = (label: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (entry) => entry.textContent?.trim() === label || entry.getAttribute("aria-label") === label,
+      );
+    const enter = (input: HTMLInputElement | HTMLTextAreaElement) =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    check("Complete Review copy")!.click();
     await flush();
     expect(entries[0]?.completed).toBe(true);
 
-    const label = dom.root.querySelector<HTMLInputElement>('[aria-label="Subtask label"]')!;
+    // A subtask is renamed and removed in the panel behind its pencil.
+    button("Subtask label")!.click();
+    await flush();
+    const label =
+      dom.document.querySelector<HTMLInputElement>('input[name="checklist-Step01"], [data-k2-part="Field"] input[value="Review copy"]') ??
+      Array.from(dom.document.querySelectorAll<HTMLInputElement>("input")).find((input) => input.value === "Review copy")!;
     label.value = "Review final copy";
     label.dispatchEvent(new Event("input", { bubbles: true }));
-    label.dispatchEvent(new Event("blur", { bubbles: true }));
+    enter(label);
     await flush();
     expect(entries[0]?.label).toBe("Review final copy");
 
-    const add = dom.root.querySelector<HTMLInputElement>('[aria-label="Add subtask…"]')!;
+    const add = dom.root.querySelector<HTMLInputElement>('input[placeholder="Add subtask…"]')!;
     add.value = "Publish";
     add.dispatchEvent(new Event("input", { bubbles: true }));
-    add.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    enter(add);
     await flush();
     expect(entries.map((entry) => entry.label)).toEqual(["Review final copy", "Publish"]);
 
-    dom.root.querySelector<HTMLButtonElement>('[aria-label="Delete Review final copy"]')!.click();
+    button("Subtask label")!.click();
+    await flush();
+    button("Delete Review final copy")!.click();
     await flush();
     expect(entries.map((entry) => entry.label)).toEqual(["Publish"]);
 
@@ -131,7 +154,7 @@ describe("Spaces task checklist", () => {
         }),
       dom.root,
     );
-    const add = dom.root.querySelector<HTMLInputElement>('[aria-label="Add subtask…"]')!;
+    const add = dom.root.querySelector<HTMLInputElement>('input[placeholder="Add subtask…"]')!;
     add.value = "Unfinished draft";
     add.dispatchEvent(new Event("input", { bubbles: true }));
     setLiveEntries([...entries]);
