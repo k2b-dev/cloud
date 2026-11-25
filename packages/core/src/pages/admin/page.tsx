@@ -9,7 +9,7 @@ type Messages = ReturnType<typeof adminMessages.resolve>["t"];
 
 const platformTasks = (t: Messages): OverviewTask[] => [
   { href: "/admin/apps", title: t.apps, description: t.appsDescription, icon: "apps" },
-  { href: "/admin/rail", title: t.rail, description: t.railDescription, icon: "layout-sidebar" },
+  { href: "/admin/apps/navigation", title: t.rail, description: t.railDescription, icon: "layout-sidebar" },
   { href: "/admin/base", title: t.generalSettings, description: t.generalSettingsDescription, icon: "app-window" },
   { href: "/admin/storage", title: t.storageSettings, description: t.storageSettingsDescription, icon: "database" },
   { href: "/admin/signin/security", title: t.security, description: t.securityDescription, icon: "shield-lock" },

@@ -17,7 +17,6 @@ const SETUP = [
   { href: "/admin/storage", icon: "ti-database", label: "Storage" },
   { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
   { href: "/admin/outgoing-mail", icon: "ti-mail", label: "Outgoing mail" },
-  { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: "Email templates" },
   { href: "/admin/announcements", icon: "ti-speakerphone", label: "Announcements" },
   { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
 ];
@@ -129,7 +128,6 @@ describe("buildAdminGroups", () => {
     const operations = groups.find((group) => group.label === "Operations")!;
     expect(operations.links.map((link) => link.href)).toEqual([
       "/admin/apps",
-      "/admin/rail",
       "/admin/code",
       "/admin/settings/maintenance",
       "/admin/observability",
@@ -145,9 +143,9 @@ describe("buildAdminGroups", () => {
       [undefined, ["Übersicht"]],
       [
         "Einrichten",
-        ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "E-Mail-Vorlagen", "Ankündigungen", "KI"],
+        ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "Ankündigungen", "KI"],
       ],
-      ["Betrieb", ["Apps", "App-Leiste", "Code", "Wartungsmodus"]],
+      ["Betrieb", ["Apps", "Code", "Wartungsmodus"]],
     ]);
   });
 

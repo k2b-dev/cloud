@@ -765,7 +765,8 @@ authorized registry.
 
 ## Provide global app bar shortcuts
 
-Administrators open **Administration → App bar** (`/admin/rail`) to create,
+Administrators open **Administration → Apps → Navigation** (`/admin/apps/navigation`;
+the old address `/admin/rail` leads there) to create,
 edit, reorder, or remove global shortcuts. Each shortcut points to an available
 app or a link with a title and icon.
 
@@ -880,8 +881,8 @@ the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
 do not apply to a v2 admin page.
 
 The admin sidebar shows the overview, then **Set up** (base settings, storage,
-sign-in, outgoing mail, email templates, announcements, AI), then
-**Operations** (apps, app bar, maintenance mode, Observability, People), then
+sign-in, outgoing mail with its email templates, announcements, AI), then
+**Operations** (apps with their navigation, maintenance mode, Observability, People), then
 app-owned groups, and last **Settings per app** with one entry per app's
 `adminHref`.
 

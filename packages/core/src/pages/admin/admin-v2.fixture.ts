@@ -20,7 +20,6 @@ const groups = (current: string, sections: NavProps["groups"][number]["items"] =
         ...item("Speicher", "database", "/admin/storage"),
         ...item("Anmeldung & Sicherheit", "shield-lock", "/admin/signin"),
         ...item("Ausgehende Mail", "mail", "/admin/outgoing-mail"),
-        ...item("E-Mail-Vorlagen", "template", "/admin/settings?tab=email-templates"),
         ...item("Ankündigungen", "speakerphone", "/admin/announcements"),
         ...item("KI", "sparkles", "/admin/ai"),
       ],
@@ -29,7 +28,6 @@ const groups = (current: string, sections: NavProps["groups"][number]["items"] =
       label: "Betrieb",
       items: [
         ...item("Apps", "apps", "/admin/apps"),
-        ...item("App-Leiste", "layout-sidebar", "/admin/rail"),
         ...item("Code", "code", "/admin/code", { count: 2 }),
         ...item("Wartungsmodus", "barrier-block", "/admin/settings/maintenance"),
         ...item("Observability", "heart-rate-monitor", "/admin/observability"),
