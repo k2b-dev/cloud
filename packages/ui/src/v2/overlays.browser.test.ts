@@ -195,15 +195,19 @@ for (const width of [767, 768])
     );
   });
 
-// The phone's sheet stands on the bottom of the window: when its content gets shorter it is lower in the very next
-// frame, never a frame at its old top (a tap there would hit the backdrop and close it, #4141).
-// With a slow sheet module, core's own observer of the sheet is made after everything of v2: the sheet holds anyway.
-for (const [touch, slowSheet] of [
-  [false, false],
-  [true, false],
-  [false, true],
+// The phone's sheet stands on the bottom of the window: when its content gets shorter or taller its top is at its new
+// place in the very next frame, never a frame at its old one (a tap there would hit the backdrop and close it, #4141;
+// content that grows would stand below the window, #4167). With a slow sheet module, core's own observer of the sheet
+// is made after everything of v2: the sheet holds anyway.
+for (const [change, touch, slowSheet] of [
+  ["shorter", false, false],
+  ["shorter", true, false],
+  ["shorter", false, true],
+  ["taller", false, false],
+  ["taller", true, false],
+  ["taller", false, true],
 ] as const)
-  test(`sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets shorter moves its top down in the same frame`, async () => {
+  test(`sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets ${change} moves its top in the same frame`, async () => {
     await withPage(
       async (page) => {
         if (slowSheet) {
@@ -218,11 +222,11 @@ for (const [touch, slowSheet] of [
         } else await openDialog(page);
         const before = await box(page.locator(".k2-dialog"));
         expect(before.y + before.height).toBe(900);
-        const frames = await page.evaluate(async () => {
+        const frames = await page.evaluate(async (taller) => {
           const dialog = document.querySelector(".k2-dialog") as HTMLElement;
           // the place each frame is drawn at: read after the frame (a task after its animation frame)
           const drawn = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
-          window.__k2Shorten?.();
+          (taller ? window.__k2Lengthen : window.__k2Shorten)?.();
           const tops: number[] = [];
           for (let index = 0; index < 4; index++) {
             await drawn();
@@ -230,15 +234,61 @@ for (const [touch, slowSheet] of [
             tops.push(Math.round(top), Math.round(bottom));
           }
           return tops;
-        });
+        }, change === "taller");
         await settled(page);
         const after = await box(page.locator(".k2-dialog"));
-        expect(after.height).toBeLessThan(before.height);
+        if (change === "taller") expect(after.height).toBeGreaterThan(before.height);
+        else expect(after.height).toBeLessThan(before.height);
         expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
       },
-      { width: 390, long: true, touch, slowSheet },
+      { width: 390, long: change === "shorter", touch, slowSheet },
     );
   });
+
+// A script that scrolls something in a resting sheet into view (a day of a calendar) never moves or closes the sheet,
+// also where the sheet's host scrolls on a touch screen (#4167). Only a person's touch moves it.
+for (const touch of [false, true])
+  for (const long of [false, true])
+    for (const block of ["end", "center"] as const)
+      test(`sheet${touch ? " on a touch screen" : ""}${long ? " that scrolls" : ""}: scrollIntoView(${block}) of a line keeps it open on the bottom`, async () => {
+        await withPage(
+          async (page) => {
+            await openDialog(page);
+            const before = await box(page.locator(".k2-dialog"));
+            await page.evaluate((where) => {
+              const lines = document.querySelectorAll(".k2-dialog-body > *");
+              lines[0]?.scrollIntoView({ block: where });
+            }, block);
+            // the sheet would have glided away and closed by now
+            await page.evaluate(() => new Promise((done) => setTimeout(done, 500)));
+            await settled(page);
+            expect(await page.locator(".k2-dialog").count()).toBe(1);
+            const after = await box(page.locator(".k2-dialog"));
+            expect([after.y, after.height]).toEqual([before.y, before.height]);
+          },
+          { width: 390, long, touch },
+        );
+      });
+
+// A swipe down still closes it: the host's scroll that a touch began is the person's.
+test("sheet on a touch screen: a scroll of its host that a touch began closes it", async () => {
+  await withPage(
+    async (page) => {
+      await openDialog(page);
+      expect(await page.locator(".k2-dialog").getAttribute("data-driver")).toBe("scroll-snap");
+      await page.evaluate(async () => {
+        const host = document.querySelector(".k2-dialog")!.parentElement!;
+        const frame = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+        host.dispatchEvent(new Event("touchstart", { bubbles: true }));
+        host.scrollTop = 0;
+        await frame();
+        host.dispatchEvent(new Event("touchend", { bubbles: true }));
+      });
+      await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+    },
+    { width: 390, touch: true },
+  );
+});
 
 // The open list of a selection (Bausteine 09): exactly as wide as its field, an option per row of 32 px, a check at the
 // chosen option; the keyboard and the form work.
