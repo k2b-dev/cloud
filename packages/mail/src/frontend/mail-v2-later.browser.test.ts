@@ -41,8 +41,10 @@ afterAll(async () => {
 type Sent = { method: string; path: string; body: Record<string, unknown> };
 
 /** Opens the demo conversation and answers the collaboration and reminder calls as Mail's server does. */
-const open = async (width = 1440) => {
+const open = async (width = 1440, options: { clock?: boolean } = {}) => {
   const page = await browser.newPage({ viewport: { width, height: width < 768 ? 844 : 900 }, hasTouch: width < 768 });
+  // Playwright's clock runs on as the real one until a test moves it forward (and with it every timer of the page)
+  if (options.clock) await page.clock.install();
   const errors = pageErrors(page);
   const sent: Sent[] = [];
   await page.route(/\/conversations\/Demo01\/(collaboration|reminder)$/, async (route) => {
@@ -75,6 +77,14 @@ const open = async (width = 1440) => {
 const head = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
 /** The open menus, outermost first (a submenu is a menu of its own). */
 const menus = (page: Page) => page.locator('[role="menu"]');
+/** The calendar panel: a dialog beside its entry, not a menu. */
+const panel = (page: Page) => page.getByRole("dialog", { name: "Datum und Uhrzeit …" });
+/** Moves the page's clock to `at` (and on from there as the real one), without running its timers. */
+const setPageNow = (page: Page, at: string) =>
+  page.evaluate((ms) => {
+    const start = performance.now();
+    Date.now = () => ms + (performance.now() - start);
+  }, Date.parse(at));
 /** How many menus are open (a submenu is a menu of its own). */
 const openMenus = (page: Page, count: number) =>
   page.waitForFunction((count) => document.querySelectorAll('[role="menu"]').length === count, count, { timeout: 5_000 });
@@ -160,9 +170,11 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await calendar.waitFor();
       // beside the times, as a submenu: the head's button stands on the right, so the times open to the left and the
       // calendar goes on to the left, never back over the menu it came from
-      const [later, times, panel] = await Promise.all([0, 1, 2].map((level) => menus(page).nth(level).boundingBox()));
+      const [later, times, beside] = await Promise.all(
+        [menus(page).nth(0), menus(page).nth(1), panel(page)].map((part) => part.boundingBox()),
+      );
       expect(!!later && !!times && times.x + times.width <= later.x + 1).toBe(true);
-      expect(!!times && !!panel && panel.x + panel.width <= times.x + 1).toBe(true);
+      expect(!!times && !!beside && beside.x + beside.width <= times.x + 1).toBe(true);
       // the days before today cannot be picked (Friday, 27 November, in the fixture's UTC)
       expect(await calendar.locator('[data-value="2026-11-26"]').getAttribute("aria-disabled")).toBe("true");
       // today at 8:00 has passed: refused under the calendar, the menu stays
@@ -180,6 +192,120 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await openMenus(page, 0);
       await calls(sent, 1);
       expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-12-02T14:30:00.000Z", expectedRevision: null } });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // Review of #4157: the menu's keys must not reach into the calendar, and the calendar is a dialog, not a menu.
+  test("the calendar is a dialog beside its entry: Tab stays in it, the arrows and Enter are its own, Escape goes back", async () => {
+    const { page, errors, sent } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).focus();
+      await page.keyboard.press("ArrowRight");
+      await openMenus(page, 2);
+      // the last of the times, "Datum und Uhrzeit …", says it opens a dialog
+      await page.keyboard.press("End");
+      const entry = page.getByRole("menuitem", { name: "Datum und Uhrzeit …" });
+      expect(await entry.getAttribute("aria-haspopup")).toBe("dialog");
+      await page.keyboard.press("ArrowRight");
+      await panel(page).waitFor();
+      // the focus moves into the calendar
+      await page.waitForFunction(() => !!document.activeElement?.closest('[role="dialog"]'));
+      // Tab walks the calendar and comes round again; the menus stay open
+      for (let step = 0; step < 6; step += 1) await page.keyboard.press("Tab");
+      await openMenus(page, 2);
+      expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(true);
+      // the arrows move the caret in the time field, not the menu
+      await panel(page).locator('[data-value="2026-12-02"]').click();
+      const time = panel(page).getByRole("textbox", { name: "Uhrzeit" });
+      await time.focus();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowRight");
+      expect(await panel(page).isVisible()).toBe(true);
+      await openMenus(page, 2);
+      // Escape closes only the calendar and returns to its entry
+      await page.keyboard.press("Escape");
+      await panel(page).waitFor({ state: "detached" });
+      await openMenus(page, 2);
+      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Datum und Uhrzeit …");
+      // Enter on "Übernehmen" applies the chosen day at 8:00
+      await page.keyboard.press("ArrowRight");
+      await panel(page).locator('[data-value="2026-12-02"]').click();
+      await panel(page).getByRole("button", { name: "Übernehmen" }).focus();
+      await page.keyboard.press("Enter");
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-12-02T08:00:00.000Z" } });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("Space on Übernehmen applies too", async () => {
+    const { page, errors, sent } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      await panel(page).locator('[data-value="2026-12-03"]').click();
+      await panel(page).getByRole("button", { name: "Übernehmen" }).focus();
+      await page.keyboard.press(" ");
+      await calls(sent, 1);
+      expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-12-03T08:00:00.000Z" } });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("an open calendar keeps its day, its typed time and the focus while the clock moves on", async () => {
+    const { page, errors } = await open(1440, { clock: true });
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      await panel(page).locator('[data-value="2026-12-02"]').click();
+      const time = panel(page).getByRole("textbox", { name: "Uhrzeit" });
+      await time.fill("14:30");
+      const element = await time.elementHandle();
+      await page.clock.fastForward(125_000);
+      await page.clock.fastForward(125_000);
+      expect(await page.evaluate((input) => input?.isConnected, element)).toBe(true);
+      expect(await time.inputValue()).toBe("14:30");
+      expect(await panel(page).locator('[data-value="2026-12-02"]').getAttribute("aria-selected")).toBe("true");
+      expect(await page.evaluate((input) => document.activeElement === input, element)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("the times are those of the moment the submenu opens, and a time that passed meanwhile is not sent", async () => {
+    const { page, errors, sent } = await open();
+    try {
+      // opened after 17:00: today is no longer offered, though the page was loaded in the morning
+      await setPageNow(page, "2026-11-27T17:00:05.000Z");
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await openMenus(page, 2);
+      expect(await entries(page, 1)).toEqual(["Morgen, 8:00 · Sa., 28. Nov.", "Montag, 8:00 · 30. Nov.", "Datum und Uhrzeit …"]);
+      // Escape until no menu is open (one more would close the conversation)
+      for (let step = 0; step < 2 && (await menus(page).count()) > 0; step += 1) await page.keyboard.press("Escape");
+      await openMenus(page, 0);
+      // opened just before 17:00 and chosen just after: nothing is sent, the person reads why
+      await setPageNow(page, "2026-11-27T16:59:58.000Z");
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: "Heute, 17:00" }).waitFor();
+      await setPageNow(page, "2026-11-27T17:00:05.000Z");
+      await page.getByRole("menuitem", { name: "Heute, 17:00" }).click();
+      await page.getByText("Dieser Zeitpunkt ist schon vorbei.").first().waitFor();
+      await Bun.sleep(300);
+      expect(sent).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

@@ -2,7 +2,7 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { type DropdownAction, type DropdownItem, toast, useLocale } from "@k2b/ui";
 import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
-import { createComponent, createMemo, createSignal, onCleanup } from "solid-js";
+import { createComponent, createMemo, onCleanup } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import { useMailCloudId } from "../mail-cloud-id";
 import { createMailConversationLinks } from "../mail-conversation-links";
@@ -70,24 +70,21 @@ export function createMailV2ReaderMenus(props: {
   const workStatus = () => c().selectedWorkStatus();
   const collaboration = () => (c().hasSelection() ? data().collaborationState : null);
 
-  // The offered times follow the clock: a menu opened after 17:00 no longer offers today.
-  const [now, setNow] = createSignal(Date.now());
-  if (typeof window !== "undefined") {
-    const tick = window.setInterval(() => setNow(Date.now()), 60_000);
-    onCleanup(() => window.clearInterval(tick));
-  }
   /**
    * A submenu of times for "Später anzeigen" and "Erinnere mich": the offered times, then "Datum und Uhrzeit …" with
-   * the calendar to the side (on the phone the sheet's next step). A time picked after another conversation opened
-   * is dropped: it was offered for the one before.
+   * the calendar to the side (on the phone the sheet's next step). The entries read it when the submenu opens, so the
+   * times are those of that moment (a menu opened after 17:00 no longer offers today). A time that has passed since is
+   * not sent, and one picked after another conversation opened is dropped: it was offered for the one before.
    */
   const timeItems = (label: string, current: string | null, choose: (at: string) => void): MenuEntry[] => {
     const conversationId = data().selectedConversationId;
     const pick = (at: string) => {
-      if (!disposed && conversationId === data().selectedConversationId) choose(at);
+      if (disposed || conversationId !== data().selectedConversationId) return;
+      if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast);
+      choose(at);
     };
     return [
-      ...mailV2LaterTimes(props.dateConfig, v2Text(), now()).map(
+      ...mailV2LaterTimes(props.dateConfig, v2Text(), Date.now()).map(
         (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), onClick: () => pick(time.at) }),
       ),
       "separator",
@@ -111,12 +108,14 @@ export function createMailV2ReaderMenus(props: {
     label: v2Text().showLater,
     icon: "clock",
     ...(disabled ? { disabled } : {}),
-    items: timeItems(readerText().laterField, snoozedUntil(), (at) => conversationState.snooze(at)),
+    get items() {
+      return timeItems(readerText().laterField, snoozedUntil(), (at) => conversationState.snooze(at));
+    },
   });
 
   // "Later" as in v1's reader: the conversation comes back at a time for everyone; the reminder reaches only you.
   const laterItems = (): MenuEntry[] => {
-    const until = snoozedUntil() && Date.parse(snoozedUntil()!) > now() ? snoozedUntil() : null;
+    const until = snoozedUntil() && Date.parse(snoozedUntil()!) > Date.now() ? snoozedUntil() : null;
     return [
       ...(c().canWrite() && collaboration()
         ? [
@@ -128,7 +127,9 @@ export function createMailV2ReaderMenus(props: {
       {
         label: conversationState.reminderDueAt() ? v2Text().changeReminder : v2Text().remindMe,
         icon: "bell",
-        items: timeItems(readerText().reminderField, conversationState.reminderDueAt(), (at) => conversationState.setReminder(at)),
+        get items() {
+          return timeItems(readerText().reminderField, conversationState.reminderDueAt(), (at) => conversationState.setReminder(at));
+        },
       },
       ...(conversationState.reminderDueAt()
         ? [{ label: readerText().removeReminder, icon: "bell-off", onClick: () => conversationState.setReminder(null) }]

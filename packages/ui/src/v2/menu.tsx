@@ -116,6 +116,37 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
   return box.left + box.width / 2 > document.documentElement.clientWidth / 2 ? "end" : "start";
 };
 
+const focusable =
+  'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex="0"]';
+
+/**
+ * The keys of a panel (a calendar beside a menu entry) are its own: they stop at the panel before the menu's walk,
+ * typeahead and Enter see them. Escape goes back to the entry; Tab goes round inside the panel, as in a dialog.
+ */
+const panelKeys = (event: KeyboardEvent, back: () => void) => {
+  const panel = event.currentTarget;
+  if (!(panel instanceof HTMLElement)) return;
+  event.stopPropagation();
+  if (event.key === "Escape") {
+    event.preventDefault();
+    back();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const stops = [...panel.querySelectorAll<HTMLElement>(focusable)].filter((element) => element.getClientRects().length > 0);
+  const first = stops[0];
+  const last = stops.at(-1);
+  if (!first || !last) return event.preventDefault();
+  const at = document.activeElement;
+  if (event.shiftKey && (at === first || !panel.contains(at))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (at === last || !panel.contains(at))) {
+    event.preventDefault();
+    first.focus();
+  }
+};
+
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
   entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
@@ -274,6 +305,8 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       <>
         <sub.Trigger
           {...shared}
+          // a panel is a dialog beside its entry, not a menu
+          overrides={props.item.panel ? { "aria-haspopup": "dialog" } : undefined}
           ref={(element: HTMLElement) => {
             trigger = element;
           }}
@@ -284,21 +317,24 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
           class="k2-menu"
           data-k2-part="Menu"
           data-panel={props.item.panel ? "" : undefined}
+          overrides={props.item.panel ? { role: "dialog" } : undefined}
+          aria-label={props.item.panel ? props.item.label : undefined}
+          onKeyDown={(event: KeyboardEvent) =>
+            props.item.panel &&
+            panelKeys(event, () => {
+              sub.back();
+              // core gives the focus to the menu once the panel has left; it belongs on the panel's entry
+              requestAnimationFrame(() => trigger?.focus());
+            })
+          }
           side={side()}
           sideOffset={4}
           collisionPadding={8}
         >
           <Show when={props.item.panel} fallback={<Entries level={sub} entries={props.item.items ?? []} />}>
             {(panel) => (
-              // the panel's keys (arrows, digits, Space) are its own, not the menu's walk and typeahead
-              <div
-                class="k2-mpanel"
-                role="group"
-                aria-label={props.item.label}
-                onKeyDown={(event) => event.key !== "Escape" && event.stopPropagation()}
-              >
-                {panel()(props.level.close)}
-              </div>
+              // made once while open: new data for the menu (a clock that moved on) keeps what was typed in it
+              <div class="k2-mpanel">{untrack(() => panel()(props.level.close))}</div>
             )}
           </Show>
         </sub.Popup>

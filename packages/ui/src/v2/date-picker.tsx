@@ -175,7 +175,8 @@ export const DatePicker = (props: DatePickerProps) => {
                 setUnreadable(false);
               }}
               onChange={() => read()}
-              onKeyDown={(event) => {
+              // a native listener: in a menu's panel the keys stop at the panel, before a delegated handler would run
+              on:keydown={(event) => {
                 if (event.isComposing) return;
                 if (event.key === "Enter") {
                   event.preventDefault();

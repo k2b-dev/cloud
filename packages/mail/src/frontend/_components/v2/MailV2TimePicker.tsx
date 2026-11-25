@@ -15,7 +15,7 @@ export const MailV2TimePicker = (props: {
   onPick: (at: string) => void;
 }) => {
   const [error, setError] = createSignal<string>();
-  const today = dates.instantToZonedInput(new Date(), props.timeZone).slice(0, 10);
+  const today = dates.instantToZonedInput(new Date(Date.now()), props.timeZone).slice(0, 10);
   const current =
     props.current && Date.parse(props.current) > Date.now() ? dates.instantToZonedInput(props.current, props.timeZone) : undefined;
   return (
