@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     // The recipes of the k2b-ui skill import v2 as an application does; here that name is the source.
-    "paths": { "@k2b/ui/v2": ["./src/v2/index.ts"] }
+    "paths": { "@k2b/ui/v2": ["./src/v2/index.ts"], "@k2b/ui/v2/list-query": ["./src/v2/list-query.ts"] }
   },
   "include": ["./src/**/*.ts", "./src/**/*.tsx", "./scripts/**/*.ts", "./skills/**/*.tsx"],
   "exclude": ["./dist", "./node_modules"]

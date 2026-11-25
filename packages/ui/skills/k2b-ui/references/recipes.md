@@ -99,3 +99,21 @@ too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 
 - The lead says the one thing; the rest are facts, which leave on the phone.
 - A deed per row is a `Button variant="text"` in its own last column.
+
+## filtered-table.tsx: a table people filter, sort and group
+
+![filtered table at 1440 px](../images/filtered-table-1440.png)
+![filtered table at 390 px](../images/filtered-table-390.png)
+
+`defineListQuery` declares the fields (`choice`, `numberRange`, `lookup`),
+the search, the sorts and the grouping once; `FilterBar` shows the active
+filters as statements in `Pane status` above the `StatusRow`, and
+`ListOrder` shows the sort and the grouping in its `filters`. The `Table`
+shows what the server found for the address.
+
+- The server reads the same address with `orderQuery.parse(...)` and filters
+  its own data; `@k2b/ui` filters nothing.
+- The bar writes the address and calls `onChange`; load the rows again there.
+- On the phone the bar is one line that scrolls; a tap opens the filter sheet.
+- Pass `views` only when the app stores views (see
+  [list queries](list-queries.md)).

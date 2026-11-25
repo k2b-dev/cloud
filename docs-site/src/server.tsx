@@ -127,7 +127,7 @@ app.get("/en/ui/v2/screen/:name", (c) => {
   const name = c.req.param("name");
   if (!(name in v2Screens)) return c.notFound();
   const screen = v2Screens[name as V2ScreenName];
-  return html(() => <V2ScreenPage name={name as V2ScreenName} />, {
+  return html(() => <V2ScreenPage name={name as V2ScreenName} search={new URL(c.req.url).search} />, {
     title: `${screen.title} — UI v2`,
     description: screen.description,
     path: `/en/ui/v2/screen/${name}`,

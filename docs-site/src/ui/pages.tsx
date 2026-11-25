@@ -8,6 +8,7 @@ import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
 import primaryScopeMarkdown from "./context/primary-scope.md" with { type: "text" };
+import v2FiltersMarkdown from "./context/v2-filters.md" with { type: "text" };
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
@@ -221,6 +222,22 @@ export const uiPages = [
     order: 11,
     layout: "full",
     component: ({ page }) => <V2DemoPage names={["form", "keys", "menus"]} title={page.meta.title} />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v2/filters",
+    title: "UI v2 · Filtern, Sortieren, Gruppieren",
+    navTitle: "v2 demo: filters",
+    description:
+      "Lists people filter, sort and group: readable statements from one defineListQuery declaration, editors, values that load, saved views from the app's own store, and the phone's sheet. Provisional until the maintainer approves v2.",
+    section: "Start",
+    order: 12,
+    layout: "full",
+    content: v2FiltersMarkdown,
+    component: ({ content, page }) => (
+      <V2DemoPage names={["articles", "logs", "people"]} title={page.meta.title} documentation={content.html} />
+    ),
   }),
   solidPage({
     html: fibelHtml,

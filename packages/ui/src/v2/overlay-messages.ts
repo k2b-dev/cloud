@@ -5,8 +5,18 @@ import { useLocale } from "../intl/locale";
 const overlayMessages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { moreActions: "More actions", undo: "Undo", actionsFor: ({ name }: { name: string }) => `Actions for ${name}` },
-    de: { moreActions: "Weitere Aktionen", undo: "Rückgängig", actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}` },
+    en: {
+      moreActions: "More actions",
+      undo: "Undo",
+      retry: "Try again",
+      actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
+    },
+    de: {
+      moreActions: "Weitere Aktionen",
+      undo: "Rückgängig",
+      retry: "Erneut versuchen",
+      actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,
+    },
   },
 });
 

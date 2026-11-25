@@ -324,7 +324,8 @@ lines instead of cutting a thing.
   below 760 px of the row's own width and on the phone, so the filters keep
   their words; put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
-  a `Button variant="ghost" menu`, pressed chips; leave on the phone),
+  `ListOrder` with the sort and the grouping of a list query, or a quiet
+  `Button variant="ghost" menu`; leave on the phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
@@ -340,6 +341,19 @@ lines instead of cutting a thing.
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
+- `FilterBar`: the filters of a list as statements, in `Pane status` above
+  its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
+  optional `base` (the view's state, where "Zurücksetzen" returns),
+  `icons`, `counts`, `names` (per field: lookup names the server resolved),
+  `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
+  current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
+  for the phone sheet). It writes the address itself. See
+  [list queries](list-queries.md).
+- `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
+  words, for `StatusRow filters`.
+- `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
+  `limit?`, `minChars?`; values that load while the person types, in a
+  filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
@@ -373,7 +387,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 
@@ -405,7 +420,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 

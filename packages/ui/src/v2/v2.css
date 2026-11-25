@@ -3616,3 +3616,633 @@
 .k2-ui .k2-input-end > .k2-icon {
   margin-right: 8px;
 }
+
+/* ── FilterBar: the filters of a list as statements (approved concept "ui-v2-filter-konzept" v4) ─────────────────
+   One rule for every width from 768 px: the statements FLOW and wrap between whole statements; "und" travels with its
+   statement, "+ Filter" and "Zurücksetzen" follow the last one. The end holds exactly one control ("Ansicht ▾"), so
+   the room for the statements never depends on what the end shows. Nothing clips: a focus ring (3 px) is always
+   whole. One line is 40 px (28 control, 6 above and below), each further line 34 px (28 + 6 gap). */
+.k2-ui .k2-fbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: var(--k2-h-bar);
+  padding: 6px var(--k2-edge);
+  border-bottom: var(--k2-hairline);
+  min-width: 0;
+  flex: none;
+}
+.k2-ui .k2-fbar-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1;
+  min-width: 0;
+}
+.k2-ui .k2-fbar-flow > * {
+  flex: none;
+  max-width: 100%;
+}
+.k2-ui .k2-fbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.k2-ui .k2-fbar-and {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  flex: none;
+}
+.k2-ui .k2-fbar-end {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-right: -8px;
+}
+.k2-ui .k2-fbar .k2-btn:not([data-variant="text"]) {
+  height: var(--k2-h-control-small);
+  padding: 0 10px;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+.k2-ui .k2-fbar .k2-btn[data-menu] {
+  padding-right: 8px;
+}
+.k2-ui .k2-fbar .k2-btn > .k2-icon {
+  font-size: 14px;
+}
+/* the filter button and the sort and group of the line are the phone's; from 768 px they live in the status row */
+.k2-ui .k2-fbar > .k2-btn,
+.k2-ui .k2-fbar-order {
+  display: none;
+}
+.k2-ui .k2-fbar-n {
+  margin-left: 4px;
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
+
+/* Statement: ONE surface, tinted in the app colour: field · word · values, and a small round × inside it.
+   rest: tint · hover: the whole statement a step stronger · pressed: one more · open (its editor): 1 px app line
+   inside · keyboard focus: 1 px blue inside and the soft ring outside · × hover: only its own circle · × focus: a ring
+   on the circle. The outer size never changes in any state. */
+.k2-ui .k2-stmt {
+  --k2-stmt-bg: var(--k2-app-tint);
+  display: inline-flex;
+  align-items: center;
+  height: var(--k2-h-control-small);
+  max-width: 100%;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-stmt-bg);
+  color: var(--k2-text-2);
+  font: var(--k2-t-meta);
+  white-space: nowrap;
+  min-width: 0;
+}
+.k2-ui .k2-stmt:hover {
+  --k2-stmt-bg: color-mix(in srgb, var(--k2-app-tint), var(--k2-app, var(--k2-blue)) 7%);
+}
+.k2-ui .k2-stmt:active {
+  --k2-stmt-bg: color-mix(in srgb, var(--k2-app-tint), var(--k2-app, var(--k2-blue)) 13%);
+}
+.k2-ui .k2-stmt-b {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  margin: 0;
+  display: block;
+  height: 100%;
+  /* one line of the meta role (16 px) in the 28 px of the statement */
+  padding: 6px 2px 6px 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: var(--k2-r-round);
+  outline: none;
+  text-align: start;
+  cursor: default;
+}
+.k2-ui .k2-stmt:not([data-removable]) > .k2-stmt-b {
+  padding-right: 12px;
+}
+.k2-ui .k2-stmt-b b {
+  font-weight: 600;
+  color: var(--k2-app-text);
+}
+.k2-ui .k2-stmt-b b > .k2-icon {
+  font-size: 13px;
+  margin-left: 2px;
+  color: var(--k2-warn-ink);
+  vertical-align: -2px;
+}
+.k2-ui .k2-stmt-x {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  width: 20px;
+  height: 20px;
+  margin: 0 4px 0 2px;
+  border-radius: var(--k2-r-round);
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: transparent;
+  color: var(--k2-app-text);
+  outline: none;
+  cursor: default;
+}
+.k2-ui .k2-stmt-x > .k2-icon {
+  font-size: 12px;
+}
+.k2-ui .k2-stmt-x:hover {
+  background: color-mix(in srgb, var(--k2-app-tint), var(--k2-app, var(--k2-blue)) 20%);
+}
+.k2-ui .k2-stmt-x:focus-visible {
+  box-shadow: 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-stmt[data-open] {
+  --k2-stmt-bg: color-mix(in srgb, var(--k2-app-tint), var(--k2-app, var(--k2-blue)) 7%);
+  box-shadow: inset 0 0 0 1px var(--k2-app, var(--k2-blue));
+}
+.k2-ui .k2-stmt:has(> .k2-stmt-b:focus-visible) {
+  box-shadow:
+    inset 0 0 0 1px var(--k2-blue),
+    0 0 0 3px var(--k2-blue-ring);
+}
+/* a required filter at its default (a log's time range): framed like a field, no × */
+.k2-ui .k2-stmt[data-fixed] {
+  --k2-stmt-bg: var(--k2-surface);
+  box-shadow: inset 0 0 0 1px var(--k2-line-control);
+}
+.k2-ui .k2-stmt[data-fixed]:hover {
+  --k2-stmt-bg: var(--k2-n50);
+  box-shadow: inset 0 0 0 1px var(--k2-n400);
+}
+.k2-ui .k2-stmt[data-fixed] .k2-stmt-b b {
+  color: var(--k2-text);
+}
+.k2-ui .k2-stmt[data-fixed][data-open] {
+  --k2-stmt-bg: var(--k2-n50);
+  box-shadow: inset 0 0 0 1px var(--k2-app, var(--k2-blue));
+}
+/* a filter being added without a value: white with a dashed app edge; it does not apply yet */
+.k2-ui .k2-stmt[data-draft] {
+  --k2-stmt-bg: var(--k2-surface);
+  box-shadow: none;
+  border: 1px dashed var(--k2-app, var(--k2-blue));
+}
+.k2-ui .k2-stmt[data-draft] > .k2-stmt-b {
+  padding: 5px 11px;
+}
+.k2-ui .k2-stmt-op {
+  color: var(--k2-subtle);
+}
+
+/* The editor of a statement inside its popover: head, values, hint are parts of one thing, no lines between. */
+.k2-ui .k2-pop.k2-fpop {
+  width: 300px;
+  padding: 0;
+  gap: 0;
+}
+.k2-ui .k2-fed {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+.k2-ui .k2-fed-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  flex: none;
+  padding: 0 8px 0 12px;
+}
+.k2-ui .k2-fed-t {
+  font: var(--k2-t-row);
+  font-weight: 600;
+}
+.k2-ui .k2-fed-op {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fed-end {
+  margin-left: auto;
+  display: flex;
+}
+.k2-ui .k2-fed-hint,
+.k2-ui .k2-lookup-hint {
+  margin: 0;
+  padding: 8px 12px 6px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px 8px;
+}
+.k2-ui .k2-fed-body[data-flush] {
+  padding-inline: 0;
+  gap: 0;
+}
+.k2-ui .k2-fed-body[data-flush] > :is(.k2-fed-range, .k2-fed-error) {
+  margin: 0 12px 8px;
+}
+.k2-ui .k2-fed-sub {
+  padding: 12px 12px 6px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fed-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.k2-ui .k2-fed-presets > .k2-btn {
+  height: var(--k2-h-control-small);
+  padding: 0 10px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+.k2-ui .k2-fed-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr);
+  gap: 0 6px;
+  align-items: end;
+}
+.k2-ui .k2-fed-dash {
+  text-align: center;
+  color: var(--k2-subtle);
+  padding-bottom: 8px;
+}
+.k2-ui .k2-fed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.k2-ui .k2-fed-label {
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-muted);
+}
+.k2-ui .k2-fed-field > .k2-input {
+  height: var(--k2-h-dense);
+}
+.k2-ui .k2-fed-field > .k2-input > input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  flex: 1;
+  font: var(--k2-t-row);
+  color: inherit;
+}
+.k2-ui .k2-fed-unit {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fed-error {
+  margin: 0;
+  font: var(--k2-t-meta);
+  color: var(--k2-bad);
+}
+.k2-ui .k2-fed-error[data-flush] {
+  padding: 4px 12px 0;
+}
+
+/* Options of an editor and a lookup: rows of 32 px, the check (or tick) first, a count at the end */
+.k2-ui .k2-opts,
+.k2-ui .k2-lookup-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
+  outline: none;
+}
+.k2-ui .k2-opt-group {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-opt-head {
+  padding: 8px 8px 4px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-dense);
+  padding: 0 8px;
+  border-radius: var(--k2-r-mark);
+  color: var(--k2-text-2);
+  outline: none;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.k2-ui .k2-opt:is(:hover, [data-highlighted]) {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-opt:focus-visible {
+  background: var(--k2-n100);
+  box-shadow: inset 0 0 0 1px var(--k2-blue);
+}
+.k2-ui .k2-opt > .k2-check {
+  margin-block: 0;
+}
+.k2-ui .k2-opt-tick {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  color: var(--k2-blue);
+}
+.k2-ui .k2-opt-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-opt-meta {
+  margin-left: 6px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-opt-count {
+  margin-left: auto;
+  flex: none;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-opt[data-zero] {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-opt-warn {
+  color: var(--k2-warn-ink);
+  display: inline-flex;
+}
+
+/* Lookup: a search over a list that loads. Loading, empty and failed keep the height of three rows (104 px), and the
+   placeholders show only after 150 ms, so a fast answer never flashes and nothing jumps. */
+.k2-ui .k2-lookup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-lookup-search {
+  margin: 0 12px 4px;
+  height: var(--k2-h-dense);
+}
+.k2-ui .k2-lookup-search > input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  flex: 1;
+  font: var(--k2-t-row);
+  color: inherit;
+}
+.k2-ui .k2-lookup-search > input::-webkit-search-cancel-button {
+  display: none;
+}
+.k2-ui .k2-lookup-search > .k2-icon {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-lookup-list {
+  max-height: 292px;
+  overflow-y: auto;
+}
+.k2-ui .k2-lookup-state {
+  min-height: 104px;
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.k2-ui .k2-lookup-state > .k2-state {
+  padding: 8px;
+  max-width: none;
+}
+.k2-ui .k2-lookup-state .k2-sign {
+  width: 32px;
+  height: 32px;
+}
+.k2-ui .k2-lookup-state .k2-sign > .k2-icon {
+  font-size: 16px;
+}
+.k2-ui .k2-lookup-skel {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px;
+  visibility: hidden;
+}
+.k2-ui .k2-lookup-skel[data-shown] {
+  visibility: visible;
+}
+.k2-ui .k2-lookup-skel > .k2-skel {
+  height: var(--k2-h-dense);
+  background-size: 100% 10px;
+}
+.k2-ui .k2-lookup-skel > .k2-skel:nth-child(2) {
+  width: 40%;
+}
+.k2-ui .k2-lookup-skel > .k2-skel:nth-child(3) {
+  width: 70%;
+}
+
+/* Sort and group in the status row: framed menu buttons in words; a fixed sort is quiet text */
+.k2-ui .k2-order {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.k2-ui .k2-order-fixed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  white-space: nowrap;
+}
+.k2-ui .k2-order .k2-btn {
+  height: var(--k2-h-control-small);
+  padding: 0 8px 0 10px;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+.k2-ui .k2-order .k2-btn > .k2-icon {
+  font-size: 14px;
+}
+/* a narrow status row: sort and group keep their symbols; the words stay their names */
+@container k2-status (max-width: 479px) {
+  .k2-ui .k2-order .k2-btn > .k2-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The dialog that saves a view: the scopes as radio rows with a hint, and what the view shows as a quiet summary */
+.k2-ui .k2-fsave-scopes {
+  padding-inline: var(--k2-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.k2-ui .k2-fsave-hint {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fsave-sum {
+  padding-inline: var(--k2-edge);
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font: var(--k2-t-row);
+}
+.k2-ui .k2-fsave-sum > dt {
+  color: var(--k2-subtle);
+  font: var(--k2-t-meta);
+  line-height: 20px;
+}
+.k2-ui .k2-fsave-sum > dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The filter sheet of the phone: fields with their values, a section "Darstellung", an editor in place */
+.k2-ui .k2-fsheet {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-fsheet-sec {
+  padding: 16px var(--k2-edge) 4px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fsheet-row {
+  appearance: none;
+  border: 0;
+  background: none;
+  margin: 0;
+  font: var(--k2-t-row);
+  color: var(--k2-text-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 var(--k2-edge);
+  text-align: start;
+  cursor: default;
+  outline: none;
+}
+.k2-ui .k2-fsheet-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-fsheet-row > .k2-icon {
+  color: var(--k2-muted);
+  font-size: 16px;
+  flex: none;
+}
+.k2-ui .k2-fsheet-label {
+  flex: none;
+}
+.k2-ui .k2-fsheet-value {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fsheet-value[data-set] {
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
+.k2-ui .k2-fsheet-back {
+  padding: 0 calc(var(--k2-edge) - 8px) 4px;
+}
+.k2-ui .k2-fsheet .k2-fed {
+  padding-bottom: 8px;
+}
+.k2-ui .k2-fsheet :is(.k2-fed-hint, .k2-lookup-hint) {
+  padding-inline: var(--k2-edge);
+}
+.k2-ui .k2-fsheet .k2-fed-body {
+  margin-inline: calc(var(--k2-edge) - 12px);
+}
+.k2-ui .k2-fsheet .k2-lookup-search {
+  margin-inline: var(--k2-edge);
+}
+.k2-ui .k2-fsheet :is(.k2-opts, .k2-lookup-list) {
+  padding: 0;
+}
+.k2-ui .k2-fsheet .k2-opt {
+  min-height: 44px;
+  padding: 0 var(--k2-edge);
+  border-radius: 0;
+}
+
+@media not all and (min-width: 768px) {
+  /* The phone: one line that scrolls sideways (the filter button, the statements without ×, sort, group); its end
+     fades. The scroller keeps 6 px above and below, so a focus ring (3 px) is never cut. */
+  .k2-ui .k2-fbar {
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  }
+  .k2-ui .k2-fbar::-webkit-scrollbar {
+    display: none;
+  }
+  .k2-ui .k2-fbar > .k2-btn {
+    display: inline-flex;
+    flex: none;
+  }
+  .k2-ui .k2-fbar-order {
+    display: inline-flex;
+    gap: 8px;
+    flex: none;
+    padding-right: 24px;
+  }
+  .k2-ui .k2-fbar-flow {
+    flex-wrap: nowrap;
+    flex: none;
+  }
+  .k2-ui .k2-fbar-flow > :is(.k2-fbar-add, .k2-fbar-reset),
+  .k2-ui .k2-fbar-and,
+  .k2-ui .k2-fbar-end,
+  .k2-ui .k2-stmt-x {
+    display: none;
+  }
+  .k2-ui .k2-stmt > .k2-stmt-b {
+    padding-right: 12px;
+  }
+  .k2-ui .k2-pop.k2-fpop {
+    width: calc(100vw - 16px);
+  }
+}
