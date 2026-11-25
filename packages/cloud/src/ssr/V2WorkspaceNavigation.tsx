@@ -3,15 +3,9 @@ import type { NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
 
-/** Where a link leads, without its origin: the key under which a tap in the shell's menu finds its entry. */
-const place = (href: string | URL) => {
-  const url = typeof href === "string" ? new URL(href, "http://cloud.invalid") : href;
-  return `${url.pathname}${url.search}`;
-};
-
 type V2Navigation = {
   items: NavigationItem[];
-  /** The entry's own way to open in place, by the place its link leads to. */
+  /** The entry's own way to open in place, by its link as written (a tap in the menu hands the same `href` on). */
   navigate: Map<string, OnNavigate>;
   /** What an entry without a link does, by its id. */
   click: Map<string, () => void>;
@@ -19,7 +13,8 @@ type V2Navigation = {
 
 /**
  * The entries of a v2 `Nav` as the shell's navigation: each group with a name becomes a section, an entry `nested`
- * stands under the entry before it, and symbols, counts, the open one and "something new" carry over.
+ * stands under the entry before it, and symbols, counts, the open one and "something new" carry over. The action of a
+ * group (its "…") stays in the sidebar.
  */
 const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navigation => {
   const navigate = new Map<string, OnNavigate>();
@@ -34,7 +29,7 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
       ...(item.dot ? { unread: true } : {}),
     };
     if (item.href !== undefined) {
-      if (item.onNavigate) navigate.set(place(item.href), item.onNavigate);
+      if (item.onNavigate) navigate.set(item.href, item.onNavigate);
       return { ...common, href: item.href, ...(item.onNavigate ? { navigation: "enhanced" as const } : {}) };
     }
     if (item.onClick) click.set(id, item.onClick);
@@ -43,14 +38,13 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
   const rows = (items: readonly NavItem[], prefix: string): NavigationItem[] => {
     const top: { item: NavigationItem; children: NavigationItem[] }[] = [];
     items.forEach((item, index) => {
-      const row = entry(item, `${prefix}:${index}`);
+      const row = entry(item, item.href ?? `${prefix}:${index}`);
       const parent = top.at(-1);
       if (item.nested && parent) parent.children.push(row);
       else top.push({ item: row, children: [] });
     });
-    return top.map(({ item, children }) =>
-      children.length === 0 ? item : { ...item, children, defaultExpanded: Boolean(item.active || children.some((child) => child.active)) },
-    );
+    // nested entries stay open, as the sidebar always shows them
+    return top.map(({ item, children }) => (children.length === 0 ? item : { ...item, children }));
   };
   const items = groups.flatMap((group, index): NavigationItem[] =>
     group.label
@@ -80,7 +74,7 @@ export default function V2WorkspaceNavigation(props: V2WorkspaceNavigationProps)
   const navigation = createNavigation({
     items: () => tree().items,
     onNavigate: (event) => {
-      const open = tree().navigate.get(place(event.url));
+      const open = tree().navigate.get(event.href);
       return open ? open(event) : event.fallback();
     },
     onAction: (action) => tree().click.get(action)?.(),
