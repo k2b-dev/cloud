@@ -121,7 +121,7 @@ test("nav tree: 'Weitere laden' pages a level of 10 000 and hands the focus to t
     const photos = place(page, "Fotos");
     await photos.focus();
     await page.keyboard.press("ArrowRight");
-    const more = tree(page).getByRole("treeitem", { name: "Weitere laden" });
+    const more = tree(page).getByRole("treeitem", { name: /^Weitere .* laden$/ });
     expect(await more.textContent()).toContain("Weitere 9.950 laden");
     await more.focus();
     await page.keyboard.press("Enter");
@@ -137,6 +137,7 @@ test("nav tree: Shift+F10 and a right-click open a folder's deeds; a deed never 
     await page.getByRole("menuitem", { name: "Umbenennen" }).click();
     expect(await page.evaluate(() => window.__treeDeeds)).toEqual(["rename:projekte"]);
     expect(await page.evaluate(() => location.hash)).toBe("");
+    // a nested place opens its own deeds, not those of the place around it
     await place(page, "Website").locator(":scope > .k2-nt-row").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     expect(await page.evaluate(() => window.__treeDeeds)).toEqual(["rename:projekte", "delete:website"]);

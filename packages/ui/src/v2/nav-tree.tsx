@@ -207,7 +207,7 @@ export const NavTreeView = (props: NavTree) => {
           // a right-click on this place's row, not on a place nested in it
           const item = event.currentTarget;
           if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
-          if (event.target.closest('[role="treeitem"]') !== item || event.target.closest(".k2-nt-group")) return;
+          if (event.target.closest('[role="treeitem"]') !== item) return;
           event.preventDefault();
           openMenuOf(item);
         }}
