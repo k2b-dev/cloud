@@ -180,15 +180,10 @@ const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `agents-v2-${name}.png`) });
 };
 
-// k2b-ui gap: describeV2 does not know an open Dialog as a layer of its own; it counts the dialog's main button and the
-// page's as two primaries. With the create dialog open this one finding is named here until describeV2 knows dialogs.
-const dialogPrimary = /^- 2 primary buttons \("API Key anlegen", "Anlegen"\)/m;
-
-const expectClean = async (tab: Page, options: { dialog?: boolean } = {}) => {
+// The page and an open dialog each have their one primary action; the outline counts them per surface.
+const expectClean = async (tab: Page) => {
   const outline = await describeV2Page(tab, "#root");
-  const [, problems = ""] = outline.split(/\nProblems \(\d+\):\n/);
-  const left = problems.split("\n").filter((line) => line && !(options.dialog && dialogPrimary.test(line)));
-  expect(left).toEqual([]);
+  expect(outline).not.toContain("Problems (");
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
   expect(layout.problems).toEqual([]);
   return outline;
@@ -359,7 +354,7 @@ describe("an agent's API keys on v2", () => {
     for (const address of [`/app/accounts/agents/${AGENT_ID}`, `/app/accounts/agents/${AGENT_ID}?key=new`]) {
       const { context, tab, errors } = await open(desktop, address, api(), { dark: true });
       try {
-        await expectClean(tab, { dialog: address.endsWith("new") });
+        await expectClean(tab);
         await shoot(tab, address.endsWith("new") ? "create-dark-1280" : "detail-dark-1280");
         expect(errors).toEqual([]);
       } finally {
