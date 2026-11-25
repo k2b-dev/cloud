@@ -113,6 +113,46 @@
   min-height: 0;
   display: flex;
 }
+/* the rail of the shell beside the app, as the mockup draws it (a picture of the shell, not part of v2) */
+.ui-v2-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  box-sizing: border-box;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+}
+.ui-v2-rail__logo {
+  width: 32px;
+  height: 32px;
+  margin: 0 0 12px;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  border-radius: var(--k2-r-control);
+  background: var(--k2-n950);
+  color: var(--k2-surface);
+  font-weight: 600;
+}
+.ui-v2-rail__app {
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--k2-r-control);
+  color: var(--k2-muted);
+}
+.ui-v2-rail__app .ti {
+  font-size: 18px;
+}
+.ui-v2-rail__app[data-current] {
+  background: color-mix(in srgb, var(--k2-surface) 80%, transparent);
+  color: var(--k2-app-text);
+}
+.ui-v2-rail__fill {
+  flex: 1;
+}
 /* the platform's bar on the phone, as the mockup draws it (a picture of the shell, not part of v2) */
 .ui-v2-phonebar {
   display: none;
@@ -122,6 +162,9 @@
   .ui-v2-screen {
     padding: 52px 0 0;
     background: var(--k2-surface);
+  }
+  .ui-v2-rail {
+    display: none;
   }
   .ui-v2-phonebar {
     position: absolute;
