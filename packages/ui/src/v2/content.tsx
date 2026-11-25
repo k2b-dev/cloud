@@ -362,7 +362,7 @@ const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
   const view = createVirtualWindow({ items: () => props.items, key: (item: T) => props.rowKey(item) });
   onMount(() => {
     if (!list) return;
-    keepPlace(list);
+    // the window keeps the reading place itself, around changes of the items only (see `createVirtualWindow`)
     view.mount(list);
   });
   const size = () => Math.max(props.total ?? 0, props.items.length);
