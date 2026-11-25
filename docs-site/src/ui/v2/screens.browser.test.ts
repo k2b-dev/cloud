@@ -301,7 +301,7 @@ describe("v2 demo screens keep the mockup", () => {
       const found = await page.evaluate(() => {
         const detail = document.querySelector(".k2-pane[data-detail]")!;
         // the line under the head: the facts of the conversation and who reads along; what has no room wraps
-        const bar = detail.querySelector(":scope > .k2-scroll > .k2-bar")!;
+        const bar = detail.querySelector(':scope > [data-slot="status"] > .k2-bar')!;
         const box = bar.getBoundingClientRect();
         const style = getComputedStyle(bar);
         const inner = {

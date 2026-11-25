@@ -332,7 +332,10 @@ const SplitContext = createContext<(entry: SplitEntry) => void>();
 export type PaneProps = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
   head?: JSX.Element;
-  /** The status row of this column (52 px), such as `StatusRow`. */
+  /**
+   * What stays under the head while the column scrolls: a `StatusRow` (52 px) above a list, or a `Bar` (40 px) with
+   * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
+   */
   status?: JSX.Element;
   /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
   width?: Width;

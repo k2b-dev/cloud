@@ -56,6 +56,40 @@ test("container context updates in place without selecting or disabling a destin
   }
 });
 
+test("a row with disclosure false shows its children always and has no toggle, so its link keeps the whole row", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "box",
+        label: "Kontakt",
+        href: "/box",
+        disclosure: false,
+        children: [{ id: "sent", label: "Gesendet", href: "/box?folder=sent" }],
+      },
+      { id: "group", label: "Gruppe", disclosure: false, children: [{ id: "one", label: "Eins", href: "/one" }] },
+    ],
+  });
+  delegateEvents(["click"], dom.document);
+  const dispose = render(() => <Navigation navigation={navigation} label="Mail" />, dom.root);
+  try {
+    expect(dom.root.querySelector(".k2b-navigation__disclosure")).toBeNull();
+    expect(dom.root.querySelector("[aria-expanded]")).toBeNull();
+    const sent = dom.root.querySelector<HTMLAnchorElement>('a[href="/box?folder=sent"]')!;
+    expect(sent.closest("[hidden]")).toBeNull();
+    // a group without a link or a deed is a heading row: no dead button, its children always show
+    expect(Array.from(dom.root.querySelectorAll("button")).some((button) => button.textContent?.includes("Gruppe"))).toBe(false);
+    const group = Array.from(dom.root.querySelectorAll(".k2b-navigation__control")).find((row) => row.textContent?.includes("Gruppe"))!;
+    expect(group.tagName).toBe("SPAN");
+    expect(group.querySelector(".ti-chevron-down, .ti-chevron-right")).toBeNull();
+    expect(dom.root.querySelector<HTMLAnchorElement>('a[href="/one"]')!.closest("[hidden]")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 describe("Navigation", () => {
   test("keeps row focus across snapshots and performs actions only after host dismissal", async () => {
     const dom = createDomTestHarness();

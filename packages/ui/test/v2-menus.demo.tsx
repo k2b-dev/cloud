@@ -1,13 +1,16 @@
 import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Text, useToast, Workspace } from "../src/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
-// panel and a hint in the same head, a context menu and a "…" on rows, and a toast with "Undo" after a deed. Each deed
+// panel and a hint in the same head, a context menu and a "…" on rows, a tab "Weitere" that opens the views without a
+// tab of their own, and a toast with "Undo" after a deed. Each deed
 // lands in `window.__deeds`, so a test reads what ran.
 
 declare global {
   interface Window {
     __deeds?: string[];
+    /** A view more under "Weitere": the app builds its tabs again while their menu may be open. */
+    __moreViews?: () => void;
     /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
     __escape?: "none" | "page" | "taken";
   }
@@ -26,6 +29,8 @@ const orders = [
 export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
+  const [views, setViews] = createSignal(["Archiv", "Vorlagen"]);
+  if (typeof window !== "undefined") window.__moreViews = () => setViews([...views(), `Ansicht ${views().length + 1}`]);
   // the open reply of Mail: one choice for the kind of reply and one for the sender
   const [kind, setKind] = createSignal("reply");
   const [sender, setSender] = createSignal("anna@werkstatt.example");
@@ -66,9 +71,15 @@ export function Demo() {
       head={
         <Bar
           start={
-            <Text type="row" weight="strong">
-              Aufträge
-            </Text>
+            // the places of the app as tabs without a menu tab: what has no room goes into a tab "Mehr"
+            <Tabs
+              label="Bereiche"
+              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen"].map((name, index) => ({
+                label: name,
+                current: index === 0,
+                onClick: did(`area:${name.toLowerCase()}`),
+              }))}
+            />
           }
           end={
             <>
@@ -131,7 +142,34 @@ export function Demo() {
         />
       }
     >
-      <Pane label="Aufträge">
+      <Pane
+        label="Aufträge"
+        head={
+          <Tabs
+            label="Ansichten"
+            items={[
+              { label: "Offen", current: true, onClick: did("view:offen") },
+              { label: "Erledigt", onClick: did("view:erledigt") },
+              { label: "In Arbeit", count: 4, onClick: did("view:in-arbeit") },
+              // a view with an address that opens in place, as Mail's views do
+              {
+                label: "Wartet auf Material",
+                count: 2,
+                href: "#material",
+                onNavigate: (nav) => {
+                  did("view:material")();
+                  nav.push();
+                },
+              },
+              {
+                label: "Weitere",
+                count: `+${views().length}`,
+                menu: views().map((name) => ({ label: name, onClick: did(`view:${name.toLowerCase()}`) })),
+              },
+            ]}
+          />
+        }
+      >
         <Section title="Offen" count={orders.length}>
           <List label="Offene Aufträge">
             <For each={orders}>

@@ -9,7 +9,7 @@ import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
 import { measureV2Layout } from "./testing";
-import { gripTolerance, hairline, heights, textEdge } from "./tokens";
+import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
 // measureV2Layout (edges, double lines, type roles, grips at DPR 1 and 2), and the numbers of the mockup (heights by
@@ -179,7 +179,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               head: box('.k2-ws-main > [data-slot="head"] > .k2-bar').height,
               status: box('[data-k2-part="StatusRow"]').height,
               // the plain bar of the reader (there only while something is open)
-              bar: document.querySelector(".k2-pane[data-detail]") ? box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height : 0,
+              bar: document.querySelector(".k2-pane[data-detail]")
+                ? box('.k2-pane[data-detail] > [data-slot="status"] > .k2-bar').height
+                : 0,
               rows: rows.map((row) => row.getBoundingClientRect().height),
               // the long title of the row of three lines stays on its line and ends in "…"
               title: (() => {
@@ -244,6 +246,86 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             expect(shown).toEqual({ list: false, head: false, detail: 0, back: heights.tabs, top: 0 });
             expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
           }
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // The line of state of an open entry ("3 Nachrichten · Wartet auf Antwort · Tag") is the detail's `status`: a bar of
+  // 40 px right under the head that stays there while the message scrolls (mockup mail.html: 117-157).
+  for (const width of [1440, 390])
+    test(
+      `${width} px: a Bar as a pane's status is 40 px under the head and stays while the pane scrolls`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          // a short window, so the message is longer than its column and scrolls
+          await page.setViewportSize({ width, height: 420 });
+          await settled(page);
+          const place = () =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".k2-pane[data-detail]")!;
+              const head = pane.querySelector(':scope > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+              const bar = pane.querySelector(':scope > [data-slot="status"] > .k2-bar')!.getBoundingClientRect();
+              return { height: Math.round(bar.height), gap: Math.round(bar.top - head.bottom), top: Math.round(bar.top) };
+            });
+          const before = await place();
+          // one line is 40 px; on the phone this line of things takes a second line instead of being cut
+          expect(before.gap).toBe(0);
+          if (width >= textEdge.phoneBelow) expect(before.height).toBe(heights.bar);
+          else expect(before.height).toBeGreaterThan(heights.bar);
+          // its controls are the small ones of a 40 px bar, not those of a head
+          const link = await page.getByRole("button", { name: "Verknüpfen" }).boundingBox();
+          expect(Math.round(link?.height ?? 0)).toBe(heights.controlSmall);
+          await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTo({ top: 200 }));
+          await settled(page);
+          expect(await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTop)).toBeGreaterThan(0);
+          expect(await place()).toEqual(before);
+          // a status row above a list keeps its 52 px
+          expect(Math.round((await page.locator('[data-k2-part="StatusRow"]').first().boundingBox())?.height ?? 0)).toBe(
+            width < textEdge.phoneBelow ? 0 : heights.status,
+          );
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // On the phone the title of an open entry is the page's title: beside the actions the head keeps ("…") it is never
+  // cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
+  for (const width of [390, 1440])
+    test(
+      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the kept actions instead of being cut" : "stays one line"}`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          const head = await page.evaluate(() => {
+            const bar = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar')!;
+            const title = bar.querySelector<HTMLElement>(".k2-bar-start > .k2-text")!;
+            // a subject longer than one line of a phone in every engine's font
+            title.textContent = "Angebot Eichenplatten – Liefertermin KW 49";
+            const more = bar.querySelector('[aria-label="Weitere Aktionen"]')!.getBoundingClientRect();
+            const box = title.getBoundingClientRect();
+            return {
+              cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
+              lines: Math.round(box.height / Number.parseFloat(getComputedStyle(title).lineHeight)),
+              beside: box.right <= more.left + 0.5 && more.width > 0,
+              height: Math.round(bar.getBoundingClientRect().height),
+            };
+          });
+          if (width < textEdge.phoneBelow)
+            expect(head).toEqual({
+              cut: false,
+              lines: 2,
+              beside: true,
+              // two lines of the lead role, 8 px of air above and below (the bar's padding), the line below
+              height: 2 * typeRoles.lead.lineHeight + 2 * 8 + hairline.width,
+            });
+          else expect(head).toMatchObject({ lines: 1, beside: true, height: heights.status });
           expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
         } finally {
           await page.close();
@@ -460,7 +542,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
-  // A bar in the flow of a column with a line of things (the state of a conversation): below 480 px of its column it
+  // A bar with a line of things (the state of a conversation, in the pane's status): below 480 px of its column it
   // wraps instead of cutting, one line stays 40 px on both sides of 480, and only a second line makes it higher.
   // 480 and 479: a column of the wide window; 300: a phone, where the open detail is the whole page
   for (const column of [480, 479, 300])
@@ -471,7 +553,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         try {
           if (column >= 400) await narrowColumn(page, ".k2-pane[data-detail]", column);
           const found = await page.evaluate(() => {
-            const bar = document.querySelector(".k2-pane[data-detail] > .k2-scroll > .k2-bar")!;
+            const bar = document.querySelector('.k2-pane[data-detail] > [data-slot="status"] > .k2-bar')!;
             const box = bar.getBoundingClientRect();
             const style = getComputedStyle(bar);
             const inner = {

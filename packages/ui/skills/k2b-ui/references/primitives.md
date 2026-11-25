@@ -40,12 +40,15 @@ The working surface of an app: one per screen.
 
 A column that scrolls, with no padding: everything in it reaches both edges.
 
-- `head` (a `Bar` or `Tabs`), `status` (a `StatusRow`), `label`.
+- `head` (a `Bar` or `Tabs`), `status` (what stays under the head while
+  the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
+  with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
-  the detail is the page.
+  the detail is the page, and the title in its head is never cut: beside the
+  actions the head keeps it takes a second line.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
   the detail (the part `Back`). With `back`, the head's close × needs no
@@ -81,11 +84,13 @@ from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
 `Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
 state under the head, as in `mail.tsx`) or directly after the fields it
-serves (the buttons of a form or of a reply), never between entries. In a
+serves (the buttons of a form or of a reply), never between entries. A line
+of state that must stay while the reader scrolls goes into the pane's
+`status` instead (40 px, as in `mail.tsx`). In a
 column narrower than 480 px, a bar inside a pane whose `start` is an
 `Inline` wraps: its things and its `end` flow as one line, one line stays
-40 px, and only a second line makes the bar higher. A head and a status row
-keep their height.
+40 px, and only a second line makes the bar higher; a bar in `status` too.
+A head and a status row keep their height.
 
 ### Band
 
@@ -289,12 +294,25 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+  A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
+  with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
+  `menu` (its deeds, such as pin and hide: a "…" over its count that shows
+  under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there).
+  problem there). An item with `items` instead of `icon` and a link folds
+  them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
+  place, its entries one level further in, open while one of them is the
+  open one. It remembers nothing; keep what is folded the same on each page.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
-  head they are their own 44 px bar.
+  head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
+  the tab ("Weitere +8") opens the views that have no tab of their own; it
+  stands at the end and its `count` counts its own entries. A tab is never
+  cut: one without room hides whole and joins that menu (and its count),
+  opening from there as it does as a tab; without a menu tab a tab "Mehr"
+  holds them. Known: while tabs hide, a gap of less than one tab may stand
+  before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
   value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
@@ -318,6 +336,38 @@ lines instead of cutting a thing.
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
+
+## Overlays: Menu, Popover, Toast
+
+- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
+  `variant`, `disabled`; children are the words). Without words it is the
+  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
+  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  Promise keeps the menu open and the entry busy), `href`, `danger`,
+  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  (an entry that toggles; `onClick` flips it, the tick stands at the end),
+  `items` (a submenu to the side); or `"separator"` between groups; or a
+  section `{ title, items }` under a quiet heading. A section with
+  `choice` and `onChoose` is one choice (reply kind, sender, order): its
+  entries are options (`value`, else `label`), the chosen one carries the
+  tick, choosing closes the menu. Lines around sections and before the
+  first `danger` entry come by themselves. The menu lines up with
+  its button; there is no `align`.
+- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
+  right-click or a long press opens the menu at the pointer, Shift+F10 at
+  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
+  Give the same entries to a "…" in the row's `end` for those who do not
+  right-click.
+- `Popover`: a panel behind a button: the button's look like `Menu`,
+  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
+  and a press outside close it. With `tip` instead, a short hint on its one
+  child (a `Button`) after a moment on hover or focus.
+- `useToast()`: call it in the component, then
+  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
+  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
+  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
+  place of a problem.
 
 ## Overlays: Menu, Popover, Toast
 

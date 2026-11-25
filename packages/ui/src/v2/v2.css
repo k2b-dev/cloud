@@ -644,7 +644,7 @@
   gap: 8px;
 }
 /* The places of a workspace and a pane are slots without a box of their own; a bar reads its height from its slot.
-   head 56, status row 52, a plain bar 40. */
+   head 56, status row 52, a plain bar 40 (also in a pane's status place: the line of state of a detail). */
 .k2-ui .k2-slot {
   display: contents;
 }
@@ -652,7 +652,6 @@
   height: var(--k2-h-head);
   gap: 12px;
 }
-.k2-ui [data-slot="status"] > .k2-bar,
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
@@ -1681,19 +1680,19 @@
   flex-wrap: wrap;
   row-gap: 8px;
 }
-/* A bar in the flow of a column (not a head or a status row, which have their own narrow forms) with such a line:
-   its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
-   line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
-   second line makes it higher. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
+/* A bar in the flow of a column or in a pane's status place (not a head or a status row, which have their own narrow
+   forms) with such a line: its things and its end flow as one line that wraps, the end after the last thing when it
+   has room there. One line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line
+   below), only a second line makes it higher. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
   height: auto;
   min-height: var(--k2-h-bar);
   padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
   flex-wrap: wrap;
   row-gap: 8px;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start:has(> .k2-inline),
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start > .k2-inline {
   display: contents;
 }
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
@@ -1954,14 +1953,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }
@@ -2139,7 +2138,7 @@
 .k2-ui :is(.k2-bar, .k2-bar-end) > .k2-input[data-search] {
   width: 184px;
 }
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input {
   height: var(--k2-h-control-small);
 }
 /* a form in a section: 12 px between its rows of fields and choices, as in a dialog */
@@ -2287,29 +2286,34 @@
   height: 16px;
   border: 0;
 }
-/* Tabs that share a head with actions give way to them: they scroll sideways and fade out at the end while more tabs
-   follow. The scroller reaches over the bar's line, so the mark of the open tab still stands on it. */
+/* Tabs that share a head with actions give way to them, and a tab is never cut: the tabs stand in one line that wraps
+   below what shows, so a tab without room hides whole (the script then names it in the menu of further views). The
+   tab with a menu stands after that line and always stays whole. The tabs reach over the bar's line, so the mark of
+   the open tab still stands on it. */
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
 }
+/* the actions beside tabs keep their room; the tabs give way, whole tab by whole tab */
+.k2-ui .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) > .k2-bar-end {
+  flex: none;
+}
 .k2-ui .k2-tabs-nav {
   display: flex;
+  gap: 24px;
   align-self: stretch;
   min-width: 0;
   margin-bottom: -1px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 0.8 * var(--k2-fade)), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 0.8 * var(--k2-fade)), transparent);
-  animation: k2-fade-end linear both;
-  animation-timeline: scroll(self inline);
 }
-.k2-ui .k2-tabs-nav::-webkit-scrollbar {
-  display: none;
+.k2-ui .k2-tabs-nav > .k2-tab {
+  flex: none;
+  margin-bottom: 0;
 }
 .k2-ui .k2-tabs-nav > .k2-tabs > .k2-tab {
   margin-bottom: 0;
+  height: 100%;
+}
+.k2-ui .k2-tabs-nav > .k2-tabs > .k2-tab[data-overflow] {
+  visibility: hidden;
 }
 .k2-ui .k2-ni {
   display: flex;
@@ -2339,17 +2343,66 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
-.k2-ui .k2-ni[aria-current] {
+/* a closed fold that holds the open entry carries its tint, so the open place never hides */
+.k2-ui .k2-ni[aria-current],
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] {
   background: var(--k2-app-tint);
   color: var(--k2-app-text);
   font-weight: 500;
 }
 .k2-ui .k2-ni[aria-current] > .k2-icon,
-.k2-ui .k2-ni[aria-current] > .k2-ni-count {
+.k2-ui .k2-ni[aria-current] > .k2-ni-count,
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] > .k2-icon,
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] > .k2-ni-count {
   color: var(--k2-app-text);
 }
 .k2-ui .k2-ni[data-level="2"] {
   padding-left: 32px;
+}
+.k2-ui .k2-ni[data-level="3"] {
+  padding-left: 56px;
+}
+/* An entry with its own deeds: its "…" stands over the end of the entry, where the count is. It shows under the pointer,
+   while the entry or the "…" has the keyboard's focus (not after a click) and while its menu is open; the count gives
+   way meanwhile and the name ends before it. Tab always reaches it. Nothing moves. Without a pointer that hovers it
+   always shows, with a target of 28 px. */
+.k2-ui .k2-ni-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-ni-row > .k2-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible)) > .k2-btn,
+.k2-ui .k2-ni-row > .k2-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni {
+  padding-right: 32px;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
+  display: none;
+}
+@media (hover: none) {
+  .k2-ui .k2-ni-row > .k2-btn {
+    opacity: 1;
+    top: 2px;
+    width: 28px;
+    height: 28px;
+  }
+  .k2-ui .k2-ni-row > .k2-ni {
+    padding-right: 32px;
+  }
+}
+/* the entries of a folding entry stand in the nav's column as if they had no box of their own */
+.k2-ui .k2-nav-fold {
+  display: contents;
 }
 .k2-ui .k2-ni:focus-visible {
   outline: none;
@@ -2371,15 +2424,15 @@
   margin-bottom: 0;
   padding: 0 var(--k2-edge);
   box-shadow: inset 0 -1px 0 var(--k2-line);
-  -webkit-mask-image: none;
-  mask-image: none;
-  animation: none;
 }
 .k2-ui .k2-tabs {
   display: flex;
-  gap: 24px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  column-gap: 24px;
   align-self: stretch;
   min-width: 0;
+  overflow: hidden;
 }
 .k2-ui .k2-tab {
   display: flex;
@@ -3182,6 +3235,21 @@
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
     display: none;
   }
+  /* The title of an open entry is the page's title here: it is never cut beside the actions the head keeps (a "…"),
+     it takes a second line instead, and the head grows with it; one line keeps the head's 52 px. */
+  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
+  .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+    height: auto;
+    min-height: var(--k2-h-status);
+    padding-block: 8px;
+  }
+  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
@@ -3220,8 +3288,9 @@
     display: none;
   }
   /* tabs that share a head with actions stand closer */
+  .k2-ui .k2-bar-start > .k2-tabs-nav,
   .k2-ui .k2-bar-start > .k2-tabs-nav > .k2-tabs {
-    gap: 20px;
+    column-gap: 20px;
   }
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;
@@ -3459,10 +3528,10 @@
 }
 /* a button at the end leaves 3 px above and below inside the field: 28 in a field of 36, 20 in the field of 28 of a
    bar of 40 */
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
   height: 20px;
 }
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
   width: 20px;
 }
 .k2-ui .k2-input-end > .k2-icon {

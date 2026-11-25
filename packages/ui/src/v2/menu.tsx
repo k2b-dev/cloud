@@ -3,6 +3,7 @@ import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
+import type { OnNavigate } from "./types";
 
 /**
  * One entry of a menu, as data. `onClick` runs it; a Promise keeps the menu open and the entry busy until it settles.
@@ -15,6 +16,8 @@ export type MenuItem = {
   icon?: string;
   onClick?: () => unknown;
   href?: string;
+  /** With `href`: opens the page in place on a plain click or Enter, as a tab or a row does (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
   /** Red, for a deed that destroys; the menu puts a line before the first one. */
   danger?: boolean;
   disabled?: boolean;
@@ -282,9 +285,20 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
   }
   if (kind === "link") {
     return (
-      <props.level.LinkItem {...keyed} href={props.item.href}>
-        <EntryFace item={props.item} lead={props.lead} />
-      </props.level.LinkItem>
+      <Show
+        when={props.item.onNavigate}
+        fallback={
+          <props.level.LinkItem {...keyed} href={props.item.href}>
+            <EntryFace item={props.item} lead={props.lead} />
+          </props.level.LinkItem>
+        }
+      >
+        {(onNavigate) => (
+          <props.level.NavLinkItem {...keyed} href={props.item.href} onNavigate={onNavigate()}>
+            <EntryFace item={props.item} lead={props.lead} />
+          </props.level.NavLinkItem>
+        )}
+      </Show>
     );
   }
   return (
@@ -330,6 +344,38 @@ const MenuRoot = (props: MenuProps) => {
         title={iconOnly() ? name() : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
+      </level.Trigger>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+        <Entries level={level} entries={props.items} />
+      </level.Popup>
+    </>
+  );
+};
+
+/**
+ * A tab that opens a menu of further views (internal to `Tabs`): it looks like a tab, with the chevron after its
+ * words, and is the menu's button, so Enter, Space and the arrow down open it and Escape brings the focus back.
+ */
+export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
+  let trigger: HTMLElement | undefined;
+  const [align, setAlign] = createSignal<"start" | "end">("start");
+  const level = useMenuLevels(() => ({
+    onOpenChange: (open: boolean) => {
+      if (open) setAlign(alignTo(trigger));
+    },
+  }));
+  return (
+    <>
+      <level.Trigger
+        ref={(element: HTMLElement) => {
+          trigger = element;
+        }}
+        class="k2-tab"
+        data-menu=""
+        aria-current={props.current ? "page" : undefined}
+      >
+        {props.children}
+        <Icon name="chevron-down" />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
         <Entries level={level} entries={props.items} />
