@@ -63,4 +63,6 @@ export function treegridStep(
 
 /** Says a change of a branch (loading, failed) in the render locale, as the tree of `Nav` does. */
 export const announceBranch = (t: BehaviorMessages, type: "loading" | "load-failed", label: string) =>
-  announce(type === "loading" ? t.treeLoading({ label }) : t.treeLoadFailed({ label }), { priority: type === "loading" ? "polite" : "assertive" });
+  announce(type === "loading" ? t.treeLoading({ label }) : t.treeLoadFailed({ label }), {
+    priority: type === "loading" ? "polite" : "assertive",
+  });

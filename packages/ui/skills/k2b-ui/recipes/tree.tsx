@@ -16,7 +16,12 @@ const content: Entry[] = [
     ],
   },
   { id: "bilder", name: "Bilder", changed: "12. Nov.", folder: true },
-  { id: "fotos", name: "Messefotos", changed: "3. Nov.", children: [{ id: "f1", name: "IMG_00001.jpg", size: "3,2 MB", changed: "3. Nov." }] },
+  {
+    id: "fotos",
+    name: "Messefotos",
+    changed: "3. Nov.",
+    children: [{ id: "f1", name: "IMG_00001.jpg", size: "3,2 MB", changed: "3. Nov." }],
+  },
   { id: "angebot", name: "Angebot Lackfabrik Nordhaus.pdf", size: "220 KB", changed: "28. Okt." },
 ];
 

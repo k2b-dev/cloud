@@ -189,18 +189,16 @@ export const NavTreeView = (props: NavTree) => {
         event.preventDefault();
         if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
       }}
+      onContextMenu={(event: MouseEvent) => {
+        // a right-click on this place's row, not on a place nested in it
+        const item = event.currentTarget;
+        if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
+        if (event.target.closest('[role="treeitem"]') !== item || event.target.closest(".k2-nt-group")) return;
+        event.preventDefault();
+        openMenuOf(item);
+      }}
     >
-      <div
-        class="k2-ni k2-nt-row"
-        data-k2-part="Nav.Item"
-        data-has-menu={entry.node.menu ? "" : undefined}
-        onContextMenu={(event) => {
-          const item = event.currentTarget.parentElement;
-          if (!entry.node.menu || !item) return;
-          event.preventDefault();
-          openMenuOf(item);
-        }}
-      >
+      <div class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
         <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
           {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
           <parts.Indicator class="k2-nt-chev">

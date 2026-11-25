@@ -650,25 +650,27 @@ export const Table = <T,>(props: TableProps<T>) => {
 
   // What shows, in reading order: the rows, the children of open rows under them, and a "Weitere laden" row after a
   // level that has more. Without `tree`, the rows themselves.
-  const flat = createMemo((): ({ row: T; tree?: TreePlace } | { more: { parent: string | null; level: number; count: true | number } })[] => {
-    const tree = props.tree;
-    if (!tree) return props.rows.map((row) => ({ row }));
-    const open = new Set(expanded());
-    const out: ({ row: T; tree: TreePlace } | { more: { parent: string | null; level: number; count: true | number } })[] = [];
-    const walk = (list: readonly T[], parent: T | null, parentKey: string | null, level: number) => {
-      list.forEach((row, index) => {
-        const rowKey = key(row, index);
-        const branch = tree.branch(row);
-        const isOpen = branch && open.has(rowKey) && tree.children(row) !== undefined;
-        out.push({ row, tree: { level, parent: parentKey, position: index + 1, size: list.length, branch, expanded: isOpen } });
-        if (isOpen) walk(tree.children(row) ?? [], row, rowKey, level + 1);
-      });
-      const more = tree.loadMore ? tree.more?.(parent) : undefined;
-      if (more !== undefined) out.push({ more: { parent: parentKey, level, count: more } });
-    };
-    walk(props.rows, null, null, 1);
-    return out;
-  });
+  const flat = createMemo(
+    (): ({ row: T; tree?: TreePlace } | { more: { parent: string | null; level: number; count: true | number } })[] => {
+      const tree = props.tree;
+      if (!tree) return props.rows.map((row) => ({ row }));
+      const open = new Set(expanded());
+      const out: ({ row: T; tree: TreePlace } | { more: { parent: string | null; level: number; count: true | number } })[] = [];
+      const walk = (list: readonly T[], parent: T | null, parentKey: string | null, level: number) => {
+        list.forEach((row, index) => {
+          const rowKey = key(row, index);
+          const branch = tree.branch(row);
+          const isOpen = branch && open.has(rowKey) && tree.children(row) !== undefined;
+          out.push({ row, tree: { level, parent: parentKey, position: index + 1, size: list.length, branch, expanded: isOpen } });
+          if (isOpen) walk(tree.children(row) ?? [], row, rowKey, level + 1);
+        });
+        const more = tree.loadMore ? tree.more?.(parent) : undefined;
+        if (more !== undefined) out.push({ more: { parent: parentKey, level, count: more } });
+      };
+      walk(props.rows, null, null, 1);
+      return out;
+    },
+  );
   const shownRows = createMemo(() => flat().flatMap((entry) => ("row" in entry ? [entry] : [])));
   // Every cell is made once: what `cell` returns is placed, never rendered a second time. In a tree, the cells of a row
   // stay while rows open and close around it.
@@ -735,7 +737,9 @@ export const Table = <T,>(props: TableProps<T>) => {
     items().flatMap((item): TreegridRow[] => {
       if ("group" in item) return [];
       if ("more" in item)
-        return [{ key: `${MORE_ROW}${item.more.parent ?? ""}`, level: item.more.level, parent: item.more.parent, branch: false, expanded: false }];
+        return [
+          { key: `${MORE_ROW}${item.more.parent ?? ""}`, level: item.more.level, parent: item.more.parent, branch: false, expanded: false },
+        ];
       const place = item.tree;
       return place
         ? [{ key: key(item.row, item.index), level: place.level, parent: place.parent, branch: place.branch, expanded: place.expanded }]
@@ -1047,7 +1051,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                           <span class="k2-tree-chev" data-loading={loadingMore().includes(moreKey) ? "" : undefined} aria-hidden="true">
                             <Icon name="loader-2" />
                           </span>
-                          <span class="k2-cell-line">{t().loadMore({ count: item.more.count === true ? undefined : item.more.count })}</span>
+                          <span class="k2-cell-line">
+                            {t().loadMore({ count: item.more.count === true ? undefined : item.more.count })}
+                          </span>
                         </td>
                       </tr>
                     );
@@ -1119,7 +1125,12 @@ export const Table = <T,>(props: TableProps<T>) => {
                                   </span>
                                 )}
                               </Show>
-                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined, place !== undefined)}
+                              {cell(
+                                column,
+                                values()[item.index]![columnIndex()]!,
+                                columnIndex() === 0 ? target : undefined,
+                                place !== undefined,
+                              )}
                             </td>
                           )}
                         </For>
@@ -1139,7 +1150,9 @@ export const Table = <T,>(props: TableProps<T>) => {
             <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
               <List label={props.label}>
                 {/* a tree shows its top level on the phone; its rows open as pages */}
-                <For each={items().filter((item) => ("row" in item ? (item.tree?.level ?? 1) : "more" in item ? item.more.level : 1) === 1)}>
+                <For
+                  each={items().filter((item) => ("row" in item ? (item.tree?.level ?? 1) : "more" in item ? item.more.level : 1) === 1)}
+                >
                   {(item) =>
                     "group" in item ? (
                       <div class="k2-bar" role="presentation">

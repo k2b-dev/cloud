@@ -164,9 +164,9 @@ test("nav tree, worst case: twelve levels and long names stay in the sidebar, cu
     const nav = await page.locator(".k2-nav").evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
     expect(nav.scroll).toBeLessThanOrEqual(nav.client);
     const indents = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>('.k2-nt-item[aria-level="9"] > .k2-nt-row, .k2-nt-item[aria-level="12"] > .k2-nt-row')].map(
-        (element) => getComputedStyle(element).paddingLeft,
-      ),
+      [
+        ...document.querySelectorAll<HTMLElement>('.k2-nt-item[aria-level="9"] > .k2-nt-row, .k2-nt-item[aria-level="12"] > .k2-nt-row'),
+      ].map((element) => getComputedStyle(element).paddingLeft),
     );
     expect(indents.length).toBe(2);
     expect(indents[0]).toBe(indents[1]);
@@ -239,7 +239,9 @@ test("table tree on the phone: the top level as rows of the list, also while row
     await page.setViewportSize({ width: 1440, height: 900 });
     await row(page, "Projekte").locator(".k2-tree-chev").click();
     await page.setViewportSize({ width: 390, height: 800 });
-    const names = await page.locator(".k2-table-phone .k2-row").evaluateAll((rows) => rows.map((element) => element.textContent?.trim() ?? ""));
+    const names = await page
+      .locator(".k2-table-phone .k2-row")
+      .evaluateAll((rows) => rows.map((element) => element.textContent?.trim() ?? ""));
     expect(names.length).toBe(6);
     expect(names.some((name) => name.includes("Website"))).toBe(false);
   });
