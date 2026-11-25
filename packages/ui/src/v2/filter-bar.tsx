@@ -170,6 +170,24 @@ const stateText = <F extends Fields, S extends string, G extends string>(query: 
   return params.toString();
 };
 
+/**
+ * The state after one change of the address, or `undefined` when the address cannot hold it. `parse` reports every
+ * part it had to drop, a value it does not accept or a query over the 2,000 characters a link carries (then it falls
+ * back to the default state); any report refuses the change, so a list never silently loses its filters. The change
+ * goes through the address text because the editors hold values of any field; `set` gives the same guarantee for
+ * code that knows its field's type.
+ */
+const follow = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  edit: (params: URLSearchParams) => void,
+): ListQueryState<F, S, G> | undefined => {
+  const params = query.serialize(state);
+  edit(params);
+  const { state: next, issues } = query.parse(params);
+  return issues.length > 0 ? undefined : next;
+};
+
 /** The phone of v2: every width below 768 px. */
 const phoneQuery = "not all and (min-width: 768px)";
 const isPhone = () => !isServer && matchMedia(phoneQuery).matches;
@@ -268,20 +286,23 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   );
   /** Applies new address text for one field, sort or group; inside an editor the first change makes the entry. */
   // The view the state started from stays in the address: its tab stays current and counts as changed.
-  const apply = (edit: (params: URLSearchParams) => void) => {
-    const params = props.query.serialize(props.state);
-    edit(params);
-    const next = props.query.parse(params).state;
+  // What the address cannot hold (a value parse would drop, a number it cannot write, more than 2000 characters) is
+  // never written: the editor that asked says so at its field, and the list stays as it is.
+  const apply = (edit: (params: URLSearchParams) => void): boolean => {
+    const next = follow(props.query, props.state, edit);
+    if (!next) return false;
     const inEditor = open() !== undefined || sheet() !== undefined;
     write(next, inEditor ? !pushed : true);
     if (inEditor) pushed = true;
+    return true;
   };
-  const setField = (key: string, value: unknown) => {
+  const setField = (key: string, value: unknown): boolean => {
     const definition = props.query.fields[key];
-    if (!definition) return;
+    if (!definition) return false;
     const text = encode(definition, value);
-    apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
-    if (text !== undefined && draft() === key) setDraft(undefined);
+    const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
+    if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    return applied;
   };
   const removeField = (key: string) => apply((params) => params.delete(key));
   const reset = () => write(base(), true);
@@ -379,11 +400,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
                       draft={filters()[key] === undefined}
                       fixed={isDefault(key, field())}
                       open={open() === key}
+                      onPhone={() => setSheet({ field: key })}
                       onOpenChange={(next) => {
-                        if (next && isPhone()) {
-                          setSheet({ field: key });
-                          return;
-                        }
+                        if (next && isPhone()) return;
                         setOpen(next ? key : undefined);
                         if (!next && draft() === key) setDraft(undefined);
                       }}
@@ -508,6 +527,8 @@ const Statement = (props: {
   fixed: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** On the phone a statement opens the filter sheet at its field instead of its popover. */
+  onPhone: () => void;
   onRemove: () => void;
   children: JSX.Element;
 }) => {
@@ -524,7 +545,24 @@ const Statement = (props: {
       data-draft={props.draft ? "" : undefined}
       data-removable={removable() ? "" : undefined}
     >
-      <popover.Trigger class="k2-stmt-b" aria-label={t().edit({ sentence: words() })} title={words()}>
+      <popover.Trigger
+        class="k2-stmt-b"
+        aria-label={t().edit({ sentence: words() })}
+        title={words()}
+        // On the phone the sheet opens after the whole tap (its click), so no part of the tap lands on the sheet; the
+        // popover's own press handling is skipped there.
+        onPointerDown={(event: PointerEvent) => isPhone() && event.preventDefault()}
+        onClick={(event: MouseEvent) => {
+          if (!isPhone()) return;
+          event.preventDefault();
+          props.onPhone();
+        }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (!isPhone() || (event.key !== "Enter" && event.key !== " ")) return;
+          event.preventDefault();
+          props.onPhone();
+        }}
+      >
         <Show
           when={!props.draft}
           fallback={
@@ -587,7 +625,8 @@ type EditorProps = {
   counts?: Readonly<Record<string, number>>;
   names: ReadonlyMap<string, LookupItem>;
   onNames: (items: readonly LookupItem[]) => void;
-  onChange: (value: unknown) => void;
+  /** Applies a value; `false` when the address cannot hold it (the editor then shows why, and nothing changes). */
+  onChange: (value: unknown) => boolean;
   /** Takes the filter out; a required field has none. */
   onRemove?: () => void;
   /** In the phone sheet: no head of its own (the sheet names the field). */
@@ -597,6 +636,7 @@ type EditorProps = {
 /** The editor of one field, inside the statement's popover or the phone sheet: head, then the values. */
 const Editor = (props: EditorProps) => {
   const t = useFilterMessages();
+  const [refused, setRefused] = createSignal(false);
   // The focus goes to the first control of the values, not to "Entfernen" in the head: the search of a lookup, the
   // option that holds the list's tab stop, or the first field. Core moves it into the popup first; this follows.
   const focusValues = (root: HTMLElement) =>
@@ -626,7 +666,22 @@ const Editor = (props: EditorProps) => {
           </Show>
         </div>
       </Show>
-      <EditorBody {...props} />
+      <EditorBody
+        {...props}
+        onChange={(value) => {
+          const applied = props.onChange(value);
+          setRefused(!applied);
+          return applied;
+        }}
+      />
+      {/* ranges, periods and text say it at their own fields */}
+      <Show
+        when={refused() && (props.definition.kind === "choice" || props.definition.kind === "lookup" || props.definition.kind === "bool")}
+      >
+        <p class="k2-fed-error" data-flush="" role="alert">
+          {t().valueRejected}
+        </p>
+      </Show>
     </div>
   );
 };
@@ -781,12 +836,13 @@ const EditField = (props: {
 const RangeEditor = (props: {
   definition: Extract<ListQueryField, { kind: "numberRange" }>;
   value?: NumberRange;
-  onChange: (value: unknown) => void;
+  onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
   const format = useFormats();
   const [min, setMin] = createSignal(props.value?.min?.toString() ?? "");
   const [max, setMax] = createSignal(props.value?.max?.toString() ?? "");
+  const [rejected, setRejected] = createSignal(false);
   const number = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
   const invalid = () => {
     const low = number(min());
@@ -794,11 +850,16 @@ const RangeEditor = (props: {
     return low !== undefined && high !== undefined && low > high;
   };
   const commit = () => {
+    setRejected(false);
     if (invalid()) return;
     const low = number(min());
     const high = number(max());
-    if ((low !== undefined && Number.isNaN(low)) || (high !== undefined && Number.isNaN(high))) return;
-    props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high });
+    const unreadable = (value: number | undefined) => value !== undefined && !Number.isFinite(value);
+    if (unreadable(low) || unreadable(high)) {
+      setRejected(true);
+      return;
+    }
+    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high }));
   };
   const unit = () => (props.definition.unit ? ` ${props.definition.unit}` : "");
   const presetLabel = (range: NumberRange) => {
@@ -818,7 +879,7 @@ const RangeEditor = (props: {
                 onClick={() => {
                   setMin(range.min?.toString() ?? "");
                   setMax(range.max?.toString() ?? "");
-                  props.onChange(range);
+                  setRejected(!props.onChange(range));
                 }}
               >
                 {presetLabel(range)}
@@ -833,7 +894,7 @@ const RangeEditor = (props: {
           type="number"
           value={min()}
           unit={props.definition.unit}
-          invalid={invalid()}
+          invalid={invalid() || rejected()}
           onCommit={(text) => {
             setMin(text);
             commit();
@@ -847,16 +908,16 @@ const RangeEditor = (props: {
           type="number"
           value={max()}
           unit={props.definition.unit}
-          invalid={invalid()}
+          invalid={invalid() || rejected()}
           onCommit={(text) => {
             setMax(text);
             commit();
           }}
         />
       </div>
-      <Show when={invalid()}>
+      <Show when={invalid() || rejected()}>
         <p class="k2-fed-error" role="alert">
-          {t().rangeInvalid}
+          {invalid() ? t().rangeInvalid : t().valueRejected}
         </p>
       </Show>
     </div>
@@ -866,7 +927,7 @@ const RangeEditor = (props: {
 const PeriodEditor = (props: {
   definition: Extract<ListQueryField, { kind: "dateRange" | "timeRange" }>;
   value?: PeriodValue;
-  onChange: (value: unknown) => void;
+  onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
   const day = props.definition.kind === "dateRange";
@@ -889,16 +950,18 @@ const PeriodEditor = (props: {
   const range = () => (props.value?.kind === "range" ? props.value : undefined);
   const [from, setFrom] = createSignal(toField(range()?.from));
   const [to, setTo] = createSignal(toField(range()?.to));
+  const [rejected, setRejected] = createSignal(false);
   const invalid = () => {
     const low = fromField(from());
     const high = fromField(to());
     return low !== undefined && high !== undefined && low > high;
   };
   const commit = () => {
+    setRejected(false);
     if (invalid()) return;
     const low = fromField(from());
     const high = fromField(to());
-    props.onChange(low === undefined && high === undefined ? undefined : { kind: "range", from: low, to: high });
+    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { kind: "range", from: low, to: high }));
   };
   return (
     <div class="k2-fed-body" data-flush="">
@@ -919,7 +982,7 @@ const PeriodEditor = (props: {
             label={t().from_}
             type={day ? "date" : "datetime-local"}
             value={from()}
-            invalid={invalid()}
+            invalid={invalid() || rejected()}
             onCommit={(text) => {
               setFrom(text);
               commit();
@@ -932,16 +995,16 @@ const PeriodEditor = (props: {
             label={t().to}
             type={day ? "date" : "datetime-local"}
             value={to()}
-            invalid={invalid()}
+            invalid={invalid() || rejected()}
             onCommit={(text) => {
               setTo(text);
               commit();
             }}
           />
         </div>
-        <Show when={invalid()}>
+        <Show when={invalid() || rejected()}>
           <p class="k2-fed-error" role="alert">
-            {t().rangeInvalid}
+            {invalid() ? t().rangeInvalid : t().valueRejected}
           </p>
         </Show>
       </Show>
@@ -949,11 +1012,26 @@ const PeriodEditor = (props: {
   );
 };
 
-const TextEditor = (props: { label: string; value: string; onChange: (value: unknown) => void }) => (
-  <div class="k2-fed-body">
-    <EditField label={props.label} type="text" value={props.value} onCommit={(text) => props.onChange(text.trim() || undefined)} />
-  </div>
-);
+const TextEditor = (props: { label: string; value: string; onChange: (value: unknown) => boolean }) => {
+  const t = useFilterMessages();
+  const [rejected, setRejected] = createSignal(false);
+  return (
+    <div class="k2-fed-body">
+      <EditField
+        label={props.label}
+        type="text"
+        value={props.value}
+        invalid={rejected()}
+        onCommit={(text) => setRejected(!props.onChange(text.trim() || undefined))}
+      />
+      <Show when={rejected()}>
+        <p class="k2-fed-error" role="alert">
+          {t().valueRejected}
+        </p>
+      </Show>
+    </div>
+  );
+};
 
 // ── Sort and group ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1006,10 +1084,10 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
  */
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
+  // a choice whose state the address cannot hold is locked in the menu, so a choice never drops the filters
   const change = (edit: (params: URLSearchParams) => void) => {
-    const params = props.query.serialize(props.state);
-    edit(params);
-    const next = props.query.parse(params).state;
+    const next = follow(props.query, props.state, edit);
+    if (!next) return;
     if (!isServer) {
       const text = props.query.serialize(next, location.search).toString();
       history.pushState(history.state, "", `${location.pathname}${text ? `?${text}` : ""}${location.hash}`);
@@ -1037,7 +1115,11 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               title: t().sort,
               choice: `${props.state.sort.field}.${props.state.sort.direction}`,
               onChoose: (value) => change((params) => params.set("sort", value)),
-              items: sortEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
+              items: sortEntries(props.query, t()).map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
+              })),
             },
           ]}
         >
@@ -1053,7 +1135,13 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               title: t().group,
               choice: props.state.group ?? "",
               onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
-              items: groups().map((entry) => ({ label: entry.label, value: entry.value })),
+              items: groups().map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) =>
+                  entry.value ? params.set("group", entry.value) : params.delete("group"),
+                ),
+              })),
             },
           ]}
         >
@@ -1326,7 +1414,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   canSave: boolean;
   onSave: () => void;
   sentence: (key: string, definition: ListQueryField) => string;
-  onField: (key: string, value: unknown) => void;
+  onField: (key: string, value: unknown) => boolean;
   onSort: (value: string) => void;
   onGroup: (value: string) => void;
   onReset: () => void;

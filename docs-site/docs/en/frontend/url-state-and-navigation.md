@@ -79,7 +79,9 @@ export const articleQuery = defineListQuery({
 
 const { state, issues } = articleQuery.parse(new URL(c.req.url).searchParams);
 // state.filters.status: readonly ("consigned" | "sold" | …)[] | undefined
-const href = `?${articleQuery.serialize(articleQuery.set(state, "price", { min: 500 }))}`;
+// undefined when the URL cannot hold the follow-up state: show no link then.
+const next = articleQuery.set(state, "price", { min: 500 });
+const href = next && `?${articleQuery.serialize(next)}`;
 ```
 
 The field kinds are `choice` (declared values, many or with `multiple: false`
@@ -99,8 +101,15 @@ to that value when cleared. A list with one fixed order declares
   reported.
 - `serialize` writes `view`, the fields in declaration order, `q`, `sort`,
   and `group`, and omits defaults, so equal states give equal URLs. Pass the
-  current parameters as `base` to keep the page's own ones.
-- `set`, `clear`, and `reset` change one statement or return the defaults.
+  current parameters as `base` to keep the page's own ones. Whatever it
+  writes, `parse` reads back to the same state.
+- `set` is the one way to a follow-up state: it changes one filter, the
+  search (`"q"`), the `"sort"`, or the `"group"`. It never throws and
+  returns `undefined` when the value is not valid or the URL cannot hold the
+  result, such as a query longer than `LIST_QUERY_MAX_LENGTH` (2,000
+  characters). Offer no link or action then. `clear` and `reset` always fit.
+- `serialize` throws a `RangeError` only for a state built by hand that the
+  URL cannot hold; states from `parse`, `set`, `clear`, and `reset` always fit.
 
 **The application filters and stores views itself.** `@k2b/ui` neither
 filters nor stores. The page loader turns the parsed state into its own SQL
