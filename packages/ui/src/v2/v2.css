@@ -4019,6 +4019,7 @@
 
 /* The dialog that saves a view: the scopes as radio rows with a hint, and what the view shows as a quiet summary */
 .k2-ui .k2-fsave-scopes {
+  padding-inline: var(--k2-edge);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4029,6 +4030,7 @@
   color: var(--k2-subtle);
 }
 .k2-ui .k2-fsave-sum {
+  padding-inline: var(--k2-edge);
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr);
   gap: 8px 12px;
@@ -4052,7 +4054,6 @@
 .k2-ui .k2-fsheet {
   display: flex;
   flex-direction: column;
-  margin-inline: calc(-1 * var(--k2-edge));
 }
 .k2-ui .k2-fsheet-sec {
   padding: 16px var(--k2-edge) 4px;
@@ -4103,6 +4104,9 @@
 }
 .k2-ui .k2-fsheet .k2-fed {
   padding-bottom: 8px;
+}
+.k2-ui .k2-fsheet :is(.k2-fed-hint, .k2-lookup-hint) {
+  padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-fsheet :is(.k2-fed-body, .k2-lookup-search) {
   margin-inline: calc(var(--k2-edge) - 12px);
