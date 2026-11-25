@@ -6,7 +6,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import "../../../ui/test/solid-ssr-preload";
-import { type FixtureCase, fixtureBase, fixtureListing, fixturePage, fixtureSearch } from "./files-screen.fixture";
+import { FIXTURE_NOW, type FixtureCase, fixtureBase, fixtureListing, fixturePage, fixtureSearch } from "./files-screen.fixture";
 
 // A person works in a folder of Files on v2: opens folders and files in place, sorts, searches, chooses entries and
 // renames, moves and trashes them, on a desktop and on a phone. The test stands in for the server: the page and the
@@ -114,7 +114,7 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
         const from = String(body.path);
         const renamed = [from.split("/").slice(0, -1).join("/"), String(body.name)].filter(Boolean).join("/");
         return route.fulfill({
-          json: { entry: { name: body.name, path: renamed, directory: false, size: 1, modified: new Date().toISOString() } },
+          json: { entry: { name: body.name, path: renamed, directory: false, size: 1, modified: FIXTURE_NOW } },
         });
       }
       if (url.pathname.endsWith("/download"))
