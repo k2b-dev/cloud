@@ -33,7 +33,8 @@ export type MailMessageMenuProps = {
   conversationMessages?: MailWorkspaceMessage[];
   onReassignMessage: (messageId: string) => void | Promise<void>;
   onSplitMessage: (messageId: string) => void | Promise<void>;
-  onDeriveMessage: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => unknown;
+  /** "Use as new"; a reader without it (the v2 pilot, until its reply is rebuilt) leaves the entry out. */
+  onDeriveMessage?: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => unknown;
 };
 
 export type MailMessageMenu = ReturnType<typeof createMailMessageMenu>;
@@ -138,13 +139,13 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
 
   const items = (): DropdownItem[] => [
     ...(props.primaryActions ?? []),
-    ...(actionVisibility().conversationRepair || actionVisibility().editAsNew
+    ...(actionVisibility().conversationRepair || (actionVisibility().editAsNew && props.onDeriveMessage)
       ? [
           {
             sectionLabel: t().conversationSection,
             items: [
-              ...(actionVisibility().editAsNew
-                ? [{ label: t().useAsNew, icon: "ti ti-copy", action: () => props.onDeriveMessage("edit_as_new", props.message) }]
+              ...(actionVisibility().editAsNew && props.onDeriveMessage
+                ? [{ label: t().useAsNew, icon: "ti ti-copy", action: () => props.onDeriveMessage?.("edit_as_new", props.message) }]
                 : []),
               ...(actionVisibility().conversationRepair
                 ? [

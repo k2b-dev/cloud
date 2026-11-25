@@ -176,6 +176,32 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // v1's menus, built by the same shared parts: no button in the reader stands there without doing something.
+  test("the reader's Later and More and each message's More offer v1's entries", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
+      await head.getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich …" }).waitFor();
+      await page.keyboard.press("Escape");
+      await head.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: /^Als (un)?gelesen markieren$/ }).waitFor();
+      await page.getByRole("menuitem", { name: "Aktivität anzeigen" }).waitFor();
+      await page.keyboard.press("Escape");
+      const message = page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Band"]').first();
+      await message.getByRole("button", { name: "Nachrichtenaktionen" }).click();
+      await page.getByRole("menuitem", { name: "Technische Details" }).waitFor();
+      await page.keyboard.press("Escape");
+      // The head's filter menu at the search field, v1's (F9).
+      await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
+      await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();
+      expect(await page.locator("[data-k2-workspace] button[disabled]").count()).toBe(0);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("the reply rests as the mockup's composer and starts Mail's reply box on a click", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {

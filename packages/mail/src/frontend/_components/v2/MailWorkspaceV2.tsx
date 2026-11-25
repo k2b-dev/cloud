@@ -1,12 +1,13 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { announce, useLocale } from "@k2b/ui";
-import { Bar, Button, Input, Nav, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Input, Menu, Nav, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
 import type { MailSidebarMailbox } from "../MailSidebar";
+import { createMailSearchFilterMenu } from "../MailWorkspaceHead";
 import { buildVisibleMailFolderTree, flattenMailFolderTree } from "../mail-folder-tree";
 import { mailListRowKey } from "../mail-list-projection";
 import type { MailboxPreferences } from "../mail-mailbox-preferences";
@@ -15,6 +16,7 @@ import { buildMailListHref, buildMailSearchHref, buildMailSelectionHref, mailRou
 import MailListV2 from "./MailListV2";
 import MailReaderV2 from "./MailReaderV2";
 import type { MailV2Session } from "./MailReplyV2";
+import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
 /** The head shows these views as tabs; the others wait under "More". */
@@ -83,6 +85,35 @@ export default function MailWorkspaceV2(props: {
   const openView: OnNavigate = (nav) => c().navigateWorkspace(nav);
   const openRow = (nav: LinkNavigateEvent, item: MailListItem) =>
     c().navigateConversation(nav.href, item, nav.event.detail === 0 ? "keyboard" : "pointer");
+  // The filter menu at the search field, v1's (F9): what narrows the list, all in the URL.
+  const filter = createMailSearchFilterMenu({
+    get requestUrl() {
+      return c().requestPath();
+    },
+    get search() {
+      return c().data.search;
+    },
+    get folderId() {
+      return c().data.folderId;
+    },
+    get folders() {
+      return c().data.folders;
+    },
+    get localTags() {
+      return c().data.localTags;
+    },
+    get quickSearch() {
+      return c().searchControls;
+    },
+    onEditSearch: (state, source) => {
+      c().searchControls.cancelPending();
+      c().searchControls.edit(state, source);
+    },
+    onOpenHref: (href) => {
+      c().searchControls.cancelPending();
+      void c().openWorkspaceHref(href);
+    },
+  });
   // Enter in the head's search field searches the mailbox, as v1's search field does.
   const searchKey = (event: KeyboardEvent) => {
     if (event.key !== "Enter" || event.isComposing) return;
@@ -216,6 +247,7 @@ export default function MailWorkspaceV2(props: {
                 value={search()}
                 onInput={setSearch}
                 onKeyDown={searchKey}
+                end={<Menu icon="adjustments-horizontal" label={filter.label()} items={mailV2MenuEntries(filter.items())} />}
               />
               <Show when={c().canWrite() && !c().assignedOnly()}>
                 <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>

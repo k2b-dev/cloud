@@ -1,19 +1,22 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { toast, useLocale } from "@k2b/ui";
-import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
+import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Menu, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, on, Show } from "solid-js";
 import type { SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
 import MailMessageBody from "../MailMessageBody";
+import { createMailMessageMenu } from "../MailSenderMessageActions";
 import { isOutgoingMessage } from "../mail-conversation-history";
 import { buildMailConversationTimeline } from "../mail-conversation-timeline";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
+import { mailV2MenuEntries } from "./mail-v2-menu";
 import type { MailV2Text } from "./mail-v2-messages";
+import { createMailV2ReaderMenus } from "./mail-v2-reader-menus";
 import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
 
@@ -62,6 +65,45 @@ function MessageV2(props: {
       : t().toRecipient({ recipients });
   };
   const when = () => mailV2MessageTime(props.message.sentAt ?? props.message.internalDate, props.dateConfig);
+  // The message's "…" is v1's message menu (MailSenderMessageActions); "Use as new" joins with the rebuilt reply.
+  const c = () => props.controller;
+  const menu = createMailMessageMenu({
+    get mailboxId() {
+      return props.mailboxId;
+    },
+    get requestUrl() {
+      return c().requestPath();
+    },
+    get canWrite() {
+      return c().canWrite();
+    },
+    get canAdmin() {
+      return c().canAdmin();
+    },
+    get mailboxWide() {
+      return !c().assignedOnly();
+    },
+    get selectionKey() {
+      return c().data.selectedMessageId ?? c().data.selectedConversationId;
+    },
+    get selectedConversationId() {
+      return c().data.selectedConversationId;
+    },
+    get message() {
+      return props.message;
+    },
+    get totalMessageCount() {
+      return c().selectedListItem()?.messageCount ?? c().data.detailMessages.length;
+    },
+    get identities() {
+      return props.identities;
+    },
+    get conversationMessages() {
+      return c().data.detailMessages;
+    },
+    onReassignMessage: (messageId) => c().reassignMessage(messageId),
+    onSplitMessage: (messageId) => c().splitMessage(messageId),
+  });
   const format = () =>
     resolveMessageBodyFormat(
       props.controller.userPreferences().readingFormat,
@@ -105,6 +147,7 @@ function MessageV2(props: {
             <Show when={props.onReply}>
               {(reply) => <Button variant="ghost" icon="arrow-back-up" label={props.text.reply} onClick={() => reply()()} />}
             </Show>
+            <Menu label={menu.label()} items={mailV2MenuEntries(menu.items())} />
           </>
         }
       />
@@ -185,6 +228,7 @@ export default function MailReaderV2(props: {
   const assignees = () => data().collaborationState?.assignees ?? [];
   const readers = () => c().presence().participants;
   const workStatus = () => c().selectedWorkStatus();
+  const menus = createMailV2ReaderMenus({ controller: c, dateConfig: props.dateConfig });
   const run = (actionId: "archive" | "trash") => {
     const open = item();
     const target = open ? c().actionTargetForItem(open, actionId) : null;
@@ -220,6 +264,7 @@ export default function MailReaderV2(props: {
                 <Button variant="ghost" icon="archive" label={props.text.archive} onClick={() => run("archive")} />
                 <Button variant="ghost" icon="trash" label={props.text.delete} onClick={() => run("trash")} />
               </Show>
+              <Menu icon="clock" label={props.text.later} items={menus.later()} />
               <Show when={c().assignment()}>
                 <Show
                   when={assignees()[0]}
@@ -237,13 +282,13 @@ export default function MailReaderV2(props: {
                   )}
                 </Show>
               </Show>
+              <Menu items={menus.more()} />
               <Button
                 variant="ghost"
                 icon="x"
                 label={props.text.close}
                 href={listHref()}
                 onNavigate={(nav) => c().closeConversation(nav)}
-                keep
               />
             </>
           }
