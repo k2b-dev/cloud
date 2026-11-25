@@ -2,8 +2,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
+import type {} from "../../test/v2-confirm-island.entry";
 import type {} from "../../test/v2-overlays.demo";
 import { measureV2Layout } from "./testing";
 import { heights, radii } from "./tokens";
@@ -20,9 +21,10 @@ const testCss =
 
 let browser: Browser;
 let bundle: string;
+let island: string;
 beforeAll(async () => {
   // The bundler resolves the entry beside the behaviour harness; ours lives one folder up in test/.
-  [bundle, browser] = await Promise.all([demoBundle("../v2-overlays"), launchBrowser()]);
+  [bundle, island, browser] = await Promise.all([demoBundle("../v2-overlays"), demoBundle("../v2-confirm-island"), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
@@ -38,6 +40,8 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, scal
       `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: bundle });
+    // another island with its own copy of the library and no Workspace of its own
+    await page.addScriptTag({ content: island });
     await page.waitForFunction(() => window.__mounted === true);
     await settled(page);
     await run(page);
@@ -64,7 +68,7 @@ const edge = (page: Page, slot: "head" | "foot") =>
 
 // A press beside an open overlay: a click, or on a touch screen a tap. Core dismisses after a tap on the click that
 // follows it (so a scroll does not dismiss); Safari sends that click, Playwright's WebKit does not, so the test sends
-// it where the engine did not.
+// it in WebKit only; every other engine must send it itself (a page that prevents it would break touch dismissal).
 declare global {
   interface Window {
     __k2Clicks?: number;
@@ -80,6 +84,10 @@ const pressOutside = async (page: Page, touch: boolean) => {
   await page.touchscreen.tap(x, y);
   // the click an engine sends with a tap has arrived once the page settled
   await settled(page);
+  if (browserName !== "webkit") {
+    expect(await page.evaluate(() => window.__k2Clicks)).toBe(1);
+    return;
+  }
   await page.evaluate(
     ([x, y]) => {
       if (window.__k2Clicks) return;
@@ -243,8 +251,9 @@ test("select in a form: required blocks an empty submit, a choice fires change, 
     };
     await choose("Material", "Buche");
     await choose("Art", "Montage");
+    await choose("Zahler", "Stadtwerke Auental");
     expect(await page.locator('input[name="material"]').inputValue()).toBe("Buche");
-    expect(await page.evaluate(() => (window as unknown as { __changes: string[] }).__changes)).toEqual(["material", "kind"]);
+    expect(await page.evaluate(() => (window as unknown as { __changes: string[] }).__changes)).toEqual(["material", "kind", "payer"]);
     expect(await valid()).toBe(true);
     await submit();
     expect(await page.evaluate(() => "sent" in document.body.dataset)).toBe(true);
@@ -254,39 +263,54 @@ test("select in a form: required blocks an empty submit, a choice fires change, 
     await settled(page);
     expect(await page.locator('input[name="material"]').inputValue()).toBe("");
     expect(await page.getByRole("combobox", { name: "Material" }).textContent()).toContain("Wählen");
+    // with a start value it goes back to that value
+    expect(await page.locator('input[name="payer"]').inputValue()).toBe("Familie Oswald");
+    expect(await page.getByRole("combobox", { name: "Zahler" }).textContent()).toContain("Familie Oswald");
+    // the controlled one keeps the value its caller holds
+    expect(await page.locator('input[name="kind"]').inputValue()).toBe("Montage");
+    expect(await page.getByRole("combobox", { name: "Art" }).textContent()).toContain("Montage");
     expect(await valid()).toBe(false);
   });
 });
 
-// Dialog.confirm always answers: with two Workspaces on a page the first one answers, the second one takes over when the
-// first leaves, and without any Workspace the answer is no at once.
-test("Dialog.confirm with two Workspaces: one answers, the other takes over, none answers no", async () => {
+// Dialog.confirm always answers with a real question: the first Workspace on the page answers, also for another island
+// with its own copy of the library; the next one takes over when it leaves; without any Workspace the question brings
+// its own dialog; a question whose dialog leaves while it asks is answered no.
+const askFrom = async (page: Page, from: "page" | "island", title: string) => {
+  await page.evaluate((which) => {
+    delete document.body.dataset.answer;
+    delete document.body.dataset.other;
+    if (which === "page") window.__k2Ask?.();
+    else window.__k2AskOther?.();
+  }, from);
+  const dialog = page.getByRole("alertdialog", { name: title });
+  await dialog.waitFor();
+  await settled(page);
+  expect(await page.locator(".k2-dialog").count()).toBe(1);
+  return dialog;
+};
+/** The hosts a question without a Workspace brings to the end of the page. */
+const ownHosts = (page: Page) => page.evaluate(() => document.querySelectorAll("body > .k2-ui[style]").length);
+const answerOf = async (page: Page, from: "page" | "island") => {
+  await page.waitForFunction((which) => document.body.dataset[which === "page" ? "answer" : "other"] !== undefined, from);
+  return page.evaluate((which) => document.body.dataset[which === "page" ? "answer" : "other"], from);
+};
+
+test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
     async (page) => {
-      const ask = async (agree: boolean) => {
-        await page.evaluate(() => {
-          delete document.body.dataset.answer;
-          window.__k2Ask?.();
-        });
-        const dialog = page.getByRole("alertdialog", { name: "Weiter?" });
-        await dialog.waitFor();
-        expect(await page.locator(".k2-dialog").count()).toBe(1);
-        if (agree) await dialog.getByRole("button", { name: "Ja" }).click();
-        else await page.keyboard.press("Escape");
-        await page.waitForFunction(() => document.body.dataset.answer !== undefined);
-        return page.evaluate(() => document.body.dataset.answer);
-      };
-      expect(await ask(true)).toBe("true");
+      await (await askFrom(page, "page", "Weiter?")).getByRole("button", { name: "Ja" }).click();
+      expect(await answerOf(page, "page")).toBe("true");
       // the second one leaves: the first still answers
       await page.evaluate(() => window.__k2Drop?.(2));
-      expect(await ask(false)).toBe("false");
-      // the first one leaves too: nobody answers, and the question is answered no at once
+      await askFrom(page, "page", "Weiter?");
+      await page.keyboard.press("Escape");
+      expect(await answerOf(page, "page")).toBe("false");
+      // the first one leaves too: the question brings its own dialog, and it leaves with the answer
       await page.evaluate(() => window.__k2Drop?.(1));
-      await page.evaluate(() => {
-        delete document.body.dataset.answer;
-        window.__k2Ask?.();
-      });
-      await page.waitForFunction(() => document.body.dataset.answer === "false");
+      await (await askFrom(page, "page", "Weiter?")).getByRole("button", { name: "Ja" }).click();
+      expect(await answerOf(page, "page")).toBe("true");
+      await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
     },
     { two: true },
   );
@@ -294,14 +318,37 @@ test("Dialog.confirm with two Workspaces: one answers, the other takes over, non
   await withPage(
     async (page) => {
       await page.evaluate(() => window.__k2Drop?.(1));
-      await page.evaluate(() => window.__k2Ask?.());
-      const dialog = page.getByRole("alertdialog", { name: "Weiter?" });
-      await dialog.waitFor();
-      await dialog.getByRole("button", { name: "Ja" }).click();
-      await page.waitForFunction(() => document.body.dataset.answer === "true");
+      await (await askFrom(page, "page", "Weiter?")).getByRole("button", { name: "Ja" }).click();
+      expect(await answerOf(page, "page")).toBe("true");
     },
     { two: true },
   );
+});
+
+test("Dialog.confirm from another island (its own copy of the library): the page's Workspace answers", async () => {
+  await withPage(async (page) => {
+    const dialog = await askFrom(page, "island", "Aus der Insel?");
+    // the page's Workspace answers: the island's copy brings no dialog of its own
+    expect(await ownHosts(page)).toBe(0);
+    await dialog.getByRole("button", { name: "Ja" }).click();
+    expect(await answerOf(page, "island")).toBe("true");
+    // without a Workspace the island's copy brings its own dialog, and takes it away with the answer
+    await page.evaluate(() => window.__k2Drop?.(1));
+    await askFrom(page, "island", "Aus der Insel?");
+    expect(await ownHosts(page)).toBe(1);
+    await page.getByRole("button", { name: "Ja" }).click();
+    expect(await answerOf(page, "island")).toBe("true");
+    await page.waitForFunction(() => document.querySelectorAll("body > .k2-ui[style]").length === 0);
+  });
+});
+
+test("Dialog.confirm: a question whose Workspace leaves while it asks is answered no", async () => {
+  await withPage(async (page) => {
+    await askFrom(page, "page", "Weiter?");
+    await page.evaluate(() => window.__k2Drop?.(1));
+    expect(await answerOf(page, "page")).toBe("false");
+    await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+  });
 });
 
 // The value of a selection is set like the value of an input (the mockup's `.k-input` holds both): the same type, and
@@ -439,6 +486,12 @@ for (const touch of [false, true])
         };
         await open();
         expect(await page.locator(".k2-dialog").getAttribute("data-presentation")).toBe(touch ? "sheet" : "dialog");
+        // on the sheet the text field does not take the focus (the keyboard would cover the sheet): the action does
+        expect(
+          await page.evaluate(
+            () => document.activeElement?.textContent?.trim() || (document.activeElement as HTMLInputElement | null)?.value,
+          ),
+        ).toBe(touch ? "Anlegen" : "k2b_live_7Q4mX9");
         await pressOutside(page, touch);
         await settled(page);
         expect(await page.locator(".k2-dialog").count()).toBe(1);
