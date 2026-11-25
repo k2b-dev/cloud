@@ -5,13 +5,31 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-22
+updated: 2026-11-25
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## The log list keeps its filters in new address parameters
+
+Operator note: the log list at `/admin/observability/logs` filters by time
+range, several levels, several sources, request ID and text, and groups by
+minute or source. Its address holds that state:
+`time=last-15m`, `level=warn,error`, `source=mail,gateway`, `request=7f3a9c`,
+`q=timeout` and `group=minute`. A custom range is
+`time=2026-11-24T08:00Z..2026-11-24T09:30Z` (UTC, at most 31 days).
+
+Old addresses keep working: the page redirects `window=6h`, `search=…`,
+`level=all` and repeated `source=` parameters to the new form. No migration is
+needed.
+
+`GET /api/logging` takes the same parameters beside `page` and `per_page`,
+still accepts `search` and `since_hours`, and answers with `levels`, the
+matching entries per level. It refuses an unknown parameter or value with
+`400` instead of ignoring it. `GET /api/logging/sources` takes `since_hours`.
 
 ## The UI returns to the look of 0.83
 
