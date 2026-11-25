@@ -10,7 +10,13 @@
  * bottom of item `from + j`), starting again at `dirtyFrom`, the first offset that may be stale. Returns the offsets,
  * a new array when the count of items changed.
  */
-export const prefixOffsets = (sizes: Float64Array<ArrayBuffer>, from: number, to: number, offsets: Float64Array<ArrayBuffer>, dirtyFrom: number): Float64Array<ArrayBuffer> => {
+export const prefixOffsets = (
+  sizes: Float64Array<ArrayBuffer>,
+  from: number,
+  to: number,
+  offsets: Float64Array<ArrayBuffer>,
+  dirtyFrom: number,
+): Float64Array<ArrayBuffer> => {
   const length = to - from;
   let start = dirtyFrom;
   let out = offsets;

@@ -1328,6 +1328,15 @@
   padding-block: 8px;
   vertical-align: top;
 }
+/* a table of any length keeps only the rows in view in the page; an empty row holds the place of the others */
+.k2-ui .k2-table tr[data-spacer] > td,
+.k2-ui .k2-table[data-grid] tr[data-spacer] > td {
+  height: var(--k2-space);
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+}
 .k2-ui .k2-table th:first-child,
 .k2-ui .k2-table td:first-child {
   padding-left: var(--k2-edge);
