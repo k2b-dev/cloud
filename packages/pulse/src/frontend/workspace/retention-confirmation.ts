@@ -1,6 +1,4 @@
 import { text } from "@k2b/stdlib";
-import { prompts } from "@k2b/ui";
-import { For } from "solid-js";
 import type { BaseRetention, RetentionPreviewItem } from "../../store/admin-contracts";
 import { baseStoreMessages } from "./base-store-messages";
 
@@ -55,27 +53,15 @@ export const baseUpdateError = (_status: number, body: unknown): Error => {
   );
 };
 
-/** Asks with date and amount before data goes; resolves true only on an explicit confirmation. */
-export const confirmShorterRetention = async (preview: RetentionPreviewItem[], locale: string): Promise<boolean> => {
+/** What a shorter retention removes, one line per kind: from which date, how many rows and about how much. */
+export const retentionPreviewLines = (preview: RetentionPreviewItem[], locale: string, timeZone: string): string[] => {
   const t = baseStoreMessages.resolve([locale]).t;
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const line = (item: RetentionPreviewItem) => {
+  return preview.map((item) => {
     const values = {
       rows: text.pprintNumber(item.rows, { locale }),
       bytes: text.pprintBytes(item.bytes, { locale, mode: "si" }),
       date: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(item.cutoff)),
     };
     return item.kind === "raw" ? t.confirmRaw(values) : item.kind === "rollup" ? t.confirmRollup(values) : t.confirmSensitive(values);
-  };
-  return (
-    (await prompts.confirm(
-      <div class="flex flex-col gap-3">
-        <p>{t.confirmShorterIntro}</p>
-        <ul class="flex list-disc flex-col gap-1 pl-5">
-          <For each={preview}>{(item) => <li>{line(item)}</li>}</For>
-        </ul>
-      </div>,
-      { title: t.confirmShorterTitle, confirmText: t.confirmShorter, variant: "danger", icon: "ti ti-trash" },
-    )) === true
-  );
+  });
 };

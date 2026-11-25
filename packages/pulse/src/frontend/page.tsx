@@ -5,7 +5,7 @@ import { ssr } from "../config";
 import { pulseMessages } from "../messages";
 import { pulseService } from "../service";
 import { projectBases } from "../service/public-resources";
-import PulseOverview from "./PulseOverview.island";
+import OverviewScreen from "./screens/OverviewScreen.island";
 
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
@@ -16,8 +16,8 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = pulseMessages.resolve([getLocale(c)]);
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <PulseOverview bases={bases} deletingBases={deletingBases} initialQuery={url.searchParams.get("q")?.trim() ?? ""} />
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
+      <OverviewScreen bases={bases} deletingBases={deletingBases} initialQuery={url.searchParams.get("q")?.trim() ?? ""} />
     </Layout>
   );
 });

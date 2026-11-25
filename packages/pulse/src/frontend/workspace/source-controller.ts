@@ -1,22 +1,24 @@
 import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui";
 import { mutation } from "@k2b/stdlib/solid";
-import { prompts, toast } from "@k2b/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseSource } from "../../contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
-import { createPulseSource, SourceCreateError, scrapePulseSourceOnce, sourceCreateValidationError } from "./source-actions";
-import { openSourceCreateDialog } from "./source-create-dialog";
-import { openSourceEditDialog, SourceEditError } from "./source-edit-dialog";
+import {
+  createPulseSource,
+  SourceCreateError,
+  SourceEditError,
+  scrapePulseSourceOnce,
+  sourceCreateValidationError,
+} from "./source-actions";
 import type { CreateSourceInput, WorkspaceView } from "./types";
 
 type SourceControllerDeps = {
   selectedBaseId: Accessor<string>;
-  selectedBaseName?: Accessor<string>;
-  timezone?: Accessor<string>;
-  askAssistant?: () => Promise<void>;
-  assistantPending?: Accessor<boolean>;
-  assistantError?: Accessor<string | null>;
+  /** Reports a finished or failed deed in one sentence (the screen's toast). */
+  notify: (text: string, status: "ok" | "bad") => void;
+  /** Asks before something that cannot be taken back; resolves true when the person agrees. */
+  confirm: (question: { title: string; description: string; confirm: string }) => Promise<boolean>;
   loading: Accessor<boolean>;
   setLoading: Setter<boolean>;
   selectedSourceId: Accessor<string>;
@@ -98,13 +100,13 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       await Promise.all(tasks.map((task) => task()));
       return !disposed;
     } catch {
-      if (!disposed) toast.error(message);
+      if (!disposed) deps.notify(message, "bad");
       return false;
     }
   };
   const requireWritable = (): boolean => {
     if (!deps.writeBlocked()) return true;
-    toast.error(t().refreshBeforeChanges);
+    deps.notify(t().refreshBeforeChanges, "bad");
     return false;
   };
 
@@ -116,12 +118,12 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (outcome !== "success") return false;
       const counts = scrapeMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedScrapedRefreshFailed))) return false;
-      toast.success(t().sourceAddedScraped({ counts: t().ingestCounts(counts) }));
+      deps.notify(t().sourceAddedScraped({ counts: t().ingestCounts(counts) }), "ok");
       return true;
     } catch (error) {
       if (disposed) return false;
       if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedRefreshFailed))) return false;
-      toast.error(t().sourceAddedScrapeFailed({ detail: error instanceof Error ? error.message : undefined }));
+      deps.notify(t().sourceAddedScrapeFailed({ detail: error instanceof Error ? error.message : undefined }), "bad");
       return true;
     }
   };
@@ -132,7 +134,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (!baseId) return false;
     const validationError = sourceCreateValidationError(input) ? t().endpointRequired : null;
     if (validationError) {
-      toast.error(validationError);
+      deps.notify(validationError, "bad");
       return false;
     }
     deps.setLoading(true);
@@ -149,7 +151,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       }
       if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedRefreshFailed))) return true;
       deps.navigate({ view: "sources", sourceId: source.id });
-      toast.success(input.kind === "http_ingest" ? t().httpIngestSourceCreated : t().metricsSourceCreated);
+      deps.notify(input.kind === "http_ingest" ? t().httpIngestSourceCreated : t().metricsSourceCreated, "ok");
       return true;
     } catch (error) {
       if (disposed) return false;
@@ -157,25 +159,11 @@ export const createSourceController = (deps: SourceControllerDeps) => {
         await reconcile([deps.refreshBaseData], t().sourceCreateUncertain);
         throw new SourceCreateError("uncertain", t().sourceCreateUncertain);
       }
-      toast.error(error instanceof Error ? error.message : t().sourceAddFailed);
+      deps.notify(error instanceof Error ? error.message : t().sourceAddFailed, "bad");
       return false;
     } finally {
       deps.setLoading(false);
     }
-  };
-
-  const addSource = () => {
-    if (!requireWritable()) return;
-    return openSourceCreateDialog({
-      loading: deps.loading,
-      baseName: deps.selectedBaseName?.(),
-      createSource,
-      inspectSources: () => deps.navigate({ view: "sources" }),
-      timezone: deps.timezone?.(),
-      askAssistant: deps.askAssistant,
-      assistantPending: deps.assistantPending,
-      assistantError: deps.assistantError,
-    });
   };
 
   const scrape = async (source: PulseSource) => {
@@ -190,9 +178,9 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (outcome !== "success") return;
       const counts = scrapeMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData, deps.refreshSourceDetail], t().sourceChangedRefreshFailed))) return;
-      toast.success(t().metricsScraped({ counts: t().ingestCounts(counts) }));
+      deps.notify(t().metricsScraped({ counts: t().ingestCounts(counts) }), "ok");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().scrapeFailed);
+      deps.notify(error instanceof Error ? error.message : t().scrapeFailed, "bad");
     } finally {
       deps.setLoading(false);
     }
@@ -210,50 +198,44 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (outcome !== "success") return;
       const updated = toggleMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData], t().sourceChangedRefreshFailed))) return;
-      toast.success(updated.enabled ? t().sourceResumed : t().sourcePaused);
+      deps.notify(updated.enabled ? t().sourceResumed : t().sourcePaused, "ok");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().sourceUpdateFailed);
+      deps.notify(error instanceof Error ? error.message : t().sourceUpdateFailed, "bad");
     } finally {
       deps.setLoading(false);
     }
   };
 
-  const editSource = async (source: PulseSource) => {
-    if (!requireWritable()) return;
+  /** Saves the edit dialog's patch; a conflict, a lost answer or a refusal comes back as `SourceEditError`. */
+  const saveSource = async (source: PulseSource, patch: Record<string, unknown>) => {
     const baseId = deps.selectedBaseId();
-    if (!baseId) return;
-    await openSourceEditDialog(source, {
-      loading: deps.loading,
-      timezone: deps.timezone?.() ?? "UTC",
-      save: async (patch) => {
-        if (disposed || !requireWritable()) throw new SourceEditError("uncertain", t().refreshBeforeChanges);
-        deps.setLoading(true);
-        try {
-          const outcome = await editMutation.mutate({ baseId, sourceId: source.id, patch });
-          if (disposed) throw new SourceEditError("uncertain", t().sourceEditUncertain);
-          if (outcome === "error") throw editMutation.error();
-          if (outcome !== "success") throw new SourceEditError("uncertain", t().sourceEditUncertain);
-          if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed)))
-            throw new SourceEditError("uncertain", t().sourceEditUncertain);
-          toast.success(t().sourceUpdated);
-        } catch (error) {
-          // Reconcile a rejected/lost response before another dialog can write.
-          await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed);
-          throw error;
-        } finally {
-          deps.setLoading(false);
-        }
-      },
-    });
+    if (disposed || !baseId || !requireWritable()) throw new SourceEditError("uncertain", t().refreshBeforeChanges);
+    deps.setLoading(true);
+    try {
+      const outcome = await editMutation.mutate({ baseId, sourceId: source.id, patch });
+      if (disposed) throw new SourceEditError("uncertain", t().sourceEditUncertain);
+      if (outcome === "error") throw editMutation.error();
+      if (outcome !== "success") throw new SourceEditError("uncertain", t().sourceEditUncertain);
+      if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed)))
+        throw new SourceEditError("uncertain", t().sourceEditUncertain);
+      deps.notify(t().sourceUpdated, "ok");
+    } catch (error) {
+      // Reconcile a rejected/lost response before another dialog can write.
+      await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed);
+      throw error;
+    } finally {
+      deps.setLoading(false);
+    }
   };
 
   const removeSource = async (source: PulseSource) => {
     if (!requireWritable()) return;
     const baseId = deps.selectedBaseId();
     if (!baseId) return;
-    const confirmed = await prompts.confirm(t().removeSourceConfirm({ name: source.name }), {
+    const confirmed = await deps.confirm({
       title: t().removeSource,
-      variant: "danger",
+      description: t().removeSourceConfirm({ name: source.name }),
+      confirm: t().removeSource,
     });
     if (disposed || !confirmed || !requireWritable()) return;
     deps.setLoading(true);
@@ -264,9 +246,9 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (outcome !== "success") return;
       if (!(await reconcile([deps.refreshBaseData], t().sourceRemovedRefreshFailed))) return;
       if (deps.selectedSourceId() === source.id) deps.navigate({ view: "sources" });
-      toast.success(t().sourceRemoved);
+      deps.notify(t().sourceRemoved, "ok");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().sourceRemoveFailed);
+      deps.notify(error instanceof Error ? error.message : t().sourceRemoveFailed, "bad");
     } finally {
       deps.setLoading(false);
     }
@@ -298,5 +280,5 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
   };
 
-  return { addSource, createApiKey, editSource, removeSource, revokeApiKey, scrape, toggleSource };
+  return { createApiKey, createSource, removeSource, revokeApiKey, saveSource, scrape, toggleSource, requireWritable };
 };

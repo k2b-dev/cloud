@@ -24,6 +24,7 @@ export type {
   ResourceApiKeyPermissionOption,
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
+export { default as ResourceApiKeySection, expiryFromDay } from "./ResourceApiKeySection";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
 export { ServiceAccountLookup } from "./ServiceAccountLookup";
 export { ServiceAccountSection, serviceAccountLine } from "./ServiceAccountSection";

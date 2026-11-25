@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AdminBaseRow, AdminBasesPage, InternalTarget, InternalTargetsPage, PulsePolicy } from "../../store/admin-contracts";
-import { pauseWorkspaceClock } from "../PulseWorkspace.browser-fixture";
+import { pauseWorkspaceClock } from "../browser-clock";
 
 // Administration -> Pulse -> Bases and Internal targets: ClickHouse-backed parts load after the first frame
 // without moving anything above them, every action ends in a visible result, and both tabs fit a phone and a

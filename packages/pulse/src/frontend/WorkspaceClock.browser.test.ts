@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { pauseWorkspaceClock } from "./PulseWorkspace.browser-fixture";
+import { pauseWorkspaceClock } from "./browser-clock";
 
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
 beforeAll(async () => {

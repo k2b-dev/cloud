@@ -52,16 +52,8 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const [write, admin] = scope.ok
     ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
     : [null, null];
-  const [policy, managers] = await Promise.all([
-    readBasePolicy(),
-    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
-      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
-      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
-      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
-      ORDER BY a.created_at LIMIT 3`,
-  ]);
+  // Settings have a page of their own now (settings.page.tsx); the views of a base need no policy or admin names.
   const props: PulseWorkspaceProps = {
-    initialSettings: { maxRawRetentionDays: policy.maxRawRetentionDays, admins: managers.map((manager) => manager.name) },
     initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
     initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
     initialBaseId: publicBaseId,
@@ -115,4 +107,70 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     props.initialQueryCoverage.sourceDetail = scrapes.ok && keys.ok;
   }
   return { kind: "ok", baseName: base.data.name, workspaceProps: props };
+}
+
+/** The base, the bases beside it and its source count: what every page of a base shows around its own content. */
+const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
+  const user = expectUserBackedActor(c);
+  const publicBaseId = c.req.param("baseId") ?? "";
+  if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error" as const, status: 404 as const };
+  const baseId = await resolvePublicId("bases", publicBaseId);
+  if (!baseId) return { kind: "error" as const, status: 404 as const };
+  const [base, bases, sources] = await Promise.all([
+    pulseService.base.get(baseId, user),
+    pulseService.base.list(user),
+    pulseService.source.list(baseId, user, { signal: c.req.raw.signal }),
+  ]);
+  if (!base.ok) return { kind: "error" as const, status: base.error.status };
+  const projected = await projectBases(bases.ok ? bases.data : [base.data]);
+  const [current] = await projectBases([base.data]);
+  return {
+    kind: "ok" as const,
+    baseId,
+    publicBaseId,
+    base: current!,
+    bases: projected,
+    sourceCount: sources.ok ? sources.data.length : 0,
+    identity: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId },
+  };
+};
+
+/** The saved queries of a base, one page of `QUERIES_PER_PAGE` from `?offset=`; a failed read becomes the page's Failed state. */
+export async function loadPulseQueriesPageData<T extends AuthContext>(c: Context<T>, perPage: number) {
+  const shell = await loadBaseShell(c);
+  if (shell.kind === "error") return shell;
+  const raw = Number(c.req.query("offset") ?? 0);
+  const offset = Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+  const page = await savedQueries.list({ ...shell.identity, limit: perPage, offset });
+  if (!page.ok && page.error.status !== 500) return { kind: "error" as const, status: page.error.status };
+  return { ...shell, offset, page: page.ok ? page.data : null, dateConfig: getDateConfig(c) };
+}
+
+/** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */
+export async function loadPulseSettingsPageData<T extends AuthContext>(c: Context<T>, tab: string) {
+  const shell = await loadBaseShell(c);
+  if (shell.kind === "error") return shell;
+  const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
+  const admin = scope.ok ? await requireBaseAccess(shell.baseId, scope.data, "admin") : null;
+  const canAdmin = admin?.ok ?? false;
+  const [policy, managers, access, limits] = await Promise.all([
+    tab === "retention" ? readBasePolicy() : null,
+    canAdmin
+      ? []
+      : sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
+      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
+      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${shell.baseId}::uuid AND a.permission='admin'
+      ORDER BY a.created_at LIMIT 3`,
+    tab === "members" && canAdmin && scope.ok ? pulseService.base.access.list(shell.baseId, scope.data) : null,
+    tab === "usage" ? baseSqlLimits(shell.identity) : null,
+  ]);
+  return {
+    ...shell,
+    canAdmin,
+    admins: managers.map((manager) => manager.name),
+    maxRawRetentionDays: policy?.maxRawRetentionDays ?? 3650,
+    access: access?.ok ? access.data : null,
+    limits: limits?.ok ? limits.data : null,
+  };
 }
