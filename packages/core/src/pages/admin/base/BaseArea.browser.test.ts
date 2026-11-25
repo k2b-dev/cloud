@@ -128,7 +128,7 @@ test("an unreadable value is replaced only after the person confirms it", async 
   expect(await notice.isVisible()).toBe(true);
   expect(await page.getByRole("textbox", { name: /^Time zone/ }).isDisabled()).toBe(true);
   expect(await button("Save").isDisabled()).toBe(true);
-  await notice.getByRole("button", { name: "Replace when saving", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Replace stored value: Time zone" }).check();
   expect(await page.getByRole("textbox", { name: /^Time zone/ }).isDisabled()).toBe(false);
   const request = page.waitForRequest((candidate) => candidate.method() === "PUT");
   await button("Save").click();

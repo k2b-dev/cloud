@@ -1,10 +1,10 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { formatBytes } from "@k2b/cloud/shared";
-import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, type NavProps, Pane, Path, Popover, Text, useToast } from "@k2b/ui/v2";
+import { Button, type NavProps, Popover, useToast } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
+import AreaFrame from "../_area/AreaFrame";
 import CacheSection from "../_area/CacheSection";
 import LegacySection, { type LegacyRow } from "../_area/LegacySection";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm";
@@ -56,35 +56,17 @@ const TestPdf = () => {
 export function BaseFrame(props: Frame & { children: JSX.Element }) {
   const locale = useLocale();
   const t = () => baseAreaMessages.resolve([locale()]).t;
-  const s = () => settingsMessages.resolve([locale()]).t;
   return (
-    <AdminWorkspace
+    <AreaFrame
       nav={props.nav}
-      head={
-        <Bar
-          start={<Path label={t().sections} items={[{ label: t().area, href: "/admin/base" }, { label: t()[props.section] }]} />}
-          end={
-            <>
-              <Show when={props.documentationHref}>
-                {(href) => (
-                  <Button variant="text" icon="book" href={href()}>
-                    {s().documentation}
-                  </Button>
-                )}
-              </Show>
-              <Show when={props.section === "pdf"}>
-                <TestPdf />
-              </Show>
-            </>
-          }
-        />
-      }
+      area={{ label: t().area, href: "/admin/base" }}
+      title={t()[props.section]}
+      description={t()[`${props.section}Description`]}
+      documentationHref={props.documentationHref}
+      actions={props.section === "pdf" ? <TestPdf /> : undefined}
     >
-      <Pane label={t()[props.section]} scrollKey={`admin-base-${props.section}`}>
-        <Text muted>{t()[`${props.section}Description`]}</Text>
-        {props.children}
-      </Pane>
-    </AdminWorkspace>
+      {props.children}
+    </AreaFrame>
   );
 }
 

@@ -4,8 +4,10 @@ import { render } from "solid-js/web";
 import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-admin/views";
 import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
+import { adminNavFixture } from "../../admin-v2.fixture";
 import { RetentionDialog } from "../../outgoing-mail/SendLog";
-import LinuxIdentityPanel from "./LinuxIdentityPanel.island";
+import { linuxQuery } from "../../signin/linux-query";
+import { LinuxScreen } from "../../signin/SigninScreen";
 
 const params = new URL(location.href).searchParams;
 const locale = params.get("locale") ?? "en";
@@ -17,8 +19,16 @@ const close = () => {
 render(
   () => (
     <LocaleProvider locale={locale}>
+      {surface === "linux" && (
+        // Linux identities are a v2 screen: the v2 scope around it, as AdminLayout ui="v2" puts it on the main area.
+        <main class="k2-ui">
+          <LinuxScreen
+            nav={adminNavFixture("/admin/signin")}
+            linux={{ initial: views.linux, state: linuxQuery(locale).parse("").state, after: null }}
+          />
+        </main>
+      )}
       <main class="mx-auto max-w-3xl p-4">
-        {surface === "linux" && <LinuxIdentityPanel initial={views.linux} />}
         {surface === "outgoing" && <RetentionDialog retention={views.outgoing} close={close} onSaved={() => {}} />}
         {surface === "logs" && (
           <>

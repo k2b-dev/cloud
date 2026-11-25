@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import { type CloudRuntime, DEFAULT_LINUX_IDENTITY_CONFIGURATION, type LinuxIdentityConfiguration, type User } from "@k2b/cloud/contracts";
+import type { PosixCandidate } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -116,6 +117,16 @@ export const fixtureEntries = (state: BaseFixtureState): SettingFieldDef[] => [
   entry("freeipa", "freeipa.service_password", "secret", "", { label: "Service password" }),
 ];
 
+const linuxUser = (id: string, uid: string): PosixCandidate => ({
+  id,
+  uid,
+  displayName: uid,
+  provider: "local",
+  profile: "user",
+  state: "ready",
+  identity: null,
+});
+
 const ui = new URL("../../../../../ui/", import.meta.url).pathname;
 const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
 
@@ -127,7 +138,8 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   const { default: BaseScreen } = await import("./BaseScreen");
   const { adminNavFixture } = await import("../admin-v2.fixture");
   const { cliSections, generalSections, pdfSections } = await import("./sections");
-  const { SigninFormView } = await import("../signin/view");
+  const { SigninFormScreen, LinuxScreen } = await import("../signin/SigninScreen");
+  const { linuxQuery } = await import("../signin/linux-query");
   const { freeipaSections, signinSections } = await import("../signin/sections");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -179,6 +191,15 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   let stored = fixtureEntries("normal");
   let saves = 0;
   let legacyDeletes = 0;
+  const linuxStart = () => ({
+    config: { ...DEFAULT_LINUX_IDENTITY_CONFIGURATION, enabled: true, rangeStart: 200000, rangeEnd: 299999 },
+    items: [linuxUser("aaaaaaaa-1111-4111-8111-111111111111", "alice"), linuxUser("bbbbbbbb-2222-4222-8222-222222222222", "bob")],
+    nextCursor: null,
+  });
+  let linux: { config: LinuxIdentityConfiguration & { unreadable?: boolean }; items: PosixCandidate[]; nextCursor: string | null } =
+    linuxStart();
+  const linuxRequests: string[] = [];
+  let linuxGate: Promise<void> = Promise.resolve();
   type Variables = {
     runtime: CloudRuntime;
     user: User;
@@ -223,7 +244,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="base-screen-props">${JSON.stringify(screen).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="base">${JSON.stringify(screen).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   };
   const renderSignin = (section: "signin" | "freeipa", group: string) => (c: Context<{ Variables: Variables }>) => {
@@ -237,11 +258,48 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     const sections = section === "signin" ? signinSections(locale) : freeipaSections(locale);
     const keys = new Set(sections.flatMap((item) => item.keys));
     const entries = stored.filter((item) => item.group === group && keys.has(item.key));
-    const body = renderToString(() => createComponent(SigninFormView, { c, locale, section, groups: [group], sections, entries }));
+    const screen = { nav: adminNavFixture("/admin/signin"), section, groups: [group], sections, entries };
+    const body = renderToString(() =>
+      createComponent(AdminLayout, {
+        c,
+        ui: "v2",
+        title: "Sign-in & security",
+        get children() {
+          return createComponent(SigninFormScreen, screen);
+        },
+      }),
+    );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="signin">${JSON.stringify(screen).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   };
+  pages.get("/admin/signin/linux", (c) => {
+    const url = new URL(c.req.url);
+    const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
+    c.req.raw.headers.set("x-cloud-locale", locale);
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("user", user);
+    c.set("settings", { app: { name: "Cloud", locale } });
+    c.set("page", { title: "Linux", theme: "light" });
+    if (url.searchParams.get("state") === "off") linux.config = { ...linux.config, enabled: false };
+    const screen = {
+      nav: adminNavFixture("/admin/signin"),
+      linux: { initial: structuredClone(linux), state: linuxQuery(locale).parse("").state, after: null },
+    };
+    const body = renderToString(() =>
+      createComponent(AdminLayout, {
+        c,
+        ui: "v2",
+        title: "Linux",
+        get children() {
+          return createComponent(LinuxScreen, screen);
+        },
+      }),
+    );
+    return c.html(
+      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="screen-props" data-screen="linux">${JSON.stringify(screen).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
+    );
+  });
   pages.get("/admin/signin", renderSignin("signin", "user"));
   pages.get("/admin/signin/freeipa", renderSignin("freeipa", "freeipa"));
   pages.get("/admin/base", render("general", ["app"]));
@@ -310,6 +368,41 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     }
     if (url.pathname === "/api/admin/core/settings/legacy") return Response.json([]);
     if (url.pathname === "/api/admin/core/settings/cache") return Response.json({ success: true });
+    if (url.pathname === "/api/admin/core/linux-identities") {
+      linuxRequests.push(`GET ${url.search}`);
+      return Response.json(linux);
+    }
+    if (url.pathname === "/api/admin/core/linux-identities/configuration" && request.method === "PUT") {
+      const body = (await request.json()) as { config: typeof linux.config; rangeReserved: boolean };
+      linuxRequests.push(`PUT reserved=${body.rangeReserved}`);
+      linux = { ...linux, config: body.config };
+      return Response.json(body.config);
+    }
+    const prepared = /^\/api\/admin\/core\/linux-identities\/users\/([^/]+)$/.exec(url.pathname);
+    if (prepared && request.method === "POST") {
+      linuxRequests.push(`POST ${prepared[1]}`);
+      await linuxGate;
+      linux = {
+        ...linux,
+        items: linux.items.map((item) =>
+          item.id === prepared[1]
+            ? {
+                ...item,
+                state: "prepared" as const,
+                identity: {
+                  userId: item.id,
+                  managedBy: "local" as const,
+                  uidNumber: 200001,
+                  primaryGidNumber: 200001,
+                  homeDirectory: `/home/${item.uid}`,
+                  loginShell: "/bin/bash",
+                },
+              }
+            : item,
+        ),
+      };
+      return Response.json({ ok: true });
+    }
     if (url.pathname === "/api/admin/core/settings/test-freeipa") return Response.json({ ok: true });
     if (url.pathname === "/api/admin/core/settings/test-pdf") return Response.json({ bytes: 18234, contentType: "application/pdf" });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
@@ -334,9 +427,21 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     url: `http://127.0.0.1:${server.port}`,
     saves: () => saves,
     legacyDeletes: () => legacyDeletes,
+    linuxRequests,
+    /** Holds account backfills until the returned release runs. */
+    holdLinux() {
+      let release = () => {};
+      linuxGate = new Promise<void>((done) => (release = done));
+      return () => {
+        release();
+        linuxGate = Promise.resolve();
+      };
+    },
     reset() {
       stored = fixtureEntries("normal");
       saves = 0;
+      linux = linuxStart();
+      linuxRequests.length = 0;
     },
     close() {
       server.stop(true);

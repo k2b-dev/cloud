@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { createSettingsDraft, SaveRejected, saveFailure, settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { readSettingsError, useLocale } from "@k2b/ui";
-import { Bar, Button, Field, Menu, Notice, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Field, Menu, Notice, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -286,20 +286,17 @@ export default function RegistryForm(props: {
       </Show>
       <For each={formKeys().filter(unreadable)}>
         {(key) => (
-          <Notice
-            tone="warn"
-            icon="eye-off"
-            title={`${entry(key).label}: ${t().unreadableTitle}`}
-            actions={[
-              {
-                label: replace().includes(key) ? t().keepStored : t().replaceOnSave,
-                onClick: () => setReplace(toggle(replace(), key)),
-                disabled: form.saving(),
-              },
-            ]}
-          >
-            {t().unreadableKeep({ value: preview(entry(key), entry(key).value, t()) })}
-          </Notice>
+          <>
+            <Notice tone="warn" icon="eye-off" title={`${entry(key).label}: ${t().unreadableTitle}`}>
+              {t().unreadableKeep({ value: preview(entry(key), entry(key).value, t()) })}
+            </Notice>
+            <Check
+              label={t().replaceStored({ label: entry(key).label })}
+              checked={replace().includes(key)}
+              disabled={form.saving()}
+              onChange={(checked) => setReplace(checked ? [...replace(), key] : replace().filter((item) => item !== key))}
+            />
+          </>
         )}
       </For>
       <For each={props.sections}>

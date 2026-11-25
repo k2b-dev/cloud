@@ -36,7 +36,8 @@ const render = (screen: () => JSX.Element) => {
   for (const element of body.querySelectorAll("*")) element.after(" ");
   return { body, text: body.textContent?.replace(/\s+/g, " ") ?? "" };
 };
-const loaders = (body: HTMLElement) => body.querySelectorAll('[data-k2-part="Loading"], [aria-busy="true"]').length;
+const loaders = (body: { querySelectorAll(selector: string): { length: number } }) =>
+  body.querySelectorAll('[data-k2-part="Loading"], [aria-busy="true"]').length;
 
 describe("v2 admin screens on the server", () => {
   test("the overview names the services and leads to every place in sections of rows", () => {
@@ -90,7 +91,7 @@ describe("v2 admin screens on the server", () => {
     );
     expect(text).toContain("Grundeinstellungen");
     expect(text).toContain("Name und Zeichen");
-    expect(body.querySelector<HTMLInputElement>('input[value="Beispiel Cloud"]')).not.toBeNull();
+    expect(body.querySelector('input[value="Beispiel Cloud"]')).not.toBeNull();
     expect(text).toContain("Eigener Wert");
     expect(text).toContain("Speichern");
     expect(text).toContain("mail.old_relay_host");

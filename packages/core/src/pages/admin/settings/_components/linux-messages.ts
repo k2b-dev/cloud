@@ -10,6 +10,9 @@ export const linuxMessages = i18n.define({
       unreadableDetail:
         "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
       replaceStored: "Replace stored value",
+      keepStoredSetup: "Keep stored settings",
+      stableOrder: "In a fixed order",
+      selectedCount: ({ count }: { count: number }) => `${count} selected`,
 
       identity_conflict: "Conflicting or invalid Linux IDs/names — review the identity data",
       title: "Linux access",
@@ -101,6 +104,9 @@ export const linuxMessages = i18n.define({
       unreadableDetail:
         "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
       replaceStored: "Gespeicherten Wert ersetzen",
+      keepStoredSetup: "Gespeicherte Einstellungen behalten",
+      stableOrder: "In fester Reihenfolge",
+      selectedCount: ({ count }) => `${count} ausgewählt`,
 
       identity_conflict: "Widersprüchliche oder ungültige Linux-IDs/Namen — Identitätsdaten prüfen",
       title: "Linux-Zugang",
