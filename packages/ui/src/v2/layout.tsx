@@ -19,6 +19,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { PictureTiles, type PictureTilesProps } from "./picture-tiles";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
@@ -634,17 +635,32 @@ export type Tile = {
   href?: string;
 };
 
-/** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
-export type TilesProps = {
+type PlainTilesProps = {
   /** The tiles, in order. */
   items: readonly Tile[];
   /** One deed after the tiles, such as "Alle herunterladen". */
   more?: Action;
   /** A name for the tiles, for assistive technology. */
   label?: string;
+  size?: undefined;
 };
 
-export const Tiles = (props: TilesProps) => (
+/**
+ * Like things side by side, such as attachments. Each is pressed, so each is round; never nested. With `size`, tiles
+ * with a picture box in a grid (see `PictureTilesProps`).
+ */
+export type TilesProps = PlainTilesProps | PictureTilesProps;
+
+export const Tiles = (props: TilesProps) => {
+  const pictures = () => (props.size === undefined ? undefined : props);
+  return (
+    <Show when={pictures()} fallback={<PlainTiles items={props.items} more={props.more} label={props.label} />}>
+      {(given) => <PictureTiles {...given()} />}
+    </Show>
+  );
+};
+
+const PlainTiles = (props: PlainTilesProps) => (
   <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
     <For each={props.items}>
       {(tile) => (

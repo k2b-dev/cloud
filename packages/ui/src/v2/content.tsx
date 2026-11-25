@@ -21,6 +21,7 @@ import { useBehaviorMessages } from "./behavior/messages";
 import { announceBranch, type TreegridRow, treegridStep } from "./behavior/treegrid";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
+import { type DragMove, useDragMove } from "./drag";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
@@ -547,9 +548,18 @@ type KeyedTable<T> = {
   group?: (row: T) => TableGroup;
   /** Rows in levels, such as folders and their files (not with `group`). */
   tree?: TableTree<T>;
+  /** Rows drag onto folders, and folder rows take rows, tiles and files (see `DragMove`). Not on the phone. */
+  drag?: DragMove;
 };
 
-type PlainTable = { rowKey?: undefined; select?: undefined; current?: undefined; group?: undefined; tree?: undefined };
+type PlainTable = {
+  rowKey?: undefined;
+  select?: undefined;
+  current?: undefined;
+  group?: undefined;
+  tree?: undefined;
+  drag?: undefined;
+};
 
 /**
  * Rows in levels: `rows` are the top level, a row's children stand under it, one level further in, while it is open.
@@ -815,6 +825,14 @@ export const Table = <T,>(props: TableProps<T>) => {
     };
     tree.loadMore(more.parent === null ? null : parent).then(done, done);
   };
+  const dragging = useDragMove(() => props.drag, {
+    targets: () => shownRows().flatMap((entry, index) => (props.drag?.target?.(key(entry.row, index)) ? [key(entry.row, index)] : [])),
+    selected: () => props.select?.selected ?? [],
+    // a closed folder row the pointer rests on opens, so a drag reaches the level below
+    open: (target) => {
+      if (props.tree && !expanded().includes(target)) expand(target, props.drag?.label(target) ?? "");
+    },
+  });
   const treeKey = (event: KeyboardEvent & { currentTarget: HTMLTableRowElement }, rowKey: string) => {
     if (event.target !== event.currentTarget) return;
     if (event.key === " " && props.select && !rowKey.startsWith(MORE_ROW)) {
@@ -1063,8 +1081,10 @@ export const Table = <T,>(props: TableProps<T>) => {
                     const target = props.open?.(item.row);
                     const rowKey = key(item.row, item.index);
                     const place = item.tree;
+                    const drag = dragging.entry(rowKey);
                     return (
                       <tr
+                        {...drag}
                         data-open={target ? "" : undefined}
                         data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
                         aria-current={props.current !== undefined && props.current === rowKey ? "true" : undefined}
@@ -1213,8 +1233,11 @@ export const Table = <T,>(props: TableProps<T>) => {
   );
 
   return (
-    <Show when={empty()} fallback={table()}>
-      {(state) => <Empty {...state()} />}
-    </Show>
+    <>
+      <Show when={empty()} fallback={table()}>
+        {(state) => <Empty {...state()} />}
+      </Show>
+      {dragging.zone()}
+    </>
   );
 };

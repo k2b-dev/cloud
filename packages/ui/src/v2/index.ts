@@ -76,6 +76,8 @@ export {
   type SelectProps,
 } from "./controls";
 export { type DescribeV2Options, describeV2 } from "./describe";
+// Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
+export type { DragMove } from "./drag";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
 // Layer 1: the primitives.
@@ -98,11 +100,11 @@ export {
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
-// Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
-export type { NavTree, NavTreeNode } from "./nav-tree";
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
+export type { NavTree, NavTreeNode } from "./nav-tree";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
+export type { PictureTile, PictureTilesProps } from "./picture-tiles";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
 export { Group, type GroupProps, Section, type SectionProps } from "./structure";

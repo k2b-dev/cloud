@@ -22,6 +22,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="tree" height="560" />
 
+## Files as tiles
+
+<Example recipe="file-grid" height="560" default="Medium" />
+
 ## Record
 
 <Example recipe="record" height="720" default="Customer" />

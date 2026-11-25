@@ -793,6 +793,169 @@
   white-space: nowrap;
 }
 
+/* Tiles with a picture (Files' grid view, media): a grid in the size the person chose. The picture box keeps its
+   shape (4:3) before, while and after the picture loads; the type's symbol stands in it until the picture covers it
+   and stays when there is none or it fails. Selected tiles draw a second line inside, the outer size stays. */
+.k2-ui .k2-tiles[data-size] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--k2-tile-w), 1fr));
+  gap: 12px;
+  align-items: start;
+  padding: 12px var(--k2-edge);
+}
+.k2-ui .k2-tiles[data-size="s"] {
+  --k2-tile-w: 128px;
+  --k2-tile-icon: 28px;
+}
+.k2-ui .k2-tiles[data-size="m"] {
+  --k2-tile-w: 176px;
+  --k2-tile-icon: 36px;
+}
+.k2-ui .k2-tiles[data-size="l"] {
+  --k2-tile-w: 248px;
+  --k2-tile-icon: 48px;
+}
+.k2-ui .k2-tiles[data-size] > .k2-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--k2-r-control);
+  outline: none;
+  max-width: none;
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile > .k2-tile-pic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  background: var(--k2-n50);
+  border-bottom: var(--k2-hairline);
+  color: var(--k2-subtle);
+  font-size: var(--k2-tile-icon);
+}
+.k2-ui .k2-tile-pic > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile > .k2-tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 8px 12px;
+}
+.k2-ui .k2-tiles[data-size] .k2-t-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile:focus-visible {
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile[aria-current] > .k2-tile-text {
+  background: var(--k2-app-tint);
+  color: var(--k2-app-text);
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile[data-selected] {
+  border-color: var(--k2-app);
+  box-shadow: inset 0 0 0 1px var(--k2-app);
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile[data-selected]:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--k2-app), 0 0 0 3px var(--k2-blue-ring);
+}
+/* the box of a selection: top left on the picture, under the pointer, with the focus, while any tile is selected,
+   and always without a pointer that hovers */
+.k2-ui .k2-tile-check {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  padding: 2px;
+  border-radius: var(--k2-r-mark);
+  background: var(--k2-surface);
+  opacity: 0;
+}
+.k2-ui .k2-tiles[data-size] > .k2-tile:is(:hover, :focus-visible, [data-selected]) .k2-tile-check,
+.k2-ui .k2-tiles[data-selecting] .k2-tile-check {
+  opacity: 1;
+}
+@media (hover: none) {
+  .k2-ui .k2-tile-check {
+    opacity: 1;
+  }
+}
+
+/* Dragging onto folders: the dragged entries fade, a folder that takes them is tinted with a line inside, one that does
+   not take them shows no tint and a "not allowed" pointer. A chip with the name follows the pointer; a labelled place
+   at the bottom says that letting go there changes nothing. */
+.k2-ui [data-dragging] {
+  opacity: 0.5;
+}
+.k2-ui :is(.k2-nt-row, .k2-tile)[data-drop-over],
+.k2-ui .k2-table tr[data-drop-over] > td {
+  background: var(--k2-app-tint);
+}
+.k2-ui :is(.k2-nt-row, .k2-tile)[data-drop-over] {
+  box-shadow: inset 0 0 0 2px var(--k2-app);
+}
+.k2-ui .k2-table tr[data-drop-over] > td {
+  box-shadow: inset 0 2px 0 var(--k2-app), inset 0 -2px 0 var(--k2-app);
+}
+.k2-ui [data-drop-refused],
+.k2-ui [data-drop-refused] * {
+  cursor: not-allowed;
+}
+.k2-ui.k2-drag-chip {
+  max-width: 280px;
+  padding: 4px 12px;
+  font: var(--k2-t-body);
+  font-weight: 500;
+  color: var(--k2-text);
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-round);
+  box-shadow: var(--k2-float);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.k2-ui.k2-drag-chip[data-refused] {
+  opacity: 0.6;
+}
+.k2-ui .k2-drag-zone {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 20px;
+  font: var(--k2-t-body);
+  color: var(--k2-text-2);
+  background: var(--k2-surface);
+  border: 1px dashed var(--k2-line-control);
+  border-radius: var(--k2-r-round);
+  box-shadow: var(--k2-float);
+}
+
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */
 .k2-ui .k2-sec {
   border-bottom: var(--k2-hairline);

@@ -106,6 +106,31 @@ fields. A message in a thread is one `Band`.
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href? }[]`, `more` (an action after them), `label`. Never nested.
 
+With `size: "s" | "m" | "l"` (the size the person chose, from 128, 176
+or 248 px wide) the tiles are a grid of picture tiles: each item adds
+`key` and `image` (a thumbnail address; the `icon` stands in the 4:3 box
+while it loads, when it fails and when there is none), `href` or
+`onOpen`. `label` is required; `select: { selected, onChange }` (a box on
+the picture, Space on the focused tile), `current`, `drag` (see below).
+One Tab stop; arrows go to the nearest tile on screen, Enter opens.
+
+### Dragging onto folders (`drag`)
+
+`Table` (with `rowKey`), picture `Tiles` and a `Nav` group's `tree` take
+`drag: DragMove`: `scope` (lists of one scope take each other's entries:
+the table, the tiles and the folder tree of Files), `label(key)`,
+`draggable?(key)`, `target?(key)` (folders), `accepts?(keys, target)`,
+`onDrop?(keys, target)`, `onFiles?(files, target)` (files from the
+computer). A dragged entry that is selected takes the whole selection.
+Mouse and pen drag after a few pixels; a finger never drags (it scrolls,
+and a long press stays the context menu's). While a drag is under way a
+chip with the name follows the pointer, a folder that takes it is tinted,
+one that refuses it shows "not allowed", a closed folder the pointer
+rests on (700 ms) opens, and a place at the bottom says "Hier loslassen:
+nichts passiert". Escape cancels. Nothing changes before `onDrop`.
+Dragging is a shortcut: give every entry a menu entry "Verschieben nach …"
+for keys and touch.
+
 ### Canvas
 
 The only place for own drawing and own CSS (a map, a chart). `label`

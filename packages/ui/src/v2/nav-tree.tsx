@@ -1,6 +1,7 @@
 import { createComputed, createMemo, For, type JSX, on, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
+import { type DragMove, useDragMove } from "./drag";
 import { Dot, Icon } from "./marks";
 import { Menu, type MenuEntry } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
@@ -58,6 +59,11 @@ export type NavTree = {
   more?: true | number;
   /** Loads the next page of the children of `key` (`null`: of the top level); the app adds them to `items`. */
   loadMore?: (key: string | null) => Promise<unknown>;
+  /**
+   * Places drag onto other places, and places that are folders take places, rows, tiles and files of the same scope
+   * (see `DragMove`); a closed folder the pointer rests on opens. The place's `menu` stays the way for keys and touch.
+   */
+  drag?: DragMove;
 };
 
 // The value of the "Weitere laden" entry of a level; no node key starts with a word joiner.
@@ -140,6 +146,12 @@ export const NavTreeView = (props: NavTree) => {
       return undefined;
     },
   }));
+  const dragging = useDragMove(() => props.drag, {
+    targets: () => [...nodes().keys()].filter((key) => props.drag?.target?.(key)),
+    open: (key) => {
+      if (!parts.controller.isExpanded(key)) parts.controller.expand(key);
+    },
+  });
   // A place that becomes the open one later (a page opened in place) shows itself: the way to it opens.
   createComputed(
     on(
@@ -178,65 +190,73 @@ export const NavTreeView = (props: NavTree) => {
     </>
   );
 
-  const Entry = (entry: { node: NavTreeNode }) => (
-    <parts.Item
-      value={entry.node.key}
-      label={entry.node.label}
-      branch={isBranch(entry.node)}
-      class="k2-nt-item"
-      onKeyDown={(event: KeyboardEvent) => {
-        if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
-        event.preventDefault();
-        if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
-      }}
-      onContextMenu={(event: MouseEvent) => {
-        // a right-click on this place's row, not on a place nested in it
-        const item = event.currentTarget;
-        if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
-        if (event.target.closest('[role="treeitem"]') !== item || event.target.closest(".k2-nt-group")) return;
-        event.preventDefault();
-        openMenuOf(item);
-      }}
-    >
-      <div class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
-        <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
-          {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
-          <parts.Indicator class="k2-nt-chev">
-            <Icon name="chevron-right" />
-            <Icon name="loader-2" />
-            <Icon name="alert-circle" />
-          </parts.Indicator>
+  const Entry = (entry: { node: NavTreeNode }) => {
+    const drag = dragging.entry(entry.node.key);
+    return (
+      <parts.Item
+        value={entry.node.key}
+        label={entry.node.label}
+        branch={isBranch(entry.node)}
+        class="k2-nt-item"
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
+          event.preventDefault();
+          if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
+        }}
+        onContextMenu={(event: MouseEvent) => {
+          // a right-click on this place's row, not on a place nested in it
+          const item = event.currentTarget;
+          if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
+          if (event.target.closest('[role="treeitem"]') !== item || event.target.closest(".k2-nt-group")) return;
+          event.preventDefault();
+          openMenuOf(item);
+        }}
+      >
+        <div {...drag} class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
+          <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
+            {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
+            <parts.Indicator class="k2-nt-chev">
+              <Icon name="chevron-right" />
+              <Icon name="loader-2" />
+              <Icon name="alert-circle" />
+            </parts.Indicator>
+          </Show>
+          <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
+          <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
+            {(href) => (
+              <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name">
+                {entry.node.label}
+              </parts.Link>
+            )}
+          </Show>
+          <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
+          <Show when={entry.node.count !== undefined}>
+            <span class="k2-ni-count">{entry.node.count}</span>
+          </Show>
+          <Show when={entry.node.menu}>
+            {(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}
+          </Show>
+        </div>
+        <Show when={isBranch(entry.node)}>
+          <parts.Group class="k2-nt-group">{level(entry.node.children ?? [], entry.node.key, () => entry.node.more)}</parts.Group>
         </Show>
-        <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
-        <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
-          {(href) => (
-            <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name">
-              {entry.node.label}
-            </parts.Link>
-          )}
-        </Show>
-        <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
-        <Show when={entry.node.count !== undefined}>
-          <span class="k2-ni-count">{entry.node.count}</span>
-        </Show>
-        <Show when={entry.node.menu}>{(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}</Show>
-      </div>
-      <Show when={isBranch(entry.node)}>
-        <parts.Group class="k2-nt-group">{level(entry.node.children ?? [], entry.node.key, () => entry.node.more)}</parts.Group>
-      </Show>
-    </parts.Item>
-  );
+      </parts.Item>
+    );
+  };
 
   return (
-    <parts.Root
-      ref={(element: HTMLElement) => {
-        root = element;
-      }}
-      class="k2-nt"
-      data-k2-part="Nav.Tree"
-      aria-label={props.label}
-    >
-      {level(props.items, null, () => props.more)}
-    </parts.Root>
+    <>
+      <parts.Root
+        ref={(element: HTMLElement) => {
+          root = element;
+        }}
+        class="k2-nt"
+        data-k2-part="Nav.Tree"
+        aria-label={props.label}
+      >
+        {level(props.items, null, () => props.more)}
+      </parts.Root>
+      {dragging.zone()}
+    </>
   );
 };

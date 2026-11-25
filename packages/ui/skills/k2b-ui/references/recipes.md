@@ -53,6 +53,22 @@ levels; the open file is `current`, so its folder starts open).
 - On the phone the sidebar is a drawer with the same tree, and the table
   shows its top level; a folder opens as its own page.
 
+## file-grid.tsx: files as picture tiles, dragged onto folders
+
+![files as tiles at 1440 px](../images/file-grid-1440.png)
+![files as tiles at 390 px](../images/file-grid-390.png)
+
+`Nav` with a `tree` that takes drops; a head `Bar` with the `Path` and a
+`Menu` "Ansicht" whose section `choice` is the tile size (in the address);
+a `Pane` with a `StatusRow` (with `selection` while tiles are selected)
+and picture `Tiles` with `size`, `select` and `drag` (scope `"files"`).
+
+- The pictures are thumbnails from the app; the symbol of the kind holds
+  the box while one loads or when it fails.
+- One `DragMove` for the tiles and the tree: what moves is decided in
+  `onDrop`, on the server. Keys and touch move through "Verschieben nach …".
+- States: `small`, `large`, `selected`.
+
 ## list-detail.tsx: a list beside the open entry
 
 ![list with detail at 1440 px](../images/list-detail-1440.png)

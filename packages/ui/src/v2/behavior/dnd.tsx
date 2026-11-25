@@ -321,6 +321,8 @@ export type DropTarget = { id: string; label: string };
 const TOUCH_HOLD_MS = 400;
 const TOUCH_TOLERANCE_PX = 8;
 const MOUSE_THRESHOLD_PX = 6;
+/** Resting this long over a closed folder opens it, so a drag reaches a level below (guide: levels change after a visible rest). */
+export const HOVER_OPEN_MS = 700;
 
 /**
  * Drag items onto target surfaces marked with `data-drop-target="<id>"`. Spread `item(key)` on each item's element.
@@ -338,10 +340,20 @@ export function createDragOnto(options: {
   itemLabel: (key: string) => string;
   accepts?: (key: string, target: string) => boolean;
   onDrop: (key: string, target: string) => void;
+  /** `false`: a finger never lifts an item (it scrolls, and a long press stays the context menu's). */
+  touch?: boolean;
+  /** The element the copy under the pointer is made from; it must stand in the page. Defaults to the item itself. */
+  preview?: (key: string, item: HTMLElement, point: { x: number; y: number }) => HTMLElement;
+  /** A pointer that rests on a target for `HOVER_OPEN_MS`, such as a closed folder that should open. */
+  onRest?: (target: string) => void;
 }) {
   const t = useBehaviorMessages();
   const [moving, setMoving] = createSignal<string | null>(null);
   const [over, setOver] = createSignal<string | null>(null);
+  // a target under the pointer that does not take this item: it says so, and letting go there changes nothing
+  const [refused, setRefused] = createSignal<string | null>(null);
+  let rest: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(rest));
   const label = (target: string | null) => options.targets().find((entry) => entry.id === target)?.label ?? "";
   const accepted = (key: string, target: string) => options.accepts?.(key, target) ?? true;
   let stop: (() => void) | undefined;
@@ -349,8 +361,10 @@ export function createDragOnto(options: {
 
   const finish = (key: string, target: string | null, by: "drop" | "cancel") => {
     stop = undefined;
+    clearTimeout(rest);
     setMoving(null);
     setOver(null);
+    setRefused(null);
     if (by === "drop" && target) {
       options.onDrop(key, target);
       announce(t().ontoDrop({ label: options.itemLabel(key), target: label(target) }), { priority: "assertive" });
@@ -359,7 +373,8 @@ export function createDragOnto(options: {
     }
   };
 
-  const targetAt = (key: string, x: number, y: number): string | null => {
+  /** The target under the point, accepted or not. */
+  const targetAt = (x: number, y: number): string | null => {
     // Geometry, not hit-testing: WebKit's elementsFromPoint misses the target while the copy sits in the top layer.
     // Only this drag's own targets count, so two boards on one page never take each other's items.
     const own = new Set(options.targets().map((target) => target.id));
@@ -368,20 +383,27 @@ export function createDragOnto(options: {
       const rect = target.getBoundingClientRect();
       return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
     });
-    const id = el?.dataset.dropTarget ?? null;
-    return id && accepted(key, id) ? id : null;
+    return el?.dataset.dropTarget ?? null;
   };
 
   const startPointerDrag = (el: HTMLElement, event: PointerEvent, key: string, threshold: number) => {
     let preview: ReturnType<typeof bindDragPreview> | undefined;
     let point = { x: event.clientX, y: event.clientY };
     const retarget = () => {
-      const target = targetAt(key, point.x, point.y);
+      const under = targetAt(point.x, point.y);
+      const target = under && accepted(key, under) ? under : null;
+      setRefused(under && !target ? under : null);
       if (target !== over()) {
         setOver(target);
-        if (target) announce(label(target));
+        clearTimeout(rest);
+        if (target) {
+          announce(label(target));
+          const onRest = options.onRest;
+          if (onRest) rest = setTimeout(() => over() === target && onRest(target), HOVER_OPEN_MS);
+        }
       }
       preview?.el.toggleAttribute("data-over", Boolean(target));
+      preview?.el.toggleAttribute("data-refused", Boolean(under && !target));
     };
     const scroll = createAutoScroll({ edge: 48, speed: 14, ignore: () => preview?.el, onScroll: retarget });
     const end = () => {
@@ -393,13 +415,16 @@ export function createDragOnto(options: {
       cancelOnEscape: true,
       onStart: () => {
         setMoving(key);
-        preview = bindDragPreview(el, point);
-        // A compact copy hangs 16 px below the pointer, so the target under the pointer stays readable.
+        const source = options.preview?.(key, el, point) ?? el;
+        preview = bindDragPreview(source, point);
+        // A compact copy hangs 16 px below the pointer, so the target under the pointer stays readable; a copy made
+        // from its own element (a chip) keeps its own width.
         Object.assign(preview.el.style, {
           left: `${point.x - 16}px`,
           top: `${point.y + 16}px`,
-          width: `${Math.min(el.getBoundingClientRect().width, 360)}px`,
+          width: source === el ? `${Math.min(el.getBoundingClientRect().width, 360)}px` : "auto",
         });
+        if (source !== el) source.remove();
         announce(t().ontoGrabPointer({ label: options.itemLabel(key) }));
       },
       onMove: ({ x, y, event: move }) => {
@@ -472,6 +497,9 @@ export function createDragOnto(options: {
       release?.();
       const press = (event: PointerEvent) => {
         if (event.button !== 0 || moving() || event.pointerType === "touch") return;
+        // a press on a control inside the item (its "…", a box) is that control's
+        const from = event.target instanceof Element ? event.target : null;
+        if (from?.closest("button, input, select, textarea") && !from.closest("[data-k2-drag-handle]")) return;
         startPointerDrag(el, event, key, MOUSE_THRESHOLD_PX);
       };
       // After the hold, a non-passive touchmove keeps the page from scrolling under the dragged finger.
@@ -483,7 +511,7 @@ export function createDragOnto(options: {
         delay: TOUCH_HOLD_MS,
         tolerance: TOUCH_TOLERANCE_PX,
         keys: [],
-        onPress: ({ input }) => input === "touch" && !moving(),
+        onPress: ({ input }) => input === "touch" && options.touch !== false && !moving(),
         onHold: ({ event }) => {
           if (!(event instanceof PointerEvent)) return false;
           el.addEventListener("touchmove", blockScroll, { passive: false });
@@ -493,9 +521,13 @@ export function createDragOnto(options: {
           return false;
         },
       });
+      // a link or picture in the item would start the browser's own drag, which ends the pointer's
+      const native = (drag: DragEvent) => drag.preventDefault();
       el.addEventListener("pointerdown", press);
+      el.addEventListener("dragstart", native);
       release = () => {
         el.removeEventListener("pointerdown", press);
+        el.removeEventListener("dragstart", native);
         unblock();
         unhold();
       };
@@ -512,5 +544,5 @@ export function createDragOnto(options: {
     };
   };
 
-  return { moving, over, item, stop: () => stop?.() };
+  return { moving, over, refused, item, stop: () => stop?.() };
 }

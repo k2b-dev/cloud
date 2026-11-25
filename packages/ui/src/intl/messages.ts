@@ -98,6 +98,8 @@ const uiMessages = i18n.define({
       nothingSelected: "Nothing selected",
       loadMore: ({ count }: { count: number | undefined }) =>
         count === undefined ? "Load more" : `Load ${count.toLocaleString("en")} more`,
+      entries: ({ count }: { count: number }) => `${count.toLocaleString("en")} entries`,
+      dropNothing: "Drop here: nothing happens",
       yes: "Yes",
     },
     de: {
@@ -192,6 +194,8 @@ const uiMessages = i18n.define({
       showSidebar: "Seitenleiste zeigen",
       nothingSelected: "Nichts ausgewählt",
       loadMore: ({ count }) => (count === undefined ? "Weitere laden" : `Weitere ${count.toLocaleString("de")} laden`),
+      entries: ({ count }) => `${count.toLocaleString("de")} Einträge`,
+      dropNothing: "Hier loslassen: nichts passiert",
       yes: "Ja",
     },
   },

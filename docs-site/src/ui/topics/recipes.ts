@@ -2,6 +2,7 @@ import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
 import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
+import * as fileGrid from "../../../../packages/ui/skills/k2b-ui/recipes/file-grid";
 import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
@@ -45,6 +46,7 @@ export const recipes = {
   actions,
   content,
   dialogs,
+  "file-grid": fileGrid,
   "filtered-table": filteredTable,
   form,
   "form-detail": formDetail,
