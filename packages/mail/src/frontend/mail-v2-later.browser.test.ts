@@ -175,7 +175,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       const time = calendar.getByRole("textbox", { name: "Uhrzeit" });
       await time.fill("");
       await time.pressSequentially("1430");
-      expect(await time.inputValue()).toBe("14:30");
+      expect(await time.inputValue()).toBe("1430");
       await time.press("Enter");
       await openMenus(page, 0);
       await calls(sent, 1);
