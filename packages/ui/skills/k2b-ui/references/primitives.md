@@ -316,7 +316,8 @@ lines instead of cutting a thing.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
   value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
-  a `Button variant="ghost" menu`, pressed chips; leave on the phone),
+  `ListOrder` with the sort and the grouping of a list query, or a quiet
+  `Button variant="ghost" menu`; leave on the phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
@@ -332,6 +333,18 @@ lines instead of cutting a thing.
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
+- `FilterBar`: the filters of a list as statements, in `Pane status` above
+  its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
+  optional `base` (the view's state, where "Zurücksetzen" returns),
+  `icons`, `counts`, `names` (lookup names the server resolved), `views`
+  (`{ stores, current?, onSaved?, onRemoved? }`), `results` ("9 Artikel"
+  for the phone sheet). It writes the address itself. See
+  [list queries](list-queries.md).
+- `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
+  words, for `StatusRow filters`.
+- `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
+  `limit?`, `minChars?`; values that load while the person types, in a
+  filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
