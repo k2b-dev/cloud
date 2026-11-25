@@ -1,11 +1,10 @@
-// Recipe: where deeds stand. The head holds the views, a hint, a filter panel, a view menu and the one main action;
+// Recipe: where deeds stand. The head holds the views, a hint, a filter menu with ticks, a view menu and the one main action;
 // each row has its deeds behind its own "…" and on a right-click or a long press, plus a star that is pressed or not.
 // An offer the address names opens beside the list with its own deeds in its head; "Senden" turns while it sends, and a deed that cannot be
 // taken now is disabled in a notice that says why. Deleting an offer answers with a toast and "Rückgängig".
 import {
   Bar,
   Button,
-  Check,
   Facts,
   List,
   Menu,
@@ -112,18 +111,16 @@ export default function OfferActions(props: Props) {
               <Popover tip="Neu laden">
                 <Button variant="ghost" icon="refresh" label="Aktualisieren" />
               </Popover>
-              <Popover
+              {/* a filter the phone needs is a Menu with ticks: a Popover in the head leaves on the phone */}
+              <Menu
                 icon="filter"
-                title="Filter"
-                content={
-                  <>
-                    <Check name="mine" label="Nur meine" checked={mine()} onChange={setMine} />
-                    <Check name="expiring" label="Nur bald ablaufende" checked={expiring()} onChange={setExpiring} />
-                  </>
-                }
+                items={[
+                  { label: "Nur meine", checked: mine(), onClick: () => setMine(!mine()) },
+                  { label: "Nur bald ablaufende", checked: expiring(), onClick: () => setExpiring(!expiring()) },
+                ]}
               >
                 Filter
-              </Popover>
+              </Menu>
               <Menu label="Ansicht" icon="adjustments-horizontal" items={view()} />
               <Menu
                 variant="primary"

@@ -1,8 +1,12 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import * as actions from "../skills/k2b-ui/recipes/actions";
+import * as content from "../skills/k2b-ui/recipes/content";
 import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
+import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
+import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
+import * as frame from "../skills/k2b-ui/recipes/frame";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as record from "../skills/k2b-ui/recipes/record";
@@ -18,8 +22,12 @@ type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?:
 
 const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
+  "content.tsx": content,
   "dialogs.tsx": dialogs,
+  "filtered-table.tsx": filteredTable,
+  "form-detail.tsx": formDetail,
   "form.tsx": form,
+  "frame.tsx": frame,
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
   "record-groups.tsx": recordGroups,

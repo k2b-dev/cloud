@@ -173,7 +173,8 @@ shows what the server found for the address.
 ![actions at 390 px](../images/actions-390.png)
 
 The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
-`Popover` filter panel, a `Menu` with a choice section and toggles, and the
+`Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the phone),
+a `Menu` with a choice section and toggles, and the
 one primary as a `Menu` with a submenu. Each `Row` stands in a
 `Menu.Context` and has a `Button pressed` star and a "…" `Menu` with the
 same entries in its `end`. The offer the address names opens in a

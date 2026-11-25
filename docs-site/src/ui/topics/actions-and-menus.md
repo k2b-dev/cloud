@@ -8,7 +8,7 @@ Where deeds stand: the page's deeds in the head, an entry's deeds in its row and
 
 ## Deeds in the head and in the rows
 
-Offers of a workshop. The head holds the views, a hint on the refresh button, a filter panel, a view menu with one choice and two toggles, and the one main action, "Neues Angebot", a menu of its own. Each row has a star that is pressed or not and its deeds behind "…"; a right-click or a long press on the row opens the same menu. Switch the state: "Open" shows the offer the address names beside the list with its own deeds, "Sending" turns "Senden" while it sends, and "Menu" and "View" open the menus.
+Offers of a workshop. The head holds the views, a hint on the refresh button, a filter menu with two toggles, a view menu with one choice and two toggles, and the one main action, "Neues Angebot", a menu of its own. Each row has a star that is pressed or not and its deeds behind "…"; a right-click or a long press on the row opens the same menu. Switch the state: "Open" shows the offer the address names beside the list with its own deeds, "Sending" turns "Senden" while it sends, and "Menu" and "View" open the menus.
 
 <Example recipe="actions" height="560" default="List" />
 
@@ -27,8 +27,8 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 
 ### Popover
 
-- The person sets several things and looks at the page while doing so: filters, a short preview.
-- A panel of primitives (`Check`, `Field`, `Facts`, `Text`) under a title.
+- The person looks at more about one thing next to the button: a short preview, details.
+- A panel of primitives (`Facts`, `Text`, `Check`) under a title. A filter is not one: a Popover in the head leaves on the phone, so a few filters are a `Menu` with ticked entries, and a list people really filter has a `FilterBar` ([Filter, sort, group](/en/ui/v2/filter-sort-group)).
 - With `tip` it is a short hint on one button instead.
 
 ## Parts
@@ -61,7 +61,7 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 ## Not in v2 yet
 
-A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs stands in a `Menu` until then. Write `// k2b-ui gap: popover keep on the phone` at that place.
+A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs is a `Menu` with ticked entries. Write `// k2b-ui gap: popover keep on the phone` at that place.
 
 ## Do and don't
 

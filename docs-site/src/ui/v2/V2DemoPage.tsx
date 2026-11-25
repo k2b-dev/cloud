@@ -1,3 +1,4 @@
+import { LocaleProvider } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import FilterScreen from "./FilterScreen.island";
 import FormScreen from "./FormScreen.island";
@@ -10,6 +11,9 @@ import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
+
+/** The language of the demo screens' data, and so of the library's own words on them. */
+export const DEMO_LOCALE = "de";
 
 /** One v2 demo screen: what it is, the approved mockup it is measured against, the colour of its app. */
 export type V2Screen = {
@@ -110,7 +114,7 @@ export const v2Screens = {
   keys: {
     title: "Zustände · Schlüssel eines Agenten",
     description:
-      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), disabled fields and a disabled deed of a notice, and facts with a token in monospace. On the phone the side column stands under the table, with one line between them.",
+      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), a disabled deed of a notice, and facts with a token in monospace and the access it may read but not change. On the phone the side column stands under the table, with one line between them.",
     mockup: "tabelle.html (Sortiert), index.html (Button, Field)",
     app: "#7c3aed",
     phone: { back: "Agenten" },
@@ -119,7 +123,7 @@ export const v2Screens = {
   menus: {
     title: "Menü · Popover · Toast",
     description:
-      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
+      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a menu of two toggles, which stays on the phone, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
     mockup: "index.html (Menu · Popover · Toast), 07-formular-menue",
     app: "#047857",
     phone: { back: "Aufträge" },
@@ -231,7 +235,10 @@ export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => 
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
       <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
-      <div class="ui-v2-screen__card">{screen.render(props.search ?? "")}</div>
+      {/* the demo data is German, so the library's own words are too; islands read it from <html lang> (see server.tsx) */}
+      <div class="ui-v2-screen__card">
+        <LocaleProvider locale={DEMO_LOCALE}>{screen.render(props.search ?? "")}</LocaleProvider>
+      </div>
       <V2Inspect />
     </div>
   );

@@ -11,7 +11,7 @@ import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import RecipeScreen from "./ui/topics/RecipeScreen.island";
 import { isRecipeName, recipeLocale, resolveRecipeState } from "./ui/topics/recipes";
-import { type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
+import { DEMO_LOCALE, type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 
@@ -135,6 +135,7 @@ app.get("/en/ui/v2/screen/:name", (c) => {
     path: `/en/ui/v2/screen/${name}`,
     theme: themeFromRequest(c.req.raw),
     styles: ["/assets/generated/cloud-ui.css"],
+    lang: DEMO_LOCALE,
   });
 });
 // A recipe of the skill k2b-ui on a page of its own, live; Fibel's Example frames it. `?state=` picks one of its states.

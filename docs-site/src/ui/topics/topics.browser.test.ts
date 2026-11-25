@@ -61,6 +61,20 @@ describe("recipe route", () => {
     }
   }, 30_000);
 
+  test("a demo screen speaks German like its data, its filters included", async () => {
+    const { page, errors } = await open("/en/ui/v2/screen/articles?status=consigned,photographed");
+    try {
+      await page.getByRole("group", { name: "Filter" }).first().waitFor();
+      await settled(page);
+      expect(await page.getAttribute("html", "lang")).toBe("de");
+      expect(await page.getByRole("button", { name: /^Filter Status entfernen$/ }).count()).toBeGreaterThan(0);
+      expect(await page.getByRole("button", { name: /^Remove filter/ }).count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("an unknown recipe or state is not found", async () => {
     expect((await fetch(`${origin}/en/ui/v2/recipe/nothing`)).status).toBe(404);
     expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=nothing`)).status).toBe(404);

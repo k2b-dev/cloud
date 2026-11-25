@@ -1,28 +1,10 @@
-import {
-  Avatar,
-  Bar,
-  Button,
-  Check,
-  Chip,
-  Choice,
-  Facts,
-  Field,
-  Input,
-  Nav,
-  Notice,
-  Pane,
-  RecordHead,
-  Section,
-  StatusRow,
-  Table,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Facts, Nav, Notice, Pane, RecordHead, Section, StatusRow, Table, Workspace } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 
 // An agent's keys in Accounts, with the states of the primitives: a picture in the record head (and the initials
-// where a picture fails), heads that sort, a busy button, disabled fields and a disabled deed of a notice, and facts
-// with a token. An island, so the heads sort and the button turns busy. On the phone the side column stands under the
-// table, with one line between them.
+// where a picture fails), heads that sort, a busy button, a disabled deed of a notice, and facts with a token. What
+// the person may read but not change is facts too, never a disabled form. An island, so the heads sort and the button
+// turns busy. On the phone the side column stands under the table, with one line between them.
 
 const robot = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#7c3aed"/><rect x="8" y="10" width="16" height="13" rx="3" fill="#fff"/><circle cx="13" cy="16" r="2" fill="#7c3aed"/><circle cx="19" cy="16" r="2" fill="#7c3aed"/></svg>',
@@ -138,14 +120,15 @@ export default function KeysScreen() {
               ]}
             />
           </Section>
+          {/* values the person may read but not change are facts, not a disabled form */}
           <Section title="Zugang">
-            <Field name="until" label="Gültig bis" hint="Ändern kann nur eine Admin-Person.">
-              <Input value="31.12.2026" disabled />
-            </Field>
-            <Field name="access" label="Zugriff">
-              <Choice name="access" options={["Voll", "Nur Modelle"]} value="Voll" disabled />
-            </Field>
-            <Check name="notify" label="Bei Nutzung benachrichtigen" checked disabled />
+            <Facts
+              items={[
+                { label: "Gültig bis", value: "31.12.2026" },
+                { label: "Zugriff", value: "Voll" },
+                { label: "Bei Nutzung", value: "benachrichtigen" },
+              ]}
+            />
           </Section>
         </Pane>
       </Pane.Split>
