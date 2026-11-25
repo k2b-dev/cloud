@@ -307,7 +307,7 @@ function StreamPane(props: { stream: NonNullable<NatsScreenProps["stream"]> }) {
           </Section>
         )}
       </Show>
-      <Section icon="users" title={t().consumers} count={props.stream.consumers.length} summary={t().consumerScope}>
+      <Section icon="users" title={t().consumers} count={props.stream.consumers.length}>
         <Show when={props.stream.consumers.length > 0} fallback={<Text muted>{t().empty}</Text>}>
           <List label={t().consumers}>
             <For each={props.stream.consumers}>

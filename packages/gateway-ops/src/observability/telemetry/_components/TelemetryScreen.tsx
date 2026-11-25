@@ -190,7 +190,7 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
                     drop: true,
                   },
                 ] satisfies Column<TelemetryRouteView>[]
-              ).filter((_, index) => !props.route || index < 3)}
+              ).filter((_, index) => !props.route || index === 0 || index === 2)}
             />
           </Section>
         </Pane>
