@@ -404,7 +404,10 @@ export type RecordHeadProps = {
   avatar?: Person;
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];
-  /** Identifiers and contact at a glance; they leave on the phone. */
+  /**
+   * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on
+   * the phone), before the name is cut with "…"; the head's actions keep their place.
+   */
   ids?: readonly RecordId[];
 };
 
