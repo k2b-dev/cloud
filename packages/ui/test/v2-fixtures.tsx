@@ -83,7 +83,7 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
       >
         <List label="Nachrichten">
           <Row icon="file" lines={["Eine Zeile, 40 px"]} time="09:42" />
-          <Row icon="file" lines={["Angebot", "zwei Zeilen, 52 px"]} meta="RE-2611-0042" selected />
+          <Row icon="file" lines={["Angebot", "zwei Zeilen, 52 px"]} meta="RE-2611-0042" current />
           <Row
             unread
             lines={[
@@ -123,7 +123,7 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               end={
                 <>
                   <Button icon="check">Erledigt</Button>
-                  <Button variant="ghost" icon="x" label="Schließen" />
+                  <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" />
                 </>
               }
             />
@@ -583,4 +583,5 @@ export const fixtures = {
   // a picture, heads that sort, busy and disabled, and a side column under the table on the phone
   access: () => <AccessScreen sort={{ column: 0, direction: "ascending" }} />,
   accessBusy: () => <AccessScreen sort={{ column: 1, direction: "descending" }} busy />,
+  accessGrid: () => <AccessScreen sort={{ column: 0, direction: "ascending" }} grid />,
 } as const;

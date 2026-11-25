@@ -61,8 +61,10 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  let element: HTMLDivElement | undefined;
   return (
     <div
+      ref={element}
       class="k2-ws"
       data-k2-workspace=""
       data-k2-part="Workspace"
@@ -104,7 +106,7 @@ export const Workspace = (props: WorkspaceProps) => {
         )}
       </Show>
       {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
-      <ConfirmDialog />
+      <ConfirmDialog host={() => element} />
     </div>
   );
 };
@@ -135,7 +137,8 @@ export type PaneProps = {
    * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
    * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
    * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead.
+   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
+   * it, the × gives way on the phone, so the detail has one way back there.
    */
   back?: Action;
   /** The side column of a record (the info column): quieter sections. */

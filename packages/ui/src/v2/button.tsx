@@ -27,7 +27,8 @@ type ButtonBase = {
   disabled?: boolean;
   /**
    * The deed of the button is under way, such as a save that waits for the server: a turning sign over the label, the
-   * width kept, pressed no second time. Its name stays; it says "busy" to assistive technology.
+   * width kept, pressed no second time. Its name stays; assistive technology hears it as unavailable for now, and the
+   * app says what came of the deed (a toast, a notice, the next page).
    */
   busy?: boolean;
   type?: "button" | "submit";

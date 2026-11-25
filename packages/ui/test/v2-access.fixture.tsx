@@ -45,6 +45,8 @@ export const AccessScreen = (props: {
   /** Pressing a head that sorts: without it the heads are links to `?sort=…`. */
   onSort?: (column: 0 | 1) => void;
   busy?: boolean;
+  /** The large table (a sticky first column), which keeps its own last line. */
+  grid?: boolean;
   onPicture?: () => void;
   onResume?: () => void;
 }) => {
@@ -95,6 +97,7 @@ export const AccessScreen = (props: {
             rows={rows()}
             rowKey={(entry) => entry.id}
             sort={props.sort}
+            sticky={props.grid}
             open={(entry) => ({ href: `?key=${entry.id}` })}
             phone={(entry) => ({ lines: [entry.name, `zuletzt genutzt ${entry.used}`] })}
             columns={[
@@ -126,7 +129,7 @@ export const AccessScreen = (props: {
               ]}
             />
           </Section>
-          <Section title="Zugang">
+          <Section title="Zugang" more={{ label: "Zugang ändern", href: "?access", disabled: true }}>
             <Field name="until" label="Gültig bis" hint="Ändern kann nur eine Admin-Person.">
               <Input value="31.12.2026" disabled />
             </Field>

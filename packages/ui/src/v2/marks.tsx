@@ -55,9 +55,14 @@ export const Avatar = (props: AvatarProps) => {
     return seen && seen.src === props.image ? seen.state : undefined;
   };
   const settle = (image: HTMLImageElement, state: "shown" | "failed") => setOutcome({ src: image.getAttribute("src") ?? "", state });
-  // a picture the browser had before the page came alive fired its events before anyone listened
+  // A picture the browser had before the page came alive fired its events before anyone listened: `decode` answers
+  // for it either way (also for a drawing without a size of its own, whose natural width may be 0).
   const settled = (image: HTMLImageElement) => {
-    if (image.complete) settle(image, image.naturalWidth > 0 ? "shown" : "failed");
+    const src = image.getAttribute("src") ?? "";
+    image.decode().then(
+      () => setOutcome({ src, state: "shown" }),
+      () => setOutcome({ src, state: "failed" }),
+    );
   };
   return (
     <span
@@ -79,6 +84,7 @@ export const Avatar = (props: AvatarProps) => {
             src={image()}
             alt=""
             decoding="async"
+            // after its address is set (the attributes follow the element)
             ref={(element) => queueMicrotask(() => settled(element))}
             onLoad={(event) => settle(event.currentTarget, "shown")}
             onError={(event) => settle(event.currentTarget, "failed")}

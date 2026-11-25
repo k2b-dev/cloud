@@ -42,7 +42,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   the detail is the page.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`). A long name (a search) is cut with "…" on
+  the detail (the part `Back`). With `back`, the head's close × needs no
+  `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
@@ -145,8 +146,15 @@ inside it.
   the marks, so keep it a preview text that may be cut, never an amount.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
-- states: `unread`, `strong`, `selected` (the open one), `yours` (you are
-  next).
+- states: `unread`, `strong`, `current` (the open one, app tint),
+  `yours` (you are next).
+- `select: { selected, onChange }`: the row stands in a selection (pair it
+  with `StatusRow select` and `selection`). A box in the lead, named by the
+  title, takes the place of the symbol, person or dot; a selected row is
+  blue, also while it is `current`; `yours` and `selected` share that blue
+  tint on purpose. Give it to every row of the list while selecting, and to
+  none otherwise: turning selection on swaps the lead for the box, so the
+  text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
 
@@ -164,7 +172,9 @@ numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, grip in the head), `wrap` (one text column may take 3
 lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
-`{ onSort }` for a deed). The last column takes the rest. Chips,
+`{ onSort }` for a deed). The phone rows have no heads: a sort given by
+`href` stays in the address there; offer another order on the phone in the
+page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 
@@ -189,7 +199,9 @@ no rows and nothing loading, the empty state stands in place of the table.
 ### Facts
 
 `items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
-per row; the label column is as wide as the longest label (80–160 px).
+per row; the label column is as wide as the longest label of that list
+(80–160 px), so two `Facts` lists may start their values at different
+edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
