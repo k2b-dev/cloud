@@ -895,6 +895,9 @@ export const gatewayOpsMessages = i18n.define({
       sortSchema: "By schema",
       sortName: "By name",
       tablesOf: ({ count, total }: { count: string; total: string }) => `${count} of ${total} tables`,
+      bySource: "By source",
+      expiryNever: "Never",
+      expiryDays: ({ days }: { days: number }) => (days === 365 ? "1 year" : `${days} days`),
     },
     de: {
       unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
@@ -1781,6 +1784,9 @@ export const gatewayOpsMessages = i18n.define({
       sortSchema: "Nach Schema",
       sortName: "Nach Name",
       tablesOf: ({ count, total }) => `${count} von ${total} Tabellen`,
+      bySource: "Nach Quelle",
+      expiryNever: "Nie",
+      expiryDays: ({ days }) => (days === 365 ? "1 Jahr" : `${days} Tage`),
     },
   },
 });

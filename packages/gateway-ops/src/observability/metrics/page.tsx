@@ -1,12 +1,15 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { StatCell, StatGrid } from "@k2b/ui";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import MetricsCatalogue, { type MetricsCatalogueRow } from "./_components/MetricsCatalogue.island";
-import MetricsTokens from "./_components/MetricsTokens.island";
+import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
+import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import MetricsScreen, { type MetricRow } from "./_components/MetricsScreen.island";
+import { metricsQuery } from "./query";
 import { getMetricsSnapshot, listMetricsTokens, METRICS_ENDPOINT, type MetricsSnapshot } from "./service";
+
+type CatalogueRow = Omit<MetricRow, "series"> & { sourceId: string; series: number };
 
 const parseMetricMetadata = (text: string): Map<string, { description: string; type: string; series: number }> => {
   const metrics = new Map<string, { description: string; type: string; series: number }>();
@@ -33,13 +36,12 @@ const parseMetricMetadata = (text: string): Map<string, { description: string; t
   return metrics;
 };
 
-const buildMetricRows = (snapshot: MetricsSnapshot): MetricsCatalogueRow[] => {
+const buildMetricRows = (snapshot: MetricsSnapshot): CatalogueRow[] => {
   const metadata = parseMetricMetadata(snapshot.text);
   const sourceByMetric = new Map<string, (typeof snapshot.collectors)[number]>();
   for (const collector of snapshot.collectors) {
     for (const metric of collector.metricNames) sourceByMetric.set(metric, collector);
   }
-
   return [...metadata.entries()]
     .map(([name, metric]) => {
       const collector = sourceByMetric.get(name);
@@ -52,61 +54,84 @@ const buildMetricRows = (snapshot: MetricsSnapshot): MetricsCatalogueRow[] => {
         series: metric.series,
         status: collector?.status ?? "ok",
         error: collector?.error ?? null,
-      } satisfies MetricsCatalogueRow;
+      };
     })
     .sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name));
 };
 
+/** Metrics on v2. The address holds the catalogue's source, type and search; the page filters itself. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
-  const [snapshot, tokens] = await Promise.all([getMetricsSnapshot(), listMetricsTokens()]);
-  const okCollectors = snapshot.collectors.filter((collector) => collector.status === "ok").length;
-  const unhealthyCollectors = snapshot.collectors.filter((collector) => collector.status !== "ok");
-  const metrics = buildMetricRows(snapshot);
-  const sources = [...new Map(metrics.map((metric) => [metric.sourceId, { id: metric.sourceId, label: metric.source }])).values()].sort(
-    (a, b) => a.label.localeCompare(b.label),
+  const [snapshot, tokens, attention] = await Promise.all([getMetricsSnapshot(), listMetricsTokens(), readAttention()]);
+  const number = (value: number) => formatNumber(value, { locale });
+  const unhealthy = snapshot.collectors.filter((collector) => collector.status !== "ok");
+  const rows = buildMetricRows(snapshot);
+  const sources = [...new Map(rows.map((row) => [row.sourceId, { id: row.sourceId, label: row.source }])).values()].sort((a, b) =>
+    a.label.localeCompare(b.label),
   );
+  const url = new URL(c.req.url);
+  const query = metricsQuery(locale, sources, url.searchParams.get("source") ?? undefined);
+  const address = query.parse(url.searchParams);
+  const { source, type } = address.state.filters;
+  const needle = address.state.search?.trim().toLowerCase() ?? "";
+  const metrics = rows.filter(
+    (row) =>
+      (!source || row.sourceId === source) &&
+      (!type || row.type === type) &&
+      (!needle || [row.name, row.source, row.type, row.description].some((value) => value.toLowerCase().includes(needle))),
+  );
+  const date = (value: string | null) => formatDateTime(value, dateConfig);
+  const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
+  const area = areaText(locale);
+  const groups = observabilityGroups(c, locale, attention);
 
-  const attention = await readAttention();
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="metrics" attention={attention}>
-      <ObservabilityPane label={areaText(locale).metrics} description={t.metricsDescription}>
-        <StatGrid columns={4}>
-          <StatCell
-            label={t.scrapeEndpoint}
-            value={METRICS_ENDPOINT}
-            sub={t.seriesTokenRequired({ count: formatNumber(snapshot.series, { locale }) })}
-            accent={{ tone: "blue", icon: "ti ti-plug" }}
-          />
-          <StatCell
-            label={t.collectors}
-            value={`${formatNumber(okCollectors, { locale })}/${formatNumber(snapshot.collectors.length, { locale })}`}
-            sub={unhealthyCollectors.length > 0 ? unhealthyCollectors.map((collector) => collector.name).join(", ") : t.healthy}
-            valueClass={unhealthyCollectors.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            title={
-              unhealthyCollectors.map((collector) => `${collector.name}: ${collector.error ?? collector.status}`).join("\n") || undefined
-            }
-            accent={
-              unhealthyCollectors.length === 0 ? { tone: "emerald", icon: "ti ti-check" } : { tone: "amber", icon: "ti ti-alert-triangle" }
-            }
-          />
-          <StatCell label={t.series} value={formatNumber(snapshot.series, { locale })} sub={t.lastPayload} />
-          <StatCell
-            label={t.tokens}
-            value={formatNumber(tokens.length, { locale })}
-            sub={t.active}
-            accent={{ tone: "zinc", icon: "ti ti-key" }}
-          />
-        </StatGrid>
-
-        <p class="text-[10px] text-dimmed">{t.metricsGenerated({ date: formatDateTime(snapshot.generatedAt, dateConfig) })}</p>
-
-        <MetricsTokens tokens={tokens} timeZone={dateConfig.timeZone ?? "UTC"} />
-
-        <MetricsCatalogue rows={metrics} sources={sources} />
-      </ObservabilityPane>
-    </ObservabilityArea>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.metrics }]}
+    >
+      <ObservabilityNavigation label={area.area} current="metrics" groups={groups} />
+      <MetricsScreen
+        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        sources={sources}
+        state={address.state}
+        ignored={ignored}
+        cells={[
+          {
+            icon: "plug",
+            label: t.scrapeEndpoint,
+            value: METRICS_ENDPOINT,
+            meta: t.seriesTokenRequired({ count: number(snapshot.series) }),
+          },
+          {
+            icon: unhealthy.length ? "alert-triangle" : "check",
+            label: t.collectors,
+            value: `${number(snapshot.collectors.length - unhealthy.length)}/${number(snapshot.collectors.length)}`,
+            meta: unhealthy.length ? unhealthy.map((collector) => collector.name).join(", ") : t.healthy,
+            tone: unhealthy.length ? "warn" : undefined,
+          },
+          { icon: "chart-dots", label: t.series, value: number(snapshot.series), meta: t.lastPayload },
+          { icon: "key", label: t.tokens, value: number(tokens.length), meta: t.active },
+        ]}
+        generatedAt={t.metricsGenerated({ date: date(snapshot.generatedAt) })}
+        unhealthy={unhealthy.map((collector) => ({ name: collector.name, error: collector.error ?? collector.status }))}
+        tokens={tokens.map((token) => ({
+          id: token.id,
+          name: token.name,
+          line: [
+            token.tokenPrefix,
+            token.scopes.join(", ") || "—",
+            `${t.expires}: ${date(token.expiresAt)}`,
+            `${t.lastUsed}: ${date(token.lastUsedAt)}`,
+          ].join(" · "),
+        }))}
+        metrics={metrics.map((row) => ({ ...row, series: number(row.series) }))}
+        metricsTotal={number(rows.length)}
+      />
+    </Layout>
   );
 });
