@@ -23,7 +23,7 @@ describe("interactive chart map viewport", () => {
     });
   });
 
-  test("zooms within the stdlib map limits", () => {
+  test("zooms within the chart core map limits", () => {
     expect(zoomMapViewport(DEFAULT_MAP_VIEWPORT, 1)).toEqual({
       latitude: 45,
       longitude: 10,

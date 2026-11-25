@@ -17,7 +17,7 @@ export type ChartInspection = { invalidate(): void; close(): void; destroy(): vo
 
 let tooltipId = 0;
 
-/** Attach inspection to stdlib SVG rendered with inspect: true, without a framework. */
+/** Attach inspection to chart core SVG rendered with inspect: true, without a framework. */
 export function inspectChart(container: HTMLElement, options: InspectChartOptions): ChartInspection {
   const document = container.ownerDocument;
   const anchor = document.createElement("span");
