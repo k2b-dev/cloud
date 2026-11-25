@@ -169,7 +169,17 @@ const page = (fonts: boolean) =>
   `<body class="k2-ui" data-theme="light"><div class="frame">${markup}</div></body></html>`;
 
 /** The markup without its <style> elements, which the outline does not read. */
-const withoutStyles = (html: string) => html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+const withoutStyles = (html: string) => {
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const open = html.indexOf("<style", at);
+    const close = open < 0 ? -1 : html.indexOf("</style>", open);
+    if (close < 0) return out + html.slice(at);
+    out += html.slice(at, open);
+    at = close + "</style>".length;
+  }
+};
 
 if (textOnly) {
   const { Window } = await import("happy-dom");
