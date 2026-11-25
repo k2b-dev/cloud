@@ -85,7 +85,6 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   const { AlertsView } = await import("../alerts/view");
   const { HealthCheckView } = await import("../health-check/view");
   const { RetentionView } = await import("../retention/view");
-  const { NatsAccessView } = await import("../nats/access-view");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -234,19 +233,6 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
         attention,
         values: { logs: 14, events: 14, rollups: 90 },
         unreadable: state === "unreadable" ? { events: true } : {},
-      }),
-    ),
-  );
-
-  pages.get(
-    "/admin/observability/nats/access",
-    page((c, locale, state) =>
-      createComponent(NatsAccessView, {
-        c,
-        locale,
-        attention,
-        values: { servers: ["tls://nats.example:4222"], kind: "creds", ca: "" },
-        unreadable: { servers: false, kind: false, access: state === "unreadable", ca: false },
       }),
     ),
   );

@@ -881,6 +881,9 @@ export const gatewayOpsMessages = i18n.define({
       properties: "Properties",
       moreAboutRun: "More about this run",
       moreAboutDeadLetter: "More about this message",
+      syncReachableOf: ({ count, total }: { count: string; total: string }) => `${count} of ${total} apps reachable`,
+      syncSchedulesFailingShort: "schedules with failures",
+      ignoredParts: "Part of the address did not apply",
     },
     de: {
       unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
@@ -1753,6 +1756,9 @@ export const gatewayOpsMessages = i18n.define({
       properties: "Eigenschaften",
       moreAboutRun: "Mehr zu diesem Lauf",
       moreAboutDeadLetter: "Mehr zu dieser Nachricht",
+      syncReachableOf: ({ count, total }) => `${count} von ${total} Apps erreichbar`,
+      syncSchedulesFailingShort: "Zeitpläne mit Fehlern",
+      ignoredParts: "Ein Teil der Adresse galt nicht",
     },
   },
 });

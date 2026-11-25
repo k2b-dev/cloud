@@ -48,6 +48,7 @@ export const syncOpsMessages = i18n.define({
       runId: "Run ID",
       detailError: "Details unavailable",
       pageError: "Store unavailable",
+      acceptUnclear: "Acceptance unclear",
     },
     de: {
       sampledAt: "Stand",
@@ -94,6 +95,7 @@ export const syncOpsMessages = i18n.define({
       runId: "Run-ID",
       detailError: "Details nicht verfügbar",
       pageError: "Speicher nicht verfügbar",
+      acceptUnclear: "Annahme unklar",
     },
   },
 });

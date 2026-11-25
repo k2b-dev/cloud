@@ -7,7 +7,6 @@ import OperationalCharts from "../../frontend/OperationalCharts.island";
 import AddWebhookButton from "../alerts/AddWebhookButton.island";
 import WebhookDetail from "../alerts/WebhookDetail.island";
 import HealthCheckForm from "../health-check/HealthCheckForm.island";
-import NatsAccessForm from "../nats/NatsAccessForm.island";
 import RetentionForm from "../retention/RetentionForm.island";
 
 /** Mounts the area's islands the way @k2b/ssr does: the server-rendered wrapper carries its props. */
@@ -16,7 +15,6 @@ const islands: Record<string, Component<never>> = {
   "SettingsSaveStatus.island.tsx": SettingsSaveStatus as Component<never>,
   "HealthCheckForm.island.tsx": HealthCheckForm as Component<never>,
   "OperationalCharts.island.tsx": OperationalCharts as Component<never>,
-  "NatsAccessForm.island.tsx": NatsAccessForm as Component<never>,
   "RetentionForm.island.tsx": RetentionForm as Component<never>,
   "WebhookDetail.island.tsx": WebhookDetail as Component<never>,
 };

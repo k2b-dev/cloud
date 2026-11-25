@@ -1,7 +1,7 @@
-import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, saveFailure } from "@k2b/cloud/ssr/settings-draft";
-import { Checkbox, NoticeCard, Select, TagsInput, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, createUniqueId, For, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Check, Choice, Field, Input, Notice } from "@k2b/ui/v2";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { responseErrorMessage } from "../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../messages";
@@ -18,6 +18,17 @@ const setting: Record<Key, string> = {
   ca: "gateway.nats_admin_tls_ca",
 };
 
+/** One server per line; blank lines and surrounding spaces do not count. */
+const serverList = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+/**
+ * The diagnostics access fields. The draft registers with `settingsSaveControls`, so the screen's head saves and
+ * discards; only changed fields are written, and the access secret last.
+ */
 export default function NatsAccessForm(props: { values: NatsAccessValues; unreadable: Record<Key, boolean>; accessRequired?: boolean }) {
   const locale = useLocale();
   const t = () => natsMessages.resolve([locale()]).t;
@@ -76,89 +87,105 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
       return stored;
     },
   });
-  const accessHelpId = createUniqueId();
-  const showAccessMessage = () => serversChanged(form.draft()) || accessRequired() || Boolean(form.errors().access);
+  // The servers field keeps what the person typed, blank lines included; the draft holds the list it means.
+  const [serversText, setServersText] = createSignal(props.values.servers.join("\n"));
   const disabled = (key: Key) => form.saving() || (unreadable()[key] && !replace()[key]);
+  const outcome = () => form.outcome();
   return (
-    <div class="flex max-w-2xl flex-col gap-4 pb-[var(--ui-space-shell)]">
-      <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
+    <>
+      <Show when={outcome()}>
+        {(failed) =>
+          failed().kind === "failed" ? (
+            <Notice tone="bad" title={t().notSaved} actions={[{ label: t().retry, icon: "refresh", onClick: () => void form.save() }]}>
+              {failed().message} {t().notSavedKeep}
+            </Notice>
+          ) : (
+            <Notice
+              tone="warn"
+              title={t().unknownOutcome}
+              actions={[{ label: t().checkNow, icon: "refresh", onClick: () => window.location.reload() }]}
+            >
+              {t().unknownOutcomeKeep}
+            </Notice>
+          )
+        }
+      </Show>
       <Show when={keys.some((key) => unreadable()[key])}>
-        <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
+        <Notice tone="warn" title={g().unreadableTitle}>
+          {g().unreadableDetail}
+        </Notice>
+        <Band>
           <For each={keys.filter((key) => unreadable()[key])}>
             {(key) => (
-              <Checkbox
+              <Check
                 label={`${g().replaceStored}: ${label(key)}`}
-                value={replace()[key] === true}
-                onValueChange={(checked) => setReplace({ ...replace(), [key]: checked })}
+                checked={replace()[key] === true}
+                onChange={(checked) => setReplace({ ...replace(), [key]: checked })}
                 disabled={form.saving()}
               />
             )}
           </For>
-        </NoticeCard>
+        </Band>
       </Show>
-      <TagsInput
-        label={t().accessServers}
-        value={() => form.draft().servers}
-        onValueChange={(servers) => form.update({ servers })}
-        disabled={disabled("servers")}
-      />
-      <Select
-        label={t().accessKind}
-        options={[
-          { value: "creds", label: t().accessCreds },
-          { value: "nkey", label: t().accessNkey },
-        ]}
-        value={() => form.draft().kind}
-        onValueChange={(kind) => form.update({ kind: kind ?? "creds" })}
-        disabled={disabled("kind")}
-      />
+      <Band>
+        <Field label={t().accessServers} hint={t().accessServersHint}>
+          {/* k2b-ui gap: a tags input (one chip per value); until then one server per line */}
+          <Input
+            multiline
+            value={serversText()}
+            disabled={disabled("servers")}
+            onInput={(text) => {
+              setServersText(text);
+              form.update({ servers: serverList(text) });
+            }}
+          />
+        </Field>
+        <Field label={t().accessKind}>
+          <Choice
+            name="kind"
+            options={[
+              { value: "creds", label: t().accessCreds },
+              { value: "nkey", label: t().accessNkey },
+            ]}
+            value={form.draft().kind}
+            onChange={(kind) => form.update({ kind })}
+            disabled={disabled("kind")}
+          />
+        </Field>
+      </Band>
       <Show when={form.draft().kind !== form.stored().kind && !form.draft().access && !form.draft().clear}>
-        <NoticeCard tone="warning" title={t().accessSwitchHelp} />
+        <Notice tone="warn" title={t().accessKind}>
+          {t().accessSwitchHelp}
+        </Notice>
       </Show>
-      <TextInput
-        label={t().accessSecret}
-        description={
-          <span class="grid">
-            <span class="col-start-1 row-start-1" classList={{ invisible: showAccessMessage() }} aria-hidden={showAccessMessage()}>
-              {t().accessSecretHelp}
-            </span>
-            <span
-              id={accessHelpId}
-              class="col-start-1 row-start-1"
-              classList={{ invisible: !showAccessMessage() }}
-              aria-hidden={!showAccessMessage()}
-              aria-live="polite"
-            >
-              {form.errors().access || t().accessEndpointHelp}
-            </span>
-          </span>
-        }
-        externalErrorId={showAccessMessage() ? accessHelpId : undefined}
-        multiline
-        autocomplete="off"
-        spellcheck={false}
-        autocapitalize="off"
-        autocorrect="off"
-        value={() => form.draft().access}
-        onValueChange={(access) => form.update({ access, clear: false })}
-        error={() => form.errors().access}
-        disabled={disabled("access") || form.draft().clear}
-      />
-      <Checkbox
-        label={t().accessClear}
-        value={form.draft().clear}
-        onValueChange={(clear) => form.update({ clear, access: "" })}
-        disabled={disabled("access")}
-      />
-      <TextInput
-        label={t().accessCa}
-        description={t().accessCaHelp}
-        multiline
-        autocomplete="off"
-        value={() => form.draft().ca}
-        onValueChange={(ca) => form.update({ ca })}
-        disabled={disabled("ca")}
-      />
-    </div>
+      <Band>
+        <Field
+          label={t().accessSecret}
+          hint={serversChanged(form.draft()) || accessRequired() ? t().accessEndpointHelp : t().accessSecretHelp}
+          error={form.errors().access}
+        >
+          {/* k2b-ui gap: Input has no spellcheck/autocomplete; a secret must never reach a spellchecker or autofill */}
+          <Input
+            multiline
+            ref={(element) => {
+              element.spellcheck = false;
+              element.autocomplete = "off";
+            }}
+            value={form.draft().access}
+            onInput={(access) => form.update({ access, clear: false })}
+            disabled={disabled("access") || form.draft().clear}
+          />
+        </Field>
+        <Check
+          label={t().accessClear}
+          checked={form.draft().clear}
+          onChange={(clear) => form.update({ clear, access: "" })}
+          disabled={disabled("access")}
+        />
+        <Field label={t().accessCa} hint={t().accessCaHelp} optional={t().optional}>
+          <Input multiline value={form.draft().ca} onInput={(ca) => form.update({ ca })} disabled={disabled("ca")} />
+        </Field>
+      </Band>
+    </>
   );
 }

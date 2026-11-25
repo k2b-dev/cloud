@@ -20,7 +20,7 @@ describe("NATS diagnostics access form", () => {
   }
   test("pasted credentials retain newlines, are submitted once, and clear after saving", async () => {
     const dom = createDomTestHarness();
-    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const { default: NatsAccessForm } = await import("./NatsAccessForm");
     const requests: { url: string; body: unknown }[] = [];
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -33,7 +33,7 @@ describe("NATS diagnostics access form", () => {
     );
     const dispose = render(() => createComponent(NatsAccessForm, props), dom.root);
     try {
-      const input = dom.root.querySelectorAll("textarea")[0]!;
+      const input = dom.root.querySelectorAll("textarea")[1]!;
       expect(input.value).toBe("");
       const content = "-----BEGIN NATS USER JWT-----\nfixture\n------END NATS USER JWT------";
       input.value = content;
@@ -63,7 +63,7 @@ describe("NATS diagnostics access form", () => {
   });
   test("a refused later field keeps the draft and retries only unconfirmed changes", async () => {
     const dom = createDomTestHarness();
-    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const { default: NatsAccessForm } = await import("./NatsAccessForm");
     const requests: string[] = [];
     let refuse = true;
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
@@ -80,7 +80,7 @@ describe("NATS diagnostics access form", () => {
     );
     const dispose = render(() => createComponent(NatsAccessForm, props), dom.root);
     try {
-      const [access, ca] = dom.root.querySelectorAll("textarea");
+      const [, access, ca] = dom.root.querySelectorAll("textarea");
       access!.value = "replacement\ncredentials";
       access!.dispatchEvent(new Event("input", { bubbles: true }));
       ca!.value = "invalid PEM";
@@ -107,7 +107,7 @@ describe("NATS diagnostics access form", () => {
   });
   test("an uncertain response stays visible and prevents repeating the write", async () => {
     const dom = createDomTestHarness();
-    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const { default: NatsAccessForm } = await import("./NatsAccessForm");
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async () => {
@@ -118,7 +118,7 @@ describe("NATS diagnostics access form", () => {
     );
     const dispose = render(() => createComponent(NatsAccessForm, props), dom.root);
     try {
-      const input = dom.root.querySelectorAll("textarea")[0]!;
+      const input = dom.root.querySelectorAll("textarea")[1]!;
       input.value = "replacement";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       settingsSaveControls()?.save();
@@ -137,7 +137,7 @@ describe("NATS diagnostics access form", () => {
   });
   test("changing servers requires re-entry and saves the endpoint before replacement access", async () => {
     const dom = createDomTestHarness();
-    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const { default: NatsAccessForm } = await import("./NatsAccessForm");
     const requests: { url: string; body: unknown }[] = [];
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -150,19 +150,14 @@ describe("NATS diagnostics access form", () => {
     );
     const dispose = render(() => createComponent(NatsAccessForm, props), dom.root);
     try {
-      const servers = dom.root.querySelector<HTMLInputElement>('input:not([type="checkbox"])')!;
+      const servers = dom.root.querySelectorAll("textarea")[0]!;
       servers.value = "nats://replacement";
       servers.dispatchEvent(new Event("input", { bubbles: true }));
-      servers.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      expect(
-        Array.from(dom.root.querySelectorAll('span[aria-hidden="false"]')).some((node) =>
-          node.textContent?.includes("Enter system access for the current server list."),
-        ),
-      ).toBe(true);
+      expect(dom.root.textContent).toContain("Enter system access for the current server list.");
       settingsSaveControls()?.save();
       await settled();
       expect(requests).toHaveLength(0);
-      const access = dom.root.querySelectorAll("textarea")[0]!;
+      const access = dom.root.querySelectorAll("textarea")[1]!;
       access.value = "replacement access";
       access.dispatchEvent(new Event("input", { bubbles: true }));
       settingsSaveControls()?.save();
@@ -183,15 +178,11 @@ describe("NATS diagnostics access form", () => {
 
   test("access re-entry remains visible after reloading a changed endpoint", async () => {
     const dom = createDomTestHarness();
-    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const { default: NatsAccessForm } = await import("./NatsAccessForm");
     const dispose = render(() => createComponent(NatsAccessForm, { ...props, accessRequired: true }), dom.root);
     try {
-      expect(
-        Array.from(dom.root.querySelectorAll('span[aria-hidden="false"]')).some((node) =>
-          node.textContent?.includes("Enter system access for the current server list."),
-        ),
-      ).toBe(true);
-      expect(dom.root.querySelectorAll("textarea")[0]!.value).toBe("");
+      expect(dom.root.textContent).toContain("Enter system access for the current server list.");
+      expect(dom.root.querySelectorAll("textarea")[1]!.value).toBe("");
     } finally {
       dispose();
       dom.cleanup();

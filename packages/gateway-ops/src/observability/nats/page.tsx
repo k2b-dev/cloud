@@ -1,24 +1,45 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge } from "@k2b/ui";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { areaText, NatsSyncTabs, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
+import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
+import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { legacySyncNatsHref, natsQuery, selectedFacets } from "../_components/sync-nats-query";
+import NatsScreen, { type NatsNotice, type NatsStreamRow, type Worded } from "./_components/NatsScreen.island";
 import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import { natsMessages } from "./messages";
 import { nodeReplicaStatus, replicaStatus, replicaTone } from "./replica-status";
-import type { NatsConsumer, NatsNode, NatsStream } from "./service";
 
+const PATH = "/admin/observability/nats";
+const toneStatus = { ok: "ok", warning: "warn", error: "bad", neutral: null } as const;
+
+/** NATS diagnostics on v2. The address holds the filters, the stream page and the open stream. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const dateConfig = getDateConfig(c);
   const { t } = natsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const parsed = NatsQuerySchema.safeParse(Object.fromEntries(url.searchParams));
-  const query = parsed.success ? parsed.data : NatsQuerySchema.parse({});
-  const consumerStream = query.stream;
-  const diagnostics = await readNatsDiagnostics(query);
+  const legacy = legacySyncNatsHref(PATH, url.searchParams);
+  if (legacy) return c.redirect(legacy);
+
+  // The filters' values come from the snapshot; read it with the filters the address names, then declare the list.
+  const raw = selectedFacets(url.searchParams);
+  const first = natsQuery(locale, { apps: [], namespaces: [] }, raw).parse(url.searchParams).state;
+  const parsed = NatsQuerySchema.safeParse({
+    app: first.filters.app,
+    namespace: first.filters.namespace,
+    resource: first.search,
+    problems: first.filters.state === "problems" ? "true" : undefined,
+    offset: url.searchParams.get("offset") ?? undefined,
+    consumerOffset: url.searchParams.get("consumerOffset") ?? undefined,
+    stream: url.searchParams.get("stream") || undefined,
+  });
+  const nats = parsed.success ? parsed.data : NatsQuerySchema.parse({});
+  const [diagnostics, attention] = await Promise.all([readNatsDiagnostics(nats), readAttention()]);
   const { cluster, inventory } = diagnostics;
+  const query = natsQuery(locale, inventory.facets, raw);
+  const address = query.parse(url.searchParams);
+
   const bytes = (value: number | null) => (value === null ? t.unknown : formatBytes(value, { locale }));
   const count = (value: number | null) => (value === null ? t.unknown : formatNumber(value, { locale }));
   const storage = (used: number | null, limit: number | null) => {
@@ -29,208 +50,126 @@ export default ssr<AuthContext>(async (c) => {
       percent > 0 && percent < 0.01 ? `< ${formatNumber(0.01, { locale, decimals: 2 })}` : formatNumber(percent, { locale, decimals: 2 });
     return `${bytes(used)} / ${capacity} (${percentLabel} %)`;
   };
-  const replicaState = (value: Parameters<typeof replicaStatus>[0], expected: number | null) => {
+  const replica = (value: Parameters<typeof replicaStatus>[0], expected: number | null): Worded | null => {
     const status = replicaStatus(value, expected);
-    return status === null ? "—" : <StatusBadge tone={replicaTone(status)} label={t[status]} variant="dot" />;
+    return status === null ? null : { label: t[status], status: toneStatus[replicaTone(status)] };
   };
+  // Pages and the open stream keep the filters; a new filter drops them (see `listHref`).
   const href = (changes: Record<string, string | number | null>) => {
     const params = new URLSearchParams(url.searchParams);
     for (const [key, value] of Object.entries(changes)) {
       if (value === null) params.delete(key);
       else params.set(key, String(value));
     }
-    return `/admin/observability/nats?${params}`;
+    return `${PATH}${params.size ? `?${params}` : ""}`;
   };
-  const nodeColumns: DataTableColumn<NatsNode>[] = [
-    { id: "name", header: t.name, value: (row) => row.name },
-    { id: "version", header: t.version, value: (row) => row.version },
-    {
-      id: "state",
-      header: t.metadataStatus,
-      value: (row) => t[nodeReplicaStatus(row, cluster.nodes)],
-    },
-    { id: "leader", header: t.leader, value: (row) => row.meta?.leader ?? t.unknown },
-    { id: "storage", header: t.storage, value: (row) => storage(row.storage, row.maxStorage) },
-    { id: "memory", header: t.memory, value: (row) => bytes(row.processMemory) },
-    { id: "streams", header: t.streams, value: (row) => count(row.streams) },
-  ];
-  const streamColumns: DataTableColumn<NatsStream>[] = [
-    { id: "name", header: t.name, value: (row) => row.name },
-    { id: "kind", header: t.kind, value: (row) => row.kind },
-    { id: "owner", header: t.owner, value: (row) => (row.sync ? `${row.sync.namespace} / ${row.sync.owner} / ${row.sync.id}` : "—") },
-    { id: "messages", header: t.messages, value: (row) => count(row.messages) },
-    { id: "bytes", header: t.storage, value: (row) => storage(row.bytes, row.maxBytes) },
-    {
-      id: "retention",
-      header: t.retention,
-      value: (row) => (row.maxAgeMs === null ? t.unknown : row.maxAgeMs === 0 ? t.unlimited : `${count(row.maxAgeMs / 1_000)} s`),
-    },
-    {
-      id: "replicas",
-      header: t.replicas,
-      value: (row) => row.replicas,
-    },
-    { id: "consumers", header: t.consumers, value: (row) => count(row.consumers) },
-  ];
-  const consumerColumns: DataTableColumn<NatsConsumer>[] = [
-    { id: "name", header: t.name, value: (row) => row.name },
-    { id: "pending", header: t.pending, value: (row) => count(row.pending) },
-    { id: "ack", header: t.ackPending, value: (row) => count(row.ackPending) },
-    { id: "redelivered", header: t.redelivered, value: (row) => count(row.redelivered) },
-    { id: "leader", header: t.leader, value: (row) => row.cluster?.leader ?? "—" },
-    {
-      id: "replicas",
-      header: t.replicas,
-      value: (row) => {
-        const status = replicaStatus(row.cluster, null);
-        return status === null ? "—" : t[status];
-      },
-    },
-  ];
-  const attention = await readAttention();
+  const known = (value: number | null) => (inventory.accountTotal === null ? null : value);
+
+  const streams: NatsStreamRow[] = inventory.streams.map((row) => ({
+    name: row.name,
+    kind: row.kind,
+    owner: row.sync
+      ? {
+          label: `${row.sync.namespace} / ${row.sync.owner} / ${row.sync.id}`,
+          href: `/admin/observability/nats/sync?q=${encodeURIComponent(row.sync.id)}`,
+        }
+      : null,
+    messages: count(row.messages),
+    deadLetters: row.deadLetter
+      ? { label: `${count(row.messages)} ${t.deadLetters}`, status: row.messages > 0 ? ("warn" as const) : null }
+      : null,
+    storage: storage(row.bytes, row.maxBytes),
+    retention: row.maxAgeMs === null ? t.unknown : row.maxAgeMs === 0 ? t.unlimited : `${count(row.maxAgeMs / 1_000)} s`,
+    replicas: String(row.replicas),
+    replicaState: replica(row.cluster, row.replicas),
+    consumers: count(row.consumers),
+    problem: row.deadLetter && row.messages > 0,
+    href: href({ stream: row.name, consumerOffset: null }),
+  }));
+
+  const clusterNotice: NatsNotice | null =
+    cluster.status === "not_configured"
+      ? { tone: "note", title: t.cluster, text: cluster.accessRequired ? t.accessEndpointHelp : t.notConfigured }
+      : cluster.status !== "available"
+        ? { tone: "warn", title: cluster.status === "partial" ? t.partial : t.unavailable, text: t.clusterIssue }
+        : null;
+  const inventoryNotice: NatsNotice | null =
+    inventory.status !== "available"
+      ? {
+          tone: "warn",
+          title: inventory.status === "partial" ? t.partial : t.unavailable,
+          text: inventory.status === "not_configured" ? t.inventoryMissing : t.inventoryIssue,
+        }
+      : null;
+  const issues = [...address.issues, ...(parsed.success ? [] : [{ param: "", value: parsed.error.issues[0]?.path.join(".") ?? "" }])];
+  const ignored =
+    issues.length > 0 ? issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.value)).join(", ") : null;
+  const stream = nats.stream ?? null;
+  const area = areaText(locale);
+  const groups = observabilityGroups(c, locale, attention);
+
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="nats" attention={attention}>
-      <ObservabilityPane
-        label={areaText(locale).nats}
-        description={
-          <>
-            {t.description} {t.sampledAt}: <time datetime={diagnostics.sampledAt}>{formatDateTime(diagnostics.sampledAt, dateConfig)}</time>
-          </>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.nats }]}
+    >
+      <ObservabilityNavigation label={area.area} current="nats" groups={groups} />
+      <NatsScreen
+        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        facets={inventory.facets}
+        state={address.state}
+        ignored={ignored}
+        sampledAt={formatDateTime(diagnostics.sampledAt, dateConfig)}
+        refreshHref={href({})}
+        clusterNotice={clusterNotice}
+        nodes={cluster.nodes.map((row) => {
+          const status = nodeReplicaStatus(row, cluster.nodes);
+          return {
+            id: row.id,
+            name: row.name,
+            version: row.version,
+            state: { label: t[status], status: toneStatus[replicaTone(status)] },
+            leader: row.meta?.leader ?? t.unknown,
+            storage: storage(row.storage, row.maxStorage),
+            memory: bytes(row.processMemory),
+            streams: count(row.streams),
+          };
+        })}
+        inventoryNotice={inventoryNotice}
+        streams={streams}
+        streamsTotal={`${count(known(inventory.total))}${inventory.accountTotal !== null && inventory.matchedTotal === null ? "+" : ""}`}
+        facts={{
+          problems: count(known(inventory.summary.problemStreams)),
+          deadLetters: count(known(inventory.summary.deadLetterStreams)),
+          replication: count(known(inventory.summary.replicationProblems)),
+          partial: inventory.matchedTotal === null,
+        }}
+        previousHref={inventory.offset > 0 ? href({ offset: Math.max(0, inventory.offset - inventory.limit) || null }) : null}
+        nextHref={inventory.nextOffset !== null ? href({ offset: inventory.nextOffset }) : null}
+        stream={
+          stream
+            ? {
+                name: stream,
+                row: streams.find((row) => row.name === stream) ?? null,
+                consumers: inventory.consumers.map((row) => ({
+                  name: row.name,
+                  numbers: t.consumerNumbers({
+                    pending: count(row.pending),
+                    ack: count(row.ackPending),
+                    redelivered: count(row.redelivered),
+                  }),
+                  leader: row.cluster?.leader ?? "",
+                  replicas: replica(row.cluster, null),
+                })),
+                firstHref: inventory.consumerOffset > 0 ? href({ consumerOffset: null }) : null,
+                nextHref: inventory.consumerNextOffset !== null ? href({ consumerOffset: inventory.consumerNextOffset }) : null,
+                closeHref: href({ stream: null, consumerOffset: null }),
+              }
+            : null
         }
-        actions={
-          <ButtonLink href={href({})} variant="secondary" size="sm">
-            {t.refresh}
-          </ButtonLink>
-        }
-      >
-        <NatsSyncTabs current="nats" locale={locale} />
-        {!parsed.success ? <NoticeCard tone="warning" title={t.invalidFilters} /> : null}
-        {cluster.status === "not_configured" ? (
-          <NoticeCard tone="info" title={t.cluster} detail={cluster.accessRequired ? t.accessEndpointHelp : t.notConfigured} />
-        ) : cluster.status !== "available" ? (
-          <NoticeCard tone="warning" title={cluster.status === "partial" ? t.partial : t.unavailable} detail={t.clusterIssue} />
-        ) : null}
-        <section class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold">{t.cluster}</h2>
-            <p class="text-[10px] text-dimmed">{t.nodeScope}</p>
-          </div>
-          <DataTable
-            renderCell={({ row, col, value, render }) => {
-              if (col.id !== "state") return render(value);
-              const status = nodeReplicaStatus(row, cluster.nodes);
-              return <StatusBadge tone={replicaTone(status)} label={t[status]} variant="dot" />;
-            }}
-            rows={cluster.nodes}
-            columns={nodeColumns}
-            getRowId={(row) => row.id}
-            surface="plain"
-            density="compact"
-            empty={t.empty}
-          />
-        </section>
-        {inventory.status !== "available" ? (
-          <NoticeCard
-            tone="warning"
-            title={inventory.status === "partial" ? t.partial : t.unavailable}
-            detail={inventory.status === "not_configured" ? t.inventoryMissing : t.inventoryIssue}
-          />
-        ) : null}
-        <SyncNatsFilterBar
-          path="/admin/observability/nats"
-          search={url.search}
-          apps={inventory.facets.apps}
-          namespaces={inventory.facets.namespaces}
-        />
-        <p class="text-xs text-dimmed">
-          {t.problemStreams}: {count(inventory.accountTotal === null ? null : inventory.summary.problemStreams)} · {t.deadLetterStreams}:{" "}
-          {count(inventory.accountTotal === null ? null : inventory.summary.deadLetterStreams)} · {t.replicationProblems}:{" "}
-          {count(inventory.accountTotal === null ? null : inventory.summary.replicationProblems)}
-          {inventory.matchedTotal === null ? ` · ${t.partial}` : ""}
-        </p>
-        <section class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold">
-              {t.streams} · {count(inventory.accountTotal === null ? null : inventory.total)}
-              {inventory.accountTotal !== null && inventory.matchedTotal === null ? "+" : ""}
-            </h2>
-            <p class="text-[10px] text-dimmed">{t.accountScope}</p>
-          </div>
-          <DataTable
-            rows={inventory.streams}
-            columns={streamColumns}
-            getRowId={(row) => row.name}
-            surface="plain"
-            density="compact"
-            empty={t.empty}
-            renderCell={({ row, col, value, render }) =>
-              col.id === "name" ? (
-                <a class="link font-mono text-xs" href={`${href({ stream: row.name, consumerOffset: null })}#nats-consumers`}>
-                  {row.name}
-                </a>
-              ) : col.id === "messages" && row.deadLetter ? (
-                <StatusBadge
-                  tone={row.messages > 0 ? "warning" : "neutral"}
-                  label={`${count(row.messages)} ${t.deadLetters}`}
-                  variant="dot"
-                />
-              ) : col.id === "replicas" ? (
-                <span class="inline-flex items-center gap-2">
-                  {row.replicas} · {replicaState(row.cluster, row.replicas)}
-                </span>
-              ) : col.id === "owner" && row.sync ? (
-                <a class="link" href={`/admin/observability/nats/sync?resource=${encodeURIComponent(row.sync.id)}`}>
-                  {render(value)}
-                </a>
-              ) : (
-                render(value)
-              )
-            }
-          />
-          <div class="flex gap-2 px-3 py-2">
-            {inventory.offset > 0 ? (
-              <ButtonLink href={href({ offset: Math.max(0, inventory.offset - inventory.limit) })} variant="secondary" size="xs">
-                {t.previous}
-              </ButtonLink>
-            ) : null}
-            {inventory.nextOffset !== null ? (
-              <ButtonLink href={href({ offset: inventory.nextOffset })} variant="secondary" size="xs">
-                {t.next}
-              </ButtonLink>
-            ) : null}
-          </div>
-        </section>
-        <section id="nats-consumers" class="paper overflow-hidden">
-          <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold">
-              {t.consumers}
-              {consumerStream ? ` · ${consumerStream}` : ""}
-            </h2>
-            <p class="text-[10px] text-dimmed">{t.consumerScope}</p>
-          </div>
-          <DataTable
-            renderCell={({ row, col, value, render }) => (col.id === "replicas" ? replicaState(row.cluster, null) : render(value))}
-            rows={inventory.consumers}
-            columns={consumerColumns}
-            getRowId={(row) => row.name}
-            surface="plain"
-            density="compact"
-            empty={t.empty}
-          />
-          <div class="flex gap-2 px-3 py-2">
-            {inventory.consumerOffset > 0 ? (
-              <ButtonLink href={href({ consumerOffset: null })} variant="secondary" size="xs">
-                {t.first}
-              </ButtonLink>
-            ) : null}
-            {inventory.consumerNextOffset !== null ? (
-              <ButtonLink href={href({ consumerOffset: inventory.consumerNextOffset })} variant="secondary" size="xs">
-                {t.next}
-              </ButtonLink>
-            ) : null}
-          </div>
-        </section>
-      </ObservabilityPane>
-    </ObservabilityArea>
+      />
+    </Layout>
   );
 });
