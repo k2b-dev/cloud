@@ -2,9 +2,10 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Band, Button, Chip, Cut, Empty, Failed, Icon, List, Notice, Row, Text } from "@k2b/ui/v2";
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 import type { MailListItem } from "../../../service/workspace";
 import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
+import { mailListRowKey } from "../mail-list-projection";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { buildMailSelectionHref, isMailListItemActive, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
@@ -99,27 +100,29 @@ export default function MailListV2(props: {
           </Show>
         }
       >
-        <List label={props.label}>
-          <For each={props.items}>
-            {(item) => (
-              <Row
-                href={buildMailSelectionHref(requestUrl(), item)}
-                onNavigate={(nav) => props.onOpen(nav, item)}
-                lines={[sender(item), item.subject || t().noSubject, item.preview || " "]}
-                meta={item.selectionKind === "conversation" && item.messageCount > 1 ? String(item.messageCount) : undefined}
-                time={mailV2RowTime(item.latestMessageAt, props.dateConfig)}
-                unread={item.unread}
-                current={isMailListItemActive(item, props.selectedConversationId, props.selectedMessageId)}
-                select={
-                  props.selection && item.conversationId
-                    ? { selected: props.selection.selected(item), onChange: () => props.selection?.toggle(item) }
-                    : undefined
-                }
-                marks={marks(item)}
-              />
-            )}
-          </For>
-        </List>
+        {/* Rows of a list of items: only those in view are in the page, so a mailbox of any size stays fast. */}
+        <List
+          label={props.label}
+          items={props.items}
+          rowKey={mailListRowKey}
+          row={(item) => (
+            <Row
+              href={buildMailSelectionHref(requestUrl(), item)}
+              onNavigate={(nav) => props.onOpen(nav, item)}
+              lines={[sender(item), item.subject || t().noSubject, item.preview || " "]}
+              meta={item.selectionKind === "conversation" && item.messageCount > 1 ? String(item.messageCount) : undefined}
+              time={mailV2RowTime(item.latestMessageAt, props.dateConfig)}
+              unread={item.unread}
+              current={isMailListItemActive(item, props.selectedConversationId, props.selectedMessageId)}
+              select={
+                props.selection && item.conversationId
+                  ? { selected: props.selection.selected(item), onChange: () => props.selection?.toggle(item) }
+                  : undefined
+              }
+              marks={marks(item)}
+            />
+          )}
+        />
       </Show>
       <Show when={props.nextCursor}>
         <Band>
