@@ -21,6 +21,6 @@ export const usePageSwap = () => {
      * `replace`, the new address takes the current entry's place, so Back skips a state that is gone (a closed dialog).
      */
     openPage: (href: string, options?: { replace?: boolean }): Promise<void> =>
-      disposed ? Promise.resolve() : swapPage(href, { replace: options?.replace ?? false }),
+      disposed ? Promise.resolve() : options?.replace ? swapPage(href, { replace: true }) : swapPage(href),
   };
 };
