@@ -1,75 +1,27 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { AdminLayout } from "@k2b/cloud/ssr";
-import { MarkdownView, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { resolveFaqTranslation } from "../content";
 import { faqService } from "../service";
-import CreateFaqButton from "./_components/CreateFaqButton.island";
-import DeleteFaqButton from "./_components/DeleteFaqButton.island";
-import EditFaqButton from "./_components/EditFaqButton.island";
+import FaqAdminScreen from "./_components/FaqAdminScreen.island";
+import { openFromAddress } from "./_components/faq-admin-open";
 import { faqMessages } from "./messages";
 
-const AUDIENCE_TONE: Record<string, StatusTone> = {
-  anonymous: "neutral",
-  guest: "warning",
-  user: "running",
-};
-
+/** The FAQ administration on v2: the entries, and the one the address opens (`?entry=<id>` or `?entry=new`). */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = faqMessages.resolve([locale]);
-  const audienceLabels: Record<string, string> = { anonymous: t.anonymous, guest: t.guests, user: t.users };
-  const entries = (await faqService.entry.list()).items;
+  const entries = (await faqService.entry.list()).items.map((entry) => ({
+    entry,
+    question: resolveFaqTranslation(entry.translations, locale).question,
+  }));
+  // The open entry comes from the list just read, so opening one costs no second statement.
+  const open = openFromAddress(entries, c.req.query("entry"));
 
+  // k2b-ui gap: AdminLayout has no v2 form yet; this page uses Layout ui="v2" until it does (the shell trail leads to Admin).
   return () => (
-    <AdminLayout c={c} title="FAQ">
-      <div class="app-rows">
-        <div class="flex flex-wrap items-center justify-between gap-3" style="view-transition-name: admin-faq-toolbar">
-          <div class="min-w-0">
-            <h1 class="text-base font-semibold text-primary">FAQ</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {t.entryCount({ count: entries.length })} — {t.visibleAt} <code class="text-[10px]">/faq</code>
-            </p>
-          </div>
-          <CreateFaqButton />
-        </div>
-
-        {entries.length > 0 ? (
-          <section class="paper overflow-hidden" style="view-transition-name: admin-faq-list">
-            <div class="flex flex-col gap-3 p-3">
-              {entries.map((entry) => {
-                const content = resolveFaqTranslation(entry.translations, locale);
-                return (
-                  <div class="flex flex-col gap-2">
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                          <h3 class="text-sm font-medium text-primary">{content.question}</h3>
-                          {Object.keys(entry.translations).map((translationLocale) => (
-                            <StatusBadge tone="neutral" label={translationLocale} icon={null} />
-                          ))}
-                          {entry.audience.map((aud) => (
-                            <StatusBadge tone={AUDIENCE_TONE[aud] ?? "neutral"} label={audienceLabels[aud] ?? aud} icon={null} />
-                          ))}
-                        </div>
-                      </div>
-                      <div class="flex shrink-0 items-center gap-1">
-                        <EditFaqButton entry={entry} />
-                        <DeleteFaqButton id={entry.id} question={content.question} />
-                      </div>
-                    </div>
-                    <div class="text-sm text-dimmed pl-0">
-                      <MarkdownView markdown={content.answer} class="markdown-content-sm" />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        ) : (
-          <Placeholder surface="paper" description={<>{t.noAdminEntries}</>} />
-        )}
-      </div>
-    </AdminLayout>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.admin, href: "/admin" }, { title: "FAQ" }]}>
+      <FaqAdminScreen entries={entries} open={open} />
+    </Layout>
   );
 });
