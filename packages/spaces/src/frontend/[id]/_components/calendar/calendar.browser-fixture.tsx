@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
-import SpacesCalendarRoute from "../workspace/SpacesCalendarRoute.island";
+import SpacesCalendarRoute from "../workspace/SpacesCalendarRoute";
 
 type Props = ComponentProps<typeof SpacesCalendarRoute> & { locale: string };
 

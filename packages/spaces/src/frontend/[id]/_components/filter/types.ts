@@ -6,6 +6,7 @@ import {
   type ItemActivityFilter,
   type ItemGroupBy,
   type ItemSort,
+  ItemSortSchema,
   type ItemStatus,
   type ItemType,
   type Priority,
@@ -119,6 +120,17 @@ const listParam = <T extends string>(value: string | null, accepts: (entry: stri
 const isPriority = (entry: string): entry is Priority => PrioritySchema.safeParse(entry).success;
 const isResourceId = (entry: string): entry is string => ResourceShortIdSchema.safeParse(entry).success;
 
+const isSort = (value: string): value is ItemSort => ItemSortSchema.safeParse(value).success;
+
+/** The sort of an address: `sort=deadline.desc` (v2), or `sort=deadline&sortDesc=true` from before. */
+const parseSort = (params: URLSearchParams): Pick<FilterState, "sort" | "sortDesc"> => {
+  const [field = "", direction] = (params.get(QueryParams.SORT) ?? "").split(".");
+  return {
+    sort: isSort(field) ? field : defaultFilter.sort,
+    sortDesc: direction === undefined ? params.get(QueryParams.SORT_DESC) === "true" : direction === "desc",
+  };
+};
+
 /**
  * Parse filter state from URL search params. Values the filter API would reject fall back to their
  * defaults, so a page and the requests it makes later apply the same filter.
@@ -139,8 +151,7 @@ export function parseFilterFromUrl(url: URL): FilterState {
     assignedTo: assignedTo.success ? assignedTo.data : defaultFilter.assignedTo,
     deadlineFilter: deadline.success ? deadline.data : defaultFilter.deadlineFilter,
     search: params.get(QueryParams.SEARCH) || "",
-    sort: (params.get(QueryParams.SORT) as ItemSort) || defaultFilter.sort,
-    sortDesc: params.get(QueryParams.SORT_DESC) === "true",
+    ...parseSort(params),
     groupBy: (params.get(QueryParams.GROUP_BY) as ItemGroupBy) || defaultFilter.groupBy,
     page: parseInt(params.get(QueryParams.PAGE) || "1", 10) || 1,
   };
@@ -169,8 +180,8 @@ export function writeFilterParams(params: URLSearchParams, merged: FilterState):
   if (merged.assignedTo !== defaultFilter.assignedTo) params.set(QueryParams.ASSIGNED_TO, merged.assignedTo);
   if (merged.deadlineFilter !== defaultFilter.deadlineFilter) params.set(QueryParams.DEADLINE, merged.deadlineFilter);
   if (merged.search) params.set(QueryParams.SEARCH, merged.search);
-  if (merged.sort !== defaultFilter.sort) params.set(QueryParams.SORT, merged.sort);
-  if (merged.sortDesc) params.set(QueryParams.SORT_DESC, "true");
+  if (merged.sort !== defaultFilter.sort || merged.sortDesc)
+    params.set(QueryParams.SORT, `${merged.sort}.${merged.sortDesc ? "desc" : "asc"}`);
   if (merged.groupBy !== defaultFilter.groupBy) params.set(QueryParams.GROUP_BY, merged.groupBy);
   if (merged.page > 1) params.set(QueryParams.PAGE, String(merged.page));
 }

@@ -49,7 +49,7 @@ describe("Spaces calendar block requests", () => {
           return dom.document.createTextNode("");
         },
       }));
-      const { default: SpacesCalendarRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesCalendarRoute.island");
+      const { default: SpacesCalendarRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesCalendarRoute");
       const dispose = render(
         () =>
           createComponent(SpacesCalendarRoute, {

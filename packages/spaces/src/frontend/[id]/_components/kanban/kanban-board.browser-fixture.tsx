@@ -1,91 +1,85 @@
-import { AppWorkspace, LocaleProvider } from "@k2b/ui";
-import type { ComponentProps } from "solid-js";
-import type { ItemListResult } from "@/contracts";
-import SpaceHeadFilters from "../filter/SpaceHeadFilters.island";
-import { defaultFilter } from "../filter/types";
-import SpaceHeadActions from "../workspace/SpaceHeadActions.island";
-import SpacesKanbanRoute from "../workspace/SpacesKanbanRoute.island";
-import SpacesListRoute from "../workspace/SpacesListRoute.island";
+import { LocaleProvider } from "@k2b/ui";
+import { Nav, Pane, Workspace } from "@k2b/ui/v2";
+import type { ItemListResult, SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
+import { defaultFilter, parseFilterFromUrl } from "../filter/types";
+import BoardPane from "../workspace/BoardPane";
+import ItemsPane from "../workspace/ItemsPane";
+import type { KanbanBucketInitial } from "./types";
 
-type Props = ComponentProps<typeof SpacesKanbanRoute> & { locale: string; workspace?: "kanban" | "table"; itemsResult?: ItemListResult };
+type Props = {
+  spaceId: string;
+  baseUrl: string;
+  columns: SpaceColumn[];
+  tags: SpaceTag[];
+  wormholes: SpaceWormhole[];
+  initialBuckets: KanbanBucketInitial[];
+  foldedColumns: string[];
+  selectedItemId: string;
+  canWrite: boolean;
+  currentUserId: string;
+  locale: string;
+  workspace?: "kanban" | "table";
+  itemsResult?: ItemListResult;
+};
 
-/** The Kanban route as the workspace page mounts it: an island below the server locale. */
+/** The board (or the table) as the Space page mounts it on v2: one Workspace below the server locale. */
 export default function KanbanFixture(props: Props) {
-  const route = () =>
-    props.workspace === "table" && props.itemsResult ? (
-      <SpacesListRoute
-        spaceId={props.spaceId}
-        currentView="table"
-        columns={props.columns}
-        tags={props.tags}
-        filter={defaultFilter}
-        initialItemsResult={props.itemsResult}
-        initialSelectedItemId=""
-        itemLinkBaseUrl={props.baseUrl}
-        paginationBaseUrl={`${props.baseUrl}&page=`}
-        canWrite={props.canWrite}
-        currentUserId={props.currentUserId}
-      />
-    ) : (
-      <SpacesKanbanRoute
-        spaceId={props.spaceId}
-        baseUrl={props.baseUrl}
-        columns={props.columns}
-        tags={props.tags}
-        wormholes={props.wormholes}
-        initialBuckets={props.initialBuckets}
-        foldedColumns={props.foldedColumns}
-        selectedItemId={props.selectedItemId}
-        canWrite={props.canWrite}
-        currentUserId={props.currentUserId}
-      />
-    );
+  const space = {
+    id: props.spaceId,
+    name: "Project",
+    description: null,
+    color: "#3b82f6",
+    icalToken: null,
+    columns: props.columns,
+    tags: props.tags,
+    templates: [],
+    virtualColumns: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const filter = parseFilterFromUrl(new URL(props.baseUrl, "http://spaces.local"));
   return (
     <LocaleProvider locale={props.locale}>
-      <AppWorkspace>
-        {props.workspace && (
-          <AppWorkspace.Sidebar>
-            <AppWorkspace.SidebarDesktop>
-              <AppWorkspace.SidebarItem href="/app/spaces/Space1" active>
-                Project
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarDesktop>
-          </AppWorkspace.Sidebar>
-        )}
-        <AppWorkspace.Head
-          filters={
-            <SpaceHeadFilters
-              spaceId={props.spaceId}
-              columns={props.columns}
-              tags={props.tags}
-              currentView={props.workspace === "table" ? "table" : "kanban"}
-              initialSource={props.baseUrl}
-              initialTotal={props.itemsResult?.total}
+      <Workspace
+        sidebar={
+          props.workspace ? (
+            <Nav
+              title="Spaces"
+              icon="layout-kanban"
+              groups={[{ items: [{ label: "Project", icon: "point-filled", href: "/app/spaces/Space1", current: true }] }]}
             />
-          }
-          actions={
-            <SpaceHeadActions
-              spaceId={props.spaceId}
-              spaceName="Project"
-              icalToken={null}
-              baseUrl={props.baseUrl}
-              currentView={props.workspace === "table" ? "table" : "kanban"}
+          ) : undefined
+        }
+        detail={props.workspace ? true : undefined}
+        detailEmpty={props.workspace ? { icon: "click", text: "Selected item" } : undefined}
+      >
+        <Pane.Split>
+          {props.workspace === "table" && props.itemsResult ? (
+            <ItemsPane
+              space={space}
+              currentView="table"
+              filter={defaultFilter}
+              initialItemsResult={props.itemsResult}
+              itemLinkBaseUrl={props.baseUrl}
+              selectedItemId=""
               canWrite={props.canWrite}
-              people={[]}
+              currentUserId={props.currentUserId}
             />
-          }
-        />
-        <AppWorkspace.Content>
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-            {route()}
-          </AppWorkspace.Main>
-          {props.workspace && (
-            <AppWorkspace.Detail id="item" open>
-              Selected item
-            </AppWorkspace.Detail>
+          ) : (
+            <BoardPane
+              space={space}
+              filter={filter}
+              baseUrl={props.baseUrl}
+              wormholes={props.wormholes}
+              initialBuckets={props.initialBuckets}
+              foldedColumns={props.foldedColumns}
+              selectedItemId={props.selectedItemId}
+              canWrite={props.canWrite}
+              currentUserId={props.currentUserId}
+            />
           )}
-        </AppWorkspace.Content>
-      </AppWorkspace>
+        </Pane.Split>
+      </Workspace>
     </LocaleProvider>
   );
 }

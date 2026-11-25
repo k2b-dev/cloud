@@ -103,7 +103,7 @@ describe("Spaces unavailable-view reloads", () => {
 
   test("the Kanban view reloads at most once for a view that stays unavailable", async () => {
     const dom = createDomTestHarness();
-    const { default: SpacesKanbanRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesKanbanRoute.island");
+    const { default: SpacesKanbanRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesKanbanRoute");
     const path = `/app/spaces/${SPACE_ID}?view=kanban`;
     await expectOneReloadAcrossLoads(
       dom,

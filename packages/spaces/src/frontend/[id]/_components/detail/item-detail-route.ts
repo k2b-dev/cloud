@@ -1,11 +1,9 @@
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { AccessMember } from "@k2b/cloud/contracts";
-import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Placeholder, prompts } from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
+import type { SpaceWormhole } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import {
@@ -18,25 +16,15 @@ import {
   subscribeToSpacesDataInvalidation,
 } from "../workspace/workspace-events";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
-import ItemDetailPanel from "./ItemDetailPanel";
 
-type Props = {
+export type ItemDetailRouteProps = {
   spaceId: string;
   initialSource: string;
-  currentUserId: string;
-  columns: SpaceColumn[];
-  tags: SpaceTag[];
   wormholes: SpaceWormhole[];
   initialDetail: SpaceItemDetail | null;
-  dateConfig?: DateContext;
-  /** List, Table and Kanban step with J and K; the Calendar does not. */
-  steppable?: boolean;
   canWrite: boolean;
   /** Whether the person may read who has access to the space; decided on the server. */
   accessVisible: boolean;
-  mailIntegrationAvailable: boolean;
-  /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
-  estimateSuggestions?: boolean;
 };
 
 type DetailHistory = "push" | "replace" | "none";
@@ -100,7 +88,11 @@ const writeHistory = (href: string, history: DetailHistory) => {
   else if (`${window.location.pathname}${window.location.search}` !== href) window.history.replaceState(null, "", href);
 };
 
-export default function ItemDetailRoute(props: Props) {
+/**
+ * The open item of a Space page: the address names it (`item`, `occurrence`), the detail loads before the address
+ * commits, Back and forward follow, live changes refresh it. The screen renders what it returns.
+ */
+export function useItemDetailRoute(props: ItemDetailRouteProps, onError: (message: string) => void) {
   const t = useSpaceMessages();
   const initialSource = props.initialDetail ? canonicalDetailHref(props.initialSource, props.initialDetail) : props.initialSource;
   const initialRequest = detailRequest(props.initialSource);
@@ -195,7 +187,7 @@ export default function ItemDetailRoute(props: Props) {
     if (request.history === "none") window.history.replaceState(null, "", committedSource);
     if (request.settled) request.settled(error);
     else if (error instanceof DetailAccessChangedError) window.location.reload();
-    else prompts.error(error.message);
+    else onError(error.message);
   };
 
   createEffect(() => {
@@ -322,73 +314,26 @@ export default function ItemDetailRoute(props: Props) {
   const scrollKey = () =>
     `spaces-detail-${props.spaceId}-${detail()?.item.id ?? "empty"}-${detail()?.recurringContext?.recurrenceId ?? "series"}`;
 
-  return (
-    <AppWorkspace.Detail
-      id="space-detail-panel"
-      open={hasDetailSelection()}
-      onStep={props.steppable ? (direction) => requestSpacesDetailStep(direction, detailRequest(source())) : undefined}
-      onClose={() => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" })}
-      viewTransitionName="space-detail-panel-shell"
-    >
-      <div class="h-full min-h-0 flex-1">
-        <Show
-          when={detail()}
-          fallback={
-            detailQuery.error() ? (
-              <Placeholder
-                state="error"
-                title={t.couldNotLoadDetails}
-                description={detailQuery.error()!.message}
-                action={
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void detailQuery.refresh()}>
-                    {t.retry}
-                  </Button>
-                }
-              />
-            ) : hasDetailSelection() ? (
-              <Placeholder state="loading" title={t.loadingDetails} />
-            ) : (
-              <Placeholder icon="ti ti-click" description={<>{t.selectItemForDetails}</>} />
-            )
+  return {
+    /** The open item, or null while none is open, it loads, or it failed. */
+    detail,
+    /** Whether the address names an item. */
+    open: hasDetailSelection,
+    error: detailQuery.error,
+    retry: () => void detailQuery.refresh(),
+    /** The address of the view without the open item: where closing and the way back lead. */
+    baseHref: () => detailBaseHref(source()),
+    close: () => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" }),
+    step: (direction: 1 | -1) => requestSpacesDetailStep(direction, detailRequest(source())),
+    wormholes: () => wormholesQuery.data() ?? props.wormholes,
+    access: () =>
+      props.accessVisible
+        ? {
+            members: accessQuery.data() ?? [],
+            state: accessQuery.error() ? ("error" as const) : accessQuery.data() ? ("ready" as const) : ("loading" as const),
+            retry: () => void accessQuery.refresh(),
           }
-        >
-          {(current) => (
-            <ItemDetailPanel
-              item={current().item}
-              columns={props.columns}
-              tags={props.tags}
-              wormholes={wormholesQuery.data() ?? props.wormholes}
-              spaceId={props.spaceId}
-              baseUrl={detailBaseHref(source())}
-              currentUserId={props.currentUserId}
-              initialCommentsPage={current().comments}
-              commentTarget={current().commentTarget}
-              recurringContext={current().recurringContext}
-              references={current().references}
-              links={current().links}
-              work={current().work}
-              attachments={current().attachments}
-              checklist={current().checklist}
-              blockedBy={current().blockedBy}
-              blocks={current().blocks}
-              dateConfig={props.dateConfig}
-              canWrite={props.canWrite}
-              access={
-                props.accessVisible
-                  ? {
-                      members: accessQuery.data() ?? [],
-                      state: accessQuery.error() ? "error" : accessQuery.data() ? "ready" : "loading",
-                      retry: () => void accessQuery.refresh(),
-                    }
-                  : null
-              }
-              mailIntegrationAvailable={props.mailIntegrationAvailable}
-              estimateSuggestions={props.estimateSuggestions}
-              scrollPreserveKey={scrollKey()}
-            />
-          )}
-        </Show>
-      </div>
-    </AppWorkspace.Detail>
-  );
+        : null,
+    scrollKey,
+  };
 }

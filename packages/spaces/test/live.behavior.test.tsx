@@ -84,7 +84,7 @@ describe("Spaces live updates in an open page", () => {
 
   /** Mounts the island as SSR renders it; the snapshot day defaults to the current day. */
   const mount = async (initialCursor: string | null, snapshotDay = dates.formatDateKey(new Date(), dateConfig)) => {
-    const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
+    const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents");
     const host = dom.document.createElement("div");
     dom.root.append(host);
     const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: SPACE_ID, initialCursor, snapshotDay, dateConfig }), host);

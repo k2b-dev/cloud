@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { LocaleProvider } from "@k2b/ui";
-import SpaceLiveEvents from "../workspace/SpaceLiveEvents.island";
+import SpaceLiveEvents from "../workspace/SpaceLiveEvents";
 import SpaceSettingsButton from "./SpaceSettingsButton.island";
 
 type Props = { locale: string; snapshotTime: string };

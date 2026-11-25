@@ -9,8 +9,8 @@ import { isEstimateSuggestionAvailable } from "../../service/estimate-suggestion
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
 import { loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
-import { firstOpenSpacesHint, spaceHintCandidates } from "../spaces-hints";
-import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
+import { legacyFilterHref } from "./_components/filter/query";
+import SpaceScreen from "./_components/workspace/SpaceScreen.island";
 import { loadSpacesWorkspaceState } from "./_components/workspace/workspace-state";
 import { spaceMessages } from "./messages";
 
@@ -22,6 +22,9 @@ export default ssr<AuthContext>(async (c) => {
     : null;
   const dateConfig = getDateConfig(c);
   if (!spaceId) return ssr.error(c, 404, { action: { label: t.allSpaces, href: "/app/spaces" } });
+  // Addresses from before v2 (`sort=deadline&sortDesc=true`) open the same list in the v2 address.
+  const legacy = legacyFilterHref(new URL(c.req.url));
+  if (legacy) return c.redirect(legacy);
   const user = expectUserBackedActor(c);
   const statePromise = loadSpacesWorkspaceState({
     user,
@@ -55,29 +58,21 @@ export default ssr<AuthContext>(async (c) => {
       action: { label: t.allSpaces, href: "/app/spaces" },
     });
 
-  const openHint = firstOpenSpacesHint(c, spaceHintCandidates(sidebar.spaces.length));
-  const hints = {
-    sidebarSwitch: openHint === "spaces.sidebar-switch",
-    viewTabs: openHint === "spaces.view-tabs",
-    spaceMenu: openHint === "spaces.space-menu",
-  };
-
   return () => (
     <Layout
       context={{ scope: { type: "spaces.space", id: state.space.id } }}
       c={c}
       help={spacesPageHelp.workspace}
       fullWidth
+      ui="v2"
       title={state.title}
     >
-      <SpacesWorkspace
-        userId={user.id}
+      <SpaceScreen
         state={state}
         dateConfig={dateConfig}
         mailIntegrationAvailable={mailIntegrationAvailable}
         estimateSuggestions={estimateSuggestions}
         sidebar={sidebar}
-        hints={hints}
         people={people}
       />
     </Layout>
