@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-18
+updated: 2026-11-25
 ---
 
 # API surface
@@ -43,6 +43,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
 | `@k2b/ui/text-editor/model` | Supported, portable | Pure Markdown table parsing and minimal source edits for the editor and server actions |
+| `@k2b/ui/v2/list-query` | Provisional, portable | [Declared filters, sorts, and groups of a v2 list and their URL](/en/docs/frontend/url-state-and-navigation#declare-a-v2-list-query) |
 | `@k2b/editor` | Supported, SolidJS | [Editor, toolbar, bubble menu, and slash menu on shared state](/en/docs/frontend/editor) |
 | `@k2b/editor/styles.css` | Supported, Tailwind CSS | [Widget styles and source class scanning](/en/docs/frontend/editor#compose-markdown-extensions) |
 | `@k2b/editor/markdown` | Supported, CodeMirror | [Optional Markdown extensions and source parsers](/en/docs/frontend/editor#compose-markdown-extensions) |

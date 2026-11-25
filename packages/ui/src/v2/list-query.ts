@@ -373,7 +373,7 @@ export type ListQueryIssueCode =
 /** One dropped part of a URL. `parse` never throws for URL input. */
 export type ListQueryIssue = {
   readonly code: ListQueryIssueCode;
-  /** The URL parameter name. */
+  /** The URL parameter name; empty for `too_long`, which concerns the whole query. */
   readonly param: string;
   /** The dropped raw value. */
   readonly value: string;
@@ -413,7 +413,7 @@ export type ListQueryStateOf<Q> = Q extends ListQuery<infer F, infer S, infer G>
 
 /** A named view. `query` is the output of `serialize(...).toString()`, without `view`. */
 export type SavedListView = {
-  /** Stable key, used as `view=` in the URL. */
+  /** Stable key, used as `view=` in the URL: letters, digits, `.`, `_` and `-`, at most 64 characters. */
   readonly key: string;
   /** Name the person or application gave the view. */
   readonly label: string;
@@ -527,7 +527,10 @@ const decode = (definition: ListQueryField, raw: string): Decoded => {
   }
 };
 
-const encodePeriod = (value: PeriodValue): string => (value.kind === "preset" ? value.preset : `${value.from ?? ""}..${value.to ?? ""}`);
+const encodePeriod = (value: PeriodValue): string | undefined => {
+  if (value.kind === "preset") return value.preset;
+  return value.from === undefined && value.to === undefined ? undefined : `${value.from ?? ""}..${value.to ?? ""}`;
+};
 
 /** The URL text of a value, or `undefined` when the value is empty and the filter is inactive. */
 const encode = (definition: ListQueryField, value: unknown): string | undefined => {

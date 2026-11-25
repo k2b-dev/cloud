@@ -5,7 +5,7 @@ section: Frontend
 order: 860
 description: Keep durable view state in the URL and navigate without losing server authority.
 tags: [url, navigation, filters]
-updated: 2026-11-15
+updated: 2026-11-25
 ---
 
 # URL state and navigation
@@ -45,6 +45,70 @@ Query state still needs service validation before it reaches SQL.
 
 See [Pagination and filtering](/en/docs/server/pagination-and-filtering) for
 the server-side query.
+
+## Declare a v2 list query
+
+A list built with `@k2b/ui/v2` declares its filters, sorts, and groups with
+`defineListQuery` from `@k2b/ui/v2/list-query`. This entry is pure TypeScript
+without DOM access or Solid, so the page loader and the island import the same
+declaration. Every field, value, sort, and group is declared. Labels are the
+application's final strings; keys and values are stable codes in the URL.
+
+```ts
+import { defineListQuery, field } from "@k2b/ui/v2/list-query";
+
+export const articleQuery = defineListQuery({
+  key: "articles",
+  fields: {
+    status: field.choice({ label: t("Status"), options: STATUS_OPTIONS, common: true }),
+    price: field.numberRange({ label: t("Price"), unit: "€" }),
+    consignor: field.lookup({ label: t("Consignor"), load: searchConsignors, resolve: consignorNames }),
+    received: field.dateRange({
+      label: t("Received"),
+      presets: [{ value: "last-30d", label: t("Last 30 days") }],
+    }),
+  },
+  search: { label: t("Number or title") },
+  sort: {
+    options: { received: { label: t("Received") }, price: { label: t("Price") } },
+    default: { field: "received", direction: "desc" },
+  },
+  group: { status: { label: t("Status") } },
+  pageParams: ["selected"],
+});
+
+const { state, issues } = articleQuery.parse(new URL(c.req.url).searchParams);
+// state.filters.status: readonly ("consigned" | "sold" | …)[] | undefined
+const href = `?${articleQuery.serialize(articleQuery.set(state, "price", { min: 500 }))}`;
+```
+
+The field kinds are `choice` (declared values, many or with `multiple: false`
+one), `lookup` (values loaded with `load(query, { signal, limit })`, named
+with `resolve(ids, { signal })` during server rendering), `numberRange`,
+`dateRange` (calendar days), `timeRange` (UTC minutes), `bool`, and `text`.
+Both date kinds take presets, and every range may leave one end open:
+`price=500..`, `received=..2026-11-30`. `required: <value>` makes a field
+mandatory, such as the time range of a log: it is always active and returns
+to that value when cleared. A list with one fixed order declares
+`sort: { fixed: { field, direction, label } }` and has no `sort` parameter.
+
+- `parse` never throws for URL input. It drops invalid, unknown, duplicate,
+  and too long parts and lists them in `issues` with a stable `code`
+  (`invalid`, `unknown`, `duplicate`, `too_long`); the page words them.
+  Parameters named in `pageParams` and those starting with `_` are not
+  reported.
+- `serialize` writes `view`, the fields in declaration order, `q`, `sort`,
+  and `group`, and omits defaults, so equal states give equal URLs. Pass the
+  current parameters as `base` to keep the page's own ones.
+- `set`, `clear`, and `reset` change one statement or return the defaults.
+
+**The application filters and stores views itself.** `@k2b/ui` neither
+filters nor stores. The page loader turns the parsed state into its own SQL
+with its own access checks, counts what it shows, and resolves lookup names.
+Saved views are `{ key, label, query }`, where `query` is the serialized
+state. The `ViewStore` type describes a store; the application implements it
+in a cookie, in its own table per person or for everyone, or not at all, and
+its server checks every write.
 
 ## Search server-rendered lists
 
