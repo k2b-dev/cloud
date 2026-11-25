@@ -2731,13 +2731,14 @@
 .k2-ui .k2-notice[data-tone="note"] {
   --k2-notice-bg: var(--k2-note-tint);
 }
-.k2-ui .k2-notice[data-tone="ai"]:not([data-open]) .k2-notice-text {
-  max-height: 4lh;
+.k2-ui .k2-notice:is([data-tone="ai"], [data-tone="note"]):not([data-open]) .k2-notice-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   overflow: hidden;
 }
 .k2-ui .k2-notice[data-tone="note"]:not([data-open]) .k2-notice-text {
-  max-height: 8lh;
-  overflow: hidden;
+  -webkit-line-clamp: 8;
 }
 .k2-ui .k2-notice-more {
   all: unset;
@@ -2745,13 +2746,13 @@
   justify-self: end;
   height: 20px;
   margin-top: -20px;
-  padding-left: 32px;
+  padding-left: 48px;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
   text-decoration: underline;
   text-underline-offset: 2px;
-  background: linear-gradient(90deg, transparent, var(--k2-notice-bg) 24px);
+  background: linear-gradient(90deg, transparent, var(--k2-notice-bg) 40px);
   cursor: default;
 }
 .k2-ui .k2-notice[data-title] .k2-notice-more {
