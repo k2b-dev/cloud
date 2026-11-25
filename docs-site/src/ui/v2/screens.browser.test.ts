@@ -66,6 +66,9 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
       facts: [".k2-facts", "1016,499 359x200"],
+      // the rail of the shell beside the app: its logo and the open app (Kunden)
+      railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
+      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
@@ -87,6 +90,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       // the inline facts with their end: the part is the line around the list
       facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
       folded: [".k2-group[data-folded]", "270,897 1085x58"],
+      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
       // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
@@ -363,4 +367,51 @@ describe("v2 demo screens keep the mockup", () => {
         await page.close();
       }
     }, 30_000);
+
+  // Between 768 and 1440 px the identity in the record's head never runs under the head's actions, and its name stays
+  // in sight: the identifiers give way first, then the name is cut with "…" (akte.html at 1024 px cuts the actions
+  // instead). A long name is set in the page, so the test sees the worst case of real data.
+  for (const name of ["record", "deliveries"] as const)
+    for (const width of [1024, 760] as const)
+      for (const long of [false, true])
+        test(`${name} at ${width} px${long ? " with a long name" : ""}: the head's name stays in sight beside its actions`, async () => {
+          const page = await show(name, width);
+          try {
+            if (long)
+              await page.evaluate(() => {
+                document.querySelector(".k2-record-name")!.textContent =
+                  "Ottilie Wilhelmine Brandner-Maibach, Antiquitäten und Nachlässe aus Oberschöneweide";
+              });
+            const found = await page.evaluate(() => {
+              const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
+              const box = bar.getBoundingClientRect();
+              const start = bar.querySelector(".k2-bar-start")!.getBoundingClientRect();
+              const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+              const inside = (selector: string) => {
+                const r = bar.querySelector(selector)!.getBoundingClientRect();
+                return (
+                  r.width > 40 * (selector === ".k2-av" ? 0 : 1) &&
+                  r.left >= start.left - 0.5 &&
+                  r.right <= start.right + 0.5 &&
+                  r.top >= box.top &&
+                  r.bottom <= box.bottom
+                );
+              };
+              // the newest entries of the record's main column (400 px at 1024) stand one under the other, so their text
+              // keeps whole lines instead of breaking after every word
+              const digest = document.querySelector(".k2-digest-text")?.getBoundingClientRect().width ?? null;
+              return {
+                apart: start.right <= end.left + 0.5,
+                actions: end.right <= box.right + 0.5,
+                avatar: inside(".k2-av"),
+                name: inside(".k2-record-name"),
+                digest,
+              };
+            });
+            expect(found).toMatchObject({ apart: true, actions: true, avatar: true, name: true });
+            if (name === "record" && width === 1024) expect(found.digest).toBeGreaterThan(300);
+          } finally {
+            await page.close();
+          }
+        }, 30_000);
 });

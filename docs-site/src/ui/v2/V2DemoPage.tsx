@@ -1,6 +1,7 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
 import KeysScreen from "./KeysScreen.island";
+import MailSelectScreen from "./MailSelectScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
@@ -17,8 +18,16 @@ export type V2Screen = {
   app?: string;
   /** The platform's bar on the phone, as the mockup draws it: the app with its switcher, or the way back to a list. */
   phone: { app: string } | { back: string };
+  /** The rail of the Cloud shell beside the app on wider screens, as the mockup draws it: its apps and the open one. */
+  rail?: { apps: readonly string[]; current: string };
   render: () => JSX.Element;
 };
+
+/** The apps in the rail of the Kundenakte mockup (akte.html), Kunden open. */
+const kundenRail = {
+  apps: ["home", "users", "file-invoice", "building-bank", "package", "id-badge-2", "user-circle"],
+  current: "users",
+} as const;
 
 export const v2Screens = {
   mail: {
@@ -39,12 +48,22 @@ export const v2Screens = {
     phone: { app: "Mail" },
     render: () => <MailScreen open={false} />,
   },
+  "mail-select": {
+    title: "Mail · Auswahl",
+    description:
+      "The same inbox with two messages selected: every row has its box in the lead, named by its sender, a selected row is blue, and the status row is the bar of what can be done with them. On the phone the list stays the page.",
+    mockup: "tabelle-grids.html (selection), mail.html",
+    app: "#0f766e",
+    phone: { app: "Mail" },
+    render: () => <MailSelectScreen />,
+  },
   record: {
     title: "Kundenakte · Überblick",
     description:
       "One customer record of Warenfluss: the identity in the head, tabs, a pinned note, three statements, what is due, the latest deliveries, the contact history and the info column with its map.",
     mockup: "akte.html",
     phone: { back: "Kunden" },
+    rail: kundenRail,
     render: () => <RecordScreen />,
   },
   deliveries: {
@@ -53,6 +72,7 @@ export const v2Screens = {
       "The tab Einlieferungen of the same record: every delivery in its own framed group with a tinted head and no line inside; the latest two open with their way, run-out days and returns, the older ones folded.",
     mockup: "akte-einlieferungen.html",
     phone: { back: "Kunden" },
+    rail: kundenRail,
     render: () => <DeliveriesScreen />,
   },
   table: {
@@ -134,6 +154,30 @@ export const PhoneBar = (props: V2Screen["phone"]) => (
 );
 
 /**
+ * The rail of the Cloud shell beside the app (56 px), drawn as the mockup has it: the logo, the apps with the open one
+ * marked, search and help at the foot. A picture of the shell, not part of v2, so assistive technology skips it.
+ */
+export const RailPicture = (props: NonNullable<V2Screen["rail"]>) => (
+  <div class="ui-v2-rail" aria-hidden="true">
+    <span class="ui-v2-rail__logo">C</span>
+    <For each={props.apps}>
+      {(app) => (
+        <span class="ui-v2-rail__app" data-current={app === props.current ? "" : undefined}>
+          <i class={`ti ti-${app}`} />
+        </span>
+      )}
+    </For>
+    <span class="ui-v2-rail__fill" />
+    <span class="ui-v2-rail__app">
+      <i class="ti ti-search" />
+    </span>
+    <span class="ui-v2-rail__app">
+      <i class="ti ti-help" />
+    </span>
+  </div>
+);
+
+/**
  * A screen on a page of its own, framed like the Cloud shell of the mockup (rail 56 px, the app card inset 8 px; the
  * phone bar 52 px), so it is measured at 1440 and 390 px exactly like the mockup. The frame is Fibel's, not part of v2.
  */
@@ -142,6 +186,7 @@ export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   return (
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
+      <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
       <div class="ui-v2-screen__card">{screen.render()}</div>
       <V2Inspect />
     </div>
