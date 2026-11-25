@@ -15,7 +15,8 @@ import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
-import { type MenuEntry, MenuTab } from "./menu";
+import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -46,6 +47,11 @@ export type NavItem = NavEntryBase &
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
         onNavigate?: OnNavigate;
         onClick?: () => void;
+        /**
+         * The deeds of this entry, such as "Anheften" and "Ausblenden" of a mailbox: a "…" at its end that shows
+         * under the pointer and with the keyboard's focus, always reached by Tab.
+         */
+        menu?: readonly MenuEntry[];
         items?: undefined;
       }
     | {
@@ -55,10 +61,19 @@ export type NavItem = NavEntryBase &
         href?: undefined;
         onNavigate?: undefined;
         onClick?: undefined;
+        menu?: undefined;
       }
   );
 
-export type NavGroup = { label?: string; action?: Action; items: readonly NavItem[] };
+export type NavGroup = {
+  label?: string;
+  /**
+   * The group's one deed as a quiet icon button, or, with `items`, a "…" with the group's deeds, such as "Neues
+   * Postfach" and "Gelöschte Postfächer"; `label` names the button.
+   */
+  action?: Action | { label: string; items: readonly MenuEntry[] };
+  items: readonly NavItem[];
+};
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
@@ -89,6 +104,23 @@ const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
 );
 
 const NavPlace = (props: { item: NavItem; level: number }) => (
+  <Show when={props.item.menu} fallback={<NavLink item={props.item} level={props.level} />}>
+    {(menu) => <NavWithMenu item={props.item} level={props.level} menu={menu()} />}
+  </Show>
+);
+
+/** An entry with its own deeds: the entry and its "…" side by side, never one inside the other. */
+const NavWithMenu = (props: { item: NavItem; level: number; menu: readonly MenuEntry[] }) => {
+  const t = useOverlayMessages();
+  return (
+    <div class="k2-ni-row">
+      <NavLink item={props.item} level={props.level} />
+      <Menu label={t().actionsFor({ name: props.item.label })} items={props.menu} />
+    </div>
+  );
+};
+
+const NavLink = (props: { item: NavItem; level: number }) => (
   <Dynamic
     component={linkOr(props.item.href, "button")}
     type={props.item.href !== undefined ? undefined : "button"}
@@ -139,6 +171,9 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
   );
 };
 
+const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
+const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
+
 /** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
 export const Nav = (props: NavProps) => (
   <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
@@ -152,7 +187,8 @@ export const Nav = (props: NavProps) => (
           <Show when={group.label}>
             <div class="k2-nav-label">
               {group.label}
-              <Show when={group.action}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              <Show when={groupMenu(group.action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+              <Show when={groupDeed(group.action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
           <For each={group.items}>{(item) => <NavEntry item={item} />}</For>

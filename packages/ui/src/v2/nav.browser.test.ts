@@ -64,7 +64,7 @@ test("a fold opens and closes by the pointer and by Enter and Space; its entries
     const group = page.getByRole("group", { name: "Mehr" });
     expect(await group.getAttribute("id")).toBe(await more.getAttribute("aria-controls"));
     expect(await names(page)).toEqual([
-      "Kontakt",
+      "Kontakt7",
       "Posteingang",
       "Gesendet",
       "Mehr",
@@ -79,7 +79,7 @@ test("a fold opens and closes by the pointer and by Enter and Space; its entries
     await settled(page);
     const left = (name: string) =>
       page.evaluate((text) => {
-        const item = [...document.querySelectorAll(".k2-ni")].find((each) => each.textContent?.trim() === text)!;
+        const item = [...document.querySelectorAll(".k2-ni")].find((each) => each.querySelector(".k2-ni-name")?.textContent === text)!;
         return Math.round(item.querySelector(".k2-icon")!.getBoundingClientRect().left);
       }, name);
     // a fold stands where its level stands; its entries 24 px further in
@@ -104,5 +104,67 @@ test("an entry inside a closed fold that becomes the open one shows itself", asy
     await page.getByRole("button", { name: "Spam" }).waitFor();
     expect(await page.getByRole("button", { name: "Spam" }).getAttribute("aria-current")).toBe("page");
     expect(await fold(page, "Mehr").getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+const deeds = (page: Page) => page.evaluate(() => window.__navDeeds ?? []);
+const closedMenu = (page: Page) => page.waitForFunction(() => !document.querySelector(".k2-menu"));
+
+test("a group's '…' holds the group's deeds; a choice runs and closes the menu", async () => {
+  await withPage(async (page) => {
+    const more = page.getByRole("button", { name: "Postfächer verwalten" });
+    expect(await more.getAttribute("aria-haspopup")).toBe("menu");
+    await more.click();
+    await page.locator(".k2-menu").waitFor();
+    expect(await page.getByRole("menuitem").allTextContents()).toEqual(["Neues Postfach", "Gelöschte Postfächer"]);
+    await page.getByRole("menuitem", { name: "Gelöschte Postfächer" }).click();
+    await closedMenu(page);
+    expect(await deeds(page)).toEqual(["deleted-mailboxes"]);
+  });
+});
+
+test("an entry's '…' shows under the pointer and with the focus, over its count; Tab reaches it, nothing moves", async () => {
+  await withPage(async (page) => {
+    const entry = page.getByRole("button", { name: /^Kontakt/ });
+    const more = page.getByRole("button", { name: "Aktionen für Kontakt" });
+    // never a control inside a control
+    expect(await page.locator(".k2-ni .k2-btn, .k2-ni button").count()).toBe(0);
+    const look = () =>
+      page.evaluate(() => {
+        const row = document.querySelector(".k2-ni-row")!;
+        const button = row.querySelector<HTMLElement>(":scope > .k2-btn")!;
+        const count = row.querySelector(".k2-ni-count");
+        const box = row.getBoundingClientRect();
+        return {
+          more: getComputedStyle(button).opacity,
+          count: count ? getComputedStyle(count).display : "none",
+          row: [Math.round(box.top), Math.round(box.height), Math.round(box.width)],
+        };
+      });
+    await page.mouse.move(1000, 800);
+    await settled(page);
+    const resting = await look();
+    expect(resting.more).toBe("0");
+    expect(resting.count).not.toBe("none");
+    await entry.hover();
+    await settled(page);
+    expect(await look()).toEqual({ ...resting, more: "1", count: "none" });
+    // the keyboard: Tab from the entry reaches its "…", which shows; Enter opens its menu
+    await page.mouse.move(1000, 800);
+    await entry.focus();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Aktionen für Kontakt");
+    await settled(page);
+    expect((await look()).more).toBe("1");
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-menu").waitFor();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await closedMenu(page);
+    expect(await deeds(page)).toEqual(["hide:kontakt"]);
+    // the entry itself still opens
+    await entry.click();
+    expect(await deeds(page)).toEqual(["hide:kontakt", "open:kontakt"]);
+    expect(await more.isVisible()).toBe(true);
   });
 });

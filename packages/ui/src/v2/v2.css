@@ -2157,6 +2157,40 @@
 .k2-ui .k2-ni[data-level="3"] {
   padding-left: 56px;
 }
+/* An entry with its own deeds: its "…" stands over the end of the entry, where the count is. It shows under the pointer,
+   while the entry or the "…" has the focus and while its menu is open; the count gives way meanwhile and the name
+   ends before it. Tab always reaches it. Nothing moves. Without a pointer that hovers it always shows. */
+.k2-ui .k2-ni-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-ni-row > .k2-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.k2-ui .k2-ni-row:is(:hover, :focus-within) > .k2-btn,
+.k2-ui .k2-ni-row > .k2-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+.k2-ui .k2-ni-row:is(:hover, :focus-within, :has(> .k2-btn[aria-expanded="true"])) > .k2-ni {
+  padding-right: 32px;
+}
+.k2-ui .k2-ni-row:is(:hover, :focus-within, :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
+  display: none;
+}
+@media (hover: none) {
+  .k2-ui .k2-ni-row > .k2-btn {
+    opacity: 1;
+  }
+  .k2-ui .k2-ni-row > .k2-ni {
+    padding-right: 32px;
+  }
+}
 /* the entries of a folding entry stand in the nav's column as if they had no box of their own */
 .k2-ui .k2-nav-fold {
   display: contents;

@@ -261,7 +261,11 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+  A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
+  with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
+  `menu` (its deeds, such as pin and hide: a "…" over its count that shows
+  under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
   problem there). An item with `items` instead of `icon` and a link folds
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's

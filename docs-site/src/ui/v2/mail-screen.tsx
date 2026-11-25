@@ -169,9 +169,22 @@ export const MailScreen = (props: { open?: boolean }) => (
         groups={[
           {
             label: "Postfächer",
-            action: { label: "Postfächer verwalten", icon: "dots" },
+            action: {
+              label: "Postfächer verwalten",
+              items: [
+                { label: "Neues Postfach", icon: "mail-plus" },
+                { label: "Gelöschte Postfächer", icon: "trash" },
+              ],
+            },
             items: [
-              { label: "Kontakt", icon: "flag" },
+              {
+                label: "Kontakt",
+                icon: "flag",
+                menu: [
+                  { label: "Lösen", icon: "pinned-off" },
+                  { label: "Ausblenden", icon: "eye-off" },
+                ],
+              },
               { label: "Posteingang", icon: "inbox", nested: true, current: true, count: 7 },
               { label: "Entwürfe", icon: "file-pencil", nested: true, count: 2 },
               { label: "Postausgang", icon: "calendar-time", nested: true, count: 1 },
