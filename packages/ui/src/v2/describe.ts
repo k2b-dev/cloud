@@ -457,15 +457,39 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
 
   for (const child of root.matches("[data-k2-part]") ? [root] : [...root.children]) visit(child, 0);
 
-  const primaries = [...root.querySelectorAll("[data-k2-part='Button'][data-variant='primary'], .k2-fab")].filter((button) =>
-    options.layout ? !hidden(button) : !button.classList.contains("k2-fab"),
-  );
-  if (options.layout && !primaries.length && root.querySelector("[data-k2-part='Button'][data-variant='primary']"))
+  // One primary action per surface: the page, and each open dialog or sheet above it, which has its own (such as
+  // "Erstellen" in a dialog over a page whose head creates the thing).
+  const surfaces = "dialog, [role='dialog'], [role='alertdialog'], [data-k2-part='Dialog']";
+  const surfaceOf = (element: Element) => {
+    const surface = element.closest(surfaces);
+    return surface && root.contains(surface) ? surface : root;
+  };
+  const surfaceName = (surface: Element) => {
+    const labelledBy = surface.getAttribute("aria-labelledby");
+    const title =
+      surface.getAttribute("aria-label") ??
+      (labelledBy ? surface.ownerDocument.getElementById(labelledBy)?.textContent : undefined) ??
+      surface.querySelector(".k2-dialog-title")?.textContent;
+    return `dialog${title ? ` ${quote(title, 30)}` : ""}`;
+  };
+  const allPrimaries = [...root.querySelectorAll("[data-k2-part='Button'][data-variant='primary'], .k2-fab")];
+  const shownPrimaries = allPrimaries.filter((button) => (options.layout ? !hidden(button) : !button.classList.contains("k2-fab")));
+  const bySurface = new Map<Element, Element[]>([[root, []]]);
+  for (const button of shownPrimaries) {
+    const surface = surfaceOf(button);
+    bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
+  }
+  if (
+    options.layout &&
+    !bySurface.get(root)!.length &&
+    allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
+  )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
-  if (primaries.length > 1)
-    problems.push(
-      `${primaries.length} primary buttons (${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per page; make the others secondary`,
-    );
+  for (const [surface, primaries] of bySurface)
+    if (primaries.length > 1)
+      problems.push(
+        `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
+      );
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {
