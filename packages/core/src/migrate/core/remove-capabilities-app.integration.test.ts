@@ -63,14 +63,14 @@ suiteFor(
       await db`INSERT INTO auth.access(id, user_id) VALUES (${grantId}::uuid, ${userId}::uuid), (${railGrantId}::uuid, ${userId}::uuid)`;
       await db`INSERT INTO auth.app_access(app_id, access_id) VALUES (${appId}, ${grantId}::uuid)`;
       await db`INSERT INTO auth.rail_shortcuts(id, position, shortcut) VALUES (${appId}, 0,
-        ${JSON.stringify({ id: appId, kind: "app", appId })}::jsonb)`;
+        ${JSON.stringify({ id: appId, kind: "app", appId })}::text::jsonb)`;
       await db`INSERT INTO auth.rail_shortcut_access(shortcut_id, access_id) VALUES (${appId}, ${railGrantId}::uuid)`;
       await db`INSERT INTO auth.rail_preferences(user_id, revision, visibility, shortcuts)
-        VALUES (${userId}::uuid, 1, ${JSON.stringify({ [appId]: false })}::jsonb,
+        VALUES (${userId}::uuid, 1, ${JSON.stringify({ [appId]: false })}::text::jsonb,
           ${JSON.stringify([
             { id: appId, kind: "app", appId },
             { id: "link", kind: "link", href: "/notes", title: "Notes", icon: "ti ti-link" },
-          ])}::jsonb)`;
+          ])}::text::jsonb)`;
       await db`INSERT INTO auth.panel_context_consent(user_id, provider, allowed, revision)
         VALUES (${userId}::uuid, ${appId}, true, 1)`;
       await db`INSERT INTO auth.file_chooser_places(user_id, app_id) VALUES (${userId}::uuid, ${appId})`;
@@ -116,7 +116,7 @@ suiteFor(
       grants: [retired, survivor].map((appId) => ({ appId, capabilityId: "search", kind: "query", fixedInput: {} })),
     };
     await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy)
-      VALUES ('user', ${users[1]!}::uuid, 'mixed-workload', 'old.workload', 'mixed', ${JSON.stringify(mixedPolicy)}::jsonb)`;
+      VALUES ('user', ${users[1]!}::uuid, 'mixed-workload', 'old.workload', 'mixed', ${JSON.stringify(mixedPolicy)}::text::jsonb)`;
     const exclusivePolicy = {
       ...mixedPolicy,
       apps: [retired],
@@ -124,7 +124,7 @@ suiteFor(
       grants: mixedPolicy.grants.filter((grant) => grant.appId === retired),
     };
     await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy)
-      VALUES ('user', ${users[1]!}::uuid, 'exclusive-workload', 'old.workload', 'exclusive', ${JSON.stringify(exclusivePolicy)}::jsonb)`;
+      VALUES ('user', ${users[1]!}::uuid, 'exclusive-workload', 'old.workload', 'exclusive', ${JSON.stringify(exclusivePolicy)}::text::jsonb)`;
 
     // Snapshot the real schema's app-id keyed rows, rather than a mirrored list of DELETE statements.
     const tables = await db<{ schema: string; name: string }[]>`SELECT c.table_schema AS schema, c.table_name AS name
