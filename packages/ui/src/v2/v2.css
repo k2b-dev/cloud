@@ -2276,29 +2276,30 @@
   height: 16px;
   border: 0;
 }
-/* Tabs that share a head with actions give way to them: they scroll sideways and fade out at the end while more tabs
-   follow. The scroller reaches over the bar's line, so the mark of the open tab still stands on it. */
+/* Tabs that share a head with actions give way to them, and a tab is never cut: the tabs stand in one line that wraps
+   below what shows, so a tab without room hides whole (the script then names it in the menu of further views). The
+   tab with a menu stands after that line and always stays whole. The tabs reach over the bar's line, so the mark of
+   the open tab still stands on it. */
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
 }
 .k2-ui .k2-tabs-nav {
   display: flex;
+  gap: 24px;
   align-self: stretch;
   min-width: 0;
   margin-bottom: -1px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 0.8 * var(--k2-fade)), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 0.8 * var(--k2-fade)), transparent);
-  animation: k2-fade-end linear both;
-  animation-timeline: scroll(self inline);
 }
-.k2-ui .k2-tabs-nav::-webkit-scrollbar {
-  display: none;
+.k2-ui .k2-tabs-nav > .k2-tab {
+  flex: none;
+  margin-bottom: 0;
 }
 .k2-ui .k2-tabs-nav > .k2-tabs > .k2-tab {
   margin-bottom: 0;
+  height: 100%;
+}
+.k2-ui .k2-tabs-nav > .k2-tabs > .k2-tab[data-overflow] {
+  visibility: hidden;
 }
 .k2-ui .k2-ni {
   display: flex;
@@ -2409,15 +2410,15 @@
   margin-bottom: 0;
   padding: 0 var(--k2-edge);
   box-shadow: inset 0 -1px 0 var(--k2-line);
-  -webkit-mask-image: none;
-  mask-image: none;
-  animation: none;
 }
 .k2-ui .k2-tabs {
   display: flex;
-  gap: 24px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  column-gap: 24px;
   align-self: stretch;
   min-width: 0;
+  overflow: hidden;
 }
 .k2-ui .k2-tab {
   display: flex;
@@ -3252,8 +3253,9 @@
     display: none;
   }
   /* tabs that share a head with actions stand closer */
+  .k2-ui .k2-bar-start > .k2-tabs-nav,
   .k2-ui .k2-bar-start > .k2-tabs-nav > .k2-tabs {
-    gap: 20px;
+    column-gap: 20px;
   }
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;

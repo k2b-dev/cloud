@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, Text, useToast, Workspace } from "../src/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
 // panel and a hint in the same head, a context menu and a "…" on rows, a tab "Weitere" that opens the views without a
@@ -71,9 +71,15 @@ export function Demo() {
       head={
         <Bar
           start={
-            <Text type="row" weight="strong">
-              Aufträge
-            </Text>
+            // the places of the app as tabs without a menu tab: what has no room goes into a tab "Mehr"
+            <Tabs
+              label="Bereiche"
+              items={["Aufträge", "Angebote", "Rechnungen", "Lieferscheine", "Reklamationen"].map((name, index) => ({
+                label: name,
+                current: index === 0,
+                onClick: did(`area:${name.toLowerCase()}`),
+              }))}
+            />
           }
           end={
             <>
@@ -144,6 +150,8 @@ export function Demo() {
             items={[
               { label: "Offen", current: true, onClick: did("view:offen") },
               { label: "Erledigt", onClick: did("view:erledigt") },
+              { label: "In Arbeit", count: 4, onClick: did("view:in-arbeit") },
+              { label: "Wartet auf Material", count: 2, onClick: did("view:material") },
               {
                 label: "Weitere",
                 count: `+${views().length}`,

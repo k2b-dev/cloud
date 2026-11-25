@@ -40,7 +40,16 @@ export default function Navigation(props: NavigationProps) {
           };
           const content = () => (
             <>
-              <Show when={item().icon}>
+              {/* a row without a symbol keeps the symbol's place where rows beside it have one, so all words start on
+                  one edge (a fold "Mehr" between folders) */}
+              <Show
+                when={item().icon}
+                fallback={
+                  <Show when={rows.items.some((entry) => entry.icon)}>
+                    <span class="k2b-navigation__icon-space" aria-hidden="true" />
+                  </Show>
+                }
+              >
                 <i class={item().icon} {...iconAccessibility(item().iconLabel)} />
               </Show>
               <span class="k2b-navigation__copy">

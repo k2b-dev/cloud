@@ -129,7 +129,7 @@ export const mailReaderMessages = i18n.define({
       createTask: "Aufgabe erstellen",
       createEvent: "Termin erstellen",
       linkExisting: "Vorhandenes verknüpfen …",
-      unlinkNamed: ({ name }) => `Verknüpfung mit ${name} entfernen`,
+      unlinkNamed: ({ name }) => `Verknüpfung entfernen: ${name}`,
       showActivity: "Aktivität anzeigen",
       activityTitle: "Aktivität",
       noActivity: "Noch keine Aktivität",
