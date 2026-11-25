@@ -217,6 +217,17 @@ test("drag onto: releasing outside every target changes nothing", async () => {
   });
 });
 
+test("drag onto: Enter or Space on another control inside an item stays that control's, nothing is lifted", async () => {
+  await withPage("board", async (page) => {
+    const status = await page.getByTestId("board-status").textContent();
+    await page.getByTestId("open-m1").focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    expect(await page.getByTestId("board-status").textContent()).toBe(status);
+    expect(await page.locator("[data-drop-target][data-over]").count()).toBe(0);
+  });
+});
+
 test("drag onto with the keyboard: Space lifts, arrows choose the target, Enter drops, focus moves on; Escape cancels", async () => {
   await withPage("board", async (page) => {
     const second = (await folderOrder(page))[1];
@@ -256,8 +267,8 @@ test.skipIf(webkit)(
         await touch("touchEnd", from.x, from.y - 72);
         expect(await mailIds(page)).toEqual(ids);
         await touch("touchStart", from.x, from.y);
-        // fixed wait: the hold that lifts the item is a duration (400 ms) by design.
-        await page.waitForTimeout(550);
+        // Core's bindHold marks the item once the hold has lifted it.
+        expect(await until(page, `document.querySelector('[data-mail="${ids[0]}"][data-held]')`)).toBe(true);
         for (let step = 1; step <= 12; step++)
           await touch("touchMove", from.x + ((to.x - from.x) * step) / 12, from.y + ((to.y - from.y) * step) / 12);
         expect(await until(page, `document.querySelectorAll('[data-drop-target="invoices"][data-over]').length === 1`)).toBe(true);

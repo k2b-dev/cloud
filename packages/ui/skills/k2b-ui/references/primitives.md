@@ -3,8 +3,8 @@
 Every part marks its root with `data-k2-part="<Name>"`; that name is what
 `describeV2` prints. No part takes `class`, `style`, `size`, `gap`,
 `padding` or `density`. Shared types: `Action = { label, icon?, href?,
-onNavigate?, onClick?, meta?, forward? }`, `Width = { min, default }` (px), `Status =
-"ok" | "warn" | "bad"`, `Person = { name, initials?, color? }`. Icons are
+onNavigate?, onClick?, meta?, forward?, disabled? }`, `Width = { min, default }` (px), `Status =
+"ok" | "warn" | "bad"`, `Person = { name, initials?, color?, image? }` (`image` is the address of a picture). Icons are
 Tabler names without `ti-` (`plus`, `package`).
 
 **Links that open in place.** Every `href` stays a real `<a href>`: it works
@@ -170,7 +170,11 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
 numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
 never widens it, grip in the head), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone). The last column takes the rest. Chips,
+lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+`{ href }` to the page sorted so, with `onNavigate` to open it in place, or
+`{ onSort }` for a deed). The phone rows have no heads: a sort given by
+`href` stays in the address there; offer another order on the phone in the
+page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 
@@ -179,7 +183,8 @@ for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
-direction }` (an arrow in that head), `phone(row) => { lines, avatar?, time?
+direction }` (the column sorted now: an arrow and darker words in its head,
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?
 }` (on the phone each row becomes a two-line row instead).
 
 Give every table whose column widths add up to more than a phone (about
@@ -193,8 +198,13 @@ no rows and nothing loading, the empty state stands in place of the table.
 
 ### Facts
 
-`items: { label, value, hint?, copy? }[]`: label 12 quiet, value 13, 32 px
-per row; `copy` adds a copy button with that text. `inline` puts all on one
+`items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
+per row; the label column is as wide as the longest label of that list
+(80–160 px), so two `Facts` lists may start their values at different
+edges.
+`copy` adds a copy button with that text; `mono` shows a value read sign by
+sign (a token, a key, an ID) in monospace, broken at any sign and selected
+whole by one click. `inline` puts all on one
 line with `end` (such as a print button).
 
 ### Text
@@ -221,7 +231,10 @@ lines instead of cutting a thing.
 ### Icon, Avatar, Chip, Progress
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
-- `Avatar`: a `Person`; the place sets the size.
+- `Avatar`: a `Person`; the place sets the size. With `image` the picture
+  lies over the initials: while it loads and when it fails the initials
+  show, and nothing moves. Beside the name (`RecordHead`, a `Button`) the
+  avatar is decoration and says nothing a second time.
 - `Chip`: exactly one kind: `status` (dot + word), `yours` (+ `dot` for
   "in Arbeit"), `tag` (+ `color`), `amount` (`out` or `in`), `ai`, or
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
@@ -234,7 +247,10 @@ lines instead of cutting a thing.
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled`, `type`, `keep` (stays
+  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  turning sign over the label while its deed runs, such as a save: the
+  width, the look and the focus stay, a second press and a second sending
+  of the form do nothing), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
@@ -250,14 +266,15 @@ lines instead of cutting a thing.
   `onKeyDown` (Enter to search, Escape to clear; while
   `event.isComposing`, Enter belongs to the input method and must not
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
-  icon button, such as the filter of a search).
+  icon button, such as the filter of a search), `disabled` (a grey well
+  that takes no input; the browser leaves it out of a sent form).
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
 - `DateInput`: `value`, `onInput`, `placeholder`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
-  `onChange`.
+  `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
-  `label`, `onChange`. With a `label` and no `Field` around it, it shows
+  `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
   its question.
 
@@ -283,7 +300,8 @@ lines instead of cutting a thing.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
-  `actions` (≤ 2 text buttons), children (the sentence and its
+  `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
+  now, and the sentence says why), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,

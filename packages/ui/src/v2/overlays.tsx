@@ -1,6 +1,7 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { createQuestion, useDialog } from "./behavior/overlays";
+import { createQuestion, type Question, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
 
 // The overlays of v2: the behaviour (focus, Escape, placement, keys, the sheet on the phone) comes from the behaviour
@@ -18,8 +19,9 @@ export type DialogProps = {
   /** Fields, a notice, text: the content scrolls when it is higher than the dialog. */
   children: JSX.Element;
   /**
-   * `false`: a press outside and a swipe on the phone's sheet do not close it, so nothing in it is lost by a stray
-   * touch (a secret shown once); Escape, the close button and the buttons of the foot still do. `true` by default.
+   * `false`: a press outside, a swipe on the phone's sheet and Android's back gesture do not close it, so nothing in
+   * it is lost by a stray touch (a secret shown once); Escape, the close button and the buttons of the foot still do.
+   * `true` by default.
    */
   dismissible?: boolean;
 };
@@ -31,9 +33,12 @@ const focusable =
 /** The phone of v2: every width below 768 px, the one query of v2.css for the phone layout. */
 const phoneQuery = "not all and (min-width: 768px)";
 
-/** Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. */
+/**
+ * Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. In the browser it is known
+ * from the start, so a dialog on the phone is a sheet from its first render on (and core prepares the sheet early).
+ */
 const usePhone = () => {
-  const [phone, setPhone] = createSignal(false);
+  const [phone, setPhone] = createSignal(!isServer && matchMedia(phoneQuery).matches);
   onMount(() => {
     const media = matchMedia(phoneQuery);
     const update = () => setPhone(media.matches);
@@ -65,7 +70,15 @@ export const Dialog = (props: DialogProps) => {
   }));
   let body: HTMLElement | undefined;
   let foot: HTMLDivElement | undefined;
-  const firstFocus = () => body?.querySelector<HTMLElement>(focusable) ?? foot?.querySelector<HTMLElement>(focusable) ?? null;
+  // On the phone's sheet a text field would bring up the keyboard over the sheet at once: there the first control that
+  // is no text field takes the focus, else the first action of the foot.
+  const typed = (element: HTMLElement) =>
+    element.matches(
+      "textarea, input:not([type]), input:is([type='text'], [type='search'], [type='email'], [type='url'], [type='tel'], [type='password'], [type='number'])",
+    );
+  const first = (part: HTMLElement | undefined) =>
+    [...(part?.querySelectorAll<HTMLElement>(focusable) ?? [])].find((element) => !phone() || !typed(element));
+  const firstFocus = () => first(body) ?? first(foot) ?? null;
   const [more, setMore] = createSignal<"above" | "below" | "both">();
   const measure = (body: HTMLElement) => {
     const above = body.scrollTop > 0;
@@ -148,48 +161,68 @@ export type ConfirmOptions = {
   cancel?: string;
 };
 
-const question = createQuestion<ConfirmOptions>();
-
 /**
  * Asks before something happens that cannot be taken back, and resolves `true` when the person agrees:
  * `if (await Dialog.confirm({ title: "Auftrag verwerfen?", confirm: "Verwerfen" })) discard()`. An alert dialog in
  * the shape of `Dialog`, without a close button: Escape and the other button answer no, focus starts on the other
- * button, a press outside does nothing, and it is never a sheet. `Workspace` renders it, so every v2 page can ask; a
- * page without a Workspace has no one to answer, and the question is answered no at once (with a warning).
+ * button, a press outside does nothing, and it is never a sheet. The first `Workspace` on the page answers, also for
+ * code in another island; without one, the question brings its own dialog to the end of the page until it is
+ * answered. A question whose dialog leaves the page while it asks is answered no.
  */
 export const confirm = (options: ConfirmOptions): Promise<boolean> => {
-  if (hosts().length === 0) {
-    console.warn("Dialog.confirm: no v2 Workspace on the page renders the dialog that answers; the answer is no.");
-    return Promise.resolve(false);
-  }
-  return question.ask(options);
+  const page = pageAnswer();
+  if (page) return page(options);
+  // no Workspace answers: a dialog of its own, in a v2 scope of its own, for as long as the question is open
+  const question = createQuestion<ConfirmOptions>();
+  const host = document.createElement("div");
+  host.className = "k2-ui";
+  host.style.display = "contents";
+  document.body.append(host);
+  const stop = render(() => <ConfirmSurface question={question} />, host);
+  return question.ask(options).finally(() => {
+    stop();
+    host.remove();
+  });
 };
 
-// The mounted Workspaces that can answer `confirm`, in the order they came; the first one answers. A signal at module
-// level, as the question is: the list only changes in the browser, after a Workspace mounted.
-const [hosts, setHosts] = createSignal<readonly object[]>([]);
+type Ask = (options: ConfirmOptions) => Promise<boolean>;
 
 /**
- * The alert dialog that answers `confirm` (internal; every `Workspace` renders it). One question needs one answer, so
- * on a page with more than one Workspace the first one mounted answers; when it leaves, the next one takes over. It
- * shows nothing until it asks, on the server too, so it never changes what the server sent.
+ * The Workspace that answers is found through the page, not through a module: every island bundles its own copy of
+ * `@k2b/ui`, so a list in this module would not see a Workspace another island renders. Each mounted Workspace puts
+ * its `ask` on its element under this key; its element and attributes stay what the server sent.
  */
-export const ConfirmDialog = () => {
-  const me = {};
-  onMount(() => {
-    setHosts((list) => [...list, me]);
-    onCleanup(() => setHosts((list) => list.filter((host) => host !== me)));
-  });
-  return (
-    <Show when={hosts()[0] === me}>
-      <ConfirmSurface />
-    </Show>
-  );
+const hostKey = Symbol.for("k2b.ui.v2.confirm");
+
+const pageAnswer = (): Ask | undefined => {
+  for (const host of document.querySelectorAll("[data-k2-workspace]")) {
+    const ask: unknown = Reflect.get(host, hostKey);
+    if (typeof ask === "function") return (options) => Promise.resolve(Reflect.apply(ask, undefined, [options])).then(Boolean);
+  }
+  return undefined;
 };
 
-const ConfirmSurface = () => {
+/**
+ * The alert dialog that answers `confirm` (internal; every `Workspace` renders it with its element as the host). Only
+ * the first Workspace on the page is asked, so one question opens one dialog. It shows nothing until it asks, on the
+ * server too, so it never changes what the server sent.
+ */
+export const ConfirmDialog = (props: { host: () => HTMLElement | undefined }) => {
+  const question = createQuestion<ConfirmOptions>();
+  onMount(() => {
+    const host = props.host();
+    if (!host) return;
+    Reflect.set(host, hostKey, question.ask);
+    onCleanup(() => {
+      Reflect.deleteProperty(host, hostKey);
+    });
+  });
+  return <ConfirmSurface question={question} />;
+};
+
+const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
   const t = useUiMessages();
-  const parts = question.useDialog();
+  const parts = props.question.useDialog();
   return (
     <parts.Popup class="k2-dialog" data-k2-part="Dialog" data-alert="" backdrop={{ class: "k2-backdrop" }}>
       <div class="k2-slot" data-slot="head">

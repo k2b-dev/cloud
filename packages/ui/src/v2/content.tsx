@@ -16,6 +16,7 @@ import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
+import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
@@ -121,6 +122,11 @@ export type Fact = {
   hint?: string;
   /** Offers a copy button at the value; the text that is copied. */
   copy?: string;
+  /**
+   * A value to be read sign by sign, such as a token, a key or an ID: monospace, it breaks at any sign instead of
+   * mid-word, and one click selects all of it for copying.
+   */
+  mono?: boolean;
 };
 
 export type FactsProps = {
@@ -131,7 +137,10 @@ export type FactsProps = {
   end?: JSX.Element;
 };
 
-/** Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. */
+/**
+ * Values with their labels: label 12 quiet, value 13, 32 px a row, copy at the value. The label column is as wide as
+ * the longest label, at least 80 px and at most 160 px.
+ */
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
@@ -141,7 +150,7 @@ export const Facts = (props: FactsProps) => {
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
-              <span class="k2-fact-value">
+              <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
                 {item.value}
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
@@ -438,7 +447,19 @@ export type Column<T> = {
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
   drop?: boolean;
+  /**
+   * The rows can be sorted by this column: its head is pressed to sort. Give the address of the page sorted so
+   * (`href`, which reload, back and links keep; with `onNavigate` it opens in place) or a deed (`onSort`). The app
+   * decides the order a press leads to, such as the other direction when the column is the sorted one; the table's
+   * `sort` says which column that is now.
+   */
+  sort?: SortTarget;
 };
+
+/** Where pressing a column head leads: the address of the rows sorted by it, or a deed that sorts them in place. */
+export type SortTarget =
+  | { href: string; onNavigate?: OnNavigate; onSort?: undefined }
+  | { href?: undefined; onNavigate?: undefined; onSort: () => void };
 
 /** Where an entry leads: a page (a real link, also before the page is live) or a deed in place. */
 export type OpenTarget =
@@ -452,7 +473,7 @@ type TableBase<T> = {
   label?: string;
   /** The first column (and the box column) stays while the table scrolls sideways; an edge shows behind it. */
   sticky?: boolean;
-  /** The column the rows are sorted by: an arrow in its head. */
+  /** The column the rows are sorted by now: an arrow in its head and darker words (a column's `sort` makes it pressable). */
   sort?: { column: number; direction: "ascending" | "descending" };
   /** What a row opens, on the desktop and on the phone: its first cell is the link or button. */
   open?: (row: T) => OpenTarget;
@@ -491,6 +512,11 @@ type KeyedTable<T> = {
 type PlainTable = { rowKey?: undefined; select?: undefined; current?: undefined; group?: undefined };
 
 export type TableProps<T> = TableBase<T> & (KeyedTable<T> | PlainTable);
+
+/** The arrow of the sorted column, after its words: up for ascending, down for descending. */
+const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
+  <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
+);
 
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
@@ -654,9 +680,29 @@ export const Table = <T,>(props: TableProps<T>) => {
                         tabindex="0"
                       />
                     </Show>
-                    {column.title}
-                    <Show when={props.sort?.column === index()}>
-                      <Icon name={props.sort?.direction === "descending" ? "arrow-down" : "arrow-up"} />
+                    <Show
+                      when={column.sort}
+                      fallback={
+                        <>
+                          {column.title}
+                          <SortArrow sorted={props.sort?.column === index() ? props.sort.direction : undefined} />
+                        </>
+                      }
+                    >
+                      {(target) => (
+                        // the head itself is the link or button; `aria-sort` on the cell says the order
+                        <Dynamic
+                          component={linkOr(target().href, "button")}
+                          type={target().href === undefined ? "button" : undefined}
+                          href={target().href}
+                          onNavigate={target().href !== undefined ? target().onNavigate : undefined}
+                          onClick={() => target().onSort?.()}
+                          class="k2-th-sort"
+                        >
+                          {column.title}
+                          <SortArrow sorted={props.sort?.column === index() ? props.sort.direction : undefined} />
+                        </Dynamic>
+                      )}
                     </Show>
                   </th>
                 )}
