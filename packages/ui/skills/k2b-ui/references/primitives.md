@@ -320,9 +320,10 @@ lines instead of cutting a thing.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
-  the row never refreshes), `facts: { before?, value?, after? }[]` (give way
-  below 760 px of the row's own width and on the phone, so the filters keep
-  their words; put what must stay in `lead`),
+  the row never refreshes), `facts: { before?, value?, after? }[]` (where
+  they do not fit before the filters, the later ones give way whole, so the
+  filters keep their words; they go on the phone; put what must stay in
+  `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   a `Button variant="ghost" menu`, pressed chips; leave on the phone),
   `selection: { count, actions, clear }` (while rows are selected the row

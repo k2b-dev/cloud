@@ -13,6 +13,8 @@ declare global {
     __k2Loading?: (on: boolean) => void;
     /** Gives the status row more key figures than fit before its controls in a column of 760 to 1024 px. */
     __k2MoreFacts?: () => void;
+    /** Takes the filters away and shortens the lead: a status row with nothing at its end, as Mail's list column. */
+    __k2NoFilters?: () => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -66,6 +68,8 @@ const [loading, setLoading] = createSignal(false);
 window.__k2Loading = setLoading;
 const [more, setMore] = createSignal(false);
 window.__k2MoreFacts = () => setMore(true);
+const [filters, setFilters] = createSignal(true);
+window.__k2NoFilters = () => setFilters(false);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("status-table: #root is missing");
@@ -106,7 +110,7 @@ render(
         label="Protokolle"
         status={
           <StatusRow
-            lead="11 von 11 Einträgen"
+            lead={filters() ? "11 von 11 Einträgen" : "4 neu"}
             loading={loading()}
             facts={[
               { value: 6, after: "Fehler" },
@@ -119,14 +123,16 @@ render(
                 : []),
             ]}
             filters={
-              <>
-                <Button variant="text" icon="arrows-sort">
-                  Neueste zuerst
-                </Button>
-                <Button variant="ghost" icon="stack-2" menu>
-                  Nach Minute
-                </Button>
-              </>
+              filters() ? (
+                <>
+                  <Button variant="text" icon="arrows-sort">
+                    Neueste zuerst
+                  </Button>
+                  <Button variant="ghost" icon="stack-2" menu>
+                    Nach Minute
+                  </Button>
+                </>
+              ) : undefined
             }
           />
         }

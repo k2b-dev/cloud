@@ -270,6 +270,13 @@ for (const width of [1440, 390]) {
       const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
       expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
       expect(rowBox.height).toBe(heights.row2 + line);
+      // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
+      const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {
+        const l3 = element.querySelector<HTMLElement>(".k2-row-l3")!;
+        const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+        return { end: Math.round(end - l3.getBoundingClientRect().right), cut: getComputedStyle(l3).textOverflow };
+      });
+      expect(third).toEqual({ end: 0, cut: "ellipsis" });
       const button = (await page.getByRole("button", { name: "Für sich" }).boundingBox())!;
       const pane = (await page.locator('.k2-pane[aria-label="Mitte"]').boundingBox())!;
       expect(button.width).toBeLessThan(160);
