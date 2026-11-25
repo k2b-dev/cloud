@@ -272,6 +272,28 @@ describe("Mail on the v2 pilot", () => {
       }
     }, 60_000);
 
+  // At 1024 px "Wartet auf Antwort" has no room: it leads "Weitere", which counts it, and opens in place like the tab.
+  test("at 1024 px a tab without room leads the Weitere menu and opens in place", async () => {
+    const page = await open(MAIL_V2_PATH, 1024);
+    try {
+      await page.evaluate(() => Object.assign(window, { stayed: true }));
+      const tabs = page.locator('[data-k2-workspace] [data-k2-part="Tabs"]');
+      expect(await tabs.getByRole("link", { name: /Wartet auf Antwort/ }).isVisible()).toBe(false);
+      const more = tabs.getByRole("button", { name: /Weitere/ });
+      expect(await more.textContent()).toContain("+9");
+      await more.click();
+      const first = page.getByRole("menuitem").first();
+      expect(await first.textContent()).toContain("Wartet auf Antwort");
+      await first.click();
+      await page.waitForURL(/view=waiting/);
+      await settled(page);
+      expect(await page.evaluate(() => "stayed" in window)).toBe(true);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   // v1's sidebar deeds: archive, bin and spam fold under "Mehr"; the group's "…" holds a new mailbox and the deleted
   // ones; each mailbox's "…" pins or releases and hides it. The head's "Weitere" lists the views that wait behind it.
   test("the sidebar's Mehr, the group's and each mailbox's deeds, and the head's further views", async () => {
