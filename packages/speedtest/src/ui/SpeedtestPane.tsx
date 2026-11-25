@@ -12,7 +12,6 @@ import {
   Notice,
   Pane,
   Progress,
-  Prose,
   Section,
   StatusRow,
   Text,
@@ -25,8 +24,6 @@ import { type CliVariant, createSpeedtest, type SpeedtestProps } from "./speedte
 
 export { speedTestMessages } from "./messages";
 export { type CliVariant, createSpeedtest, speedtestSnippet } from "./speedtest-state";
-
-const code = (text: string) => `\`\`\`text\n${text.replaceAll("```", "'''")}\n\`\`\``;
 
 /**
  * A measurement on v2, as one column: the duration and the start in the first band, the reading and the time left
@@ -87,9 +84,13 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
       <Bar
         start={
           <Progress
-            value={s.state() === "done" ? 100 : Math.round((s.progress()?.progress ?? 0) * 100)}
+            value={s.state() === "done" ? 100 : s.running() ? Math.round((s.progress()?.progress ?? 0) * 100) : 0}
             of={100}
-            label={s.state() === "done" ? t().phaseDone : t().remaining({ seconds: s.remaining() })}
+            label={
+              s.state() === "done" || s.state() === "error" || s.state() === "cancelled"
+                ? s.phaseLabel()
+                : t().remaining({ seconds: s.remaining() })
+            }
           />
         }
         end={
@@ -156,7 +157,22 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
           { label: t().copyResult, icon: "copy", disabled: !s.result(), onClick: () => void copy(s.finalJson()) },
         ]}
       >
-        <Prose markdown={code(s.terminal())} />
+        {/* The terminal is drawn text: a fixed 200 px, so switching to JSON or a long result scrolls inside it. */}
+        <Canvas label={t().terminalOutput} height={200}>
+          <pre
+            tabIndex={0}
+            style={{
+              margin: 0,
+              height: "100%",
+              overflow: "auto",
+              "white-space": "pre-wrap",
+              "overflow-wrap": "anywhere",
+              font: "12px/18px var(--k2-font-mono)",
+            }}
+          >
+            {s.terminal()}
+          </pre>
+        </Canvas>
         <Field label={t().runtime}>
           <Choice
             name="speedtest-runtime"

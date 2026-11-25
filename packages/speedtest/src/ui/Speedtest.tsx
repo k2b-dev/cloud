@@ -18,7 +18,6 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean; i
     gaugeMax,
     state,
     progress,
-    download,
     upload,
     downloadHistory,
     uploadHistory,

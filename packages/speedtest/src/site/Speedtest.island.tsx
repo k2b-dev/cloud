@@ -1,4 +1,4 @@
-import { Bar, Menu, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Text, Workspace } from "@k2b/ui/v2";
 import SpeedtestPane from "../ui/SpeedtestPane";
 import { type SiteLocale, siteText } from "./text";
 
@@ -11,14 +11,9 @@ export default function PublicSpeedtest(props: { server: string; locale: SiteLoc
         <Bar
           start={<Text type="body">{text().title}</Text>}
           end={
-            <Menu
-              icon="language"
-              label={text().language}
-              items={[
-                { label: "Deutsch", href: "/de", checked: props.locale === "de" },
-                { label: "English", href: "/en", checked: props.locale === "en" },
-              ]}
-            />
+            <Button keep variant="ghost" icon="language" href={props.locale === "de" ? "/en" : "/de"} title={text().language}>
+              {props.locale === "de" ? "English" : "Deutsch"}
+            </Button>
           }
         />
       }
