@@ -821,9 +821,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* the end gives way only after the start: it leaves the start at least a few letters, then is cut itself */
 .k2-ui .k2-cut > span + span {
   flex: none;
-  max-width: 100%;
+  max-width: calc(100% - 4ch);
 }
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */
