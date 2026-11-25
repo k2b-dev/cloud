@@ -698,6 +698,9 @@ for their input, access, cancellation and deployment responsibilities.
 `@k2b/cloud/ssr/islands` exports `Layout.HelpPage` / `LayoutHelpPage` for
 full-page and embedded readers, plus `Layout.HelpDocuments` /
 `LayoutHelpDocuments` and `openLayoutHelpDialog`.
+`@k2b/cloud/ssr/help-v2/HelpPage` (provisional) default-exports the full-page
+reader for pages built with `@k2b/ui/v2`; it is a separate entry, so the shell
+loads no v2.
 `@k2b/cloud/ssr` exports `LayoutHelpPanel` with `LayoutHelpPanelProps` for
 server HTML with small interaction islands. Render it in a server page, such
 as inside `PanelLayout`, never inside an island. Applications normally use the
