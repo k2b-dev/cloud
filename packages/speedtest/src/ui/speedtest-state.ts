@@ -253,6 +253,7 @@ export function createSpeedtest(props: SpeedtestProps) {
     updateOnline();
     window.addEventListener("online", updateOnline);
     window.addEventListener("offline", updateOnline);
+    // runtime-timer: browser countdown to the next allowed test while the page is open; no server work to quiesce.
     const timer = setInterval(() => {
       if (retryAt()) setNow(Date.now());
     }, 250);

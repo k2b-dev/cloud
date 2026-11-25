@@ -8,7 +8,7 @@
     "./http": "./src/http.ts",
     "./node": "./src/node.ts",
     "./udp-client": "./src/udp-client.ts",
-    "./ui": "./src/ui/Speedtest.tsx",
+    "./ui": "./src/ui/Speedtest.island.tsx",
     "./messages": "./src/ui/messages.ts",
     "./format": "./src/ui/format.ts",
     "./styles.css": "./src/ui/styles.css"

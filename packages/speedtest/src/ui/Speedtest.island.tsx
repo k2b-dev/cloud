@@ -7,7 +7,10 @@ import { type CliVariant, createSpeedtest } from "./speedtest-state";
 export { speedTestMessages } from "./messages";
 export { type CliVariant, speedtestSnippet } from "./speedtest-state";
 
-/** The v1 screen of a measurement, kept while Tools still renders v1; the public site draws `SpeedtestPane` (v2). */
+/**
+ * The v1 screen of a measurement, kept while Tools still renders v1; the public site draws `SpeedtestPane` (v2). A
+ * browser module (`.island.tsx`): Tools mounts it as its island through `@k2b/speedtest/ui`, and its charts need one.
+ */
 export default function SpeedTest(props: { server?: string; enabled?: boolean; initialCliVariant?: CliVariant }) {
   const {
     t,

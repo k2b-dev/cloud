@@ -43,7 +43,8 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
       toast(t().copied, { status: "ok" });
     } catch {
       s.setCopyFailed(true);
-      toast(t().copyFailed, { status: "bad" });
+      // the reason and the way out stand in the status row (copyFailed); the toast names the outcome
+      toast(t().copyFailedTitle, { status: "bad" });
     }
   };
   return (
