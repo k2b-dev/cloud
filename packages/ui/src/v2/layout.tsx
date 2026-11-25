@@ -651,6 +651,7 @@ export type CanvasProps = {
 /**
  * The one way out: a surface with its own drawing, where an app may write its own CSS. Never measured by the rules.
  * It draws no line of its own; the structure around it separates it, and a drawing that needs an edge draws it.
+ * While the drawing loads, has no data or fails, `Loading`, `Empty` or `Failed` stand inside it and keep its height.
  */
 export const Canvas = (props: CanvasProps) => (
   <div

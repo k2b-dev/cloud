@@ -9,6 +9,17 @@ test("distributes equal-specificity classes without introducing descendant white
   expect(indexClassGroups(".scope:-moz-any(.one,.two){color:red}")).toBe(".scope.one,.scope.two{color:red}");
 });
 
+test("keeps one rule where the compatibility fallbacks of a class group become the same rule", () => {
+  expect(indexClassGroups(":-webkit-any(.a,.b) .x{color:red}:-moz-any(.a,.b) .x{color:red}:is(.a,.b) .x{color:red}")).toBe(
+    ".a .x,.b .x{color:red}",
+  );
+  // a repeat that is not one of these fallbacks, or another declaration, stays
+  expect(indexClassGroups(".a .x{color:red}:is(.a,.b) .x{color:red}")).toBe(".a .x{color:red}.a .x,.b .x{color:red}");
+  expect(indexClassGroups(":-webkit-any(.a,.b) .x{color:red}:is(.a,.b) .x{color:blue}")).toBe(
+    ".a .x,.b .x{color:red}.a .x,.b .x{color:blue}",
+  );
+});
+
 test("preserves specificity differences, nested groups, strings and declarations", () => {
   const css =
     ':is(#id,.one),:not(:is(.one,.two)),:where(.one,.two),:has(:is(.one,.two)),:is(.one,.two:hover),:is(.one,.two .three){--text:":is(.one,.two)";color:red}';

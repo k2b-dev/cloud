@@ -25,7 +25,8 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
   // CSSOM measurements are enhancements, not serialized first-render markup.
   // Each calendar has its own rule, including in notebook and app-frame hosts.
   const sheet = new CSSStyleSheet();
-  sheet.insertRule(`.k2b-ui #${CSS.escape(id)} {}`);
+  // Under the scope of either sheet, as the calendar rules of chart.css (`:is(.k2b-ui, .k2-ui)`) read these variables.
+  sheet.insertRule(`:is(.k2b-ui, .k2-ui) #${CSS.escape(id)} {}`);
   const rule = sheet.cssRules[0];
   if (!(rule instanceof CSSStyleRule)) throw new Error("Missing calendar scroll rule.");
   root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];

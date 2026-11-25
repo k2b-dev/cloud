@@ -117,7 +117,11 @@ href? }[]`, `more` (an action after them), `label`. Never nested.
 The only place for own drawing and own CSS (a map, a chart). `label`
 (required), `height` in px. It must stand directly in a primitive
 (`<Band><Canvas …/></Band>` or directly in a `Pane`), never as a
-component's root and never in a plain element.
+component's root and never in a plain element. A `Chart` of `@k2b/ui`
+fills it (`style={{ height: "100%" }}`) with `v2.css` alone. While the
+drawing loads, fails or has no data, put `Loading`, `Failed` or `Empty`
+inside the `Canvas`: with a `height` it keeps that height, so nothing
+moves.
 
 ## Structure
 
