@@ -44,7 +44,7 @@ Many like things, one per line; `label` names it.
 
 ### Row
 
-One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it.
+One entry: one to three lines, a lead, a time, marks and one action; `current`, `unread` and `yours` mark it. Marks take at most half of the row and give way whole when there is no room: a tag is cut to about 12 letters first, lone symbols leave next, then the marks at the end, so pass them in the order of their weight. An address or a file name as a line is cut in the middle with `Cut`, so its domain or extension stays readable.
 
 <Props of="Row" />
 
@@ -83,7 +83,7 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 - Open an entry by `href`; add `onNavigate` to open it in place.
 - Give every wide table a `phone(row)`.
 - Put the count and key figures in the `StatusRow`.
-- Keep row text short; long text is cut with "…".
+- Keep row text short; long text is cut with "…" and shows whole on hover.
 
 ### Don't
 

@@ -104,7 +104,9 @@ fields. A message in a thread is one `Band`.
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href? }[]`, `more` (an action after them), `label`. Never nested.
+href? }[]`, `more` (an action after them), `label`. Never nested. A tile is
+at most 320 px wide; a long title is cut in the middle and keeps its
+extension ("Angebot_Holz…nal_v3.pdf"), whole on hover.
 
 ### Canvas
 
@@ -156,6 +158,14 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
+  Marks take at most half of the row; what does not fit gives way whole, in
+  this order: a tag chip is cut to about 12 letters first, then lone `Icon`s
+  leave (they stand last), then the marks at the end. So pass them in the
+  order of their weight: words of a state (as `Text`, never loose text),
+  then the tag, then the person, then symbols.
+- A line of three is cut with "…" and says its words on hover. An address
+  or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
+  the middle, so the domain or extension stays readable.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
@@ -314,14 +324,16 @@ lines instead of cutting a thing.
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  before the menu tab. The open tab never hides: without room it stands
+  after the tabs that fit, cut with "…" (whole on hover), and is not named
+  in the menu again (leave it out of your `menu` entries too).
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
   they do not fit before the filters, the later ones give way whole, so the
   filters keep their words; they go on the phone; put what must stay in
-  `lead`),
+  `lead`; a number `value` is written in the page's language, 12.847),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`; leave on the phone),
@@ -336,7 +348,9 @@ lines instead of cutting a thing.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
   now, and the sentence says why), children (the sentence and its
-  consequence). Use it for errors with a way out instead of "try again"
+  consequence). A `note` and an `ai` summary keep their line breaks; a long
+  one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
+  Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
