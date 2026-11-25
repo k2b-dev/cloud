@@ -56,7 +56,9 @@ export type ArticleState = ListQueryStateOf<typeof articleQuery>;
 export const readArticleQuery = (requestUrl: string) => {
   const { state, issues } = articleQuery.parse(new URL(requestUrl).searchParams);
   const status: readonly ("consigned" | "sold")[] | undefined = state.filters.status;
-  const href = `?${articleQuery.serialize(articleQuery.set(state, "price", { min: 500 }))}`;
+  // set returns undefined when the URL cannot hold the follow-up state: the page shows no link then.
+  const next = articleQuery.set(state, "price", { min: 500 });
+  const href = next && `?${articleQuery.serialize(next)}`;
   return { state, issues, status, href };
 };
 

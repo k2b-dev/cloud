@@ -401,21 +401,41 @@ export type ListQuery<
    * Writes a state as URL parameters: `view`, the fields in declaration order, `q`, `sort`, `group`.
    * Defaults and mandatory fields at their default are omitted, so equal states give equal URLs.
    * Parameters of `base` the query does not own come first and stay unchanged. Whatever `serialize` writes, `parse`
-   * reads back to the same state. Throws a `RangeError` for a state the URL cannot hold: an undeclared value, sort or
-   * group, a reversed range, a number with an exponent or without a finite value, or more than
-   * {@link LIST_QUERY_MAX_LENGTH} characters.
+   * reads back to the same state. States from `parse`, `set`, `clear` and `reset` always fit; a state built by hand
+   * that the URL cannot hold (an undeclared value, sort or group, a reversed range, a number with an exponent, more
+   * than {@link LIST_QUERY_MAX_LENGTH} characters) throws a `RangeError`. Derive follow-up states with `set`.
    */
   serialize(state: ListQueryState<F, S, G>, base?: URLSearchParams | string): URLSearchParams;
   /**
-   * Sets one filter and stores its canonical form (declared value order, no duplicates). An empty value clears it.
-   * Throws a `RangeError` like `serialize` when the URL cannot hold the result; check input before applying it.
+   * The one safe way to a follow-up state: changes one filter, or the search (`"q"`), sort or grouping, and returns
+   * the new state, or `undefined` when the value is not valid or the URL cannot hold the result (such as more than
+   * {@link LIST_QUERY_MAX_LENGTH} characters). Never throws: offer no link or action for `undefined`. A filter keeps
+   * its canonical form (declared value order, no duplicates); an empty value clears it, and an empty search removes it.
    */
-  set<K extends keyof F & string>(state: ListQueryState<F, S, G>, key: K, value: ListQueryFieldValue<F[K]>): ListQueryState<F, S, G>;
+  set<K extends ListQuerySetKey<F>>(
+    state: ListQueryState<F, S, G>,
+    key: K,
+    value: ListQuerySetValue<F, S, G, K>,
+  ): ListQueryState<F, S, G> | undefined;
   /** Removes one filter; a mandatory field returns to its default. */
   clear(state: ListQueryState<F, S, G>, key: keyof F & string): ListQueryState<F, S, G>;
   /** The default state: no filters but the mandatory ones, no search, the default sort, no grouping, no view. */
   reset(): ListQueryState<F, S, G>;
 };
+
+/** What `set` changes: a filter field, the search `"q"`, the `"sort"` or the `"group"`. */
+export type ListQuerySetKey<F> = (keyof F & string) | "q" | "sort" | "group";
+
+/** The value `set` takes for a key: the field's value, the search text, a sort, or a grouping (`undefined`: none). */
+export type ListQuerySetValue<F, S extends string, G extends string, K> = K extends "q"
+  ? string
+  : K extends "sort"
+    ? SortState<S>
+    : K extends "group"
+      ? G | undefined
+      : K extends keyof F
+        ? ListQueryFieldValue<F[K]>
+        : never;
 
 /** The state type of a declared query: `ListQueryStateOf<typeof articleQuery>`. */
 export type ListQueryStateOf<Q> = Q extends ListQuery<infer F, infer S, infer G> ? ListQueryState<F, S, G> : never;
@@ -762,57 +782,86 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
     return { state: asState(state), issues };
   };
 
-  const serialize = (state: State, base?: URLSearchParams | string): URLSearchParams => {
+  /** The URL parameters of a state, or the reason the URL cannot hold it. Never throws. */
+  const write = (state: State, base?: URLSearchParams | string): URLSearchParams | RangeError => {
     const params = new URLSearchParams();
     for (const [name, value] of new URLSearchParams(base ?? "")) if (!owned.has(name)) params.append(name, value);
     if (state.view !== undefined && state.view !== "") {
-      if (!VIEW_KEY.test(state.view)) throw new RangeError(`serialize: view "${state.view}" is not a view key`);
+      if (!VIEW_KEY.test(state.view)) return new RangeError(`serialize: view "${state.view}" is not a view key`);
       params.set("view", state.view);
     }
     const filters: Readonly<Record<string, unknown>> = state.filters;
     for (const [key, definition] of fields) {
       const checked = check(definition, own(filters, key));
       if (checked === "empty") continue;
-      if (checked === "invalid") throw new RangeError(`serialize: the URL cannot hold the value of "${key}"`);
+      if (checked === "invalid") return new RangeError(`serialize: the URL cannot hold the value of "${key}"`);
       if (checked.raw !== defaults.get(key)?.raw) params.set(key, checked.raw);
     }
     if (declaration.search && state.search) params.set("q", state.search);
-    if (!sortDeclaration.fixed && (state.sort.field !== defaultSort.field || state.sort.direction !== defaultSort.direction)) {
-      const option = own(sortOptions, state.sort.field);
+    if (state.sort.field !== defaultSort.field || state.sort.direction !== defaultSort.direction) {
+      const option = sortDeclaration.fixed ? undefined : own(sortOptions, state.sort.field);
       if (!option || !(option.directions ?? DIRECTIONS).includes(state.sort.direction)) {
-        throw new RangeError(`serialize: sort "${state.sort.field}.${state.sort.direction}" is not an option`);
+        return new RangeError(`serialize: sort "${state.sort.field}.${state.sort.direction}" is not an option`);
       }
       params.set("sort", `${state.sort.field}.${state.sort.direction}`);
     }
     if (state.group !== undefined) {
-      if (!Object.hasOwn(groups, state.group)) throw new RangeError(`serialize: group "${state.group}" is not an option`);
+      if (!Object.hasOwn(groups, state.group)) return new RangeError(`serialize: group "${state.group}" is not an option`);
       params.set("group", state.group);
     }
     const length = ownedLength(params);
     if (length > LIST_QUERY_MAX_LENGTH) {
-      throw new RangeError(`serialize: the query has ${length} characters, more than ${LIST_QUERY_MAX_LENGTH}`);
+      return new RangeError(`serialize: the query has ${length} characters, more than ${LIST_QUERY_MAX_LENGTH}`);
     }
     return params;
   };
 
-  const withFilter = (state: State, key: string, value: unknown): State => {
+  const serialize = (state: State, base?: URLSearchParams | string): URLSearchParams => {
+    const written = write(state, base);
+    if (written instanceof RangeError) throw written;
+    return written;
+  };
+
+  /** The follow-up state with one part changed, or `undefined` when the value is not valid or the URL cannot hold it. */
+  const change = (state: State, key: string, value: unknown): State | undefined => {
+    const { filters: before, ...rest } = state;
+    const filters: Record<string, unknown> = { ...before };
+    const next: { filters: Record<string, unknown>; search?: string; sort: SortState<string>; group?: string; view?: string } = {
+      ...rest,
+      filters,
+    };
+    if (key === "q") {
+      if (typeof value !== "string" || (!declaration.search && value !== "")) return undefined;
+      if (value === "") delete next.search;
+      else next.search = value;
+    } else if (key === "sort") {
+      if (!isRecord(value) || typeof value.field !== "string" || (value.direction !== "asc" && value.direction !== "desc"))
+        return undefined;
+      next.sort = { field: value.field, direction: value.direction };
+    } else if (key === "group") {
+      if (value === undefined) delete next.group;
+      else if (typeof value === "string") next.group = value;
+      else return undefined;
+    } else {
+      const definition = own<ListQueryField>(declaration.fields, key);
+      if (!definition) return undefined;
+      const checked = check(definition, value);
+      if (checked === "invalid") return undefined;
+      const stored = checked === "empty" ? defaults.get(key)?.value : checked.value;
+      if (stored === undefined) delete filters[key];
+      else filters[key] = stored;
+    }
+    const result = asState(next);
+    return write(result) instanceof RangeError ? undefined : result;
+  };
+
+  const clear = (state: State, key: keyof F & string): State => {
     const filters: Record<string, unknown> = { ...state.filters };
+    const value = defaults.get(key)?.value;
     if (value === undefined) delete filters[key];
     else filters[key] = value;
     return asState({ ...state, filters });
   };
 
-  const set = <K extends keyof F & string>(state: State, key: K, value: ListQueryFieldValue<F[K]>): State => {
-    const definition = own<ListQueryField>(declaration.fields, key);
-    if (!definition) throw new RangeError(`set: "${key}" is not a field`);
-    const checked = check(definition, value);
-    if (checked === "invalid") throw new RangeError(`set: the URL cannot hold this value of "${key}"`);
-    const next = withFilter(state, key, checked === "empty" ? defaults.get(key)?.value : checked.value);
-    serialize(next);
-    return next;
-  };
-
-  const clear = (state: State, key: keyof F & string): State => withFilter(state, key, defaults.get(key)?.value);
-
-  return { ...declaration, parse, serialize, set, clear, reset };
+  return { ...declaration, parse, serialize, set: change, clear, reset };
 }
