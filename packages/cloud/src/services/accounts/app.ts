@@ -11,6 +11,7 @@ import type {
   ServiceAccountKind,
   ServiceAccountStatus,
   User,
+  UserDirectoryEntry,
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
@@ -340,6 +341,17 @@ export const accountsAppService = {
         total: result.total,
         hasNext: result.pagination.has_next,
       };
+    },
+    /**
+     * The administration's user list with its filters and sort: the one query its page, its API and its CLI share.
+     * Callers check the administrator role first (the routes do).
+     */
+    directory: async (
+      query: Omit<users.UserDirectoryQuery, "page" | "perPage"> & { pagination?: PageParams },
+    ): Promise<Paginated<UserDirectoryEntry>> => {
+      const { page, perPage } = paginate(query.pagination);
+      const result = await users.directory({ ...query, page, perPage });
+      return { items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total };
     },
     get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
       users.get(config, options),

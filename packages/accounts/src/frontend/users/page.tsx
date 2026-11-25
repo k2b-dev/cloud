@@ -1,145 +1,72 @@
-import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { accountsAppService as accountsService } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
-import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
-import AccountsWorkspace from "../AccountsWorkspace";
-
-import { buildUserDetailUrl, buildUsersPageBaseUrl, buildUsersUrl, parseUsersListState } from "../lib/url-state";
+import AccountsNavigation from "../AccountsNavigation.island";
+import { accountsNavigationItems } from "../accounts-nav";
+import { listMessages } from "../list-messages";
 import { accountsMessages } from "../messages";
-import CreateUserForm from "./new/CreateUserForm.island";
-import UsersFilters from "./UsersFilters.island";
+import { directoryQueryOf, isUserView, legacyUsersHref, parseUsersAddress, USER_VIEWS, USERS_PER_PAGE, usersHref, usersQuery } from "./query";
+import UsersScreen from "./UsersScreen.island";
 
-/** Admin users list page - nav sidebar + full-page list. */
+/** The users of this Cloud on v2. The address is the whole list state: the declaration in `query.ts` reads it. */
 export default ssr<AuthContext>(async (c) => {
-  const { t } = accountsMessages.resolve([getLocale(c)]);
-  const perPage = 100;
-  const user = expectUserBackedActor(c);
-  const categoryPolicy = await readAccountCategoryPolicy();
-  const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
-  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
-  const listState = parseUsersListState({
-    search: c.req.query("search"),
-    page: c.req.query("page"),
-    provider: c.req.query("provider"),
-    profile: c.req.query("profile"),
-  });
-  const [pendingRequests, usersPage] = await Promise.all([
+  const locale = getLocale(c);
+  const timeZone = getTimeZone(c);
+  expectUserBackedActor(c);
+  const url = new URL(c.req.url);
+  // Addresses from before v2 (`search`, `profile`) lead to the same list in the v2 address.
+  const legacy = legacyUsersHref(url.searchParams);
+  if (legacy) return c.redirect(legacy);
+
+  const query = usersQuery(locale);
+  const address = parseUsersAddress(query, url.searchParams);
+  const view = address.state.view;
+  // A view named alone opens with its whole query, so the address always holds the state.
+  if (isUserView(view) && [...url.searchParams.keys()].every((name) => name === "view"))
+    return c.redirect(usersHref(query, USER_VIEWS[view](query)));
+
+  const now = new Date();
+  const groupIds = address.state.filters["member-of"];
+  const [pendingRequests, list, groups] = await Promise.all([
     accountsService.accountRequest.countPending(),
-    accountsService.user.list({
-      pagination: { page: listState.page, perPage },
-      filter: { search: listState.search || undefined },
-      scope: {
-        provider: listState.provider || undefined,
-        profile: listState.profile || undefined,
-      },
-    }),
+    accountsService.user
+      .directory({ ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
+      .catch(() => null),
+    groupIds
+      ? accountsService.group.list({ pagination: { page: 1, perPage: groupIds.length }, scope: { mode: "all", ids: [...groupIds] } })
+      : null,
   ]);
-  const totalPages = Math.max(1, Math.ceil(usersPage.total / perPage));
-  const paginationBaseUrl = buildUsersPageBaseUrl({
-    search: listState.search,
-    provider: listState.provider,
-    profile: listState.profile,
-  });
-  type UserRow = (typeof usersPage.items)[number];
-  const columns: DataTableColumn<UserRow>[] = [
-    { id: "user", header: t.user, value: (entry) => entry.displayName || entry.mail || entry.uid },
-    { id: "email", header: t.email, value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
-    { id: "category", header: t.accountType, value: (entry) => accountCategoryLabel(entry, categoryPolicy.login.label) },
-  ];
+  // A page past the end, after deletions or from an old link, opens the last page with the same filters.
+  const pages = Math.max(1, Math.ceil((list?.total ?? 0) / USERS_PER_PAGE));
+  if (list && address.page > pages) return c.redirect(usersHref(query, address.state, pages));
 
+  const { t } = accountsMessages.resolve([locale]);
+  const words = listMessages.resolve([locale]).t;
+  const ignored =
+    address.issues.length > 0
+      ? words.ignoredPartsDetail({ params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", ") })
+      : null;
   return () => (
-    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.users }]}>
-      <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequests} scrollPreserveKey="accounts-users">
-        <div class="flex flex-col gap-2">
-          <div class="min-w-0" style="view-transition-name: accounts-users-title">
-            <h1 class="text-base font-semibold text-primary">{t.users}</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {listState.search ? t.resultCount({ count: usersPage.total }) : t.userCount({ count: usersPage.total })}
-            </p>
-          </div>
-
-          <div style="view-transition-name: accounts-users-search">
-            <SearchBar
-              action={buildUsersUrl({
-                ...listState,
-                search: "",
-                page: 1,
-              })}
-              value={listState.search}
-            />
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <UsersFilters state={listState} />
-            <ButtonLink href="/app/accounts/duplicate-emails" variant="subtle" size="sm">
-              {t.duplicateEmails}
-            </ButtonLink>
-            <div class="ml-auto">
-              <CreateUserForm
-                buttonClass="shrink-0"
-                freeIpaEnabled={freeIpaEnabled}
-                localEmailOptional={localEmailOptional}
-                categoryPolicy={categoryPolicy}
-              />
-            </div>
-          </div>
-
-          {usersPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>{t.usersEmpty}</>} />
-          ) : (
-            <Paper class="overflow-hidden" style="view-transition-name: accounts-users-table">
-              <DataTable
-                rows={usersPage.items}
-                columns={columns}
-                getRowId={(entry) => entry.id}
-                hoverRows
-                class="overflow-x-auto"
-                scrollPreserveKey="accounts-users-table"
-                renderCell={({ row: entry, col }) => {
-                  const href = buildUserDetailUrl(entry.id, listState);
-                  if (col.id === "user") {
-                    return (
-                      <a href={href} class="flex min-w-0 items-center gap-2 text-primary hover:underline">
-                        <AccountAvatar
-                          name={entry.displayName || entry.mail || entry.uid}
-                          userId={entry.id}
-                          avatarHash={entry.avatarHash}
-                          size="xs"
-                        />
-                        <span class="block truncate font-medium">{(entry.displayName || entry.mail || entry.uid) + ` (${entry.uid})`}</span>
-                      </a>
-                    );
-                  }
-                  if (col.id === "email") {
-                    return (
-                      <a href={href} class="block truncate text-dimmed" title={entry.mail || "-"} tabindex={-1}>
-                        {entry.mail || "-"}
-                      </a>
-                    );
-                  }
-                  if (col.id === "category") {
-                    return (
-                      <a href={href} class="block" tabindex={-1}>
-                        <Tag>{accountCategoryLabel(entry, categoryPolicy.login.label)}</Tag>
-                      </a>
-                    );
-                  }
-                  return "";
-                }}
-              />
-            </Paper>
-          )}
-
-          <div class="pt-1">
-            <Pagination currentPage={listState.page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-          </div>
-        </div>
-      </AccountsWorkspace>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.users }]}
+    >
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "users", pendingRequests, isAdmin: true })} />
+      <UsersScreen
+        state={address.state}
+        page={address.page}
+        entries={list?.items ?? null}
+        total={list?.total ?? 0}
+        groupNames={(groups?.items ?? []).map((group) => ({ value: group.id, label: group.name }))}
+        ignored={ignored}
+        now={now.toISOString()}
+        timeZone={timeZone}
+        pendingRequests={pendingRequests}
+      />
     </Layout>
   );
 });

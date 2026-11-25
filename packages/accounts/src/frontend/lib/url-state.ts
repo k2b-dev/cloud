@@ -16,8 +16,9 @@ const USERS_QUERY_KEYS: QueryKeys = {
   profile: "profile",
 };
 
+// The list's v2 address names the search `q` (see `groups/query.ts`).
 const GROUPS_QUERY_KEYS: GroupQueryKeys = {
-  search: "search",
+  search: "q",
   page: "page",
   provider: "provider",
   scope: "scope",

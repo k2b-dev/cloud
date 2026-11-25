@@ -70,9 +70,11 @@ test("old personal-group list URLs use normal discovery and retain ordinary list
     spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
   ];
   try {
-    const response = await server().request("/app/accounts/groups?personal=1&scope=all&search=Design", {
-      headers: { "Accept-Language": "en" },
-    });
+    // The former filter falls away on the way to the v2 address; the ordinary filters stay.
+    const old = await server().request("/app/accounts/groups?personal=1&scope=all&search=Design");
+    expect(old.status).toBe(302);
+    expect(old.headers.get("location")).toBe("/app/accounts/groups?scope=all&q=Design");
+    const response = await server().request(old.headers.get("location")!, { headers: { "Accept-Language": "en" } });
     const html = await response.text();
     expect(response.status, html).toBe(200);
     expect(list).toHaveBeenCalledWith({

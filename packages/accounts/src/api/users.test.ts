@@ -295,3 +295,36 @@ test("admin updates pass an explicit null to remove an email", async () => {
   expect(res.status).toBe(200);
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ id: targetId, data: { mail: null } }));
 });
+
+test("the user list reads the list's address: filters, search and sort reach the one directory query", async () => {
+  const directory = spyOn(accountsAppService.user, "directory").mockResolvedValue({ items: [], page: 1, perPage: 50, total: 0, hasNext: false });
+  try {
+    const group = "33333333-3333-4333-8333-333333333333";
+    const res = await users.request(`/?role=admin,guest&member-of=${group}&status=invited&passkey=no&q=ada&sort=login.asc&group=member-of&per_page=50`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ users: [], pagination: expect.objectContaining({ total: 0, per_page: 50 }) });
+    expect(directory).toHaveBeenLastCalledWith({
+      search: "ada",
+      roles: ["admin", "guest"],
+      groupIds: [group],
+      statuses: ["invited"],
+      lastLogin: undefined,
+      passkey: false,
+      provider: undefined,
+      sort: { field: "lastLogin", direction: "asc" },
+      pagination: { page: 1, perPage: 50 },
+    });
+    // the names before v2 still work: search is q, profile=guest is the guest role
+    expect((await users.request("/?search=eva&profile=guest&provider=ipa")).status).toBe(200);
+    expect(directory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: "eva", roles: ["guest"], provider: "ipa", sort: { field: "name", direction: "asc" } }),
+    );
+    // a value the list cannot hold is refused, not dropped
+    const refused = await users.request("/?role=owner");
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ message: expect.stringContaining("role") });
+    expect(directory).toHaveBeenCalledTimes(2);
+  } finally {
+    directory.mockRestore();
+  }
+});
