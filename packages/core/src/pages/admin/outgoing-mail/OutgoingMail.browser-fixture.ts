@@ -198,17 +198,24 @@ export async function outgoingMailBrowserFixture() {
     c.set("page", { title: "Outgoing mail", theme: "light" });
     await next();
   });
-  const nav = adminNavFixture("/admin/outgoing-mail");
+  // The sections of Outgoing mail under their entry in the admin bar, as the real pages pass them.
+  const nav = (current: string) =>
+    adminNavFixture("/admin/outgoing-mail", [
+      { label: "Absenderprofile", icon: "mail-cog", href: "/admin/outgoing-mail", nested: true, current: current === "profiles" },
+      { label: "Apps", icon: "apps", href: "/admin/outgoing-mail/apps", nested: true, current: current === "apps" },
+      { label: "Versandprotokoll", icon: "list-search", href: "/admin/outgoing-mail/log", nested: true, current: current === "log" },
+      { label: "E-Mail-Vorlagen", icon: "template", href: "/admin/outgoing-mail/templates", nested: true },
+    ]);
   pages.get("/admin/outgoing-mail", (c) => {
     const props = {
-      nav,
+      nav: nav("profiles"),
       profiles: data.profiles.map((item) => ({ ...item, bounceText: "Bounce check off", bounceFailed: false })),
       open: c.req.query("profile") ?? null,
     };
     return respond(c, "profiles", props, () => createComponent(ProfilesScreen, props));
   });
   pages.get("/admin/outgoing-mail/apps", (c) => {
-    const props = { nav, profiles: data.profiles, apps: data.apps, open: c.req.query("app") ?? null };
+    const props = { nav: nav("apps"), profiles: data.profiles, apps: data.apps, open: c.req.query("app") ?? null };
     return respond(c, "apps", props, () => createComponent(AppsScreen, props));
   });
   pages.get("/admin/outgoing-mail/log", (c) => {
@@ -217,7 +224,7 @@ export async function outgoingMailBrowserFixture() {
     params.delete("locale");
     const address = parseLogAddress(logQuery(localeOf(c), apps), params);
     const props = {
-      nav,
+      nav: nav("log"),
       apps,
       state: address.state,
       page: { items: data.messages, page: 1, perPage: 25, total: data.messages.length, hasNext: false },

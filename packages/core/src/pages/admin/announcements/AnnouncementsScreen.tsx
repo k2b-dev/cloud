@@ -172,8 +172,7 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
             open={(row) => ({ href: `${ANNOUNCEMENTS_PATH}?entry=${row.id}` })}
             empty={{ icon: "speakerphone", text: t().noAnnouncements, action: newAction }}
             phone={(row) => ({
-              lines: [row.title, `${row.kind === "banner" ? t().banner : t().announcement} · ${row.published}`],
-              marks: <Chip status={STATUS[row.state]}>{t()[row.state]}</Chip>,
+              lines: [row.title, `${t()[row.state]} · ${row.kind === "banner" ? t().banner : t().announcement} · ${row.published}`],
             })}
             columns={[
               {

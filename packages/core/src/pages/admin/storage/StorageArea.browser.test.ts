@@ -1,18 +1,22 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { STORAGE_FIXTURE_IDS, storageAreaBrowserFixture } from "./StorageArea.browser-fixture";
-
-// A save or test loads the bucket's page again; on a loaded VM two development renders took longer than the 5 s
-// default (3 of 30 failed at 5 s, all passed at 20 s on 25.11.), so each test gets 15 s.
-setDefaultTimeout(15_000);
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof storageAreaBrowserFixture>>;
 beforeAll(async () => {
   fixture = await storageAreaBrowserFixture();
   browser = await launchBrowser();
+  // Warm-up outside the tests: the first page and the first bucket render compile the development SSR, which the
+  // per-test budget must not pay (#4189).
+  const page = await browser.newPage();
+  for (const query of ["state=liste", "state=liste&bucket=3f0c2a54-8f1e-4c3b-9a0d-6b1e2c3d4e5f", "state=liste&bucket=new"]) {
+    await page.goto(`${fixture.url}?${query}`);
+    await page.waitForFunction(() => document.body?.dataset.ready === "true");
+  }
+  await page.close();
 }, 90_000);
 afterAll(async () => {
   await browser?.close();

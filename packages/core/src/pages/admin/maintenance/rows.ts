@@ -20,9 +20,7 @@ export const activeRows = (
     ...(status.message ? [{ label: t.note, value: status.message }] : []),
     {
       label: t.appsReady,
-      value: starting.length
-        ? `${apps} · ${t.appsStarting({ names: i18n.formatList(starting, locale), count: starting.length })}`
-        : apps,
+      value: starting.length ? `${apps} · ${t.appsStarting({ names: i18n.formatList(starting, locale), count: starting.length })}` : apps,
     },
   ];
 };

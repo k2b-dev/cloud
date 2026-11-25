@@ -254,6 +254,33 @@ export function LinuxContent(props: { linux: Linux }) {
     const parsed = Number(value);
     return Number.isInteger(parsed) ? parsed : 0;
   };
+  /** Save and Discard, right after the last fields of the setup. */
+  const saveBar = () => (
+    <Show when={linux.dirty()}>
+      <Bar
+        end={
+          <>
+            <Button disabled={linux.busy()} onClick={linux.discard}>
+              {t().discard}
+            </Button>
+            <Button
+              variant="primary"
+              busy={linux.saving()}
+              disabled={
+                linux.busy() ||
+                (linux.config().unreadable === true && !linux.replace()) ||
+                !linux.valid() ||
+                (linux.draft().enabled && !linux.reserved())
+              }
+              onClick={() => void linux.save()}
+            >
+              {linux.draft().enabled ? t().save : t().saveDisabled}
+            </Button>
+          </>
+        }
+      />
+    </Show>
+  );
   return (
     <>
       <Notice tone="note" icon="info-circle" title={t().scope}>
@@ -308,73 +335,53 @@ export function LinuxContent(props: { linux: Linux }) {
             disabled={linux.busy()}
             onChange={(value) => linux.change("enabled", value)}
           />
-          <Show when={linux.draft().enabled}>
-            <Text muted>{t().defaultsDescription}</Text>
-            <Field name="homeTemplate" label={t().home} hint={t().homeHint}>
-              <Input value={linux.draft().homeTemplate} disabled={linux.busy()} onInput={(value) => linux.change("homeTemplate", value)} />
-            </Field>
-            <Field name="loginShell" label={t().shell} hint={t().shellHint}>
-              <Input value={linux.draft().loginShell} disabled={linux.busy()} onInput={(value) => linux.change("loginShell", value)} />
-            </Field>
-            <Text muted>{t().rangeHint}</Text>
-            <Field.Row>
-              <Field name="rangeStart" label={t().start}>
-                <Input
-                  type="number"
-                  min={1000}
-                  max={2147483647}
-                  value={linux.draft().rangeStart ? String(linux.draft().rangeStart) : ""}
-                  disabled={linux.busy()}
-                  onInput={(value) => linux.change("rangeStart", number(value))}
-                />
-              </Field>
-              <Field name="rangeEnd" label={t().end}>
-                <Input
-                  type="number"
-                  min={1000}
-                  max={2147483647}
-                  value={linux.draft().rangeEnd ? String(linux.draft().rangeEnd) : ""}
-                  disabled={linux.busy()}
-                  onInput={(value) => linux.change("rangeEnd", number(value))}
-                />
-              </Field>
-            </Field.Row>
-            <Show when={linux.dirty()}>
-              <Check label={t().reserved} checked={linux.reserved()} disabled={linux.busy()} onChange={linux.setReserved} />
-              <Text type="meta" muted>
-                {t().reservedHint}
-              </Text>
-            </Show>
-            <Show when={!linux.valid()}>
-              <Notice tone="bad">{t().invalid}</Notice>
-            </Show>
-          </Show>
-          <Show when={linux.dirty()}>
-            <Bar
-              end={
-                <>
-                  <Button disabled={linux.busy()} onClick={linux.discard}>
-                    {t().discard}
-                  </Button>
-                  <Button
-                    variant="primary"
-                    busy={linux.saving()}
-                    disabled={
-                      linux.busy() ||
-                      (linux.config().unreadable === true && !linux.replace()) ||
-                      !linux.valid() ||
-                      (linux.draft().enabled && !linux.reserved())
-                    }
-                    onClick={() => void linux.save()}
-                  >
-                    {linux.draft().enabled ? t().save : t().saveDisabled}
-                  </Button>
-                </>
-              }
-            />
-          </Show>
+          <Show when={!linux.draft().enabled}>{saveBar()}</Show>
         </Show>
       </Section>
+      <Show when={linux.editing() && linux.draft().enabled}>
+        <Section icon="home" title={t().defaults} summary={t().defaultsDescription}>
+          <Field name="homeTemplate" label={t().home} hint={t().homeHint}>
+            <Input value={linux.draft().homeTemplate} disabled={linux.busy()} onInput={(value) => linux.change("homeTemplate", value)} />
+          </Field>
+          <Field name="loginShell" label={t().shell} hint={t().shellHint}>
+            <Input value={linux.draft().loginShell} disabled={linux.busy()} onInput={(value) => linux.change("loginShell", value)} />
+          </Field>
+        </Section>
+        <Section icon="numbers" title={t().advanced} summary={t().rangeHint}>
+          <Field.Row>
+            <Field name="rangeStart" label={t().start}>
+              <Input
+                type="number"
+                min={1000}
+                max={2147483647}
+                value={linux.draft().rangeStart ? String(linux.draft().rangeStart) : ""}
+                disabled={linux.busy()}
+                onInput={(value) => linux.change("rangeStart", number(value))}
+              />
+            </Field>
+            <Field name="rangeEnd" label={t().end}>
+              <Input
+                type="number"
+                min={1000}
+                max={2147483647}
+                value={linux.draft().rangeEnd ? String(linux.draft().rangeEnd) : ""}
+                disabled={linux.busy()}
+                onInput={(value) => linux.change("rangeEnd", number(value))}
+              />
+            </Field>
+          </Field.Row>
+          <Show when={linux.dirty()}>
+            <Check label={t().reserved} checked={linux.reserved()} disabled={linux.busy()} onChange={linux.setReserved} />
+            <Text type="meta" muted>
+              {t().reservedHint}
+            </Text>
+          </Show>
+          <Show when={!linux.valid()}>
+            <Notice tone="bad">{t().invalid}</Notice>
+          </Show>
+          {saveBar()}
+        </Section>
+      </Show>
       <Show when={linux.config().enabled}>
         <Section icon="users" title={t().inventory} summary={t().inventoryHint}>
           <Table
