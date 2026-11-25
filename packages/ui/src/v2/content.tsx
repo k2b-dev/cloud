@@ -1,5 +1,6 @@
 import { Link } from "@k2b/ssr/nav";
 import {
+  type Accessor,
   createContext,
   createMemo,
   createUniqueId,
@@ -21,6 +22,7 @@ import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
+import { createVirtualWindow } from "./virtual";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -235,10 +237,36 @@ export const Facts = (props: FactsProps) => {
 // ── Row and List ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const ListContext = createContext(false);
+/** Where a row of a list of items stands in the whole list, for assistive technology ("3 of 1,000"). */
+const ListItemContext = createContext<{ index: () => number; size: () => number }>();
 
-export type ListProps = {
+/** A list of a few rows, written out. */
+type WrittenList = {
   /** The entries, each a `Row`. */
   children: JSX.Element;
+  items?: never;
+  rowKey?: never;
+  row?: never;
+  total?: never;
+};
+
+/**
+ * A list of items that can grow without end, such as conversations: only the rows in view and a margin around them
+ * are in the page (see `createVirtualWindow`), the server renders the first rows, and each row says where it stands.
+ */
+type ItemList<T> = {
+  /** All loaded items, in order. */
+  items: readonly T[];
+  /** The stable key of an item. */
+  rowKey: (item: T) => string;
+  /** The `Row` of an item, made once per item while it is in the page. */
+  row: (item: T, index: Accessor<number>) => JSX.Element;
+  /** How many items the whole list has, when more than are loaded; the rows count against it. */
+  total?: number;
+  children?: never;
+};
+
+export type ListProps<T = unknown> = (WrittenList | ItemList<T>) & {
   /** A name for the list, for assistive technology. */
   label?: string;
 };
@@ -304,15 +332,65 @@ const keepPlace = (list: HTMLElement) => {
   });
 };
 
-/** Rows one under the other. (Selection, keyboard and drag come with the behaviour layer.) */
-export const List = (props: ListProps) => {
+/**
+ * Rows one under the other: written out (`children`), or made from `items` with `row`, which keeps only the rows in
+ * view in the page, so a list of any length stays fast. (Selection, keyboard and drag come with the behaviour layer.)
+ */
+export const List = <T,>(props: ListProps<T>) => {
   let list: HTMLDivElement | undefined;
+  const items = () => props.items;
   onMount(() => {
     if (list) keepPlace(list);
   });
   return (
-    <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
-      <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+    <Show
+      when={items()}
+      fallback={
+        <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
+          <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+        </div>
+      }
+    >
+      {(loaded) => <ItemRows {...(props as ItemList<T> & { label?: string })} items={loaded()} />}
+    </Show>
+  );
+};
+
+/** The rows of a list of items, in a window (see `List`). */
+const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
+  let list: HTMLDivElement | undefined;
+  const view = createVirtualWindow({ items: () => props.items, key: (item: T) => props.rowKey(item) });
+  onMount(() => {
+    if (!list) return;
+    keepPlace(list);
+    view.mount(list);
+  });
+  const size = () => Math.max(props.total ?? 0, props.items.length);
+  return (
+    <div
+      ref={list}
+      class="k2-list"
+      data-k2-part="List"
+      data-virtual=""
+      role="list"
+      aria-label={props.label}
+      style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}
+    >
+      <ListContext.Provider value={true}>
+        <For each={view.shown()}>
+          {(item) => {
+            const index = () => view.indexOf(item);
+            const node = (
+              <ListItemContext.Provider value={{ index, size }}>{props.row(item, index)}</ListItemContext.Provider>
+            );
+            const element = resolveChildren(() => node)
+              .toArray()
+              .find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
+            if (element) view.observe(element, item);
+            return node;
+          }}
+        </For>
+      </ListContext.Provider>
     </div>
   );
 };
@@ -387,6 +465,7 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
+  const place = useContext(ListItemContext);
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
@@ -405,6 +484,9 @@ export const Row = (props: RowProps) => {
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
+      // in a list of items only some rows are in the page: each says where it stands in the whole list
+      aria-posinset={place ? place.index() + 1 : undefined}
+      aria-setsize={place ? place.size() : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}
