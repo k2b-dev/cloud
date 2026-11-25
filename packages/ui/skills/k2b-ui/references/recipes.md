@@ -9,6 +9,30 @@ test keeps every recipe free of findings, so code and picture always match.
 Read the recipe file next to its picture: each part in the code is one
 thing you can point at in the image.
 
+Most recipes also export `states`: the same screen empty, loading, failed
+or in another state that fits it (a form while it saves). Fibel's examples
+switch between them, and the browser test checks each one. A state stands
+where the data would stand; the head and the status row never move.
+
+## frame.tsx: the frame of an app
+
+![frame at 1440 px](../images/frame-1440.png)
+![frame at 390 px](../images/frame-390.png)
+
+`Workspace` with `detail` and `detailEmpty`; a `Nav` with two groups
+(a group `action`, a `dot`, a folding "Mehr", a `foot`); a head `Bar`
+with `Tabs` (a menu tab "Weitere") and the one primary, mirrored as
+`Workspace primary`; a list `Pane` with `width`, `scrollKey` and a
+`StatusRow`; the open entry as `Pane detail` with `back`, a head `Bar`
+and a status `Bar` with `Inline` chips.
+
+- What is open comes from the address. Without an open entry the detail is
+  not rendered (`undefined`, never `false`), and `detailEmpty` holds its
+  place, so nothing moves when it opens.
+- On a tablet the sidebar becomes a drawer behind a button in the head; on
+  the phone the open entry is the page and `back` is its one way back.
+- States: `closed`, `empty`, `loading`, `failed`.
+
 ## list-detail.tsx: a list beside the open entry
 
 ![list with detail at 1440 px](../images/list-detail-1440.png)
@@ -35,7 +59,25 @@ with "Cancel" and the one primary "Save", disabled while the conflict lasts.
 
 - Validation and server answers live in the app's state; the primitives
   only show `error`.
-- Until v2 has a `Dialog`, the form stands in its own pane or route.
+- A form that opens over the page is a `Dialog` (a sheet on the phone);
+  this one has a page of its own.
+- States: `fresh` (nothing sent yet), `errors` ("Pflichtfeld." and the
+  server's errors at their fields), `saving` (`Button busy`).
+
+## form-detail.tsx: a form beside a list
+
+![form beside a list at 1440 px](../images/form-detail-1440.png)
+![form beside a list at 390 px](../images/form-detail-390.png)
+
+The page's one primary "Neuer Termin" stays in the head; the form is a
+`Pane detail` beside the list, so the list stays in view while it is
+filled in, with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
+multiline `Input`, and `Check`s, one of them `disabled` with the reason
+in its words. Its footer `Bar` saves with a default button.
+
+- A form beside a page with a head primary never gets a second primary.
+- On the phone the form is the page; `back` leads to the list.
+- States: `errors`, `saving`.
 
 ## record.tsx: a record, first tab
 
@@ -52,19 +94,23 @@ statements. Below them a `Pane.Split`: the main column with
 - What needs a person comes first; history comes after.
 - Area colours (`color`) mark the same area in cells, sections and groups
   (tabs carry no colour).
+- States: `empty` (a new customer), `loading` and `failed` (the history,
+  which loads on its own: its state stands in its section).
 
 ## record-groups.tsx: a record tab with groups
 
 ![record groups at 1440 px](../images/record-groups-1440.png)
 ![record groups at 390 px](../images/record-groups-390.png)
 
-One `Section` for the area with a `summary`; one `Group` per delivery with
+A `Band tone="note"` with the one statement of the tab; one `Section` for
+the area with a `summary`; one `Group` per delivery with
 `meta`, a `state` chip and actions. Inside a group: a strong sentence, its
 way as `Steps`, a `Table` with two-line cells and `Progress`, `Facts inline`
 with a print button. A finished group is `folded`.
 
 - Never a `Group` inside a `Group`, never a line inside one.
 - "You are next" is `Chip yours`, not a red badge.
+- States: `empty`, `loading`, `failed`, in the place of the groups.
 
 ## mail.tsx: a list with a reader
 

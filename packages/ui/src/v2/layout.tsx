@@ -452,7 +452,10 @@ export const Pane = (props: PaneProps) => {
  * Panes side by side inside content: a list beside its reader, a main column beside its info column. One hairline
  * between them; where a pane has a `width`, its line carries a grip.
  */
-Pane.Split = (props: { children: JSX.Element }) => {
+Pane.Split = (props: {
+  /** The panes side by side; a pane that is not there is `undefined`. */
+  children: JSX.Element;
+}) => {
   const [entries, setEntries] = createSignal<readonly SplitEntry[]>([]);
   const register = (entry: SplitEntry) => {
     setEntries((list) => [...list, entry]);
@@ -553,7 +556,9 @@ export const Bar = (props: BarProps) => {
 export type BandProps = {
   /** A tone only by meaning: a note, AI, "yours", wrong, waiting. */
   tone?: "note" | "ai" | "yours" | "bad" | "warn";
+  /** A name for the band, for assistive technology. */
   label?: string;
+  /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */
   children: JSX.Element;
 };
 
@@ -567,10 +572,13 @@ export const Band = (props: BandProps) => (
 // ── Cells ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CellProps = {
+  /** A Tabler icon before the label. */
   icon: string;
   /** The data colour of the symbol, such as the colour of an area. */
   color?: string;
+  /** What the cell is about, such as "Geld heute". */
   label: string;
+  /** The key statement: words, a number or a `Chip`. */
   value: JSX.Element;
   /** A quiet line under the value. */
   meta?: JSX.Element;
@@ -579,7 +587,10 @@ export type CellProps = {
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
-export const Cells = (props: { children: JSX.Element }) => (
+export const Cells = (props: {
+  /** Two to four `Cells.Cell`. */
+  children: JSX.Element;
+}) => (
   <div class="k2-cells" data-k2-part="Cells">
     {props.children}
   </div>
