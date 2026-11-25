@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -11,7 +11,7 @@ import * as jmapClient from "./connectors/jmap-client";
 import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
 import { providerErrorCode } from "./provider-errors";
-import { executeBindingRediscovery, submitDueFolderSyncs } from "./sync-runtime";
+import { executeBindingRediscovery, runRediscoveryJob, submitDueFolderSyncs } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -230,6 +230,38 @@ suite("mail binding rediscovery", () => {
     } finally {
       probe.mockRestore();
       setSystemTime();
+    }
+  });
+
+  test("a queued rediscovery whose binding is gone ends without retry, while a direct call still reports it", async () => {
+    const revoked = await createBoundMailbox("revoked");
+    await sql`UPDATE mail.provider_bindings SET state = 'revoked' WHERE id = ${revoked.bindingId}::uuid`;
+    const verify = spyOn(imapSmtpConnector, "verify");
+    const resubmit = mock(() => undefined);
+    try {
+      // A binding moved out of the served states, and one that no longer exists at all.
+      for (const bindingId of [revoked.bindingId, crypto.randomUUID()]) {
+        // The last attempt is where a throwing job would land in the dead-letter queue.
+        await expect(
+          runRediscoveryJob({
+            input: { bindingId, allowCredentialRevision: false },
+            heartbeat: async () => undefined,
+            resubmit,
+            attempt: 5,
+            failureCount: 4,
+          }),
+        ).resolves.toBeUndefined();
+        // A person's rediscovery calls this directly and must still learn why it did nothing.
+        const direct = await executeBindingRediscovery(bindingId, false, async () => undefined).then(
+          () => "resolved",
+          (error: unknown) => providerErrorCode(error, "UNEXPECTED_FAILURE"),
+        );
+        expect(direct).toBe("BINDING_UNAVAILABLE");
+      }
+      expect(resubmit, "a job without a binding must not queue itself again").not.toHaveBeenCalled();
+      expect(verify, "a job without a binding must not reach the provider").not.toHaveBeenCalled();
+    } finally {
+      verify.mockRestore();
     }
   });
 

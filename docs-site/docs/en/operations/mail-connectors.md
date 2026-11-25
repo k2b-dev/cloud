@@ -33,6 +33,13 @@ IMAP hostname for JMAP over HTTPS on port 443, **without credentials**.
 Background rediscovery never checks. Connection changes do not wait for detection;
 limit refresh waits up to five seconds.
 
+A background rediscovery ends without retry when its provider binding was
+deleted or is no longer active or degraded; a rediscovery that a person starts
+still reports the error. Earlier versions retried such a job into the
+dead-letter queue, and the dead letter kept Mail unhealthy. Delete a
+`mail:rediscover-binding` dead letter whose binding no longer exists on
+**Sync**; do not replay it.
+
 Cloud super administrators can run `cld mail admin operations`:
 
 - **JMAP possible** (`true`): the server indicates JMAP support.

@@ -3802,50 +3802,64 @@ export const executeBindingRediscovery = async (
 };
 
 const REDISCOVERY_MAX_ATTEMPTS = 5;
+type RediscoveryJobInput = { bindingId: string; allowCredentialRevision: boolean };
 const rediscoveryJob = lazySync((sync) =>
-  sync.job<{ bindingId: string; allowCredentialRevision: boolean }>({
+  sync.job<RediscoveryJobInput>({
     id: "mail:rediscover-binding",
     delivery: { ackWaitMs: REDISCOVERY_DEADLINE_MS, maxAttempts: REDISCOVERY_MAX_ATTEMPTS, backoffMs: [15_000, 30_000, 60_000, 120_000] },
   }),
 );
+
+/** Runs one `mail:rediscover-binding` attempt; exported so tests can drive its failure handling. */
+export const runRediscoveryJob = async (
+  ctx: Pick<JobContext<RediscoveryJobInput>, "input" | "heartbeat" | "resubmit" | "attempt" | "failureCount">,
+): Promise<void> => {
+  try {
+    await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () => ctx.heartbeat());
+  } catch (error) {
+    const code = normalizeSyncErrorCode(error);
+    if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+    // The binding was deleted or left the states rediscovery serves after the job was queued.
+    // Nothing is left to rediscover, so the job ends: a retry would fail the same way and its
+    // dead letter would keep Mail unhealthy. A person's rediscovery still reports the error.
+    if (code === "BINDING_UNAVAILABLE") {
+      log.debug("Mail provider rediscovery ended because its binding is unavailable", { bindingId: ctx.input.bindingId });
+      return;
+    }
+    // The binding's provider did not answer recent connection attempts. The rediscovery ends
+    // without trying it: the scheduler queues it again once the breaker's window ends, and a
+    // person's rediscovery ends the window first.
+    if (code === "PROVIDER_UNREACHABLE") {
+      log.debug("Mail provider rediscovery skipped while the provider is unreachable", {
+        bindingId: ctx.input.bindingId,
+        retryAfterMs: retryAfterMs(error, 0),
+      });
+      return;
+    }
+    if (code === "MAIL_RATE_LIMITED") {
+      ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
+      return;
+    }
+    if (code === "SYNC_BUSY") {
+      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
+      return;
+    }
+    if (ctx.attempt >= REDISCOVERY_MAX_ATTEMPTS) {
+      log.error("Mail provider rediscovery exhausted retries", { bindingId: ctx.input.bindingId, failureCount: ctx.failureCount, code });
+    } else if (code === "PROVIDER_REDISCOVERY_TIMEOUT") {
+      log.warn("Mail provider rediscovery was cancelled at its deadline and will retry", {
+        bindingId: ctx.input.bindingId,
+        attempt: ctx.attempt,
+        maxAttempts: REDISCOVERY_MAX_ATTEMPTS,
+      });
+    }
+    throw error;
+  }
+};
+
 let rediscoveryJobWorker: Worker | undefined;
 const startRediscoveryJob = async (): Promise<void> => {
-  rediscoveryJobWorker = await rediscoveryJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, async (ctx) => {
-    try {
-      await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () => ctx.heartbeat());
-    } catch (error) {
-      const code = normalizeSyncErrorCode(error);
-      if (code === "MAILBOX_TRANSPORT_CHANGED") return;
-      // The binding's provider did not answer recent connection attempts. The rediscovery ends
-      // without trying it: the scheduler queues it again once the breaker's window ends, and a
-      // person's rediscovery ends the window first.
-      if (code === "PROVIDER_UNREACHABLE") {
-        log.debug("Mail provider rediscovery skipped while the provider is unreachable", {
-          bindingId: ctx.input.bindingId,
-          retryAfterMs: retryAfterMs(error, 0),
-        });
-        return;
-      }
-      if (code === "MAIL_RATE_LIMITED") {
-        ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
-        return;
-      }
-      if (code === "SYNC_BUSY") {
-        ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
-        return;
-      }
-      if (ctx.attempt >= REDISCOVERY_MAX_ATTEMPTS) {
-        log.error("Mail provider rediscovery exhausted retries", { bindingId: ctx.input.bindingId, failureCount: ctx.failureCount, code });
-      } else if (code === "PROVIDER_REDISCOVERY_TIMEOUT") {
-        log.warn("Mail provider rediscovery was cancelled at its deadline and will retry", {
-          bindingId: ctx.input.bindingId,
-          attempt: ctx.attempt,
-          maxAttempts: REDISCOVERY_MAX_ATTEMPTS,
-        });
-      }
-      throw error;
-    }
-  });
+  rediscoveryJobWorker = await rediscoveryJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, runRediscoveryJob);
 };
 
 // Slightly longer than a minute, so a listener's minute check and the scheduler's tick do not
