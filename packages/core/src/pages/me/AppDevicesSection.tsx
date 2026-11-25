@@ -9,23 +9,13 @@ import {
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
-import {
-  announce,
-  Button,
-  ButtonLink,
-  dialogCore,
-  PanelDialog,
-  PinInput,
-  panelDialogFixedOptions,
-  prompts,
-  SettingsSection,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { announce, useLocale } from "@k2b/ui";
+import { confirm as ask, Bar, Button, Canvas, Dialog, Empty, Field, Icon, Input, Row, Section, Text, useToast } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
-import { accountMessages } from "./messages";
+import { autocomplete } from "../auth/autocomplete";
+import { useAccountMessages } from "./AccountWorkspace";
 
 const pwaApi = apiClient.auth.pwa.v1;
 const ResumeSchema = z.object({ id: z.string().uuid(), expiresAt: z.string().datetime() });
@@ -38,23 +28,19 @@ type Pairing =
   | { kind: "expired" | "locked" | "cancelled" | "reauthenticate" }
   | { kind: "error"; code: string };
 
-const toneClass = {
-  success: "text-[var(--k2b-success-text)]",
-  warning: "text-[var(--k2b-warning-text)]",
-  danger: "text-[var(--k2b-danger-text)]",
-} as const;
-
 const icon = (platform: PwaDeviceView["platform"]) =>
-  platform === "ios" ? "ti ti-brand-apple" : platform === "android" ? "ti ti-brand-android" : "ti ti-device-mobile";
+  platform === "ios" ? "brand-apple" : platform === "android" ? "brand-android" : "device-mobile";
 
 /**
- * The paired phones on `/me/app` and the pairing dialog. SSR renders the list; pairing needs the browser.
- * The whole pairing runs in one dialog of fixed height, so no step moves the page or the frame; closing it
- * cancels an open pairing.
+ * The paired phones on `/me/app` and the pairing dialog. SSR renders the list; pairing needs the browser. Closing the
+ * dialog cancels an open pairing. `pair` opens it from the page head; `dialog` must stand once in the screen.
  */
-export default function AppDevices(props: { userId: string; initial: PwaDeviceView[]; dateConfig: DateContext }) {
+export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[]; dateConfig: DateContext; summary: string }) => {
   const locale = useLocale();
-  const t = () => accountMessages.resolve([locale()]).t;
+  const t = useAccountMessages();
+  const toast = useToast();
+  const [dialogOpen, setDialogOpen] = createSignal(false);
+  let timer: ReturnType<typeof setInterval> | undefined;
   const [devices, setDevices] = createSignal(props.initial);
   const [pairing, setPairing] = createSignal<Pairing>({ kind: "starting" });
   const [code, setCode] = createSignal("");
@@ -68,8 +54,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   const storageKey = `cloud.pwa-pairing:${props.userId}`;
   let stop = () => {};
   let stopCompletion = () => {};
-  let closeDialog: (() => void) | undefined;
-  let dialogBody: HTMLDivElement | undefined;
+  let codeInput: HTMLInputElement | HTMLTextAreaElement | undefined;
   let disposed = false;
   // Counts closed dialogs: an answer that arrives after its dialog closed changes nothing.
   let generation = 0;
@@ -228,13 +213,13 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         setCode("");
         setWrongCode(left);
         setPairing({ ...current, status: current.status ? { ...current.status, attemptsLeft: left } : null });
-        focusTarget()?.focus();
+        codeInput?.focus();
       } else if (cause instanceof ApprovalError && cause.code === "EXPIRED" && cause.attemptsLeft === 0) {
         // The last wrong code cancels the pairing on the server, which says so; any other end is an expiry.
         finish({ kind: "locked" });
       } else if (!(cause instanceof ApprovalError) || cause.status >= 500 || cause.status === 429) {
         // No answer about the code: the pairing stays open, so the same code can be sent again.
-        toast.error(t().pwaFailed);
+        toast(t().pwaFailed, { status: "bad" });
       } else fail(cause);
     } finally {
       if (!disposed && run === generation) setBusy(false);
@@ -247,7 +232,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     } catch (cause) {
       // Already over on the server: nothing left to cancel.
       if (!(cause instanceof ApprovalError && (cause.code === "EXPIRED" || cause.code === "NOT_FOUND")) && !disposed)
-        toast.error(t().pwaFailed);
+        toast(t().pwaFailed, { status: "bad" });
     }
   };
 
@@ -256,18 +241,18 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     if (current.kind !== "waiting" || !current.link) return;
     try {
       await navigator.clipboard.writeText(current.link);
-      toast.success(t().pwaLinkCopied);
+      toast(t().pwaLinkCopied, { status: "ok" });
     } catch {
-      toast.error(t().pwaCopyFailed);
+      toast(t().pwaCopyFailed, { status: "bad" });
     }
   };
 
   const remove = async (device: PwaDeviceView) => {
     if (removing()) return;
-    const accepted = await prompts.confirm(t().pwaRemoveConfirm({ name: device.name }), {
+    const accepted = await ask({
       title: t().pwaRemoveTitle,
-      variant: "danger",
-      confirmText: t().pwaRemove,
+      description: t().pwaRemoveConfirm({ name: device.name }),
+      confirm: t().pwaRemove,
     });
     if (!accepted || disposed) return;
     setRemoving(device.id);
@@ -275,9 +260,9 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       await checked(await pwaApi.devices[":id"].$delete({ param: { id: device.id } }, approvalRequestOptions()));
       if (disposed) return;
       setDevices((items) => items.filter((item) => item.id !== device.id));
-      toast.success(t().pwaRemoved);
+      toast(t().pwaRemoved, { status: "ok" });
     } catch {
-      if (!disposed) toast.error(t().pwaFailed);
+      if (!disposed) toast(t().pwaFailed, { status: "bad" });
     } finally {
       if (!disposed) setRemoving(undefined);
     }
@@ -293,52 +278,33 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
 
   /** Only a code on its way to the server holds the dialog open; everything else may be cancelled. */
   const confirming = () => busy() && step() === "code";
-  /** The first task of the current screen: the code's first digit, or the screen's main button. */
-  const focusTarget = () =>
-    step() === "code"
-      ? (dialogBody?.querySelector<HTMLElement>(".k2b-pin-input input") ?? null)
-      : (dialogBody?.closest(".k2b-panel-dialog")?.querySelector<HTMLElement>("[data-pairing-focus]") ?? null);
+  const closed = () => {
+    clearInterval(timer);
+    setDialogOpen(false);
+    // Leaving the page keeps the pairing, so a reload of this tab resumes it.
+    if (disposed) return;
+    generation += 1;
+    const current = pairing();
+    // Closing is cancelling: an open pairing must not stay claimable.
+    stop();
+    remember(null);
+    if (current.kind === "waiting") void cancelPending(current.id);
+    setCode("");
+    setWrongCode(undefined);
+    setBusy(false);
+    setPairing({ kind: "starting" });
+  };
   const requestClose = () => {
-    if (!confirming()) closeDialog?.();
+    if (dialogOpen() && !confirming()) closed();
   };
 
   /** Opens the dialog; `resume` continues a pairing this tab started before a reload. */
   const open = (resume?: z.infer<typeof ResumeSchema>) => {
-    if (closeDialog || disposed) return;
+    if (dialogOpen() || disposed) return;
     setTouch(!window.matchMedia("(pointer: fine)").matches);
     setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    void dialogCore
-      .open<void>(
-        (close, context) => {
-          closeDialog = close;
-          context.setDismissHandler(requestClose);
-          return content();
-        },
-        {
-          ...panelDialogFixedOptions,
-          cancelBehavior: "ignore",
-          panelClassName: `${panelDialogFixedOptions.panelClassName} app-pairing-dialog`,
-          // The step owns focus, also when the first answer arrives before the dialog's first frame.
-          initialFocus: focusTarget,
-        },
-      )
-      .then(() => {
-        clearInterval(timer);
-        closeDialog = undefined;
-        // Leaving the page keeps the pairing, so a reload of this tab resumes it.
-        if (disposed) return;
-        generation += 1;
-        const current = pairing();
-        // Closing is cancelling: an open pairing must not stay claimable.
-        stop();
-        remember(null);
-        if (current.kind === "waiting") void cancelPending(current.id);
-        setCode("");
-        setWrongCode(undefined);
-        setBusy(false);
-        setPairing({ kind: "starting" });
-      });
+    timer = setInterval(() => setNow(Date.now()), 1000);
+    setDialogOpen(true);
     if (resume) {
       setPairing({ kind: "waiting", id: resume.id, expiresAt: resume.expiresAt, link: null, claimUntil: null, status: null });
       watch(resume.id, resume.expiresAt);
@@ -366,7 +332,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     disposed = true;
     stop();
     stopCompletion();
-    closeDialog?.();
+    clearInterval(timer);
   });
 
   const remaining = (until: string) => {
@@ -393,202 +359,211 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   });
   const errorText = (code: string) =>
     code === "LIMIT_REACHED" ? t().pwaLimit : code === "UNAVAILABLE" ? t().pwaUnavailable : t().pwaFailed;
-  const outcome = () => {
+  const outcome = (): { icon: string; tone: "ok" | "warn" | "bad"; text: string } | null => {
     const current = pairing();
-    if (current.kind === "done")
-      return { icon: "ti ti-circle-check", tone: toneClass.success, text: t().pwaPairedTitle({ name: current.name }) };
-    if (current.kind === "expired") return { icon: "ti ti-clock-x", tone: toneClass.warning, text: t().pwaExpired };
-    if (current.kind === "locked") return { icon: "ti ti-lock", tone: toneClass.warning, text: t().pwaTooManyTries };
-    if (current.kind === "cancelled") return { icon: "ti ti-circle-x", tone: toneClass.warning, text: t().pwaCancelled };
-    if (current.kind === "reauthenticate") return { icon: "ti ti-shield-lock", tone: toneClass.warning, text: t().pwaReauthenticateHint };
-    if (current.kind === "error") return { icon: "ti ti-alert-circle", tone: toneClass.danger, text: errorText(current.code) };
+    if (current.kind === "done") return { icon: "circle-check", tone: "ok", text: t().pwaPairedTitle({ name: current.name }) };
+    if (current.kind === "expired") return { icon: "clock-x", tone: "warn", text: t().pwaExpired };
+    if (current.kind === "locked") return { icon: "lock", tone: "warn", text: t().pwaTooManyTries };
+    if (current.kind === "cancelled") return { icon: "circle-x", tone: "warn", text: t().pwaCancelled };
+    if (current.kind === "reauthenticate") return { icon: "shield-lock", tone: "warn", text: t().pwaReauthenticateHint };
+    if (current.kind === "error") return { icon: "alert-circle", tone: "bad", text: errorText(current.code) };
     return null;
   };
 
-  // Each screen of the dialog moves focus to its first task and tells screen readers what changed.
+  // Each screen of the dialog tells screen readers what changed; the code screen puts the focus in the field.
   createEffect(
     on(step, (current, previous) => {
-      if (!closeDialog || current === previous) return;
+      if (!dialogOpen() || current === previous) return;
       const result = outcome();
       if (current === "code") announce(t().pwaClaimed({ name: waiting()?.status?.device?.name ?? "" }));
       else if (current === "link") announce(t().pwaScanOrCopy);
       else if (result) announce(current === "done" ? `${result.text} ${t().pwaPaired}` : result.text);
-      queueMicrotask(() => focusTarget()?.focus());
+      if (current === "code") queueMicrotask(() => codeInput?.focus());
     }),
   );
 
-  const text = "text-sm";
-  const secondary = "text-sm text-dimmed";
-  const content = () => (
-    <PanelDialog>
-      <PanelDialog.Header title={t().pwaPair} icon="ti ti-device-mobile" close={requestClose} closeDisabled={confirming()} />
-      <PanelDialog.Body>
-        <div ref={dialogBody} class="flex flex-col gap-4">
-          <Switch>
-            <Match when={step() === "starting"}>
-              <p class={`${secondary} flex items-center gap-2`} role="status">
-                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                {t().pwaPreparing}
-              </p>
-            </Match>
-            <Match when={step() === "link" && waiting()}>
-              {(current) => (
-                <>
-                  <p class={text}>{t().pwaScanOrCopy}</p>
-                  {/* Every screen shows the code: a touch screen is as often a tablet or a laptop as the phone to pair. */}
-                  <Show when={current().link}>
-                    {(link) => (
-                      <img
-                        class="size-56 max-w-full self-center rounded-[var(--ui-radius-control)] bg-white p-2"
-                        alt={t().pwaQrLabel}
-                        src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(link()))}`}
-                      />
-                    )}
-                  </Show>
-                  <Show when={current().claimUntil}>
-                    {(until) => <p class={`${secondary} text-center tabular-nums`}>{t().pwaLinkValid({ time: remaining(until()) })}</p>}
-                  </Show>
-                  <Show when={touch()} fallback={<p class={secondary}>{t().pwaNoAppYet}</p>}>
-                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                      <p class={secondary}>{t().pwaNoAppOnPhone}</p>
-                      <ButtonLink href="/pwa/" variant="secondary" size="sm">
-                        <i class="ti ti-download" aria-hidden="true" />
-                        {t().pwaInstall}
-                      </ButtonLink>
-                    </div>
-                  </Show>
-                </>
-              )}
-            </Match>
-            <Match when={step() === "resumed"}>
-              <p class={secondary}>{t().pwaResumed}</p>
-            </Match>
-            <Match when={step() === "code"}>
-              <p class={text}>{t().pwaClaimed({ name: waiting()?.status?.device?.name ?? "" })}</p>
-              <PinInput
-                label={t().pwaCode}
-                length={6}
-                stretch
-                value={code}
-                onValueChange={(value) => {
-                  setCode(value);
-                  if (value) setWrongCode(undefined);
-                }}
-                onSubmit={confirm}
-                readOnly={busy()}
-                error={() => {
-                  const count = wrongCode();
-                  return count === undefined ? undefined : t().pwaWrongCode({ count });
-                }}
-              />
-            </Match>
-            <Match when={outcome()}>
-              {(result) => (
-                <div class="flex flex-col items-center gap-2 py-6 text-center">
-                  <i class={`${result().icon} text-3xl ${result().tone}`} aria-hidden="true" />
-                  <p class={step() === "done" ? `${text} font-medium` : text}>{result().text}</p>
-                  <Show when={step() === "done"}>
-                    <p class={secondary}>{t().pwaPaired}</p>
-                  </Show>
-                </div>
-              )}
-            </Match>
-          </Switch>
-        </div>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <div class="flex w-full flex-wrap justify-end gap-2">
-          <Switch>
-            <Match when={step() === "starting" || step() === "resumed"}>
-              <Button data-pairing-focus variant="ghost" onClick={requestClose}>
-                {t().pwaCancel}
-              </Button>
-            </Match>
-            <Match when={step() === "link"}>
-              <Button variant="ghost" onClick={requestClose}>
-                {t().pwaCancel}
-              </Button>
-              <Button data-pairing-focus variant={touch() ? "primary" : "secondary"} onClick={copy}>
-                <i class="ti ti-copy" aria-hidden="true" />
-                {t().pwaCopyLink}
-              </Button>
-            </Match>
-            <Match when={step() === "code"}>
-              <Button variant="ghost" onClick={requestClose} disabled={confirming()}>
-                {t().pwaCancel}
-              </Button>
-              <Button loading={busy()} disabled={code().length !== 6} onClick={confirm}>
-                {t().pwaConfirm}
-              </Button>
-            </Match>
-            <Match when={step() === "done"}>
-              <Button data-pairing-focus onClick={requestClose}>
-                {t().pwaDone}
-              </Button>
-            </Match>
-            <Match when={step() === "reauthenticate"}>
-              <Button variant="ghost" onClick={requestClose}>
-                {t().pwaClose}
-              </Button>
-              <Button data-pairing-focus onClick={reauthenticate}>
-                {t().pwaReauthenticate}
-              </Button>
-            </Match>
-            <Match when={outcome()}>
-              <Button variant="ghost" onClick={requestClose}>
-                {t().pwaClose}
-              </Button>
-              <Button data-pairing-focus loading={busy()} onClick={start}>
-                {t().pwaStartAgain}
-              </Button>
-            </Match>
-          </Switch>
-        </div>
-      </PanelDialog.Footer>
-    </PanelDialog>
-  );
-
-  return (
-    <SettingsSection
-      title={t().pwaPhones}
-      actions={
-        <Button size="sm" onClick={() => open()}>
-          {t().pwaPair}
-        </Button>
+  const dialog = (): JSX.Element => (
+    // k2b-ui gap: a dialog takes the height of each step (v1 kept one fixed height), and there is no code input of six
+    // digits (PinInput); the code is a plain field that keeps digits only.
+    <Dialog
+      title={t().pwaPair}
+      open={dialogOpen()}
+      dismissible={false}
+      onOpenChange={(next) => {
+        if (!next) requestClose();
+      }}
+      foot={
+        <Switch>
+          <Match when={step() === "starting" || step() === "resumed"}>
+            <Button variant="ghost" onClick={requestClose}>
+              {t().pwaCancel}
+            </Button>
+          </Match>
+          <Match when={step() === "link"}>
+            <Button variant="ghost" onClick={requestClose}>
+              {t().pwaCancel}
+            </Button>
+            <Button variant="primary" icon="copy" onClick={() => void copy()}>
+              {t().pwaCopyLink}
+            </Button>
+          </Match>
+          <Match when={step() === "code"}>
+            <Button variant="ghost" onClick={requestClose} disabled={confirming()}>
+              {t().pwaCancel}
+            </Button>
+            <Button variant="primary" busy={busy()} disabled={code().length !== 6} onClick={() => void confirm()}>
+              {t().pwaConfirm}
+            </Button>
+          </Match>
+          <Match when={step() === "done"}>
+            <Button variant="primary" onClick={requestClose}>
+              {t().pwaDone}
+            </Button>
+          </Match>
+          <Match when={step() === "reauthenticate"}>
+            <Button variant="ghost" onClick={requestClose}>
+              {t().pwaClose}
+            </Button>
+            <Button variant="primary" onClick={reauthenticate}>
+              {t().pwaReauthenticate}
+            </Button>
+          </Match>
+          <Match when={outcome()}>
+            <Button variant="ghost" onClick={requestClose}>
+              {t().pwaClose}
+            </Button>
+            <Button variant="primary" busy={busy()} onClick={() => void start()}>
+              {t().pwaStartAgain}
+            </Button>
+          </Match>
+        </Switch>
       }
     >
-      <Show when={devices().length} fallback={<p class={secondary}>{t().pwaNoPhones}</p>}>
-        <ul class="flex flex-col gap-2">
-          <For each={devices()}>
-            {(device) => (
-              <li class="flex min-h-11 items-center gap-3">
-                <i
-                  class={`${icon(device.platform)} text-lg text-dimmed`}
-                  role="img"
-                  aria-label={t().pwaPlatform({ platform: device.platform })}
+      <Switch>
+        <Match when={step() === "starting"}>
+          <Text muted>{t().pwaPreparing}</Text>
+        </Match>
+        <Match when={step() === "link" && waiting()}>
+          {(current) => (
+            <>
+              <Text>{t().pwaScanOrCopy}</Text>
+              {/* Every screen shows the code: a touch screen is as often a tablet or a laptop as the phone to pair. */}
+              <Show when={current().link}>
+                {(link) => (
+                  // k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas.
+                  <Canvas label={t().pwaQrLabel} height={224}>
+                    <img
+                      alt={t().pwaQrLabel}
+                      width="224"
+                      height="224"
+                      style={{
+                        display: "block",
+                        margin: "0 auto",
+                        height: "100%",
+                        background: "#fff",
+                        padding: "8px",
+                        "box-sizing": "border-box",
+                      }}
+                      src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(link()))}`}
+                    />
+                  </Canvas>
+                )}
+              </Show>
+              <Show when={current().claimUntil}>{(until) => <Text muted>{t().pwaLinkValid({ time: remaining(until()) })}</Text>}</Show>
+              <Show when={touch()} fallback={<Text muted>{t().pwaNoAppYet}</Text>}>
+                <Text muted>{t().pwaNoAppOnPhone}</Text>
+                <Bar
+                  end={
+                    <Button icon="download" href="/pwa/">
+                      {t().pwaInstall}
+                    </Button>
+                  }
                 />
-                <div class="min-w-0 flex-1">
-                  <p class={`${text} break-words font-medium`}>{device.name}</p>
-                  <p class={secondary}>
-                    {device.current ? `${t().pwaThisPhone} · ` : ""}
-                    {t().pwaLastUsed({ when: day(device.lastUsedAt) })}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={t().pwaRemoveDevice({ name: device.name })}
-                  loading={removing() === device.id}
-                  disabled={Boolean(removing())}
-                  onClick={() => remove(device)}
-                >
-                  {t().pwaRemove}
-                </Button>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-    </SettingsSection>
+              </Show>
+            </>
+          )}
+        </Match>
+        <Match when={step() === "resumed"}>
+          <Text muted>{t().pwaResumed}</Text>
+        </Match>
+        <Match when={step() === "code"}>
+          <Text>{t().pwaClaimed({ name: waiting()?.status?.device?.name ?? "" })}</Text>
+          <Field
+            name="code"
+            label={t().pwaCode}
+            error={wrongCode() === undefined ? undefined : t().pwaWrongCode({ count: wrongCode() ?? 0 })}
+            required
+          >
+            <Input
+              value={code()}
+              placeholder="000000"
+              disabled={busy()}
+              ref={(element) => {
+                codeInput = element;
+                autocomplete("one-time-code")(element);
+              }}
+              onInput={(value) => {
+                const digits = value.replace(/\D/g, "").slice(0, 6);
+                setCode(digits);
+                if (digits) setWrongCode(undefined);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.isComposing) void confirm();
+              }}
+            />
+          </Field>
+        </Match>
+        <Match when={outcome()}>
+          {(result) => (
+            <>
+              <Text weight={step() === "done" ? "strong" : undefined}>
+                <Icon name={result().icon} tone={result().tone} /> {result().text}
+              </Text>
+              <Show when={step() === "done"}>
+                <Text muted>{t().pwaPaired}</Text>
+              </Show>
+            </>
+          )}
+        </Match>
+      </Switch>
+    </Dialog>
   );
-}
+
+  const section = (): JSX.Element => (
+    <Section
+      icon="device-mobile"
+      title={t().pwaPhones}
+      count={devices().length}
+      summary={props.summary}
+      actions={[{ label: t().pwaPair, icon: "plus", onClick: () => open() }]}
+    >
+      <Show
+        when={devices().length}
+        fallback={
+          <Empty icon="device-mobile" text={t().pwaNoPhones} action={{ label: t().pwaPair, icon: "plus", onClick: () => open() }} />
+        }
+      >
+        <For each={devices()}>
+          {(device) => (
+            <Row
+              icon={icon(device.platform)}
+              lines={[device.name, `${device.current ? `${t().pwaThisPhone} · ` : ""}${t().pwaLastUsed({ when: day(device.lastUsedAt) })}`]}
+              end={
+                <Button
+                  variant="ghost"
+                  icon="trash"
+                  label={t().pwaRemoveDevice({ name: device.name })}
+                  busy={removing() === device.id}
+                  disabled={Boolean(removing()) && removing() !== device.id}
+                  onClick={() => void remove(device)}
+                />
+              }
+            />
+          )}
+        </For>
+      </Show>
+    </Section>
+  );
+
+  return { section, dialog, pair: () => open() };
+};

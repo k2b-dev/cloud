@@ -8,20 +8,11 @@ import {
   type UpdateNotificationQuietSettings,
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
-import {
-  Button,
-  DateTimePicker,
-  IconButton,
-  MultiSelectInput,
-  Select,
-  SettingsGroup,
-  SettingsSection,
-  StatusBadge,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createEffect, createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js";
-import { type AccountMessages, accountMessages } from "./messages";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Empty, Field, Group, Menu, Row, Section, Select, useToast } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, Index, onCleanup, onMount } from "solid-js";
+import { useAccountMessages } from "./AccountWorkspace";
+import type { AccountMessages } from "./messages";
 
 const HOUR_MS = 60 * 60_000;
 /** How long to wait before asking again when a refresh failed or the server still reports a passed change. */
@@ -63,9 +54,14 @@ const statusLabel = (settings: NotificationQuietSettings, t: AccountMessages, no
   return until ? t.quietHoursUntil({ time: until }) : t.quietHoursNow;
 };
 
-export default function QuietTimeSettings(props: { initial: NotificationQuietSettings; dateConfig: DateContext }) {
+/**
+ * Notifications › Do not disturb: a pause until a chosen time and recurring quiet hours. The state follows the clock
+ * and refreshes itself when it changes on its own; each save replaces the whole snapshot, one at a time.
+ */
+export default function QuietTimeSection(props: { initial: NotificationQuietSettings; dateConfig: DateContext }) {
   const locale = useLocale();
-  const t = () => accountMessages.resolve([locale()]).t;
+  const t = useAccountMessages();
+  const toast = useToast();
   const context = () => ({ ...props.dateConfig, locale: locale() });
   const [settings, setSettings] = createSignal(props.initial);
   const [draft, setDraft] = createSignal<NotificationQuietHours>(props.initial.quietHours);
@@ -130,7 +126,7 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
       setSettings(next);
       return true;
     } catch {
-      toast.error(kind === "pause" ? t().pauseSaveFailed : t().quietHoursSaveFailed);
+      toast(kind === "pause" ? t().pauseSaveFailed : t().quietHoursSaveFailed, { status: "bad" });
       return false;
     } finally {
       setSaving(null);
@@ -139,14 +135,14 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
 
   const pause = async (until: string | null) => {
     if (until && Date.parse(until) <= Date.now()) {
-      toast.error(t().pauseInPast);
+      toast(t().pauseInPast, { status: "bad" });
       return;
     }
     if (until && Date.parse(until) > Date.now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * HOUR_MS) {
-      toast.error(t().pauseTooFar);
+      toast(t().pauseTooFar, { status: "bad" });
       return;
     }
-    if (await save("pause", { doNotDisturbUntil: until })) toast.success(until ? t().pauseSaved : t().pauseResumed);
+    if (await save("pause", { doNotDisturbUntil: until })) toast(until ? t().pauseSaved : t().pauseResumed, { status: "ok" });
   };
 
   const saveHours = async () => {
@@ -154,7 +150,7 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
     if (await save("hours", { quietHours: hours })) {
       // Take the saved form unless the periods changed while saving; those edits stay as unsaved changes.
       if (sameHours(draft(), hours)) setDraft(settings().quietHours);
-      toast.success(t().quietHoursSaved);
+      toast(t().quietHoursSaved, { status: "ok" });
     }
   };
 
@@ -164,114 +160,113 @@ export default function QuietTimeSettings(props: { initial: NotificationQuietSet
       periods: current.periods.map((period, position) => (position === index ? { ...period, ...change } : period)),
     }));
 
-  return (
-    <SettingsSection
-      title={t().quietTitle}
-      subtitle={
-        <>
-          {t().quietDescription}
-          {/* On a line of its own below the description: a longer status never rewraps the text or moves the fields. */}
-          <span class="mt-2 flex">
-            <StatusBadge
-              tone={settings().state.active ? "info" : "neutral"}
-              icon={settings().state.active ? "ti ti-moon" : null}
-              label={statusLabel(settings(), t(), now(), context())}
-            />
-          </span>
-        </>
-      }
-      icon="ti ti-moon"
-    >
-      <SettingsGroup title={t().pauseTitle} description={t().pauseDescription}>
-        <DateTimePicker
-          class="sm:max-w-sm"
-          label={t().pauseUntil}
-          placeholder={t().pauseNotPaused}
-          value={() => settings().doNotDisturbUntil}
-          presets={presets()}
-          dateConfig={context()}
-          clearable
-          disabled={saving() !== null}
-          onValueChange={(value) => void pause(value)}
-        />
-      </SettingsGroup>
+  const days = (period: NotificationQuietPeriod) => {
+    const names = weekdayOptions(locale());
+    return period.days.length === 7 ? t().quietEveryDay : period.days.map((day) => names[day - 1]?.label ?? String(day)).join(", ");
+  };
+  const toggleDay = (index: number, period: NotificationQuietPeriod, day: number) =>
+    updatePeriod(index, {
+      days: (period.days.includes(day) ? period.days.filter((value) => value !== day) : [...period.days, day]).sort(
+        (left, right) => left - right,
+      ),
+    });
+  const pausedUntil = () => settings().doNotDisturbUntil;
 
-      <SettingsGroup title={t().quietHoursTitle} description={t().quietHoursDescription}>
-        <SettingsGroup.Action>
-          <Button
-            type="button"
-            size="sm"
-            variant="primary"
-            disabled={saving() !== null || !dirty() || invalid()}
-            loading={saving() === "hours"}
-            loadingLabel={t().save}
-            onClick={() => void saveHours()}
+  return (
+    <Section icon="moon" title={t().quietTitle} summary={t().quietDescription}>
+      <Row
+        icon={settings().state.active ? "moon" : "moon-off"}
+        lines={[t().pauseTitle, statusLabel(settings(), t(), now(), context())]}
+        end={
+          // k2b-ui gap: no date and time picker yet; a pause ends at one of the presets (the old free time is gone).
+          <Menu
+            label={t().pauseUntil}
+            disabled={saving() !== null}
+            items={[
+              ...presets().map((preset) => ({ label: preset.label, icon: "player-pause", onClick: () => void pause(preset.value) })),
+              ...(pausedUntil()
+                ? ["separator" as const, { label: t().pauseResume, icon: "player-play", onClick: () => void pause(null) }]
+                : []),
+            ]}
           >
-            {t().save}
-          </Button>
-        </SettingsGroup.Action>
-        <div class="flex flex-col gap-4">
-          <Show when={draft().periods.length > 0} fallback={<p class="text-sm text-dimmed">{t().quietNoPeriods}</p>}>
-            {/* Rows are keyed by position, so editing a period keeps its open controls. The times and the remove
-                button share a cell of their own, so an error below the days moves nothing beside them. */}
-            <Index each={draft().periods}>
-              {(period, index) => (
-                <div class="grid items-start gap-3 sm:grid-cols-2">
-                  <MultiSelectInput
-                    label={t().quietDays}
-                    options={weekdayOptions(locale())}
-                    value={() => period().days.map(String)}
-                    error={period().days.length === 0 ? t().quietDaysRequired : undefined}
-                    onValueChange={(days) => updatePeriod(index, { days: days.map(Number).sort((left, right) => left - right) })}
-                  />
-                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
-                    <Select
-                      label={t().quietFrom}
-                      options={timeOptions(period().start)}
-                      value={() => period().start}
-                      onValueChange={(start) => start && updatePeriod(index, { start })}
-                    />
-                    <Select
-                      label={t().quietTo}
-                      options={timeOptions(period().end)}
-                      value={() => period().end}
-                      onValueChange={(end) => end && updatePeriod(index, { end })}
-                    />
-                    <IconButton
-                      label={t().quietRemovePeriod}
-                      onClick={() =>
-                        setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) }))
-                      }
-                    >
-                      <i class="ti ti-trash" aria-hidden="true" />
-                    </IconButton>
-                  </div>
-                </div>
-              )}
-            </Index>
-          </Show>
-          <div class="flex flex-wrap items-end justify-between gap-3">
+            {pausedUntil() ? t().pauseChange : t().pauseTitle}
+          </Menu>
+        }
+      />
+      <Index each={draft().periods} fallback={<Empty icon="clock" text={t().quietNoPeriods} />}>
+        {(period, index) => (
+          <Group
+            icon="clock"
+            title={t().quietPeriodTitle({ from: period().start, to: period().end })}
+            meta={days(period())}
+            actions={[
+              {
+                label: t().quietRemovePeriod,
+                icon: "trash",
+                onClick: () =>
+                  setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) })),
+              },
+            ]}
+          >
+            <Field.Row>
+              <Field
+                name={`quietDays${index}`}
+                label={t().quietDays}
+                error={period().days.length === 0 ? t().quietDaysRequired : undefined}
+              >
+                <Menu
+                  label={t().quietDays}
+                  items={weekdayOptions(locale()).map((option) => ({
+                    label: option.label,
+                    checked: period().days.includes(Number(option.value)),
+                    onClick: () => toggleDay(index, period(), Number(option.value)),
+                  }))}
+                >
+                  {period().days.length > 0 ? days(period()) : t().quietDaysRequired}
+                </Menu>
+              </Field>
+              <Field name={`quietFrom${index}`} label={t().quietFrom}>
+                <Select
+                  options={timeOptions(period().start)}
+                  value={period().start}
+                  onChange={(start) => start && updatePeriod(index, { start })}
+                />
+              </Field>
+              <Field name={`quietTo${index}`} label={t().quietTo}>
+                <Select options={timeOptions(period().end)} value={period().end} onChange={(end) => end && updatePeriod(index, { end })} />
+              </Field>
+            </Field.Row>
+          </Group>
+        )}
+      </Index>
+      <Field name="quietTimeZone" label={t().quietTimeZone} hint={t().quietHoursDescription}>
+        <Select
+          options={timeZones()}
+          value={draft().timeZone}
+          onChange={(timeZone) => timeZone && setDraft((current) => ({ ...current, timeZone }))}
+        />
+      </Field>
+      <Bar
+        end={
+          <>
             <Button
-              type="button"
-              size="sm"
-              variant="secondary"
+              icon="plus"
               disabled={draft().periods.length >= NOTIFICATION_QUIET_PERIOD_LIMIT}
               onClick={() => setDraft((current) => ({ ...current, periods: [...current.periods, DEFAULT_PERIOD] }))}
             >
-              <i class="ti ti-plus" aria-hidden="true" />
               {t().quietAddPeriod}
             </Button>
-            <Select
-              class="w-full sm:w-72"
-              label={t().quietTimeZone}
-              searchable
-              options={timeZones()}
-              value={() => draft().timeZone}
-              onValueChange={(timeZone) => timeZone && setDraft((current) => ({ ...current, timeZone }))}
-            />
-          </div>
-        </div>
-      </SettingsGroup>
-    </SettingsSection>
+            <Button
+              variant="primary"
+              busy={saving() === "hours"}
+              disabled={saving() === "pause" || !dirty() || invalid()}
+              onClick={() => void saveHours()}
+            >
+              {t().save}
+            </Button>
+          </>
+        }
+      />
+    </Section>
   );
 }

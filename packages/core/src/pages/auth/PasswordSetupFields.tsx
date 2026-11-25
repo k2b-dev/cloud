@@ -1,7 +1,8 @@
 import { i18n, password } from "@k2b/stdlib";
-import { clipboard } from "@k2b/stdlib/solid";
-import { Button, prompts, TextInput, useLocale } from "@k2b/ui";
-import { type Accessor, createMemo, createSignal } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Button, Dialog, Facts, Field, Input, Progress, Text } from "@k2b/ui/v2";
+import { type Accessor, createMemo, createSignal, type JSX } from "solid-js";
+import { autocomplete } from "./autocomplete";
 
 type PasswordSetupFieldsProps = {
   newPassword: Accessor<string>;
@@ -28,7 +29,7 @@ export const passwordSetupMessages = i18n.define({
       noPassword: "No password yet",
       minimumLength: "Use at least 12 characters.",
       estimatedCrackTime: ({ time }: { time: string }) => `Estimated crack time: ${time}`,
-      generatedFilled: "Generated password filled into both password fields. Use the eye icon to review it before saving.",
+      generatedFilled: 'Generated password filled into both password fields. Use "Show password" to review it before saving.',
       confirmPassword: "Confirm new password",
       confirmPasswordDescription: "Repeat the new password to avoid typos.",
       strength0: "very weak",
@@ -37,6 +38,8 @@ export const passwordSetupMessages = i18n.define({
       strength3: "strong",
       strength4: "very strong",
       germanStrengthAdvice: "A longer, randomly generated password is harder to guess.",
+      showPassword: "Show password",
+      strength: ({ level }: { level: string }) => `Strength: ${level}`,
     },
     de: {
       generatedPassword: "Erzeugtes Passwort",
@@ -52,7 +55,7 @@ export const passwordSetupMessages = i18n.define({
       noPassword: "Noch kein Passwort",
       minimumLength: "Verwende mindestens 12 Zeichen.",
       estimatedCrackTime: ({ time }) => `Geschätzte Zeit zum Knacken: ${time}`,
-      generatedFilled: "Das erzeugte Passwort wurde in beide Felder eingetragen. Prüfe es vor dem Speichern über das Augensymbol.",
+      generatedFilled: "Das erzeugte Passwort wurde in beide Felder eingetragen. Prüfe es vor dem Speichern über „Passwort zeigen“.",
       confirmPassword: "Neues Passwort bestätigen",
       confirmPasswordDescription: "Wiederhole das neue Passwort, um Tippfehler zu vermeiden.",
       strength0: "sehr schwach",
@@ -61,150 +64,119 @@ export const passwordSetupMessages = i18n.define({
       strength3: "stark",
       strength4: "sehr stark",
       germanStrengthAdvice: "Ein längeres, zufällig erzeugtes Passwort ist schwerer zu erraten.",
+      showPassword: "Passwort zeigen",
+      strength: ({ level }) => `Stärke: ${level}`,
     },
   },
 });
 
-function GeneratedPasswordDialog(props: { password: string; close: () => void; locale?: string }) {
-  const inheritedLocale = useLocale();
-  const t = () => passwordSetupMessages.resolve([props.locale ?? inheritedLocale()]).t;
-  const { copy, wasCopied } = clipboard.create(2500);
-  const [copiedOnce, setCopiedOnce] = createSignal(false);
-
-  const copyPassword = async () => {
-    await copy(props.password);
-    setCopiedOnce(true);
-  };
-
+/** A password field with a quiet "show" toggle at its end. */
+export function PasswordInput(props: {
+  value: string;
+  onInput: (value: string) => void;
+  autocomplete: "current-password" | "new-password";
+  placeholder?: string;
+  label: string;
+  /** One more quiet deed at the field's end, such as "Generate". */
+  end?: JSX.Element;
+}) {
+  const [visible, setVisible] = createSignal(false);
   return (
-    <div class="flex flex-col gap-4">
-      <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <p class="text-xs font-semibold text-secondary">{t().generatedPassword}</p>
-        <p class="mt-2 break-all font-mono text-sm text-primary">{props.password}</p>
-      </div>
-
-      <p class="text-sm text-dimmed">{t().generatedPasswordDescription}</p>
-
-      <div class="flex justify-end gap-2">
-        <Button type="button" variant="secondary" size="sm" onClick={() => void copyPassword()}>
-          <i class={wasCopied() ? "ti ti-clipboard-check" : "ti ti-copy"} />
-          {wasCopied() ? t().copied : t().copyPassword}
-        </Button>
-        {copiedOnce() && (
-          <Button type="button" size="sm" onClick={props.close}>
-            {t().done}
-          </Button>
-        )}
-      </div>
-    </div>
+    <Input
+      type={visible() ? "text" : "password"}
+      value={props.value}
+      onInput={props.onInput}
+      placeholder={props.placeholder}
+      ref={autocomplete(props.autocomplete)}
+      end={
+        <>
+          <Button
+            variant="ghost"
+            icon={visible() ? "eye-off" : "eye"}
+            label={props.label}
+            pressed={visible()}
+            onClick={() => setVisible(!visible())}
+          />
+          {props.end}
+        </>
+      }
+    />
   );
 }
 
-/** Reusable new-password fields for expired-password and reset-token flows. */
+/** Reusable new-password fields for expired-password, reset-token and change-password flows. */
 export function PasswordSetupFields(props: PasswordSetupFieldsProps) {
   const inheritedLocale = useLocale();
   const resolved = () => passwordSetupMessages.resolve([props.locale ?? inheritedLocale()]);
   const t = () => resolved().t;
   const [generatedPassword, setGeneratedPassword] = createSignal(false);
-
+  const [shown, setShown] = createSignal<string | null>(null);
   const strength = createMemo(() => password.strength(props.newPassword()));
-  const strengthPercent = () => (props.newPassword().length === 0 ? 0 : ((strength().score + 1) / 5) * 100);
-  const strengthColor = () => {
-    const score = strength().score;
-    if (score <= 1) return "bg-red-500";
-    if (score === 2) return "bg-amber-500";
-    if (score === 3) return "bg-emerald-500";
-    return "bg-green-600";
-  };
-  const strengthTextColor = () => {
-    const score = strength().score;
-    if (score <= 1) return "text-red-600 dark:text-red-400";
-    if (score === 2) return "text-amber-600 dark:text-amber-400";
-    return "text-emerald-600 dark:text-emerald-400";
-  };
+  const level = () => [t().strength0, t().strength1, t().strength2, t().strength3, t().strength4][strength().score] ?? "";
 
-  const generatePassword = async () => {
-    const next = password.random({
-      length: 24,
-      uppercase: true,
-      numbers: true,
-      symbols: false,
-    });
+  const generatePassword = () => {
+    const next = password.random({ length: 24, uppercase: true, numbers: true, symbols: false });
     props.onNewPasswordChange(next);
     props.onConfirmPasswordChange(next);
     setGeneratedPassword(true);
-    await prompts.dialog<void>((close) => <GeneratedPasswordDialog password={next} close={close} locale={props.locale} />, {
-      title: t().passwordGenerated,
-      icon: "ti ti-sparkles",
-      size: "small",
-    });
+    setShown(next);
   };
-
   const updateNewPassword = (value: string) => {
     props.onNewPasswordChange(value);
     setGeneratedPassword(false);
   };
+  const advice = () =>
+    props.newPassword().length === 0
+      ? t().minimumLength
+      : generatedPassword()
+        ? t().generatedFilled
+        : resolved().locale === "de"
+          ? t().germanStrengthAdvice
+          : strength().feedback.length > 0
+            ? `${strength().feedback.slice(0, 2).join(". ")}.`
+            : t().estimatedCrackTime({ time: strength().crackTime });
 
   return (
-    <div class="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/70">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium text-primary">{t().newPassword}</p>
-          <p class="text-xs text-dimmed">{t().newPasswordDescription}</p>
-        </div>
-        <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={() => void generatePassword()}>
-          <i class="ti ti-sparkles" />
-          {t().generate}
-        </Button>
-      </div>
-
-      <TextInput
-        placeholder={t().newPassword}
-        icon="ti ti-lock-open"
-        password
-        value={props.newPassword}
-        onValueChange={updateNewPassword}
-        autocomplete="new-password"
-        aria-label={t().newPassword}
+    <>
+      <Field name="newPassword" label={t().newPassword} hint={advice()} required>
+        <PasswordInput
+          value={props.newPassword()}
+          onInput={updateNewPassword}
+          autocomplete="new-password"
+          placeholder={t().newPassword}
+          label={t().showPassword}
+          end={<Button variant="ghost" icon="sparkles" label={t().generate} onClick={generatePassword} />}
+        />
+      </Field>
+      <Progress
+        value={props.newPassword().length === 0 ? 0 : strength().score + 1}
+        of={5}
+        label={props.newPassword().length === 0 ? t().noPassword : t().strength({ level: level() })}
       />
-
-      <div class="flex flex-col gap-1.5">
-        <div class="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" aria-hidden="true">
-          <div
-            class={`h-full rounded-full transition-[width,background-color] ${strengthColor()}`}
-            style={{ width: `${strengthPercent()}%` }}
-          />
-        </div>
-        <div class="flex items-start justify-between gap-3 text-xs">
-          <p class={`font-medium capitalize ${props.newPassword().length === 0 ? "text-dimmed" : strengthTextColor()}`}>
-            {props.newPassword().length === 0
-              ? t().noPassword
-              : [t().strength0, t().strength1, t().strength2, t().strength3, t().strength4][strength().score]}
-          </p>
-          <p class="text-right text-dimmed">
-            {props.newPassword().length === 0
-              ? t().minimumLength
-              : resolved().locale === "de"
-                ? t().germanStrengthAdvice
-                : t().estimatedCrackTime({ time: strength().crackTime })}
-          </p>
-        </div>
-        {generatedPassword() && <p class="text-xs text-dimmed">{t().generatedFilled}</p>}
-        {!generatedPassword() && resolved().locale !== "de" && props.newPassword().length > 0 && strength().feedback.length > 0 && (
-          <p class="text-xs text-dimmed">{strength().feedback.slice(0, 2).join(". ")}.</p>
-        )}
-      </div>
-
-      <TextInput
-        label={t().confirmPassword}
-        description={t().confirmPasswordDescription}
-        placeholder={t().confirmPassword}
-        icon="ti ti-lock-check"
-        password
-        value={props.confirmPassword}
-        onValueChange={props.onConfirmPasswordChange}
-        autocomplete="new-password"
-      />
-    </div>
+      <Field name="confirmPassword" label={t().confirmPassword} hint={t().confirmPasswordDescription} required>
+        <PasswordInput
+          value={props.confirmPassword()}
+          onInput={props.onConfirmPasswordChange}
+          autocomplete="new-password"
+          placeholder={t().confirmPassword}
+          label={t().showPassword}
+        />
+      </Field>
+      <Dialog
+        title={t().passwordGenerated}
+        open={shown() !== null}
+        onOpenChange={(open) => {
+          if (!open) setShown(null);
+        }}
+        foot={
+          <Button variant="primary" onClick={() => setShown(null)}>
+            {t().done}
+          </Button>
+        }
+      >
+        <Facts items={[{ label: t().generatedPassword, value: shown() ?? "", copy: shown() ?? "", mono: true }]} />
+        <Text muted>{t().generatedPasswordDescription}</Text>
+      </Dialog>
+    </>
   );
 }

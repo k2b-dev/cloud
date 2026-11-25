@@ -1,4 +1,5 @@
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Notice } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { ApprovalError } from "./client";
 import { appApprovalMessages } from "./messages";
@@ -39,16 +40,14 @@ export default function ApprovalFeedback(props: { error: unknown; returnTo?: str
   };
   return (
     <Show when={props.error}>
-      <NoticeCard tone="danger">
-        <div role="alert" class="flex flex-col gap-2">
-          <p>{logoutFailed() ? t().failure : message()}</p>
-          <Show when={recent()}>
-            <Button variant="secondary" loading={busy()} onClick={reauthenticate}>
-              {t().reauthenticate}
-            </Button>
-          </Show>
-        </div>
-      </NoticeCard>
+      <Notice
+        tone="bad"
+        actions={
+          recent() ? [{ label: t().reauthenticate, icon: "login-2", disabled: busy(), onClick: () => void reauthenticate() }] : undefined
+        }
+      >
+        {logoutFailed() ? t().failure : message()}
+      </Notice>
     </Show>
   );
 }

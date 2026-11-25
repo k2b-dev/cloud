@@ -1,13 +1,14 @@
 import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { Button, Placeholder, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { type Action, Button, Dialog, Empty, Field, Input, Menu, Row, Section, type TwoActions, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
-import ApprovalStatus from "./ApprovalStatus";
+import ApprovalNotice from "./ApprovalNotice";
 import type { ApprovalAvailability } from "./availability";
 import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";
 import ApprovalFeedback from "./Feedback";
-import InstallApp from "./InstallApp";
+import { useInstallApp } from "./InstallApp";
 import { appApprovalMessages } from "./messages";
 import Pairing from "./Pairing";
 import RevokeDevice, { findRemoval, type RevokeRequest, revokeStorageKey, SavedRevokeSchema } from "./RevokeDevice";
@@ -15,7 +16,14 @@ import RevokeDevice, { findRemoval, type RevokeRequest, revokeStorageKey, SavedR
 // Mirrors the server's readable minute after a device change expires.
 const removalResultGraceMs = 60_000;
 
-export default function Devices(props: {
+/** At most two deeds for a section head. */
+const two = (list: readonly Action[]): TwoActions | undefined => {
+  const [first, second] = list;
+  return first ? (second ? [first, second] : [first]) : undefined;
+};
+
+/** The paired sign-in app devices of the signed-in person, as a section of the security page. */
+export default function DevicesSection(props: {
   initial: z.infer<typeof AppDevicesPageSchema> | null;
   availability: ApprovalAvailability;
   admin?: boolean;
@@ -23,6 +31,8 @@ export default function Devices(props: {
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
+  const toast = useToast();
+  const install = useInstallApp(() => props.pairing?.appOrigin ?? "");
   const [page, setPage] = createSignal(props.initial);
   const activeDevices = createMemo(() => page()?.items.filter((device) => !device.revokedAt) ?? []);
   const [busy, setBusy] = createSignal(false);
@@ -65,7 +75,7 @@ export default function Devices(props: {
                 },
                 () => {
                   if (!unchanged()) return;
-                  toast.error(t().revokeCheckFailed);
+                  toast(t().revokeCheckFailed, { status: "bad" });
                   window.addEventListener("online", look, { once: true });
                 },
               );
@@ -130,28 +140,110 @@ export default function Devices(props: {
           ? { ...previous, items: previous.items.map((item) => (item.id === device.id ? { ...item, name: name().trim() } : item)) }
           : previous,
       );
-      toast.success(t().saved);
+      toast(t().saved, { status: "ok" });
     } catch (cause) {
       if (!disposed) setError(cause);
     } finally {
       if (!disposed) setBusy(false);
     }
   };
+  const editingDevice = () => activeDevices().find((device) => device.id === editing());
+  const deviceLine = (device: AppDeviceView) =>
+    [
+      device.assisted ? t().assisted : t().self,
+      t().created({ date: dates.formatDateTime(device.createdAt, { locale: locale() }) }),
+      device.lastUsedAt ? t().used({ date: dates.formatDateTime(device.lastUsedAt, { locale: locale() }) }) : t().never,
+    ].join(" · ");
   return (
-    <SettingsSection
-      title={t().devices}
-      subtitle={t().description}
-      actions={
-        <>
-          <Show when={props.pairing?.appOrigin}>{(origin) => <InstallApp origin={origin()} />}</Show>
-          <Show when={props.availability === "configured"}>
-            <Button size="sm" disabled={!props.pairing} onClick={() => setPairingOpen(true)}>
-              {t().pair}
-            </Button>
+    <>
+      <Section
+        icon="device-mobile"
+        title={t().devices}
+        count={page() ? activeDevices().length : undefined}
+        summary={t().description}
+        actions={two([
+          ...(props.pairing?.appOrigin ? [{ label: t().install, icon: "download", onClick: install.start }] : []),
+          ...(props.availability === "configured"
+            ? [{ label: t().pair, icon: "plus", disabled: !props.pairing, onClick: () => setPairingOpen(true) }]
+            : []),
+        ])}
+        more={page()?.nextCursor ? { label: t().more, disabled: busy(), onClick: () => void load(true) } : undefined}
+      >
+        <Show when={props.availability !== "configured"}>
+          <ApprovalNotice state={props.availability} admin={props.admin} settingsLink={props.admin} />
+        </Show>
+        <ApprovalFeedback error={error()} />
+        <Show when={page()}>
+          <Show
+            when={activeDevices().length}
+            fallback={
+              <Show when={props.availability === "configured"}>
+                <Empty icon="device-mobile" text={t().empty} />
+              </Show>
+            }
+          >
+            <For each={activeDevices()}>
+              {(device) => (
+                <Row
+                  icon="device-mobile"
+                  lines={[device.name, deviceLine(device)]}
+                  end={
+                    <Menu
+                      label={t().deviceActions({ name: device.name })}
+                      disabled={busy()}
+                      items={[
+                        {
+                          label: t().rename,
+                          icon: "pencil",
+                          onClick: () => {
+                            setEditing(device.id);
+                            setName(device.name);
+                          },
+                        },
+                        // Revoking needs approval on a paired device, which only a configured Cloud can ask for.
+                        ...(props.pairing
+                          ? [{ label: t().revoke, icon: "device-mobile-off", danger: true, onClick: () => setRevoking({ device }) }]
+                          : []),
+                      ]}
+                    />
+                  }
+                />
+              )}
+            </For>
           </Show>
-        </>
-      }
-    >
+        </Show>
+      </Section>
+      <Dialog
+        title={t().rename}
+        open={editingDevice() !== undefined}
+        onOpenChange={(open) => {
+          if (!open && !busy()) setEditing(undefined);
+        }}
+        foot={
+          <>
+            <Button disabled={busy()} onClick={() => setEditing(undefined)}>
+              {t().back}
+            </Button>
+            <Button
+              variant="primary"
+              busy={busy()}
+              disabled={!name().trim()}
+              onClick={() => {
+                const device = editingDevice();
+                if (device) void rename(device);
+              }}
+            >
+              {t().save}
+            </Button>
+          </>
+        }
+      >
+        {/* k2b-ui gap: Input has no maxLength; the server refuses names over 80 characters. */}
+        <Field name="name" label={t().name} required>
+          <Input value={name()} onInput={setName} />
+        </Field>
+      </Dialog>
+      {install.dialog()}
       <Show when={pairingOpen() && props.pairing}>
         {(pairing) => (
           <Pairing
@@ -182,93 +274,6 @@ export default function Devices(props: {
           </Show>
         )}
       </Show>
-      <Show when={props.availability !== "configured"}>
-        <ApprovalStatus state={props.availability} admin={props.admin} settingsLink={props.admin} />
-      </Show>
-      <ApprovalFeedback error={error()} />
-      <Show when={page()}>
-        {(data) => (
-          <>
-            <Show
-              when={activeDevices().length}
-              fallback={
-                <Show when={props.availability === "configured"}>
-                  <Placeholder icon="ti ti-device-mobile" description={t().empty} />
-                </Show>
-              }
-            >
-              <div class="flex flex-col divide-y divide-(--ui-data-row-divider)">
-                <For each={activeDevices()}>
-                  {(device) => (
-                    <div class="flex flex-wrap items-start justify-between gap-3 py-3">
-                      <div class="min-w-0">
-                        <p class="break-words font-medium">{device.name}</p>
-                        <p class="text-xs text-dimmed">{device.assisted ? t().assisted : t().self}</p>
-                        <p class="text-xs text-dimmed">
-                          {t().created({ date: dates.formatDateTime(device.createdAt, { locale: locale() }) })}
-                        </p>
-                        <p class="text-xs text-dimmed">
-                          {device.lastUsedAt
-                            ? t().used({ date: dates.formatDateTime(device.lastUsedAt, { locale: locale() }) })
-                            : t().never}
-                        </p>
-                        <Show when={device.revokedAt}>
-                          {(date) => (
-                            <p class="text-xs text-dimmed">{t().revokedAt({ date: dates.formatDateTime(date(), { locale: locale() }) })}</p>
-                          )}
-                        </Show>
-                      </div>
-                      <Show when={!device.revokedAt}>
-                        <div class="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={busy()}
-                            onClick={() => {
-                              setEditing(device.id);
-                              setName(device.name);
-                            }}
-                          >
-                            {t().rename}
-                          </Button>
-                          {/* Revoking needs approval on a paired device, which only a configured Cloud can ask for. */}
-                          <Show when={props.pairing}>
-                            <Button size="sm" variant="secondary" disabled={busy()} onClick={() => setRevoking({ device })}>
-                              {t().revoke}
-                            </Button>
-                          </Show>
-                        </div>
-                      </Show>
-                      <Show when={editing() === device.id}>
-                        <form
-                          class="flex w-full flex-wrap items-end gap-2"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void rename(device);
-                          }}
-                        >
-                          <TextInput label={t().name} value={name} onValueChange={setName} required maxLength={80} />
-                          <Button type="submit" size="sm" disabled={busy() || !name().trim()}>
-                            {t().save}
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" disabled={busy()} onClick={() => setEditing(undefined)}>
-                            {t().back}
-                          </Button>
-                        </form>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <Show when={data().nextCursor}>
-              <Button variant="secondary" loading={busy()} onClick={() => load(true)}>
-                {t().more}
-              </Button>
-            </Show>
-          </>
-        )}
-      </Show>
-    </SettingsSection>
+    </>
   );
 }

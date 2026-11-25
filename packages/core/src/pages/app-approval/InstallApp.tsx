@@ -1,69 +1,71 @@
 import { qr } from "@k2b/stdlib/qr";
-import { Button, dialogCore, PanelDialog, panelDialogOptions, toast, useLocale } from "@k2b/ui";
-import { onCleanup } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Canvas, Dialog, Facts, Text, useToast } from "@k2b/ui/v2";
+import { createSignal } from "solid-js";
 import { appApprovalMessages } from "./messages";
 
 /** The configured sign-in app address as a QR code with a copy action. */
 export function InstallLink(props: { origin: string }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
+  const toast = useToast();
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(props.origin);
-      toast.success(t().installLinkCopied);
+      toast(t().installLinkCopied, { status: "ok" });
     } catch {
-      toast.error(t().failure);
+      toast(t().failure, { status: "bad" });
     }
   };
   return (
-    <div class="flex flex-col items-center gap-4">
-      <img class="w-64 max-w-full" alt={t().installQr} src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`} />
-      <p class="break-all text-sm text-dimmed">{props.origin}</p>
-      <Button variant="secondary" onClick={copy}>
-        {t().copyInstallLink}
-      </Button>
-    </div>
+    <>
+      {/* k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas. */}
+      <Canvas label={t().installQr} height={256}>
+        <img
+          alt={t().installQr}
+          width="256"
+          height="256"
+          style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
+          src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`}
+        />
+      </Canvas>
+      <Facts items={[{ label: t().install, value: props.origin, mono: true }]} />
+      <Bar
+        end={
+          <Button icon="copy" onClick={() => void copy()}>
+            {t().copyInstallLink}
+          </Button>
+        }
+      />
+    </>
   );
 }
 
-export default function InstallApp(props: { origin: string }) {
+/** How to get the sign-in app: on a phone its page opens, elsewhere a dialog shows the address as a QR code. */
+export const useInstallApp = (origin: () => string) => {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
-  let closeDialog: (() => void) | undefined;
-  onCleanup(() => closeDialog?.());
-  const open = () => {
+  const [open, setOpen] = createSignal(false);
+  const start = () => {
     const mobile =
       /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-    if (mobile) {
-      window.open(props.origin, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (closeDialog) return;
-    void dialogCore
-      .open<void>(
-        (close) => {
-          closeDialog = close;
-          return (
-            <PanelDialog>
-              <PanelDialog.Header title={t().install} icon="ti ti-device-mobile" close={close} />
-              <PanelDialog.Body>
-                <div class="flex flex-col items-center gap-4">
-                  <p class="text-sm text-dimmed">{t().installHint}</p>
-                  <InstallLink origin={props.origin} />
-                </div>
-              </PanelDialog.Body>
-            </PanelDialog>
-          );
-        },
-        { ...panelDialogOptions, panelClassName: `${panelDialogOptions.panelClassName} app-pairing-dialog` },
-      )
-      .then(() => {
-        closeDialog = undefined;
-      });
+    if (mobile) window.open(origin(), "_blank", "noopener,noreferrer");
+    else setOpen(true);
   };
-  return (
-    <Button variant="secondary" size="sm" onClick={open}>
-      {t().install}
-    </Button>
+  const dialog = () => (
+    <Dialog
+      title={t().install}
+      open={open()}
+      onOpenChange={setOpen}
+      foot={
+        <Button variant="primary" onClick={() => setOpen(false)}>
+          {t().close}
+        </Button>
+      }
+    >
+      <Text muted>{t().installHint}</Text>
+      <InstallLink origin={origin()} />
+    </Dialog>
   );
-}
+  return { start, dialog };
+};

@@ -2,13 +2,12 @@ import { cloudMcpResourceUri, publicCloudOrigin } from "@k2b/cloud/api";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { coreSettings, readAccountCategoryPolicy, serviceAccountCredentials } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
-import ApiKeysSettings from "./ApiKeysSettings.island";
+import { accountUserView } from "./account-view";
 import { pwaAvailable } from "./app-availability";
-import McpSetup from "./McpSetup.island";
+import DeveloperScreen from "./DeveloperScreen.island";
 import { accountMessages } from "./messages";
+import { profileActionsUser } from "./profile-actions-user";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
@@ -21,57 +20,22 @@ export default ssr<AuthContext>(async (c) => {
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     coreSettings.get<boolean>("ai.openai_api_enabled"),
   ]);
-  const appName = rawAppName || "Cloud";
-  const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
   const cloudUrl = publicCloudOrigin(rawAppUrl);
-  const cliInstallCommand = `curl -fsSL ${cloudUrl}/cli | sh`;
-  const mcpResource = cloudMcpResourceUri(rawAppUrl);
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.developer }]}>
-      <AccountHub appTab={pwaAvailable(c)} user={user} active="developer" loginLabel={categoryPolicy.login.label}>
-        <AccountPage title={t.developer} description={t.developerDescription}>
-          <SettingsSection title="Cloud MCP" subtitle={t.cloudMcpDescription}>
-            {/* Islands render as display: contents, so the section's spacing needs a real box. */}
-            <div>
-              <McpSetup endpoint={mcpResource} />
-            </div>
-            <div class="flex flex-col gap-2 text-xs text-dimmed">
-              <p>{t.mcpOauthNotice}</p>
-              <p>
-                {t.mcpApiKeyBefore} <code class="font-mono text-secondary">CLOUD_API_KEY</code>. {t.mcpApiKeyAfter}
-              </p>
-              <a
-                class="w-fit text-link hover:underline"
-                href="https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/platform/mcp.md"
-              >
-                {t.mcpGuide}
-              </a>
-            </div>
-          </SettingsSection>
-
-          <ApiKeysSettings initialKeys={apiKeys} openAiBaseUrl={openAiApiEnabled ? `${cloudUrl}/api/ai/openai/v1` : null} />
-
-          <SettingsSection title="Cloud CLI" subtitle={t.cloudCliDescription}>
-            <code class="block overflow-x-auto rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 font-mono text-xs text-secondary">
-              {cliInstallCommand}
-            </code>
-            <p class="text-xs text-dimmed">
-              {t.thenRun} <code class="font-mono text-secondary">cld login --server {cloudUrl}</code>.
-            </p>
-          </SettingsSection>
-
-          {user.provider === "ipa" && (
-            <SettingsSection
-              title={t.sshKeys}
-              subtitle={t.providerSshKeys({ count: user.ipa.sshPublicKeys.length })}
-              actions={<AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["details"]} />}
-            >
-              {null}
-            </SettingsSection>
-          )}
-        </AccountPage>
-      </AccountHub>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.developer }]}>
+      <DeveloperScreen
+        user={accountUserView(user, categoryPolicy.login.label, t)}
+        appTab={pwaAvailable(c)}
+        actionsUser={profileActionsUser(user)}
+        appName={rawAppName || "Cloud"}
+        freeIpaEnabled={Boolean(freeIpaEnabledRaw)}
+        apiKeys={apiKeys}
+        openAiBaseUrl={openAiApiEnabled ? `${cloudUrl}/api/ai/openai/v1` : null}
+        mcpEndpoint={cloudMcpResourceUri(rawAppUrl)}
+        cloudUrl={cloudUrl}
+        now={new Date().toISOString()}
+      />
     </Layout>
   );
 });

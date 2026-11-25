@@ -2,8 +2,8 @@ import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/ser
 import { coreSettings, pwaDevices, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import AccountHub, { AccountPage } from "./AccountHub";
-import AppDevices from "./AppDevices.island";
+import AppScreen from "./AppScreen.island";
+import { accountUserView } from "./account-view";
 import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 
@@ -23,15 +23,16 @@ export default ssr<AuthContext>(async (c) => {
     coreSettings.get<string>("app.name"),
     pwaDevices.list({ userId: user.id }, currentDeviceId),
   ]);
-  const cloud = rawAppName || "Cloud";
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.pwaTab }]}>
-      <AccountHub appTab user={user} active="app" loginLabel={categoryPolicy.login.label}>
-        <AccountPage title={t.pwaTab} description={t.pwaDescription({ cloud })}>
-          <AppDevices userId={user.id} initial={devices} dateConfig={getDateConfig(c)} />
-        </AccountPage>
-      </AccountHub>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.pwaTab }]}>
+      <AppScreen
+        user={accountUserView(user, categoryPolicy.login.label, t)}
+        userId={user.id}
+        devices={devices}
+        dateConfig={getDateConfig(c)}
+        description={t.pwaDescription({ cloud: rawAppName || "Cloud" })}
+      />
     </Layout>
   );
 });

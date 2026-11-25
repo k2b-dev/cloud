@@ -3,8 +3,8 @@ import { type AuthContext, getLocale, loadPendingApprovals } from "@k2b/cloud/se
 import { readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import AccountApprovals from "./AccountApprovals.island";
-import AccountHub, { AccountPage } from "./AccountHub";
+import ApprovalsScreen from "./ApprovalsScreen.island";
+import { accountUserView } from "./account-view";
 import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 
@@ -16,12 +16,8 @@ export default ssr<AuthContext>(async (c) => {
   const [categoryPolicy, page] = await Promise.all([readAccountCategoryPolicy(), loadPendingApprovals(c, app ? { app } : {})]);
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.approvals }]}>
-      <AccountHub appTab={pwaAvailable(c)} user={user} active="approvals" loginLabel={categoryPolicy.login.label}>
-        <AccountPage title={t.approvals} description={t.approvalsDescription}>
-          <AccountApprovals app={app} initial={page} />
-        </AccountPage>
-      </AccountHub>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.approvals }]}>
+      <ApprovalsScreen user={accountUserView(user, categoryPolicy.login.label, t)} appTab={pwaAvailable(c)} app={app} initial={page} />
     </Layout>
   );
 });

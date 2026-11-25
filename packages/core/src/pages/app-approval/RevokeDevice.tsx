@@ -1,6 +1,7 @@
 import { AppDeviceRemovalStatusSchema, AppDeviceRevokeResultSchema } from "@k2b/cloud/contracts";
-import { Button, Checkbox, dialogCore, PanelDialog, panelDialogOptions, toast, useLocale } from "@k2b/ui";
-import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Button, Check, Dialog, Icon, Text, useToast } from "@k2b/ui/v2";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
 import ApprovalFeedback from "./Feedback";
@@ -44,8 +45,8 @@ export const findRemoval = async (saved: Omit<SavedRevoke, "changeId" | "expires
 type Phase = "ask" | "waiting" | "approved" | "denied" | "expired" | "gone" | "error";
 
 /**
- * Asks the account's paired devices to approve revoking one of them, then follows the request. Every phase shares
- * one grid cell sized by the tallest, so the dialog keeps its size from the first frame to the result.
+ * Asks the account's paired devices to approve revoking one of them, then follows the request in a v2 dialog that a
+ * press outside does not close.
  */
 export default function RevokeDevice(props: {
   userId: string;
@@ -55,6 +56,8 @@ export default function RevokeDevice(props: {
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
+  const toast = useToast();
+  const [open, setOpen] = createSignal(true);
   const [phase, setPhase] = createSignal<Phase>(props.resume ? "waiting" : "ask");
   const [endSessions, setEndSessions] = createSignal(props.resume?.endSessions ?? true);
   const [request, setRequest] = createSignal(props.resume);
@@ -73,7 +76,6 @@ export default function RevokeDevice(props: {
   let dismissed = false;
   // The last send failed without a definite answer: Cloud may have created the request anyway.
   let unsure = false;
-  let closeDialog: (() => void) | undefined;
   /** Saves this dialog's request; `undefined` clears only a record of this device, or of `changeId` when given, so a
    * late answer of an earlier dialog never drops the request of a newer one. */
   const remember = (value: SavedRevoke | undefined, changeId?: string) => {
@@ -234,7 +236,7 @@ export default function RevokeDevice(props: {
       remember(found);
       await cancelPending(found.changeId);
     } catch {
-      toast.error(t().cancelFailed);
+      toast(t().cancelFailed, { status: "bad" });
     }
   };
   /** Forgets the saved request only once Cloud withdrew it; otherwise a reload of the page continues it. */
@@ -245,7 +247,7 @@ export default function RevokeDevice(props: {
     } catch (cause) {
       // Already decided or expired: nothing is left to withdraw.
       if (cause instanceof ApprovalError && (cause.status === 404 || cause.status === 409)) remember(undefined, changeId);
-      else toast.error(t().cancelFailed);
+      else toast(t().cancelFailed, { status: "bad" });
     }
   };
   const connection = () => setOnline(navigator.onLine);
@@ -257,144 +259,57 @@ export default function RevokeDevice(props: {
       remember(resumed);
       follow(resumed);
     }
-    void dialogCore
-      .open<void>(
-        (close) => {
-          closeDialog = close;
-          return content(close);
-        },
-        { ...panelDialogOptions, cancelBehavior: "ignore", panelClassName: `${panelDialogOptions.panelClassName} app-revoke-dialog` },
-      )
-      .then(() => {
-        dismissed = true;
-        if (disposed) return;
-        stop();
-        // Closing while the request waits withdraws it, so nothing is revoked after the person left.
-        const waiting = phase() === "waiting" ? request() : undefined;
-        if (waiting) void cancelPending(waiting.changeId);
-        else if (unsure) void withdrawUnsure();
-        // A send still on its way keeps its record: its answer, or a reload, reconciles it.
-        else if (!busy()) remember(undefined);
-        props.onClose(phase() === "approved");
-      });
   });
   onCleanup(() => {
     disposed = true;
     stop();
     window.removeEventListener("online", connection);
     window.removeEventListener("offline", connection);
-    closeDialog?.();
   });
+  const close = () => {
+    if (dismissed) return;
+    setOpen(false);
+    dismissed = true;
+    if (disposed) return;
+    stop();
+    // Closing while the request waits withdraws it, so nothing is revoked after the person left.
+    const waiting = phase() === "waiting" ? request() : undefined;
+    if (waiting) void cancelPending(waiting.changeId);
+    else if (unsure) void withdrawUnsure();
+    // A send still on its way keeps its record: its answer, or a reload, reconciles it.
+    else if (!busy()) remember(undefined);
+    props.onClose(phase() === "approved");
+  };
   const name = () => device.name;
-  const Pane = (pane: { when: Phase; children: JSX.Element }) => (
-    <div
-      class="flex flex-col gap-3 [grid-area:1/1]"
-      classList={{ invisible: phase() !== pane.when }}
-      aria-hidden={phase() === pane.when ? undefined : true}
-      inert={phase() === pane.when ? undefined : true}
-    >
-      {pane.children}
-    </div>
-  );
-  const Result = (result: { icon: string; tone: "success" | "neutral"; children: JSX.Element }) => (
-    <div class="flex items-start gap-3" role="status">
-      <span
-        class="grid size-10 shrink-0 place-items-center rounded-full text-xl"
-        classList={{
-          "bg-[var(--k2b-success-surface)] text-[var(--k2b-success-text)]": result.tone === "success",
-          "bg-[var(--ui-surface-subtle)] text-dimmed": result.tone === "neutral",
-        }}
-        aria-hidden="true"
-      >
-        <i class={result.icon} />
-      </span>
-      <div class="flex min-w-0 flex-col gap-1 pt-2 text-sm">{result.children}</div>
-    </div>
-  );
-  const content = (close: () => void) => (
-    <PanelDialog>
-      <PanelDialog.Header title={t().revokeDevice} subtitle={name()} icon="ti ti-device-mobile-off" close={close} />
-      <PanelDialog.Body>
-        <div class="app-revoke-phases grid">
-          <Pane when="ask">
-            {/* The explanation and the offline reason share one place; going offline moves nothing. */}
-            <div class="grid text-sm">
-              <p class="[grid-area:1/1]" classList={{ invisible: !online() }} aria-hidden={online() ? undefined : true}>
-                {t().revokeIntro}
-              </p>
-              <p class="invisible [grid-area:1/1]" aria-hidden="true">
-                {t().revokeOffline}
-              </p>
-              <p class="[grid-area:1/1]" role="status">
-                {online() ? "" : t().revokeOffline}
-              </p>
-            </div>
-            <Checkbox
-              label={t().endSessions}
-              description={t().endSessionsHint}
-              value={endSessions}
-              onValueChange={setEndSessions}
-              disabled={busy()}
-            />
-          </Pane>
-          <Pane when="waiting">
-            <h3 class="text-sm font-semibold">{t().approvalTitle}</h3>
-            <p class="text-sm">{t().revokeApprovalHint({ name: name() })}</p>
-            <p class="text-sm text-dimmed">{t().revokeApprovalHelp}</p>
-            {/* An interrupted connection is said in a place kept free for it. */}
-            <p class="min-h-[2lh] text-sm text-dimmed" role="status">
-              {retrying() ? t().retrying : ""}
-            </p>
-          </Pane>
-          <Pane when="approved">
-            <Result icon="ti ti-check" tone="success">
-              <p>{t().revokeDone({ name: name() })}</p>
-              <Show when={sessionsEnded()}>
-                <p class="text-dimmed">{t().revokeDoneSessions}</p>
-              </Show>
-            </Result>
-          </Pane>
-          <Pane when="denied">
-            <Result icon="ti ti-x" tone="neutral">
-              <p>{t().revokeDenied({ name: name() })}</p>
-            </Result>
-          </Pane>
-          <Pane when="expired">
-            <Result icon="ti ti-clock" tone="neutral">
-              <p>{t().revokeExpired({ name: name() })}</p>
-            </Result>
-          </Pane>
-          <Pane when="gone">
-            <Result icon="ti ti-help-circle" tone="neutral">
-              <p>{t().revokeGone({ name: name() })}</p>
-            </Result>
-          </Pane>
-          <Pane when="error">
-            <ApprovalFeedback error={error()} returnTo="/me/security" />
-          </Pane>
-        </div>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <div class="flex w-full flex-wrap justify-end gap-2">
+  // k2b-ui gap: no polite live status in v2 (Notice speaks only when "bad"); the phase texts change without being
+  // announced, and the dialog takes the height of each phase.
+  return (
+    <Dialog
+      title={t().revokeDeviceNamed({ name: name() })}
+      open={open()}
+      dismissible={false}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+      foot={
+        <>
           <Show when={phase() === "ask"}>
             <Button variant="ghost" disabled={busy()} onClick={close}>
               {t().cancelWait}
             </Button>
-            <Button variant="danger" loading={busy()} disabled={!online()} onClick={() => void submit()}>
+            <Button variant="primary" icon="device-mobile-off" busy={busy()} disabled={!online()} onClick={() => void submit()}>
               {t().revoke}
             </Button>
           </Show>
           <Show when={phase() === "waiting"}>
-            <Button variant="secondary" onClick={close}>
-              {t().cancelRequest}
-            </Button>
+            <Button onClick={close}>{t().cancelRequest}</Button>
           </Show>
           <Show when={phase() === "denied" || phase() === "expired" || phase() === "gone" || phase() === "error"}>
             <Button variant="ghost" onClick={close}>
               {t().close}
             </Button>
             <Button
-              variant="secondary"
+              variant="primary"
               onClick={() => {
                 setError(undefined);
                 setPhase("ask");
@@ -404,11 +319,54 @@ export default function RevokeDevice(props: {
             </Button>
           </Show>
           <Show when={phase() === "approved"}>
-            <Button onClick={close}>{t().close}</Button>
+            <Button variant="primary" onClick={close}>
+              {t().close}
+            </Button>
           </Show>
-        </div>
-      </PanelDialog.Footer>
-    </PanelDialog>
+        </>
+      }
+    >
+      <Show when={phase() === "ask"}>
+        <Text>{online() ? t().revokeIntro : t().revokeOffline}</Text>
+        <Check label={t().endSessions} checked={endSessions()} onChange={setEndSessions} disabled={busy()} />
+        <Text muted type="meta">
+          {t().endSessionsHint}
+        </Text>
+      </Show>
+      <Show when={phase() === "waiting"}>
+        <Text weight="strong">{t().approvalTitle}</Text>
+        <Text>{t().revokeApprovalHint({ name: name() })}</Text>
+        <Text muted>{t().revokeApprovalHelp}</Text>
+        <Show when={retrying()}>
+          <Text muted>{t().retrying}</Text>
+        </Show>
+      </Show>
+      <Show when={phase() === "approved"}>
+        <Text>
+          <Icon name="check" tone="ok" /> {t().revokeDone({ name: name() })}
+        </Text>
+        <Show when={sessionsEnded()}>
+          <Text muted>{t().revokeDoneSessions}</Text>
+        </Show>
+      </Show>
+      <Show when={phase() === "denied"}>
+        <Text>
+          <Icon name="x" /> {t().revokeDenied({ name: name() })}
+        </Text>
+      </Show>
+      <Show when={phase() === "expired"}>
+        <Text>
+          <Icon name="clock" /> {t().revokeExpired({ name: name() })}
+        </Text>
+      </Show>
+      <Show when={phase() === "gone"}>
+        <Text>
+          <Icon name="help-circle" /> {t().revokeGone({ name: name() })}
+        </Text>
+      </Show>
+      <Show when={phase() === "error"}>
+        <ApprovalFeedback error={error()} returnTo="/me/security" />
+      </Show>
+    </Dialog>
   );
-  return null;
 }

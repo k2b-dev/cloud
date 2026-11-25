@@ -1,4 +1,4 @@
-import { prompts } from "@k2b/ui";
+import { confirm } from "@k2b/ui/v2";
 
 /** The stable codes Cloud answers when new access needs a recent browser sign-in. */
 export class SignInNeededError extends Error {
@@ -29,7 +29,7 @@ export const confirmIdentity = async (
   labels: { title: string; confirm: string },
   draft?: unknown,
 ): Promise<void> => {
-  const confirmed = await prompts.confirm(message, { title: labels.title, icon: "ti ti-shield-lock", confirmText: labels.confirm });
+  const confirmed = await confirm({ title: labels.title, description: message, confirm: labels.confirm });
   if (!confirmed) return;
   // The draft stays in this tab only; without storage the dialog simply opens empty.
   try {

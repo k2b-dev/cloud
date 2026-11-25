@@ -1,125 +1,66 @@
-import type { NotificationDeliveryStatus, UserNotificationHistoryItem } from "@k2b/cloud/contracts";
+import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountHub, { AccountPage, AccountSubnav, notificationViews } from "./AccountHub";
+import { accountUserView } from "./account-view";
 import { pwaAvailable } from "./app-availability";
-import { type AccountMessages, accountMessages } from "./messages";
-import NotificationHistoryFilters from "./NotificationHistoryFilters.island";
+import HistoryScreen from "./HistoryScreen.island";
+import { historyQuery, historyStatusOf } from "./history-query";
+import { accountMessages } from "./messages";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
-
-const historyStatuses = new Set<NotificationDeliveryStatus>(["deferred", "pending", "sending", "delivered", "suppressed", "failed"]);
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const columns = (t: AccountMessages): DataTableColumn<UserNotificationHistoryItem>[] => [
-  { id: "time", header: t.time, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
-  { id: "notification", header: t.notification, value: (item) => item.title, cellClass: "min-w-[13rem]" },
-  { id: "channel", header: t.channel, value: (item) => item.channel, cellClass: "min-w-[9rem]" },
-  { id: "status", header: t.status, value: (item) => item.status, cellClass: "min-w-[12rem]" },
-];
+/** A delivery's state as a word with its meaning: delivered is ok, failed is bad, a held or waiting one waits. */
+const statusTone = (status: NotificationDeliveryStatus): "ok" | "warn" | "bad" | undefined =>
+  status === "delivered" ? "ok" : status === "failed" ? "bad" : status === "suppressed" ? undefined : "warn";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
   const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
+  const { state } = historyQuery(t).parse(new URL(c.req.url).searchParams);
   const page = parsePositiveInt(c.req.query("page"), 1);
-  const rawStatus = c.req.query("status");
-  const status =
-    rawStatus && historyStatuses.has(rawStatus as NotificationDeliveryStatus) ? (rawStatus as NotificationDeliveryStatus) : undefined;
-  const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status, locale });
-  const registeredApps = getLocalizedRuntimeContext(c).apps;
-  const appNames = new Map(registeredApps.map((app) => [app.id, app.name]));
-  const baseUrl = status ? `/me/notifications/history?status=${encodeURIComponent(status)}&page=` : "/me/notifications/history?page=";
+  const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status: historyStatusOf(state), locale });
+  const appNames = new Map(getLocalizedRuntimeContext(c).apps.map((app) => [app.id, app.name]));
 
   return () => (
     <Layout
       c={c}
+      fullWidth
+      ui="v2"
       title={[
         { title: t.start, href: "/" },
         { title: t.account, href: "/me" },
-        // The account tabs and the notification views above the history lead back; the shell repeats neither.
+        { title: t.notifications, href: "/me/notifications" },
         { title: t.deliveryHistory },
       ]}
     >
-      <AccountHub appTab={pwaAvailable(c)} user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
-        <AccountPage
-          title={t.deliveryHistory}
-          description={t.deliveryHistoryDescription}
-          actions={<AccountSubnav active="history" items={notificationViews(locale)} />}
-        >
-          <SettingsSection
-            title={t.recentDeliveries}
-            subtitle={t.deliveryMetadataOnly}
-            actions={<NotificationHistoryFilters status={status} />}
-          >
-            {history.items.length === 0 ? (
-              <Placeholder description={<>{t.noNotificationDeliveries}</>} />
-            ) : (
-              <DataTable
-                rows={history.items}
-                columns={columns(t)}
-                getRowId={(item) => item.id}
-                density="compact"
-                highlightColumns={false}
-                class="max-h-[34rem] overflow-auto"
-                tableClass="w-full min-w-[46rem] text-xs"
-                renderCell={({ row: item, col, render }) => {
-                  if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(item.createdAt, { locale })}</span>;
-                  if (col.id === "notification")
-                    return (
-                      <div class="min-w-0">
-                        {item.targetHref ? (
-                          <a href={item.targetHref} class="font-medium text-primary hover:underline">
-                            {item.title}
-                          </a>
-                        ) : (
-                          <span class="font-medium text-primary">{item.title}</span>
-                        )}
-                        <p class="mt-0.5 text-[11px] text-dimmed">
-                          {appNames.get(item.appId) ?? item.appId} · {item.label}
-                        </p>
-                      </div>
-                    );
-                  if (col.id === "channel") {
-                    const channel = notificationChannelMeta(item.channel, locale);
-                    return (
-                      <div>
-                        <span class="inline-flex items-center gap-1.5 text-secondary">
-                          <i class={channel.icon} />
-                          {channel.label}
-                        </span>
-                        <p class="mt-0.5 text-[11px] text-dimmed">
-                          {item.channel === "none" ? t.noDeliveryChannel : item.destinationLabel}
-                        </p>
-                      </div>
-                    );
-                  }
-                  if (col.id === "status") {
-                    const delivery = notificationStatusMeta(item.status, locale);
-                    const error = notificationErrorText(item.errorCode, item.errorMessage, locale);
-                    return (
-                      <div>
-                        <span class={`tag ${delivery.class}`}>{delivery.label}</span>
-                        {error && <p class="mt-1 max-w-xs text-[11px] leading-snug text-dimmed">{error}</p>}
-                      </div>
-                    );
-                  }
-                  return render(item);
-                }}
-              />
-            )}
-            <Pagination currentPage={history.page} totalPages={history.totalPages} baseUrl={baseUrl} />
-          </SettingsSection>
-        </AccountPage>
-      </AccountHub>
+      <HistoryScreen
+        user={accountUserView(user, categoryPolicy.login.label, t)}
+        appTab={pwaAvailable(c)}
+        state={state}
+        total={history.total}
+        page={history.page}
+        pages={history.totalPages}
+        rows={history.items.map((item) => ({
+          id: item.id,
+          time: dates.formatDateTime(item.createdAt, { locale }),
+          title: item.title,
+          href: item.targetHref,
+          source: `${appNames.get(item.appId) ?? item.appId} · ${item.label}`,
+          channel: notificationChannelMeta(item.channel, locale).label,
+          destination: item.channel === "none" ? t.noDeliveryChannel : (item.destinationLabel ?? ""),
+          status: { label: notificationStatusMeta(item.status, locale).label, tone: statusTone(item.status) },
+          error: notificationErrorText(item.errorCode, item.errorMessage, locale),
+        }))}
+      />
     </Layout>
   );
 });

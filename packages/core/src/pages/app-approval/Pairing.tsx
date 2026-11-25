@@ -1,7 +1,8 @@
 import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { AppPairingConfirmResultSchema, AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
 import { qr } from "@k2b/stdlib/qr";
-import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, toast, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Canvas, Dialog, Loading, Notice, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
@@ -25,6 +26,8 @@ export default function Pairing(props: {
 }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
+  const toast = useToast();
+  const [open, setOpen] = createSignal(true);
   const [reference, setReference] = createSignal<z.infer<typeof ResumeSchema>>();
   const [link, setLink] = createSignal("");
   const [inspection, setInspection] = createSignal<z.infer<typeof AppPairingInspectionSchema>>();
@@ -74,7 +77,7 @@ export default function Pairing(props: {
     setRetrying(false);
     setError(undefined);
     setState(next);
-    if (next === "cancelled") closeDialog?.();
+    if (next === "cancelled") close();
   };
   /** `stale`: the saved reference is past its deadline, which Cloud may have extended; ask at once, else start over. */
   const wait = (started: z.infer<typeof ResumeSchema>, stale = false) => {
@@ -143,24 +146,6 @@ export default function Pairing(props: {
     );
   };
   onMount(() => {
-    void dialogCore
-      .open<void>(
-        (close) => {
-          closeDialog = close;
-          return content(close);
-        },
-        { ...panelDialogOptions, cancelBehavior: "ignore", panelClassName: `${panelDialogOptions.panelClassName} app-pairing-dialog` },
-      )
-      .then(() => {
-        if (!disposed) {
-          stop();
-          const pending = reference();
-          // The saved reference stays until Cloud confirms the cancellation, so reopening the dialog can retry it.
-          if (pending) void cancelPending(pending.pairingId, true);
-          else forget();
-          props.onClose();
-        }
-      });
     try {
       const saved = ResumeSchema.safeParse(JSON.parse(window.sessionStorage.getItem(storageKey) || "null"));
       if (saved.success) {
@@ -179,17 +164,27 @@ export default function Pairing(props: {
     if (props.install) setStep("install");
     else void start();
   };
-  let pairHeading: HTMLHeadingElement | undefined;
   const next = () => {
     setStep("pair");
-    pairHeading?.focus();
     void start();
   };
   onCleanup(() => {
     disposed = true;
     stop();
-    closeDialog?.();
   });
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    setOpen(false);
+    if (disposed) return;
+    stop();
+    const pending = reference();
+    // The saved reference stays until Cloud confirms the cancellation, so reopening the dialog can retry it.
+    if (pending) void cancelPending(pending.pairingId, true);
+    else forget();
+    props.onClose();
+  };
   const start = async () => {
     if (busy()) return;
     setBusy(true);
@@ -257,7 +252,7 @@ export default function Pairing(props: {
           return;
         }
         finish("done");
-        toast.success(t().paired);
+        toast(t().paired, { status: "ok" });
         return;
       }
       await checked(await approvalApi.manage.pairings.cancel.$post({ json: { pairingId: ref.pairingId } }, approvalRequestOptions()));
@@ -276,7 +271,7 @@ export default function Pairing(props: {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link());
-      toast.success(t().copied);
+      toast(t().copied, { status: "ok" });
     } catch {
       setError(new Error());
     }
@@ -289,10 +284,9 @@ export default function Pairing(props: {
       // A pairing that Cloud already finished or no longer knows has nothing left to cancel.
       const settled = cause instanceof ApprovalError && cause.status < 500 && cause.status !== 429;
       if (saved && settled) forget(pairingId);
-      toast.error(saved && !settled ? t().pairCancelFailed : t().failure);
+      toast(saved && !settled ? t().pairCancelFailed : t().failure, { status: "bad" });
     }
   };
-  let closeDialog: (() => void) | undefined;
   const confirmIdentity = () => {
     forget();
     const target = new URL(returnTo, window.location.origin);
@@ -300,164 +294,162 @@ export default function Pairing(props: {
     target.searchParams.set("reauthenticate", "1");
     window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search })}`);
   };
-  const installStep = () => (
-    <>
-      <PanelDialog.Body>
-        <div class="flex flex-col gap-4">
-          <h3 class="flex flex-col gap-0.5 text-sm font-semibold">
-            <span class="text-xs font-normal text-dimmed">{t().step({ number: 1 })}</span>
-            {t().installStep}
-          </h3>
-          <p class="text-sm text-dimmed">{t().installStepHint}</p>
-          <InstallLink origin={props.appOrigin} />
-        </div>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <div class="flex w-full flex-wrap justify-end gap-2">
-          <Button variant="secondary" onClick={next}>
-            {t().alreadyInstalled}
-          </Button>
-          <Button onClick={next}>{t().next}</Button>
-        </div>
-      </PanelDialog.Footer>
-    </>
+  const qrImage = (value: string) => (
+    // k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas.
+    <Canvas label={t().qr} height={256}>
+      <img
+        alt={t().qr}
+        width="256"
+        height="256"
+        style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
+        src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(value))}`}
+      />
+    </Canvas>
   );
-  const pairingStep = (close: () => void) => (
-    <>
-      <PanelDialog.Body>
-        <Show when={step() === "pair"}>
-          <h3 ref={pairHeading} tabIndex={-1} class="mb-4 flex flex-col gap-0.5 text-sm font-semibold focus:outline-none">
-            <span class="text-xs font-normal text-dimmed">{t().step({ number: 2 })}</span>
-            {t().pairStep}
-          </h3>
+  // k2b-ui gap: no polite live status in v2 (Notice speaks only when "bad"), and a dialog takes the height of each step.
+  return (
+    <Dialog
+      title={props.actorId !== props.userId ? t().pairFor({ name: props.name }) : t().pair}
+      open={open()}
+      dismissible={false}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+      foot={
+        <Show
+          when={step() !== "install"}
+          fallback={
+            <>
+              <Button onClick={next}>{t().alreadyInstalled}</Button>
+              <Button variant="primary" onClick={next}>
+                {t().next}
+              </Button>
+            </>
+          }
+        >
+          <Show when={!checkingIdentity() && canRestart()}>
+            <Button variant="primary" busy={busy()} onClick={() => void start()}>
+              {t().tryAgain}
+            </Button>
+          </Show>
+          <Show when={!checkingIdentity() && canCancelResume()}>
+            <Button onClick={close}>{t().cancel}</Button>
+          </Show>
+          <Show when={!checkingIdentity() && needsAuthentication()}>
+            <Button variant="primary" onClick={confirmIdentity}>
+              {t().reauthenticate}
+            </Button>
+          </Show>
+          <Show when={!checkingIdentity() && !needsAuthentication() && canConfirm()}>
+            <Button variant="primary" busy={busy()} onClick={() => void change(true)}>
+              {t().confirm}
+            </Button>
+          </Show>
         </Show>
-        <Show when={!checkingIdentity()} fallback={<Placeholder state="loading" title={t().checkingIdentity} />}>
-          <div class="flex flex-col gap-4">
-            <Show when={props.actorId !== props.userId && !needsAuthentication()}>
-              <NoticeCard tone="warning">{t().assistedWarning}</NoticeCard>
-            </Show>
+      }
+    >
+      <Show
+        when={step() !== "install"}
+        fallback={
+          <>
+            <Text muted type="meta">
+              {t().step({ number: 1 })}
+            </Text>
+            <Text weight="strong">{t().installStep}</Text>
+            <Text muted>{t().installStepHint}</Text>
+            <InstallLink origin={props.appOrigin} />
+          </>
+        }
+      >
+        <Show when={step() === "pair"}>
+          <Text muted type="meta">
+            {t().step({ number: 2 })}
+          </Text>
+          <Text weight="strong">{t().pairStep}</Text>
+        </Show>
+        <Show when={!checkingIdentity()} fallback={<Loading rows={2} lines={2} />}>
+          <Show when={props.actorId !== props.userId && !needsAuthentication()}>
+            <Notice tone="warn">{t().assistedWarning}</Notice>
+          </Show>
+          <Show
+            when={needsAuthentication()}
+            fallback={
+              <ApprovalFeedback
+                error={error()}
+                beforeReauthenticate={forget}
+                returnTo={`${returnTo}${returnTo.includes("?") ? "&" : "?"}pairDevice=${props.userId}`}
+              />
+            }
+          >
+            <Notice tone="warn" icon="shield-lock">
+              {props.actorId !== props.userId ? t().confirmAdminIdentity : t().confirmPairingIdentity}
+            </Notice>
+          </Show>
+          <Show when={retrying()}>
+            <Text muted>{t().retrying}</Text>
+          </Show>
+          <Show when={state() === "expired"}>
+            <Text muted>{t().expired}</Text>
+          </Show>
+          <Show when={state() === "done"}>
+            <Notice tone="note" icon="circle-check">
+              {t().done}
+            </Notice>
+          </Show>
+          <Show when={state() === "denied"}>
+            <Notice tone="warn">{t().pairDenied}</Notice>
+          </Show>
+          <Show when={state() === "waiting" && !needsAuthentication()}>
             <Show
-              when={needsAuthentication()}
+              when={link()}
               fallback={
-                <ApprovalFeedback
-                  error={error()}
-                  beforeReauthenticate={forget}
-                  returnTo={`${returnTo}${returnTo.includes("?") ? "&" : "?"}pairDevice=${props.userId}`}
-                />
+                <Show when={!inspection()?.comparison}>
+                  <Text muted>{t().resumed}</Text>
+                </Show>
               }
             >
-              <NoticeCard tone="warning">
-                <p role="status">{props.actorId !== props.userId ? t().confirmAdminIdentity : t().confirmPairingIdentity}</p>
-              </NoticeCard>
+              {(value) => (
+                <>
+                  <Text muted>{t().instructions}</Text>
+                  {qrImage(value())}
+                  <Bar
+                    end={
+                      <Button icon="copy" onClick={copy}>
+                        {t().copy}
+                      </Button>
+                    }
+                  />
+                </>
+              )}
             </Show>
-            <Show when={retrying()}>
-              <NoticeCard tone="info">{t().retrying}</NoticeCard>
+            <Show when={canConfirm()}>
+              <Text>{t().confirmHint({ name: inspection()?.name ?? "" })}</Text>
+              <Text muted>{t().comparison}</Text>
+              {/* k2b-ui gap: no primitive shows a short code to compare at a glance; it is drawn in a Canvas. */}
+              <Canvas label={t().comparison} height={72}>
+                <span
+                  style={{
+                    display: "grid",
+                    "place-items": "center",
+                    height: "100%",
+                    "font-family": "var(--k2-font-mono, ui-monospace, monospace)",
+                    "font-size": "40px",
+                    "letter-spacing": "0.2em",
+                    "font-variant-numeric": "tabular-nums",
+                  }}
+                >
+                  {inspection()?.comparison}
+                </span>
+              </Canvas>
             </Show>
-            <Show when={state() === "expired"}>
-              <p class="text-sm text-dimmed" role="status">
-                {t().expired}
-              </p>
+            <Show when={awaitingApproval()}>
+              <Text weight="strong">{t().approvalTitle}</Text>
+              <Text>{t().pairApprovalHint({ name: inspection()?.name ?? "" })}</Text>
+              <Text muted>{t().pairApprovalHelp}</Text>
             </Show>
-            <Show when={state() === "done"}>
-              <NoticeCard tone="success">
-                <p role="status">{t().done}</p>
-              </NoticeCard>
-            </Show>
-            <Show when={state() === "denied"}>
-              <NoticeCard tone="warning">
-                <p role="status">{t().pairDenied}</p>
-              </NoticeCard>
-            </Show>
-            <Show when={state() === "waiting" && !needsAuthentication()}>
-              <Show
-                when={link()}
-                fallback={
-                  <Show when={!inspection()?.comparison}>
-                    <p class="text-sm text-dimmed">{t().resumed}</p>
-                  </Show>
-                }
-              >
-                <p class="text-sm text-dimmed">{t().instructions}</p>
-                <img class="w-64 max-w-full self-center" alt={t().qr} src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(link()))}`} />
-                <div class="flex flex-wrap justify-center gap-2">
-                  <Button variant="secondary" onClick={copy}>
-                    {t().copy}
-                  </Button>
-                </div>
-              </Show>
-              {/* The code and the wait for a paired device share one place, so confirming moves nothing. */}
-              <Show when={canConfirm() || awaitingApproval()}>
-                <div class="grid">
-                  <div
-                    class="flex flex-col [grid-area:1/1]"
-                    classList={{ invisible: !canConfirm() }}
-                    aria-hidden={canConfirm() ? undefined : true}
-                    inert={canConfirm() ? undefined : true}
-                  >
-                    <p class="text-sm">{t().confirmHint({ name: inspection()?.name ?? "" })}</p>
-                    <div class="py-4 text-center" role="status">
-                      <p class="text-sm">{t().comparison}</p>
-                      <p class="mt-2 text-3xl sm:text-5xl font-mono tabular-nums tracking-widest">{inspection()?.comparison}</p>
-                    </div>
-                  </div>
-                  <div
-                    class="flex flex-col gap-2 [grid-area:1/1]"
-                    classList={{ invisible: !awaitingApproval() }}
-                    aria-hidden={awaitingApproval() ? undefined : true}
-                    role="status"
-                  >
-                    <h3 class="text-sm font-semibold">{t().approvalTitle}</h3>
-                    <p class="text-sm">{t().pairApprovalHint({ name: inspection()?.name ?? "" })}</p>
-                    <p class="text-sm text-dimmed">{t().pairApprovalHelp}</p>
-                  </div>
-                </div>
-              </Show>
-            </Show>
-          </div>
+          </Show>
         </Show>
-      </PanelDialog.Body>
-      <Show when={!checkingIdentity() && (needsAuthentication() || canConfirm() || canCancelResume() || canRestart())}>
-        <PanelDialog.Footer>
-          <div class="flex w-full justify-end">
-            <Show when={canRestart()}>
-              <Button loading={busy()} onClick={() => void start()}>
-                {t().tryAgain}
-              </Button>
-            </Show>
-            <Show when={canCancelResume()}>
-              <Button variant="danger" onClick={close}>
-                {t().cancel}
-              </Button>
-            </Show>
-            <Show when={needsAuthentication() || canConfirm()}>
-              <Show
-                when={needsAuthentication()}
-                fallback={
-                  <Button loading={busy()} onClick={() => change(true)}>
-                    {t().confirm}
-                  </Button>
-                }
-              >
-                <Button onClick={confirmIdentity}>{t().reauthenticate}</Button>
-              </Show>
-            </Show>
-          </div>
-        </PanelDialog.Footer>
       </Show>
-    </>
+    </Dialog>
   );
-  const content = (close: () => void) => (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={t().pair}
-        subtitle={props.actorId !== props.userId ? props.name : undefined}
-        icon="ti ti-device-mobile"
-        close={close}
-      />
-      <Show when={step() !== "install"} fallback={installStep()}>
-        {pairingStep(close)}
-      </Show>
-    </PanelDialog>
-  );
-  return null;
 }

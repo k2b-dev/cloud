@@ -128,6 +128,9 @@ export const appApprovalMessages = i18n.define({
       cancelWait: "Cancel",
       cancelWaitHint:
         "Stopping here does not delete the request in your app. It expires after five minutes and cannot sign this browser in once discarded.",
+      revokeDeviceNamed: ({ name }: { name: string }) => `Revoke ${name}`,
+      pairFor: ({ name }: { name: string }) => `Pair a device for ${name}`,
+      deviceActions: ({ name }: { name: string }) => `Actions for ${name}`,
     },
     de: {
       title: "App-Anmeldung",
@@ -258,6 +261,9 @@ export const appApprovalMessages = i18n.define({
       cancelWait: "Abbrechen",
       cancelWaitHint:
         "Die Anfrage bleibt in deiner App bis zu fünf Minuten sichtbar. Nach dem Verwerfen hier kann sie diesen Browser nicht mehr anmelden.",
+      revokeDeviceNamed: ({ name }) => `${name} widerrufen`,
+      pairFor: ({ name }) => `Gerät für ${name} koppeln`,
+      deviceActions: ({ name }) => `Aktionen für ${name}`,
     },
   },
 });
