@@ -1131,7 +1131,7 @@ const RangeBound = (props: {
   const t = useFilterMessages();
   return (
     <NumberEntry
-      label={`${props.definition.label} ${props.bound === "from" ? t().atLeast : t().atMost}`}
+      label={`${props.definition.label} ${props.bound === "from" ? t().from : t().upTo}`}
       value={props.bound === "from" ? props.value?.min : props.value?.max}
       unit={props.definition.unit}
       sheet={props.sheet}
