@@ -99,8 +99,12 @@ to that value when cleared. A list with one fixed order declares
   reported.
 - `serialize` writes `view`, the fields in declaration order, `q`, `sort`,
   and `group`, and omits defaults, so equal states give equal URLs. Pass the
-  current parameters as `base` to keep the page's own ones.
+  current parameters as `base` to keep the page's own ones. Whatever it
+  writes, `parse` reads back to the same state.
 - `set`, `clear`, and `reset` change one statement or return the defaults.
+- `set` and `serialize` throw a `RangeError` for a state the URL cannot hold,
+  such as a reversed range, a number with an exponent, or a query longer than
+  `LIST_QUERY_MAX_LENGTH` (2,000 characters). Check input before applying it.
 
 **The application filters and stores views itself.** `@k2b/ui` neither
 filters nor stores. The page loader turns the parsed state into its own SQL
