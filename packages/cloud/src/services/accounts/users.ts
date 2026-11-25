@@ -1,5 +1,16 @@
 import type { SQL } from "bun";
-import type { BaseUser, MutationResult, PaginationResponse, Role, User, UserProfile, UserProvider } from "../../contracts/shared";
+import type {
+  BaseUser,
+  MutationResult,
+  PaginationResponse,
+  Role,
+  User,
+  UserDirectoryEntry,
+  UserDirectoryRole,
+  UserDirectoryStatus,
+  UserProfile,
+  UserProvider,
+} from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
@@ -349,6 +360,154 @@ export const list = async (params: {
       total_pages: totalPages,
       has_next: page < totalPages,
     } satisfies PaginationResponse,
+  };
+};
+
+/** Most groups one entry of the user list names; `groupCount` still counts all of them. */
+export const USER_DIRECTORY_GROUPS_MAX = 50;
+/** Most groups one filter of the user list names. */
+export const USER_DIRECTORY_GROUP_FILTER_MAX = 20;
+/** Longest free search of the user list. */
+export const USER_DIRECTORY_SEARCH_MAX = 200;
+
+/** What the administration's user list asks for. Every part narrows the list; an absent part does not. */
+export type UserDirectoryQuery = {
+  search?: string;
+  provider?: UserProvider;
+  roles?: readonly UserDirectoryRole[];
+  /** Direct members of any of these groups. */
+  groupIds?: readonly string[];
+  statuses?: readonly UserDirectoryStatus[];
+  /** The last sign-in: within `[since, until)`, or `"never"` for accounts that never signed in. */
+  lastLogin?: { since?: Date; until?: Date } | "never";
+  passkey?: boolean;
+  sort?: { field: "name" | "lastLogin"; direction: "asc" | "desc" };
+  page?: number;
+  perPage?: number;
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The administration's user list: filters, sort and the facts each row shows, in two statements (a count and the
+ * page), as `list`. Groups are direct memberships without personal Linux groups, the same set the row names.
+ */
+export const directory = async (query: UserDirectoryQuery): Promise<{ items: UserDirectoryEntry[]; total: number }> => {
+  const page = query.page ?? 1;
+  const perPage = query.perPage ?? 100;
+  if (query.search && query.search.length > USER_DIRECTORY_SEARCH_MAX) throw new RangeError("search too long");
+  const groupIds = query.groupIds;
+  if (groupIds && (groupIds.length > USER_DIRECTORY_GROUP_FILTER_MAX || !groupIds.every((id) => UUID.test(id))))
+    throw new RangeError("invalid group filter");
+  if (groupIds?.length === 0 || query.roles?.length === 0 || query.statuses?.length === 0) return { items: [], total: 0 };
+
+  const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
+  // As `buildRoles`: only a full account is an administrator, also a FreeIPA guest in an administrators' group is not.
+  const adminExpression = sql`u.profile = 'user' AND CASE
+    WHEN u.provider = 'local' THEN u.admin
+    ELSE EXISTS(
+      SELECT 1 FROM auth.ipa_user_effective_groups eg
+      WHERE eg.user_id = u.id AND eg.group_name = ANY(${toPgTextArray(groupsAdmin)}::text[])
+    )
+  END`;
+  const expired = sql`(u.account_expires IS NOT NULL AND u.account_expires <= now())`;
+  const conditions: SQL.Query<unknown>[] = [sql`TRUE`];
+  if (query.provider) conditions.push(sql`u.provider = ${query.provider}`);
+  if (query.search) {
+    const search = `%${freeipa.util.escapeLike(query.search.toLowerCase())}%`;
+    conditions.push(sql`(
+      LOWER(u.uid) LIKE ${search} ESCAPE '\\' OR
+      LOWER(u.display_name) LIKE ${search} ESCAPE '\\' OR
+      LOWER(u.given_name) LIKE ${search} ESCAPE '\\' OR
+      LOWER(u.sn) LIKE ${search} ESCAPE '\\' OR
+      LOWER(u.mail) LIKE ${search} ESCAPE '\\'
+    )`);
+  }
+  if (query.roles) {
+    const roles = new Set(query.roles);
+    const parts: SQL.Query<unknown>[] = [];
+    if (roles.has("admin")) parts.push(sql`a.effective_admin`);
+    if (roles.has("member")) parts.push(sql`(NOT a.effective_admin AND u.profile = 'user')`);
+    if (roles.has("guest")) parts.push(sql`u.profile = 'guest'`);
+    conditions.push(sql`(${parts.reduce((acc, part) => sql`${acc} OR ${part}`)})`);
+  }
+  if (groupIds) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM auth.user_groups_v2 ug WHERE ug.user_id = u.id AND ug.group_id = ANY(${toPgUuidArray([...groupIds])}::uuid[])
+    )`);
+  }
+  if (query.statuses) {
+    const statuses = new Set(query.statuses);
+    const parts: SQL.Query<unknown>[] = [];
+    if (statuses.has("expired")) parts.push(expired);
+    if (statuses.has("invited")) parts.push(sql`(NOT ${expired} AND u.last_login_local IS NULL)`);
+    if (statuses.has("active")) parts.push(sql`(NOT ${expired} AND u.last_login_local IS NOT NULL)`);
+    conditions.push(sql`(${parts.reduce((acc, part) => sql`${acc} OR ${part}`)})`);
+  }
+  if (query.lastLogin === "never") conditions.push(sql`u.last_login_local IS NULL`);
+  else if (query.lastLogin) {
+    if (query.lastLogin.since) conditions.push(sql`u.last_login_local >= ${query.lastLogin.since}`);
+    if (query.lastLogin.until) conditions.push(sql`u.last_login_local < ${query.lastLogin.until}`);
+  }
+  if (query.passkey !== undefined) {
+    const exists = sql`EXISTS (SELECT 1 FROM auth.webauthn_credentials w WHERE w.user_id = u.id)`;
+    conditions.push(query.passkey ? exists : sql`NOT ${exists}`);
+  }
+  const where = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
+  const from = sql`auth.users u CROSS JOIN LATERAL (SELECT ${adminExpression} AS effective_admin) a`;
+
+  const sort = query.sort ?? { field: "name", direction: "asc" };
+  const name = sql`LOWER(COALESCE(NULLIF(u.display_name, ''), u.mail, u.uid))`;
+  // Ties end on the unique uid, so pages never repeat or skip a row. "Never signed in" counts as the oldest sign-in.
+  const order =
+    sort.field === "lastLogin"
+      ? sort.direction === "desc"
+        ? sql`u.last_login_local DESC NULLS LAST, u.uid`
+        : sql`u.last_login_local ASC NULLS FIRST, u.uid`
+      : sort.direction === "desc"
+        ? sql`${name} DESC, u.uid DESC`
+        : sql`${name} ASC, u.uid ASC`;
+  const ownGroups = sql`
+    SELECT g.id, g.name FROM auth.user_groups_v2 ug JOIN auth.groups g ON g.id = ug.group_id
+    WHERE ug.user_id = u.id AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
+  `;
+
+  const countRows = await sql<DbRow[]>`SELECT COUNT(*)::int AS count FROM ${from} WHERE ${where}`;
+  const total = (countRows[0]?.count as number) ?? 0;
+  const rows = await sql<DbRow[]>`
+    SELECT u.*, a.effective_admin,
+      ${expired} AS expired,
+      EXISTS (SELECT 1 FROM auth.webauthn_credentials w WHERE w.user_id = u.id) AS has_passkey,
+      COALESCE((
+        SELECT json_agg(json_build_object('id', o.id, 'name', o.name) ORDER BY o.name)
+        FROM (${ownGroups} ORDER BY g.name LIMIT ${USER_DIRECTORY_GROUPS_MAX}) o
+      ), '[]'::json) AS directory_groups,
+      (SELECT COUNT(*)::int FROM (${ownGroups}) c) AS directory_group_count
+    FROM ${from}
+    WHERE ${where}
+    ORDER BY ${order}
+    LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+  `;
+  return {
+    total,
+    items: rows.map((row) => {
+      const base = buildBaseUser(row);
+      const lastLogin = row.last_login_local ? (row.last_login_local as Date).toISOString() : null;
+      const groupList = (typeof row.directory_groups === "string" ? JSON.parse(row.directory_groups) : row.directory_groups) as {
+        id: string;
+        name: string;
+      }[];
+      return {
+        ...base,
+        role: row.effective_admin ? "admin" : base.profile === "guest" ? "guest" : "member",
+        status: row.expired ? "expired" : lastLogin ? "active" : "invited",
+        lastLogin,
+        accountExpires: row.account_expires ? (row.account_expires as Date).toISOString() : null,
+        passkey: Boolean(row.has_passkey),
+        groups: groupList,
+        groupCount: (row.directory_group_count as number) ?? 0,
+      } satisfies UserDirectoryEntry;
+    }),
   };
 };
 
