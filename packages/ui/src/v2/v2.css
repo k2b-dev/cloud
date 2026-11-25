@@ -1073,11 +1073,23 @@
 .k2-ui .k2-row[data-strong] .k2-row-title {
   font-weight: 600;
 }
-.k2-ui .k2-row[data-selected] {
+.k2-ui .k2-row[data-current] {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-row[data-yours] {
   background: var(--k2-blue-tint);
+}
+/* a row chosen in a selection takes the blue tint of a selected table row; open and chosen at once, it stays blue */
+.k2-ui .k2-row[data-selected] {
+  background: var(--k2-blue-tint);
+}
+/* the box of a row in a selection stands in the lead; its target reaches 12 px to the edge, 8 px towards the title
+   (the gap before it) and 8 px up and down (36 × 36 px), inside the row, so a finger meets it and never the title or
+   the entry beside it */
+.k2-ui .k2-row-lead > .k2-mark > .k2-mark-input {
+  inset: -8px -8px -8px -12px;
+  width: calc(100% + 20px);
+  height: calc(100% + 16px);
 }
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
@@ -1131,8 +1143,9 @@
   position: absolute;
   inset: 0;
 }
-.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open),
-.k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open) {
+/* (a box's mark stands above as a whole: its input lies over the mark and keeps its place there) */
+.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex], .k2-mark):not(.k2-row-open, .k2-mark-input),
+.k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex], .k2-mark):not(.k2-row-open, .k2-mark-input) {
   position: relative;
   z-index: 1;
 }
