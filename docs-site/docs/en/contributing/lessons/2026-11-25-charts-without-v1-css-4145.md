@@ -1,4 +1,4 @@
-### A chart had no size or mark styles in a page with only `v2.css`, and jumped while it loaded
+### A chart had no size or mark styles in a page with only the v2 sheet, and jumped while it loaded
 
 - **What happened:** In a page that loads only `@k2b/ui/v2.css` (a standalone v2 app, Fibel's recipe route, `v2-preview`, the k2b-ui recipe images), a `Chart` of `@k2b/ui` had no size, its marks lost their styles, and its tooltip opened as a bare popover. In every v2 screen, `Loading` and `Failed` replaced the chart's `Canvas` with rows, so the page moved by about 120 px when the chart came.
 - **Root cause:** Every chart rule lived in the v1 sheet (`styles.css`) below `.k2b-ui`, and the chart counted on the v1 tooltip rules, the v1 `border-box` reset and v1 tokens. `v2.css` carried none of them. The v2 states had no shape for a drawing.

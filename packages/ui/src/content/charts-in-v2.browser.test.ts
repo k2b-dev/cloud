@@ -270,6 +270,7 @@ test("v2 only: a focused chart shows the v2 ring", async () => {
   try {
     await page.locator(".charts-v2-bar").focus();
     await page.keyboard.press("ArrowRight");
+    await settled(page);
     const ring = await page.locator(".charts-v2-bar").evaluate((element) => {
       const style = getComputedStyle(element);
       const probe = document.createElement("span");
