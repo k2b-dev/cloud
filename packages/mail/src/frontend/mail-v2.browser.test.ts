@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { summaryState } from "./_components/mail-summary-fixtures";
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
 
 // Mail's mailbox on the @k2b/ui v2 pilot: the real island and controller with the mockup's data. The boxes of its
@@ -256,6 +257,8 @@ describe("Mail on the v2 pilot", () => {
           });
         await page.getByText("Keine Nachricht ausgewählt").waitFor();
         const before = await place();
+        // a column at 1440 px, a closed drawer at 1024 px: the comparison is of a sidebar that is there or not by design
+        expect(before.sidebar).toBe(width === 1440);
         await rowLink(page, "Holzwerk Brandt").click();
         await page.waitForURL(/conversation=Demo01/);
         await settled(page);
@@ -271,6 +274,58 @@ describe("Mail on the v2 pilot", () => {
         await page.close();
       }
     }, 60_000);
+
+  // The summary is written through v1's save: a failed save keeps the text behind Retry, which sends it again.
+  test("a failed summary save offers Retry, which sends the same text again", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const puts: unknown[] = [];
+      await page.route("**/api/mail/mailboxes/Box001/conversations/Demo01/summary", async (route) => {
+        if (route.request().method() !== "PUT") return route.fallback();
+        const body = route.request().postDataJSON() as { summary: string; expectedSummaryRevision: number };
+        puts.push(body);
+        if (puts.length === 1) return route.fulfill({ status: 503, json: { error: "Gerade nicht erreichbar" } });
+        return route.fulfill({
+          json: summaryState({ summary: body.summary, summaryRevision: body.expectedSummaryRevision + 1, source: "person" }),
+        });
+      });
+      await page.locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      const retry = page.getByRole("button", { name: "Erneut versuchen" });
+      await retry.waitFor();
+      const saved = page.waitForResponse((response) => response.url().endsWith("/summary") && response.request().method() === "PUT");
+      await retry.click();
+      expect((await saved).ok()).toBe(true);
+      expect(puts.length).toBe(2);
+      expect(puts[1]).toEqual(puts[0]);
+      expect((puts[0] as { summary: string }).summary).toContain("Eichenplatten");
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // The search field shows the page's search: a folder opened after a search shows none, Back brings the search back.
+  test("the search field follows the page: another folder clears it, Back brings the search back", async () => {
+    const page = await open(MAIL_V2_PATH);
+    try {
+      const field = page.locator('[data-k2-workspace] [data-slot="head"] input[type="search"]');
+      await field.fill("Angebot");
+      await field.press("Enter");
+      await page.waitForURL((url) => url.searchParams.get("q") === "Angebot");
+      await settled(page);
+      await page.locator('[data-k2-part="Nav"]').getByRole("link", { name: "Gesendet" }).click();
+      await page.waitForURL(/folder=Sent1/);
+      await settled(page);
+      expect(await field.inputValue()).toBe("");
+      await page.goBack();
+      await page.waitForURL((url) => url.searchParams.get("q") === "Angebot");
+      await settled(page);
+      expect(await field.inputValue()).toBe("Angebot");
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 
   // At 1024 px "Wartet auf Antwort" has no room: it leads "Weitere", which counts it, and opens in place like the tab.
   test("at 1024 px a tab without room leads the Weitere menu and opens in place", async () => {
@@ -569,7 +624,9 @@ describe("Mail on the v2 pilot", () => {
       await page.locator('[data-k2-part="Canvas"] .cm-placeholder').waitFor();
       await settled(page);
       const opened = await row();
-      expect(resting.mode).not.toBeNull();
+      // every part is there, so equal places compare numbers, not two missing parts
+      for (const [part, value] of Object.entries(resting)) expect(value, part).not.toBeNull();
+      for (const [part, value] of Object.entries(resting)) expect(value, part).not.toBeUndefined();
       expect(opened).toEqual(resting);
       // The name alone, whole while there is room; the address is the chip's hint.
       const chip = page.locator('[data-k2-part="Canvas"] .mail-recipient-pill');

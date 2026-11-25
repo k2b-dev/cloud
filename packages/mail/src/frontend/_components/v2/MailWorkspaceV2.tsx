@@ -18,7 +18,7 @@ import {
   Tabs,
   Workspace,
 } from "@k2b/ui/v2";
-import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
+import { type Accessor, createComputed, createMemo, createSignal, on, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
 import { mailOverviewMessages } from "../../mail-overview-messages";
@@ -97,6 +97,14 @@ export default function MailWorkspaceV2(props: {
   const formatCount = (count: number) => count.toLocaleString(locale());
   const requestUrl = () => mailRouteUrl(c().requestPath());
   const [search, setSearch] = createSignal(c().data.query);
+  // The field shows the page's search: another mailbox, folder or view, Back and Forward bring their own text.
+  createComputed(
+    on(
+      () => c().data.query,
+      (query) => setSearch(query),
+      { defer: true },
+    ),
+  );
 
   // ── Links open in place ────────────────────────────────────────────────────────────────────────────────────────
   // Rows, tabs and sidebar entries are real links (a new tab, a page before hydration); a plain click opens them in
@@ -203,7 +211,7 @@ export default function MailWorkspaceV2(props: {
     const folderItem = (folder: (typeof folders)[number]): NavItem => ({
       label: mailFolderNames(locale())(folder),
       icon: folderIcon(folder.role),
-      href: folder.selectable ? `/app/mail/${openId}?folder=${folder.id}` : undefined,
+      href: folder.selectable ? `/app/mail/${openId}?folder=${encodeURIComponent(folder.id)}` : undefined,
       onNavigate: openView,
       nested: true,
       current: data.folderId === folder.id,
