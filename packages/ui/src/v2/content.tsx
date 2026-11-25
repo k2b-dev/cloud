@@ -41,6 +41,7 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /** The words. */
   children: JSX.Element;
 };
 
@@ -77,7 +78,11 @@ export type ProseProps =
       markdown: string;
       children?: never;
     }
-  | { markdown?: never; children: JSX.Element };
+  | {
+      markdown?: never;
+      /** Reading text as elements, when it is not Markdown. */
+      children: JSX.Element;
+    };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {

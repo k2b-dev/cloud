@@ -86,14 +86,15 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| reading text, an email body | `Prose` | `mail.tsx` |
-| attachments, like things to press | `Tiles` | `mail.tsx` |
+| reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
+| attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
-| a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
+| a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
+| a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
@@ -170,7 +171,8 @@ a `Notice` that names the deed.
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer (comes from `@k2b/editor`), and an assistant
+the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
+a code block with highlighting, an image or video viewer, and an assistant
 message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with

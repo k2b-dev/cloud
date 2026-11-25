@@ -1,6 +1,8 @@
 import { createComponent, type JSX } from "solid-js";
 import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
+import * as content from "../../../../packages/ui/skills/k2b-ui/recipes/content";
 import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
+import * as filteredTable from "../../../../packages/ui/skills/k2b-ui/recipes/filtered-table";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
@@ -40,7 +42,9 @@ const RECIPE_LOCALE = "de";
 /** Every recipe by its file name without `.tsx`. A new recipe file is one line here; a test fails on a missing one. */
 export const recipes = {
   actions,
+  content,
   dialogs,
+  "filtered-table": filteredTable,
   form,
   "form-detail": formDetail,
   frame,
