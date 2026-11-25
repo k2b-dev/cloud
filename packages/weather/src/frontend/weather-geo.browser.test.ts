@@ -185,7 +185,7 @@ for (const name of Object.keys(weatherScreenFixtures))
           await page.screenshot({ path: resolve(process.env.CLOUD_WEATHER_SHOTS, `${name}-${width}.png`) });
           await Bun.write(
             resolve(process.env.CLOUD_WEATHER_SHOTS, `${name}-${width}.txt`),
-            `${outline}\n${JSON.stringify(layout.problems)}`,
+            `${outline}\nelements ${await page.locator("#app *").count()}\n${JSON.stringify(layout.problems)}`,
           );
         }
         expect({ width, errors, loaders, problems: outline.includes("Problems") ? outline : null, layout: layout.problems }).toEqual({

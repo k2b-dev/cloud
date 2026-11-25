@@ -82,13 +82,15 @@ export default function WeatherScreen(props: WeatherScreenProps) {
     if (!(await Dialog.confirm({ title: t().removeLocationConfirm, confirm: t().removeLocation }))) return;
     const response = await apiClient.locations[":id"].$delete({ param: { id } }).catch(() => null);
     if (!response?.ok) {
-      toast(response ? await messageOf(response, t().removeLocationFailed) : t().removeLocationFailed, { status: "bad" });
+      toast(t().notRemoved, { status: "bad" });
       return;
     }
     toast(t().locationRemoved, { status: "ok" });
     navigateTo("/app/weather");
   };
+  // the display also stands in the menu: the head's button gives way on the phone, the menu stays
   const menu = (open: WeatherOpen): MenuEntry[] => [
+    { label: t().displaySettings, icon: "device-tv", onClick: () => setDisplaying(true) },
     ...(cloudId.available()
       ? [
           {
@@ -284,7 +286,8 @@ function AddLocationDialog(props: { open: boolean; onOpenChange: (open: boolean)
         json: { name: place.name, state: place.state, lat: place.lat, lon: place.lon, provenance: place.provenance },
       });
       if (!response.ok) {
-        toast(await messageOf(response, t().addLocationFailed), { status: "bad" });
+        // the reason stays in the dialog, where the person can pick another city
+        setSearchError(await messageOf(response, t().addLocationFailed));
         return;
       }
       const { id } = (await response.json()) as { id: string };
