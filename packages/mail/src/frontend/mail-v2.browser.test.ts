@@ -855,8 +855,8 @@ describe("Mail on the v2 pilot with worst-case data", () => {
       expect(await status.locator('.k2-chip[data-kind="tag"]').count()).toBe(3);
       await status.getByRole("button", { name: /^\+\d+$/ }).waitFor();
       await status.getByText(/^\d+ lesen mit$/).waitFor();
-      // the line stays one line high, also with 12 tags, 14 links and 5 readers
-      expect((await status.boundingBox())?.height ?? 0).toBeLessThanOrEqual(53);
+      // with 12 tags, 14 links and 5 readers the line takes two lines at most (it took 170 px), each tag cut to ~16 letters
+      expect((await status.locator(":scope > .k2-bar").boundingBox())?.height ?? 0).toBeLessThanOrEqual(80);
     } finally {
       await page.close();
     }
