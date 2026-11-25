@@ -329,11 +329,7 @@ describe("the log list on v2", () => {
         const outline = await describeV2Page(tab, "#root");
         expect(outline).not.toContain("Problems (");
         const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
-        // k2b-ui gap: 1 – the filter statement's 12/28 text is not one of the v2 type roles yet; only these two findings.
-        const problems = layout.problems.filter(
-          (problem) => !/^text outside the type roles: 12px\/28px (400 in button\.k2-stmt-b|600 in b)( |$)/.test(problem),
-        );
-        expect({ name, problems }).toEqual({ name, problems: [] });
+        expect({ name, problems: layout.problems }).toEqual({ name, problems: [] });
         await shoot(tab, name);
         expect(errors).toEqual([]);
       } finally {

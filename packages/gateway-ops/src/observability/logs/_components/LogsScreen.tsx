@@ -360,7 +360,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                 onChange={change}
                 base={base()}
                 icons={{ time: "clock", level: "alert-triangle", source: "server", request: "id" }}
-                names={(state().filters.source ?? []).map((source) => ({ value: source, label: source }))}
+                names={{ source: (state().filters.source ?? []).map((source) => ({ value: source, label: source })) }}
                 results={t().entries({ count: number(total()) })}
               />
               <StatusRow
