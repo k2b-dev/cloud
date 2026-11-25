@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
 import {
@@ -30,7 +31,7 @@ const open = async (view: { width: number; height: number }, query: string, hold
   if (holdsBypass) await page.context().addCookies([{ ...MAINTENANCE_FIXTURE_BYPASS_COOKIE, url: new URL(fixture.url).origin }]);
   await page.addInitScript(pinPageClock, MAINTENANCE_FIXTURE_NOW.getTime());
   await page.goto(`${fixture.url}?${query}`);
-  await page.locator('#maintenance-fixture[data-ready="true"]').waitFor();
+  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
   return { page, errors };
 };
 
@@ -42,7 +43,7 @@ test("both states fit a phone and a desktop in both themes and say what the mock
         try {
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
           expect({ state, width: view.width, overflow: Math.max(0, overflow) }).toEqual({ state, width: view.width, overflow: 0 });
-          const text = (await page.locator("[data-maintenance-admin]").innerText()).replace(/\s+/g, " ");
+          const text = (await page.locator('main [data-k2-part="Pane"]').innerText()).replace(/\s+/g, " ");
           if (state === "aus") {
             expect(text).toContain("Solange er an ist, sehen alle statt der Cloud eine Wartungsseite.");
             expect(text).not.toContain("Beginn");
@@ -74,7 +75,7 @@ test("starting lets this browser past the wall: the gateway confirms the bypass 
     const reloaded = page.waitForEvent("load", { timeout: 10_000 });
     await page.getByRole("button", { name: "Wartung starten", exact: true }).click();
     await reloaded;
-    await page.locator('#maintenance-fixture[data-ready="true"] [data-maintenance-admin="active"]').waitFor();
+    await page.getByRole("button", { name: "Wartung beenden", exact: true }).waitFor();
     // The reload passed the wall: the server rendered the running maintenance for a browser the gateway lets in.
     expect(await page.locator("[data-maintenance-wall]").count()).toBe(0);
     // The fixture gateway confirms only for a browser holding its HttpOnly cookie, which the page's script cannot set.
@@ -90,7 +91,7 @@ test("starting lets this browser past the wall: the gateway confirms the bypass 
     ]);
     // The browser stayed on this page and reloaded it once.
     expect(loads).toEqual([fixture.url + "?locale=de"]);
-    const text = await page.locator("[data-maintenance-admin]").innerText();
+    const text = await page.locator('main [data-k2-part="Pane"]').innerText();
     expect(text).toContain("Alle außer dir sehen gerade die Wartungsseite.");
     // The suggested end, one hour ahead and rounded up to the quarter hour.
     expect(text).toContain("15:15 Uhr");
@@ -109,10 +110,10 @@ test("when the gateway never confirms the bypass, the page says so and stays: no
     const loads: string[] = [];
     page.on("load", () => loads.push(page.url()));
     await page.getByRole("button", { name: "Wartung starten", exact: true }).click();
-    const notice = page.locator('[data-maintenance-admin] [role="alert"]');
+    const notice = page.locator('main [data-k2-part="Notice"]');
     await notice.waitFor({ timeout: 10_000 });
     expect(await notice.innerText()).toContain("Die Wartung läuft, aber dein Link an der Wartungsseite vorbei ließ sich nicht erstellen.");
-    const text = await page.locator("[data-maintenance-admin]").innerText();
+    const text = await page.locator('main [data-k2-part="Pane"]').innerText();
     expect(text).toContain("Alle sehen gerade die Wartungsseite, du ab dem nächsten Laden auch.");
     expect(await notice.getByRole("button", { name: "Erneut versuchen", exact: true }).isVisible()).toBe(true);
     // Bounded: fifteen link-and-status rounds, then nothing more, and the page never reloaded into the wall.
@@ -134,7 +135,7 @@ test("the end moves past midnight with the date-time picker, which names the tim
   try {
     fixture.control.requests.length = 0;
     await page.getByRole("button", { name: "Ende verschieben", exact: true }).click();
-    const dialog = page.locator("[data-move-end-dialog]");
+    const dialog = page.getByRole("dialog");
     await dialog.locator(".k2b-date-trigger").click();
     await page.locator(".k2b-date-popover__timezone", { hasText: "Europe/Berlin" }).waitFor();
     await page.locator('[data-date-day="2026-11-17"]').click();
@@ -144,7 +145,36 @@ test("the end moves past midnight with the date-time picker, which names the tim
     await dialog.waitFor({ state: "detached" });
     const saved = fixture.control.requests.find((request) => request.path === "/api/admin/maintenance/until");
     expect(JSON.parse(saved?.body ?? "{}")).toEqual({ until: "2026-11-17T00:30:00.000Z" });
-    expect(await page.locator("[data-maintenance-admin]").innerText()).toMatch(/17\.\s?Nov\.?\s2026,\s01:30 Uhr/);
+    expect(await page.locator('main [data-k2-part="Pane"]').innerText()).toMatch(/17\.\s?Nov\.?\s2026,\s01:30 Uhr/);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("ending asks first: cancel changes nothing, the v2 layout holds in both states", async () => {
+  for (const state of ["aus", "aktiv"])
+    for (const width of [1440, 1024, 390]) {
+      const { page } = await open({ width, height: 900 }, `state=${state}&locale=de`);
+      try {
+        expect({ state, width, problems: (await measureV2Layout(page, { root: "main.k2-ui" })).problems }).toEqual({
+          state,
+          width,
+          problems: [],
+        });
+      } finally {
+        await page.close();
+      }
+    }
+  const { page, errors } = await open(views[0], "state=aktiv&locale=de");
+  try {
+    fixture.control.requests.length = 0;
+    await page.getByRole("button", { name: "Wartung beenden", exact: true }).click();
+    const question = page.getByRole("alertdialog");
+    expect(await question.innerText()).toContain("Wartung beenden?");
+    await question.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await question.waitFor({ state: "detached" });
+    expect(fixture.control.requests.filter((request) => request.path === "/api/admin/maintenance/off")).toHaveLength(0);
     expect(errors).toEqual([]);
   } finally {
     await page.close();

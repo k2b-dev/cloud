@@ -17,12 +17,14 @@ const [{ LocaleProvider }, { default: Maintenance }] = await Promise.all([import
 beforeAll(() => setSystemTime(new Date("2026-11-16T13:10:00.000Z")));
 afterAll(() => setSystemTime());
 
+const { adminNavFixture } = await import("../admin-v2.fixture");
 const html = (initial: MaintenanceStatus, locale = "de") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(Maintenance, {
+          nav: adminNavFixture("/admin/settings/maintenance"),
           initial,
           appNames: { files: "Dateien", mail: "Mail" },
           dateConfig: { timeZone: "Europe/Berlin", locale },
@@ -59,7 +61,7 @@ test("off: the switch with its note, a suggested end with its date and the cld w
     "Freiwillig. Steht auf der Wartungsseite.",
     "Voraussichtlich fertig um",
     "Freiwillig. Die Wartung endet nie von selbst; du schaltest sie aus.",
-    "Ausschalten geht auch mit cld admin maintenance off .",
+    "Ausschalten geht auch mit cld admin maintenance off.",
     "Wartung starten",
   ])
     expect(page).toContain(words);

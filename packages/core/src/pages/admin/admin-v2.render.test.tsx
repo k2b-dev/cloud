@@ -18,6 +18,25 @@ const { default: OverviewScreen } = await import("./OverviewScreen");
 const { default: BaseScreen } = await import("./base/BaseScreen");
 const { generalSections } = await import("./base/sections");
 const { fixtureEntries } = await import("./base/BaseArea.browser-fixture");
+const { default: AnnouncementsScreen } = await import("./announcements/AnnouncementsScreen");
+
+const announcement = {
+  id: "aaaaaaaa-0000-4000-8000-000000000001",
+  version: 3,
+  kind: "banner" as const,
+  title: "Wartung am Samstag",
+  body: "Am Samstag ist die Cloud von 8 bis 9 Uhr nicht erreichbar.",
+  tone: "warning" as const,
+  publishedAt: "2026-11-20T08:00:00.000Z",
+  expiresAt: "2026-11-29T08:00:00.000Z",
+  createdAt: "2026-11-20T08:00:00.000Z",
+  updatedAt: "2026-11-20T08:00:00.000Z",
+  createdBy: null,
+  updatedBy: null,
+  state: "active" as const,
+  published: "20.11.2026, 09:00",
+  expires: "29.11.2026, 09:00",
+};
 
 const dom = createDomTestHarness();
 dom.cleanup();
@@ -98,5 +117,25 @@ describe("v2 admin screens on the server", () => {
     expect(text).toContain("Einstellungen-Cache");
     expect(body.querySelector('[data-k2-part="Nav.Item"][aria-current="page"]')?.textContent).toContain("Allgemein");
     expect(loaders(body)).toBe(0);
+  });
+  test("announcements list their entries with state and times; the address opens one as a form beside the list", () => {
+    const list = render(() =>
+      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [announcement], open: null }),
+    );
+    expect(list.text).toContain("Wartung am Samstag");
+    expect(list.text).toContain("20.11.2026, 09:00");
+    expect(list.text).toContain("Neue Ankündigung");
+    expect(list.body.querySelector('[data-k2-part="Field"]')).toBeNull();
+    expect(loaders(list.body)).toBe(0);
+    const open = render(() =>
+      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [announcement], open: announcement.id }),
+    );
+    expect(open.body.querySelector('input[value="Wartung am Samstag"]')).not.toBeNull();
+    expect(open.text).toContain("Löschen");
+    const empty = render(() =>
+      createComponent(AnnouncementsScreen, { nav: adminNavFixture("/admin/announcements"), rows: [], open: "new" }),
+    );
+    expect(empty.text).toContain("Noch keine Ankündigungen");
+    expect(empty.text).toContain("Erstellen");
   });
 });

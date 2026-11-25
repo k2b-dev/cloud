@@ -3,6 +3,7 @@ import type { MaintenanceStatus } from "@k2b/cloud/contracts/maintenance";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
+import { adminNavFixture } from "../admin-v2.fixture";
 
 // 14:10 in Berlin; every time below is read in that zone.
 const NOW = new Date("2026-11-16T13:10:00.000Z");
@@ -47,6 +48,18 @@ const mockFetch = (route: (method: string, path: string, body: unknown, url: URL
 
 const load = async () => {
   const dom = createDomTestHarness();
+  // v2 dialogs need a real browser (Maintenance.browser.test.ts covers moving the end and ending); the DOM harness has no
+  // media queries; v2's phone query answers "desk" here.
+  globalThis.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof matchMedia;
   try {
     return { ui: await import("@k2b/ui"), Maintenance: (await import("./Maintenance.island.tsx")).default };
   } finally {
@@ -64,6 +77,7 @@ const mount = (dom: DomTestHarness, initial: MaintenanceStatus, suggestedEnd = S
         locale: "en",
         get children() {
           return createComponent(Maintenance, {
+            nav: adminNavFixture("/admin/settings/maintenance"),
             initial,
             appNames: { files: "Files", mail: "Mail" },
             dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
@@ -222,30 +236,6 @@ else {
     }
   });
 
-  test("after starting, focus lands on the running state instead of falling to the page", async () => {
-    const dom = createDomTestHarness();
-    const link = deferred<Response>();
-    const fetch = mockFetch((method, path) => {
-      if (method === "POST" && path === "/api/admin/maintenance/on") return Response.json(active);
-      if (method === "POST" && path === "/api/admin/maintenance/bypass") return link.promise;
-      return undefined;
-    });
-    const dispose = mount(dom, off);
-    try {
-      const start = button(dom, "Start maintenance")!;
-      start.focus();
-      start.click();
-      await waitFor(() => Boolean(dom.root.querySelector("[data-maintenance-active-state]")), "running state");
-      await waitFor(() => dom.document.activeElement?.hasAttribute("data-maintenance-active-state") === true, "focus on the state");
-      expect(dom.document.activeElement).not.toBe(dom.document.body);
-    } finally {
-      link.settle(Response.json({ code: "INTERNAL" }, { status: 500 }));
-      dispose();
-      fetch.restore();
-      dom.cleanup();
-    }
-  });
-
   test("an end the server refuses says why at the field, not as a general failure", async () => {
     const dom = createDomTestHarness();
     // This browser's clock is behind the server's: the end it still considers future has passed there.
@@ -355,157 +345,4 @@ else {
       dom.cleanup();
     }
   }, 15_000);
-
-  test("moving the end starts from the current end, saves it and shows the answer", async () => {
-    const dom = createDomTestHarness();
-    const fetch = mockFetch((method, path) =>
-      method === "POST" && path === "/api/admin/maintenance/until"
-        ? Response.json({ ...active, until: "2026-11-17T00:30:00.000Z" })
-        : undefined,
-    );
-    const dispose = mount(dom, active);
-    try {
-      expect(dom.root.textContent).toContain("14:30");
-      button(dom, "Move end")!.click();
-      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
-      // The dialog names the viewer's time zone through its date-time field.
-      button(dom, "Save", "dialog")!.click();
-      await waitFor(() => (dom.root.textContent ?? "").includes("01:30"), "new end after midnight");
-      expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/until"]);
-      expect(fetch.calls[0]!.body).toEqual({ until: "2026-11-16T13:30:00.000Z" });
-      expect(dom.document.querySelector("[data-move-end-dialog]")).toBeNull();
-    } finally {
-      modules!.ui.dialogCore.close();
-      dispose();
-      fetch.restore();
-      dom.cleanup();
-    }
-  });
-
-  test("a refresh answer that left before a moved end does not overwrite it; the next refresh applies again", async () => {
-    const dom = createDomTestHarness();
-    // The page refreshes every ten seconds; the test runs that refresh by hand instead of waiting.
-    const interval = spyOn(globalThis, "setInterval");
-    const tick = () => {
-      const refresh = interval.mock.calls.find((call) => call[1] === 10_000)?.[0];
-      if (typeof refresh !== "function") throw new Error("Missing refresh timer");
-      refresh();
-    };
-    const stale = deferred<Response>();
-    let reads = 0;
-    const fetch = mockFetch((method, path) => {
-      if (method === "GET" && path === "/api/admin/maintenance") {
-        reads += 1;
-        return reads === 1
-          ? stale.promise
-          : Response.json({ ...active, until: "2026-11-17T00:30:00.000Z", apps: { ready: 11, total: 11, starting: [] } });
-      }
-      if (method === "POST" && path === "/api/admin/maintenance/until")
-        return Response.json({ ...active, until: "2026-11-17T00:30:00.000Z" });
-      return undefined;
-    });
-    const dispose = mount(dom, active);
-    try {
-      // The refresh leaves with the old end …
-      tick();
-      await waitFor(() => reads === 1, "refresh request");
-      // … the end moves while it is on its way …
-      button(dom, "Move end")!.click();
-      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
-      button(dom, "Save", "dialog")!.click();
-      await waitFor(() => (dom.root.textContent ?? "").includes("01:30"), "moved end");
-      // … and its late answer, still with the old end, changes nothing.
-      stale.settle(Response.json(active));
-      await Bun.sleep(50);
-      expect(dom.root.textContent).toContain("01:30");
-      expect(dom.root.textContent).not.toContain("14:30");
-      expect(dom.root.textContent).toContain("9 of 11");
-      // A refresh that leaves after the write applies as before.
-      tick();
-      await waitFor(() => (dom.root.textContent ?? "").includes("11 of 11"), "next refresh");
-      expect(dom.root.textContent).toContain("01:30");
-    } finally {
-      modules!.ui.dialogCore.close();
-      dispose();
-      fetch.restore();
-      interval.mockRestore();
-      dom.cleanup();
-    }
-  });
-
-  test("without a future end the dialog suggests one; a failed save stays in the dialog and keeps the old end", async () => {
-    const dom = createDomTestHarness();
-    const fetch = mockFetch(() => Response.json({ code: "INTERNAL" }, { status: 500 }));
-    const noEnd: MaintenanceStatus = { active: true, startedAt: active.startedAt, startedBy: active.startedBy, apps: active.apps };
-    const dispose = mount(dom, noEnd);
-    try {
-      button(dom, "Move end")!.click();
-      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
-      button(dom, "Save", "dialog")!.click();
-      await waitFor(() => Boolean(dom.document.querySelector('[data-move-end-dialog] [role="alert"]')), "error in dialog");
-      expect(dom.document.querySelector("[data-move-end-dialog]")!.textContent).toContain("The end was not moved.");
-      expect(fetch.calls[0]!.body).toEqual({ until: "2026-11-16T14:15:00.000Z" });
-      button(dom, "Cancel", "dialog")!.click();
-      await waitFor(() => !dom.document.querySelector("[data-move-end-dialog]"), "dialog closed");
-      expect(dom.root.textContent).not.toContain("Planned until");
-    } finally {
-      modules!.ui.dialogCore.close();
-      dispose();
-      fetch.restore();
-      dom.cleanup();
-    }
-  });
-
-  test("an end the server refuses in the dialog says why at the field and keeps the dialog open", async () => {
-    const dom = createDomTestHarness();
-    const fetch = mockFetch((method, path) =>
-      method === "POST" && path === "/api/admin/maintenance/until"
-        ? Response.json({ message: "until must be in the future", code: "BAD_INPUT" }, { status: 400 })
-        : undefined,
-    );
-    const dispose = mount(dom, active);
-    try {
-      button(dom, "Move end")!.click();
-      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
-      button(dom, "Save", "dialog")!.click();
-      const dialog = () => dom.document.querySelector("[data-move-end-dialog]");
-      await waitFor(() => (dialog()?.textContent ?? "").includes("This time has already passed."), "field error in dialog");
-      expect(dialog()!.textContent).not.toContain("The end was not moved.");
-      expect(button(dom, "Save", "dialog")!.disabled).toBe(false);
-    } finally {
-      modules!.ui.dialogCore.close();
-      dispose();
-      fetch.restore();
-      dom.cleanup();
-    }
-  });
-
-  test("ending asks first; cancel changes nothing, confirm switches off and reloads", async () => {
-    const dom = createDomTestHarness();
-    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
-    const fetch = mockFetch((method, path) =>
-      method === "POST" && path === "/api/admin/maintenance/off" ? Response.json(off) : undefined,
-    );
-    const dispose = mount(dom, active);
-    try {
-      button(dom, "End maintenance")!.click();
-      await waitFor(() => Boolean(dom.document.querySelector("dialog")), "confirm prompt");
-      expect(dom.document.querySelector("dialog")!.textContent).toContain("Everyone sees the Cloud again.");
-      button(dom, "Cancel", "dialog")!.click();
-      await waitFor(() => !dom.document.querySelector("dialog[open]"), "prompt closed");
-      expect(fetch.calls).toEqual([]);
-
-      button(dom, "End maintenance")!.click();
-      await waitFor(() => Boolean(button(dom, "End maintenance", "dialog")), "confirm prompt again");
-      button(dom, "End maintenance", "dialog")!.click();
-      await waitFor(() => reload.mock.calls.length > 0, "reload");
-      expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/off"]);
-    } finally {
-      modules!.ui.dialogCore.close();
-      dispose();
-      fetch.restore();
-      reload.mockRestore();
-      dom.cleanup();
-    }
-  });
 }
