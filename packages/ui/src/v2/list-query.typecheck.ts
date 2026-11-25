@@ -115,3 +115,16 @@ field.bool<true>({ label: "2FA", labels: { yes: "on", no: "off" } });
 field.bool<true>({ label: "2FA", labels: { yes: "on", no: "off" }, required: true });
 // @ts-expect-error: a mandatory type needs its required value
 field.text<"x">({ label: "Request" });
+
+// set never throws: it returns undefined when the URL cannot hold the follow-up state, and the type says so.
+const next = query.set(state, "price", { min: 500 });
+export type SetTypes = [Expect<Equal<typeof next, State | undefined>>];
+query.set(state, "sort", { field: "price", direction: "asc" });
+query.set(state, "group", undefined);
+query.set(state, "q", "text");
+// @ts-expect-error: not a declared sort
+query.set(state, "sort", { field: "title", direction: "asc" });
+// @ts-expect-error: not a declared group
+query.set(state, "group", "era");
+// @ts-expect-error: a possibly undefined state is no state to serialize
+query.serialize(next);

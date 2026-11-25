@@ -3,6 +3,12 @@ import { defineListQuery, field, LIST_QUERY_MAX_LENGTH, type ListQueryStateOf, t
 
 const noItems = async (): Promise<readonly LookupItem[]> => [];
 
+/** The state `set` returned; fails the test when the URL could not hold it. */
+const must = <T>(state: T | undefined): T => {
+  if (state === undefined) throw new Error("set returned undefined");
+  return state;
+};
+
 const articles = defineListQuery({
   key: "articles",
   fields: {
@@ -244,7 +250,7 @@ describe("list query URL", () => {
 describe("list query helpers", () => {
   test("set and clear change one statement and keep the rest", () => {
     const start = articles.parse("view=all&status=sold&q=x").state;
-    const withPrice = articles.set(start, "price", { min: 10 });
+    const withPrice = must(articles.set(start, "price", { min: 10 }));
     expect(withPrice).toEqual({
       view: "all",
       filters: { status: ["sold"], price: { min: 10 } },
@@ -262,14 +268,39 @@ describe("list query helpers", () => {
 
   test("setting an empty value clears the statement", () => {
     const start = articles.parse("status=sold&price=1..").state;
-    expect(articles.set(start, "status", []).filters).toEqual({ price: { min: 1 } });
-    expect(articles.set(start, "price", {}).filters).toEqual({ status: ["sold"] });
+    expect(must(articles.set(start, "status", [])).filters).toEqual({ price: { min: 1 } });
+    expect(must(articles.set(start, "price", {})).filters).toEqual({ status: ["sold"] });
   });
 
   test("a mandatory field returns to its default when cleared or emptied", () => {
     const hour = logs.parse("time=last-1h&level=error").state;
     expect(logs.clear(hour, "time").filters).toEqual({ time: { kind: "preset", preset: "last-15m" }, level: ["error"] });
-    expect(logs.set(hour, "time", { kind: "range" }).filters.time).toEqual({ kind: "preset", preset: "last-15m" });
+    expect(must(logs.set(hour, "time", { kind: "range" })).filters.time).toEqual({ kind: "preset", preset: "last-15m" });
+  });
+
+  test("set changes the search, sort and grouping too, and empties remove them", () => {
+    const start = articles.parse("q=x&group=status").state;
+    const sorted = must(articles.set(start, "sort", { field: "price", direction: "asc" }));
+    expect(articles.serialize(sorted).toString()).toBe("q=x&sort=price.asc&group=status");
+    expect(must(articles.set(sorted, "q", "")).search).toBeUndefined();
+    expect(must(articles.set(sorted, "q", "Kommode")).search).toBe("Kommode");
+    expect(must(articles.set(sorted, "group", undefined)).group).toBeUndefined();
+    expect(must(articles.set(sorted, "group", "location")).group).toBe("location");
+  });
+
+  test("a follow-up state of a URL at the limit is undefined, never a throw (the documented link flow)", () => {
+    // parse accepts exactly LIST_QUERY_MAX_LENGTH characters; one more filter does not fit.
+    const url = new URL(`https://example.test/articles?q=${"x".repeat(LIST_QUERY_MAX_LENGTH - 2)}`);
+    const { state, issues } = articles.parse(url.searchParams);
+    expect(issues).toEqual([]);
+    expect(state.search?.length).toBe(LIST_QUERY_MAX_LENGTH - 2);
+    const next = articles.set(state, "price", { min: 500 });
+    expect(next).toBeUndefined();
+    const href = next && `?${articles.serialize(next)}`;
+    expect(href).toBeUndefined();
+    // Clearing and resetting always fit.
+    expect(() => articles.serialize(articles.clear(state, "price"))).not.toThrow();
+    expect(articles.serialize(articles.reset()).toString()).toBe("");
   });
 
   test("reset returns the defaults", () => {
@@ -306,7 +337,7 @@ describe("list query review guards", () => {
     }
   });
 
-  test("numbers outside the one URL grammar are invalid in parse and refused by set and serialize", () => {
+  test("numbers outside the one URL grammar are invalid in parse, refused by set and thrown by serialize", () => {
     const tooLarge = "9".repeat(309);
     for (const raw of ["0.0000001..", "1000000000000000000000..", `${tooLarge}..`, "1e3..", "+5.."]) {
       const parsed = articles.parse(new URLSearchParams({ price: raw }));
@@ -315,13 +346,13 @@ describe("list query review guards", () => {
     }
     const start = articles.reset();
     for (const range of [{ min: 0.0000001 }, { min: 1e21 }, { max: Number.POSITIVE_INFINITY }, { min: Number.NaN }, { min: 5, max: 1 }]) {
-      expect(() => articles.set(start, "price", range)).toThrow(RangeError);
+      expect(articles.set(start, "price", range)).toBeUndefined();
       expect(() => articles.serialize({ ...start, filters: { price: range } })).toThrow(RangeError);
     }
     // What the grammar holds round-trips exactly, including the canonical form of zero.
-    const small = articles.set(start, "price", { min: 0.000001, max: 123456789012345 });
+    const small = must(articles.set(start, "price", { min: 0.000001, max: 123456789012345 }));
     expect(articles.parse(articles.serialize(small)).state).toEqual(small);
-    expect(articles.serialize(articles.set(start, "price", { min: -0 })).toString()).toBe("price=0..");
+    expect(articles.serialize(must(articles.set(start, "price", { min: -0 }))).toString()).toBe("price=0..");
   });
 
   test("a mandatory value is checked as a whole and stored in its canonical form", () => {
@@ -350,21 +381,27 @@ describe("list query review guards", () => {
 
   test("values the URL cannot hold are refused instead of changing on the way", () => {
     const start = articles.reset();
-    expect(() => articles.set(start, "consignor", ["a,b"])).toThrow(RangeError);
-    expect(() => articles.set(start, "status", ["consigned", "gone" as "sold"])).toThrow(RangeError);
-    expect(() => articles.set(start, "received", { kind: "range", from: "2026-11-30", to: "2026-11-01" })).toThrow(RangeError);
-    expect(() => articles.set(start, "received", { kind: "preset", preset: "last-7d" as "last-30d" })).toThrow(RangeError);
+    expect(articles.set(start, "consignor", ["a,b"])).toBeUndefined();
+    expect(articles.set(start, "status", ["consigned", "gone" as "sold"])).toBeUndefined();
+    expect(articles.set(start, "received", { kind: "range", from: "2026-11-30", to: "2026-11-01" })).toBeUndefined();
+    expect(articles.set(start, "received", { kind: "preset", preset: "last-7d" as "last-30d" })).toBeUndefined();
+    expect(articles.set(start, "sort", { field: "constructor" as "price", direction: "asc" })).toBeUndefined();
+    expect(articles.set(start, "group", "era" as "status")).toBeUndefined();
+    expect(logs.set(logs.reset(), "q", "x")).toBeUndefined();
+    expect(logs.set(logs.reset(), "sort", { field: "time", direction: "asc" })).toBeUndefined();
   });
 
   test("serialize and set never produce a query that parse rejects as too long", () => {
     const fits = "x".repeat(LIST_QUERY_MAX_LENGTH - "request=".length);
-    const atLimit = articles.set(articles.reset(), "request", fits);
+    const atLimit = must(articles.set(articles.reset(), "request", fits));
     const params = articles.serialize(atLimit);
     expect(params.toString().length).toBe(LIST_QUERY_MAX_LENGTH);
     expect(articles.parse(params)).toEqual({ state: atLimit, issues: [] });
 
-    expect(() => articles.set(articles.reset(), "request", `${fits}x`)).toThrow(RangeError);
-    expect(() => articles.set(atLimit, "twofa", true)).toThrow(RangeError);
+    expect(articles.set(articles.reset(), "request", `${fits}x`)).toBeUndefined();
+    expect(articles.set(atLimit, "twofa", true)).toBeUndefined();
+    expect(articles.set(atLimit, "sort", { field: "price", direction: "asc" })).toBeUndefined();
+    expect(articles.set(atLimit, "group", "status")).toBeUndefined();
     expect(() => articles.serialize({ ...articles.reset(), filters: { request: `${fits}x` } })).toThrow(RangeError);
     // Page parameters do not count.
     expect(articles.serialize(atLimit, new URLSearchParams({ selected: "y".repeat(500) })).get("request")).toBe(fits);
