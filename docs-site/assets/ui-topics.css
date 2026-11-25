@@ -361,6 +361,7 @@ div.ui-topic__part,
   vertical-align: top;
 }
 .ui-props thead th {
+  border-bottom: 1px solid var(--c-line);
   color: var(--c-faint);
   font-weight: 500;
 }
