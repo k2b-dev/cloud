@@ -266,3 +266,37 @@ export const fixtureQueries: SavedQuery[] = [
     updatedAt: "2026-11-20T09:00:00.000Z",
   },
 ];
+
+/** Worst-case sources for break-ui: long and unbreakable names and endpoints, non-Latin text, emoji, huge counts. */
+export const worstSources: PulseSource[] = [
+  fixtureSource({
+    id: "w1Aa2Bb3",
+    name: "Produktionsstraße Nord-Ost Halle 7 Schaltschrank 12 Temperatur- und Feuchtigkeitssensoren aller Etagen",
+    endpointUrl: "https://sehr-lange-subdomain-ohne-umbruch.werkstatt-nord-ost.example:9100/metrics/federate/node-exporter",
+    seriesCount: 9_876_543,
+    status: status({
+      lastError: "SCRAPE_HTTP_STATUS:503",
+      lastErrorAt: "2026-11-25T09:40:00.000Z",
+      throttled: true,
+      refusedHistograms: [{ family: "http_request_duration_seconds_bucket_sehr_lang", reason: "too_many_buckets" }],
+      skippedSummaries: 12_345,
+    }),
+    metricFilters: ["node_cpu_seconds_total", "node_filesystem_avail_bytes", "node_network_receive_bytes_total"],
+  }),
+  fixtureSource({
+    id: "w4Cc5Dd6",
+    name: "東京オフィス 🔥📈",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    seriesCount: undefined,
+    todayCount: 123_456_789,
+  }),
+  fixtureSource({ id: "w7Ee8Ff9", name: "X", status: status({ newestDataAt: null }), lastSeenAt: null, seriesCount: 0 }),
+];
+
+/** A huge base for the scale check: `count` sources with invented names. */
+export const manySources = (count: number): PulseSource[] =>
+  Array.from({ length: count }, (_, index) =>
+    fixtureSource({ id: `n${String(index).padStart(7, "0")}`, name: `Quelle ${index + 1}`, seriesCount: index * 7 }),
+  );

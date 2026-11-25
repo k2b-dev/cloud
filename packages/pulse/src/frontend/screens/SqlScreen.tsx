@@ -78,8 +78,9 @@ export default function SqlScreen(props: SqlScreenProps) {
   const band = () => c.statusBand();
   const missing = createMemo(c.missingParameter);
   const result = () => (c.state().kind === "ok" ? c.lastResult() : null);
+  // The last result's chart stays while a new run is under way, so nothing below it moves.
   const chart = createMemo(() => {
-    const value = result();
+    const value = c.state().kind === "ok" || running() ? c.lastResult() : null;
     return value ? sqlResultChart(value, locale()) : null;
   });
   /** Why the result draws no chart, in words; null when it draws one or nothing ran. */
@@ -90,7 +91,7 @@ export default function SqlScreen(props: SqlScreenProps) {
   };
   const drawn = () => {
     const value = chart();
-    return value?.kind === "chart" && result() ? value : null;
+    return value?.kind === "chart" ? value : null;
   };
   const count = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value);
   const decimal = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value);
@@ -337,6 +338,35 @@ export default function SqlScreen(props: SqlScreenProps) {
             {t().sqlLinkTooLong}
           </Notice>
         </Show>
+        <Show when={drawn()}>
+          {(value) => (
+            <Section
+              icon="chart-line"
+              title={words().chart}
+              summary={
+                value().truncated
+                  ? `${t().sqlChartCut({
+                      seriesShown: count(value().cut.seriesShown),
+                      seriesTotal: count(value().cut.seriesTotal),
+                      pointsShown: count(value().cut.pointsShown),
+                      pointsTotal: count(value().cut.pointsTotal),
+                    })} · ${t().sqlChartCutHint}`
+                  : t().sqlChartMeta({
+                      column: value().xColumn,
+                      series: value().cut.seriesShown,
+                      points: value().cut.pointsShown,
+                      formattedPoints: count(value().cut.pointsShown),
+                      maxSeries: count(SQL_CHART_MAX_SERIES),
+                      maxPoints: count(SQL_CHART_MAX_POINTS),
+                    })
+              }
+            >
+              <Canvas label={words().chart} height={240}>
+                <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%" }} />
+              </Canvas>
+            </Section>
+          )}
+        </Show>
         <Section icon="table" title={words().result} summary={summary()}>
           <Show
             when={result() || running()}
@@ -397,35 +427,6 @@ export default function SqlScreen(props: SqlScreenProps) {
               </Show>
             }
           />
-        </Show>
-        <Show when={drawn()}>
-          {(value) => (
-            <Section
-              icon="chart-line"
-              title={words().chart}
-              summary={
-                value().truncated
-                  ? `${t().sqlChartCut({
-                      seriesShown: count(value().cut.seriesShown),
-                      seriesTotal: count(value().cut.seriesTotal),
-                      pointsShown: count(value().cut.pointsShown),
-                      pointsTotal: count(value().cut.pointsTotal),
-                    })} · ${t().sqlChartCutHint}`
-                  : t().sqlChartMeta({
-                      column: value().xColumn,
-                      series: value().cut.seriesShown,
-                      points: value().cut.pointsShown,
-                      formattedPoints: count(value().cut.pointsShown),
-                      maxSeries: count(SQL_CHART_MAX_SERIES),
-                      maxPoints: count(SQL_CHART_MAX_POINTS),
-                    })
-              }
-            >
-              <Canvas label={words().chart} height={240}>
-                <Chart {...value().chart} legendPlacement="top-start" style={{ height: "100%" }} />
-              </Canvas>
-            </Section>
-          )}
         </Show>
         <Show when={c.limitSegments().length > 0}>
           <Band>

@@ -34,6 +34,7 @@ export type OverviewScreenProps = {
   initialQuery: string;
 };
 
+const PAGE = 100;
 const baseHref = (base: PulseBase) => `/app/pulse/${base.id}`;
 
 const matches = (base: PulseBase, query: string) => {
@@ -51,10 +52,13 @@ export default function OverviewScreen(props: OverviewScreenProps) {
   const [query, setQuery] = createSignal(props.initialQuery);
   const [creating, setCreating] = createSignal(false);
   const shown = createMemo(() => props.bases.filter((base) => matches(base, query())));
+  // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
+  const [visible, setVisible] = createSignal(PAGE);
 
   // The search filters the list as it is typed; the address keeps it for reload and back.
   const search = (value: string) => {
     setQuery(value);
+    setVisible(PAGE);
     if (isServer) return;
     const url = new URL(location.href);
     if (value.trim()) url.searchParams.set("q", value.trim());
@@ -118,7 +122,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
           {/* k2b-ui gap: v2 Table does not virtualize yet (lane MW); bases per person stay in the low hundreds. */}
           <Table
             label={t().yourBases}
-            rows={shown()}
+            rows={shown().slice(0, visible())}
             rowKey={(base) => base.id}
             open={(base) => ({ href: baseHref(base) })}
             empty={{ icon: "search", text: t().noMatchingBases, action: { label: words().clearSearch, onClick: () => search("") } }}
@@ -146,6 +150,20 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               { title: words().storeColumn, cell: (base) => <StoreChip store={base.store} t={store()} /> },
             ]}
           />
+          <Show when={shown().length > visible()}>
+            <Bar
+              start={
+                <Text type="meta" muted>
+                  {words().rowsShown({ shown: String(visible()), total: String(shown().length) })}
+                </Text>
+              }
+              end={
+                <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
+                  {words().showMore}
+                </Button>
+              }
+            />
+          </Show>
         </Show>
         <Show when={props.deletingBases.length > 0}>
           <Section icon="trash" title={words().deletingTitle} count={props.deletingBases.length}>

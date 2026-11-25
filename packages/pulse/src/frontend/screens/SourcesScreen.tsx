@@ -73,6 +73,8 @@ const dataCount = (source: PulseSource, t: Words) =>
       ? "—"
       : t.sqlTodayCount({ count: source.todayCount });
 
+const PAGE = 100;
+
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
   -H "Content-Type: application/json" \\
@@ -124,6 +126,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     const needle = search().trim().toLowerCase();
     return needle ? sources().filter((source) => source.name.toLowerCase().includes(needle)) : sources();
   });
+  // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
+  const [visible, setVisible] = createSignal(PAGE);
   const readQueries = () =>
     selectedSourceId() ? [queries.bases, queries.baseData, queries.sourceDetail] : [queries.bases, queries.baseData];
   const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
@@ -217,6 +221,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
 
   const changeSearch = (value: string) => {
     setSearch(value);
+    setVisible(PAGE);
     if (isServer) return;
     const url = new URL(location.href);
     if (value.trim()) url.searchParams.set("q", value.trim());
@@ -341,7 +346,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           {/* k2b-ui gap: v2 Table does not virtualize yet (lane MW); a base holds at most a few hundred sources. */}
           <Table
             label={words().sources}
-            rows={shown()}
+            rows={shown().slice(0, visible())}
             rowKey={(source) => source.id}
             current={selectedSourceId() || undefined}
             open={(source) => ({ href: sourceHref(source) })}
@@ -372,6 +377,20 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               { title: words().dataColumn, align: "end", drop: true, cell: (source) => dataCount(source, t()) },
             ]}
           />
+          <Show when={shown().length > visible()}>
+            <Bar
+              start={
+                <Text type="meta" muted>
+                  {words().rowsShown({ shown: String(visible()), total: String(shown().length) })}
+                </Text>
+              }
+              end={
+                <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
+                  {words().showMore}
+                </Button>
+              }
+            />
+          </Show>
         </Pane>
         <Show when={selected()} keyed>
           {(source) => (
@@ -621,7 +640,7 @@ function SourceDetail(props: {
         />
         <Section
           icon="send"
-          title={t().httpIngestExample}
+          title={words().setupTitle}
           summary={t().idempotencyHint}
           actions={[{ label: t().copy, icon: "copy", onClick: () => props.copy(command()) }]}
         >

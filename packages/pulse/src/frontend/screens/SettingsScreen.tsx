@@ -264,32 +264,33 @@ function BaseForm(props: {
     const value = () => Number(draft()[options.name]);
     return (
       <Band>
-        <Field name={options.name} label={options.label} hint={options.hint} optional={options.unit}>
-          <Choice
-            name={`${options.name}-preset`}
-            options={options.presets
-              .filter((preset) => preset <= options.max)
-              .map((preset) => ({ value: String(preset), label: `${number(preset)} ${options.unit}` }))}
-            value={String(value())}
-            disabled={!props.canAdmin}
-            onChange={(next) => set(options.name, Number(next))}
-          />
-        </Field>
-        <Field
-          name={`${options.name}-exact`}
-          label={words().exactValue}
-          optional={options.unit}
-          error={value() >= 1 && value() <= options.max ? undefined : `1 – ${number(options.max)}`}
-        >
-          <Input
-            type="number"
-            min={1}
-            max={options.max}
-            value={String(value())}
-            disabled={!props.canAdmin}
-            onInput={(next) => set(options.name, Number(next))}
-          />
-        </Field>
+        <Field.Row>
+          <Field name={options.name} label={options.label} hint={options.hint}>
+            <Select
+              options={options.presets
+                .filter((preset) => preset <= options.max)
+                .map((preset) => ({ value: String(preset), label: `${number(preset)} ${options.unit}` }))}
+              value={options.presets.includes(value()) ? String(value()) : undefined}
+              placeholder={words().exactValue}
+              onChange={(next) => set(options.name, Number(next))}
+            />
+          </Field>
+          <Field
+            name={`${options.name}-exact`}
+            label={words().exactValue}
+            optional={options.unit}
+            error={value() >= 1 && value() <= options.max ? undefined : `1 – ${number(options.max)}`}
+          >
+            <Input
+              type="number"
+              min={1}
+              max={options.max}
+              value={String(value())}
+              disabled={!props.canAdmin}
+              onInput={(next) => set(options.name, Number(next))}
+            />
+          </Field>
+        </Field.Row>
       </Band>
     );
   };
