@@ -3602,6 +3602,7 @@
   display: none;
 }
 .k2-ui .k2-fbar-n {
+  margin-left: 4px;
   color: var(--k2-app-text);
   font-weight: 600;
 }
@@ -4137,7 +4138,6 @@
   .k2-ui .k2-fbar > .k2-btn {
     display: inline-flex;
     flex: none;
-    margin-left: 3px;
   }
   .k2-ui .k2-fbar-order {
     display: inline-flex;

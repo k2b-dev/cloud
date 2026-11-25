@@ -379,11 +379,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
                       draft={filters()[key] === undefined}
                       fixed={isDefault(key, field())}
                       open={open() === key}
+                      onPhone={() => setSheet({ field: key })}
                       onOpenChange={(next) => {
-                        if (next && isPhone()) {
-                          setSheet({ field: key });
-                          return;
-                        }
+                        if (next && isPhone()) return;
                         setOpen(next ? key : undefined);
                         if (!next && draft() === key) setDraft(undefined);
                       }}
@@ -508,6 +506,8 @@ const Statement = (props: {
   fixed: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** On the phone a statement opens the filter sheet at its field instead of its popover. */
+  onPhone: () => void;
   onRemove: () => void;
   children: JSX.Element;
 }) => {
@@ -524,7 +524,24 @@ const Statement = (props: {
       data-draft={props.draft ? "" : undefined}
       data-removable={removable() ? "" : undefined}
     >
-      <popover.Trigger class="k2-stmt-b" aria-label={t().edit({ sentence: words() })} title={words()}>
+      <popover.Trigger
+        class="k2-stmt-b"
+        aria-label={t().edit({ sentence: words() })}
+        title={words()}
+        // On the phone the sheet opens after the whole tap (its click), so no part of the tap lands on the sheet; the
+        // popover's own press handling is skipped there.
+        onPointerDown={(event: PointerEvent) => isPhone() && event.preventDefault()}
+        onClick={(event: MouseEvent) => {
+          if (!isPhone()) return;
+          event.preventDefault();
+          props.onPhone();
+        }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (!isPhone() || (event.key !== "Enter" && event.key !== " ")) return;
+          event.preventDefault();
+          props.onPhone();
+        }}
+      >
         <Show
           when={!props.draft}
           fallback={
