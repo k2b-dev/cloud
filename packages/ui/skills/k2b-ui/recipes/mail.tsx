@@ -117,7 +117,7 @@ export default function MailScreen() {
             {threads.map((thread) => (
               <Row
                 unread={thread.unread}
-                selected={thread.id === open.id}
+                current={thread.id === open.id}
                 lines={[thread.from, thread.subject, thread.preview]}
                 meta={thread.count}
                 time={thread.at}

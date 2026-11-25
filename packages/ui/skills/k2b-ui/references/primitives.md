@@ -45,7 +45,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   actions the head keeps it takes a second line.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
-  the detail (the part `Back`). A long name (a search) is cut with "…" on
+  the detail (the part `Back`). With `back`, the head's close × needs no
+  `keep`: it gives way on the phone like the other head actions. A long name (a search) is cut with "…" on
   one line; the whole name stays its accessible name and its hint. A detail
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
@@ -150,8 +151,15 @@ inside it.
   the marks, so keep it a preview text that may be cut, never an amount.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
-- states: `unread`, `strong`, `selected` (the open one), `yours` (you are
-  next).
+- states: `unread`, `strong`, `current` (the open one, app tint),
+  `yours` (you are next).
+- `select: { selected, onChange }`: the row stands in a selection (pair it
+  with `StatusRow select` and `selection`). A box in the lead, named by the
+  title, takes the place of the symbol, person or dot; a selected row is
+  blue, also while it is `current`; `yours` and `selected` share that blue
+  tint on purpose. Give it to every row of the list while selecting, and to
+  none otherwise: turning selection on swaps the lead for the box, so the
+  text of a row with a symbol or person moves (intended).
 - `href` (+ `onNavigate` to open in place) makes the whole row open its
   entry; `onOpen` only for what has no address.
 

@@ -332,6 +332,38 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
+  // On the phone an open detail has one way back: its Back. The × that closes it beside the list (without `keep`, as
+  // every head action) gives way in its head from 767 px down; from 768 px the × closes the detail and there is no Back.
+  for (const width of [390, 767, 768, 1440])
+    test(
+      `${width} px: an open detail shows either its way back or its close ×, never both`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          const shown = await page.evaluate(() => {
+            const seen = (element: Element | null) => !!element && element.getBoundingClientRect().width > 0;
+            const pane = document.querySelector(".k2-pane[data-detail]")!;
+            return {
+              back: seen(pane.querySelector(':scope > [data-k2-part="Back"]')),
+              close: seen(pane.querySelector('[data-slot="head"] [aria-label="Schließen"]')),
+              // the other kept or unkept actions of the head follow their own rule: "Erledigt" leaves on the phone
+              done: seen(
+                [...pane.querySelectorAll('[data-slot="head"] .k2-btn')].find((button) => button.textContent === "Erledigt") ?? null,
+              ),
+            };
+          });
+          const phone = width < textEdge.phoneBelow;
+          expect(shown).toEqual({ back: phone, close: !phone, done: !phone });
+          // (the layout rules at the two boundary widths belong to the workspace between phone and wide screen, which
+          // still cuts the detail's head at 768; measured here at the phone and the wide screen)
+          if (width === 390 || width === 1440) expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
   // name stays its accessible name and its hint under the pointer.
   test(

@@ -420,13 +420,22 @@ const mixed = (input: HTMLInputElement, when: () => boolean) => {
   });
 };
 
-/** A box without visible words, named for assistive technology (internal: "select all", "select this row"). */
-export const MarkCheck = (props: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void }) => (
+/**
+ * A box without visible words, named for assistive technology by a `label` or by the element `labelledBy` (internal:
+ * "select all", "select this row", a row's box named by its title).
+ */
+export const MarkCheck = (
+  props: ({ label: string; labelledBy?: undefined } | { label?: undefined; labelledBy: string }) & {
+    checked?: boolean | "mixed";
+    onChange?: (checked: boolean) => void;
+  },
+) => (
   <span class="k2-mark">
     <input
       class="k2-mark-input"
       type="checkbox"
       aria-label={props.label}
+      aria-labelledby={props.labelledBy}
       checked={props.checked === true}
       ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
