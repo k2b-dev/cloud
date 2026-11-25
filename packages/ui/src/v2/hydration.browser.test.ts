@@ -72,7 +72,8 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
 
 /**
  * Runs in the page: where the live page differs from what the server sent, in elements, texts and attributes. The
- * keys of hydration and comments do not count; a style counts by its declarations, not their spelling.
+ * keys of hydration and comments do not count; a style counts by its declarations, not their spelling. A place the
+ * live page measures (a grip in the middle of the part of its line in sight) is set after hydration and does not count.
  */
 const differencesInPage = () => {
   const sent = window.__k2Sent!;
@@ -82,6 +83,7 @@ const differencesInPage = () => {
     const probe = document.createElement("i");
     probe.setAttribute("style", element.getAttribute("style") ?? "");
     return Array.from(probe.style)
+      .filter((name) => name !== "--k2-grip-top")
       .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
       .sort()
       .join(";");

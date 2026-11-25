@@ -360,4 +360,31 @@ describe("v2 demo screens keep the mockup", () => {
         await page.close();
       }
     }, 30_000);
+
+  // At 1024 px the identity in the record's head keeps to its line and never runs under the head's actions; what has
+  // no room (the identifiers) leaves the line whole (akte.html at 1024 px cuts the actions instead).
+  for (const name of ["record", "deliveries"] as const)
+    test(`${name} at 1024 px: the head's identity leaves room for its actions`, async () => {
+      const page = await show(name, 1024);
+      try {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
+          const start = bar.querySelector(".k2-bar-start")!.getBoundingClientRect();
+          const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+          // what is in sight of the identity: the parts whose box lies inside the start's box
+          const shown = [...bar.querySelectorAll(".k2-bar-start > *")]
+            .filter((part) => {
+              const r = part.getBoundingClientRect();
+              return r.top >= start.top - 0.5 && r.bottom <= start.bottom + 0.5;
+            })
+            .map((part) => part.textContent?.trim() || part.getAttribute("aria-label"));
+          return { apart: start.right <= end.left, startHeight: start.height, shown };
+        });
+        expect(found.apart).toBe(true);
+        expect(found.startHeight).toBe(32);
+        expect(found.shown.slice(0, 2)).toEqual(["OB", "Ottilie Brandner"]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
 });
