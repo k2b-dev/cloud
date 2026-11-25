@@ -6,6 +6,7 @@ import type { HealthApp, HealthWebhook } from "../../frontend/health-webhook-que
 import { isHealthWebhookId, listHealthWebhooks } from "../../health-webhooks";
 import { observabilityAdminNav } from "../_components/admin-nav";
 import { areaText, readAttention, readHealth } from "../_components/ObservabilityArea";
+import SettingsFormScreen from "./_components/SettingsFormScreen.island";
 import SettingsScreen from "./_components/SettingsScreen.island";
 
 /** Alerts: the list of health webhooks, the open one (`?webhook=<id>`) or a new one (`?webhook=new`) beside it. */
@@ -34,7 +35,6 @@ export const alertsPage = ssr<AuthContext>(async (c) => {
       <SettingsScreen
         nav={observabilityAdminNav(c, locale, attention, "settings")}
         timeZone={getTimeZone(c)}
-        area="alerts"
         webhooks={rows}
         apps={apps}
         open={open}
@@ -53,9 +53,8 @@ export const healthCheckPage = ssr<AuthContext>(async (c) => {
   ]);
   return () => (
     <AdminLayout c={c} ui="v2" title={areaText(locale).settings}>
-      <SettingsScreen
+      <SettingsFormScreen
         nav={observabilityAdminNav(c, locale, attention, "settings")}
-        timeZone={getTimeZone(c)}
         area="health"
         values={{ schedule: String(schedule.value), targets: Array.isArray(targets.value) ? targets.value.map(String) : [] }}
         unreadable={{ schedule: schedule.stored === "unreadable", targets: targets.stored === "unreadable" }}
@@ -75,9 +74,8 @@ export const retentionPage = ssr<AuthContext>(async (c) => {
   ]);
   return () => (
     <AdminLayout c={c} ui="v2" title={areaText(locale).settings}>
-      <SettingsScreen
+      <SettingsFormScreen
         nav={observabilityAdminNav(c, locale, attention, "settings")}
-        timeZone={getTimeZone(c)}
         area="retention"
         values={{ logs: Number(logs.value), events: Number(events.value), rollups: Number(rollups.value) }}
         unreadable={{

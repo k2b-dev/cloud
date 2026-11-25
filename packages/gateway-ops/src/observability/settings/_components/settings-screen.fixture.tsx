@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { HealthApp, HealthWebhook } from "../../../frontend/health-webhook-queries";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
+import SettingsFormScreen from "./SettingsFormScreen.island";
 import SettingsScreen from "./SettingsScreen.island";
 
 export const BEREITSCHAFT = "hw_bereitschaft";
@@ -60,19 +61,17 @@ export const SettingsScreenFixture = (props: {
   return (
     <LocaleProvider locale={locale}>
       {area === "alerts" ? (
-        <SettingsScreen nav={fixtureNav} timeZone="Europe/Berlin" area="alerts" webhooks={webhooks} apps={apps} open={props.open ?? null} />
+        <SettingsScreen nav={fixtureNav} timeZone="Europe/Berlin" webhooks={webhooks} apps={apps} open={props.open ?? null} />
       ) : area === "health" ? (
-        <SettingsScreen
+        <SettingsFormScreen
           nav={fixtureNav}
-          timeZone="Europe/Berlin"
           area="health"
           values={{ schedule: "*/5 * * * *", targets: ["alerts.internal", "10.20.0.0/16"] }}
           unreadable={{ schedule: unreadable }}
         />
       ) : (
-        <SettingsScreen
+        <SettingsFormScreen
           nav={fixtureNav}
-          timeZone="Europe/Berlin"
           area="retention"
           values={{ logs: 14, events: 14, rollups: 90 }}
           unreadable={{ events: unreadable }}

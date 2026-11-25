@@ -1,79 +1,30 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, confirm, Empty, Failed, List, Menu, type NavProps, Pane, Row, Tabs, Text, useToast } from "@k2b/ui/v2";
-import { For, type JSX, Show } from "solid-js";
+import { Bar, Button, Chip, confirm, Empty, Failed, List, Menu, type NavProps, Pane, Row, Text, useToast } from "@k2b/ui/v2";
+import { For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type HealthApp, type HealthWebhook, responseErrorMessage } from "../../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../../messages";
 import { afterMenu } from "../../_components/after-menu";
 import { areaMessages } from "../../_components/area-messages";
 import { SettingsSaveBar } from "../../_components/SettingsSaveBar";
-import HealthCheckForm, { type HealthCheckValues } from "../HealthCheckForm";
-import RetentionForm, { type RetentionValues } from "../RetentionForm";
 import WebhookForm, { ALERTS_PATH, webhookHref } from "../WebhookForm";
+import { SettingsTabs } from "./SettingsTabs";
 
-export const SETTINGS_HREF = {
-  alerts: ALERTS_PATH,
-  health: "/admin/observability/settings/health-check",
-  retention: "/admin/observability/settings/retention",
-} as const;
-
-export type SettingsScreenProps = { nav: NavProps; timeZone: string } & (
-  | {
-      area: "alerts";
-      webhooks: HealthWebhook[] | null;
-      apps: HealthApp[];
-      /** The open alert: an id, "new" for the form of a new one, or null. */
-      open: string | null;
-    }
-  | { area: "health"; values: HealthCheckValues; unreadable: Partial<Record<keyof HealthCheckValues, boolean>> }
-  | { area: "retention"; values: RetentionValues; unreadable: Partial<Record<keyof RetentionValues, boolean>> }
-);
-
-/** Observability settings on v2: alerts, the health check and retention, each an area of one record. */
-export default function SettingsScreen(props: SettingsScreenProps) {
-  const locale = useLocale();
-  const t = () => areaMessages.resolve([locale()]).t;
-  const tabs = () => (
-    <Tabs
-      label={t().settings}
-      items={[
-        { label: t().alertsShort, icon: "webhook", href: SETTINGS_HREF.alerts, current: props.area === "alerts" },
-        { label: t().healthCheckShort, icon: "heart-rate-monitor", href: SETTINGS_HREF.health, current: props.area === "health" },
-        { label: t().retention, icon: "archive", href: SETTINGS_HREF.retention, current: props.area === "retention" },
-      ]}
-    />
-  );
-  // The area is fixed for a page, so the screen picks its shape once.
-  if (props.area === "alerts") return <AlertsArea {...props} tabs={tabs()} />;
-  return <FormArea {...props} tabs={tabs()} />;
-}
-
-/** Health check or retention: one form, saved from the head. */
-function FormArea(props: Exclude<SettingsScreenProps, { area: "alerts" }> & { tabs: JSX.Element }) {
-  const locale = useLocale();
-  const t = () => areaMessages.resolve([locale()]).t;
-  return (
-    <AdminWorkspace nav={props.nav} head={<Bar start={props.tabs} end={<SettingsSaveBar />} />}>
-      <Pane label={props.area === "health" ? t().healthCheck : t().retention}>
-        <Text type="body" muted>
-          {props.area === "health" ? t().healthCheckDescription : t().retentionDescription}
-        </Text>
-        {props.area === "health" ? (
-          <HealthCheckForm values={props.values} unreadable={props.unreadable} />
-        ) : (
-          <RetentionForm values={props.values} unreadable={props.unreadable} />
-        )}
-      </Pane>
-    </AdminWorkspace>
-  );
-}
+export type SettingsScreenProps = {
+  nav: NavProps;
+  timeZone: string;
+  webhooks: HealthWebhook[] | null;
+  apps: HealthApp[];
+  /** The open alert: an id, "new" for the form of a new one, or null. */
+  open: string | null;
+};
 
 const statusOf = (webhook: HealthWebhook) =>
   !webhook.enabled ? null : webhook.lastError ? ("bad" as const) : webhook.lastStatus === "warn" ? ("warn" as const) : ("ok" as const);
 
-/** The alerts as a list, the open one (or a new one) beside it. */
-function AlertsArea(props: Extract<SettingsScreenProps, { area: "alerts" }> & { tabs: JSX.Element }) {
+/** Alerts on v2: the list of health webhooks, the open one (or a new one) beside it. */
+export default function SettingsScreen(props: SettingsScreenProps) {
   const locale = useLocale();
   const t = () => areaMessages.resolve([locale()]).t;
   const g = () => gatewayOpsMessages.resolve([locale()]).t;
@@ -107,7 +58,7 @@ function AlertsArea(props: Extract<SettingsScreenProps, { area: "alerts" }> & { 
       primary={props.open ? undefined : add()}
       head={
         <Bar
-          start={props.tabs}
+          start={<SettingsTabs current="alerts" />}
           end={
             <Button variant={props.open ? undefined : "primary"} icon="plus" href={webhookHref("new")}>
               {t().addWebhook}
