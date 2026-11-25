@@ -83,6 +83,7 @@ export function Demo() {
             title: entry.name,
             meta: entry.size,
             image: entry.image,
+            color: entry.folder ? "#ca8a04" : entry.image ? "#0891b2" : "#dc2626",
             onOpen: () => setCurrent(entry.key),
           }))}
           current={current()}

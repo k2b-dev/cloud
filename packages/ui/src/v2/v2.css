@@ -837,10 +837,14 @@
   display: grid;
   place-items: center;
   aspect-ratio: 4 / 3;
-  background: var(--k2-n50);
+  background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 10%, var(--k2-surface));
   border-bottom: var(--k2-hairline);
-  color: var(--k2-subtle);
+  color: var(--k2-c, var(--k2-subtle));
+}
+/* the symbol of the kind, large in the box: it holds the place of the picture */
+.k2-ui .k2-tile-pic > .k2-icon {
   font-size: var(--k2-tile-icon);
+  color: inherit;
 }
 .k2-ui .k2-tile-pic > img {
   position: absolute;

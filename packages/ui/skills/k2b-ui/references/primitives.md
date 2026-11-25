@@ -109,7 +109,8 @@ href? }[]`, `more` (an action after them), `label`. Never nested.
 With `size: "s" | "m" | "l"` (the size the person chose, from 128, 176
 or 248 px wide) the tiles are a grid of picture tiles: each item adds
 `key` and `image` (a thumbnail address; the `icon` stands in the 4:3 box
-while it loads, when it fails and when there is none), `href` or
+while it loads, when it fails and when there is none), `color` (the data
+colour of its kind: the box is tinted, the symbol coloured), `href` or
 `onOpen`. `label` is required; `select: { selected, onChange }` (a box on
 the picture, Space on the focused tile), `current`, `drag` (see below).
 One Tab stop; arrows go to the nearest tile on screen, Enter opens.

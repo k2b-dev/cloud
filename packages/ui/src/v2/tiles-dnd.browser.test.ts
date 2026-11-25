@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
@@ -13,6 +13,9 @@ import type {} from "../../test/v2-tiles-dnd.demo";
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+
+// several drags in one test; a busy runner needs more than the default five seconds
+setDefaultTimeout(20_000);
 
 let browser: Browser;
 let bundle: string;
@@ -62,7 +65,7 @@ const dragTo = async (page: Page, from: Locator, to: Locator, rest = 0) => {
 
 test("server markup: picture tiles stand in a grid of their size, each picture over its symbol", () => {
   expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-size="m"/);
-  expect(markup).toMatch(/<span class="k2-tile-pic"><i[^>]*ti-photo[^>]*><\/i><img[^>]*loading="lazy"/);
+  expect(markup).toMatch(/<span class="k2-tile-pic"[^>]*><i[^>]*ti-photo[^>]*><\/i><img[^>]*loading="lazy"/);
 });
 
 test("tiles: the picture box keeps one shape with a picture, a broken one and none, in every size", async () => {
@@ -84,6 +87,8 @@ test("tiles: the picture box keeps one shape with a picture, a broken one and no
     const broken = tile(page, "Beschädigt.png").locator("img");
     await page.waitForFunction(() => [...document.images].every((image) => image.complete));
     expect(await broken.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
+    // it leaves, so no broken-picture mark stands over the symbol
+    await page.waitForFunction(() => document.querySelector<HTMLImageElement>('img[src="data:image/png;base64,AAAA"]')?.hidden === true);
     expect(await tile(page, "Beschädigt.png").locator(".k2-tile-pic > .ti").isVisible()).toBe(true);
     // a long name is cut, the tile keeps its width
     const title = tile(page, "Werkstatt mit einem sehr langen Dateinamen, der nicht passt.jpg").locator(".k2-tile-title");

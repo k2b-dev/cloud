@@ -19,6 +19,8 @@ const files: File[] = [
   { id: "angebot", name: "Angebot Lackfabrik Nordhaus.pdf", size: "220 KB", kind: "pdf" },
 ];
 const icon = { folder: "folder", photo: "photo", pdf: "file-type-pdf" } as const;
+// the data colour of each kind, so a file's kind is seen before its name is read
+const color = { folder: "#ca8a04", photo: "#0891b2", pdf: "#dc2626" } as const;
 
 const folders: NavTreeNode[] = [
   {
@@ -85,8 +87,8 @@ export default function FileGrid(props: Props) {
               props.selected?.length
                 ? {
                     count: `${props.selected.length} ausgewählt`,
-                    actions: [{ label: "Verschieben nach …", icon: "folder-symlink" }],
-                    clear: { label: "Auswahl aufheben", icon: "x" },
+                    actions: [{ label: "Verschieben", icon: "folder-symlink" }],
+                    clear: { label: "Aufheben", icon: "x" },
                   }
                 : undefined
             }
@@ -102,6 +104,7 @@ export default function FileGrid(props: Props) {
             title: file.name,
             meta: file.size,
             image: file.thumb,
+            color: color[file.kind],
             href: `/files/${file.id}`,
           }))}
           select={{ selected: props.selected ?? [], onChange: () => {} }}

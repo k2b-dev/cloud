@@ -4,7 +4,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { type DragMove, useDragMove } from "./drag";
-import { Icon } from "./marks";
+import { custom, Icon } from "./marks";
 import type { Action, OnNavigate } from "./types";
 
 /**
@@ -23,6 +23,8 @@ export type PictureTile = {
   meta?: string;
   /** The address of the picture; the browser loads it when it comes near the view. */
   image?: string;
+  /** The data colour of its kind, such as red for a PDF: the box behind the symbol is tinted with it. */
+  color?: string;
   /** The tile opens this page or file; with `onNavigate` in place. */
   href?: string;
   onNavigate?: OnNavigate;
@@ -107,10 +109,24 @@ export const PictureTiles = (props: PictureTilesProps) => {
                   }
                 }}
               >
-                <span class="k2-tile-pic">
+                <span class="k2-tile-pic" style={custom({ "--k2-c": tile.color })}>
                   <Icon name={tile.icon} />
                   {/* over the symbol: transparent while it loads, nothing drawn when it fails (empty alt) */}
-                  <Show when={tile.image}>{(src) => <img src={src()} alt="" loading="lazy" decoding="async" draggable={false} />}</Show>
+                  <Show when={tile.image}>
+                    {(src) => (
+                      // a picture that fails leaves, so no broken-picture mark stands over the symbol
+                      <img
+                        src={src()}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                        onError={(event) => {
+                          event.currentTarget.hidden = true;
+                        }}
+                      />
+                    )}
+                  </Show>
                   <Show when={props.select}>
                     <span class="k2-tile-check">
                       <MarkCheck
