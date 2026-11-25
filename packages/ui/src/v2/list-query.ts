@@ -399,6 +399,7 @@ export type ListQuery<
   parse(params: URLSearchParams | string): ListQueryParseResult<ListQueryState<F, S, G>>;
   /**
    * Writes a state as URL parameters: `view`, the fields in declaration order, `q`, `sort`, `group`.
+   * Its text keeps `,` `:` `/` and `@` readable (`status=open,sold`); everything else is encoded as usual.
    * Defaults and mandatory fields at their default are omitted, so equal states give equal URLs.
    * Parameters of `base` the query does not own come first and stay unchanged. Whatever `serialize` writes, `parse`
    * reads back to the same state. States from `parse`, `set`, `clear` and `reset` always fit; a state built by hand
@@ -488,6 +489,18 @@ const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const DIRECTIONS: readonly SortDirection[] = ["asc", "desc"];
 
 type Decoded = { readonly value?: unknown; readonly invalid: readonly string[] };
+
+/**
+ * The parameters `serialize` returns. Their text keeps `,` `:` `/` and `@` readable (`level=warn,error`,
+ * `time=2026-11-24T08:00Z..`): a URL query allows them unencoded, and form decoding reads them unchanged. Every other
+ * character stays encoded as `URLSearchParams` does, so `&`, `=`, `+`, `#` and `%` keep their meaning. Each `%`
+ * of the encoded text starts one escape, so only real escapes of those four characters are turned back.
+ */
+class ListQueryParams extends URLSearchParams {
+  override toString(): string {
+    return super.toString().replace(/%(?:2C|3A|2F|40)/gi, (escape) => decodeURIComponent(escape));
+  }
+}
 
 const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined => (Object.hasOwn(record, key) ? record[key] : undefined);
 
@@ -784,7 +797,7 @@ export function defineListQuery<const F extends Record<string, ListQueryField>, 
 
   /** The URL parameters of a state, or the reason the URL cannot hold it. Never throws. */
   const write = (state: State, base?: URLSearchParams | string): URLSearchParams | RangeError => {
-    const params = new URLSearchParams();
+    const params = new ListQueryParams();
     for (const [name, value] of new URLSearchParams(base ?? "")) if (!owned.has(name)) params.append(name, value);
     if (state.view !== undefined && state.view !== "") {
       if (!VIEW_KEY.test(state.view)) return new RangeError(`serialize: view "${state.view}" is not a view key`);
