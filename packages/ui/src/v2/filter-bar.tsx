@@ -385,6 +385,8 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
     const text = encode(definition, value);
     const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
     if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    // emptying every bound in the open editor keeps that editor: the filter waits as a dashed draft that does not apply
+    if (applied && text === undefined && open() === key && definition.required === undefined) setDraft(key);
     return applied;
   };
   const removeField = (key: string) => apply((params) => params.delete(key));
@@ -636,7 +638,11 @@ const Statement = (props: {
 }) => {
   const t = useFilterMessages();
   const popover = usePopover(() => ({ open: props.open, onOpenChange: props.onOpenChange }));
-  const words = () => (props.draft ? `${props.definition.label} ${props.definition.op ?? t().is} …` : plain(props.parts));
+  let popup: HTMLElement | undefined;
+  // a draft says what it will be, in the grammar of its kind: "Lagerort ist …", but "Preis …" (a range brings its own words)
+  const draftWord = () => props.definition.op ?? (saysIs(props.definition) ? t().is : undefined);
+  const words = () =>
+    props.draft ? [props.definition.label, draftWord(), "…"].filter((word) => word !== undefined).join(" ") : plain(props.parts);
   const removable = () => !props.draft && (props.definition.required === undefined || !props.fixed);
   return (
     <span
@@ -669,7 +675,7 @@ const Statement = (props: {
           when={!props.draft}
           fallback={
             <>
-              {props.definition.label} <span class="k2-stmt-op">{props.definition.op ?? t().is} …</span>
+              {props.definition.label} <span class="k2-stmt-op">{draftWord() === undefined ? "…" : `${draftWord()} …`}</span>
             </>
           }
         >
@@ -711,12 +717,35 @@ const Statement = (props: {
           <Icon name="x" />
         </button>
       </Show>
-      <popover.Popup class="k2-pop k2-fpop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          popup = element;
+        }}
+        // the focus goes once, as the popover opens, to the first control of the values; nothing moves it later, so a
+        // field the person is typing in keeps it
+        initialFocus={() => firstValue(popup)}
+        class="k2-pop k2-fpop"
+        data-k2-part="Popover"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+      >
         {props.children}
       </popover.Popup>
     </span>
   );
 };
+
+/**
+ * The first control of an editor's values, where its focus goes when it opens: the search of a lookup, the option that
+ * holds a list's tab stop, else the first preset, field or option; never "Entfernen" in the head.
+ */
+const firstValue = (root: HTMLElement | undefined): HTMLElement | null =>
+  root?.querySelector<HTMLElement>(".k2-lookup-search input") ??
+  root?.querySelector<HTMLElement>('[role="option"][tabindex="0"]') ??
+  root?.querySelector<HTMLElement>('.k2-fed-presets .k2-btn, .k2-fed-field input, [role="option"]') ??
+  null;
 
 // ── Editors ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -745,18 +774,8 @@ type EditorProps = {
 const Editor = (props: EditorProps) => {
   const t = useFilterMessages();
   const [refused, setRefused] = createSignal(false);
-  // The focus goes to the first control of the values, not to "Entfernen" in the head: the search of a lookup, the
-  // option that holds the list's tab stop, or the first field. Core moves it into the popup first; this follows.
-  const focusValues = (root: HTMLElement) =>
-    setTimeout(() => {
-      if (!root.isConnected || (!root.contains(document.activeElement) && document.activeElement !== document.body)) return;
-      const target = root.querySelector<HTMLElement>(
-        '.k2-lookup-search input, [role="option"][tabindex="0"], [role="option"], .k2-fed-field input, .k2-fed-presets .k2-btn',
-      );
-      target?.focus({ preventScroll: true });
-    });
   return (
-    <div class="k2-fed" data-k2-part="FilterEditor" ref={focusValues}>
+    <div class="k2-fed" data-k2-part="FilterEditor">
       <Show when={!props.bare}>
         <div class="k2-fed-h">
           <span class="k2-fed-t">{props.definition.label}</span>

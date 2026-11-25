@@ -7,3 +7,5 @@
 @import "./editors-parity.css";
 @import "./print.css";
 @import "./text-editor.css";
+/* Last: v2.css carries the same chart sheet, and a page that loads both sheets (Cloud) puts that copy after this one. */
+@import "./chart.css";

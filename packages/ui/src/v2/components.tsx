@@ -411,8 +411,9 @@ export type StatusRowProps = {
    */
   loading?: boolean;
   /**
-   * Key figures after the lead. They give way where the row itself is narrower than 760 px (it measures its own
-   * column, not the window) and on the phone, so the filters keep their words; put what must stay in `lead`.
+   * Key figures after the lead. They give way only where they do not fit before the filters, the later ones first and
+   * whole, so the filters keep their words and no figure runs under them; without filters they keep the row's room.
+   * On the phone they go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
@@ -450,18 +451,22 @@ export const StatusRow = (props: StatusRowProps) => {
                   </Show>
                 </span>
               </Show>
-              <For each={props.facts}>
-                {(fact) => (
-                  <span class="k2-fact">
-                    {fact.before ?? ""}
-                    {fact.before && fact.value !== undefined ? " " : ""}
-                    <Show when={fact.value !== undefined}>
-                      <b>{fact.value}</b>
-                    </Show>
-                    {fact.after ? ` ${fact.after}` : ""}
-                  </span>
-                )}
-              </For>
+              <Show when={props.facts?.length}>
+                <span class="k2-status-facts">
+                  <For each={props.facts}>
+                    {(fact) => (
+                      <span class="k2-fact">
+                        {fact.before ?? ""}
+                        {fact.before && fact.value !== undefined ? " " : ""}
+                        <Show when={fact.value !== undefined}>
+                          <b>{fact.value}</b>
+                        </Show>
+                        {fact.after ? ` ${fact.after}` : ""}
+                      </span>
+                    )}
+                  </For>
+                </span>
+              </Show>
             </div>
             <Show when={filters() !== undefined}>
               <div class="k2-bar-end">{filters()}</div>

@@ -447,6 +447,46 @@ test("a number the field cannot read keeps the active filter and says so at the 
   });
 });
 
+// #4153: a focus move that came late took the focus from a field the person had already put it in; the emptied field
+// then applied "no range" on blur, the filter and its editor went away under the typing.
+test("an editor takes the focus once, in its values, and never moves it again", async () => {
+  await withPage(articles, async (page) => {
+    await page.evaluate(() => {
+      window.__focus = [];
+      document.addEventListener("focusin", (event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement) window.__focus?.push(target.textContent?.trim() || target.tagName);
+      });
+    });
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    await page.locator(".k2-fpop").waitFor();
+    await page.waitForFunction(() => (window.__focus ?? []).length > 1);
+    // the statement's button, then straight the first control of the values (the first preset); never "Entfernen"
+    expect(await page.evaluate(() => window.__focus)).toEqual(["Preis ab 500 €", "bis 500 €"]);
+    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    await from.focus();
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => document.activeElement?.matches(".k2-fpop .k2-fed-field input"))).toBe(true);
+  });
+});
+
+test("emptying every bound in an open editor keeps the editor: the filter waits as a dashed draft", async () => {
+  await withPage(articles, async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    await from.fill("");
+    await from.press("Tab");
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
+    expect(await page.locator(".k2-fpop").count()).toBe(1);
+    expect(await page.locator(".k2-stmt[data-draft] .k2-stmt-b").textContent()).toBe("Preis …");
+    // the editor is still the one the person types in
+    await from.fill("800");
+    await from.press("Enter");
+    expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
+    expect(await statements(page)).toContain("Preis ab 800 €");
+  });
+});
+
 test("renaming a saved view keeps the query it holds, also while the list shows a changed state", async () => {
   await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {
     await page.getByRole("button", { name: "Ansicht" }).click();

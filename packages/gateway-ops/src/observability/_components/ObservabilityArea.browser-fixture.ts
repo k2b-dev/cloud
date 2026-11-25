@@ -75,39 +75,6 @@ const apps: HealthApp[] = [
   { id: "pulse", name: "Pulse", icon: "ti ti-activity-heartbeat", status: "ok", online: true, signals: [] },
 ];
 
-const LOGS: [string, "error" | "warn" | "info", string, string, Record<string, unknown> | null][] = [
-  [
-    "10:42:18",
-    "error",
-    "mail",
-    "IMAP-Abruf für Postfach „Info“ abgebrochen: Zeitüberschreitung nach 30 s",
-    { mailbox: "mbx_info", host: "imap.example.org", timeoutMs: 30000, attempt: 3 },
-  ],
-  ["10:42:02", "warn", "gateway", "Upstream spaces antwortet langsam (2,4 s)", { upstream: "spaces", ms: 2400 }],
-  ["10:41:57", "info", "core", "Anmeldung mit Passkey · Mia Muster", null],
-  ["10:41:40", "info", "notebooks", "Export „Handbuch“ fertig (18 Seiten)", { pages: 18 }],
-  ["10:41:12", "error", "pulse", "Ziel „Lager-Sensoren“ nicht erreichbar", { target: "lager-sensoren" }],
-  ["10:40:55", "info", "files", "Freigabe-Link erstellt · Ordner „Angebote 2026“", null],
-  ["10:40:31", "warn", "nats", "Consumer „mail-sync“ hinkt 1.204 Nachrichten hinterher", { consumer: "mail-sync", pending: 1204 }],
-  ["10:40:02", "info", "assistant", "Hintergrundaufgabe „Wochenrückblick“ gestartet", null],
-];
-const logEntries = LOGS.map(([time, level, source, message, metadata], index) => ({
-  id: String(9000 + index),
-  level,
-  source,
-  message,
-  metadata,
-  createdAt: `2026-10-28T${time}.000Z`,
-}));
-const timeseries = Array.from({ length: 12 }, (_, index) => ({
-  at: new Date(Date.parse("2026-10-28T09:45:00.000Z") + index * 5 * 60_000),
-  debug: 0,
-  info: 40 + ((index * 7) % 13),
-  warn: index % 4 === 0 ? 3 : 1,
-  error: index === 9 ? 4 : index % 5 === 0 ? 1 : 0,
-  total: 0,
-})).map((point) => ({ ...point, total: point.info + point.warn + point.error }));
-
 const ui = new URL("../../../../ui/", import.meta.url).pathname;
 const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
 
@@ -115,12 +82,10 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   const root = mkdtempSync(join(tmpdir(), "gateway-ops-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
-  const { LogsView } = await import("../logs/view");
   const { AlertsView } = await import("../alerts/view");
   const { HealthCheckView } = await import("../health-check/view");
   const { RetentionView } = await import("../retention/view");
   const { NatsAccessView } = await import("../nats/access-view");
-  const { defaultLogFilter } = await import("../logs/_components/types");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -179,7 +144,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   };
   const pages = new Hono<{ Variables: Variables }>();
   const page =
-    (render: (c: Parameters<typeof LogsView>[0]["c"], locale: string, state: ObservabilityFixtureState, url: URL) => JSX.Element) =>
+    (render: (c: Parameters<typeof AlertsView>[0]["c"], locale: string, state: ObservabilityFixtureState, url: URL) => JSX.Element) =>
     (c: Context<{ Variables: Variables }>) => {
       const url = new URL(c.req.url);
       const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
@@ -233,33 +198,6 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     };
   const attention = { home: "warning" as const, nats: "warning" as const };
 
-  pages.get(
-    "/admin/observability/logs",
-    page((c, locale, state, url) => {
-      const selectedId = url.searchParams.get("entry");
-      const entry = logEntries.find((candidate) => candidate.id === selectedId) ?? null;
-      return createComponent(LogsView, {
-        c,
-        locale,
-        timeZone: "UTC",
-        attention,
-        filter: defaultLogFilter,
-        entries: state === "empty" || state === "loadfail" ? [] : logEntries,
-        total: state === "empty" || state === "loadfail" ? 0 : 1932,
-        totalPages: state === "empty" ? 1 : 20,
-        baseUrl: "/admin/observability/logs?page=",
-        sources: ["assistant", "core", "files", "gateway", "mail", "nats", "notebooks", "pulse"],
-        loadError: state === "loadfail" ? "Der Log-Speicher antwortet nicht." : null,
-        summary: { total: 48_210, errors24h: 12, warnings24h: 31, total24h: 6_120, sources: 8, lastErrorAt: "2026-10-28T10:42:18.000Z" },
-        topSource: { key: "mail", count: 812 },
-        timeseriesResult: { points: state === "empty" ? [] : timeseries, error: null },
-        retentionDays: 14,
-        selectedId,
-        selected: selectedId ? { entry: entry as never, error: null } : null,
-        retryHref: url.pathname + url.search,
-      });
-    }),
-  );
   pages.get(
     "/admin/observability/alerts",
     page((c, locale, state, url) =>
