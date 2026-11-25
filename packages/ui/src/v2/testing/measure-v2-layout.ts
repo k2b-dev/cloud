@@ -30,6 +30,8 @@
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…".
+ * - **squeezed:** no text is pressed by its neighbours to a box of a few px (its words are gone, as a sender beside
+ *   too many marks) or to one letter per line (as "To" beside a long sender). A visually hidden name is no finding.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -86,6 +88,8 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
+  /** Text pressed to a box of a few px (its words are gone) or to one letter per line. */
+  squeezed: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -114,6 +118,7 @@ type DomResult = {
   double: string[];
   inside: string[];
   cut: string[];
+  squeezed: string[];
   type: string[];
   grip: string[];
   grips: { grip: string; dom: number; rect: Rect; line: { x0: number; x1: number } | null }[];
@@ -128,6 +133,7 @@ function measureInPage(options: InPage): DomResult {
     double: [],
     inside: [],
     cut: [],
+    squeezed: [],
     type: [],
     grip: [],
     grips: [],
@@ -616,6 +622,51 @@ function measureInPage(options: InPage): DomResult {
       if (lines > 1) cut.push(`${name(element)} "${labelOf(element)}" wraps to ${lines} lines; it stays on one line and ends with "…"`);
     }
 
+    // 4d. Squeezed text (break-ui 25.11.): text whose box was pressed to nothing by its neighbours, so its words are
+    // gone, and text pressed so narrow that it stands one letter per line.
+    const squeezed: string[] = [];
+    // Kept only as a name: the visually hidden label of 1 px clips itself on purpose.
+    const keptAsName = (element: Element) => {
+      for (let node: Element | null = element; node && node !== root; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.clipPath !== "none" || (style.clip !== "auto" && style.clip !== "")) return true;
+        if (style.position === "absolute" && node.getBoundingClientRect().width <= 1) return true;
+      }
+      return false;
+    };
+    const shown = (element: Element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    const textWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const seen = new Set<Element>();
+    for (let node = textWalker.nextNode(); node; node = textWalker.nextNode()) {
+      const parent = node.parentElement;
+      const words = node.textContent?.trim() ?? "";
+      if (!parent || !words || seen.has(parent) || parent.closest(options.skip) || parent.closest("script, style, template")) continue;
+      if (!shown(parent) || keptAsName(parent)) continue;
+      seen.add(parent);
+      const box = parent.getBoundingClientRect();
+      if (box.height <= 0) continue;
+      // A box of a few px holds no word of 2 letters or more: its text is gone (a sender of width 0 beside many marks).
+      const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
+      if ([...words].length >= 2 && box.width < Math.min(4, fontSize / 3)) {
+        squeezed.push(`${name(parent)} "${labelOf(parent)}" is ${round(box.width)} px wide; its text is gone, give it room or cut it with "…"`);
+        continue;
+      }
+      // One letter per line: three or more line boxes, none wider than about a letter and a half.
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rows = new Map<number, number>();
+      for (const rect of Array.from(range.getClientRects())) {
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const top = Math.round(rect.top);
+        rows.set(top, (rows.get(top) ?? 0) + rect.width);
+      }
+      const widths = [...rows.values()];
+      if (widths.length >= 3 && [...words].length >= 3 && Math.max(...widths) <= fontSize * 1.6)
+        squeezed.push(
+          `${name(parent)} "${labelOf(parent)}" stands one letter per line (${widths.length} lines of at most ${round(Math.max(...widths))} px); keep it on one line`,
+        );
+    }
+
     // 5. Type roles: every run of text that a person sees.
     const type = new Map<string, number>();
     let texts = 0;
@@ -680,6 +731,7 @@ function measureInPage(options: InPage): DomResult {
       double,
       inside,
       cut,
+      squeezed,
       type: [...type].map(([key, count]) => `text outside the type roles: ${key}${count > 1 ? ` (${count}×)` : ""}`),
       grip,
       grips,
@@ -811,12 +863,13 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.squeezed, ...dom.type, ...grip];
   return {
     edge: dom.edge,
     double: dom.double,
     inside: dom.inside,
     cut: dom.cut,
+    squeezed: dom.squeezed,
     type: dom.type,
     grip,
     grips,

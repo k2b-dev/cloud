@@ -53,18 +53,24 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
-export const Text = (props: TextProps) => (
-  <Dynamic
-    component={props.href ? "a" : "span"}
-    href={props.href}
-    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
-    data-k2-part="Text"
-    data-type={props.type}
-    data-tone={props.tone}
-  >
-    {props.children}
-  </Dynamic>
-);
+export const Text = (props: TextProps) => {
+  // made once and read from here: reading `children` again would make its JSX again
+  const words = resolveChildren(() => props.children);
+  return (
+    <Dynamic
+      component={props.href ? "a" : "span"}
+      href={props.href}
+      class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+      data-k2-part="Text"
+      data-type={props.type}
+      data-tone={props.tone}
+      // a title (the lead of a head) may be cut where it has no room: it says all of its words on hover
+      title={props.type === "lead" && typeof words() === "string" ? String(words()) : undefined}
+    >
+      {words()}
+    </Dynamic>
+  );
+};
 
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
@@ -340,6 +346,11 @@ export const Row = (props: RowProps) => {
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
+  // a row of three lines cuts each line with "…": a line of words says all of them on hover
+  const cut = (index: number) => {
+    const line = text()[index];
+    return lines() === 3 && typeof line === "string" && line.trim() ? line : undefined;
+  };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
@@ -409,7 +420,7 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title" id={title}>
+        <span class="k2-row-title" id={title} title={cut(0)}>
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -417,10 +428,10 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2">{text()[1]}</span>
+        <span class="k2-row-l2" title={cut(1)}>{text()[1]}</span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3">{text()[2]}</span>
+        <span class="k2-row-l3" title={cut(2)}>{text()[2]}</span>
       </Show>
       <Show when={time() !== undefined}>
         <span class="k2-row-time">{time()}</span>

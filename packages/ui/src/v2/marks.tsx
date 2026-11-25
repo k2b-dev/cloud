@@ -1,4 +1,4 @@
-import { createSignal, type JSX, Show } from "solid-js";
+import { children as resolveChildren, createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
@@ -150,6 +150,8 @@ export type ChipProps = {
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
 export const Chip = (props: ChipProps) => {
   const pressable = () => props.href !== undefined || props.onClick !== undefined;
+  // made once and read from here: reading `children` again would make its JSX again
+  const words = resolveChildren(() => props.children);
   const kind = () =>
     props.yours
       ? "yours"
@@ -185,7 +187,11 @@ export const Chip = (props: ChipProps) => {
       </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
-      {props.children}
+      {/* the words are cut with "…" where the chip has no room; a tag (words someone typed, of any length) says all of
+          them on hover */}
+      <span class="k2-chip-text" title={props.tag && typeof words() === "string" ? String(words()) : undefined}>
+        {words()}
+      </span>
     </Dynamic>
   );
 };
