@@ -157,6 +157,8 @@ const message = (
   attachments,
 });
 
+const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Team view": "Team" };
+
 /** The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open. */
 export const mailV2Data = (url: URL, now: number): MailboxPageData => {
   // The mailbox sends as "Kontakt", so the reply names its sender.
@@ -184,6 +186,7 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
       ...overrides,
     }),
   );
+  const german = url.searchParams.get("locale") !== "en";
   const selected = url.searchParams.get("conversation");
   const open = selected === "Demo01";
   return {
@@ -191,7 +194,11 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
     mailbox: { ...data.mailbox, name: "Kontakt" },
     // The server names the list in the page's language (service/workspace.ts: the mailbox's start, without a folder, is
     // "Alle E-Mails"); the shared fixture's is English.
-    listTitle: data.listTitle === "All mail" && url.searchParams.get("locale") !== "en" ? "Alle E-Mails" : data.listTitle,
+    listTitle: german
+      ? (savedViewNames[data.listTitle] ?? (data.listTitle === "All mail" ? "Alle E-Mails" : data.listTitle))
+      : data.listTitle,
+    // The shared fixture's saved views are English; the German page names them in German.
+    savedViews: german ? data.savedViews.map((view) => ({ ...view, name: savedViewNames[view.name] ?? view.name })) : data.savedViews,
     folders: data.folders
       .filter((folder) => ["Inbox1", "Drafts1", "Sent1", "Archive1", "Trash1", "Junk1", "Filed1", "Long01"].includes(folder.id))
       .map((folder) => ({
