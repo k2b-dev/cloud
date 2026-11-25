@@ -161,6 +161,8 @@ const screen = "/en/ui/v2/screen";
 export const MailScreen = (props: { open?: boolean }) => (
   <Workspace
     sidebarLabel="Breite der Seitenleiste"
+    // the reader opens beside the list: the sidebar keeps room for it, open or not
+    detail
     primary={{ label: "Neu", icon: "pencil" }}
     sidebar={
       <Nav
