@@ -258,7 +258,6 @@ packages/mail/src/frontend/_components/MailResponsePolicySettings.tsx | untitled
 packages/mail/src/frontend/_components/MailScheduledView.tsx | untitled | disposition === "draft" ? t().cancelledDraftRestored : t().scheduledDiscarded
 packages/mail/src/frontend/_components/MailSearchBuilder.tsx | untitled | updated ? messages().savedViewUpdated : messages().savedViewCreated
 packages/mail/src/frontend/_components/MailSenderMessageActions.tsx | untitled | t().reportSubmitted
-packages/mail/src/frontend/_components/MailSidebar.tsx | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | messages().unsubscribeRequestedFor({ name: item.name })
@@ -274,6 +273,7 @@ packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | a
 packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | error instanceof Error ? error.message : t().couldNotLoadSpaces
 packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | error instanceof Error ? error.message : t().linkedSpacesRefreshFailed
 packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
+packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
 packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
