@@ -16,6 +16,8 @@ export default function AppLoginForm(props: {
   redirectTo?: string;
   fallback?: { href: string; label: string };
   setupHint?: string;
+  /** The sentence that opens the form. */
+  lead?: string | null;
   /** A shared workstation: the page remembers neither the account nor the method. */
   forget?: boolean;
 }) {
@@ -154,17 +156,22 @@ export default function AppLoginForm(props: {
           when={pending()}
           fallback={
             <>
-              <Field name="identifier" label={t().identifier} required>
-                <Input
-                  value={identifier()}
-                  onInput={setIdentifier}
-                  placeholder={t().identifierPlaceholder}
-                  ref={autocomplete(props.forget ? "off" : "username")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.isComposing) void start();
-                  }}
-                />
-              </Field>
+              <Band>
+                <Show when={props.lead}>
+                  <Text muted>{props.lead}</Text>
+                </Show>
+                <Field name="identifier" label={t().identifier} required>
+                  <Input
+                    value={identifier()}
+                    onInput={setIdentifier}
+                    placeholder={t().identifierPlaceholder}
+                    ref={autocomplete(props.forget ? "off" : "username")}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.isComposing) void start();
+                    }}
+                  />
+                </Field>
+              </Band>
               <Bar
                 start={
                   <Show when={!busy() ? props.fallback : undefined}>

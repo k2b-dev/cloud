@@ -1,4 +1,4 @@
-import { Button, Text } from "@k2b/ui/v2";
+import { Button } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
 import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
 import { NewPasswordForm, PasswordResetCompleteForm, PasswordResetRequestForm } from "./password-forms";
@@ -23,7 +23,6 @@ export default function PasswordScreen(props: {
   );
   return (
     <AuthFrame appName={props.appName} title={props.title} legalLinks={props.legalLinks}>
-      <Text muted>{props.subtitle}</Text>
       <Switch>
         <Match when={props.form.kind === "new" && props.form}>
           {(form) => (
@@ -36,7 +35,7 @@ export default function PasswordScreen(props: {
           )}
         </Match>
         <Match when={props.form.kind === "reset-request"}>
-          <PasswordResetRequestForm redirectTo={props.redirectTo} start={back()} />
+          <PasswordResetRequestForm redirectTo={props.redirectTo} start={back()} lead={props.subtitle} />
         </Match>
         <Match when={props.form.kind === "reset-complete" && props.form}>
           {(form) => (

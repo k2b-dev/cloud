@@ -4,7 +4,7 @@ import { accountCategory } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Check, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { createSignal, onMount, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
@@ -24,6 +24,8 @@ const onEnter = (send: () => void) => (event: KeyboardEvent) => {
 
 /** FreeIPA username and password. An expired password continues on the new-password page. */
 export function FreeIpaForm(props: {
+  /** The sentence that opens the form. */
+  lead?: string | null;
   redirectTo?: string;
   showBanner?: boolean;
   defaultUsername?: string;
@@ -72,26 +74,31 @@ export function FreeIpaForm(props: {
           {t().freeIpaBanner({ appName: props.appName || t().thisApp })}
         </Notice>
       </Show>
-      <Field name="username" label={t().usernameOrEmail} hint={t().usernameDescription}>
-        <Input
-          icon="user"
-          value={username()}
-          onInput={setUsername}
-          placeholder={t().usernamePlaceholder}
-          ref={autocomplete(props.forget ? "off" : "username")}
-          onKeyDown={onEnter(send)}
-        />
-      </Field>
-      <Field name="password" label={t().password} hint={t().passwordDescription}>
-        <PasswordInput
-          value={password()}
-          onInput={setPassword}
-          autocomplete="current-password"
-          placeholder={t().freeIpaPassword}
-          label={t().showPassword}
-          onEnter={send}
-        />
-      </Field>
+      <Band>
+        <Show when={props.lead}>
+          <Text muted>{props.lead}</Text>
+        </Show>
+        <Field name="username" label={t().usernameOrEmail} hint={t().usernameDescription}>
+          <Input
+            icon="user"
+            value={username()}
+            onInput={setUsername}
+            placeholder={t().usernamePlaceholder}
+            ref={autocomplete(props.forget ? "off" : "username")}
+            onKeyDown={onEnter(send)}
+          />
+        </Field>
+        <Field name="password" label={t().password} hint={t().passwordDescription}>
+          <PasswordInput
+            value={password()}
+            onInput={setPassword}
+            autocomplete="current-password"
+            placeholder={t().freeIpaPassword}
+            label={t().showPassword}
+            onEnter={send}
+          />
+        </Field>
+      </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       <Bar
         start={
@@ -111,6 +118,8 @@ export function FreeIpaForm(props: {
 
 /** An email link: the address first, then the code from the mail (or the link's token, verified at once). */
 export function EmailForm(props: {
+  /** The sentence that opens the form. */
+  lead?: string | null;
   redirectTo?: string;
   token?: string;
   allowSelfRegistration: boolean;
@@ -175,16 +184,18 @@ export function EmailForm(props: {
           <Notice tone="note" icon="mail">
             {t().checkEmail}
           </Notice>
-          <Field name="token" label={t().loginCode} hint={t().loginCodeDescription}>
-            <Input
-              icon="key"
-              value={tokenInput()}
-              onInput={setTokenInput}
-              placeholder={t().loginCode}
-              ref={autocomplete("one-time-code")}
-              onKeyDown={onEnter(verify)}
-            />
-          </Field>
+          <Band>
+            <Field name="token" label={t().loginCode} hint={t().loginCodeDescription}>
+              <Input
+                icon="key"
+                value={tokenInput()}
+                onInput={setTokenInput}
+                placeholder={t().loginCode}
+                ref={autocomplete("one-time-code")}
+                onKeyDown={onEnter(verify)}
+              />
+            </Field>
+          </Band>
           <Show when={error()}>
             {(cause) => (
               <Notice tone="bad" actions={[{ label: t().backToSignIn, href: signInAgainHref(props.redirectTo) }]}>
@@ -202,20 +213,25 @@ export function EmailForm(props: {
         </>
       }
     >
-      <Field
-        name="email"
-        label={t().emailOrUsername}
-        hint={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
-      >
-        <Input
-          icon="mail"
-          value={email()}
-          onInput={setEmail}
-          placeholder={t().emailOrUsernamePlaceholder}
-          ref={autocomplete(props.forget ? "off" : "username")}
-          onKeyDown={onEnter(sendEmail)}
-        />
-      </Field>
+      <Band>
+        <Show when={props.lead}>
+          <Text muted>{props.lead}</Text>
+        </Show>
+        <Field
+          name="email"
+          label={t().emailOrUsername}
+          hint={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
+        >
+          <Input
+            icon="mail"
+            value={email()}
+            onInput={setEmail}
+            placeholder={t().emailOrUsernamePlaceholder}
+            ref={autocomplete(props.forget ? "off" : "username")}
+            onKeyDown={onEnter(sendEmail)}
+          />
+        </Field>
+      </Band>
       <Show when={error()}>{(cause) => <Notice tone="bad">{cause().message}</Notice>}</Show>
       <Bar
         end={
@@ -230,7 +246,12 @@ export function EmailForm(props: {
 }
 
 /** The emergency admin token, with the recovery of local Login accounts when they are disabled. */
-export function AdminForm(props: { redirectTo?: string; requiresRecovery?: boolean }) {
+export function AdminForm(props: {
+  redirectTo?: string;
+  requiresRecovery?: boolean;
+  /** The sentence that opens the form. */
+  lead?: string | null;
+}) {
   const t = useAuthMessages();
   const [token, setToken] = createSignal("");
   const [requiresRecovery, setRequiresRecovery] = createSignal(!!props.requiresRecovery);
@@ -257,16 +278,21 @@ export function AdminForm(props: { redirectTo?: string; requiresRecovery?: boole
   };
   return (
     <>
-      <Field name="token" label={t().adminToken} hint={t().adminTokenDescription}>
-        <PasswordInput
-          value={token()}
-          onInput={setToken}
-          autocomplete="off"
-          placeholder={t().adminToken}
-          label={t().showPassword}
-          onEnter={send}
-        />
-      </Field>
+      <Band>
+        <Show when={props.lead}>
+          <Text muted>{props.lead}</Text>
+        </Show>
+        <Field name="token" label={t().adminToken} hint={t().adminTokenDescription}>
+          <PasswordInput
+            value={token()}
+            onInput={setToken}
+            autocomplete="off"
+            placeholder={t().adminToken}
+            label={t().showPassword}
+            onEnter={send}
+          />
+        </Field>
+      </Band>
       <Show when={requiresRecovery()}>
         <Notice tone="warn" title={t().restoreLoginTitle}>
           {t().restoreLoginConfirmation}

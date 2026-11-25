@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
+import { authMessages } from "./messages";
 
 const root = mkdtempSync(join(tmpdir(), "core-login-page-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -44,15 +45,31 @@ const page = async (query = "", cookie = "") => {
   const raw = await response.text();
   const decode = (text: string) => text.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
   const html = decode(raw);
-  const form = /data-props="([^"]*)" data-file="(\w*LoginForm)\.island\.tsx"/.exec(raw);
-  const props: unknown = form ? fromJSON(JSON.parse(decode(form[1]!))) : undefined;
+  // The sign-in page is one island on v2; its props say which form it opens and which way leads to the other one.
+  const island = /data-props="([^"]*)" data-file="LoginScreen\.island\.tsx"/.exec(raw);
+  const props = (island ? fromJSON(JSON.parse(decode(island[1]!))) : undefined) as
+    | {
+        form: { kind: string; category?: string; fallback?: { href: string; label: string } };
+        forget: boolean;
+        signedOutIdle: boolean;
+        others: { appInstead: string | null } | null;
+      }
+    | undefined;
+  const names: Record<string, string> = { freeipa: "LoginForm", app: "AppLoginForm", email: "GuestLoginForm", admin: "AdminLoginForm" };
+  const t = authMessages.resolve([cookie.includes("cloud.locale=de") ? "de" : "en"]).t;
+  const appInstead = props?.others?.appInstead;
   return {
     html,
-    form: form?.[2],
-    category: props && typeof props === "object" && "category" in props ? props.category : undefined,
-    forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
+    form: props ? names[props.form.kind] : undefined,
+    category: props?.form.category,
+    forget: props?.forget,
+    signedOutIdle: props?.signedOutIdle,
     /** The plain link to the other credential: [target, label]. */
-    alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
+    alternative: props?.form.fallback
+      ? [props.form.fallback.href, props.form.fallback.label]
+      : appInstead
+        ? [appInstead, t.useAppInstead]
+        : undefined,
   };
 };
 
@@ -136,9 +153,9 @@ test("after an idle sign-out the page says why and finishes the sign-out", async
   spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
   const signedOut = await page("?signedOut=idle");
   expect(signedOut.html).toContain("You were signed out because nobody worked at this shared workstation for a while.");
-  expect(signedOut.html).toContain('data-file="IdleSignOutFinish.island.tsx"');
+  expect(signedOut.signedOutIdle).toBe(true);
   const regular = await page("");
-  expect(regular.html).not.toContain("IdleSignOutFinish");
+  expect(regular.signedOutIdle).toBe(false);
   expect((await page("?signedOut=idle", "cloud.locale=de")).html).toContain("Du wurdest abgemeldet");
 });
 

@@ -1,6 +1,6 @@
 import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
-import { Bar, Button, Check, Notice, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Check, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
 
@@ -53,21 +53,23 @@ export default function ConsentScreen(props: {
   };
   return (
     <AuthFrame appName={props.appName} title={t().consentTitle} legalLinks={props.legalLinks}>
-      <Text>{t().consentDescription}</Text>
-      {/* k2b-ui gap: a Text link opens in the same tab; the documents opened in a new tab before v2. */}
-      <Check
-        name="accepted"
-        checked={accepted()}
-        disabled={busy()}
-        onChange={setAccepted}
-        label={
-          <>
-            {t().termsPrefix} <Text href="/legal/terms">{t().terms}</Text> {t().consentPrivacyJoin}{" "}
-            <Text href="/legal/privacy">{t().privacy}</Text>
-            {t().consentPrivacyEnd}
-          </>
-        }
-      />
+      <Band>
+        <Text>{t().consentDescription}</Text>
+        {/* k2b-ui gap: a Text link opens in the same tab; the documents opened in a new tab before v2. */}
+        <Check
+          name="accepted"
+          checked={accepted()}
+          disabled={busy()}
+          onChange={setAccepted}
+          label={
+            <>
+              {t().termsPrefix} <Text href="/legal/terms">{t().terms}</Text> {t().consentPrivacyJoin}{" "}
+              <Text href="/legal/privacy">{t().privacy}</Text>
+              {t().consentPrivacyEnd}
+            </>
+          }
+        />
+      </Band>
       <Show when={error()}>
         {(message) => (
           <Notice

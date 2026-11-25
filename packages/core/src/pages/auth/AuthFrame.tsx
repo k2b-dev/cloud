@@ -24,10 +24,10 @@ const LanguageMenu = () => {
     window.location.reload();
   };
   return (
+    // Without words the menu stays in the head on the phone too, where the head's other deeds give way.
     <Menu
-      label={german() ? "Sprache" : "Language"}
+      label={german() ? "Sprache: Deutsch" : "Language: English"}
       icon="language"
-      variant="ghost"
       items={[
         {
           title: german() ? "Sprache" : "Language",
@@ -39,9 +39,7 @@ const LanguageMenu = () => {
           ],
         },
       ]}
-    >
-      {german() ? "Deutsch" : "English"}
-    </Menu>
+    />
   );
 };
 

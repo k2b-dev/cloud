@@ -45,7 +45,6 @@ export default function LoginScreen(props: LoginScreenProps) {
         ) : undefined
       }
     >
-      <Show when={props.subtitle}>{(subtitle) => <Text muted>{subtitle()}</Text>}</Show>
       <Show when={props.signedOutIdle}>
         <IdleSignOutFinish />
         <Notice tone="note" icon="lock">
@@ -54,7 +53,7 @@ export default function LoginScreen(props: LoginScreenProps) {
       </Show>
       <Switch>
         <Match when={props.form.kind === "admin" && props.form}>
-          {(form) => <AdminForm redirectTo={props.redirectTo} requiresRecovery={form().requiresRecovery} />}
+          {(form) => <AdminForm redirectTo={props.redirectTo} requiresRecovery={form().requiresRecovery} lead={props.subtitle} />}
         </Match>
         <Match when={props.form.kind === "app" && props.form}>
           {(form) => (
@@ -63,6 +62,7 @@ export default function LoginScreen(props: LoginScreenProps) {
               redirectTo={props.redirectTo}
               fallback={form().fallback}
               setupHint={form().setupHint}
+              lead={props.subtitle}
               forget={props.forget}
             />
           )}
@@ -74,6 +74,7 @@ export default function LoginScreen(props: LoginScreenProps) {
               token={form().token}
               category={form().category}
               allowSelfRegistration={form().allowSelfRegistration}
+              lead={props.subtitle}
               forget={props.forget}
             />
           )}
@@ -84,6 +85,7 @@ export default function LoginScreen(props: LoginScreenProps) {
               redirectTo={props.redirectTo}
               showBanner={form().showBanner}
               defaultUsername={form().defaultUsername}
+              lead={props.subtitle}
               appName={props.appName}
               forget={props.forget}
             />

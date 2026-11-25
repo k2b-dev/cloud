@@ -1,6 +1,6 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Bar, Button, Field, Input, Notice } from "@k2b/ui/v2";
+import { Band, Bar, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
 import { retrySignOutOthers, signInAgainHref, signOutOthersRetryPath } from "../sign-out-others";
 import { useAuthMessages } from "./AuthFrame";
@@ -63,7 +63,13 @@ const useOutcome = (props: { redirectTo?: string; signOutFailed?: boolean }) => 
 };
 
 /** A new password for an expired or temporary one; it signs in when it is set. */
-export function NewPasswordForm(props: { defaultUsername: string; redirectTo?: string; signOutFailed?: boolean; start?: JSX.Element }) {
+export function NewPasswordForm(props: {
+  defaultUsername: string;
+  redirectTo?: string;
+  signOutFailed?: boolean;
+  start?: JSX.Element;
+  lead?: string;
+}) {
   const t = useAuthMessages();
   const [username, setUsername] = createSignal(props.defaultUsername);
   const [currentPassword, setCurrentPassword] = createSignal("");
@@ -97,30 +103,35 @@ export function NewPasswordForm(props: { defaultUsername: string; redirectTo?: s
   return (
     <Show when={!outcome.signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!outcome.signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
-        <Field name="username" label={t().username} hint={t().organizationUsernameDescription}>
-          <Input
-            icon="user"
-            value={username()}
-            onInput={setUsername}
-            placeholder={t().usernameShortPlaceholder}
-            ref={autocomplete("username")}
+        <Band>
+          <Show when={props.lead}>
+            <Text muted>{props.lead}</Text>
+          </Show>
+          <Field name="username" label={t().username} hint={t().organizationUsernameDescription}>
+            <Input
+              icon="user"
+              value={username()}
+              onInput={setUsername}
+              placeholder={t().usernameShortPlaceholder}
+              ref={autocomplete("username")}
+            />
+          </Field>
+          <Field name="currentPassword" label={t().currentPassword} hint={t().currentPasswordDescription}>
+            <PasswordInput
+              value={currentPassword()}
+              onInput={setCurrentPassword}
+              autocomplete="current-password"
+              placeholder={t().currentPassword}
+              label={t().showPassword}
+            />
+          </Field>
+          <PasswordSetupFields
+            newPassword={newPassword}
+            confirmPassword={confirmPassword}
+            onNewPasswordChange={setNewPassword}
+            onConfirmPasswordChange={setConfirmPassword}
           />
-        </Field>
-        <Field name="currentPassword" label={t().currentPassword} hint={t().currentPasswordDescription}>
-          <PasswordInput
-            value={currentPassword()}
-            onInput={setCurrentPassword}
-            autocomplete="current-password"
-            placeholder={t().currentPassword}
-            label={t().showPassword}
-          />
-        </Field>
-        <PasswordSetupFields
-          newPassword={newPassword}
-          confirmPassword={confirmPassword}
-          onNewPasswordChange={setNewPassword}
-          onConfirmPasswordChange={setConfirmPassword}
-        />
+        </Band>
         <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
         <Bar
           start={props.start}
@@ -136,7 +147,7 @@ export function NewPasswordForm(props: { defaultUsername: string; redirectTo?: s
 }
 
 /** Asks for a reset link; the answer never says whether the address has an account. */
-export function PasswordResetRequestForm(props: { redirectTo?: string; start?: JSX.Element }) {
+export function PasswordResetRequestForm(props: { redirectTo?: string; start?: JSX.Element; lead?: string }) {
   const t = useAuthMessages();
   const [email, setEmail] = createSignal("");
   const [sent, setSent] = createSignal(false);
@@ -160,19 +171,24 @@ export function PasswordResetRequestForm(props: { redirectTo?: string; start?: J
           {t().resetSent}
         </Notice>
       </Show>
-      <Field name="email" label={t().emailAddress} hint={t().organizationEmailDescription}>
-        <Input
-          type="email"
-          icon="mail"
-          value={email()}
-          onInput={setEmail}
-          placeholder="you@example.org"
-          ref={autocomplete("email")}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.isComposing) send();
-          }}
-        />
-      </Field>
+      <Band>
+        <Show when={props.lead}>
+          <Text muted>{props.lead}</Text>
+        </Show>
+        <Field name="email" label={t().emailAddress} hint={t().organizationEmailDescription}>
+          <Input
+            type="email"
+            icon="mail"
+            value={email()}
+            onInput={setEmail}
+            placeholder="you@example.org"
+            ref={autocomplete("email")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.isComposing) send();
+            }}
+          />
+        </Field>
+      </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       <Bar
         start={props.start}
@@ -191,7 +207,13 @@ const newResetLinkHref = (redirectTo?: string): string =>
   redirectTo ? `/auth/password-reset?${new URLSearchParams({ redirectTo }).toString()}` : "/auth/password-reset";
 
 /** Sets the new password from a reset link; every attempt uses the link up. */
-export function PasswordResetCompleteForm(props: { token: string; redirectTo?: string; signOutFailed?: boolean; start?: JSX.Element }) {
+export function PasswordResetCompleteForm(props: {
+  token: string;
+  redirectTo?: string;
+  signOutFailed?: boolean;
+  start?: JSX.Element;
+  lead?: string;
+}) {
   const t = useAuthMessages();
   const [newPassword, setNewPassword] = createSignal("");
   const [confirmPassword, setConfirmPassword] = createSignal("");
@@ -215,12 +237,17 @@ export function PasswordResetCompleteForm(props: { token: string; redirectTo?: s
   return (
     <Show when={!outcome.signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!outcome.signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
-        <PasswordSetupFields
-          newPassword={newPassword}
-          confirmPassword={confirmPassword}
-          onNewPasswordChange={setNewPassword}
-          onConfirmPasswordChange={setConfirmPassword}
-        />
+        <Band>
+          <Show when={props.lead}>
+            <Text muted>{props.lead}</Text>
+          </Show>
+          <PasswordSetupFields
+            newPassword={newPassword}
+            confirmPassword={confirmPassword}
+            onNewPasswordChange={setNewPassword}
+            onConfirmPasswordChange={setConfirmPassword}
+          />
+        </Band>
         <Show when={mutation.error()}>
           {(error) => (
             // Every attempt uses up the link, so a failure offers a new one right where it is reported.
