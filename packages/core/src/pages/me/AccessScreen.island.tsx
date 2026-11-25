@@ -62,77 +62,79 @@ export default function AccessScreen(props: AccessScreenProps) {
       <Pane label={t().accessAndGroups} head={<AccountTabs active="access" />}>
         <Pane.Split>
           <Pane label={t().groupMemberships}>
-        <Section
-          icon="users-group"
-          title={t().groupMemberships}
-          count={props.groups.length}
-          summary={t().groupMembershipsDescription}
-          actions={[
-            {
-              label: props.showInherited ? t().directOnly : t().showInherited,
-              icon: "git-branch",
-              href: props.showInherited ? "/me/access" : "/me/access?groups=all",
-            },
-          ]}
-        >
-          <Show when={props.groups.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
-            <For each={props.groups}>
-              {(group) => (
-                <Row
-                  icon={group.inherited ? "git-branch" : "users"}
-                  lines={[group.label]}
-                  meta={group.inherited ? t().inheritedMembership : undefined}
-                  href={groupHref("member", group.name)}
-                />
-              )}
-            </For>
-          </Show>
-        </Section>
-          </Pane>
-          <Pane side label={t().delegatedManagement} width={sideWidth}>
-        <Section
-          icon="user-shield"
-          title={t().delegatedManagement}
-          count={props.managed.length}
-          summary={t().delegatedManagementDescription}
-        >
-          <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
-            <For each={props.managed}>{(group) => <Row icon="users" lines={[group.label]} href={groupHref("managed", group.name)} />}</For>
-          </Show>
-        </Section>
-        <Show when={props.freeIpa}>
-          {(freeIpa) => (
-            <Section icon="building-fortress" title={t().freeIpaAccount} summary={t().freeIpaAccountDescription}>
-              <Show
-                when={freeIpa().pendingSince}
-                fallback={
-                  <Row
-                    icon="building-fortress"
-                    lines={[t().requestFreeIpaAccount]}
-                    action={{ label: t().requestFreeIpaAccount, onClick: request.request }}
-                  />
-                }
-              >
-                {(since) => (
-                  <Notice
-                    tone="note"
-                    icon="hourglass"
-                    actions={[
-                      {
-                        label: request.withdrawing() ? t().withdrawing : t().withdrawRequest,
-                        icon: "x",
-                        disabled: request.withdrawing(),
-                        onClick: request.withdraw,
-                      },
-                    ]}
-                  >
-                    {t().requestPendingSince({ date: since() })}
-                  </Notice>
-                )}
+            <Section
+              icon="users-group"
+              title={t().groupMemberships}
+              count={props.groups.length}
+              summary={t().groupMembershipsDescription}
+              actions={[
+                {
+                  label: props.showInherited ? t().directOnly : t().showInherited,
+                  icon: "git-branch",
+                  href: props.showInherited ? "/me/access" : "/me/access?groups=all",
+                },
+              ]}
+            >
+              <Show when={props.groups.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
+                <For each={props.groups}>
+                  {(group) => (
+                    <Row
+                      icon={group.inherited ? "git-branch" : "users"}
+                      lines={[group.label]}
+                      meta={group.inherited ? t().inheritedMembership : undefined}
+                      href={groupHref("member", group.name)}
+                    />
+                  )}
+                </For>
               </Show>
             </Section>
-          )}
-        </Show>
+          </Pane>
+          <Pane side label={t().delegatedManagement} width={sideWidth}>
+            <Section
+              icon="user-shield"
+              title={t().delegatedManagement}
+              count={props.managed.length}
+              summary={t().delegatedManagementDescription}
+            >
+              <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
+                <For each={props.managed}>
+                  {(group) => <Row icon="users" lines={[group.label]} href={groupHref("managed", group.name)} />}
+                </For>
+              </Show>
+            </Section>
+            <Show when={props.freeIpa}>
+              {(freeIpa) => (
+                <Section icon="building-fortress" title={t().freeIpaAccount} summary={t().freeIpaAccountDescription}>
+                  <Show
+                    when={freeIpa().pendingSince}
+                    fallback={
+                      <Row
+                        icon="building-fortress"
+                        lines={[t().requestFreeIpaAccount]}
+                        action={{ label: t().requestFreeIpaAccount, onClick: request.request }}
+                      />
+                    }
+                  >
+                    {(since) => (
+                      <Notice
+                        tone="note"
+                        icon="hourglass"
+                        actions={[
+                          {
+                            label: request.withdrawing() ? t().withdrawing : t().withdrawRequest,
+                            icon: "x",
+                            disabled: request.withdrawing(),
+                            onClick: request.withdraw,
+                          },
+                        ]}
+                      >
+                        {t().requestPendingSince({ date: since() })}
+                      </Notice>
+                    )}
+                  </Show>
+                </Section>
+              )}
+            </Show>
           </Pane>
         </Pane.Split>
       </Pane>

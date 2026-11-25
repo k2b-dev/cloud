@@ -20,7 +20,13 @@ export default ssr(async (c) => {
   return () => (
     <MinimalLayout c={c} preferences={false}>
       <AuthPage legalVersion={version}>
-        <ConsentScreen appName={appName || "Cloud"} legalLinks={legalLinks} userId={pending.user.id} version={version} redirectTo={redirectTo} />
+        <ConsentScreen
+          appName={appName || "Cloud"}
+          legalLinks={legalLinks}
+          userId={pending.user.id}
+          version={version}
+          redirectTo={redirectTo}
+        />
       </AuthPage>
     </MinimalLayout>
   );

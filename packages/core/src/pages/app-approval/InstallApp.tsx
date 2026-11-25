@@ -21,15 +21,15 @@ export function InstallLink(props: { origin: string }) {
     <>
       {/* k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas. */}
       <Band>
-      <Canvas label={t().installQr} height={256}>
-        <img
-          alt={t().installQr}
-          width="256"
-          height="256"
-          style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
-          src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`}
-        />
-      </Canvas>
+        <Canvas label={t().installQr} height={256}>
+          <img
+            alt={t().installQr}
+            width="256"
+            height="256"
+            style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
+            src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`}
+          />
+        </Canvas>
       </Band>
       <Facts items={[{ label: t().install, value: props.origin, mono: true }]} />
       <Bar

@@ -77,7 +77,9 @@ export default ssr<AuthContext>(async (c) => {
               }
             : null
         }
-        phones={phones ? { devices: phones, dateConfig: getDateConfig(c), summary: t.pwaDescription({ cloud: rawAppName || "Cloud" }) } : null}
+        phones={
+          phones ? { devices: phones, dateConfig: getDateConfig(c), summary: t.pwaDescription({ cloud: rawAppName || "Cloud" }) } : null
+        }
         apiKeys={{
           keys: apiKeys,
           openAiBaseUrl: openAiApiEnabled ? `${cloudUrl}/api/ai/openai/v1` : null,

@@ -27,13 +27,27 @@ export default function PasswordScreen(props: {
       <Text muted>{props.subtitle}</Text>
       <Switch>
         <Match when={props.form.kind === "new" && props.form}>
-          {(form) => <NewPasswordForm defaultUsername={form().defaultUsername} redirectTo={props.redirectTo} signOutFailed={props.signOutFailed} start={back()} />}
+          {(form) => (
+            <NewPasswordForm
+              defaultUsername={form().defaultUsername}
+              redirectTo={props.redirectTo}
+              signOutFailed={props.signOutFailed}
+              start={back()}
+            />
+          )}
         </Match>
         <Match when={props.form.kind === "reset-request"}>
           <PasswordResetRequestForm redirectTo={props.redirectTo} start={back()} />
         </Match>
         <Match when={props.form.kind === "reset-complete" && props.form}>
-          {(form) => <PasswordResetCompleteForm token={form().token} redirectTo={props.redirectTo} signOutFailed={props.signOutFailed} start={back()} />}
+          {(form) => (
+            <PasswordResetCompleteForm
+              token={form().token}
+              redirectTo={props.redirectTo}
+              signOutFailed={props.signOutFailed}
+              start={back()}
+            />
+          )}
         </Match>
       </Switch>
     </AuthFrame>

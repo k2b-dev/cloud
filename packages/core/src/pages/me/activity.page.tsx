@@ -39,7 +39,13 @@ export default ssr<AuthContext>(async (c) => {
   const loadContent = async (): Promise<ActivityScreenProps["content"]> => {
     if (kind === "open") return { kind, app, approvals: await loadPendingApprovals(c, app ? { app } : {}) };
     if (kind === "deliveries") {
-      const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status: deliveryStatusOf(state), locale });
+      const history = await notifications.user.history.list({
+        userId: user.id,
+        page,
+        perPage: 25,
+        status: deliveryStatusOf(state),
+        locale,
+      });
       const names = appNames();
       return {
         kind,
@@ -59,7 +65,11 @@ export default ssr<AuthContext>(async (c) => {
         })),
       };
     }
-    const activity = await audit.listSelfServiceActivity({ userId: user.id, days: activityDaysOf(state), pagination: { page: 1, perPage: 50 } });
+    const activity = await audit.listSelfServiceActivity({
+      userId: user.id,
+      days: activityDaysOf(state),
+      pagination: { page: 1, perPage: 50 },
+    });
     return {
       kind,
       total: activity.items.length,

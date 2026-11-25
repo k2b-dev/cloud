@@ -1,4 +1,11 @@
-import type { AppDevicesPageSchema, PwaDeviceView, ServiceAccountCredential, UserProfile, UserProvider, WebAuthnPasskey } from "@k2b/cloud/contracts";
+import type {
+  AppDevicesPageSchema,
+  PwaDeviceView,
+  ServiceAccountCredential,
+  UserProfile,
+  UserProvider,
+  WebAuthnPasskey,
+} from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import { Pane } from "@k2b/ui/v2";
 import { Show } from "solid-js";

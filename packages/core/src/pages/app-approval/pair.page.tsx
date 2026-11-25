@@ -29,11 +29,7 @@ export default ssr<AuthContext>(async (c) => {
     // The pairing dialog's close returns to `returnTo`, so the shell draws no way up above it.
     <Layout c={c} fullWidth ui="v2" title={t.pair}>
       <PairScreen
-        self={
-          id === actor.id
-            ? { user: accountUserView(actor, policy.login.label, accountMessages.resolve([locale]).t) }
-            : null
-        }
+        self={id === actor.id ? { user: accountUserView(actor, policy.login.label, accountMessages.resolve([locale]).t) } : null}
         userId={id}
         actorId={actor.id}
         name={`${user.displayName || user.uid} (${user.uid})`}

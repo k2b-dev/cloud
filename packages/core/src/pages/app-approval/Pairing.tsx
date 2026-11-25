@@ -298,15 +298,15 @@ export default function Pairing(props: {
   const qrImage = (value: string) => (
     // k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas.
     <Band>
-    <Canvas label={t().qr} height={256}>
-      <img
-        alt={t().qr}
-        width="256"
-        height="256"
-        style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
-        src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(value))}`}
-      />
-    </Canvas>
+      <Canvas label={t().qr} height={256}>
+        <img
+          alt={t().qr}
+          width="256"
+          height="256"
+          style={{ display: "block", margin: "0 auto", "max-width": "100%", height: "100%" }}
+          src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(value))}`}
+        />
+      </Canvas>
     </Band>
   );
   // k2b-ui gap: no polite live status in v2 (Notice speaks only when "bad"), and a dialog takes the height of each step.
@@ -430,21 +430,21 @@ export default function Pairing(props: {
               <Text muted>{t().comparison}</Text>
               {/* k2b-ui gap: no primitive shows a short code to compare at a glance; it is drawn in a Canvas. */}
               <Band>
-              <Canvas label={t().comparison} height={72}>
-                <span
-                  style={{
-                    display: "grid",
-                    "place-items": "center",
-                    height: "100%",
-                    "font-family": "var(--k2-font-mono, ui-monospace, monospace)",
-                    "font-size": "40px",
-                    "letter-spacing": "0.2em",
-                    "font-variant-numeric": "tabular-nums",
-                  }}
-                >
-                  {inspection()?.comparison}
-                </span>
-              </Canvas>
+                <Canvas label={t().comparison} height={72}>
+                  <span
+                    style={{
+                      display: "grid",
+                      "place-items": "center",
+                      height: "100%",
+                      "font-family": "var(--k2-font-mono, ui-monospace, monospace)",
+                      "font-size": "40px",
+                      "letter-spacing": "0.2em",
+                      "font-variant-numeric": "tabular-nums",
+                    }}
+                  >
+                    {inspection()?.comparison}
+                  </span>
+                </Canvas>
               </Band>
             </Show>
             <Show when={awaitingApproval()}>

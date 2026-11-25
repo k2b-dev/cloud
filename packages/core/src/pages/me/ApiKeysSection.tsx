@@ -168,105 +168,105 @@ export const useApiKeys = (props: {
 
   const dialogs = (): JSX.Element => (
     <>
-    {connect.dialog()}
-    <Dialog
-      title={created() ? t().apiKeyCreated : t().createApiKey}
-      open={open()}
-      // While the token shows, a stray press outside would lose the one copy: only Done, × and Escape close.
-      dismissible={created() === null}
-      onOpenChange={(next) => !busy() && setOpen(next)}
-      foot={
+      {connect.dialog()}
+      <Dialog
+        title={created() ? t().apiKeyCreated : t().createApiKey}
+        open={open()}
+        // While the token shows, a stray press outside would lose the one copy: only Done, × and Escape close.
+        dismissible={created() === null}
+        onOpenChange={(next) => !busy() && setOpen(next)}
+        foot={
+          <Show
+            when={created()}
+            fallback={
+              <>
+                <Button disabled={busy()} onClick={() => setOpen(false)}>
+                  {t().cancel}
+                </Button>
+                <Button variant="primary" icon="plus" busy={busy()} onClick={() => void create()}>
+                  {t().createKey}
+                </Button>
+              </>
+            }
+          >
+            <Button variant="primary" onClick={() => setOpen(false)}>
+              {t().done}
+            </Button>
+          </Show>
+        }
+      >
         <Show
           when={created()}
           fallback={
             <>
-              <Button disabled={busy()} onClick={() => setOpen(false)}>
-                {t().cancel}
-              </Button>
-              <Button variant="primary" icon="plus" busy={busy()} onClick={() => void create()}>
-                {t().createKey}
-              </Button>
-            </>
-          }
-        >
-          <Button variant="primary" onClick={() => setOpen(false)}>
-            {t().done}
-          </Button>
-        </Show>
-      }
-    >
-      <Show
-        when={created()}
-        fallback={
-          <>
-            <Field
-              name="name"
-              label={t().name}
-              hint={t().apiKeyNameDescription}
-              error={tried() && !name().trim() ? t().passkeyNameRequired : undefined}
-              required
-            >
-              <Input value={name()} onInput={setName} placeholder={t().apiKeyNamePlaceholder} />
-            </Field>
-            <Show when={modelsAvailable}>
               <Field
-                name="access"
-                label={t().keyAccess}
-                hint={access() === "models" ? t().modelsOnlyDescription : t().fullAccessDescription}
+                name="name"
+                label={t().name}
+                hint={t().apiKeyNameDescription}
+                error={tried() && !name().trim() ? t().passkeyNameRequired : undefined}
+                required
               >
-                <Choice
+                <Input value={name()} onInput={setName} placeholder={t().apiKeyNamePlaceholder} />
+              </Field>
+              <Show when={modelsAvailable}>
+                <Field
                   name="access"
-                  value={access()}
-                  onChange={(value) => setAccess(value === "models" ? "models" : "full")}
+                  label={t().keyAccess}
+                  hint={access() === "models" ? t().modelsOnlyDescription : t().fullAccessDescription}
+                >
+                  <Choice
+                    name="access"
+                    value={access()}
+                    onChange={(value) => setAccess(value === "models" ? "models" : "full")}
+                    options={[
+                      { value: "full", label: t().fullAccess },
+                      { value: "models", label: t().modelsOnly },
+                    ]}
+                  />
+                </Field>
+              </Show>
+              {/* k2b-ui gap: no date picker yet; a key lives for one of the preset spans or forever. */}
+              <Field name="expires" label={t().expires} hint={t().apiKeyExpiryDescription}>
+                <Select
+                  value={expiry()}
+                  onChange={(value) => setExpiry(EXPIRY_CHOICES.find((choice) => choice === value) ?? "90")}
                   options={[
-                    { value: "full", label: t().fullAccess },
-                    { value: "models", label: t().modelsOnly },
+                    { value: "30", label: t().days30 },
+                    { value: "90", label: t().days90 },
+                    { value: "365", label: t().year1 },
+                    { value: "never", label: t().never },
                   ]}
                 />
               </Field>
-            </Show>
-            {/* k2b-ui gap: no date picker yet; a key lives for one of the preset spans or forever. */}
-            <Field name="expires" label={t().expires} hint={t().apiKeyExpiryDescription}>
-              <Select
-                value={expiry()}
-                onChange={(value) => setExpiry(EXPIRY_CHOICES.find((choice) => choice === value) ?? "90")}
-                options={[
-                  { value: "30", label: t().days30 },
-                  { value: "90", label: t().days90 },
-                  { value: "365", label: t().year1 },
-                  { value: "never", label: t().never },
+              <Show when={error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
+            </>
+          }
+        >
+          {(value) => (
+            <>
+              <Notice tone="warn" icon="key">
+                {t().apiKeyOneTime}
+              </Notice>
+              <Facts
+                items={[
+                  { label: t().apiKey, value: value().token, copy: value().token, mono: true },
+                  ...(value().baseUrl
+                    ? [
+                        {
+                          label: t().openAiBaseUrl,
+                          value: value().baseUrl ?? "",
+                          copy: value().baseUrl ?? "",
+                          mono: true,
+                          hint: t().openAiBaseUrlDescription,
+                        },
+                      ]
+                    : []),
                 ]}
               />
-            </Field>
-            <Show when={error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
-          </>
-        }
-      >
-        {(value) => (
-          <>
-            <Notice tone="warn" icon="key">
-              {t().apiKeyOneTime}
-            </Notice>
-            <Facts
-              items={[
-                { label: t().apiKey, value: value().token, copy: value().token, mono: true },
-                ...(value().baseUrl
-                  ? [
-                      {
-                        label: t().openAiBaseUrl,
-                        value: value().baseUrl ?? "",
-                        copy: value().baseUrl ?? "",
-                        mono: true,
-                        hint: t().openAiBaseUrlDescription,
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-          </>
-        )}
-      </Show>
-    </Dialog>
+            </>
+          )}
+        </Show>
+      </Dialog>
     </>
   );
 

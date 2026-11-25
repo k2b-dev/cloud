@@ -27,13 +27,22 @@ const onEnter = (send: () => void) => (event: KeyboardEvent) => {
 };
 
 /** FreeIPA username and password. An expired password continues on the new-password page. */
-export function FreeIpaForm(props: { redirectTo?: string; showBanner?: boolean; defaultUsername?: string; appName?: string; forget?: boolean }) {
+export function FreeIpaForm(props: {
+  redirectTo?: string;
+  showBanner?: boolean;
+  defaultUsername?: string;
+  appName?: string;
+  forget?: boolean;
+}) {
   const t = useAuthMessages();
   const [username, setUsername] = createSignal(props.defaultUsername ?? "");
   const [password, setPassword] = createSignal("");
   const mutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth.login.$post({ json: { username: username(), password: password() } }, confirmationRequestOptions(props.redirectTo));
+      const res = await apiClient.auth.login.$post(
+        { json: { username: username(), password: password() } },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (res.status === 409) throw new Error(t().signedOutWhileSigningIn);
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string; passwordExpired?: boolean; ipaUid?: string } | null;
@@ -105,7 +114,13 @@ export function FreeIpaForm(props: { redirectTo?: string; showBanner?: boolean; 
 }
 
 /** An email link: the address first, then the code from the mail (or the link's token, verified at once). */
-export function EmailForm(props: { redirectTo?: string; token?: string; allowSelfRegistration: boolean; category?: "guest" | "login"; forget?: boolean }) {
+export function EmailForm(props: {
+  redirectTo?: string;
+  token?: string;
+  allowSelfRegistration: boolean;
+  category?: "guest" | "login";
+  forget?: boolean;
+}) {
   const t = useAuthMessages();
   const [email, setEmail] = createSignal("");
   const [tokenInput, setTokenInput] = createSignal(props.token ?? "");
@@ -123,7 +138,10 @@ export function EmailForm(props: { redirectTo?: string; token?: string; allowSel
   });
   const tokenMutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["verify-token"].$post({ json: { token: tokenInput() } }, confirmationRequestOptions(props.redirectTo));
+      const res = await apiClient.auth["verify-token"].$post(
+        { json: { token: tokenInput() } },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message ?? t().invalidToken);
@@ -162,7 +180,14 @@ export function EmailForm(props: { redirectTo?: string; token?: string; allowSel
             {t().checkEmail}
           </Notice>
           <Field name="token" label={t().loginCode} hint={t().loginCodeDescription}>
-            <Input icon="key" value={tokenInput()} onInput={setTokenInput} placeholder={t().loginCode} ref={autocomplete("one-time-code")} onKeyDown={onEnter(verify)} />
+            <Input
+              icon="key"
+              value={tokenInput()}
+              onInput={setTokenInput}
+              placeholder={t().loginCode}
+              ref={autocomplete("one-time-code")}
+              onKeyDown={onEnter(verify)}
+            />
           </Field>
           <Show when={error()}>
             {(cause) => (
@@ -237,7 +262,14 @@ export function AdminForm(props: { redirectTo?: string; requiresRecovery?: boole
   return (
     <>
       <Field name="token" label={t().adminToken} hint={t().adminTokenDescription}>
-        <PasswordInput value={token()} onInput={setToken} autocomplete="off" placeholder={t().adminToken} label={t().showPassword} onEnter={send} />
+        <PasswordInput
+          value={token()}
+          onInput={setToken}
+          autocomplete="off"
+          placeholder={t().adminToken}
+          label={t().showPassword}
+          onEnter={send}
+        />
       </Field>
       <Show when={requiresRecovery()}>
         <Notice tone="warn" title={t().restoreLoginTitle}>
@@ -267,7 +299,10 @@ export const usePasskeySignIn = (props: { redirectTo?: string; forget?: boolean 
       const options = await optionsRes.json();
       if (!optionsRes.ok) throw new Error((options as { message?: string }).message ?? t().passkeyStartFailed);
       const response = await startAuthentication({ optionsJSON: options as never });
-      const verifyRes = await apiClient.auth.passkeys.authentication.verify.$post({ json: { response } }, confirmationRequestOptions(props.redirectTo));
+      const verifyRes = await apiClient.auth.passkeys.authentication.verify.$post(
+        { json: { response } },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (!verifyRes.ok) {
         const data = (await verifyRes.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message ?? t().passkeyLoginFailed);

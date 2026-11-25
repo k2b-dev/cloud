@@ -481,7 +481,8 @@ export const accountMessages = i18n.define({
       deliveries: "Deliveries",
       signInActivity: "Sign-ins and changes",
       deliveryStatus: "Delivery",
-      openApprovalsCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} open approval`, other: `${count} open approvals` }),
+      openApprovalsCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `${count} open approval`, other: `${count} open approvals` }),
       groups: "Groups",
       connectAction: "CLI & MCP",
       connectTitle: "Connect the CLI and agents",

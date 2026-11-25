@@ -38,11 +38,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
       "Control: the three retention preset groups select scalar form values, not navigation or objects; each button exposes aria-pressed.",
   },
   {
-    file: "packages/core/src/pages/me/AppDevices.island.tsx",
-    subject: 'variant={touch() ? "primary" : "secondary"}',
-    reason: "Action: copying the pairing link is the link step's main action on touch devices.",
-  },
-  {
     file: "packages/grids/src/frontend/_components/custom-apps/CustomAppBlockPreview.tsx",
     subject: 'variant={action.kind === "workflow" ? "primary" : "secondary"}',
     reason: "Action preview: the disabled configured workflow action retains its primary emphasis.",
@@ -164,26 +159,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/core/src/pages/me/notification-ui.ts",
     subject: 'return { label: t.sending, class: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" };',
     reason: "Status: notification is sending.",
-  },
-  {
-    file: "packages/core/src/pages/me/NotificationPreferences.island.tsx",
-    subject: 'class={`tag ${customized() ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"',
-    reason: "Status: customized preferences tag.",
-  },
-  {
-    file: "packages/core/src/pages/me/AccountHub.tsx",
-    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"',
-    reason: "Status: admin role tag in the roleClass admin branch.",
-  },
-  {
-    file: "packages/core/src/pages/me/access.page.tsx",
-    subject: 'class="tag bg-blue-100 text-blue-700 transition-colors hover:text-primary dark:bg-blue-900/50 dark:text-blue-300"',
-    reason: "Status: managed-group tag link.",
-  },
-  {
-    file: "packages/core/src/pages/me/access.page.tsx",
-    subject: '<span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">',
-    reason: "Status: managed-group tag.",
   },
   {
     file: "packages/mail/src/styles/app.css",

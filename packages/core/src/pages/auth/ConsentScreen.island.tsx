@@ -9,7 +9,13 @@ import { useAuthMessages } from "./login-forms";
  * `/auth/continue` on v2: accept the terms once, or cancel and sign out. The request, its version and every answer's
  * way on are those of the form before v2.
  */
-export default function ConsentScreen(props: { appName: string; legalLinks: LegalLinks; userId: string; version: string; redirectTo: string }) {
+export default function ConsentScreen(props: {
+  appName: string;
+  legalLinks: LegalLinks;
+  userId: string;
+  version: string;
+  redirectTo: string;
+}) {
   const t = useAuthMessages();
   const [accepted, setAccepted] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
@@ -57,7 +63,8 @@ export default function ConsentScreen(props: { appName: string; legalLinks: Lega
         onChange={setAccepted}
         label={
           <>
-            {t().termsPrefix} <Text href="/legal/terms">{t().terms}</Text> {t().consentPrivacyJoin} <Text href="/legal/privacy">{t().privacy}</Text>
+            {t().termsPrefix} <Text href="/legal/terms">{t().terms}</Text> {t().consentPrivacyJoin}{" "}
+            <Text href="/legal/privacy">{t().privacy}</Text>
             {t().consentPrivacyEnd}
           </>
         }

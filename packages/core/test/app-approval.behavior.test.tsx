@@ -1570,9 +1570,9 @@ describe("Cloud app approval UI", () => {
     });
     const forms: Node[] = [];
     const observer = new dom.window.MutationObserver((records) => {
+      // the sign-in form is its field of the identifier (v2 has no form element)
       for (const record of records)
         for (const node of record.addedNodes)
-          // the sign-in form is its field of the identifier (v2 has no form element)
           if ((node as unknown as Element).querySelector?.('input[name="identifier"]')) forms.push(node as unknown as Node);
     });
     const { default: Login } = await import("../src/pages/auth/AppLoginForm");

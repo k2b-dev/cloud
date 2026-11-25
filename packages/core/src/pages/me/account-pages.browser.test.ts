@@ -105,10 +105,7 @@ beforeEach(() => {
   freeIpaEnabled = false;
   requestsEnabled = false;
   spies.push(
-    spyOn(cloudSsr, "Layout").mockImplementation(((props: {
-      c: Parameters<typeof server.getLocale>[0];
-      children: JSX.Element;
-    }) => {
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) => {
       return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {

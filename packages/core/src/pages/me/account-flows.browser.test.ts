@@ -73,6 +73,8 @@ const page = (screen: string) =>
 /** Opens a screen at `address`; `api` answers "METHOD /path" in order, everything else is a 404. */
 const open = async (screen: string, address: string, api: Api) => {
   const context: BrowserContext = await browser.newContext({ viewport: { width: 1280, height: 860 }, reducedMotion: "reduce" });
+  // Date starts at a fixed instant, so dates the page computes are the same on every day the test runs.
+  await context.addInitScript(pinPageClock, Date.parse(PINNED));
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
@@ -89,14 +91,13 @@ const open = async (screen: string, address: string, api: Api) => {
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     const key = `${request.method()} ${url.pathname}`;
     // the requests of the API; pictures such as the logo are not
-    if (url.pathname.startsWith("/api/")) seen.push({ method: request.method(), path: url.pathname, body: request.postData() ? request.postDataJSON() : null });
+    if (url.pathname.startsWith("/api/"))
+      seen.push({ method: request.method(), path: url.pathname, body: request.postData() ? request.postDataJSON() : null });
     const answer = api[key]?.shift();
     if (answer === "abort") return route.abort("connectionreset");
     if (answer) return route.fulfill({ status: answer.status ?? 200, json: answer.json });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
-  // a fixed clock, so dates the page computes are the same on every day the test runs
-  await tab.clock.setFixedTime(new Date("2026-11-24T10:00:00.000Z"));
   await tab.goto(`${origin}${address}`);
   await settled(tab);
   return { context, tab, errors, seen, navigations };
@@ -109,6 +110,24 @@ const eventually = async (check: () => boolean, timeoutMs = 5_000) => {
     if (performance.now() > deadline) throw new Error("The expected step did not happen in time");
     await Bun.sleep(25);
   }
+};
+
+const PINNED = "2026-11-24T10:00:00.000Z";
+/** Pins only `Date` in the page to `at`, flowing from there; timers and frames stay real. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
 };
 
 const dialog = (tab: Page) => tab.locator('[data-k2-part="Dialog"]');
@@ -198,8 +217,8 @@ describe("account deeds on v2", () => {
       expect(outline).not.toContain("Problems (");
       const body = seen.find((entry) => entry.path === "/api/me/api-keys")?.body as { name: string; access: string; expiresAt: string };
       expect([body.name, body.access]).toEqual(["CI", "full"]);
-      // 90 days ahead by default, from the page's fixed clock
-      expect(body.expiresAt).toBe("2027-02-22T10:00:00.000Z");
+      // 90 days ahead by default, from the page's pinned clock
+      expect(Math.round((Date.parse(body.expiresAt) - Date.parse(PINNED)) / 86_400_000)).toBe(90);
       await tab.mouse.click(5, 5);
       expect(await dialog(tab).getByText(token).isVisible()).toBe(true);
       await dialog(tab).getByRole("button", { name: "Done" }).click();

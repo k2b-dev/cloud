@@ -24,7 +24,10 @@ export const useConnectSetup = (props: { mcpEndpoint: string; cloudUrl: string }
     >
       <Text muted>{t().cloudCliDescription}</Text>
       <Facts
-        items={[snippet(t().install, `curl -fsSL ${props.cloudUrl}/cli | sh`), snippet(t().thenRun, `cld login --server ${props.cloudUrl}`)]}
+        items={[
+          snippet(t().install, `curl -fsSL ${props.cloudUrl}/cli | sh`),
+          snippet(t().thenRun, `cld login --server ${props.cloudUrl}`),
+        ]}
       />
       <Text muted>{t().cloudMcpDescription}</Text>
       <Facts

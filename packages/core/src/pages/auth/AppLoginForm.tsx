@@ -194,23 +194,23 @@ export default function AppLoginForm(props: {
               <Text muted>{t().waiting}</Text>
               {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
               <Band>
-              <Canvas label={`${t().comparison} ${request().comparison}`} height={96}>
-                <span
-                  style={{
-                    display: "flex",
-                    "justify-content": "center",
-                    "align-items": "center",
-                    gap: "16px",
-                    height: "100%",
-                    "font-family": "ui-monospace, monospace",
-                    "font-size": "44px",
-                    "letter-spacing": "0.12em",
-                    "font-variant-numeric": "tabular-nums",
-                  }}
-                >
-                  {(request().comparison.match(/.{1,3}/g) ?? [request().comparison]).join(" ")}
-                </span>
-              </Canvas>
+                <Canvas label={`${t().comparison} ${request().comparison}`} height={96}>
+                  <span
+                    style={{
+                      display: "flex",
+                      "justify-content": "center",
+                      "align-items": "center",
+                      gap: "16px",
+                      height: "100%",
+                      "font-family": "ui-monospace, monospace",
+                      "font-size": "44px",
+                      "letter-spacing": "0.12em",
+                      "font-variant-numeric": "tabular-nums",
+                    }}
+                  >
+                    {(request().comparison.match(/.{1,3}/g) ?? [request().comparison]).join(" ")}
+                  </span>
+                </Canvas>
               </Band>
               <Bar
                 start={

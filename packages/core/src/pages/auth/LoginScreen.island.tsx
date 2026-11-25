@@ -104,7 +104,11 @@ export default function LoginScreen(props: LoginScreenProps) {
         {(others) => (
           <Section icon="route" title={t().otherWays}>
             <Show when={others().passkey}>
-              <Row icon="key" lines={[t().continueWithPasskey]} action={{ label: t().continueWithPasskey, disabled: passkey.busy(), onClick: passkey.start }} />
+              <Row
+                icon="key"
+                lines={[t().continueWithPasskey]}
+                action={{ label: t().continueWithPasskey, disabled: passkey.busy(), onClick: passkey.start }}
+              />
               <Show when={passkey.error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
             </Show>
             <Show when={others().appInstead}>{(href) => <Row icon="device-mobile" lines={[t().useAppInstead]} href={href()} />}</Show>

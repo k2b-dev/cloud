@@ -74,7 +74,14 @@ export function NewPasswordForm(props: { defaultUsername: string; redirectTo?: s
     mutation: async (): Promise<Outcome> => {
       if (newPassword() !== confirmPassword()) throw new Error(t().passwordsDoNotMatch);
       const res = await apiClient.auth["change-expired-password"].$post(
-        { json: { username: username(), currentPassword: currentPassword(), newPassword: newPassword(), confirmPassword: confirmPassword() } },
+        {
+          json: {
+            username: username(),
+            currentPassword: currentPassword(),
+            newPassword: newPassword(),
+            confirmPassword: confirmPassword(),
+          },
+        },
         confirmationRequestOptions(props.redirectTo),
       );
       if (res.status === 409) return "sign-in-again";
@@ -91,7 +98,13 @@ export function NewPasswordForm(props: { defaultUsername: string; redirectTo?: s
     <Show when={!outcome.signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!outcome.signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
         <Field name="username" label={t().username} hint={t().organizationUsernameDescription}>
-          <Input icon="user" value={username()} onInput={setUsername} placeholder={t().usernameShortPlaceholder} ref={autocomplete("username")} />
+          <Input
+            icon="user"
+            value={username()}
+            onInput={setUsername}
+            placeholder={t().usernameShortPlaceholder}
+            ref={autocomplete("username")}
+          />
         </Field>
         <Field name="currentPassword" label={t().currentPassword} hint={t().currentPasswordDescription}>
           <PasswordInput
@@ -129,7 +142,9 @@ export function PasswordResetRequestForm(props: { redirectTo?: string; start?: J
   const [sent, setSent] = createSignal(false);
   const mutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["password-reset"].request.$post({ json: { email: email(), redirectTo: props.redirectTo, acceptedAgb: true } });
+      const res = await apiClient.auth["password-reset"].request.$post({
+        json: { email: email(), redirectTo: props.redirectTo, acceptedAgb: true },
+      });
       const data = (await res.json().catch(() => null)) as { message?: string } | null;
       if (!res.ok) throw new Error(data?.message ?? t().resetRequestFailed);
       setSent(true);
@@ -209,7 +224,10 @@ export function PasswordResetCompleteForm(props: { token: string; redirectTo?: s
         <Show when={mutation.error()}>
           {(error) => (
             // Every attempt uses up the link, so a failure offers a new one right where it is reported.
-            <Notice tone="bad" actions={[{ label: t().requestNewResetLink, icon: "mail-forward", href: newResetLinkHref(props.redirectTo) }]}>
+            <Notice
+              tone="bad"
+              actions={[{ label: t().requestNewResetLink, icon: "mail-forward", href: newResetLinkHref(props.redirectTo) }]}
+            >
               {error().message}
             </Notice>
           )}

@@ -3,8 +3,8 @@ import type { KeyboardPlatform } from "@k2b/ui";
 import { Button, Cells, Empty, Facts, Notice, Pane, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import AccountWorkspace, { AccountTabs, sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
-import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
 import type { AccountUserView } from "./account-view";
+import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 import ScreenSection from "./ScreenSection";
 
@@ -126,29 +126,31 @@ export default function ProfileScreen(props: ProfileScreenProps) {
         </Cells>
         <Pane.Split>
           <Pane label={t().profileTitle}>
-        <Section icon="user" title={t().profileTitle} summary={t().profileDescription} actions={profileActions()}>
-          <Facts items={props.profileFacts} />
-        </Section>
-        <ScreenSection
-          timerSeconds={props.screen.timerSeconds}
-          platform={props.screen.platform}
-          sharedWorkstation={props.screen.sharedWorkstation}
-        />
+            <Section icon="user" title={t().profileTitle} summary={t().profileDescription} actions={profileActions()}>
+              <Facts items={props.profileFacts} />
+            </Section>
+            <ScreenSection
+              timerSeconds={props.screen.timerSeconds}
+              platform={props.screen.platform}
+              sharedWorkstation={props.screen.sharedWorkstation}
+            />
           </Pane>
           <Pane side label={t().accountFacts} width={sideWidth}>
-        <Section icon="id" title={t().accountFacts}>
-          <Facts items={props.accountFacts} />
-        </Section>
-        <Section
-          icon="activity"
-          title={t().recentSecurityActivity}
-          summary={t().recentSecurityActivityDescription}
-          more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
-        >
-          <Show when={props.activity.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
-            <For each={props.activity}>{(entry) => <Row icon="shield-check" lines={[entry.label, entry.context]} time={entry.when} />}</For>
-          </Show>
-        </Section>
+            <Section icon="id" title={t().accountFacts}>
+              <Facts items={props.accountFacts} />
+            </Section>
+            <Section
+              icon="activity"
+              title={t().recentSecurityActivity}
+              summary={t().recentSecurityActivityDescription}
+              more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
+            >
+              <Show when={props.activity.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
+                <For each={props.activity}>
+                  {(entry) => <Row icon="shield-check" lines={[entry.label, entry.context]} time={entry.when} />}
+                </For>
+              </Show>
+            </Section>
           </Pane>
         </Pane.Split>
       </Pane>
