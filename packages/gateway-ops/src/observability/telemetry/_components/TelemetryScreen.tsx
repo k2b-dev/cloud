@@ -147,7 +147,11 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
               phone={(row) => ({ lines: [row.route, `${row.app} · ${row.requests} · ${row.errorRate}`] })}
               columns={(
                 [
-                  { title: t().route, width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.route, row.app] }) },
+                  {
+                    title: t().route,
+                    width: props.route ? { min: 150, default: 180 } : { min: 200, default: 260 },
+                    cell: (row) => ({ lines: [row.route, row.app] }),
+                  },
                   {
                     title: t().requests,
                     width: { min: 90, default: 110 },
