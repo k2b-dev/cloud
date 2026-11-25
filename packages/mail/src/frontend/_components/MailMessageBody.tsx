@@ -64,8 +64,11 @@ export default function MailMessageBody(props: {
   linksDisabled?: boolean;
   /** The host's defaults for the frame's text, after the frame's own; a message's own styles still win (v2 pilot). */
   frameStyle?: string;
-  /** The frame loads Cloud's shared typeface from this page's origin, so `frameStyle` can set it (v2 pilot). */
-  sharedFonts?: boolean;
+  /**
+   * The frame loads Cloud's shared typeface from this origin, so `frameStyle` can set it (v2 pilot). It comes from the
+   * server, so the server's frame and the browser's are the same document.
+   */
+  sharedFontsOrigin?: string;
   onSelectionChange: (value: string) => void;
 }) {
   const locale = useLocale();
@@ -139,7 +142,7 @@ export default function MailMessageBody(props: {
       { show: localized.t.showQuotedText, hide: localized.t.hideQuotedText },
       untrack(appearanceMode),
       props.frameStyle,
-      props.sharedFonts && typeof window !== "undefined" ? window.location.origin : undefined,
+      props.sharedFontsOrigin,
     );
   });
   let plainBody: HTMLDivElement | undefined;

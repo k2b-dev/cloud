@@ -59,7 +59,7 @@ afterEach(() => {
 beforeEach(() => {
   spies.push(stubRailSnapshot());
   // Nobody is in the v2 pilot unless a test lists them.
-  spies.push(spyOn(pilot, "readMailV2Pilot").mockResolvedValue([]));
+  spies.push(spyOn(pilot, "readMailV2Pilot").mockReturnValue([]));
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } }));
   spies.push(
     spyOn(sidebarData, "loadMailSidebarData").mockResolvedValue({
@@ -400,7 +400,7 @@ test("only a person in the v2 pilot gets the mailbox on @k2b/ui v2; everyone els
     [[" Reader@Example.test "], true],
     [["*"], true],
   ] as const) {
-    listed.mockResolvedValue(list);
+    listed.mockReturnValue(list);
     const html = await (await request()).text();
     expect({ list, v1: (await selectHtml(html, ".mail-workspace")).length }).toEqual({ list, v1: v2 ? 0 : 1 });
     expect({ list, v2: (await selectHtml(html, "main.k2-ui [data-k2-workspace]")).length }).toEqual({ list, v2: v2 ? 1 : 0 });

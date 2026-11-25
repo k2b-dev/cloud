@@ -287,7 +287,14 @@ const v2Sidebar = {
   pinnedMailboxIds: ["Box001"],
 };
 
-export default function MailV2Fixture(props: { source: string; locale?: "en" | "de"; now: number; cookieHeader?: string | null }) {
+export default function MailV2Fixture(props: {
+  source: string;
+  locale?: "en" | "de";
+  now: number;
+  cookieHeader?: string | null;
+  /** The fixture server's own origin, which serves the shared typeface. */
+  cloudUrl?: string;
+}) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "de";
   const data = mailV2Data(url, props.now);
@@ -300,7 +307,7 @@ export default function MailV2Fixture(props: { source: string; locale?: "en" | "
         currentUserId="user-mira"
         currentUserEmail="mira@solberg-kramer.example"
         contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-        cloudUrl="https://cloud.example"
+        cloudUrl={props.cloudUrl ?? "https://cloud.example"}
         dateConfig={{ locale, timeZone: "UTC" }}
         initialPreferences={readMailWorkspacePreferences(props.cookieHeader ?? "")}
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}

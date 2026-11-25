@@ -1,4 +1,5 @@
-import { app } from "../config";
+import type { Context } from "hono";
+import { z } from "zod";
 
 /**
  * Whether this person sees the mailbox on @k2b/ui v2 (provisional, until the maintainer accepts Mail on v2).
@@ -12,5 +13,13 @@ export const showsMailV2 = (pilot: readonly string[], email: string | null | und
   return !!own && listed.includes(own);
 };
 
-/** The administrator's pilot list, as the mailbox page reads it. */
-export const readMailV2Pilot = (): Promise<readonly string[]> => app.settings.get("mail.ui_v2_pilot");
+const pilotSnapshot = z.object({ mail: z.object({ ui_v2_pilot: z.array(z.string()) }) });
+
+/**
+ * The administrator's pilot list, from the request's settings snapshot (no read of its own). A router mounted without
+ * the settings middleware, such as an isolated route test, lists nobody.
+ */
+export const readMailV2Pilot = (c: Context): readonly string[] => {
+  const snapshot = pilotSnapshot.safeParse(c.get("settings"));
+  return snapshot.success ? snapshot.data.mail.ui_v2_pilot : [];
+};
