@@ -738,8 +738,7 @@ export default function FilesScreen(props: {
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         detail
         detailEmpty={{ icon: "file", text: b().v2NothingOpen }}
-        // An open entry is a page of its own on the phone; the upload floats over the folder only.
-        primary={openPath() ? undefined : uploadAction()}
+        primary={uploadAction()}
         head={
           <Bar
             start={<Path label={b().v2Where} items={pathItems()} />}
