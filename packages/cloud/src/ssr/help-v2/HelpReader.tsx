@@ -447,9 +447,8 @@ export function HelpReader(props: HelpReaderProps) {
 
   const title = () => (props.app?.name ? t().helpFor({ app: props.app.name }) : t().help);
   return (
+    // No placeholder beside the list: until an article is open, the list is the page (no half-empty pane).
     <Workspace
-      detail
-      detailEmpty={{ icon: "book-2", text: t().chooseArticle }}
       head={
         <Bar
           start={<Text weight="strong">{title()}</Text>}

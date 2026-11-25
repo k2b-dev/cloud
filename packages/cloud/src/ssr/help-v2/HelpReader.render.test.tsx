@@ -31,9 +31,9 @@ test("the start renders the tasks, the kinds and the shortcuts", () => {
   expect(html).toContain('href="/help/apps/spaces/share"');
   expect(html).toContain("Open global search");
   expect(parts(html, "Loading")).toBe(0);
-  // No article is open: the place beside the list says how to open one.
+  // No article is open: the list is the page, without a half-empty pane beside it.
   expect(html).not.toContain('data-detail=""');
-  expect(html).toContain("Choose an article to read it here.");
+  expect(parts(html, "Pane")).toBe(1);
 });
 
 test("an open article renders with the page, without a loading shape", () => {
