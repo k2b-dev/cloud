@@ -1,5 +1,5 @@
 import { Composer } from "@k2b/editor/composer";
-import { Button, Menu, type MenuEntry, Text } from "@k2b/ui/v2";
+import { Button, Icon, Menu, type MenuEntry, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import type { MailReplyFrameChoice, MailReplyFrameParts } from "../mail-reply-frame";
 import type { MailV2Text } from "./mail-v2-messages";
@@ -19,18 +19,20 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
   const choice = (title: string, of: MailReplyFrameChoice): MenuEntry[] => [
     { title, choice: of.value(), onChoose: (value) => of.choose(value), items: of.options() },
   ];
+  /** Reply, Reply all, Forward or the internal note, as one choice at the top of "More"; it waits while the mode switches. */
+  const modeChoice = (): MenuEntry[] => {
+    const mode = parts().mode;
+    const waits = mode.disabled?.() ?? false;
+    return choice(props.text.replyAs, { ...mode, options: () => mode.options().map((option) => ({ ...option, disabled: waits })) });
+  };
   return (
     <Composer
       label={parts().label()}
       head={
         <>
-          <Menu
-            variant="ghost"
-            icon={parts().mode.icon()}
-            label={parts().mode.label()}
-            disabled={parts().mode.disabled?.()}
-            items={choice(props.text.replyAs, parts().mode)}
-          />
+          {/* The row of the resting composer, unchanged: the mode's symbol, "To", the recipient. The mode is a choice in
+              "More" (and Reply, Reply all, Forward stand in each message's menu), so nothing in the row moves. */}
+          <Icon name={parts().mode.icon()} tone="muted" />
           <Text type="meta">{props.text.to}</Text>
           {parts().to}
         </>
@@ -102,7 +104,7 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
             disabled={parts().tools.assistant.disabled()}
             onClick={() => parts().tools.assistant.run()}
           />
-          <Menu variant="ghost" icon="dots" label={parts().tools.more.label()} items={parts().tools.more.items()} />
+          <Menu variant="ghost" icon="dots" label={parts().tools.more.label()} items={[...modeChoice(), ...parts().tools.more.items()]} />
         </>
       }
       actions={
