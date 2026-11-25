@@ -22,9 +22,9 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { OUTGOING_MAIL_HREF } from "./area";
 import { type LogState, logFilter, logHref, logQuery, statusLabel } from "./log-query";
 import { outgoingMailMessages } from "./messages";
+import { OUTGOING_MAIL_HREF } from "./paths";
 import RetentionDialog from "./RetentionDialog";
 import { api } from "./shared";
 
@@ -221,7 +221,7 @@ export default function LogScreen(props: LogScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={460}
+      detail={420}
       detailEmpty={{ icon: "mail", text: t().noMessageOpen }}
       head={
         <Bar
@@ -261,13 +261,12 @@ export default function LogScreen(props: LogScreenProps) {
             open={(row) => ({ href: logHref(query(), state(), row.id) })}
             empty={filtered() ? { icon: "filter-off", text: t().noMatches } : { icon: "mail-off", text: t().noMailDescription }}
             phone={(row) => ({
-              lines: [row.subject, `${row.to[0] ?? ""} · ${time(row.createdAt)}`],
-              marks: <MailChip status={row.status} />,
+              lines: [row.subject, `${statusLabel(row.status, t())} · ${time(row.createdAt)}`],
             })}
             columns={[
               {
                 title: t().message,
-                width: { min: 220, default: 280 },
+                width: { min: 180, default: 220 },
                 cell: (row) => ({
                   lines: [
                     row.subject,
@@ -277,11 +276,11 @@ export default function LogScreen(props: LogScreenProps) {
               },
               {
                 title: t().app,
-                width: { min: 120, default: 140 },
+                width: { min: 100, default: 110 },
                 drop: true,
                 cell: (row) => ({ lines: [appName(row.appId), row.profile] }),
               },
-              { title: t().created, width: { min: 150, default: 170 }, drop: true, cell: (row) => time(row.createdAt) },
+              { title: t().created, width: { min: 120, default: 130 }, drop: true, cell: (row) => time(row.createdAt) },
               { title: t().statusLabel, cell: (row) => <MailChip status={row.status} /> },
             ]}
           />

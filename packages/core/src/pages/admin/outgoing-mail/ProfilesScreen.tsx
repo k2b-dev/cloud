@@ -2,27 +2,11 @@ import type { AdminMailProfile } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Chip,
-  Dialog,
-  Field,
-  Input,
-  Menu,
-  type NavProps,
-  Notice,
-  Pane,
-  Path,
-  StatusRow,
-  Table,
-  Text,
-  useToast,
-} from "@k2b/ui/v2";
+import { Bar, Button, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, Path, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import { OUTGOING_MAIL_HREF } from "./area";
 import { outgoingMailMessages } from "./messages";
 import ProfileForm from "./ProfileForm";
+import { OUTGOING_MAIL_HREF } from "./paths";
 import { api, failure } from "./shared";
 
 /** A profile as the list shows it, with its bounce check worded by the server. */
@@ -164,8 +148,7 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
             open={(row) => ({ href: `${PATH}?profile=${row.key}` })}
             empty={{ icon: "mail-off", text: t().noProfilesDescription, action: newAction }}
             phone={(row) => ({
-              lines: [row.name, row.fromAddress],
-              marks: row.isDefault ? <Chip tag>{t().defaultBadge}</Chip> : undefined,
+              lines: [row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name, row.fromAddress],
             })}
             columns={[
               {

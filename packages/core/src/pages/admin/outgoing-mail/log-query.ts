@@ -1,7 +1,7 @@
 import { type AdminMailApp, type MailStatus, MailStatusSchema } from "@k2b/cloud/contracts";
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
-import { OUTGOING_MAIL_HREF } from "./area";
 import { outgoingMailMessages } from "./messages";
+import { OUTGOING_MAIL_HREF } from "./paths";
 
 type Messages = ReturnType<typeof outgoingMailMessages.resolve>["t"];
 

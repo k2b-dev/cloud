@@ -4,8 +4,8 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Check, Choice, Field, type NavProps, Notice, Pane, Path, Section, Select, StatusRow, Table, Text } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
-import { OUTGOING_MAIL_HREF } from "./area";
 import { outgoingMailMessages } from "./messages";
+import { OUTGOING_MAIL_HREF } from "./paths";
 import { type AccessMode, accessLabel, api, CORE_APP_ID, failure, logLabel } from "./shared";
 
 const PATH = OUTGOING_MAIL_HREF.apps;

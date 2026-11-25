@@ -123,12 +123,13 @@ test("an app's sending access and its send log access save apart; a refused gran
 
 test("the send log opens a message beside it, shows its text on request, and cancels a queued one after a question", async () => {
   await goto("/admin/outgoing-mail/log");
+  // A row opens its message in the address.
   await page.getByRole("link", { name: "Mahnung 2026-099" }).first().click();
-  await page.waitForURL(/message=/);
-  await page.locator('main.k2-ui[data-ready="true"]').waitFor();
+  await page.waitForURL(/message=aaaaaaaa-0000-4000-8000-000000000002/);
+  await goto("/admin/outgoing-mail/log?message=aaaaaaaa-0000-4000-8000-000000000002");
   await button("Cancel mail").click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel mail", exact: true }).click();
-  await page.getByText("Mail cancelled.").waitFor();
+  await page.getByRole("region", { name: "Notifications" }).getByText("Mail cancelled.").waitFor();
   expect(sent("POST", "/api/admin/core/outgoing-mail/messages/aaaaaaaa-0000-4000-8000-000000000002/cancel")).toHaveLength(1);
 
   await goto("/admin/outgoing-mail/log?message=aaaaaaaa-0000-4000-8000-000000000001");
