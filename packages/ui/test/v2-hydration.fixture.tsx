@@ -128,6 +128,10 @@ export function Fixture() {
             <Field name="delivery" label="Übergabe">
               <Choice name="delivery" options={["Abholung", "Lieferung"]} value="Lieferung" />
             </Field>
+            {/* a word for a day: the server and the browser read it in the same zone, so both say 1 January 2027 */}
+            <Field name="since" label="Seit">
+              <DateInput value="heute" timeZone="Europe/Berlin" />
+            </Field>
             <Field name="notify" label="Benachrichtigung">
               <Check label="Kunde benachrichtigen" />
             </Field>
