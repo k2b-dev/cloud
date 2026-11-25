@@ -310,7 +310,17 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
   await withPage(async (page) => {
     // an empty region is no open popover: a page that lets an open popover take Escape first still gets it
     await page.waitForFunction(() => document.querySelector('[data-slot="toast-region"][popover]') !== null);
-    expect(await page.evaluate(() => document.querySelectorAll(":popover-open").length)).toBe(0);
+    expect(await page.evaluate(() => document.querySelector(":popover-open"))).toBeNull();
+    // and Escape reaches the page untouched (Mail closes its reader with it)
+    await page.evaluate(() => {
+      window.__escape = "none";
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") window.__escape = event.defaultPrevented ? "taken" : "page";
+      });
+    });
+    await page.locator("body").focus();
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => window.__escape)).toBe("page");
     await page.getByRole("button", { name: "Speichern" }).click();
     const toast = page.locator(".k2-toast");
     await toast.waitFor();

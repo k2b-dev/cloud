@@ -8,6 +8,8 @@ import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Sec
 declare global {
   interface Window {
     __deeds?: string[];
+    /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
+    __escape?: "none" | "page" | "taken";
   }
 }
 
