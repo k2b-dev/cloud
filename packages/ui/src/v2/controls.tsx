@@ -5,6 +5,8 @@ import {
   createUniqueId,
   For,
   type JSX,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
@@ -154,7 +156,8 @@ export type InputProps = {
    * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
    * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
    * itself with `preventDefault`). Where a host offers the page's search in a bar of its own (`data-k2-host-search`
-   * on the v2 scope, as the Cloud shell's phone bar does), the folded search leaves the head and the host focuses it.
+   * on the v2 scope, as the Cloud shell's phone bar does), the folded search leaves the head and the order of the Tab
+   * key on the phone, and the host focuses it; a head with a path then opens it over the content's first row.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
@@ -203,9 +206,33 @@ const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement
   event.currentTarget.blur();
 };
 
+/**
+ * Whether a search is the head's search that a host's bar opens on the phone (`data-k2-host-search`): folded away,
+ * it leaves the order of the Tab key, so the bar's button is its one way in; the host still focuses it. Known in the
+ * browser only, after the first render, which stays the server's.
+ */
+const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
+  const [hosted, setHosted] = createSignal(false);
+  onMount(() => {
+    const place = input()?.parentElement?.parentElement;
+    if (!search() || !place?.matches('[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+    const phone = matchMedia(`not all and (min-width: ${textEdge.phoneBelow}px)`);
+    const update = () => setHosted(phone.matches);
+    update();
+    phone.addEventListener("change", update);
+    onCleanup(() => phone.removeEventListener("change", update));
+  });
+  return hosted;
+};
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  let input: HTMLInputElement | undefined;
+  const hosted = useHostedHeadSearch(
+    () => input,
+    () => props.type === "search",
+  );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const shared = () => ({
@@ -234,7 +261,11 @@ export const Input = (props: InputProps) => {
         fallback={
           <input
             {...shared()}
-            ref={(element) => forwardRef(props.ref, element)}
+            ref={(element) => {
+              input = element;
+              forwardRef(props.ref, element);
+            }}
+            tabIndex={hosted() ? -1 : undefined}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}

@@ -27,11 +27,12 @@ afterAll(async () => {
 
 /**
  * Opens the fixture in a window of `width`; the column (the root) is `column` wide, so it narrows without the window.
- * `host` marks the v2 scope as a host's that offers the page's search in a bar of its own (`data-k2-host-search`).
+ * `host` marks the v2 scope as a host's that offers the page's search in a bar of its own (`data-k2-host-search`);
+ * `path` gives the head a `Path` instead of its views.
  */
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, column = width, host = false }: { width?: number; column?: number; host?: boolean } = {},
+  { width = 1440, column = width, host = false, path = false }: { width?: number; column?: number; host?: boolean; path?: boolean } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
@@ -40,6 +41,10 @@ const withPage = async (
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${host ? " data-k2-host-search" : ""}><div id="root" style="width: ${column}px"></div></body></html>`,
     );
+    if (path)
+      await page.evaluate(() => {
+        window.__k2PathHead = true;
+      });
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     // the column is the width of its rows: the frame of the workspace around them takes its own pixels
@@ -256,6 +261,69 @@ test("390 px in a host's bar: the folded search leaves the head to its tabs, ope
       expect(await state()).toEqual(folded);
     },
     { width: 390, host: true },
+  );
+});
+
+// The host's bar is the one way into the folded search: the Tab key passes it by, the host's focus still reaches it.
+test("390 px in a host's bar: the folded search is out of the Tab key's order, and the host still focuses it", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      expect(await search.evaluate((input) => input.tabIndex)).toBe(-1);
+      const reached: string[] = [];
+      for (let step = 0; step < 8; step += 1) {
+        await page.keyboard.press("Tab");
+        reached.push(
+          await page.evaluate(
+            () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim() ?? "",
+          ),
+        );
+      }
+      expect(reached).not.toContain("Durchsuchen");
+      await search.focus();
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+    },
+    { width: 390, host: true },
+  );
+});
+
+test("1440 px in a host's page: the search of the head stays in the Tab key's order", async () => {
+  await withPage(
+    async (page) => {
+      expect(await page.getByRole("searchbox", { name: "Durchsuchen" }).evaluate((input) => input.tabIndex)).toBe(0);
+    },
+    { host: true },
+  );
+});
+
+// A head with a path gives way on the phone; its search opens over the content's first row, so nothing below moves.
+test("390 px in a host's bar with a path: the search opens over the status row and nothing below the head moves", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      const state = () =>
+        page.evaluate(() => {
+          const head = document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+          const status = document.querySelector('[data-k2-part="StatusRow"]')!.getBoundingClientRect();
+          const field = document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect();
+          const hit = document.elementFromPoint(field.left + field.width / 2, field.top + field.height / 2);
+          return {
+            head: Math.round(head.height),
+            status: Math.round(status.top),
+            field: [Math.round(field.width), Math.round(field.left), Math.round(field.top - status.top)],
+            onTop: hit?.closest('[data-k2-part="Input"]') !== null,
+          };
+        });
+      const folded = await state();
+      expect({ head: folded.head, status: folded.status }).toEqual({ head: 0, status: 0 });
+      await search.focus();
+      await settled(page);
+      expect(await state()).toEqual({ head: 0, status: 0, field: [390 - 2 * textEdge.phone, textEdge.phone, 8], onTop: true });
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect({ ...(await state()), field: [], onTop: false }).toEqual({ head: 0, status: 0, field: [], onTop: false });
+    },
+    { width: 390, host: true, path: true },
   );
 });
 

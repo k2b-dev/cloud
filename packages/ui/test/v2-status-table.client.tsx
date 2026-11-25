@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Input, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, Input, Pane, Path, StatusRow, Table, Tabs, Workspace } from "../src/v2";
 
 // A filtered list as an operations log draws it: a head with views, a search and "…"; a status row with the result,
 // key figures, a loading mark and the order controls, above a large table with a sticky first column, group rows of
@@ -14,6 +14,8 @@ declare global {
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
+    /** Set before the fixture mounts: the head shows where the page stands (a `Path`) instead of its views. */
+    __k2PathHead?: boolean;
   }
 }
 
@@ -71,22 +73,26 @@ render(
       head={
         <Bar
           start={
-            <Tabs
-              label="Ansichten"
-              items={[
-                { label: "Alle", href: "#alle", current: true },
-                { label: "Fehler", count: 5, href: "#fehler" },
-                { label: "Warn", count: 6, href: "#warn" },
-                {
-                  label: "Weitere",
-                  count: "+2",
-                  menu: [
-                    { label: "Jobs", href: "#jobs" },
-                    { label: "Anfragen", href: "#anfragen" },
-                  ],
-                },
-              ]}
-            />
+            window.__k2PathHead ? (
+              <Path label="Ort" items={[{ label: "Betrieb", href: "#betrieb" }, { label: "Protokolle" }]} />
+            ) : (
+              <Tabs
+                label="Ansichten"
+                items={[
+                  { label: "Alle", href: "#alle", current: true },
+                  { label: "Fehler", count: 5, href: "#fehler" },
+                  { label: "Warn", count: 6, href: "#warn" },
+                  {
+                    label: "Weitere",
+                    count: "+2",
+                    menu: [
+                      { label: "Jobs", href: "#jobs" },
+                      { label: "Anfragen", href: "#anfragen" },
+                    ],
+                  },
+                ]}
+              />
+            )
           }
           end={
             <>

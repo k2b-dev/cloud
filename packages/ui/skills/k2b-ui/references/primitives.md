@@ -40,7 +40,8 @@ The working surface of an app: one per screen.
   and folds back, its words kept, on blur or Escape. A host that offers the
   page's search in a bar of its own (the Cloud shell's phone bar) marks the
   v2 scope with `data-k2-host-search`: the folded search then leaves the head
-  to its tabs, and the host focuses the field from its bar.
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 

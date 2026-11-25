@@ -1,5 +1,6 @@
 import { IconButton, Kbd, useLocale } from "@k2b/ui";
-import { openPageSearch } from "../browser/page-search";
+import { onCleanup, onMount } from "solid-js";
+import { openPageSearch, returnPageSearchFocus } from "../browser/page-search";
 import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { createBusyAction } from "./busy-action";
@@ -48,11 +49,17 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     );
   }
 
+  // on a v2 page, Escape in the head's search brings the focus back to this button
+  let button: HTMLButtonElement | undefined;
+  onMount(() => {
+    if (props.page) onCleanup(returnPageSearchFocus(() => button));
+  });
   return (
     <IconButton
+      ref={button}
       class={props.class}
-      onClick={(event) => {
-        if (props.page && openPageSearch(event.currentTarget)) return;
+      onClick={() => {
+        if (props.page && openPageSearch()) return;
         open();
       }}
       aria-busy={action.busy() ? "true" : undefined}

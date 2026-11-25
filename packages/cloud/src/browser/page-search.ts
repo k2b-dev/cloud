@@ -10,25 +10,30 @@ export const pageOwnsSearch = (): boolean => (field()?.getClientRects().length ?
 
 /**
  * Opens the search of the page's head from the phone bar: the field takes the focus, so it opens over the head and
- * the phone's keyboard comes. Escape folds it away again (`@k2b/ui/v2`), and the focus returns to `trigger`. False
- * when the page shows no such field (none, or its head gives way to an open detail); the bar then opens the global
- * search.
+ * the phone's keyboard comes. False when the page shows no such field (none, or its head gives way to an open detail);
+ * the bar then opens the global search.
  */
-export const openPageSearch = (trigger: HTMLElement): boolean => {
+export const openPageSearch = (): boolean => {
   const input = field();
   if (!input || !pageOwnsSearch()) return false;
   input.focus();
-  if (document.activeElement !== input) return false;
+  return document.activeElement === input;
+};
+
+/**
+ * Escape in the page's head search folds the field away (`@k2b/ui/v2`) and lets its focus go; the focus then returns
+ * to the phone bar's search button (`trigger`), however the field got it. Returns the cleanup.
+ */
+export const returnPageSearchFocus = (trigger: () => HTMLElement | undefined): (() => void) => {
   const escape = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
-    // after the field's own handler (delegated to the document, so a task later): it folds the field and lets the
-    // focus go, unless the app keeps Escape
+    if (event.key !== "Escape" || event.target !== field()) return;
+    // after the field's own handler, which the document runs too: unless the app keeps Escape, the field is left
     setTimeout(() => {
-      if (document.activeElement === input) return;
-      if (document.activeElement === document.body || document.activeElement === null) trigger.focus();
+      const button = trigger();
+      if (!button || button.getClientRects().length === 0) return;
+      if (document.activeElement === document.body || document.activeElement === null) button.focus();
     });
   };
-  input.addEventListener("keydown", escape);
-  input.addEventListener("blur", () => setTimeout(() => input.removeEventListener("keydown", escape)), { once: true });
-  return true;
+  document.addEventListener("keydown", escape);
+  return () => document.removeEventListener("keydown", escape);
 };

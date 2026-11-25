@@ -106,7 +106,9 @@ beforeAll(async () => {
   const entry = resolve(import.meta.dir, "page-search.fixture.ts");
   const bundle = await Bun.build({
     entrypoints: [entry],
-    files: { [entry]: `import { openPageSearch } from "../browser/page-search"; window.openPageSearch = openPageSearch;` },
+    files: {
+      [entry]: `import { openPageSearch, returnPageSearchFocus } from "../browser/page-search"; Object.assign(window, { openPageSearch, returnPageSearchFocus });`,
+    },
     target: "browser",
     format: "iife",
   });
@@ -121,11 +123,12 @@ afterAll(async () => {
 
 declare global {
   interface Window {
-    openPageSearch?: (trigger: HTMLElement) => boolean;
+    openPageSearch?: () => boolean;
+    returnPageSearchFocus?: (trigger: () => HTMLElement | undefined) => () => void;
   }
 }
 
-/** The real page from Layout's server HTML with the global stylesheet; the phone bar's button runs `openPageSearch`. */
+/** The real page from Layout's server HTML with the global stylesheet; the phone bar's button gets its deeds below. */
 const open = async (ui: "v1" | "v2" = "v2"): Promise<Page> => {
   const response = await server.request(`/app/phone?ui=${ui}`);
   expect(response.status).toBe(200);
@@ -187,8 +190,11 @@ test("the phone bar's search opens the head's field over the head, and Escape gi
       }),
     );
     const button = page.getByRole("button", { name: "Search", exact: true });
+    // what the hydrated button does: a tap opens the page's search, and Escape there comes back to the button
     await button.evaluate((trigger) => {
-      if (trigger instanceof HTMLElement) trigger.addEventListener("click", () => window.openPageSearch?.(trigger));
+      if (!(trigger instanceof HTMLElement)) return;
+      trigger.addEventListener("click", () => window.openPageSearch?.());
+      window.returnPageSearchFocus?.(() => trigger);
     });
     await button.click();
     await settled(page);
@@ -201,6 +207,11 @@ test("the phone bar's search opens the head's field over the head, and Escape gi
     expect(await button.evaluate((trigger) => document.activeElement === trigger)).toBe(true);
     expect(await search.inputValue()).toBe("Brandt");
     expect((await head(page)).field[0]).toBeLessThanOrEqual(1);
+    // the field focused another way (an app's shortcut): Escape still comes back to the bar's button, never to the page
+    await search.focus();
+    await page.keyboard.press("Escape");
+    await settled(page);
+    expect(await button.evaluate((trigger) => document.activeElement === trigger)).toBe(true);
   } finally {
     await page.close();
   }
