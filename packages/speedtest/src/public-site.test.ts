@@ -62,9 +62,10 @@ test("standalone production page serves localized SSR and local assets without c
       expect(response.headers.get("content-security-policy")).toContain("font-src 'self' data:");
       const html = await response.text();
       expect(html).toContain(`<html lang="${locale}">`);
-      expect(html).toContain(`<h1>${title}</h1>`);
+      expect(html).toContain(`<body class="k2-ui">`);
+      expect(html).toContain(`data-k2-part="Text" data-type="body" >${title}</span>`);
       expect(html).toContain(action!);
-      expect(html).toContain("tools-speedtest-terminal");
+      expect(html).toContain(`data-k2-part="Prose"`);
       expect(html).toContain("node speedtest.mjs");
       expect(html).not.toContain("cld tools speedtest --server");
       expect(html).toContain(`rel="canonical" href="${origin}/${locale}"`);
@@ -75,7 +76,7 @@ test("standalone production page serves localized SSR and local assets without c
       expect(css.status).toBe(200);
       expect(css.headers.get("content-type")).toContain("text/css");
       expect(css.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
-      expect(await css.text()).toContain("tools-speedtest-measure");
+      expect(await css.text()).toContain(".k2-ui");
       const prefix = html.match(/data-ssr-assets="([^"<>]+)"/)?.[1];
       expect(prefix).toMatch(/^\/_ssr\/[a-z0-9]+$/);
       const scripts = [...html.matchAll(/data-id="([a-z0-9]+)"/g)].map((match) => `${prefix}/${match[1]}.js`);

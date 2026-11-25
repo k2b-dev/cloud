@@ -5,6 +5,12 @@ export const speedTestMessages = i18n.define({
   messages: {
     en: {
       copyFailed: "Could not copy. Try the copy button again, or select the terminal text.",
+      copied: "Result copied",
+      downloadNote: "From the server to your device",
+      jitterValue: ({ value }: { value: string }) => `Jitter ${value} ms`,
+      runtime: "Run with",
+      command: "Command",
+      about: "Notes",
       phasePing: "Pinging server",
       phaseDownload: "Measuring download",
       phaseUpload: "Measuring upload",
@@ -64,6 +70,12 @@ export const speedTestMessages = i18n.define({
     },
     de: {
       copyFailed: "Kopieren fehlgeschlagen. Versuche es erneut oder markiere den Text im Terminal.",
+      copied: "Ergebnis kopiert",
+      downloadNote: "Vom Server zu deinem Gerät",
+      jitterValue: ({ value }: { value: string }) => `Jitter ${value} ms`,
+      runtime: "Ausführen mit",
+      command: "Befehl",
+      about: "Hinweise",
       phasePing: "Ping wird gemessen",
       phaseDownload: "Download wird gemessen",
       phaseUpload: "Upload wird gemessen",
