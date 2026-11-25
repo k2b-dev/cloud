@@ -143,7 +143,10 @@ export function Fixture() {
               <Check label="Einige Positionen" checked="mixed" onChange={() => undefined} />
             </Field>
             <Field name="contact" label="Ansprechperson">
-              <Input placeholder="Wer nimmt ab?" />
+              <Input placeholder="Wer nimmt ab?" autocomplete="name" maxLength={80} spellcheck={false} autocapitalize="words" />
+            </Field>
+            <Field name="code" label="Abholcode">
+              <Input type="password" autocomplete="one-time-code" inputMode="numeric" maxLength={6} />
             </Field>
             <Field name="note" label="Notiz">
               <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
