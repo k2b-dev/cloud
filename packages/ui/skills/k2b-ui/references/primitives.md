@@ -283,6 +283,13 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
 - `DateInput`: `value` (a date key such as "2026-12-15", or as the locale

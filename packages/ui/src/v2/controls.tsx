@@ -199,6 +199,19 @@ export type InputProps = {
   end?: JSX.Element;
   /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
   disabled?: boolean;
+  /**
+   * What the browser and a password manager may fill in, such as `username`, `current-password`, `new-password`,
+   * `one-time-code` or `off`. It stands in the server's markup, where a password manager reads it.
+   */
+  autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
+  /** The most characters the field takes. */
+  maxLength?: number;
+  /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
+  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
+  spellcheck?: boolean;
+  /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
+  autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -235,6 +248,12 @@ export const Input = (props: InputProps) => {
     "aria-describedby": field?.described,
     required: field?.required || undefined,
     disabled: props.disabled,
+    // written as attributes, so the first markup from the server already carries them (password managers read it)
+    autocomplete: props.autocomplete,
+    maxlength: props.maxLength,
+    inputmode: props.inputMode,
+    spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
+    autocapitalize: props.autocapitalize,
   });
   return (
     <span
