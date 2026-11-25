@@ -177,7 +177,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               head: box('.k2-ws-main > [data-slot="head"] > .k2-bar').height,
               status: box('[data-k2-part="StatusRow"]').height,
               // the plain bar of the reader (there only while something is open)
-              bar: document.querySelector(".k2-pane[data-detail]") ? box(".k2-pane[data-detail] .k2-scroll > .k2-bar").height : 0,
+              bar: document.querySelector(".k2-pane[data-detail]")
+                ? box('.k2-pane[data-detail] > [data-slot="status"] > .k2-bar').height
+                : 0,
               rows: rows.map((row) => row.getBoundingClientRect().height),
               // the long title of the row of three lines stays on its line and ends in "…"
               title: (() => {
@@ -243,6 +245,41 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
           }
           expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // The line of state of an open entry ("3 Nachrichten · Wartet auf Antwort · Tag") is the detail's `status`: a bar of
+  // 40 px right under the head that stays there while the message scrolls (mockup mail.html: 117-157).
+  for (const width of [1440, 390])
+    test(
+      `${width} px: a Bar as a pane's status is 40 px under the head and stays while the pane scrolls`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          // a short window, so the message is longer than its column and scrolls
+          await page.setViewportSize({ width, height: 420 });
+          await settled(page);
+          const place = () =>
+            page.evaluate(() => {
+              const pane = document.querySelector(".k2-pane[data-detail]")!;
+              const head = pane.querySelector(':scope > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+              const bar = pane.querySelector(':scope > [data-slot="status"] > .k2-bar')!.getBoundingClientRect();
+              return { height: Math.round(bar.height), gap: Math.round(bar.top - head.bottom), top: Math.round(bar.top) };
+            });
+          const before = await place();
+          expect(before).toMatchObject({ height: heights.bar, gap: 0 });
+          await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTo({ top: 200 }));
+          await settled(page);
+          expect(await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTop)).toBeGreaterThan(0);
+          expect(await place()).toEqual(before);
+          // a status row above a list keeps its 52 px
+          expect(Math.round((await page.locator('[data-k2-part="StatusRow"]').first().boundingBox())?.height ?? 0)).toBe(
+            width < textEdge.phoneBelow ? 0 : heights.status,
+          );
         } finally {
           await page.close();
         }
@@ -426,7 +463,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 
-  // A bar in the flow of a column with a line of things (the state of a conversation): below 480 px of its column it
+  // A bar with a line of things (the state of a conversation, in the pane's status): below 480 px of its column it
   // wraps instead of cutting, one line stays 40 px on both sides of 480, and only a second line makes it higher.
   // 480 and 479: a column of the wide window; 300: a phone, where the open detail is the whole page
   for (const column of [480, 479, 300])
@@ -437,7 +474,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         try {
           if (column >= 400) await narrowColumn(page, ".k2-pane[data-detail]", column);
           const found = await page.evaluate(() => {
-            const bar = document.querySelector(".k2-pane[data-detail] > .k2-scroll > .k2-bar")!;
+            const bar = document.querySelector('.k2-pane[data-detail] > [data-slot="status"] > .k2-bar')!;
             const box = bar.getBoundingClientRect();
             const style = getComputedStyle(bar);
             const inner = {

@@ -591,7 +591,7 @@
   gap: 8px;
 }
 /* The places of a workspace and a pane are slots without a box of their own; a bar reads its height from its slot.
-   head 56, status row 52, a plain bar 40. */
+   head 56, status row 52, a plain bar 40 (also in a pane's status place: the line of state of a detail). */
 .k2-ui .k2-slot {
   display: contents;
 }
@@ -599,7 +599,6 @@
   height: var(--k2-h-head);
   gap: 12px;
 }
-.k2-ui [data-slot="status"] > .k2-bar,
 .k2-ui .k2-bar[data-status-row] {
   height: var(--k2-h-status);
 }
@@ -3112,15 +3111,15 @@
      its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
      line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
      second line makes it higher. */
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
     height: auto;
     min-height: var(--k2-h-bar);
     padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
     flex-wrap: wrap;
     row-gap: 8px;
   }
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start:has(> .k2-inline),
+  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start > .k2-inline {
     display: contents;
   }
 }

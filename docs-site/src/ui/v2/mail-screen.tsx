@@ -273,30 +273,32 @@ export const MailScreen = (props: { open?: boolean }) => (
               }
             />
           }
+          status={
+            <Bar
+              start={
+                <Inline>
+                  <Text type="meta">3 Nachrichten</Text>
+                  <Chip status="warn">Wartet auf Antwort</Chip>
+                  <Chip tag color={teal}>
+                    Angebot
+                  </Chip>
+                  <Chip icon="link" href="#verknuepft">
+                    1 verknüpft
+                  </Chip>
+                  <Chip icon="plus" onClick={() => undefined}>
+                    Tag
+                  </Chip>
+                </Inline>
+              }
+              end={
+                <>
+                  <Avatar name="Ada Renz" color="#be123c" />
+                  <Text type="meta">Ada Renz liest mit</Text>
+                </>
+              }
+            />
+          }
         >
-          <Bar
-            start={
-              <Inline>
-                <Text type="meta">3 Nachrichten</Text>
-                <Chip status="warn">Wartet auf Antwort</Chip>
-                <Chip tag color={teal}>
-                  Angebot
-                </Chip>
-                <Chip icon="link" href="#verknuepft">
-                  1 verknüpft
-                </Chip>
-                <Chip icon="plus" onClick={() => undefined}>
-                  Tag
-                </Chip>
-              </Inline>
-            }
-            end={
-              <>
-                <Avatar name="Ada Renz" color="#be123c" />
-                <Text type="meta">Ada Renz liest mit</Text>
-              </>
-            }
-          />
           <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
             Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.
           </Notice>

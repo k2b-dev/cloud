@@ -127,19 +127,22 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               }
             />
           }
+          // the line of state stays under the head while the message scrolls
+          status={
+            <Bar
+              start={
+                <Inline>
+                  <Text type="meta">3 Nachrichten</Text>
+                  <Chip status="warn">Wartet auf Antwort</Chip>
+                  <Chip icon="plus" onClick={() => undefined}>
+                    Tag
+                  </Chip>
+                </Inline>
+              }
+              end={<Avatar name="Ada Renz" />}
+            />
+          }
         >
-          <Bar
-            start={
-              <Inline>
-                <Text type="meta">3 Nachrichten</Text>
-                <Chip status="warn">Wartet auf Antwort</Chip>
-                <Chip icon="plus" onClick={() => undefined}>
-                  Tag
-                </Chip>
-              </Inline>
-            }
-            end={<Avatar name="Ada Renz" />}
-          />
           <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
             Brandt liefert 14 Eichenplatten in KW 49.
           </Notice>

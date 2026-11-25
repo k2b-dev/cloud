@@ -151,19 +151,21 @@ export default function MailScreen() {
               }
             />
           }
+          status={
+            <Bar
+              start={
+                <Inline>
+                  <Text type="meta">3 Nachrichten</Text>
+                  <Chip status="warn">Wartet auf Antwort</Chip>
+                  <Chip tag color="#0f766e">
+                    Angebot
+                  </Chip>
+                </Inline>
+              }
+              end={<Avatar name="Ada Renz" color="#be123c" />}
+            />
+          }
         >
-          <Bar
-            start={
-              <Inline>
-                <Text type="meta">3 Nachrichten</Text>
-                <Chip status="warn">Wartet auf Antwort</Chip>
-                <Chip tag color="#0f766e">
-                  Angebot
-                </Chip>
-              </Inline>
-            }
-            end={<Avatar name="Ada Renz" color="#be123c" />}
-          />
           <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
             Brandt liefert 14 Eichenplatten in KW 49 und braucht bis Freitag eine Bestätigung.
           </Notice>

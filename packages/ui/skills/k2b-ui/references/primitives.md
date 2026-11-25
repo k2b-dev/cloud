@@ -34,7 +34,9 @@ The working surface of an app: one per screen.
 
 A column that scrolls, with no padding: everything in it reaches both edges.
 
-- `head` (a `Bar` or `Tabs`), `status` (a `StatusRow`), `label`.
+- `head` (a `Bar` or `Tabs`), `status` (what stays under the head while
+  the column scrolls: a `StatusRow` of 52 px above a list, or a `Bar` of 40 px
+  with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line.
 - `detail`: the reader beside a list. What is open belongs in the address:
@@ -74,11 +76,13 @@ from the place: 56 as a head, 52 as a status row, 40 inside a pane. Put
 `Text`, `Tabs`, `RecordHead`, `Inline`, `Button`s, `Avatar` in it. Text in
 a bar is cut to one line. Inside a pane a bar stands at the top (a line of
 state under the head, as in `mail.tsx`) or directly after the fields it
-serves (the buttons of a form or of a reply), never between entries. In a
+serves (the buttons of a form or of a reply), never between entries. A line
+of state that must stay while the reader scrolls goes into the pane's
+`status` instead (40 px, as in `mail.tsx`). In a
 column narrower than 480 px, a bar inside a pane whose `start` is an
 `Inline` wraps: its things and its `end` flow as one line, one line stays
-40 px, and only a second line makes the bar higher. A head and a status row
-keep their height.
+40 px, and only a second line makes the bar higher; a bar in `status` too.
+A head and a status row keep their height.
 
 ### Band
 
