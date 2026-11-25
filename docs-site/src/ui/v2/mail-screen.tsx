@@ -169,6 +169,9 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
   return (
     <Workspace
       sidebarLabel="Breite der Seitenleiste"
+      // the reader opens beside the list: the sidebar keeps room for it, and its place says so while none is open
+      detail
+      detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt" }}
       primary={{ label: "Neu", icon: "pencil" }}
       sidebar={
         <Nav

@@ -6,6 +6,7 @@
 import { isFocusFromKeyboard } from "@ui-sdk/core";
 import { alertDialog as alertDialogPrimitive, createConfirm } from "@ui-sdk/core/alert-dialog";
 import { dialog as dialogPrimitive } from "@ui-sdk/core/dialog";
+import { drawer as drawerPrimitive } from "@ui-sdk/core/drawer";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
 import type { JSX } from "solid-js";
@@ -86,6 +87,35 @@ export function useDialog(options: () => DialogOptions = () => ({})): DialogPart
     ),
     Title: slotComponent(handle, "title", "h2"),
     Description: slotComponent(handle, "description", "p"),
+    Close: slotComponent(handle, "close", "button"),
+  };
+}
+
+export type DrawerParts = Omit<DialogParts, "Description">;
+
+/**
+ * A modal panel from an edge of the window: focus moves in and stays in, Escape, a press beside it and a swipe back
+ * toward its edge close it, focus returns to the trigger. Core's drawer.
+ */
+export type DrawerOptions = OverlayOptions & {
+  /** The edge it comes from; `"start"` and `"end"` follow the writing direction. */
+  side?: "start" | "end" | "top" | "bottom";
+};
+
+export function useDrawer(options: () => DrawerOptions = () => ({})): DrawerParts {
+  const t = useBehaviorMessages();
+  const handle = usePrimitive(drawerPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));
+  const Backdrop = popupComponent(handle, "backdrop");
+  const Content = popupComponent(handle, "content");
+  return {
+    Trigger: slotComponent(handle, "trigger", "button"),
+    Popup: (props) => (
+      <>
+        <Backdrop {...(props.backdrop ?? {})} />
+        <Content {...props} backdrop={undefined} />
+      </>
+    ),
+    Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
   };
 }
