@@ -234,8 +234,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
   return (
     <Workspace
       sidebar={<SpacesNav nav={nav} />}
-      detail
-      detailEmpty={{ icon: "click", text: t.selectItemForDetails }}
+      // Design pass (25.11.): a detail is useful or absent; nothing stands in its place while no item is open.
       head={
         <Bar
           start={

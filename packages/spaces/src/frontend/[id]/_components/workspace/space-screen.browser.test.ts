@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchHookMs, settled } from "../../../../../../ui/test/browser";
 import { createScreenBrowser, layoutProblems, narrow, phone, type View, wide } from "../../../../../test/v2-screen-browser";
-import { type SpaceFixtureState, spaceScreenProps } from "./space-screen.fixture";
+import { SPACE_NOW, type SpaceFixtureState, spaceScreenProps } from "./space-screen.fixture";
 
 // A Space on v2: its list, table and board, the filters in the address, the open item beside the list, ticking a task
 // off and starting a new one. The test stands in for the server: the page renders invented data, the API answers from it.
@@ -15,6 +15,7 @@ const open = (view: View, address: string, state: SpaceFixtureState = "usual") =
   const seen: Seen = { views: [], completed: [] };
   const page = screen.open(view, address, {
     pages: ["/app/spaces/Space1"],
+    now: SPACE_NOW,
     state,
     api: (url, route) => {
       if (url.pathname === "/api/spaces/workspace/view") {

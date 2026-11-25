@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchHookMs, settled } from "../../../ui/test/browser";
 import { createScreenBrowser, layoutProblems, narrow, phone, type View, wide } from "../../test/v2-screen-browser";
-import { overviewWork } from "./overview.fixture";
+import { OVERVIEW_NOW, overviewWork } from "./overview.fixture";
 
 // The Spaces home on v2: the work of a view, what changed lately, the Spaces in the sidebar and a new Space. The test
 // stands in for the server: the page renders invented data, and the overview API answers from the same sample.
@@ -19,6 +19,7 @@ const created: unknown[] = [];
 const open = (view: View, address = "/app/spaces", state = "") =>
   screen.open(view, address, {
     pages: ["/app/spaces", "/app/spaces/SpaceN1"],
+    now: OVERVIEW_NOW,
     state,
     api: (url, route) => {
       if (url.pathname === "/api/spaces/overview/work") return work(url.searchParams.get("view") ?? "mine");

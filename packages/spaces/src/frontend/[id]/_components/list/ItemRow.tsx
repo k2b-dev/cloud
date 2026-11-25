@@ -1,3 +1,4 @@
+import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Check, Row } from "@k2b/ui/v2";
@@ -145,7 +146,8 @@ export default function ItemRow(props: ItemRowProps) {
     const tags = props.item.tags ?? [];
     return [
       status()?.name,
-      !isCompleted() && isTaskOverdue(props.item, props.dateConfig) ? t.overdue : undefined,
+      // Grouped by day, the "Overdue" group already says it.
+      !props.agenda && !isCompleted() && isTaskOverdue(props.item, props.dateConfig) ? t.overdue : undefined,
       priorityLabel(),
       props.item.estimatedDurationMinutes !== null ? formatEstimate(props.item.estimatedDurationMinutes) : undefined,
       props.item.activeBlockerCount > 0 ? t.blockedByCount({ count: props.item.activeBlockerCount }) : undefined,
@@ -162,10 +164,30 @@ export default function ItemRow(props: ItemRowProps) {
       .join(" · ");
   };
   const blocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
+  const person = () => {
+    const claim = props.item.claim;
+    const first = props.item.assignees?.[0];
+    const who = claim
+      ? { name: claim.displayName, id: claim.actor.kind === "user" ? claim.actor.id : null, hash: claim.avatarHash }
+      : first
+        ? { name: first.displayName, id: first.kind === "user" ? first.id : null, hash: first.avatarHash }
+        : null;
+    return who ? { name: who.name, image: who.id && who.hash ? cloudAvatarSource(who.id, who.hash) : undefined } : undefined;
+  };
   return (
     <Row
+      // The person who works on the task, else the first one assigned, leads the row; without one, its kind in the status colour.
+      avatar={person()}
       icon={
-        isEvent() ? "calendar-event" : props.item.priority ? priorityIcon[props.item.priority] : isCompleted() ? "circle-check" : "circle"
+        person()
+          ? undefined
+          : isEvent()
+            ? "calendar-event"
+            : props.item.priority
+              ? priorityIcon[props.item.priority]
+              : isCompleted()
+                ? "circle-check"
+                : "circle"
       }
       color={status()?.color ?? undefined}
       lines={details() ? [props.item.title, details()] : [props.item.title]}

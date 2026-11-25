@@ -83,7 +83,7 @@ export const createScreenBrowser = (entry: string) => {
     `<body class="k2b-ui k2-ui"><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`;
 
   /** Opens an address; `pages` are the paths the harness answers as a page, `api` answers everything under `/api/`. */
-  const open = async (view: View, address: string, options: { pages: string[]; api?: Api; locale?: string; state?: string }) => {
+  const open = async (view: View, address: string, options: { pages: string[]; api?: Api; locale?: string; state?: string; now?: string }) => {
     const context: BrowserContext = await browser.newContext({
       viewport: { width: view.width, height: view.height },
       deviceScaleFactor: 1,
@@ -93,6 +93,15 @@ export const createScreenBrowser = (entry: string) => {
       colorScheme: "light",
       timezoneId: "Europe/Berlin",
     });
+    // Only Date stands at the fixture time, as the server rendered it; timers and animation frames stay real.
+    if (options.now)
+      await context.addInitScript((at: number) => {
+        const Real = Date;
+        window.Date = new Proxy(Real, {
+          construct: (target, args) => new target(...((args.length > 0 ? args : [at]) as [number])),
+          get: (target, key) => (key === "now" ? () => at : Reflect.get(target, key)),
+        });
+      }, Date.parse(options.now));
     const tab = await context.newPage();
     tab.setDefaultTimeout(10_000);
     const errors = pageErrors(tab);

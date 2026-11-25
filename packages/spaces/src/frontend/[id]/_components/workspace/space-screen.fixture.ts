@@ -83,6 +83,45 @@ const usualItems: SpaceItem[] = [
   }),
   item("Item07", "Col003", "Check the September delivery notes", { activeBlockerCount: 1, priority: "urgent" }),
   item("Item10", "Col004", "Sweep ramp 2", { assignees: [robin] }),
+  item("Item11", "Col001", "Order pallet wrap for hall 1", {
+    tags: [tags[1]!],
+    assignees: [kim],
+    deadline: "2026-10-15",
+    deadlineAllDay: true,
+  }),
+  item("Item12", "Col001", "Call the forwarder about the late truck", {
+    priority: "urgent",
+    assignees: [robin],
+    deadline: "2026-10-15T11:00:00+02:00",
+  }),
+  item("Item13", "Col002", "Relabel returns shelf C", {
+    tags: [tags[0]!],
+    assignees: [robin],
+    estimatedDurationMinutes: 120,
+    deadline: "2026-10-16",
+    deadlineAllDay: true,
+  }),
+  item("Item14", "Col001", "Supplier visit Brandt", {
+    startsAt: "2026-10-16T10:00:00+02:00",
+    endsAt: "2026-10-16T11:30:00+02:00",
+    assignees: [kim],
+  }),
+  item("Item15", "Col003", "Check fire extinguisher dates", { tags: [tags[0]!], deadline: "2026-10-19", deadlineAllDay: true }),
+  item("Item16", "Col001", "Plan the winter routes", {
+    tags: [tags[2]!],
+    priority: "high",
+    assignees: [kim, robin],
+    deadline: "2026-10-21",
+    deadlineAllDay: true,
+  }),
+  item("Item17", "Col002", "Count stock on shelf D", { tags: [tags[0]!], assignees: [kim], deadline: "2026-10-17", deadlineAllDay: true }),
+  item("Item18", "Col001", "Renew the forklift lease"),
+  item("Item19", "Col001", "Team breakfast", {
+    startsAt: "2026-10-20T08:30:00+02:00",
+    endsAt: "2026-10-20T09:30:00+02:00",
+    location: "Canteen",
+  }),
+  item("Item20", "Col004", "Compare film prices", { tags: [tags[1]!], assignees: [kim] }),
 ];
 
 const longTitle = "Annual inventory of the north warehouse including the cold store, the returns area and every outside shelf";
