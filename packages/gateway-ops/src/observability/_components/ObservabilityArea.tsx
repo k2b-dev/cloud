@@ -15,7 +15,7 @@ import { type AreaMessages, areaMessages } from "./area-messages";
 export const OBSERVABILITY_SECTIONS = [
   "home",
   "logs",
-  "jobs",
+  "runs",
   "workflows",
   "capabilities",
   "telemetry",
@@ -32,7 +32,7 @@ export type ObservabilitySection = (typeof OBSERVABILITY_SECTIONS)[number];
 export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = {
   home: "/admin/observability",
   logs: "/admin/observability/logs",
-  jobs: "/admin/observability/jobs",
+  runs: "/admin/observability/runs",
   workflows: "/admin/observability/workflows",
   capabilities: "/admin/observability/capabilities",
   telemetry: "/admin/observability/telemetry",
@@ -48,7 +48,7 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
 const SECTION_ICON: Record<ObservabilitySection, string> = {
   home: "ti ti-dashboard",
   logs: "ti ti-file-text",
-  jobs: "ti ti-hourglass",
+  runs: "ti ti-player-play",
   workflows: "ti ti-binary-tree",
   capabilities: "ti ti-bolt",
   telemetry: "ti ti-activity",
@@ -63,7 +63,7 @@ const SECTION_ICON: Record<ObservabilitySection, string> = {
 
 const GROUPS: { title?: keyof AreaMessages; sections: ObservabilitySection[] }[] = [
   { sections: ["home"] },
-  { title: "groupView", sections: ["logs", "jobs", "workflows", "capabilities", "telemetry", "metrics", "deliveries"] },
+  { title: "groupView", sections: ["logs", "runs", "workflows", "capabilities", "telemetry", "metrics", "deliveries"] },
   { title: "groupServices", sections: ["gateway", "infrastructure"] },
   { title: "groupSetup", sections: ["alerts", "healthCheck", "retention"] },
 ];

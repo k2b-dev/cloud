@@ -15,7 +15,9 @@ import infrastructureApiRoutes from "./observability/infrastructure/api";
 import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
-import jobsPage from "./observability/jobs/page";
+import runsApiRoutes from "./observability/runs/api";
+import { legacyDeliveriesHref, legacyJobsHref } from "./observability/runs/legacy";
+import runsPage from "./observability/runs/page";
 import loggingApiRoutes from "./observability/logs/api";
 import logsPage from "./observability/logs/page";
 import loggingWidgetRoutes from "./observability/logs/widgets";
@@ -60,6 +62,8 @@ const moved = (path: string) => (c: Context) => c.redirect(`${path}${new URL(c.r
 
 export const router = new Hono<AuthContext>()
   .use("*", (c, next) => (c.req.method === "GET" || c.req.method === "HEAD" ? withObservabilityRead(c.req.raw.signal, next) : next()))
+  .use("/admin/observability/runs", middleware.noTransform())
+  .use("/admin/observability/runs/*", middleware.noTransform())
   .use("/admin/observability/jobs", middleware.noTransform())
   .use("/admin/observability/jobs/*", middleware.noTransform())
   .use("/admin/observability/nats/sync", middleware.noTransform())
@@ -90,7 +94,9 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/gateway/routes", auth.requireRole("admin", ssr.access), ...gatewayPage)
   .get("/admin/observability", auth.requireRole("admin", ssr.access), ...observabilityOverviewPage)
   .get("/admin/observability/logs", auth.requireRole("admin", ssr.access), ...logsPage)
-  .get("/admin/observability/jobs", auth.requireRole("admin", ssr.access), ...jobsPage)
+  .get("/admin/observability/runs", auth.requireRole("admin", ssr.access), ...runsPage)
+  // Jobs became the runs list; its address keeps its filters there.
+  .get("/admin/observability/jobs", auth.requireRole("admin", ssr.access), (c) => c.redirect(legacyJobsHref(new URL(c.req.url).searchParams), 302))
   .post("/admin/observability/jobs/run-now", auth.requireRole("admin", ssr.access), runScheduleNowAction)
   .get("/admin/observability/telemetry", auth.requireRole("admin", ssr.access), ...telemetryPage)
   .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
@@ -108,7 +114,17 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/nats/access", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats-access"))
   .get("/admin/observability/nats/sync", auth.requireRole("admin", ssr.access), ...syncPage)
   .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
-  .get("/admin/observability/deliveries", auth.requireRole("admin", ssr.access), ...notificationsPage)
+  // Deliveries are runs now; the notification definitions and earlier notifications stay on this page.
+  .get(
+    "/admin/observability/deliveries",
+    auth.requireRole("admin", ssr.access),
+    async (c, next) => {
+      const target = legacyDeliveriesHref(new URL(c.req.url).searchParams);
+      if (target) return c.redirect(target, 302);
+      await next();
+    },
+    ...notificationsPage,
+  )
   .get("/admin/observability/health-check", auth.requireRole("admin", ssr.access), ...healthCheckPage)
   .get("/admin/observability/retention", auth.requireRole("admin", ssr.access), ...retentionPage)
   .get("/metrics", auth.requireRole("*"), metricsEndpoint)
@@ -125,6 +141,7 @@ export const router = new Hono<AuthContext>()
   .route("/api/gateway/nats", natsApiRoutes)
   .route("/api/gateway/infrastructure", infrastructureApiRoutes)
   .route("/api/gateway/workflows", workflowsApiRoutes)
+  .route("/api/gateway/runs", runsApiRoutes)
   .route("/api/gateway/capabilities", capabilitiesApiRoutes)
   .route("/api/gateway", apiRoutes);
 
