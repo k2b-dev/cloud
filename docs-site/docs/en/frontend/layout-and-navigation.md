@@ -849,6 +849,36 @@ scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
 when the page owns its content insets; it replaces the default shell padding.
 
+### An admin page on v2
+
+`AdminLayout ui="v2"` (provisional, like `@k2b/ui/v2`) is the admin shell for a
+page built with `@k2b/ui/v2`. The v1 workspace and admin sidebar stay away; the
+page's island returns one `AdminWorkspace` (from `@k2b/cloud/ssr/islands`) in
+place of its own `Workspace`. Build its `nav` on the server with
+`adminNavigation(c)` from `@k2b/cloud/ssr` and pass it to the island as plain
+data:
+
+```tsx
+// page.tsx (server)
+<AdminLayout c={c} ui="v2" title={t.storage}>
+  <StorageScreen nav={adminNavigation(c, sections)} data={data} />
+</AdminLayout>
+
+// StorageScreen.tsx (island)
+<AdminWorkspace nav={props.nav} head={<Bar start={<Text type="body">{t().storage}</Text>} />}>
+  <Pane label={t().storage}>…</Pane>
+</AdminWorkspace>
+```
+
+The admin bar is the same as the v1 sidebar: the same groups, links, order and
+counts, the open page current. An administration area passes its sections as
+the second argument (`{ label, icon, href, current?, dot? }`); they stand one
+level in under the area's entry, so the way to the other admin pages stays in
+the sidebar. On a tablet the bar becomes the workspace's drawer where it does
+not fit; on the phone it leaves the page and the phone bar's title opens it as
+the shell's menu, from the first render. `scroll`, `contentClass` and `ownMain`
+do not apply to a v2 admin page.
+
 The admin sidebar shows the overview, then **Set up** (base settings, storage,
 sign-in, outgoing mail, email templates, announcements, AI), then
 **Operations** (apps, app bar, maintenance mode, Observability, People), then

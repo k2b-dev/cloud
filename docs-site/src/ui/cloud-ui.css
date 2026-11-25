@@ -95,6 +95,12 @@
     border-radius: 0;
   }
 }
+/* A recipe of the skill k2b-ui on its own page: the whole viewport, as its pictures in the skill are drawn. */
+.ui-v2-recipe {
+  position: fixed;
+  inset: 0;
+  display: flex;
+}
 /* A screen on its own page: the frame of the Cloud shell from the mockup (rail 56, card inset 8; phone bar 52). */
 .ui-v2-screen {
   position: fixed;
