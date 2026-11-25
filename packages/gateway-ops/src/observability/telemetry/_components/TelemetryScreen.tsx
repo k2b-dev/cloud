@@ -157,7 +157,7 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
                   },
                   {
                     title: t().errorRate,
-                    width: { min: 140, default: 150 },
+                    width: { min: 170, default: 170 },
                     align: "end",
                     sort: sortHref("errorRate"),
                     cell: (row) => (row.problem ? <Text tone="bad">{row.errorRate}</Text> : row.errorRate),

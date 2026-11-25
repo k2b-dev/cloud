@@ -225,7 +225,7 @@ export default function NatsScreen(props: NatsScreenProps) {
                         align: "end",
                         cell: (row) => (row.deadLetters ? toned(row.deadLetters) : row.messages),
                       },
-                      { title: t().replicas, cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas) },
+                      { title: t().replicas, cell: (row) => (row.replicaState ? toned(row.replicaState) : row.replicas) },
                     ]
                   : [
                       {
