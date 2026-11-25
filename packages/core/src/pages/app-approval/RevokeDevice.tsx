@@ -236,7 +236,7 @@ export default function RevokeDevice(props: {
       remember(found);
       await cancelPending(found.changeId);
     } catch {
-      toast(t().cancelFailed, { status: "bad" });
+      toast(t().cancelToast, { status: "bad" });
     }
   };
   /** Forgets the saved request only once Cloud withdrew it; otherwise a reload of the page continues it. */
@@ -247,7 +247,7 @@ export default function RevokeDevice(props: {
     } catch (cause) {
       // Already decided or expired: nothing is left to withdraw.
       if (cause instanceof ApprovalError && (cause.status === 404 || cause.status === 409)) remember(undefined, changeId);
-      else toast(t().cancelFailed, { status: "bad" });
+      else toast(t().cancelToast, { status: "bad" });
     }
   };
   const connection = () => setOnline(navigator.onLine);

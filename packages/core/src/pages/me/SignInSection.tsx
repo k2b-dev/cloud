@@ -1,6 +1,6 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
-import { normalizeRedirectTo } from "@k2b/cloud/shared/redirect";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { useLocale } from "@k2b/ui";
 import { Button, confirm, Dialog, Field, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
@@ -32,7 +32,7 @@ export default function SignInSection(props: { userId: string; provider: UserPro
   // ── What happens after the password changed ──
   /** A message the person must read before the page goes on, with the deed that follows. */
   const [notice, setNotice] = createSignal<{ text: string; confirm: string; next: () => void } | null>(null);
-  const signedOutElsewhere = () => toast(t().passwordChangedSignedOut, { status: "ok" });
+  const signedOutElsewhere = () => toast(t().passwordChangedToast, { status: "ok" });
   // Every sign-in ended, this browser's too: sign in again and come back to this page.
   const signInAgain = () =>
     setNotice({
@@ -130,9 +130,7 @@ export default function SignInSection(props: { userId: string; provider: UserPro
 
   // ── Sign out, delete ──
   const signOut = () =>
-    void signOutCurrentSession(props.userId, t().signOutFailed).catch((error) =>
-      toast(error instanceof Error ? error.message : t().signOutFailed, { status: "bad" }),
-    );
+    void signOutCurrentSession(props.userId, t().signOutFailed).catch(() => toast(t().signOutFailedToast, { status: "bad" }));
   const remove = async () => {
     if (!(await confirm({ title: t().deleteAccountTitle, description: t().deleteAccountConfirm, confirm: t().delete, cancel: t().cancel })))
       return;

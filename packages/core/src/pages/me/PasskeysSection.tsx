@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import type { WebAuthnPasskey } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, confirm, Dialog, Empty, Field, Input, Notice, Row, Section, useToast } from "@k2b/ui/v2";
+import { Button, confirm, Dialog, Empty, Field, Input, Notice, Row, Section } from "@k2b/ui/v2";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
@@ -28,7 +28,6 @@ export default function PasskeysSection(props: {
 }) {
   const t = useAccountMessages();
   const locale = useLocale();
-  const toast = useToast();
   const [passkeys, setPasskeys] = createSignal<WebAuthnPasskey[]>(props.initialPasskeys);
   const [open, setOpen] = createSignal(false);
   const [name, setName] = createSignal("");
@@ -36,6 +35,8 @@ export default function PasskeysSection(props: {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [deleting, setDeleting] = createSignal(false);
+  // A deletion that failed stays a fact at the section (the passkey is still active), not a passing toast.
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
   const base = new Date(props.now);
 
   const openCreate = (initialName?: string) => {
@@ -117,6 +118,7 @@ export default function PasskeysSection(props: {
     });
     if (!agreed || deleting()) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       const res = await apiClient.me.passkeys[":id"].$delete({ param: { id: passkey.id } }).catch(() => null);
       if (!res) {
@@ -134,7 +136,7 @@ export default function PasskeysSection(props: {
       if (res.status === 404 && !(await reload())) dropLocally(passkey.id);
       throw new Error(`${deleteFailure(res.status)} ${t().errorCode({ code })}`);
     } catch (cause) {
-      toast(cause instanceof Error ? cause.message : t().passkeyDeleteFailed, { status: "bad" });
+      setDeleteError(cause instanceof Error ? cause.message : t().passkeyDeleteFailed);
     } finally {
       setDeleting(false);
     }
@@ -156,6 +158,7 @@ export default function PasskeysSection(props: {
         summary={t().passkeysDescription}
         actions={[{ label: t().addPasskey, icon: "plus", disabled: busy(), onClick: () => openCreate() }]}
       >
+        <Show when={deleteError()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
         <Show
           when={passkeys().length > 0}
           fallback={

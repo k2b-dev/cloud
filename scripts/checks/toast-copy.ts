@@ -10,8 +10,9 @@ import type { Finding, Rule } from "./rule";
  * the narrowest toast (a 390 px phone: about 260 px of text at 14 px). A toast may skip its title only when the whole
  * message is that short; it then takes the title's type.
  *
- * The toast of `@k2b/ui/v2` (`const toast = useToast()` from `@k2b/ui/v2`) is one sentence by design, with its sign
- * from `status`; it has no title, so its calls are not this contract's.
+ * The toast of `@k2b/ui/v2` (`const toast = useToast()` from `@k2b/ui/v2`) has no description: `toast(message)` shows the
+ * message in the title's place, one sentence with its sign from `status`. It never lacks a title, so it is checked for
+ * that one sentence instead: a second sentence belongs in a `Notice` at its place, or is cut.
  */
 export const TITLE_MAX_WORDS = 3;
 export const TITLE_MAX_CHARACTERS = 32;
@@ -112,6 +113,13 @@ const resolveText = (node: ts.Expression, lookup: (key: string) => string[] | nu
 const words = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 export const isShortLabel = (text: string): boolean => words(text) <= TITLE_MAX_WORDS && text.trim().length <= TITLE_MAX_CHARACTERS;
 
+/** Sentences in a text: a stop, a question or an exclamation mark that ends the text or is followed by a space. */
+export const sentences = (text: string): number =>
+  text
+    .trim()
+    .split(/(?<=[.!?…])\s+(?=\S)/)
+    .filter(Boolean).length;
+
 const toastCall = (node: ts.Node): node is ts.CallExpression => {
   if (!ts.isCallExpression(node)) return false;
   const callee = node.expression;
@@ -169,7 +177,7 @@ const v2Toast = (sourceFile: ts.SourceFile): boolean => {
 export const checkToastCopySource = (file: string, source: string, catalogs: Catalogs): ToastCopyFinding[] => {
   if (!inScope(file) || !/\btoast\b/.test(source)) return [];
   const { sourceFile, findings: unparsed } = parseSource(file, source);
-  if (v2Toast(sourceFile)) return unparsed.map(({ line = 1, message }) => ({ file, line, key: `${file} | parse | ${message}`, message }));
+  const v2 = v2Toast(sourceFile);
   const findings: ToastCopyFinding[] = unparsed.map(({ line = 1, message }) => ({
     file,
     line,
@@ -194,7 +202,17 @@ export const checkToastCopySource = (file: string, source: string, catalogs: Cat
       message,
     });
   const visit = (node: ts.Node): void => {
-    if (toastCall(node)) {
+    if (v2 && toastCall(node) && ts.isIdentifier(node.expression)) {
+      // v2: the message is the title; one sentence
+      const message = node.arguments[0];
+      const long = message ? resolveText(message, lookup).find((text) => text.kind === "text" && sentences(text.value) > 1) : undefined;
+      if (long?.kind === "text")
+        add(
+          message!,
+          "v2-sentences",
+          `Toast message “${long.value}” has more than one sentence; a v2 toast shows one sentence as its title. Keep the outcome and put the rest in a Notice at its place.`,
+        );
+    } else if (toastCall(node)) {
       const message = node.arguments[0];
       const title = option(node, "title");
       const icon = option(node, "iconClass");

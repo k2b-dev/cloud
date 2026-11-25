@@ -7,6 +7,7 @@ import { NewPasswordForm, PasswordResetCompleteForm, PasswordResetRequestForm } 
 export default function PasswordScreen(props: {
   appName: string;
   legalLinks: LegalLinks;
+  localeCookie: string;
   title: string;
   subtitle: string;
   form: { kind: "new"; defaultUsername: string } | { kind: "reset-request" } | { kind: "reset-complete"; token: string };
@@ -22,7 +23,7 @@ export default function PasswordScreen(props: {
     </Button>
   );
   return (
-    <AuthFrame appName={props.appName} title={props.title} legalLinks={props.legalLinks}>
+    <AuthFrame localeCookie={props.localeCookie} appName={props.appName} title={props.title} legalLinks={props.legalLinks}>
       <Switch>
         <Match when={props.form.kind === "new" && props.form}>
           {(form) => (

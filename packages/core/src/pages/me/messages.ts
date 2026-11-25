@@ -487,6 +487,9 @@ export const accountMessages = i18n.define({
       connectAction: "CLI & MCP",
       connectTitle: "Connect the CLI and agents",
       details: "Details",
+      pwaFailedToast: "That did not work, please try again.",
+      passwordChangedToast: "Password changed, and you are signed out everywhere else.",
+      signOutFailedToast: "Signing out did not finish; reload to check your sign-in.",
     },
     de: {
       start: "Start",
@@ -983,6 +986,9 @@ export const accountMessages = i18n.define({
       connectAction: "CLI & MCP",
       connectTitle: "CLI und Agenten verbinden",
       details: "Details",
+      pwaFailedToast: "Das hat nicht geklappt, versuch es bitte erneut.",
+      passwordChangedToast: "Passwort geändert, und du bist überall sonst abgemeldet.",
+      signOutFailedToast: "Das Abmelden wurde nicht abgeschlossen; lade neu, um deine Anmeldung zu prüfen.",
     },
   },
 });

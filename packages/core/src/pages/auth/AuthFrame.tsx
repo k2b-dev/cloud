@@ -1,5 +1,4 @@
 import type { listLegalLinks } from "@k2b/cloud";
-import { LOCALE_COOKIE } from "@k2b/cloud/shared/locale";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Bar, Inline, Menu, Pane, Text, Workspace } from "@k2b/ui/v2";
@@ -15,12 +14,12 @@ export const useAuthMessages = () => {
 };
 
 /** The page's language as a choice in the head; a new language reloads the page in it. */
-const LanguageMenu = () => {
+const LanguageMenu = (props: { cookie: string }) => {
   const locale = useLocale();
   const german = () => locale().toLowerCase().split("-")[0] === "de";
   const choose = (language: string) => {
     if ((language === "de") === german()) return;
-    cookies.writeCookie(LOCALE_COOKIE, language);
+    cookies.writeCookie(props.cookie, language);
     window.location.reload();
   };
   return (
@@ -50,6 +49,8 @@ const LanguageMenu = () => {
 export default function AuthFrame(props: {
   appName: string;
   title: string;
+  /** The name of the language cookie (`LOCALE_COOKIE`), from the server, so the island needs no platform barrel. */
+  localeCookie: string;
   legalLinks: LegalLinks;
   /** Views of the page, such as the account kinds of the sign-in, as the head of the column. */
   tabs?: JSX.Element;
@@ -67,7 +68,7 @@ export default function AuthFrame(props: {
               </Text>
             </Inline>
           }
-          end={<LanguageMenu />}
+          end={<LanguageMenu cookie={props.localeCookie} />}
         />
       }
     >

@@ -131,6 +131,11 @@ export const appApprovalMessages = i18n.define({
       revokeDeviceNamed: ({ name }: { name: string }) => `Revoke ${name}`,
       pairFor: ({ name }: { name: string }) => `Pair a device for ${name}`,
       deviceActions: ({ name }: { name: string }) => `Actions for ${name}`,
+      revokeCheckToast: "A revocation request could not be checked; it is checked again once you are online.",
+      copyFailedToast: "The link could not be copied.",
+      actionFailedToast: "That did not work, please try again.",
+      pairCancelToast: "The pairing was not cancelled; choose Pair a device again to cancel it.",
+      cancelToast: "The request was not cancelled; reload the page to cancel it.",
     },
     de: {
       title: "App-Anmeldung",
@@ -264,6 +269,11 @@ export const appApprovalMessages = i18n.define({
       revokeDeviceNamed: ({ name }) => `${name} widerrufen`,
       pairFor: ({ name }) => `Gerät für ${name} koppeln`,
       deviceActions: ({ name }) => `Aktionen für ${name}`,
+      revokeCheckToast: "Eine Widerrufsanfrage konnte nicht geprüft werden; sie wird erneut geprüft, sobald du online bist.",
+      copyFailedToast: "Der Link konnte nicht kopiert werden.",
+      actionFailedToast: "Das hat nicht geklappt, versuch es bitte erneut.",
+      pairCancelToast: "Die Kopplung wurde nicht abgebrochen; wähle erneut „Gerät koppeln“, um sie abzubrechen.",
+      cancelToast: "Die Anfrage wurde nicht abgebrochen; lade die Seite neu, um sie abzubrechen.",
     },
   },
 });

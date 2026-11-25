@@ -2,7 +2,7 @@ import { listLegalLinks } from "@k2b/cloud";
 import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
-import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
+import { LOCALE_COOKIE, normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
 import { LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
@@ -127,6 +127,7 @@ export default ssr(async (c) => {
         <LoginScreen
           appName={appName}
           legalLinks={legalLinks}
+          localeCookie={LOCALE_COOKIE}
           title={confirmation?.reauthenticate ?? formTitle}
           subtitle={confirmation?.recent ?? formSubtitle}
           categories={

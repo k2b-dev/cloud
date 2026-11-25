@@ -9,6 +9,7 @@ import { AdminForm, EmailForm, FreeIpaForm, IdleSignOutFinish, usePasskeySignIn 
 export type LoginScreenProps = {
   appName: string;
   legalLinks: LegalLinks;
+  localeCookie: string;
   title: string;
   subtitle: string | null;
   /** The account kinds to switch between, each its own address; absent with only one. */
@@ -33,6 +34,7 @@ export default function LoginScreen(props: LoginScreenProps) {
   const passkey = usePasskeySignIn({ redirectTo: props.redirectTo, forget: props.forget });
   return (
     <AuthFrame
+      localeCookie={props.localeCookie}
       appName={props.appName}
       title={props.title}
       legalLinks={props.legalLinks}

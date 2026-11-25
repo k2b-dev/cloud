@@ -14,7 +14,7 @@ export function InstallLink(props: { origin: string }) {
       await navigator.clipboard.writeText(props.origin);
       toast(t().installLinkCopied, { status: "ok" });
     } catch {
-      toast(t().failure, { status: "bad" });
+      toast(t().copyFailedToast, { status: "bad" });
     }
   };
   return (

@@ -3,7 +3,6 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { accountCategory } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { useLocale } from "@k2b/ui";
 import { Band, Bar, Button, Check, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { createSignal, onMount, Show } from "solid-js";
@@ -12,7 +11,6 @@ import { signInAgainHref } from "../sign-out-others";
 import { useAuthMessages } from "./AuthFrame";
 import { autocomplete } from "./autocomplete";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
-import { authMessages } from "./messages";
 import { PasswordInput } from "./PasswordSetupFields";
 
 // k2b-ui gap: v2 has no form primitive, so a sign-in form sends on Enter in its fields and on its button; the

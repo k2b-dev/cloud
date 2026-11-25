@@ -1,7 +1,7 @@
 import { listLegalLinks } from "@k2b/cloud";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { coreSettings, legalConsent } from "@k2b/cloud/services";
-import { normalizeRedirectTo } from "@k2b/cloud/shared";
+import { LOCALE_COOKIE, normalizeRedirectTo } from "@k2b/cloud/shared";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AuthPage from "./AuthPage";
@@ -23,6 +23,7 @@ export default ssr(async (c) => {
         <ConsentScreen
           appName={appName || "Cloud"}
           legalLinks={legalLinks}
+          localeCookie={LOCALE_COOKIE}
           userId={pending.user.id}
           version={version}
           redirectTo={redirectTo}

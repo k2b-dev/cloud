@@ -18,6 +18,7 @@ render(
         <ConsentScreen
           appName="Cloud"
           legalLinks={[]}
+          localeCookie="cloud.locale"
           userId="00000000-0000-4000-8000-000000000042"
           version="v-7"
           redirectTo="/app/files"
@@ -26,6 +27,7 @@ render(
         <LoginScreen
           appName="Cloud"
           legalLinks={[]}
+          localeCookie="cloud.locale"
           title="Sign in"
           subtitle="Sign in with your FreeIPA password."
           categories={null}

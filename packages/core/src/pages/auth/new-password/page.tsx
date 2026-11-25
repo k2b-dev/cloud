@@ -1,7 +1,7 @@
 import { listLegalLinks } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { normalizeRedirectTo } from "@k2b/cloud/shared";
+import { LOCALE_COOKIE, normalizeRedirectTo } from "@k2b/cloud/shared";
 import { LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import { isSignOutOthersRetry } from "../../sign-out-others";
@@ -26,6 +26,7 @@ export default ssr(async (c) => {
         <PasswordScreen
           appName={rawAppName || "My App"}
           legalLinks={legalLinks}
+          localeCookie={LOCALE_COOKIE}
           title={t.setNewPassword}
           subtitle={t.expiredPasswordDescription}
           form={{ kind: "new", defaultUsername: params.get("ipa-uid") ?? "" }}

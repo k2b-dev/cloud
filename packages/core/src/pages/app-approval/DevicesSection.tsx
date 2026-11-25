@@ -69,7 +69,7 @@ export default function DevicesSection(props: {
                 },
                 () => {
                   if (!unchanged()) return;
-                  toast(t().revokeCheckFailed, { status: "bad" });
+                  toast(t().revokeCheckToast, { status: "bad" });
                   window.addEventListener("online", look, { once: true });
                 },
               );

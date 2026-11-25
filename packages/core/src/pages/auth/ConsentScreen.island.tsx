@@ -11,6 +11,7 @@ import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
 export default function ConsentScreen(props: {
   appName: string;
   legalLinks: LegalLinks;
+  localeCookie: string;
   userId: string;
   version: string;
   redirectTo: string;
@@ -52,7 +53,7 @@ export default function ConsentScreen(props: {
     }
   };
   return (
-    <AuthFrame appName={props.appName} title={t().consentTitle} legalLinks={props.legalLinks}>
+    <AuthFrame localeCookie={props.localeCookie} appName={props.appName} title={t().consentTitle} legalLinks={props.legalLinks}>
       <Band>
         <Text>{t().consentDescription}</Text>
         {/* k2b-ui gap: a Text link opens in the same tab; the documents opened in a new tab before v2. */}

@@ -285,7 +285,7 @@ export default function Pairing(props: {
       // A pairing that Cloud already finished or no longer knows has nothing left to cancel.
       const settled = cause instanceof ApprovalError && cause.status < 500 && cause.status !== 429;
       if (saved && settled) forget(pairingId);
-      toast(saved && !settled ? t().pairCancelFailed : t().failure, { status: "bad" });
+      toast(saved && !settled ? t().pairCancelToast : t().actionFailedToast, { status: "bad" });
     }
   };
   const confirmIdentity = () => {

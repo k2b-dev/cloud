@@ -219,7 +219,7 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
         finish({ kind: "locked" });
       } else if (!(cause instanceof ApprovalError) || cause.status >= 500 || cause.status === 429) {
         // No answer about the code: the pairing stays open, so the same code can be sent again.
-        toast(t().pwaFailed, { status: "bad" });
+        toast(t().pwaFailedToast, { status: "bad" });
       } else fail(cause);
     } finally {
       if (!disposed && run === generation) setBusy(false);
@@ -232,7 +232,7 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
     } catch (cause) {
       // Already over on the server: nothing left to cancel.
       if (!(cause instanceof ApprovalError && (cause.code === "EXPIRED" || cause.code === "NOT_FOUND")) && !disposed)
-        toast(t().pwaFailed, { status: "bad" });
+        toast(t().pwaFailedToast, { status: "bad" });
     }
   };
 
@@ -262,7 +262,7 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
       setDevices((items) => items.filter((item) => item.id !== device.id));
       toast(t().pwaRemoved, { status: "ok" });
     } catch {
-      if (!disposed) toast(t().pwaFailed, { status: "bad" });
+      if (!disposed) toast(t().pwaFailedToast, { status: "bad" });
     } finally {
       if (!disposed) setRemoving(undefined);
     }
