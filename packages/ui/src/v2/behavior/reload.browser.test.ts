@@ -59,6 +59,12 @@ const normalized = (page: Page, html?: string) =>
         node.style.removeProperty("--resizable-panel-size");
       // Core measures an open tree group for its expand animation once it binds (`--tree-group-height`).
       if (node instanceof HTMLElement && node.getAttribute("data-slot") === "tree-group") node.style.removeProperty("--tree-group-height");
+      // Core's `bindHold` sets two style properties on the item it binds: `--hold-delay` for CSS and, against iOS's
+      // long-press callout, `-webkit-touch-callout`. Neither is painted; both are left out here.
+      if (node instanceof HTMLElement) {
+        node.style.removeProperty("--hold-delay");
+        node.style.removeProperty("-webkit-touch-callout");
+      }
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]
