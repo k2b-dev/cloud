@@ -4,7 +4,8 @@ import { Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspa
 // The v2 dialog in the place the mockup puts it: it asks before something is discarded, opened from a button in the
 // head that stays on the phone. `<html data-long>` gives the dialog more content than fits, so it scrolls.
 // `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
-// `Dialog.confirm` from outside both and writes the answer to `<body data-answer>`.
+// `Dialog.confirm` from outside both and writes the answer to `<body data-answer>`. `<html data-opened>` has the dialog
+// "Neuer Zugang" open from the start, as a page whose address names the dialog ("…/keys/new").
 
 declare global {
   interface Window {
@@ -39,7 +40,7 @@ export function Demo() {
 
 function Order() {
   const [open, setOpen] = createSignal(false);
-  const [secret, setSecret] = createSignal(false);
+  const [secret, setSecret] = createSignal(document.documentElement.dataset.opened !== undefined);
   const [made, setMade] = createSignal(false);
   const [kind, setKind] = createSignal("Neubau");
   const [answer, setAnswer] = createSignal("keine");
