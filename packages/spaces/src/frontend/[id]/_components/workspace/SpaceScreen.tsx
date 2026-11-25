@@ -1,9 +1,10 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { listenPopState } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Bar, Canvas, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
 import { spaceCommandMessages } from "../../../../commands";
 import SpacesNav, { useSpacesNav } from "../../../_components/spaces-nav";
@@ -24,6 +25,7 @@ import { createKanbanShortcuts } from "./kanban-shortcuts";
 import RememberSpace from "./RememberSpace";
 import SpaceLiveEvents from "./SpaceLiveEvents";
 import SpacesCalendarRoute from "./SpacesCalendarRoute";
+import { SPACES_DETAIL_NAVIGATION_EVENT } from "./workspace-events";
 import { buildSpacesItemLinkBaseUrl, buildSpacesPaginationBaseUrl, type SpacesWorkspaceState } from "./workspace-types";
 
 type OkWorkspaceState = Extract<SpacesWorkspaceState, { kind: "ok" }>;
@@ -205,8 +207,23 @@ export default function SpaceScreen(props: SpaceScreenProps) {
       : []),
   ];
 
+  /** The address the view committed last: the tabs keep its filters when they switch the view. */
+  const [committedQuery, setCommittedQuery] = createSignal(state.query);
+  onMount(() => {
+    if (window.location.pathname === spaceHref) setCommittedQuery(window.location.search.slice(1));
+    const follow = (href: string) => {
+      const url = new URL(href, window.location.origin);
+      if (url.pathname === spaceHref) setCommittedQuery(url.search.slice(1));
+    };
+    const onCommitted = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail?.history === "none") follow(event.detail.href);
+    };
+    window.addEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted);
+    onCleanup(() => window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onCommitted));
+    onCleanup(listenPopState(({ url }) => follow(url.href)));
+  });
   const viewHref = (id: View) => {
-    const params = new URLSearchParams(state.query);
+    const params = new URLSearchParams(committedQuery());
     params.set("view", id);
     params.delete("item");
     params.delete("occurrence");

@@ -103,7 +103,10 @@ describe("Spaces unavailable-view reloads", () => {
 
   test("the Kanban view reloads at most once for a view that stays unavailable", async () => {
     const dom = createDomTestHarness();
-    const { default: SpacesKanbanRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesKanbanRoute");
+    // The v2 filter bar asks whether the window is a phone; happy-dom has no media queries.
+    Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+    const { default: BoardPane } = await import("../src/frontend/[id]/_components/workspace/BoardPane");
+    const { defaultFilter } = await import("../src/frontend/[id]/_components/filter/types");
     const path = `/app/spaces/${SPACE_ID}?view=kanban`;
     await expectOneReloadAcrossLoads(
       dom,
@@ -111,11 +114,22 @@ describe("Spaces unavailable-view reloads", () => {
       () =>
         render(
           () =>
-            createComponent(SpacesKanbanRoute, {
-              spaceId: SPACE_ID,
+            createComponent(BoardPane, {
+              space: {
+                id: SPACE_ID,
+                name: "Space",
+                description: null,
+                color: "#3b82f6",
+                icalToken: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+                columns: [],
+                virtualColumns: [],
+                tags: [],
+                templates: [],
+              },
+              filter: defaultFilter,
               baseUrl: path,
-              columns: [],
-              tags: [],
               wormholes: [],
               initialBuckets: [],
               foldedColumns: [],

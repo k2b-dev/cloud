@@ -140,6 +140,7 @@ export default function SpacesOverview(props: Props) {
       .catch((error: unknown) => {
         toast(error instanceof Error && error.message ? error.message : spaceCommandMessages.resolve([locale()]).t.failed, {
           status: "bad",
+          retry: composeTask,
         });
       });
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });

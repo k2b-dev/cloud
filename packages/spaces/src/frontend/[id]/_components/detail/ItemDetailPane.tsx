@@ -124,7 +124,6 @@ export default function ItemDetailPane(props: Props) {
   return (
     <Show
       when={props.route.detail()}
-      keyed
       fallback={
         <Pane
           detail
@@ -141,7 +140,8 @@ export default function ItemDetailPane(props: Props) {
         </Pane>
       }
     >
-      {(detail) => <ItemDetail {...props} detail={detail} close={closeButton} />}
+      {/* Not keyed: a refreshed snapshot of the same item keeps its editors, focus and drafts. */}
+      {(detail) => <ItemDetail {...props} detail={detail()} close={closeButton} />}
     </Show>
   );
 }
@@ -818,6 +818,13 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
     ];
   };
 
+  /** Open blockers first; more than three wait behind one press. */
+  const [blockersOpen, setBlockersOpen] = createSignal(false);
+  const orderedBlockers = () =>
+    [...props.detail.blockedBy].sort(
+      (left, right) => Number(Boolean(left.blocker.completedAt)) - Number(Boolean(right.blocker.completedAt)),
+    );
+  const visibleBlockers = () => (blockersOpen() ? orderedBlockers() : orderedBlockers().slice(0, 3));
   const references = () => {
     const all = props.detail.references;
     return [
@@ -930,7 +937,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
 
       <Show when={!isEvent() && (canEditItem() || props.detail.blockedBy.length > 0 || props.detail.blocks.length > 0)}>
         <Section icon="lock" title={t.blockedBy} count={props.detail.blockedBy.length}>
-          <For each={props.detail.blockedBy}>
+          <For each={visibleBlockers()}>
             {(dependency) => (
               <Row
                 icon={dependency.blocker.completedAt ? "circle-check" : "lock"}
@@ -951,6 +958,15 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
               />
             )}
           </For>
+          <Show when={orderedBlockers().length > 3}>
+            <Bar
+              end={
+                <Button variant="text" onClick={() => setBlockersOpen(!blockersOpen())}>
+                  {blockersOpen() ? t.fewerDependencies : t.moreDependencies({ count: orderedBlockers().length - 3 })}
+                </Button>
+              }
+            />
+          </Show>
           <Show when={canEditItem()}>
             <Bar
               end={

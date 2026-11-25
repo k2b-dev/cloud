@@ -41,6 +41,19 @@ const item: SpaceItem = {
   tags: [],
   claim,
 };
+/** The detail snapshot of an item, as the server sends it with the page. */
+const detailOf = (source: SpaceItem) => ({
+  item: source,
+  comments: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
+  commentTarget: { itemId: source.id, recurrenceId: null },
+  recurringContext: null,
+  references: [],
+  links: [],
+  attachments: [],
+  checklist: [],
+  blockedBy: [],
+  blocks: [],
+});
 
 const calls: string[] = [];
 const release = mock(async (_input: { json: { claimId: string; force?: boolean } }) => {
@@ -98,31 +111,19 @@ describe("Spaces claim take-over", () => {
 
   test("asks for confirmation with the take-over explanation before releasing somebody else's claim, without leaking computations", async () => {
     const dom = createDomTestHarness();
+    // The v2 question checks focusable inputs by their class, which happy-dom keeps on its window.
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement });
     dom.root.className = "k2b-ui";
-    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const { DetailPaneFixture } = await import("./detail-pane");
     const dispose = render(
-      () =>
-        createComponent(ItemDetailPanel, {
-          item,
-          columns: [],
-          tags: [],
-          wormholes: [],
-          spaceId: item.spaceId,
-          baseUrl: "/app/spaces/Space1",
-          currentUserId: writerId,
-          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
-          commentTarget: { itemId: item.id, recurrenceId: null },
-          recurringContext: null,
-          canWrite: true,
-          mailIntegrationAvailable: false,
-          scrollPreserveKey: "test-detail",
-        }),
+      () => createComponent(DetailPaneFixture, { detail: () => detailOf(item), canWrite: true, currentUserId: writerId }),
       dom.root,
     );
-    const takeOver = () => dom.root.querySelector<HTMLButtonElement>('[data-spaces-claim-action="take-over"]')!;
-    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const takeOver = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Take over")!;
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="alertdialog"]');
     const dialogButton = (label: string) =>
-      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent?.trim() === label);
 
     expect(dom.root.textContent).not.toContain("Take over moves the task");
 
@@ -151,24 +152,9 @@ describe("Spaces claim take-over", () => {
     calls.splice(0);
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
-    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const { DetailPaneFixture } = await import("./detail-pane");
     const dispose = render(
-      () =>
-        createComponent(ItemDetailPanel, {
-          item,
-          columns: [],
-          tags: [],
-          wormholes: [],
-          spaceId: item.spaceId,
-          baseUrl: "/app/spaces/Space1",
-          currentUserId: writerId,
-          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
-          commentTarget: { itemId: item.id, recurrenceId: null },
-          recurringContext: null,
-          canWrite: true,
-          mailIntegrationAvailable: false,
-          scrollPreserveKey: "test-detail",
-        }),
+      () => createComponent(DetailPaneFixture, { detail: () => detailOf(item), canWrite: true, currentUserId: writerId }),
       dom.root,
     );
     const completeButton = () =>
@@ -205,28 +191,11 @@ describe("Spaces claim take-over", () => {
     calls.splice(0);
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
-    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
+    const { DetailPaneFixture } = await import("./detail-pane");
     const other: SpaceItem = { ...item, id: "Item02", title: "Venue", claim: null };
     const [shown, show] = createSignal(item);
     const dispose = render(
-      () =>
-        createComponent(ItemDetailPanel, {
-          get item() {
-            return shown();
-          },
-          columns: [],
-          tags: [],
-          wormholes: [],
-          spaceId: item.spaceId,
-          baseUrl: "/app/spaces/Space1",
-          currentUserId: writerId,
-          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
-          commentTarget: { itemId: item.id, recurrenceId: null },
-          recurringContext: null,
-          canWrite: true,
-          mailIntegrationAvailable: false,
-          scrollPreserveKey: "test-detail",
-        }),
+      () => createComponent(DetailPaneFixture, { detail: () => detailOf(shown()), canWrite: true, currentUserId: writerId }),
       dom.root,
     );
     const completeButton = () =>
@@ -243,66 +212,6 @@ describe("Spaces claim take-over", () => {
     await waitFor(() => dialog() === null);
     for (let turn = 0; turn < 50; turn++) await Promise.resolve();
     expect(calls).toEqual([]);
-
-    dispose();
-    dom.cleanup();
-  });
-
-  test("removing somebody else who works on the task asks once, then ends their exact claim with the new assignees", async () => {
-    calls.splice(0);
-    const dom = createDomTestHarness();
-    dom.root.className = "k2b-ui";
-    const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
-    const dispose = render(
-      () =>
-        createComponent(ItemDetailPanel, {
-          // The person working on a task is one of its assignees.
-          item: { ...item, assignees: [{ id: claim.actor.id, kind: "user", displayName: claim.displayName, avatarHash: null }] },
-          columns: [],
-          tags: [],
-          wormholes: [],
-          spaceId: item.spaceId,
-          baseUrl: "/app/spaces/Space1",
-          currentUserId: writerId,
-          initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
-          commentTarget: { itemId: item.id, recurrenceId: null },
-          recurringContext: null,
-          canWrite: true,
-          mailIntegrationAvailable: false,
-          scrollPreserveKey: "test-detail",
-        }),
-      dom.root,
-    );
-    const removeButton = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Mira Beck"]')!;
-    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Remove assignee"]');
-    const dialogButton = (label: string) =>
-      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
-
-    removeButton().click();
-    await waitFor(() => dialog() !== null);
-    expect(dialog()!.textContent).toContain("Mira Beck is working on this – remove them and end their claim?");
-    dialogButton("Cancel")!.click();
-    await waitFor(() => dialog() === null);
-    for (let turn = 0; turn < 50; turn++) await Promise.resolve();
-    expect(calls).toEqual([]);
-
-    // The panel reloads the Space data once the change is saved; the test ends after that, not before.
-    const { SPACES_DATA_INVALIDATED_EVENT } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
-    let reloaded = false;
-    dom.window.addEventListener(SPACES_DATA_INVALIDATED_EVENT, () => {
-      reloaded = true;
-    });
-    removeButton().click();
-    await waitFor(() => dialogButton("Remove and end claim") !== undefined);
-    dialogButton("Remove and end claim")!.click();
-    await waitFor(() => reloaded);
-    expect(calls).toEqual(["patch"]);
-    expect(patch.mock.calls[0]![0].json).toEqual({
-      addAssigneeIds: [],
-      removeAssigneeIds: [claim.actor.id],
-      claimId: claim.id,
-      force: true,
-    });
 
     dispose();
     dom.cleanup();

@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent, onCleanup } from "solid-js";
+import { createComponent, type JSX, onCleanup, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
+import type { ItemDetailRouteProps } from "../src/frontend/[id]/_components/detail/item-detail-route";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const SERIES_ID = "22222222-2222-4222-8222-222222222222";
@@ -36,20 +37,36 @@ if (!isServer) {
       },
     },
   }));
-  mock.module("../src/frontend/[id]/_components/detail/ItemDetailPanel", () => ({
-    default: (props: { baseUrl: string }) => {
+}
+/** The open item of a Space page as the v2 screen renders it: the route hook and one detail per open item. */
+let ItemDetailRoute: ((props: RouteProps) => JSX.Element) | undefined;
+type RouteProps = Omit<ItemDetailRouteProps, "accessVisible"> & { accessVisible?: boolean } & Record<string, unknown>;
+const loadRoute = async () => {
+  const { useItemDetailRoute } = await import("../src/frontend/[id]/_components/detail/item-detail-route");
+  return (props: RouteProps) => {
+    const route = useItemDetailRoute({ ...props, accessVisible: props.accessVisible ?? false }, () => {});
+    // Stands in for the detail: an editor whose mount and focus the tests follow, and the way back.
+    const Panel = () => {
       panelMounts += 1;
       onCleanup(() => (panelDisposals += 1));
       return (
         <div>
           <input aria-label="Comment draft" />
-          <a href={props.baseUrl}>Close</a>
+          <a href={route.baseHref()}>Close</a>
         </div>
       );
-    },
-  }));
-}
-let ItemDetailRoute: typeof import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island").default;
+    };
+    return (
+      <Show when={route.open()}>
+        <section id="detail-pane">
+          <Show when={route.detail()} fallback="Loading item details">
+            {() => <Panel />}
+          </Show>
+        </section>
+      </Show>
+    );
+  };
+};
 
 const detail = (itemId: string, override = false) =>
   ({
@@ -79,13 +96,13 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const href = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", href);
 
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: href,
           currentUserId: "user",
@@ -111,13 +128,13 @@ describe("Spaces detail navigation", () => {
   test("a search result selection preserves the current list search instead of the SSR query", async () => {
     detailGet = async () => Response.json(detail(SERIES_ID));
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const initialSource = `/app/spaces/${SPACE_ID}?view=list&q=initial`;
     dom.window.history.replaceState(null, "", `/app/spaces/${SPACE_ID}?view=list&q=current&status=all`);
 
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource,
           currentUserId: "user",
@@ -153,7 +170,7 @@ describe("Spaces detail navigation", () => {
       return new Response(null, { status: 500 });
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const occurrence = "2026-08-10T10%3A00%3A00.000Z";
     const requested = `${BASE}&item=${SERIES_ID}&occurrence=${occurrence}`;
     const canonical = `${BASE}&item=${OVERRIDE_ID}&occurrence=${occurrence}`;
@@ -161,7 +178,7 @@ describe("Spaces detail navigation", () => {
 
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: requested,
           currentUserId: "user",
@@ -190,14 +207,14 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const initialHref = `${BASE}&item=${SERIES_ID}`;
     const nextHref = `${BASE}&item=${OVERRIDE_ID}`;
     dom.window.history.replaceState(null, "", initialHref);
 
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: initialHref,
           currentUserId: "user",
@@ -210,8 +227,8 @@ describe("Spaces detail navigation", () => {
         }),
       dom.root,
     );
-    const panel = dom.document.getElementById("k2b-workspace-detail-space-detail-panel") as HTMLElement;
-    expect(panel.hidden).toBe(false);
+    const panel = () => dom.document.getElementById("detail-pane");
+    expect(panel()).not.toBeNull();
 
     dom.window.dispatchEvent(
       new dom.window.CustomEvent("spaces-detail-navigation", {
@@ -221,12 +238,12 @@ describe("Spaces detail navigation", () => {
     await flush();
 
     expect(requests).toHaveLength(1);
-    expect(panel.hidden).toBe(false);
-    expect(panel.textContent).toContain("Loading item details");
+    expect(panel()).not.toBeNull();
+    expect(panel()?.textContent).toContain("Loading item details");
 
     requests[0]!.resolve(Response.json(detail(OVERRIDE_ID)));
     await flush();
-    expect(panel.hidden).toBe(false);
+    expect(panel()).not.toBeNull();
 
     dom.window.dispatchEvent(
       new dom.window.CustomEvent("spaces-detail-navigation", {
@@ -234,7 +251,7 @@ describe("Spaces detail navigation", () => {
       }),
     );
     await flush();
-    expect(panel.hidden).toBe(true);
+    expect(panel()).toBeNull();
 
     dispose();
     dom.cleanup();
@@ -245,12 +262,12 @@ describe("Spaces detail navigation", () => {
     panelDisposals = 0;
     detailGet = async () => Response.json(detail(SERIES_ID));
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const href = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", href);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: href,
           currentUserId: "user",
@@ -285,12 +302,12 @@ describe("Spaces detail navigation", () => {
       return Response.json(detail(SERIES_ID));
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const href = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState({ marker: "preserved" }, "", href);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: href,
           currentUserId: "user",
@@ -325,7 +342,7 @@ describe("Spaces detail navigation", () => {
 
   test("a closed detail panel lets a resync and subsequent live events complete", async () => {
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     dom.window.history.replaceState(null, "", BASE);
     let reads = 0;
     detailGet = async () => {
@@ -334,7 +351,7 @@ describe("Spaces detail navigation", () => {
     };
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: BASE,
           currentUserId: "user",
@@ -372,12 +389,12 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const href = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", href);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: href,
           currentUserId: "user",
@@ -421,12 +438,12 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const href = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", href);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: href,
           currentUserId: "user",
@@ -470,12 +487,12 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const initial = `${BASE}&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", initial);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: initial,
           currentUserId: "user",
@@ -514,7 +531,7 @@ describe("Spaces detail navigation", () => {
     requests[1]!.resolve(Response.json(detail(SERIES_ID)));
     await flush();
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(`${BASE}&q=back`);
-    expect(dom.document.getElementById("k2b-workspace-detail-space-detail-panel")?.hidden).toBe(true);
+    expect(dom.document.getElementById("detail-pane")).toBeNull();
     dispose();
     dom.cleanup();
   });
@@ -529,12 +546,12 @@ describe("Spaces detail navigation", () => {
       return request.promise;
     };
     const dom = createDomTestHarness();
-    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    ItemDetailRoute ??= await loadRoute();
     const initial = `/app/spaces/${SPACE_ID}?view=calendar&date=2026-09-01&item=${SERIES_ID}`;
     dom.window.history.replaceState(null, "", initial);
     const dispose = render(
       () =>
-        createComponent(ItemDetailRoute, {
+        createComponent(ItemDetailRoute!, {
           spaceId: SPACE_ID,
           initialSource: initial,
           currentUserId: "user",

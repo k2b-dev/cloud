@@ -32,6 +32,11 @@ const item: SpaceItem = {
   assignees: [],
   tags: [],
 };
+/** The input of a v2 check, found by its words. */
+const checkInput = (root: ParentNode, label: string) =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-k2-part="Check"]'))
+    .find((check) => check.textContent?.trim() === label)
+    ?.querySelector<HTMLInputElement>("input") ?? null;
 const flush = async () => {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -120,7 +125,7 @@ describe("Spaces feedback channels", () => {
         }),
       dom.root,
     );
-    const tick = () => dom.root.querySelector<HTMLInputElement>('input[aria-label="Mark complete: Book the venue"]')!;
+    const tick = () => checkInput(dom.root, "Mark complete: Book the venue")!;
 
     completions.length = 0;
     completionAnswers = [Response.json({ message: "Spaces is unavailable" }, { status: 503 })];
@@ -178,7 +183,7 @@ describe("Spaces feedback channels", () => {
     );
 
     completions.length = 0;
-    dom.root.querySelector<HTMLInputElement>('input[aria-label="Mark complete: Book the venue"]')!.click();
+    checkInput(dom.root, "Mark complete: Book the venue")!.click();
     await flush();
     expect(successes.map((notice) => notice.message)).toEqual(["Item completed"]);
     const undo = successes[0]!.options?.action;
@@ -361,11 +366,12 @@ describe("Spaces feedback channels", () => {
     const composer = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
     composer.value = "Can we move this to Friday?";
     composer.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    for (let attempt = 0; attempt < 20 && !dom.root.querySelector(".k2b-discussion__status"); attempt++) await flush();
+    Array.from(dom.root.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Post comment")!
+      .click();
+    for (let attempt = 0; attempt < 20 && !dom.root.textContent?.includes("Comments are closed"); attempt++) await flush();
 
-    const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent).filter(Boolean);
-    expect(alerts).toEqual(["Comments are closed for this item"]);
+    expect(dom.root.textContent).toContain("Comments are closed for this item");
     expect(composer.value).toBe("Can we move this to Friday?");
     expect(dialogs).not.toHaveBeenCalled();
     expect(errors).not.toHaveBeenCalled();

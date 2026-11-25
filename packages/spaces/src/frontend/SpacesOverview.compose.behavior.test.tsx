@@ -3,7 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
-test.skipIf(isServer)("a New task that fails says why and offers Retry, which tries again", async () => {
+test.skipIf(isServer)("a New task that fails says why and offers Try again, which tries again", async () => {
   const dom = createDomTestHarness();
   const commands = await import("@k2b/cloud/browser/commands");
   const open = spyOn(commands, "openCommand").mockImplementation(() => Promise.reject(new Error("You cannot add tasks to this Space.")));
@@ -29,7 +29,7 @@ test.skipIf(isServer)("a New task that fails says why and offers Retry, which tr
     await Bun.sleep(30);
     expect(open).toHaveBeenCalledTimes(1);
     expect(dom.document.body.textContent).toContain("You cannot add tasks to this Space.");
-    button("Retry")!.click();
+    button("Try again")!.click();
     await Bun.sleep(30);
     expect(open).toHaveBeenCalledTimes(2);
   } finally {

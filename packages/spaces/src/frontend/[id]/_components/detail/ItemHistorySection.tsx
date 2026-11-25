@@ -47,7 +47,8 @@ export default function ItemHistorySection(props: Props) {
     getNextCursor: (page) => page.nextCursor,
     subscribe: ({ invalidate }) =>
       subscribeToSpacesDataInvalidation(["detail"], async ({ itemId }) => {
-        if (shouldInvalidateSpacesDetail(props.itemId, itemId)) await invalidate();
+        // A history nobody opened has nothing to refresh.
+        if (shown() && shouldInvalidateSpacesDetail(props.itemId, itemId)) await invalidate();
       }),
   });
   const rows = () => history.pages().flatMap((page) => page.rows);
