@@ -205,6 +205,20 @@ Give every table whose column widths add up to more than a phone (about
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
 
+Rows in levels (Files, a page tree): `tree: { children(row), branch(row),
+expanded?, onExpandedChange?, load?, more?, loadMore? }` with `rowKey`, not
+with `group`. `rows` are the top level; an open row's `children` stand under
+it, 20 px further in per level (at most eight steps). `children(row)` is
+`undefined` while not loaded; `load(row, { signal })` fetches them the first
+time the row opens (the arrow turns, a rejection leaves a red mark, opening
+again retries). `more(row | null)` says that more children (or top rows)
+exist (`true` or a count), and a last row "Weitere laden" calls
+`loadMore(row | null)`; the focus goes on to the first new row. The table
+is then a treegrid: one Tab stop, Up/Down/Home/End move, Right opens and
+enters, Left closes and goes to the parent, Enter opens the row, Space
+selects with `select`. `expanded` left out: the table keeps it, starting
+with the way to `current`. On the phone only the top level shows.
+
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
 no rows and nothing loading, the empty state stands in place of the table.
@@ -306,6 +320,18 @@ lines instead of cutting a thing.
   them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
   place, its entries one level further in, open while one of them is the
   open one. It remembers nothing; keep what is folded the same on each page.
+  A group with `tree` in place of `items` holds places in levels (the
+  folders of Files, the pages of a notebook): `tree: { label, items,
+  current?, expanded?, onExpandedChange?, load?, more?, loadMore? }`, each
+  place a `NavTreeNode`: `key`, `label`, `icon?`, `href` (+ `onNavigate`),
+  `count?`, `dot?`, `children?` (loaded so far), `branch` (children that
+  load on the first open through `load(key, { signal })`), `more` (`true`
+  or a count: a last entry "Weitere laden" calls `loadMore(key | null)`),
+  `menu` (a "…" under the pointer, a right-click, Shift+F10). A press on a
+  place opens its page; the arrow, Right and Left fold it without leaving
+  the page. The way to `current` stands open (also when `current` changes);
+  give the loaded nodes down to it. The tree is one Tab stop and scrolls on
+  its own in the sidebar; levels step 16 px in, at most eight steps.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:

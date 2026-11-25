@@ -56,6 +56,7 @@ export {
   Table,
   type TableGroup,
   type TableProps,
+  type TableTree,
   Text,
   type TextProps,
 } from "./content";
@@ -98,6 +99,7 @@ export {
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
+export type { NavTree, NavTreeNode } from "./nav-tree";
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";

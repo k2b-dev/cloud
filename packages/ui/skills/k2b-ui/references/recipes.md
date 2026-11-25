@@ -36,6 +36,23 @@ and a status `Bar` with `Inline` chips.
   the phone the open entry is the page and `back` is its one way back.
 - States: `closed`, `empty`, `loading`, `failed`.
 
+## tree.tsx: folders as a tree
+
+![folders as a tree at 1440 px](../images/tree-1440.png)
+![folders as a tree at 390 px](../images/tree-390.png)
+
+`Nav` with a plain group ("Zuletzt", "Favoriten") and a group with `tree`
+(folders; "Website" is `current`, so the way to it is open; "Archiv" and
+"Texte" are `branch` and load on the first open; "Kunden" has `more`); a
+head `Bar` with the `Path` and the one primary; a `Pane` with a
+`StatusRow` and a `Table` with `tree` (folders and files as rows in
+levels; the open file is `current`, so its folder starts open).
+
+- Give the loaded nodes down to the open place; the rest loads through
+  `load` and `loadMore` when a person opens it. Never load the whole tree.
+- On the phone the sidebar is a drawer with the same tree, and the table
+  shows its top level; a folder opens as its own page.
+
 ## list-detail.tsx: a list beside the open entry
 
 ![list with detail at 1440 px](../images/list-detail-1440.png)
