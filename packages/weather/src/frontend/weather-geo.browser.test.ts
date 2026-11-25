@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { weatherScreenFixtures } from "./weather-screen.fixture";
 
 const provenance = {
@@ -174,8 +174,7 @@ for (const name of Object.keys(weatherScreenFixtures))
     for (const width of [1440, 1024, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       try {
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(String(error)));
+        const errors = pageErrors(page);
         await page.goto(`${server.url.href}?screen=${name}`);
         await page.locator('[data-k2-part="Workspace"]').waitFor();
         const loaders = await page.locator('[data-k2-part="Loading"], [aria-busy="true"]').count();

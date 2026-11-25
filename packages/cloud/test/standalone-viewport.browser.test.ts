@@ -57,7 +57,7 @@ const pageHtml = async (path: string, status: number) => {
   return response.text();
 };
 const surfaces: Record<string, { html: () => string | Promise<string>; selector: string }> = {
-  "Weather configuration error page": { html: () => pageHtml("/weather/display", 200), selector: "main" },
+  "Weather configuration error page": { html: () => pageHtml("/weather/display", 200), selector: '[data-k2-part="Workspace"]' },
   "Weather simple display": { html: () => componentHtml(() => createComponent(SimpleDisplayView, weatherProps)), selector: "main" },
   "Weather detail display": { html: () => componentHtml(() => createComponent(DetailDisplayView, weatherProps)), selector: "main" },
   "Weather unavailable display": {
