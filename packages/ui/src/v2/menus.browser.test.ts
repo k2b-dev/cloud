@@ -216,6 +216,36 @@ test("context menu: Shift+F10 opens it at the row; a long press shows no link pr
   });
 });
 
+test("tabs: 'Weitere +2' is the button of a menu of the views without a tab; keys open it, a choice runs, Escape returns", async () => {
+  await withPage(async (page) => {
+    const more = page.getByRole("navigation", { name: "Ansichten" }).getByRole("button", { name: /Weitere/ });
+    expect(await more.getAttribute("aria-haspopup")).toBe("menu");
+    expect(await more.getAttribute("aria-expanded")).toBe("false");
+    // it looks like a tab: the tab's words and count, its chevron, the tab's height
+    expect((await more.textContent())?.replace(/\s+/g, "")).toBe("Weitere+2");
+    const tab = await box(page.getByRole("navigation", { name: "Ansichten" }).getByRole("button", { name: "Offen" }));
+    expect((await box(more)).height).toBe(tab.height);
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(menu).waitFor();
+    expect(await more.getAttribute("aria-expanded")).toBe("true");
+    expect(await page.getByRole("menuitem").allTextContents()).toEqual(["Archiv", "Vorlagen"]);
+    expect(await focused(page)).toBe("Archiv");
+    await page.keyboard.press("Escape");
+    await closed(page, menu);
+    expect(await focused(page)).toContain("Weitere");
+    // the pointer: a click opens it under the tab, a choice runs and closes it
+    await more.click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    const [t, m] = [await box(more), await box(page.locator(menu))];
+    expect(Math.abs(m.x - t.x)).toBeLessThanOrEqual(1);
+    await page.getByRole("menuitem", { name: "Vorlagen" }).click();
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["view:vorlagen"]);
+  });
+});
+
 test("popover: a panel of 280 px under the start of its button with a title; Escape closes and returns focus", async () => {
   await withPage(async (page) => {
     const trigger = page.getByRole("button", { name: "Filter" });
@@ -298,6 +328,18 @@ test("phone: the head keeps the '…', its menu opens on screen; toasts stay ins
       expect(m.x).toBeGreaterThanOrEqual(7);
       expect(m.x + m.width).toBeLessThanOrEqual(390 - 7);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+      await page.keyboard.press("Escape");
+      await closed(page, menu);
+      // the tab "Weitere" opens its menu with a tap, on screen
+      await page
+        .getByRole("navigation", { name: "Ansichten" })
+        .getByRole("button", { name: /Weitere/ })
+        .tap();
+      await page.locator(menu).waitFor();
+      await settled(page);
+      const views = await box(page.locator(menu));
+      expect(views.x).toBeGreaterThanOrEqual(7);
+      expect(views.x + views.width).toBeLessThanOrEqual(390 - 7);
     },
     { width: 390, touch: true },
   );

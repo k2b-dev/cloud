@@ -1,8 +1,9 @@
 import { createSignal, For } from "solid-js";
-import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Text, useToast, Workspace } from "../src/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Section, Tabs, Text, useToast, Workspace } from "../src/v2";
 
 // Menu, Popover and Toast of v2 in the places the mockup puts them: the "…" of a head (07-formular-menue), a filter
-// panel and a hint in the same head, a context menu and a "…" on rows, and a toast with "Undo" after a deed. Each deed
+// panel and a hint in the same head, a context menu and a "…" on rows, a tab "Weitere" that opens the views without a
+// tab of their own, and a toast with "Undo" after a deed. Each deed
 // lands in `window.__deeds`, so a test reads what ran.
 
 declare global {
@@ -96,7 +97,26 @@ export function Demo() {
         />
       }
     >
-      <Pane label="Aufträge">
+      <Pane
+        label="Aufträge"
+        head={
+          <Tabs
+            label="Ansichten"
+            items={[
+              { label: "Offen", current: true, onClick: did("view:offen") },
+              { label: "Erledigt", onClick: did("view:erledigt") },
+              {
+                label: "Weitere",
+                count: "+2",
+                menu: [
+                  { label: "Archiv", onClick: did("view:archiv") },
+                  { label: "Vorlagen", onClick: did("view:vorlagen") },
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Section title="Offen" count={orders.length}>
           <List label="Offene Aufträge">
             <For each={orders}>

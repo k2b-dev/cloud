@@ -5,6 +5,7 @@ import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { type MenuEntry, MenuTab } from "./menu";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -100,39 +101,55 @@ export type Tab = {
   /** … or switches the view in place. */
   onClick?: () => void;
   current?: boolean;
-  menu?: boolean;
+  /**
+   * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href`, or
+   * `onClick`). It is the menu's button and has no address of its own.
+   */
+  menu?: readonly MenuEntry[];
 };
 
 export type TabsProps = { items: readonly Tab[]; label: string };
 
 /**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
- * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. (The
- * keyboard comes with the behaviour layer.)
+ * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
+ * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views.
  */
 export const Tabs = (props: TabsProps) => (
   <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
     <div class="k2-tabs">
       <For each={props.items}>
         {(tab) => (
-          <Dynamic
-            component={linkOr(tab.href, "button")}
-            type={tab.href !== undefined ? undefined : "button"}
-            class="k2-tab"
-            href={tab.href}
-            onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
-            onClick={() => tab.onClick?.()}
-            aria-current={tab.current ? "page" : undefined}
+          <Show
+            when={tab.menu}
+            fallback={
+              <Dynamic
+                component={linkOr(tab.href, "button")}
+                type={tab.href !== undefined ? undefined : "button"}
+                class="k2-tab"
+                href={tab.href}
+                onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
+                onClick={() => tab.onClick?.()}
+                aria-current={tab.current ? "page" : undefined}
+              >
+                <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab.label}
+                <Show when={tab.count !== undefined}>
+                  <span class="k2-tab-count">{tab.count}</span>
+                </Show>
+              </Dynamic>
+            }
           >
-            <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
-            {tab.label}
-            <Show when={tab.count !== undefined}>
-              <span class="k2-tab-count">{tab.count}</span>
-            </Show>
-            <Show when={tab.menu}>
-              <Icon name="chevron-down" />
-            </Show>
-          </Dynamic>
+            {(items) => (
+              <MenuTab items={items()} current={tab.current}>
+                <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab.label}
+                <Show when={tab.count !== undefined}>
+                  <span class="k2-tab-count">{tab.count}</span>
+                </Show>
+              </MenuTab>
+            )}
+          </Show>
         )}
       </For>
     </div>

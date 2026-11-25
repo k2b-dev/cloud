@@ -198,7 +198,17 @@ export const MailScreen = (props: { open?: boolean }) => (
               { label: "Handlungsbedarf", count: 5 },
               { label: "Mir zugewiesen", count: 3 },
               { label: "Wartet auf Antwort", count: 4 },
-              { label: "Weitere", count: "+5", menu: true },
+              {
+                label: "Weitere",
+                count: "+5",
+                menu: [
+                  { label: "Erledigt", href: `${screen}/mail` },
+                  { label: "Später", href: `${screen}/mail` },
+                  { label: "Entwürfe", href: `${screen}/mail` },
+                  { label: "Gesendet", href: `${screen}/mail` },
+                  { label: "Spam", href: `${screen}/mail` },
+                ],
+              },
             ]}
           />
         }

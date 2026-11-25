@@ -261,7 +261,8 @@ lines instead of cutting a thing.
   problem there).
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
-  head they are their own 44 px bar.
+  head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
+  the tab ("Weitere +8") opens the views that have no tab of their own.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
   value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:

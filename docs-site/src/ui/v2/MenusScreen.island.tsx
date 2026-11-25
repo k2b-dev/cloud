@@ -1,8 +1,8 @@
-import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Text, useToast, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createSignal, For } from "solid-js";
 
 // Menu, Popover and Toast of @k2b/ui/v2 on a list of orders in Grids: "Neu" opens a menu with a submenu of templates,
-// "…" holds view settings that toggle, the filter is a panel, the refresh button has a hint. Every row has its deeds
+// "…" holds view settings that toggle, the tab "Weitere" opens the views that have no tab of their own, the filter is a panel, the refresh button has a hint. Every row has its deeds
 // on a right-click or a long press and behind its own "…"; deleting one answers with a toast and "Rückgängig".
 
 type Order = { id: string; title: string; customer: string };
@@ -21,6 +21,8 @@ export default function MenusScreen() {
   const [done, setDone] = createSignal(false);
   const [urgent, setUrgent] = createSignal(false);
   const [mine, setMine] = createSignal(true);
+  const [view, setView] = createSignal("Offen");
+  const further = ["Archiv", "Vorlagen", "Papierkorb"];
   const remove = (order: Order) => {
     const before = orders();
     setOrders(before.filter((each) => each.id !== order.id));
@@ -32,7 +34,7 @@ export default function MenusScreen() {
     { label: "Verschieben nach", icon: "folder", items: [{ label: "Werkstatt" }, { label: "Lager" }, { label: "Archiv", disabled: true }] },
     { label: "Löschen", icon: "trash", danger: true, onClick: () => remove(order) },
   ];
-  const view = (): MenuEntry[] => [
+  const settings = (): MenuEntry[] => [
     { label: "Nach Kunde gruppieren", checked: grouped(), onClick: () => setGrouped(!grouped()) },
     { label: "Erledigte zeigen", checked: done(), onClick: () => setDone(!done()) },
     "separator",
@@ -62,9 +64,18 @@ export default function MenusScreen() {
       head={
         <Bar
           start={
-            <Text type="row" weight="strong">
-              Aufträge
-            </Text>
+            <Tabs
+              label="Ansichten"
+              items={[
+                ...["Offen", "Erledigt"].map((name) => ({ label: name, current: view() === name, onClick: () => setView(name) })),
+                {
+                  label: further.includes(view()) ? view() : "Weitere",
+                  count: further.includes(view()) ? undefined : `+${further.length}`,
+                  current: further.includes(view()),
+                  menu: further.map((name) => ({ label: name, checked: view() === name, onClick: () => setView(name) })),
+                },
+              ]}
+            />
           }
           end={
             <>
@@ -83,7 +94,7 @@ export default function MenusScreen() {
               >
                 Filter
               </Popover>
-              <Menu label="Ansicht" icon="adjustments-horizontal" items={view()} />
+              <Menu label="Ansicht" icon="adjustments-horizontal" items={settings()} />
               <Menu
                 variant="primary"
                 icon="plus"
