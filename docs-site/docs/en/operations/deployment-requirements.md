@@ -71,10 +71,10 @@ Assistant; Compose does not enforce this order automatically.
 
 ## Remove the FAQ application when upgrading
 
-The built-in FAQ application is removed from this release. Application Help
-continues to work. Your authored FAQ entries stay in `faq.entries`; no migration
-drops the schema or deletes entries, translations, audiences, or their order.
-The new release no longer publishes a FAQ application image.
+The built-in FAQ application is removed from this release. **Upgrading
+permanently deletes all FAQ entries**, including translations, audiences and
+their order. Core drops the FAQ schema even when the application is absent.
+Application Help continues to work; the new release publishes no FAQ image.
 
 Before stopping the old service, export your entries with an administrator
 profile connected to the old installation. Choose an unused output filename:
@@ -94,14 +94,8 @@ in separate notes or sections. Review the notebook's sharing before copying:
 FAQ audiences are not converted into notebook access. Notebooks requires
 sign-in and notebook access; it does not replace anonymous FAQ publication.
 In-app Help remains application-authored documentation and does not import your
-FAQ entries automatically. If you have already upgraded, an operator with
-database access can still read the retained entries:
-
-```sql
-SELECT id, translations, audience, position, created_at
-FROM faq.entries
-ORDER BY position, created_at, id;
-```
+FAQ entries automatically. Export before upgrading: after the migration,
+the entries can only be recovered from a pre-upgrade backup or export.
 
 Stop and remove the old service using your previous Compose configuration,
 including your normal environment and infrastructure overlays:
@@ -111,11 +105,16 @@ docker compose -f compose.prod.yml stop app-faq
 docker compose -f compose.prod.yml rm -f app-faq
 ```
 
-Then deploy the new release. For Kubernetes or custom deployments, remove the
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or custom deployments, remove the
 FAQ workload and service from your manifests. Remove its app-key mount and
-secret from deployment configuration after the service is gone. Revoke unused
-FAQ app keys separately through app-key administration; retained keys, grants,
-package assignments, and application history are not deleted by this upgrade.
+secret from deployment configuration after the service is gone. Core also
+deletes the application's remembered registration, package assignment, app
+keys, grants, settings, rail entries, notifications, approvals, audit references
+and indexed Help. Explicit FAQ grants are removed from other workloads'
+mandates, and those workloads are paused for review. Other applications'
+data stays. Back up the database before upgrading if you need this history.
 You can remove the cached CLI module with
 `cld --profile <admin-profile> plugins remove faq` after exporting.
 
@@ -124,9 +123,8 @@ container is an unknown application handled by the generic registry. Stop it
 before upgrading: graceful shutdown withdraws its live registration; otherwise
 its last heartbeat lease expires within three minutes. The gateway and shell
 then drop its routes and footer link. Until expiry, a stopped service can still return a gateway
-error through an old route; other applications remain available. Remembered
-FAQ records remain visible as offline in **Administration → Apps** and can be
-hidden with the existing removal action, which leaves FAQ data and keys intact.
+error through an old route; other applications remain available. Core removes
+the remembered FAQ listing during the upgrade.
 Update bookmarks, integrations, and external links to `/faq`, `/admin/faq`, and
 `/api/faq`; those surfaces are removed without a redirect.
 
