@@ -6,24 +6,24 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 
-// The start of Notebooks on v2 in a real browser: a notebook is created from the head (wide) and from the floating main
-// action (phone), pinning reorders the sidebar, older activity loads. The test stands in for the server and the API.
+// Notebooks without any notebook, in a real browser: the first notebook is created from the head (wide, blank and from a
+// template) and from the floating main action (phone). The test stands in for the server and the API.
 const ui = resolve(import.meta.dir, "../../../ui");
 const origin = "https://cloud.example.test";
-const shots = process.env.CLOUD_NOTEBOOKS_OVERVIEW_SHOTS;
+const shots = process.env.CLOUD_NOTEBOOKS_EMPTY_SHOTS;
 
 const buildHarness = async (): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "notebooks-overview.browser-harness.tsx")],
+    entrypoints: [resolve(import.meta.dir, "no-notebooks.browser-harness.tsx")],
     target: "browser",
     format: "iife",
     conditions: ["browser"],
     plugins: [
       {
-        name: "solid-notebooks-overview-test",
+        name: "solid-no-notebooks-test",
         setup(builder) {
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
@@ -38,7 +38,7 @@ const buildHarness = async (): Promise<string> => {
       },
     ],
   });
-  if (!build.success) throw new AggregateError(build.logs, "Notebooks overview harness build failed");
+  if (!build.success) throw new AggregateError(build.logs, "No-notebooks harness build failed");
   return build.outputs[0]!.text();
 };
 
@@ -66,15 +66,15 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const tablet: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
-const page = (sample: string) =>
-  `<!doctype html><html lang="de" class="light" data-sample="${sample}"><head><meta charset="utf-8">` +
+const page = () =>
+  `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
-type Seen = { created: unknown[]; fromTemplate: { templateId: string; body: unknown }[]; activity: string[]; opened: string[] };
+type Seen = { created: unknown[]; fromTemplate: { templateId: string; body: unknown }[]; opened: string[] };
 
-const open = async (view: View, sample = "normal") => {
+const open = async (view: View) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -86,11 +86,11 @@ const open = async (view: View, sample = "normal") => {
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
-  const seen: Seen = { created: [], fromTemplate: [], activity: [], opened: [] };
+  const seen: Seen = { created: [], fromTemplate: [], opened: [] };
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    if (url.pathname === "/app/notebooks") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(sample) });
+    if (url.pathname === "/app/notebooks") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page() });
     if (url.pathname.startsWith("/app/notebooks/")) {
       seen.opened.push(url.pathname);
       return route.fulfill({ contentType: "text/html; charset=utf-8", body: "<!doctype html><title>Notizbuch</title>" });
@@ -104,28 +104,6 @@ const open = async (view: View, sample = "normal") => {
       seen.fromTemplate.push({ templateId: template[1]!, body: route.request().postDataJSON() });
       return route.fulfill({ status: 201, json: { id: "Neu002" } });
     }
-    if (url.pathname === "/api/notebooks/overview/activity") {
-      seen.activity.push(url.search);
-      return route.fulfill({
-        json: {
-          data: [
-            {
-              id: "older-1",
-              notebook: { id: "Prod01", name: "Produkt", icon: "ti ti-bulb" },
-              note: { id: "Note03", title: "Preisliste 2027" },
-              noteVersionId: null,
-              actor: { kind: "user", id: "00000000-0000-4000-8000-000000000003", displayName: "Mara Lind", avatarHash: null },
-              action: "note.created",
-              metadata: {},
-              occurrenceCount: 1,
-              createdAt: "2026-11-01T09:00:00.000Z",
-              lastOccurredAt: "2026-11-01T09:00:00.000Z",
-            },
-          ],
-          nextCursor: null,
-        },
-      });
-    }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
@@ -138,7 +116,7 @@ const open = async (view: View, sample = "normal") => {
 };
 
 const shoot = async (tab: Page, name: string) => {
-  if (shots) await tab.screenshot({ path: join(shots, `notebooks-overview-v2-${name}.png`) });
+  if (shots) await tab.screenshot({ path: join(shots, `notebooks-empty-v2-${name}.png`) });
 };
 
 const expectClean = async (tab: Page) => {
@@ -149,12 +127,11 @@ const expectClean = async (tab: Page) => {
   expect(layout.problems).toEqual([]);
 };
 
-const sidebarNames = (tab: Page) => tab.locator("[data-k2-part=Nav] .k2-ni-name").allTextContents();
-
-describe("the Notebooks overview on v2", () => {
+describe("Notebooks without a notebook on v2", () => {
   test("create: a blank notebook from the head, with its name and description, opens the new notebook", async () => {
     const { context, tab, errors, seen } = await open(wide);
     try {
+      await tab.getByText("Du kannst noch kein Notizbuch öffnen. Erstelle das erste.").waitFor();
       await expectClean(tab);
       await shoot(tab, "light-1440");
       await tab.getByRole("button", { name: "Neues Notizbuch" }).first().click();
@@ -179,7 +156,6 @@ describe("the Notebooks overview on v2", () => {
     const { context, tab, errors, seen } = await open(tablet);
     try {
       await expectClean(tab);
-      await shoot(tab, "light-1024");
       await tab.getByRole("button", { name: "Neues Notizbuch" }).first().click();
       const dialog = tab.getByRole("dialog", { name: "Neues Notizbuch" });
       await dialog.getByRole("radio", { name: "Rezepte" }).check();
@@ -195,65 +171,17 @@ describe("the Notebooks overview on v2", () => {
     }
   }, 60_000);
 
-  test("pin: a notebook's menu pins it, and it leads the sidebar with the flag", async () => {
-    const { context, tab, errors } = await open(wide);
-    try {
-      expect(await sidebarNames(tab)).toEqual(["Alle Notizbücher", "Team Logistik", "Produkt", "Rezepte"]);
-      await tab.getByRole("button", { name: /Rezepte/ }).click();
-      await tab.getByRole("menuitem", { name: "Rezepte anheften" }).click();
-      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Nav] .k2-ni-name")[1]?.textContent === "Rezepte");
-      expect(await sidebarNames(tab)).toEqual(["Alle Notizbücher", "Rezepte", "Team Logistik", "Produkt"]);
-      expect(await tab.evaluate(() => document.cookie)).toContain("Rezep1");
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-
-  test("activity: older entries load below the newest without moving them", async () => {
-    const { context, tab, errors, seen } = await open(wide);
-    try {
-      const activity = tab.getByRole("list", { name: "Letzte Notizbuchaktivitäten" });
-      expect(await activity.getByRole("listitem").count()).toBe(3);
-      await tab.getByText("Mehr laden", { exact: true }).click();
-      await activity.getByText("Mara Lind").waitFor();
-      expect(await activity.getByRole("listitem").count()).toBe(4);
-      expect(seen.activity.at(-1)).toContain("cursor=cursor-2");
-      // the last page came: no "Mehr laden" any more
-      expect(await tab.getByText("Mehr laden", { exact: true }).count()).toBe(0);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-
-  test("open on phone: recent notes and activity stand one under the other, the floating action creates", async () => {
-    const { context, tab, errors, seen } = await open(phone, "worst");
+  test("open on phone: the floating main action creates the first notebook", async () => {
+    const { context, tab, errors, seen } = await open(phone);
     try {
       await expectClean(tab);
-      await shoot(tab, "worst-light-390");
-      // nothing is wider than the phone, also with the worst names
-      expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await tab.getByRole("list", { name: "Zuletzt bearbeitet" }).waitFor();
-      await tab.getByRole("list", { name: "Letzte Notizbuchaktivitäten" }).waitFor();
+      await shoot(tab, "light-390");
       await tab.locator(".k2-fab").tap();
       const dialog = tab.getByRole("dialog", { name: "Neues Notizbuch" });
       await dialog.getByRole("textbox", { name: "Name" }).fill("Unterwegs");
       await dialog.getByRole("button", { name: "Erstellen" }).tap();
       await tab.waitForURL(`${origin}/app/notebooks/Neu001`);
       expect(seen.created).toEqual([{ name: "Unterwegs" }]);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 60_000);
-
-  test("an empty Cloud says what is missing in place of the lists", async () => {
-    const { context, tab, errors } = await open(wide, "empty");
-    try {
-      await tab.getByText("Erstelle ein Notizbuch oder öffne eines aus der Seitenleiste, um mit dem Schreiben zu beginnen.").waitFor();
-      await tab.getByText("Änderungen an Notizbüchern und Notizen erscheinen hier.").waitFor();
-      await expectClean(tab);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -127,7 +127,7 @@ export default ssr<AuthContext>(async (c) => {
       fullPage
       title={[
         { title: t.start, href: "/" },
-        { title: t.notebooks, href: "/app/notebooks" },
+        { title: t.notebooks },
         { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
         { title: t.attachments },
       ]}

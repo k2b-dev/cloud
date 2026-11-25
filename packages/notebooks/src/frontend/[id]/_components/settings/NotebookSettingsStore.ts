@@ -8,7 +8,6 @@ import { cookies } from "@k2b/stdlib/browser";
 
 const COOKIE_NAME = "settings-app-notebooks";
 const MAX_NOTEBOOK_SETTINGS = 25;
-const MAX_PINNED_NOTEBOOKS = 200;
 
 export type NotebookSettings = {
   lastNoteId: string | null;
@@ -18,7 +17,6 @@ export type NotebookSettings = {
 
 type AllNotebookSettings = {
   lastNotebookId: string | null;
-  pinnedNotebookIds: string[];
   detailPanelOpen: boolean;
   /** Hides the desktop navigation in every notebook, for focused or private writing. */
   navigationHidden: boolean;
@@ -39,7 +37,6 @@ const DEFAULT_SETTINGS: NotebookSettings = {
 
 const DEFAULT_ALL: AllNotebookSettings = {
   lastNotebookId: null,
-  pinnedNotebookIds: [],
   detailPanelOpen: false,
   navigationHidden: false,
   tabMovesFocus: false,
@@ -54,7 +51,6 @@ const writeCookie = (data: AllNotebookSettings) => {
   // mistake. A default is `undefined`, which JSON leaves out of the cookie.
   const compact: { [Key in keyof AllNotebookSettings]: AllNotebookSettings[Key] | undefined } = {
     lastNotebookId: data.lastNotebookId ?? undefined,
-    pinnedNotebookIds: data.pinnedNotebookIds.length > 0 ? data.pinnedNotebookIds : undefined,
     detailPanelOpen: data.detailPanelOpen || undefined,
     navigationHidden: data.navigationHidden || undefined,
     tabMovesFocus: data.tabMovesFocus || undefined,
@@ -66,11 +62,6 @@ const writeCookie = (data: AllNotebookSettings) => {
 
 const isTreeSort = (value: unknown): value is NotebookSettings["treeSort"] =>
   value === "updated" || value === "created" || value === "title";
-
-const isPublicNotebookId = (value: unknown): value is string => typeof value === "string" && /^[0-9A-Za-z]{6}$/.test(value);
-
-const normalizePinnedNotebookIds = (value: unknown): string[] =>
-  Array.isArray(value) ? [...new Set(value.filter(isPublicNotebookId))].slice(0, MAX_PINNED_NOTEBOOKS) : [];
 
 const compactNotebookSettings = (settings: Partial<NotebookSettings>): StoredNotebookSettings => {
   const compact: StoredNotebookSettings = {};
@@ -110,7 +101,6 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
 
   return {
     lastNotebookId: typeof parsed.lastNotebookId === "string" ? parsed.lastNotebookId : null,
-    pinnedNotebookIds: normalizePinnedNotebookIds(parsed.pinnedNotebookIds),
     detailPanelOpen: parsed.detailPanelOpen === true,
     navigationHidden: parsed.navigationHidden === true,
     tabMovesFocus: parsed.tabMovesFocus === true,
@@ -179,16 +169,6 @@ export const setLastNotebookId = (id: string) => {
   writeCookie({
     ...all,
     lastNotebookId: id,
-  });
-};
-
-/** Reads and writes the overview's user-defined notebook order. */
-export const readPinnedNotebookIds = (): string[] => readCookie().pinnedNotebookIds;
-
-export const setPinnedNotebookIds = (ids: string[]) => {
-  writeCookie({
-    ...readCookie(),
-    pinnedNotebookIds: normalizePinnedNotebookIds(ids),
   });
 };
 
@@ -263,6 +243,3 @@ export const parseFullWidth = (cookieHeader: string | undefined): boolean => par
 export const parseLastNotebookId = (cookieHeader: string | undefined): string | null => {
   return parseCookieHeader(cookieHeader).lastNotebookId;
 };
-
-/** Parses pinned notebook ids for SSR-stable ordering on the overview. */
-export const parsePinnedNotebookIds = (cookieHeader: string | undefined): string[] => parseCookieHeader(cookieHeader).pinnedNotebookIds;

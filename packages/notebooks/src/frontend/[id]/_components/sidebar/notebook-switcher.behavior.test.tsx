@@ -45,8 +45,8 @@ describe("notebooks container switcher loader", () => {
 
   test("switcher labels match the overview in English and German", async () => {
     for (const { locale, expected } of [
-      { locale: "en", expected: { switchLabel: "Switch notebook", actions: ["New notebook", "All notebooks"] } },
-      { locale: "de", expected: { switchLabel: "Notizbuch wechseln", actions: ["Neues Notizbuch", "Alle Notizbücher"] } },
+      { locale: "en", expected: { switchLabel: "Switch notebook", actions: ["New notebook"] } },
+      { locale: "de", expected: { switchLabel: "Notizbuch wechseln", actions: ["Neues Notizbuch"] } },
     ]) {
       dom.document.documentElement.lang = locale;
       const view = await mount(true);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
 import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
-import { notebooksPageMessages } from "../frontend/messages";
+import { notebookWorkspaceMessages } from "../frontend/[id]/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { notebookChartOptions } from "../lib/chart-options";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
@@ -38,10 +38,12 @@ describe("notebookHelp", () => {
     expect(notebookHelp.getMarkdown("notebooks-start", "fr")).toBe(notebookHelp.getMarkdown("notebooks-start", "en")!);
   });
 
-  test("points to the recent notes the overview shows, with its label", () => {
+  test("points to the recent notes and the search of the sidebar, with their labels", () => {
     for (const locale of ["en", "de"] as const) {
       const start = notebookHelp.getMarkdown("notebooks-start", locale)!;
-      expect(start).toContain(`**${notebooksPageMessages.resolve([locale]).t.recentlyEdited}**`);
+      const { t } = notebookWorkspaceMessages.resolve([locale]);
+      expect(start).toContain(`**${t.recent}**`);
+      expect(start).toContain(`**${t.searchNotes}**`);
     }
     expect(notebookHelp.getMarkdown("notebooks-start", "en")).not.toContain("**Recents**");
     expect(notebookHelp.getMarkdown("notebooks-start", "de")).not.toContain("**Zuletzt verwendet**");

@@ -1,87 +1,40 @@
+import { hasRole } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
-import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
-import { projectNotebook } from "./[id]/page-data";
+import { parseLastNotebookId } from "./[id]/_components/settings/NotebookSettingsStore";
 import { notebooksPageMessages } from "./messages";
-import NotebooksOverview from "./NotebooksOverview.island";
+import NoNotebooks from "./NoNotebooks.island";
 
 /**
- * Notebooks list page - shows all notebooks the user has access to
+ * `/app/notebooks` opens a notebook straight away: the one this person opened last, else the first one they can see.
+ * The address's parameters go along (except the former `recent=true`). Only without any notebook it shows a workspace
+ * that offers the first one. There is no overview page (maintainer decision on #4185).
  */
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
-  const { t } = notebooksPageMessages.resolve([getLocale(c)]);
-  const url = new URL(c.req.raw.url);
-  const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
+  const params = new URL(c.req.url).searchParams;
+  params.delete("recent");
+  const open = (shortId: string) => c.redirect(`/app/notebooks/${shortId}${params.size ? `?${params}` : ""}`);
 
-  const [notebookPage, recentNotes, activityResult] = await Promise.all([
-    notebooksService.notebook.list({ userId: user.id }),
-    notebooksService.note.recentForUser({ userId: user.id, limit: 12 }),
-    notebooksService.activity
-      .list({ userId: user.id, limit: 30 })
-      .then((page) => ({ page, error: null }))
-      .catch((error: unknown) => ({
-        page: { items: [], nextCursor: null },
-        error: error instanceof Error ? error.message : t.activityLoadFailed,
-      })),
-  ]);
-  const notebooks = notebookPage.items;
-
-  // Redirect to last opened notebook if ?recent=true
-  if (url.searchParams.get("recent") === "true" && notebooks.length > 0) {
-    const lastId = parseLastNotebookId(cookieHeader);
-    if (lastId && notebooks.some((n) => n.shortId === lastId)) {
-      return c.redirect(`/app/notebooks/${lastId}`);
-    }
+  const lastId = parseLastNotebookId(c.req.header("Cookie"));
+  if (lastId) {
+    const last = await notebooksService.notebook.getByShortId({ shortId: lastId });
+    const allowed =
+      last &&
+      (hasRole(user, "admin") || (await notebooksService.notebook.permission.get({ notebookId: last.id, userId: user.id })) !== "none");
+    if (last && allowed) return open(last.shortId);
   }
-  const templates = notebooksService.template.list(getLocale(c));
-  const overviewStats = new Map(
-    (await notebooksService.notebook.overviewStats({ notebookIds: notebooks.map((notebook) => notebook.id) })).map((stats) => [
-      stats.notebookId,
-      stats,
-    ]),
-  );
+  const [first] = (await notebooksService.notebook.list({ userId: user.id, pagination: { page: 1, perPage: 1 } })).items;
+  if (first) return open(first.shortId);
 
+  const { t } = notebooksPageMessages.resolve([getLocale(c)]);
+  const templates = notebooksService.template.list(getLocale(c));
   return () => (
-    <Layout printHint={t.printHint} c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
-      <NotebooksOverview
-        notebooks={notebooks.map((notebook) => {
-          const { id, name, description, icon } = projectNotebook(notebook);
-          const stats = overviewStats.get(notebook.id);
-          return {
-            id,
-            name,
-            description,
-            icon,
-            noteCount: stats?.noteCount ?? 0,
-            lastEditedAt: stats?.lastNoteAt ?? null,
-          };
-        })}
-        templates={templates}
-        recentNotes={recentNotes.map((note) => ({
-          id: note.shortId,
-          notebookId: note.notebookShortId,
-          notebookName: note.notebookName,
-          notebookIcon: note.notebookIcon,
-          title: note.title,
-          updatedAt: note.updatedAt,
-        }))}
-        initialActivity={{
-          items: activityResult.page.items.map((item) => ({
-            ...item,
-            notebook: { id: item.notebook.shortId, name: item.notebook.name, icon: item.notebook.icon },
-            note: item.note ? { id: item.note.shortId, title: item.note.title } : null,
-          })),
-          nextCursor: activityResult.page.nextCursor,
-        }}
-        initialActivityError={activityResult.error}
-        initialPinnedNotebookIds={parsePinnedNotebookIds(cookieHeader)}
-        dateConfig={getDateConfig(c)}
-        now={new Date().toISOString()}
-      />
+    <Layout printHint={t.printHint} c={c} fullPage fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
+      <NoNotebooks templates={templates} />
     </Layout>
   );
 });

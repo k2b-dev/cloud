@@ -62,7 +62,6 @@ export function createNotebookSwitcher(
     onLoad: load,
     actions: [
       ...(canCreate ? [{ id: "new", label: t().newNotebook, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : []),
-      { id: "all", label: t().allNotebooks, icon: "ti ti-layout-grid", href: "/app/notebooks" },
     ],
   });
 }
