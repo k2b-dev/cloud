@@ -421,17 +421,24 @@ test("on the phone a bound's calendar is the sheet's next step, with a way back 
       await page.locator(".k2-fbar-item:first-child .k2-stmt-b").tap();
       await page.getByRole("dialog", { name: "Eingang" }).waitFor();
       await steady(page, '[role="dialog"]');
+      // Each step changes the sheet's height, and the sheet follows its new height a frame late (under load several
+      // frames): it stands at its old top with its lower part below the window (#4141). A tap in that moment finds the
+      // day outside the window and does not land (CI: "element is outside of the viewport"), so each tap waits until
+      // the sheet stands.
       await page.locator(".k2-fsheet .k2-fed-bounds .k2-mi").first().tap();
       const step = page.getByRole("dialog", { name: "Eingang · Von" });
       await step.waitFor();
+      await steady(page, '[role="dialog"]');
       expect(await page.locator(".k2-dpop").count()).toBe(0);
       const cell = await box(page, '.k2-fsheet-pick [data-value="2026-11-10"]');
       expect(Math.round(cell.width)).toBe(44);
       // back leads to the period, not to the list of filters
       await page.getByRole("button", { name: "Zurück", exact: true }).tap();
       await page.getByRole("dialog", { name: "Eingang" }).waitFor();
+      await steady(page, '[role="dialog"]');
       await page.locator(".k2-fsheet .k2-fed-bounds .k2-mi").first().tap();
       await step.waitFor();
+      await steady(page, '[role="dialog"]');
       await page.locator('.k2-fsheet-pick [data-value="2026-11-10"]').tap();
       await page.getByRole("dialog", { name: "Eingang" }).waitFor();
       expect(param(page, "received")).toBe("2026-11-10..");
