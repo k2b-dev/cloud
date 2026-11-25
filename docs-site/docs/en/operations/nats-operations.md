@@ -10,10 +10,12 @@ updated: 2026-10-30
 
 # NATS operations
 
-Use **Observability → NATS & Sync** (`/admin/observability/nats`) to inspect broker
-infrastructure. Use **Observability → NATS & Sync → Sync** (`/admin/observability/nats/sync`) to
-investigate application work and perform supported recovery actions. Both
-pages require administrator access.
+Use **Observability → Infrastructure → NATS** (`/admin/observability/infrastructure/nats`) to
+inspect broker infrastructure; its system-account connection is set up under
+**Diagnostics access** (`/admin/observability/infrastructure/nats-access`). Use
+**Observability → Sync** (`/admin/observability/nats/sync`) to investigate
+application work and perform supported recovery actions. These pages require
+administrator access.
 
 For cluster provisioning, persistence, payload limits, and coordinated
 upgrades, follow [Deployment requirements](/en/docs/operations/deployment-requirements).
