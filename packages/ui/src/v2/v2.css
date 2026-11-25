@@ -3134,6 +3134,20 @@
   gap: 8px;
   outline: none;
 }
+/* On the phone the panel is a sheet, as a dialog is: the whole width at the bottom, its top corners round, as high as
+   its content up to most of the screen; a swipe down closes it. */
+.k2-ui .k2-pop[data-presentation="sheet"] {
+  position: fixed;
+  inset: auto 0 0;
+  /* as high as its content: on a touch screen core places the sheet by its top, and a bottom of 0 would squeeze it */
+  height: fit-content;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  box-shadow: var(--k2-float-large);
+}
 .k2-ui .k2-pop-title {
   margin: 0;
   padding: 0 var(--k2-edge);
@@ -3601,6 +3615,24 @@
 }
 .k2-ui .k2-table td[data-align="end"] .k2-skel {
   margin-left: auto;
+}
+/* a value on its way in an inline line of facts holds a short place of its own: the line has no column to fill */
+.k2-ui .k2-facts[data-inline] .k2-skel {
+  width: 48px;
+}
+/* A value that is there while a newer one comes keeps its exact room, unseen (its lines, chips and wrapping), and the
+   bar lies over its first line, so nothing moves when the newer one comes. */
+.k2-ui .k2-held {
+  display: contents;
+  visibility: hidden;
+}
+.k2-ui :is(.k2-fact-value, .k2-cell-value, .k2-cell-meta):has(> .k2-skel[data-over]) {
+  position: relative;
+}
+.k2-ui .k2-skel[data-over] {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 /* words for assistive technology only, such as "loading" beside the placeholders */
 .k2-ui .k2-hidden-text {

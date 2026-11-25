@@ -18,7 +18,7 @@ import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
-import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
+import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
 
@@ -135,6 +135,14 @@ export type FactsProps = {
   inline?: boolean;
   /** At the end of the inline line, such as "Print". */
   end?: JSX.Element;
+  /**
+   * The values are on their way: a quiet bar lies on each, while labels, hints and copy buttons (not yet usable) stay.
+   * A value that is there (a refresh) keeps its exact room unseen under the bar, its lines, chips and wrapping; a value
+   * not there yet (`""`, `undefined`) is a bar of one line. So nothing moves when they come. Assistive technology
+   * hears "Wird geladen…" at each value. Give the labels the values will have, and `copy` (an empty string is
+   * enough) where a value will have it.
+   */
+  loading?: boolean;
 };
 
 /**
@@ -144,19 +152,24 @@ export type FactsProps = {
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
-    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined}>
+    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
       <For each={props.items}>
         {(item) => (
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                {item.value}
+                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
+                  {item.value}
+                </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
-              <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
+              {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
+              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
+                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              </Show>
             </dd>
           </div>
         )}

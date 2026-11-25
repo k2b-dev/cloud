@@ -91,7 +91,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
 | a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | – |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | – |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |

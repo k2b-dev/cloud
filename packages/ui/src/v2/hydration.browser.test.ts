@@ -238,6 +238,65 @@ test("controls without a handler keep their own state, and the shape shows it", 
   });
 });
 
+// Facts and cells whose values are on their way keep the shape of the loaded ones: labels and hints stay, each value
+// is a bar of its line's height, and nothing moves when the values come (#4152).
+for (const width of [1440, 390])
+  test(`at ${width}: loading facts and cells stand in the shape of the loaded ones`, async () => {
+    await withPage(async (page) => {
+      const shape = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".k2-facts, .k2-fact-pair > *, .k2-cells, .k2-cell, .k2-cell > *")].map((element) => {
+            const box = element.getBoundingClientRect();
+            return [element.className || element.tagName, Math.round(box.top), Math.round(box.left), Math.round(box.height)].join(" ");
+          }),
+        );
+      const loaded = await shape();
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(true));
+      await settled(page);
+      // places and heights, not widths: an inline value's bar is shorter than its words, the line keeps its height
+      expect(await shape()).toEqual(loaded);
+      const said = await page.evaluate(() => ({
+        busy: [...document.querySelectorAll('[aria-busy="true"]')].map((element) => element.className),
+        // per value: what assistive technology hears, and whether the value that is there is held unseen
+        values: [...document.querySelectorAll(".k2-fact-value, .k2-cell-value")].map((value) => [
+          value.querySelector(":scope > .k2-hidden-text")?.textContent,
+          value.querySelector(":scope > .k2-held")?.getAttribute("aria-hidden") ?? "no value yet",
+        ]),
+        labels: [...document.querySelectorAll(".k2-fact-pair > dt, .k2-cell-label")].map((label) => label.textContent?.trim()),
+      }));
+      expect(said.busy).toEqual(["k2-facts", "k2-facts", "k2-facts", "k2-cell", "k2-cell"]);
+      const held = ["Wird geladen...", "true"];
+      // "Notiz" has no value yet: a bar of one line
+      expect(said.values).toEqual([held, held, held, held, held, ["Wird geladen...", "no value yet"], held, held, held, held, held, held]);
+      expect(said.labels).toEqual([
+        "Kundennr.",
+        "Ort",
+        "Anschrift",
+        "Schlüssel",
+        "Status",
+        "Notiz",
+        "Stand",
+        "Termin",
+        "Betrag",
+        "Ansprechperson",
+        "Offen",
+        "Erledigt",
+      ]);
+      // the value under the bar is not seen
+      expect(
+        await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-held *, .k2-held")].every((part) => getComputedStyle(part).visibility === "hidden"),
+        ),
+      ).toBe(true);
+      // the copy buttons keep their place, not yet usable
+      const copy = page.locator(".k2-fact-pair > dd > .k2-btn");
+      expect(await copy.evaluateAll((buttons) => buttons.map((button) => button.matches(":disabled")))).toEqual([true, true]);
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(false));
+      await settled(page);
+      expect(await shape()).toEqual(loaded);
+    }, width);
+  });
+
 test("facts are pairs of term and value, Markdown in prose runs nothing", async () => {
   await withPage(async (page) => {
     const facts = await page.evaluate(() => {
@@ -245,7 +304,8 @@ test("facts are pairs of term and value, Markdown in prose runs nothing", async 
       return [...list.children].map((pair) => `${pair.tagName}:${[...pair.children].map((child) => child.tagName).join(",")}`);
     });
     expect(facts).toEqual(["DIV:DT,DD", "DIV:DT,DD"]);
-    expect(await page.locator("dl.k2-facts dd .k2-btn").count()).toBe(1);
+    // the first list: one value to copy
+    expect(await page.locator("dl.k2-facts").first().locator("dd .k2-btn").count()).toBe(1);
     const prose = page.locator('[data-k2-part="Prose"]');
     expect(await prose.locator("script, img, [onerror]").count()).toBe(0);
     expect(await prose.locator('a[href^="javascript"]').count()).toBe(0);

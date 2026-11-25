@@ -105,7 +105,9 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron). Use for the key statements of a record.
+`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+what is there keeps its room unseen under it, a value not there yet is one
+line; symbol and label stay). Use for the key statements of a record.
 
 ### Tiles
 
@@ -224,7 +226,12 @@ edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
-line with `end` (such as a print button).
+line with `end` (such as a print button). `loading` while the values are on
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 
@@ -387,7 +394,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
@@ -420,7 +429,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
