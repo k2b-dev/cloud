@@ -18,6 +18,12 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 <Example recipe="form-detail" height="640" default="Filled" />
 
+## Settings with more than text
+
+The sign-in settings of an app: a field that goes back to its default through the deed at the end of its label line, a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, a code from another device, and questions that open in place. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
+
+<Example recipe="settings" height="760" />
+
 ## Errors, conflicts and saving
 
 - **At the field:** a server error or "Pflichtfeld." goes into the `error` of its field. It replaces the hint and marks the control.
@@ -38,7 +44,7 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 - Many options, or options that come from data, such as customers.
 - Takes little room; `placeholder` says what to pick.
-- An option that cannot be chosen now is `disabled`.
+- An option that cannot be chosen now is `disabled`; so is the whole select while it cannot be changed.
 
 ## Parts
 
@@ -46,7 +52,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Field
 
-Names one control with a label, a hint or an error, and "optional" or a unit; `Field.Row` puts fields side by side.
+Names one control with a label, a hint or an error, and "optional" or a unit, or one deed at the end of its label line (`action`, such as "Auf Standard zurücksetzen"); `Field.Row` puts fields side by side.
 
 <Props of="Field Field.Row" />
 
@@ -61,6 +67,24 @@ A text field of one line or several (`multiline`), a number, an address or a sea
 One choice from many options, in a list that opens.
 
 <Props of="Select SelectOption" />
+
+### TagsInput
+
+Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
+
+<Props of="TagsInput" />
+
+### ImageInput
+
+One image with its preview, a button to choose or change it and one to remove it; a dropped or pasted file counts as chosen.
+
+<Props of="ImageInput" />
+
+### CodeInput
+
+A one-time or pairing code, one box per character; a phone offers a code from a message.
+
+<Props of="CodeInput" />
 
 ### DateInput
 
@@ -84,7 +108,8 @@ One choice from a few options, all visible.
 
 - A time field: a time is an `Input` with a placeholder such as "09:00".
 - `DateInput` has no picker yet and takes no `disabled`.
-- `Select` can dim single options (`SelectOption` `disabled`), but not the whole select.
+- An image cropper: `ImageInput` makes a square picture of the chosen file, or what its `transform` returns.
+- A template editor with a preview: until it ships, a field shows the v1 `TemplateEditor` in a `Dialog`.
 - A multiline `Input` with a `value` shows empty in the server's page until the page comes alive ([#4148](https://github.com/k2b-dev/cloud/issues/4148)).
 
 Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.

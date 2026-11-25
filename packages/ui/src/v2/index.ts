@@ -64,15 +64,21 @@ export {
   type CheckProps,
   Choice,
   type ChoiceProps,
+  CodeInput,
+  type CodeInputProps,
   DateInput,
   type DateInputProps,
   Field,
   type FieldProps,
+  ImageInput,
+  type ImageInputProps,
   Input,
   type InputProps,
   Select,
   type SelectOption,
   type SelectProps,
+  TagsInput,
+  type TagsInputProps,
 } from "./controls";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
@@ -103,7 +109,7 @@ export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuPr
 export { type ConfirmOptions, confirm, Dialog, type DialogProps } from "./overlays";
 export { Popover, type PopoverPanelProps, type PopoverProps, type PopoverTipProps } from "./popover";
 export { Empty, type EmptyProps, Failed, type FailedProps, Loading, type LoadingProps } from "./states";
-export { Group, type GroupProps, Section, type SectionProps } from "./structure";
+export { Disclosure, type DisclosureProps, Group, type GroupProps, Section, type SectionProps } from "./structure";
 export { type ShowToast, type ToastOptions, useToast } from "./toast";
 export { fontWeights, gripTolerance, hairline, heights, radii, type TypeRole, textEdge, typeRoles } from "./tokens";
 export type { Action, OnNavigate, Person, Status, TwoActions, Width } from "./types";

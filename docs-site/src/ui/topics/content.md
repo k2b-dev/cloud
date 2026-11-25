@@ -60,6 +60,12 @@ The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is
 
 <Props of="Canvas" />
 
+### Disclosure
+
+Something that opens in place, such as the answer to a question; a closed one is still found by the browser's find in page.
+
+<Props of="Disclosure" />
+
 ## Not in v2 yet
 
 - Writing Markdown in place: the editor of `@k2b/editor` has no v2 form yet. Open it behind the deed "Bearbeiten".

@@ -265,8 +265,9 @@
 .k2-ui :where([class^="k2-"], [class*=" k2-"])::after {
   box-sizing: border-box;
 }
-/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden */
-.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden] {
+/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden. Not a
+   closed panel that find in page may open (`until-found`): the browser hides it its own way (content-visibility). */
+.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden]:not([hidden="until-found"]) {
   display: none !important;
 }
 /* elements a primitive draws without a class of their own */
@@ -885,8 +886,12 @@
   gap: 12px;
   min-width: 0;
 }
-.k2-ui .k2-group > * {
+.k2-ui :is(.k2-group, .k2-group-body) > * {
   flex: none;
+}
+/* the content of a folded group that is open: its parts stand in the group as if the body were not there */
+.k2-ui .k2-group-body {
+  display: contents;
 }
 .k2-ui .k2-group + .k2-group {
   margin-top: 12px;
@@ -961,7 +966,7 @@
 .k2-ui .k2-group .k2-table th {
   height: 20px;
 }
-.k2-ui .k2-group > .k2-list {
+.k2-ui :is(.k2-group, .k2-group-body) > .k2-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2187,6 +2192,44 @@
   font-weight: 400;
   color: var(--k2-subtle);
 }
+/* a field's one deed stands at the end of its label line, in the line's 20 px: the field keeps its height with it */
+.k2-ui .k2-field[data-action] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+}
+.k2-ui .k2-field[data-action] > :not(.k2-field-label, .k2-field-action) {
+  grid-column: 1 / -1;
+}
+.k2-ui .k2-field[data-action] > .k2-field-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-field-action {
+  grid-row: 1;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+.k2-ui .k2-field-action > .k2-btn {
+  position: relative;
+  height: 20px;
+  margin-right: -6px;
+  padding: 0 6px;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+.k2-ui .k2-field-action > .k2-btn > .k2-icon {
+  font-size: 14px;
+}
+/* the press area reaches the grip of a control (44 px on the phone) while the button draws 20 px */
+.k2-ui .k2-field-action > .k2-btn::after {
+  content: "";
+  position: absolute;
+  inset: -12px -4px;
+}
 .k2-ui .k2-field-message {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
@@ -2212,10 +2255,195 @@
   font: var(--k2-t-row);
   color: var(--k2-text);
 }
+.k2-ui .k2-input[data-select][data-disabled] {
+  color: var(--k2-subtle);
+}
 .k2-ui .k2-input[data-select]:focus-visible {
   outline: none;
   border-color: var(--k2-blue);
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+/* a code: one round box per character on the control's height, the real input laid over them unseen (core) */
+.k2-ui .k2-code {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+}
+.k2-ui .k2-code-boxes {
+  display: flex;
+  gap: 8px;
+}
+.k2-ui .k2-code-box {
+  position: relative;
+  width: var(--k2-h-control);
+  height: var(--k2-h-control);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  font: var(--k2-t-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-text);
+}
+.k2-ui .k2-code-box[data-active] {
+  border-color: var(--k2-blue);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-code[data-invalid] .k2-code-box {
+  border-color: var(--k2-bad);
+}
+.k2-ui .k2-code[data-disabled] .k2-code-box {
+  background: var(--k2-n100);
+  border-color: var(--k2-line);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-code-caret {
+  position: absolute;
+  width: 1px;
+  height: 16px;
+  background: var(--k2-text);
+  animation: k2-caret 1s steps(1) infinite;
+}
+@keyframes k2-caret {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-code-caret {
+    animation: none;
+  }
+}
+/* tags: chips and the typed text in one round field that grows by a line when the chips need one */
+.k2-ui .k2-input[data-tags] {
+  height: auto;
+  min-height: var(--k2-h-control);
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 12px 5px 5px;
+}
+.k2-ui .k2-input[data-tags] > input {
+  flex: 1 0 96px;
+  min-width: 96px;
+  height: 24px;
+  padding-left: 7px;
+}
+.k2-ui .k2-input[data-tags] > .k2-chip {
+  padding-right: 2px;
+  background: var(--k2-n100);
+  max-width: 100%;
+}
+.k2-ui .k2-chip-x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--k2-r-round);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-chip-x:hover {
+  background: var(--k2-n200);
+  color: var(--k2-text);
+}
+.k2-ui .k2-chip-x:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--k2-blue-ring);
+}
+.k2-ui .k2-input[data-tags][data-disabled] > .k2-chip {
+  color: var(--k2-subtle);
+}
+/* an image: its preview, then its buttons; the preview takes dropped and pasted files */
+.k2-ui .k2-image {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+.k2-ui .k2-image-preview {
+  width: 48px;
+  height: 48px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-n50);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--k2-subtle);
+  font-size: 20px;
+}
+.k2-ui .k2-image-preview[data-round] {
+  border-radius: 50%;
+}
+.k2-ui .k2-image-preview[data-dragging] {
+  border-color: var(--k2-blue);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-image-preview > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.k2-ui .k2-image-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.k2-ui .k2-image-failed {
+  grid-column: 1 / -1;
+  font: var(--k2-t-meta);
+  color: var(--k2-bad);
+}
+/* something that opens in place: a 44 px row with the title and a chevron, the content under it on the text edge */
+.k2-ui .k2-disc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-disc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px var(--k2-edge);
+  text-align: left;
+  font: var(--k2-t-body);
+  font-weight: 500;
+  color: var(--k2-text);
+  cursor: default;
+}
+.k2-ui .k2-disc-head:hover {
+  background: var(--k2-n50);
+}
+.k2-ui .k2-disc-head:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-disc-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.k2-ui .k2-disc-head > .k2-icon {
+  flex: none;
+  color: var(--k2-subtle);
+  transition: transform 150ms ease;
+}
+.k2-ui .k2-disc-head[data-open] > .k2-icon {
+  transform: rotate(180deg);
+}
+.k2-ui .k2-disc-body {
+  padding: 0 var(--k2-edge) 12px;
+  font: var(--k2-t-body);
+  color: var(--k2-text-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-disc-head > .k2-icon {
+    transition: none;
+  }
 }
 /* the open list of a selection: at least as wide as its field, an option per row like a menu, the check at the end */
 .k2-ui .k2-menu[data-listbox] {

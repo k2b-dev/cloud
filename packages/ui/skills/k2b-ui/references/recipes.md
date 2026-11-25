@@ -82,6 +82,22 @@ in its words. Its footer `Bar` saves with a default button.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
+## settings.tsx: settings with more than text
+
+![settings at 1440 px](../images/settings-1440.png)
+![settings at 390 px](../images/settings-390.png)
+
+The sign-in settings of an app: a `Field` with an `action` that resets it
+to its default, a `Select` the operator fixed (`disabled`), allowed
+domains in a `TagsInput`, a logo in an `ImageInput`, a pairing code in a
+`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+
+- A field's deed stands at the end of its label line and never moves the
+  field; it takes the place of `optional`.
+- A choice the person may not change is a dimmed control with the reason
+  in its hint, not a missing one.
+- States: `empty`, `locked`.
+
 ## record.tsx: a record, first tab
 
 ![record at 1440 px](../images/record-1440.png)
