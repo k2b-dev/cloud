@@ -80,12 +80,12 @@ describe("reserved /pwa prefix", () => {
   });
 });
 
-test("a legacy FAQ lease can route until withdrawal without affecting platform Help", () => {
+test("an unknown application lease can route until withdrawal without affecting platform Help", () => {
   const core = app("core", ["/", "/api/help", "/help"]);
-  const faq = app("faq", ["/faq", "/api/faq", "/admin/faq", "/public/faq"]);
-  const before = buildAppRoutesDetailed([core, faq]);
+  const retired = app("retired-app", ["/retired-app", "/api/retired-app", "/admin/retired-app", "/public/retired-app"]);
+  const before = buildAppRoutesDetailed([core, retired]);
   expect(before.warnings).toEqual([]);
-  expect(before.routes.filter((route) => route.appId === "faq")).toHaveLength(4);
+  expect(before.routes.filter((route) => route.appId === "retired-app")).toHaveLength(4);
   const after = buildAppRoutesDetailed([core]);
   expect(after.warnings).toEqual([]);
   expect(after.routes).toEqual(before.routes.filter((route) => route.appId === "core"));

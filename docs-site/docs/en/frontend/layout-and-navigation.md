@@ -481,7 +481,7 @@ Anonymous pages do not render the authenticated application rail, global
 search, notifications, or profile actions.
 
 Use this default for public pages that should still look and navigate like a
-Cloud application, such as a utility catalog or public FAQ. The presence of
+Cloud application, such as a utility catalog or public reference. The presence of
 `Layout` does not authorize the route or its data. Follow
 [Public and anonymous access](/en/docs/identity/public-and-anonymous-access)
 for route and resource policy.

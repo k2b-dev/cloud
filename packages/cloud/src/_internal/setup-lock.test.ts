@@ -7,7 +7,7 @@ const deferred = <T>() => Promise.withResolvers<T>();
 const fixture = () => {
   let time = 0;
   let tick: (() => Promise<void> | undefined) | undefined;
-  const lease: Lock = { resource: "faq", ownerToken: "test", fence: 1n, expiresAt: new Date(60_000) };
+  const lease: Lock = { resource: "fixture", ownerToken: "test", fence: 1n, expiresAt: new Date(60_000) };
   const mutex = {
     ready: mock(async () => {}),
     acquire: mock(async (_input: { resource: string }): Promise<Lock | null> => lease),
@@ -32,7 +32,7 @@ const fixture = () => {
   const sleeps: number[] = [];
   const options = {
     mutex,
-    resource: "faq",
+    resource: "fixture",
     now: () => time,
     sleep: async (ms: number) => {
       sleeps.push(ms);
@@ -70,7 +70,7 @@ describe("application setup lease", () => {
     const f = fixture();
     const random = spyOn(Math, "random").mockReturnValue(0.5);
     f.mutex.acquire.mockImplementation(async ({ resource }) => {
-      expect(resource).toBe("faq");
+      expect(resource).toBe("fixture");
       expect(f.mutex.ready).toHaveBeenCalledTimes(1);
       if (f.time() < 365_000) return null;
       f.lease.expiresAt = new Date(f.time() + 60_000);
@@ -84,7 +84,7 @@ describe("application setup lease", () => {
       const calls = f.log.info.mock.calls;
       const loggedAt = f.loggedAt;
       expect(calls.length).toBe(13);
-      expect(calls[0]).toEqual(["waiting for setup on another replica", { appId: "faq", waitedMs: 0 }]);
+      expect(calls[0]).toEqual(["waiting for setup on another replica", { appId: "fixture", waitedMs: 0 }]);
       for (let i = 1; i < loggedAt.length; i++) expect(loggedAt[i]! - loggedAt[i - 1]!).toBeGreaterThanOrEqual(30_000);
       expect(run).toHaveBeenCalledTimes(1);
       expect(f.mutex.release).toHaveBeenCalledWith(f.lease);

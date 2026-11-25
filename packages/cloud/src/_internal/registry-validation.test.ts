@@ -144,19 +144,19 @@ test("registry readers drop unknown permissions without dropping routes or grant
   expect(entry.platformPermissions).toContain("future:permission");
 });
 
-test("keeps an older FAQ registration usable during a rolling removal", () => {
+test("accepts an unknown application through the generic registry contract", () => {
   const entry = {
     ...valid,
-    id: "faq",
-    package: "faq",
-    name: "FAQ",
-    baseUrl: "http://app-faq:3000",
-    routes: ["/faq", "/api/faq", "/admin/faq", "/public/faq"],
-    access: { kind: "signedIn", publicRoutes: ["/faq", "/api/faq/openapi.json"] },
-    nav: { href: "/faq", section: "hidden" },
-    legalLinks: [{ label: "FAQ", href: "/faq", icon: "ti ti-help-circle" }],
+    id: "retired-app",
+    package: "retired-app",
+    name: "Retired app",
+    baseUrl: "http://app-retired-app:3000",
+    routes: ["/retired-app", "/api/retired-app", "/admin/retired-app", "/public/retired-app"],
+    access: { kind: "signedIn", publicRoutes: ["/retired-app", "/api/retired-app/openapi.json"] },
+    nav: { href: "/retired-app", section: "hidden" },
+    legalLinks: [{ label: "Public reference", href: "/retired-app", icon: "ti ti-help-circle" }],
   };
   expect(validateAppRegistryEntry(entry)).toBeNull();
   expect(asAppRegistryEntry(entry)).toMatchObject(entry);
-  expect(resolveApplicationPackage(entry.id, entry.package)).toBe("faq");
+  expect(resolveApplicationPackage(entry.id, entry.package)).toBe("retired-app");
 });

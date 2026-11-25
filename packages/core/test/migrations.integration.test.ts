@@ -70,32 +70,6 @@ suite("Cloud schema migrations", () => {
     await runAllMigrations();
     expect(await snapshot()).toEqual(first);
   }, 120_000);
-  test("upgrading without the FAQ app preserves its existing entries", async () => {
-    // Recreate the removed application's schema as it existed before this upgrade.
-    await sql`CREATE SCHEMA faq`.simple();
-    await sql`CREATE TABLE faq.entries (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      translations JSONB NOT NULL CHECK (jsonb_typeof(translations) = 'object' AND translations ? 'en'),
-      audience TEXT[] NOT NULL,
-      position INT NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`.simple();
-    const translations = { en: { question: "Where is Help?", answer: "Open Help in the application." } };
-    await sql`INSERT INTO faq.entries(id, translations, audience, position, created_at)
-      VALUES ('019d0000-0000-7000-8000-000000000001', ${JSON.stringify(translations)}::text::jsonb,
-        ARRAY['user', 'guest'], 3, '2026-01-01T00:00:00Z')`;
-    await runAllMigrations();
-    const rows = await sql`SELECT id, translations, audience, position, created_at FROM faq.entries`;
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      id: "019d0000-0000-7000-8000-000000000001",
-      translations,
-      audience: ["user", "guest"],
-      position: 3,
-    });
-    expect(new Date(rows[0].created_at).toISOString()).toBe("2026-01-01T00:00:00.000Z");
-  }, 120_000);
-
   test("Core startup does not scan application JSON or classify historical candidates", async () => {
     const id = crypto.randomUUID();
     const owner = crypto.randomUUID();

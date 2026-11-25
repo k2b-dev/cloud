@@ -10,10 +10,10 @@ const sheets = ["fonts", "tabler-icons", "global"];
 
 test("page-head URLs follow content and Core's release across real process restarts", async () => {
   const root = mkdtempSync(join(tmpdir(), "cloud-stylesheet-versions-"));
-  const faqCss = "body{color:red}";
+  const fixtureCss = "body{color:red}";
   const mailCss = "body{color:blue}";
   for (const [id, content] of [
-    ["faq", faqCss],
+    ["fixture", fixtureCss],
     ["mail", mailCss],
   ] as const) {
     mkdirSync(join(root, "public", id), { recursive: true });
@@ -28,7 +28,7 @@ test("page-head URLs follow content and Core's release across real process resta
     const probe = {
       root,
       defineApp: join(import.meta.dir, "define-app.ts"),
-      apps: ["faq", "mail", "core"],
+      apps: ["fixture", "mail", "core"],
       coreRelease: release,
       nextCoreRelease,
     };
@@ -58,16 +58,16 @@ test("page-head URLs follow content and Core's release across real process resta
     const [first, afterCoreRedeploy] = await start("sha-0123456789ab", { nextCoreRelease: "sha-core-redeployed" });
     const [restarted] = await start("sha-0123456789ab");
     expect(restarted).toEqual(first);
-    for (const id of ["faq", "mail", "core"]) {
+    for (const id of ["fixture", "mail", "core"]) {
       expect(first![id]!.status).toBe(200);
       expect(first![id]!.hrefs).toHaveLength(5);
       for (const sheet of sheets) expect(first![id]!.hrefs).toContain(`/public/${sheet}.css?v=sha-0123456789ab`);
     }
-    expect(first!.faq!.hrefs).toContain(`/public/faq/app.css?v=${hash(faqCss)}`);
+    expect(first!.fixture!.hrefs).toContain(`/public/fixture/app.css?v=${hash(fixtureCss)}`);
     expect(first!.mail!.hrefs).toContain(`/public/mail/app.css?v=${hash(mailCss)}`);
-    expect(first!.faq!.hrefs).toContain(`/public/faq/favicon.svg?v=${hash('<svg id="faq"/>')}`);
+    expect(first!.fixture!.hrefs).toContain(`/public/fixture/favicon.svg?v=${hash('<svg id="fixture"/>')}`);
     expect(first!.core!.hrefs).toContain("/branding/favicon");
-    for (const id of ["faq", "mail", "core"]) {
+    for (const id of ["fixture", "mail", "core"]) {
       expect(afterCoreRedeploy![id]).toEqual({
         status: 200,
         hrefs: first![id]!.hrefs.map((href) => href.replace("v=sha-0123456789ab", "v=sha-core-redeployed")),
@@ -75,14 +75,14 @@ test("page-head URLs follow content and Core's release across real process resta
     }
 
     const updatedCss = "body{color:green}";
-    writeFileSync(join(root, "public", "faq", "app.css"), updatedCss);
+    writeFileSync(join(root, "public", "fixture", "app.css"), updatedCss);
     const [changed] = await start("sha-0123456789ab");
     expect(changed).toEqual({
       ...first,
-      faq: {
+      fixture: {
         status: 200,
-        hrefs: first!.faq!.hrefs.map((href) =>
-          href === `/public/faq/app.css?v=${hash(faqCss)}` ? `/public/faq/app.css?v=${hash(updatedCss)}` : href,
+        hrefs: first!.fixture!.hrefs.map((href) =>
+          href === `/public/fixture/app.css?v=${hash(fixtureCss)}` ? `/public/fixture/app.css?v=${hash(updatedCss)}` : href,
         ),
       },
     });
@@ -91,15 +91,15 @@ test("page-head URLs follow content and Core's release across real process resta
     const [unnamed] = await start("local");
     expect(unnamed!.mail!.status).toBe(200);
     expect(unnamed!.mail!.hrefs).toContain("/public/mail/app.css");
-    for (const id of ["faq", "mail", "core"]) {
+    for (const id of ["fixture", "mail", "core"]) {
       for (const sheet of sheets) expect(unnamed![id]!.hrefs).toContain(`/public/${sheet}.css`);
     }
 
     const [development] = await start("sha-0123456789ab", { nodeEnv: "development" });
     // Exactly the five original development hrefs, in their original order, with one shared start stamp.
-    const stamp = /\?v=(\d+)$/.exec(development!.faq!.hrefs[0]!)?.[1];
+    const stamp = /\?v=(\d+)$/.exec(development!.fixture!.hrefs[0]!)?.[1];
     expect(stamp).toMatch(/^\d+$/);
-    for (const id of ["faq", "mail"]) {
+    for (const id of ["fixture", "mail"]) {
       expect(development![id]!.status).toBe(200);
       expect(development![id]!.hrefs).toEqual([
         `/public/${id}/favicon.svg?v=${stamp}`,

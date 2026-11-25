@@ -34,7 +34,7 @@ const { default: PwaLayout } = await import("./PwaLayout");
 const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
   id: `app-${index}`,
   name:
-    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "FAQ", "Pulse", "Tasks", "Tools"][index] ??
+    ["Dashboard", "Mail", "Contacts", "Grids", "Files", "Notebooks", "Calendar", "Assistant", "Catalog", "Pulse", "Tasks", "Tools"][index] ??
     `App ${index}`,
   icon: "ti ti-box",
   description: "Manage projects, documents and daily work in your team.",

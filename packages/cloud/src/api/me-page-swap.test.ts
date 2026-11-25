@@ -14,26 +14,26 @@ test("page swap fallback reports require a user and accept only the app, the rea
     .route("/", routes);
   const post = (body: unknown) =>
     app.request("/page-swap-fallbacks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  expect((await post({ appId: "faq", reason: "timeout" })).status).toBe(204);
-  expect((await post({ appId: "faq", reason: "status", status: 503 })).status).toBe(204);
+  expect((await post({ appId: "fixture", reason: "timeout" })).status).toBe(204);
+  expect((await post({ appId: "fixture", reason: "status", status: 503 })).status).toBe(204);
   expect(recorded).toEqual([
-    { appId: "faq", reason: "timeout" },
-    { appId: "faq", reason: "status", status: 503 },
+    { appId: "fixture", reason: "timeout" },
+    { appId: "fixture", reason: "status", status: 503 },
   ]);
   const anonymous = await routes.request("/page-swap-fallbacks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ appId: "faq", reason: "timeout" }),
+    body: JSON.stringify({ appId: "fixture", reason: "timeout" }),
   });
   expect(anonymous.status).toBe(401);
   for (const invalid of [
-    { appId: "faq", reason: "unknown" },
-    { appId: "faq", reason: "status", status: 42 },
-    { appId: "FAQ", reason: "timeout" },
-    { appId: "faq", reason: "timeout", url: "/app/faq/private" },
-    { appId: "faq", reason: "timeout", userId: "other" },
+    { appId: "fixture", reason: "unknown" },
+    { appId: "fixture", reason: "status", status: 42 },
+    { appId: "FIXTURE", reason: "timeout" },
+    { appId: "fixture", reason: "timeout", url: "/app/fixture/private" },
+    { appId: "fixture", reason: "timeout", userId: "other" },
   ])
     expect((await post(invalid)).status).toBe(400);
-  expect((await post({ appId: "faq", reason: "timeout", padding: "x".repeat(512) })).status).toBe(413);
+  expect((await post({ appId: "fixture", reason: "timeout", padding: "x".repeat(512) })).status).toBe(413);
   expect(recorded).toHaveLength(2);
 });

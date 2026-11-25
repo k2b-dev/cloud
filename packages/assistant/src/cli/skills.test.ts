@@ -207,7 +207,7 @@ test("push updates with expectedRevision and reports removed references", async 
 test("push refuses differing Cloud content without --force and lists every change", async () => {
   const cloud = fixture();
   cloud.revision = 6;
-  cloud.references.push({ path: "references/faq.md", content: "Cloud only" });
+  cloud.references.push({ path: "references/old.md", content: "Cloud only" });
   const local = {
     ...fixture(),
     description: "Changed description.",
@@ -221,7 +221,7 @@ test("push refuses differing Cloud content without --force and lists every chang
   };
   const session = context(["skills", "push", await folder(local)], cloud);
   await expect(assistant.run(session.ctx)).rejects.toThrow(
-    "Cloud Skill weekly-status (revision 6) differs from this folder: changes description; changes instructions; changes frontmatter; adds references/a.md, references/z.md; replaces references/style.md; removes references/faq.md. Pull it first to keep Cloud changes, or use --force to replace it.",
+    "Cloud Skill weekly-status (revision 6) differs from this folder: changes description; changes instructions; changes frontmatter; adds references/a.md, references/z.md; replaces references/style.md; removes references/old.md. Pull it first to keep Cloud changes, or use --force to replace it.",
   );
   expect(session.requests.map(({ path, method }) => ({ path, method }))).toEqual([
     { path: "/api/ai/skills?name=weekly-status", method: "GET" },

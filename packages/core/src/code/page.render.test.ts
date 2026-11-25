@@ -293,11 +293,11 @@ describe("Code pages in the Cloud layout", () => {
         legalLinks: [{ label: "Imprint", href: "/impressum" }],
       },
       {
-        id: "faq-probe",
+        id: "fixture-probe",
         name: "Questions probe",
         icon: "ti ti-help",
-        routes: ["/app/faq-probe"],
-        nav: { href: "/app/faq-probe", section: "primary" },
+        routes: ["/app/fixture-probe"],
+        nav: { href: "/app/fixture-probe", section: "primary" },
       },
       {
         id: "payroll-probe",

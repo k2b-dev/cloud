@@ -46,7 +46,7 @@ hand; entries come from squash-commit titles on `main`.
 
 ### Bug Fixes
 
-* **apps:** Files, Grids, Weather, Contacts, Notebooks, FAQ and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
+* **apps:** Files, Grids, Weather, Contacts, Notebooks and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
 * **chat:** a message sent right after Quote shows at once and never goes out without a quote that could not load ([#4036](https://github.com/k2b-dev/cloud/issues/4036)) ([cadd95a](https://github.com/k2b-dev/cloud/commit/cadd95a2004eb115988135beb8417f929c310c27))
 * **ci:** the release check rejects a squash body that release-please would drop ([#4033](https://github.com/k2b-dev/cloud/issues/4033)) ([7bc1b3a](https://github.com/k2b-dev/cloud/commit/7bc1b3ac4d8a34543ca104e571a2821dbe3bc70a))
 * **cli:** served-plugin tests pack the echo plugin once, outside the test deadline ([#4017](https://github.com/k2b-dev/cloud/issues/4017)) ([e86dac4](https://github.com/k2b-dev/cloud/commit/e86dac4724157b78cb5f7cfb31b5ffc66c6020dd))
@@ -82,7 +82,6 @@ hand; entries come from squash-commit titles on `main`.
 * **assistant:** Gustav is flat – cards in the reading column and a docked "In this chat" column with a grip ([#3930](https://github.com/k2b-dev/cloud/issues/3930)) ([aa21c44](https://github.com/k2b-dev/cloud/commit/aa21c44bb3cbda93af30e9e8645fb37dace35449))
 * **contacts:** contacts are flat – the record has facts beside its topics, list rows divided by hairlines ([#3964](https://github.com/k2b-dev/cloud/issues/3964)) ([9e5ac96](https://github.com/k2b-dev/cloud/commit/9e5ac96764df70c131d8d60ed6e06fd7a8be2ffb))
 * **core:** profile, settings, admin and sign-in are flat ([#3926](https://github.com/k2b-dev/cloud/issues/3926)) ([f1f31f5](https://github.com/k2b-dev/cloud/commit/f1f31f5371a75f6927da5dd827c9dd93043b7e8b))
-* **faq:** faq is flat – questions as reading rows divided by hairlines, an admin list without a frame ([#3925](https://github.com/k2b-dev/cloud/issues/3925)) ([aeecb6a](https://github.com/k2b-dev/cloud/commit/aeecb6a0d51a4e3b861c837bf6545a0f40e84f84))
 * **filesv2:** Files is flat – path in the head, status row, flat table and detail ([#3965](https://github.com/k2b-dev/cloud/issues/3965)) ([5563249](https://github.com/k2b-dev/cloud/commit/5563249c6327b2f167b0dc4c83838210411c354c))
 * **grids:** grids is flat – views as tabs, a status row, K7 table columns, and record fields in rows ([#3957](https://github.com/k2b-dev/cloud/issues/3957)) ([482f1c5](https://github.com/k2b-dev/cloud/commit/482f1c5c9d68287693198db26a46b825c4041755))
 * **mail:** a drag knows its targets from the first load – people, folders and tags, without a request before the drop ([#3908](https://github.com/k2b-dev/cloud/issues/3908)) ([9679615](https://github.com/k2b-dev/cloud/commit/9679615efc86a50b2536da89add8f714b692521d))

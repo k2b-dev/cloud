@@ -119,10 +119,11 @@ package assignments, and application history are not deleted by this upgrade.
 You can remove the cached CLI module with
 `cld --profile <admin-profile> plugins remove faq` after exporting.
 
-An old FAQ process remains a valid registered application until you stop it.
-Graceful shutdown withdraws its live registration; otherwise its last heartbeat
-lease expires within three minutes. The gateway and shell then drop its routes
-and footer link. Until expiry, a stopped service can still return a gateway
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its live registration; otherwise
+its last heartbeat lease expires within three minutes. The gateway and shell
+then drop its routes and footer link. Until expiry, a stopped service can still return a gateway
 error through an old route; other applications remain available. Remembered
 FAQ records remain visible as offline in **Administration → Apps** and can be
 hidden with the existing removal action, which leaves FAQ data and keys intact.

@@ -166,7 +166,7 @@ const checkContractsSharedDrift = (workspaceRoot: string): Finding[] => {
   if (!existsSync(sharedFile)) return [];
 
   const lines = readFileSync(sharedFile, "utf8").split("\n");
-  const forbiddenPrefixes = ["Space", "File", "OAuth", "ProxyAuth", "Faq", "Terms", "Log"];
+  const forbiddenPrefixes = ["Space", "File", "OAuth", "ProxyAuth", "Terms", "Log"];
   const findings: Finding[] = [];
   const exportNameRe = /^export\s+(?:const|type)\s+([A-Za-z0-9_]+)/;
 
