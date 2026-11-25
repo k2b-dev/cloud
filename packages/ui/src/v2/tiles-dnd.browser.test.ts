@@ -128,7 +128,11 @@ test("drag: a folder that does not take it says so; letting go there, on the zon
     expect(await tile(page, "Fotos").getAttribute("data-drop-refused")).toBe("");
     expect(await tile(page, "Fotos").getAttribute("data-drop-over")).toBeNull();
     await page.mouse.up();
-    await dragTo(page, tile(page, "Angebot.pdf"), page.getByText("Hier loslassen: nichts passiert"));
+    // the zone exists only while a drag is under way: lift first, then go there
+    await dragTo(page, tile(page, "Angebot.pdf"), tile(page, "Messestand.jpg"));
+    const zone = await page.getByText("Hier loslassen: nichts passiert").boundingBox();
+    if (!zone) throw new Error("no zone while dragging");
+    await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2, { steps: 6 });
     await page.mouse.up();
     await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Archiv"));
     await page.keyboard.press("Escape");
