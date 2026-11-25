@@ -62,8 +62,11 @@ const differencesInPage = () => {
       found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
       return;
     }
+    // core puts the workspace's toast region in the top layer and measures the viewport into it once it binds; an
+    // empty region shows nothing either way (as the reload contract treats it)
+    const toasts = a.getAttribute("data-slot") === "toast-region";
     for (const name of new Set([...a.getAttributeNames(), ...b.getAttributeNames()]))
-      if (name !== "data-hk" && a.getAttribute(name) !== b.getAttribute(name))
+      if (name !== "data-hk" && !(toasts && (name === "popover" || name === "style")) && a.getAttribute(name) !== b.getAttribute(name))
         found.push(`${path}: ${name} "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
     if (a.children.length !== b.children.length) found.push(`${path}: ${a.children.length} children became ${b.children.length}`);
     for (let index = 0; index < Math.min(a.children.length, b.children.length); index++)
