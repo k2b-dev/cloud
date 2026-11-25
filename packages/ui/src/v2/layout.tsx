@@ -477,8 +477,8 @@ Pane.Split = (props: { children: JSX.Element }) => {
  */
 const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
   const resolved = resolveChildren(() => props.children);
-  // a pane hidden by `Show` stays in the list as nothing: it gets no seam
-  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && pane !== "");
+  // a pane hidden by `Show` or `{open && <Pane …/>}` stays in the list as what renders nothing: it gets no seam
+  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && typeof pane !== "boolean" && pane !== "");
   const entryOf = (index: number) => {
     const pane = panes()[index];
     if (pane === undefined) return undefined;
