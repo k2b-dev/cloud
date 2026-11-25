@@ -166,17 +166,6 @@ export const listNotesForTag = async (params: {
   };
 };
 
-/** Total notes-with-this-tag (unfiltered), for the page-header count. */
-export const countNotesForTag = async (params: { notebookId: string; tag: string }): Promise<number> => {
-  const [row] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.note_tags
-    WHERE notebook_id = ${params.notebookId}
-      AND tag = ${params.tag.toLowerCase()}
-  `;
-  return row?.count ?? 0;
-};
-
 /** Total distinct tags in a notebook — gates the sidebar "Tags" link. */
 export const count = async (params: { notebookId: string }): Promise<number> => {
   const [row] = await sql<{ count: number }[]>`

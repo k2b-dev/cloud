@@ -37,7 +37,6 @@ export default function NotebookSidebarBody(props: {
     currentNoteId,
     openSettings,
     chooseNewNote,
-    navigationHidden,
     filter,
     setFilter,
     toggleFilter,
@@ -52,10 +51,9 @@ export default function NotebookSidebarBody(props: {
     listMenu,
     isHomepage,
     switcher,
-    mobileNavigation,
   } = props.sidebar;
   return (
-    <AppWorkspace.SidebarDesktop>
+    <>
       <div class="notebook-sidebar-head">
         <AppWorkspace.SidebarSwitcher {...switcher()} />
         <Show when={canWrite}>
@@ -242,6 +240,6 @@ export default function NotebookSidebarBody(props: {
           {t().settings}
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarFooter>
-    </AppWorkspace.SidebarDesktop>
+    </>
   );
 }

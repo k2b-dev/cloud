@@ -39,6 +39,8 @@ export type NotesListScreenProps = {
   ignored: string | null;
   /** The presentation the list was opened in (`book` for readers); links to notes keep it. */
   mode?: string;
+  /** This page's address: Links (the graph) returns here on Close. */
+  graphBack: string;
   /** The server's time, so the server and the first browser render show the same times. */
   now: string;
 };
@@ -51,7 +53,7 @@ export type NotesListScreenProps = {
 export default function NotesListScreen(props: NotesListScreenProps) {
   const locale = useLocale();
   const t = createMemo(() => notesListMessages.resolve([locale()]).t);
-  const sidebar = useNotebookSidebar({ ctx: props.ctx });
+  const sidebar = useNotebookSidebar({ ctx: props.ctx, graphBack: props.graphBack });
   const { showChanges, openPage } = usePageSwap();
   const notebookId = () => props.ctx.notebook.id;
   const query = createMemo(() => notesQuery(locale(), props.ctx.tags));

@@ -93,7 +93,7 @@ describe("Book surface", () => {
     expect(html).toContain('class="notebook-book-content"');
     expect(html).toContain("Getting started");
     expect(html).toContain("/app/notebooks/book01/notes/note02?mode=book");
-    expect(html).toContain("/app/notebooks/book01/tags/handbook?mode=book");
+    expect(html).toContain("/app/notebooks/book01/notes?tag=handbook&amp;mode=book");
     expect(html).not.toMatch(/CodeMirror|NoteEditor|NotebookDetailPanel|EditorToolbar|mode=write|mode=readonly/);
     expect(html).not.toContain("sidebar-mobile");
     expect(html).toContain("data-cloud-workspace-navigation");

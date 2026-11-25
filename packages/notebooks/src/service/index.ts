@@ -285,7 +285,6 @@ export const notebooksService = {
   tag: {
     listForNotebook: tags.listForNotebook,
     listNotesForTag: tags.listNotesForTag,
-    countNotesForTag: tags.countNotesForTag,
     count: tags.count,
     extractTags: tags.extractTags,
     transformHtml: tags.transformTags,

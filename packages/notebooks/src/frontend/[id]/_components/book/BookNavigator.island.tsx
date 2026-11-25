@@ -29,7 +29,6 @@ export type BookNavigatorProps = {
   /** The levels of the reading order on arrival: the way to the open page and its own sub-pages. */
   navigation: SidebarTreeState;
   tags: { tag: string; count: number }[];
-  activeTag?: string;
   /** The current Book address; Write keeps its query (sidebar filters) and only switches the mode. */
   currentHref: string;
   canWrite?: boolean;
@@ -128,7 +127,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
     const update = (event: Event) => {
       const next = (event as CustomEvent<BookMetadata>).detail;
       const opened = next.selectedNoteId !== state().selectedNoteId;
-      setState({ ...props, ...next, activeTag: next.activeTag, currentHref: next.href });
+      setState({ ...props, ...next, currentHref: next.href });
       if (opened && next.selectedNoteId) void tree.reveal(next.selectedNoteId).catch(() => undefined);
     };
     // A change in the notebook reads the open levels again; the article refreshes on its own.
@@ -209,7 +208,6 @@ export default function BookNavigator(props: BookNavigatorProps) {
             {(item) => (
               <AppWorkspace.SidebarItem
                 href={withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book")}
-                active={state().activeTag === item.tag}
                 icon="ti ti-hash"
                 meta={item.count}
               >
@@ -297,7 +295,6 @@ export default function BookNavigator(props: BookNavigatorProps) {
                 label: item.tag,
                 icon: "ti ti-hash",
                 badge: item.count,
-                active: state().activeTag === item.tag,
                 ...readingPage(withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book")),
               })),
             },

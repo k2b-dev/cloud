@@ -120,6 +120,7 @@ export default ssr<AuthContext>(async (c) => {
         items={list.items}
         ignored={ignored}
         mode={mode}
+        graphBack={c.req.path + url.search}
         now={new Date().toISOString()}
       />
     </Layout>

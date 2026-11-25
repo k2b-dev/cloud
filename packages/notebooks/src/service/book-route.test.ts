@@ -66,12 +66,7 @@ function fixture() {
   const tree = track(spyOn(treeLevels, "countNotes")).mockResolvedValue(1);
   const content = track(spyOn(notes, "getWithContentByShortId")).mockResolvedValue(note);
   const tagList = track(spyOn(tags, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
-  const tagNotes = track(spyOn(tags, "listNotesForTag")).mockResolvedValue({
-    items: [{ id: note.id, shortId: note.shortId, title: note.title, preview: "Start here", updatedAt: timestamp }],
-    total: 101,
-  });
-  const tagCount = track(spyOn(tags, "countNotesForTag")).mockResolvedValue(101);
-  return { permission, cursor, get, tree, content, tagList, tagNotes, tagCount };
+  return { permission, cursor, get, tree, content, tagList };
 }
 
 describe("authorized Book refresh routes", () => {
@@ -114,17 +109,12 @@ describe("authorized Book refresh routes", () => {
       "/app/notebooks/book01/notes/note01?mode=graph",
       "/app/notebooks/book01/settings",
       "/app/notebooks/book01/tags/team/extra",
+      // a tag is a filter of the notes list now: its address leaves Book for the list
+      "/app/notebooks/book01/tags/team",
+      "/app/notebooks/book01/notes?tag=team",
     ])
       expect(await loadBookRoute({ ...params, href })).toEqual({ kind: "invalid" });
     for (const read of Object.values(reads)) expect(read).not.toHaveBeenCalled();
-  });
-
-  test("malformed pagination falls back to the first page just like direct SSR", async () => {
-    fixture();
-    for (const page of ["abc", "-1", "9007199254740991"]) {
-      const result = await loadBookRoute({ ...params, href: `/app/notebooks/book01/tags/team?page=${page}` });
-      expect(result.kind).toBe("ok");
-    }
   });
 
   test("returns rendered public-only note snapshots and captures the cursor before content", async () => {
@@ -168,29 +158,6 @@ describe("authorized Book refresh routes", () => {
     expect(await loadBookRoute(params)).toEqual({ kind: "not_found" });
   });
 
-  test("tag refreshes retain localized content, search, pagination and Book links", async () => {
-    const calls = fixture();
-    const result = await loadBookRoute({
-      ...params,
-      locale: "de",
-      href: "/app/notebooks/book01/tags/TEAM?search=%20join%20&page=2&mode=book",
-    });
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") throw new Error(result.kind);
-    expect(result.snapshot).toMatchObject({ activeTag: "team", selectedNoteId: null, title: "#team" });
-    expect(result.snapshot.html).toContain("Suchen");
-    expect(result.snapshot.html).toContain("/app/notebooks/book01/notes/note01?mode=book");
-    expect(result.snapshot.html).toContain("mode=book&amp;search=join&amp;page=3");
-    expect(calls.tagNotes).toHaveBeenCalledWith({
-      notebookId: notebook.id,
-      tag: "team",
-      search: "join",
-      pagination: { limit: 50, offset: 50 },
-    });
-    expect(calls.content).not.toHaveBeenCalled();
-    expect(JSON.stringify(result.snapshot)).not.toContain(note.id);
-  });
-
   test("refreshes update author controls and lock metadata from current state", async () => {
     const calls = fixture();
     calls.permission.mockResolvedValue("admin");
@@ -217,6 +184,5 @@ describe("authorized Book refresh routes", () => {
     expect(populated.snapshot.hasNotes).toBe(true);
     expect(populated.snapshot.html).toContain("Wähle eine Seite");
     expect(calls.content).not.toHaveBeenCalled();
-    expect(calls.tagNotes).not.toHaveBeenCalled();
   });
 });

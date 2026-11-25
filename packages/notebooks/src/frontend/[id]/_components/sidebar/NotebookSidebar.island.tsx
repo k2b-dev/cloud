@@ -25,7 +25,9 @@ export default function NotebookSidebar(props: NotebookSidebarProps) {
         hidden={navigationHidden()}
         onHiddenChange={setNavigationHidden}
       >
-        <NotebookSidebarBody sidebar={sidebar} current={props.current} />
+        <AppWorkspace.SidebarDesktop>
+          <NotebookSidebarBody sidebar={sidebar} current={props.current} />
+        </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       {/* Views without the editor toolbar, such as an empty notebook, Read-only or
           the attachments, still need a visible way back. The graph's own toolbar holds the toggle. */}
