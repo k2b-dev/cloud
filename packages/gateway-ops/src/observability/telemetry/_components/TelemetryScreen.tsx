@@ -112,7 +112,9 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
               <FilterBar query={query()} state={props.state} onChange={change} icons={{ range: "clock", app: "apps", only: "filter" }} />
               <StatusRow
                 lead={t().routesCount({ count: props.routes.length })}
-                filters={<ListOrder query={query()} state={props.state} onChange={change} />}
+                // k2b-ui gap: in a status row narrowed by an open detail, ListOrder loses its words to its icon; the order
+                // stays in the address and comes back when the route closes.
+                filters={props.route ? undefined : <ListOrder query={query()} state={props.state} onChange={change} />}
               />
             </>
           }

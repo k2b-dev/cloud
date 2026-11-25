@@ -149,7 +149,7 @@ describe("the service pages of Observability on v2", () => {
               }));
               expect(evidence[screen]?.loaders).toBe(0);
             }
-            if (shots && view !== tablet) await tab.screenshot({ path: join(shots, `${screen}${worst ? "-worst" : ""}-${view.name}.png`) });
+            if (shots) await tab.screenshot({ path: join(shots, `${screen}${worst ? "-worst" : ""}-${view.name}.png`) });
             for (const error of errors) findings.push(`${where}: ${error}`);
           } finally {
             await context.close();
