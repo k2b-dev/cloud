@@ -6,9 +6,11 @@ A list that people filter, sort or group has one way to do it in
 too many to list. The address holds the whole state, so reload, back and a
 shared link show the same list.
 
-Do not parse search parameters yourself, keep filter state in a signal of
-your own, or build a row of filter chips by hand. The declaration is the one
-source for the server and the browser.
+The island keeps one signal that mirrors the address: it starts with the
+state the server parsed and is set in `onChange`. Do not parse search
+parameters yourself, keep filter values the address does not hold, or build a
+row of filter chips by hand. The declaration is the one source for the server
+and the browser.
 
 ## What the person sees
 
@@ -56,8 +58,9 @@ const [state, setState] = createSignal(props.state); // what the server parsed
         }}
         icons={{ status: "circle-dashed", price: "currency-euro", consignor: "user" }}
         counts={props.counts} // per value, for fields declared with `counts`
-        names={props.names} // lookup names the server resolved
-        views={{ stores: props.stores, current: props.view }} // leave out: no saving
+        names={{ consignor: props.consignorNames }} // per field: lookup names the server resolved
+        timeZone={props.timeZone} // the person's zone, the same on the server; "UTC" by default
+        views={{ stores: props.stores, current: props.view }} // current: { key, label, query, scope? }; leave out: no saving
         results={`${props.total} Artikel`}
       />
       <StatusRow lead={`${props.total} Artikel`} filters={<ListOrder query={articleQuery} state={state()} onChange={setState} />} />
@@ -72,9 +75,22 @@ const [state, setState] = createSignal(props.state); // what the server parsed
 - The bar writes the address itself and then calls `onChange`. An open
   editor adds one entry to the history, every other change one; back and
   forward call `onChange` with the parsed state.
-- The bar never writes what `parse` would drop: a number the address cannot
-  hold or a query longer than 2,000 characters shows an error at the field,
-  and the list stays as it is.
+- The bar never writes what `parse` would drop: a number the field cannot
+  read or the address cannot hold shows an error at the field, a value or
+  sort that would make the query longer than 2,000 characters is offered
+  locked, and the list stays as it is.
+- Points in time (`timeRange`) are shown and entered in `timeZone`, "UTC" by
+  default. Pass the person's zone from the same setting on the server and in
+  the island, so the first picture and the island show the same minutes.
+  Around a change of the clocks, a bound that was not changed keeps its
+  instant; a typed time that occurs twice means its first occurrence, and a
+  typed time that does not exist (the hour skipped in spring) is refused at
+  its field.
+- Values that would make the address longer than 2,000 characters are
+  offered locked, with one hint under the list (linked to them through
+  `aria-describedby`): remove a filter or shorten the search.
+- A lookup code nobody can name (deleted) is asked for once and stays a code
+  with a warning; opening its editor asks again.
 - Field and value labels come from the app's catalog through the
   declaration. The grammar ("ist", "oder", "und", "ab", "bis") comes from the
   `@k2b/ui` catalog in the page's locale.
@@ -95,7 +111,9 @@ entry returns to the search.
 
 ## Saved views
 
-The app decides where views live. Pass zero, one or more `ViewStore`s:
+The app decides where views live. Pass zero, one or more `ViewStore`s. An
+update or a delete that fails says so in a toast with "Erneut versuchen"; a
+rename keeps the query the view holds (`views.current.query`).
 
 | Store `scope` | Typical place | Who writes |
 | --- | --- | --- |

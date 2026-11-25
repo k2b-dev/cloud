@@ -245,7 +245,7 @@ const Articles = (props: { search: string }) => {
               received: "calendar",
             }}
             counts={{ status: { consigned: 5, photographed: 4, online: 2, reserved: 0, sold: 1 } }}
-            names={CONSIGNORS}
+            names={{ consignor: CONSIGNORS }}
             views={{ stores: articleViews }}
             results={`${rows().length} Artikel`}
           />
@@ -382,7 +382,7 @@ const Logs = (props: { search: string }) => {
             state={state()}
             onChange={setState}
             icons={{ time: "clock", level: "alert-triangle", source: "plug", request: "hash", duration: "hourglass" }}
-            names={SOURCES}
+            names={{ source: SOURCES }}
             views={{ stores: logViews }}
             results={`${rows().length} Einträge`}
           />
@@ -580,7 +580,7 @@ const People = (props: { search: string }) => {
             state={state()}
             onChange={setState}
             icons={{ role: "shield", groups: "users-group", state: "circle-dashed", lastLogin: "login", twofa: "lock" }}
-            names={GROUPS}
+            names={{ groups: GROUPS }}
             results={`${new Set(rows().map((row) => row.person.email)).size} Personen`}
           />
           <StatusRow

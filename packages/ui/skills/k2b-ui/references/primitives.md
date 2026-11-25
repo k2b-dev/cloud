@@ -344,8 +344,9 @@ lines instead of cutting a thing.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
   its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
   optional `base` (the view's state, where "Zurücksetzen" returns),
-  `icons`, `counts`, `names` (lookup names the server resolved), `views`
-  (`{ stores, current?, onSaved?, onRemoved? }`), `results` ("9 Artikel"
+  `icons`, `counts`, `names` (per field: lookup names the server resolved),
+  `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
+  current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
   for the phone sheet). It writes the address itself. See
   [list queries](list-queries.md).
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
@@ -386,7 +387,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 
@@ -418,7 +420,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 

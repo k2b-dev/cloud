@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-filter.demo";
 import { heights } from "./tokens";
@@ -29,8 +29,12 @@ afterAll(async () => {
 
 const articles = "status=consigned,photographed&category=furniture,clocks&price=500..";
 
-const withPage = async (search: string, run: (page: Page) => Promise<void>, { width = 1440, touch = false } = {}) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch });
+const withPage = async (
+  search: string,
+  run: (page: Page) => Promise<void>,
+  { width = 1440, touch = false, timezoneId }: { width?: number; touch?: boolean; timezoneId?: string } = {},
+) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, timezoneId });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   await page.route(`${origin}/**`, (route) =>
@@ -58,8 +62,11 @@ const box = async (page: Page, selector: string) => {
   return found;
 };
 /** Waits until the element keeps its place for two frames, such as a sheet once it has slid up. */
-const steady = (page: Page, selector: string) =>
-  page.waitForFunction(
+const steady = async (page: Page, selector: string) => {
+  // each wait measures afresh: a top kept from an earlier wait would match the one frame in which a sheet whose content
+  // just changed still stands at its old place
+  await page.evaluate((s) => document.querySelector(s)?.removeAttribute("data-test-top"), selector);
+  await page.waitForFunction(
     (s) => {
       const element = document.querySelector(s);
       if (!element) return false;
@@ -73,6 +80,7 @@ const steady = (page: Page, selector: string) =>
     selector,
     { polling: 100, timeout: 5000 },
   );
+};
 const calls = (page: Page) =>
   page.evaluate(() => (window.__lookup?.calls ?? []).map((call) => ({ query: call.query, aborted: call.aborted() })));
 
@@ -161,10 +169,12 @@ test("nothing moves when a statement is hovered, focused or opened, or when the 
   await withPage(articles, async (page) => {
     const before = await box(page, ".k2-fbar-item:first-child .k2-stmt");
     const status = await box(page, "[data-status-row]");
-    await page.locator(".k2-fbar-item:first-child .k2-stmt").hover();
+    await hoverInPlace(page.locator(".k2-fbar-item:first-child .k2-stmt"));
+    await settled(page);
     expect(await box(page, ".k2-fbar-item:first-child .k2-stmt")).toEqual(before);
     await page.keyboard.press("Tab");
     await page.locator(".k2-fbar-item:first-child .k2-stmt-b").focus();
+    await settled(page);
     expect(await box(page, ".k2-fbar-item:first-child .k2-stmt")).toEqual(before);
     await page.keyboard.press("Enter");
     await page.locator(".k2-fpop").waitFor();
@@ -322,8 +332,9 @@ test("at the length limit of the address a change is refused and every filter st
   await withPage(search, async (page) => {
     expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("option", { name: /Fotografiert/ }).click();
-    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    // a value that would not fit is locked where it is offered; pressing it changes nothing
+    expect(await page.getByRole("option", { name: /Fotografiert/ }).getAttribute("aria-disabled")).toBe("true");
+    await page.getByRole("option", { name: /Fotografiert/ }).click({ force: true });
     expect(new URL(page.url()).searchParams.get("status")).toBe("consigned");
     expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
     expect(await page.getByRole("option", { name: /Fotografiert/ }).getAttribute("aria-selected")).toBe("false");
@@ -404,7 +415,248 @@ test("views: “Als neue Ansicht speichern” waits for a change and saves the w
     await dialog.getByRole("button", { name: "Speichern" }).click();
     await dialog.waitFor({ state: "detached" });
     expect(await page.evaluate(() => window.__changes?.filter((change) => change.startsWith("saved")))).toEqual([
-      `saved person Möbel in Arbeit ${articles.replaceAll(",", "%2C")}&group=location`,
+      `saved person Möbel in Arbeit ${articles}&group=location`,
     ]);
+  });
+});
+
+// ── Review findings of #4136: each test failed before its fix ──────────────────────────────────────────────────
+
+test("a lookup code nobody can name is asked for once, and stays a code with a warning", async () => {
+  await withPage("consignor=c-9999", async (page) => {
+    await page.waitForFunction(() => (window.__resolves ?? []).length > 0);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.__resolves)).toEqual([["c-9999"]]);
+    expect(await statements(page)).toEqual(["Einlieferer ist c-9999"]);
+    expect(await page.locator(".k2-stmt-b b .k2-icon").getAttribute("aria-label")).toBe(
+      "Name nicht gefunden. Der Eintrag wurde vielleicht gelöscht.",
+    );
+  });
+});
+
+test("a number the field cannot read keeps the active filter and says so at the field", async () => {
+  await withPage(articles, async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    await from.fill("");
+    await from.pressSequentially("1e");
+    await from.press("Tab");
+    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
+    expect(await statements(page)).toContain("Preis ab 500 €");
+  });
+});
+
+test("renaming a saved view keeps the query it holds, also while the list shows a changed state", async () => {
+  await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {
+    await page.getByRole("button", { name: "Ansicht" }).click();
+    await page.getByRole("menuitem", { name: /„Teure Möbel“ umbenennen/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Ansicht umbenennen" });
+    await dialog.getByRole("textbox").fill("Teure Stücke");
+    await dialog.getByRole("button", { name: "Speichern" }).click();
+    await dialog.waitFor({ state: "detached" });
+    expect(await page.evaluate(() => window.__changes?.filter((change) => change.startsWith("saved")))).toEqual([
+      "saved person Teure Stücke category=furniture&price=2000..",
+    ]);
+  });
+});
+
+test("two lookup fields with the same code keep their own names", async () => {
+  await withPage("consignor=c-1001&buyer=c-1001", async (page) => {
+    await page.waitForFunction(() => document.querySelectorAll(".k2-stmt-b b .k2-icon").length === 0);
+    expect(await statements(page)).toEqual(["Einlieferer ist Haus Bergmann", "Käufer ist Lena Hof"]);
+  });
+});
+
+/** On the phone: opens the filter sheet with its button and waits until it stands. */
+const openSheet = async (page: Page) => {
+  await page.getByRole("button", { name: /^Filter\s*\d*$/ }).tap();
+  await page.getByRole("dialog", { name: "Filter" }).waitFor();
+  await steady(page, '[role="dialog"]');
+};
+
+test("phone: each sheet session is one history entry, so Back returns to the state of the session before", async () => {
+  await withPage(
+    articles,
+    async (page) => {
+      const session = async (value: RegExp) => {
+        await openSheet(page);
+        await page.locator(".k2-fsheet-row").first().tap();
+        await steady(page, '[role="dialog"]');
+        await page.getByRole("option", { name: value }).tap();
+        await page.getByRole("button", { name: /Artikel zeigen$/ }).tap();
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+      };
+      await session(/Online/);
+      expect(new URL(page.url()).searchParams.get("status")).toBe("consigned,photographed,online");
+      await session(/Reserviert/);
+      expect(new URL(page.url()).searchParams.get("status")).toBe("consigned,photographed,online,reserved");
+      await page.goBack();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("status") === "consigned,photographed,online");
+      expect((await statements(page))[0]).toBe("Status ist Eingeliefert, Fotografiert oder Online");
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("phone: a range editor follows a reset, so a new end never brings back the old one", async () => {
+  await withPage(
+    "price=500..2000",
+    async (page) => {
+      await page.getByRole("button", { name: "Filter Preis 500 € bis 2.000 € bearbeiten" }).tap();
+      await page.getByRole("dialog", { name: "Preis" }).waitFor();
+      await steady(page, '[role="dialog"]');
+      await page.getByRole("button", { name: "Zurücksetzen" }).tap();
+      await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
+      const fields = page.locator(".k2-fsheet .k2-fed-field input");
+      expect(await fields.first().inputValue()).toBe("");
+      await fields.nth(1).fill("3000");
+      await fields.nth(1).press("Enter");
+      expect(new URL(page.url()).searchParams.get("price")).toBe("..3000");
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("at the length limit, presets and sorts that would not fit are locked where they are offered", async () => {
+  const base = "status=consigned&q=";
+  const search = `${base}${"x".repeat(1995 - base.length)}`;
+  await withPage(search, async (page) => {
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await page.getByRole("menuitem", { name: /Eingang/ }).click();
+    await page.locator(".k2-fpop [role=option]").first().waitFor();
+    expect(await page.getByRole("option", { name: "letzte 7 Tage" }).getAttribute("aria-disabled")).toBe("true");
+  });
+  await withPage(
+    search,
+    async (page) => {
+      await openSheet(page);
+      await page.locator(".k2-fsheet-row", { hasText: "Sortierung" }).tap();
+      await steady(page, '[role="dialog"]');
+      expect(await page.getByRole("option", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("phone: “Keine Gruppen” in the sheet takes the grouping away", async () => {
+  await withPage(
+    "status=consigned&group=status",
+    async (page) => {
+      await openSheet(page);
+      await page.locator(".k2-fsheet-row", { hasText: "Gruppierung" }).tap();
+      await steady(page, '[role="dialog"]');
+      await page.getByRole("option", { name: "Keine Gruppen" }).tap();
+      await page.waitForFunction(() => !new URL(location.href).searchParams.has("group"));
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("a view that fails to update says so and offers to try again", async () => {
+  await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {
+    await page.evaluate(() => {
+      window.__failStore = true;
+    });
+    await page.getByRole("button", { name: "Ansicht" }).click();
+    await page.getByRole("menuitem", { name: /„Teure Möbel“ aktualisieren/ }).click();
+    await page.getByText("Ansicht nicht gespeichert").waitFor();
+    await page.evaluate(() => {
+      window.__failStore = false;
+    });
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.waitForFunction(() => (window.__changes ?? []).some((change) => change.startsWith("saved person Teure Möbel")));
+  });
+});
+
+test("points in time read in the app's time zone, the same on the server and in any browser", async () => {
+  const seen = "seen=2026-11-24T08:00Z..2026-11-24T09:30Z";
+  // without a zone the bar reads UTC, as the server does, even in a browser in Berlin
+  await withPage(
+    seen,
+    async (page) => {
+      expect(await statements(page)).toEqual(["Gesehen 24.11., 08:00 bis 24.11., 09:30"]);
+    },
+    { timezoneId: "Europe/Berlin" },
+  );
+  await withPage(
+    `${seen}&_tz=Europe/Berlin`,
+    async (page) => {
+      expect(await statements(page)).toEqual(["Gesehen 24.11., 09:00 bis 24.11., 10:30"]);
+    },
+    { timezoneId: "America/New_York" },
+  );
+});
+
+test("lookup: Arrow up from the second entry goes to the first, and from the first to the search", async () => {
+  await withPage("consignor=c-1005", async (page) => {
+    await page.locator(".k2-stmt-b").first().click();
+    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    await page.evaluate(() => window.__lookup?.answer());
+    await page.getByRole("option", { name: /Haus Bergmann/ }).waitFor();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    const focused = () => page.evaluate(() => document.activeElement?.textContent ?? "");
+    expect(await focused()).toContain("Haus Bergmann");
+    await page.keyboard.press("ArrowUp");
+    expect(await focused()).toContain("Nachlass Kessler");
+    await page.keyboard.press("ArrowUp");
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
+  });
+});
+
+// ── Delta review of #4136 (a400358): each test failed before its fix ───────────────────────────────────────────
+
+test("daylight saving: an unchanged bound keeps its instant, a time that does not exist is refused", async () => {
+  // 00:30Z is 02:30 summer time in Berlin; 02:30 comes twice that night. 03:00Z is 04:00 winter time.
+  const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
+  await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
+    await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
+    const fields = page.locator(".k2-fpop .k2-fed-field input");
+    await fields.nth(1).press("Enter");
+    await page.waitForTimeout(100);
+    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    // 02:30 on 29 March does not exist in Berlin: the clocks jump from 02:00 to 03:00
+    await fields.first().fill("2026-03-29T02:30");
+    await fields.first().press("Enter");
+    await page.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
+    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+  });
+});
+
+test("retrying a failed view update writes exactly what failed, not what the list shows by then", async () => {
+  await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {
+    await page.evaluate(() => {
+      window.__failStore = true;
+    });
+    await page.getByRole("button", { name: "Ansicht" }).click();
+    await page.getByRole("menuitem", { name: /„Teure Möbel“ aktualisieren/ }).click();
+    await page.getByText("Ansicht nicht gespeichert").waitFor();
+    // the list moves on before the retry
+    await page.getByRole("button", { name: "Filter Status entfernen" }).click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("status"));
+    await page.evaluate(() => {
+      window.__failStore = false;
+    });
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.waitForFunction(() => (window.__changes ?? []).some((change) => change.startsWith("saved")));
+    expect(await page.evaluate(() => window.__changes?.filter((change) => change.startsWith("saved")))).toEqual([
+      "saved person Teure Möbel status=consigned&category=furniture&price=2000..",
+    ]);
+  });
+});
+
+test("options locked by the full address say why and what to do, visibly and to assistive technology", async () => {
+  const base = "status=consigned&q=";
+  const search = `${base}${"x".repeat(1995 - base.length)}`;
+  await withPage(search, async (page) => {
+    await page.locator(".k2-stmt-b").first().click();
+    const hint = page.getByText("Die Adresse ist voll. Entferne einen Filter oder kürze die Suche, um mehr zu wählen.");
+    await hint.waitFor();
+    const id = (await hint.getAttribute("id")) ?? "";
+    expect(id).toBeTruthy();
+    const option = page.getByRole("option", { name: /Fotografiert/ });
+    expect(await option.getAttribute("aria-disabled")).toBe("true");
+    expect((await option.getAttribute("aria-describedby"))?.split(" ")).toContain(id);
   });
 });

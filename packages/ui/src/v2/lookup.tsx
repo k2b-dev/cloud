@@ -124,11 +124,14 @@ export const Lookup = (props: LookupProps) => {
     if ((props.minChars ?? 0) === 0) run("");
   });
 
-  // Codes without a name (from a link) are named once; a code the app cannot name stays a code with a warning.
+  // Codes without a name (from a link) are named once; a code the app cannot name stays a code with a warning and is
+  // not asked for again while this lookup is open.
+  const asked = new Set<string>();
   createEffect(
     on(
-      () => props.value.filter((value) => !untrack(names).has(value)),
+      () => props.value.filter((value) => !untrack(names).has(value) && !asked.has(value)),
       (unknown) => {
+        for (const value of unknown) asked.add(value);
         const resolve = props.resolve;
         if (unknown.length === 0 || !resolve) return;
         const controller = new AbortController();
@@ -223,8 +226,10 @@ export const Lookup = (props: LookupProps) => {
         onKeyDown={(event) => {
           // Arrow up from the first entry goes back to the search, where typing goes on
           if (event.key !== "ArrowUp") return;
+          // the listbox moves the focus before the key reaches this box, so the option the key was pressed on is
+          // the event's target, not the focused element
           const options = [...(box?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
-          if (options[0] && document.activeElement === options[0]) {
+          if (options[0] && event.target === options[0]) {
             event.preventDefault();
             field?.focus();
           }

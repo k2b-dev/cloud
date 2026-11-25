@@ -155,6 +155,10 @@ declare global {
   interface Window {
     __lookup?: { calls: { query: string; aborted: () => boolean }[]; answer: () => void; fail: () => void };
     __changes?: string[];
+    /** How often the consignor names were resolved, and the codes asked for. */
+    __resolves?: string[][];
+    /** While true, every write of a view store fails, as a server that refuses would. */
+    __failStore?: boolean;
   }
 }
 const pending: Pending[] = [];
@@ -191,6 +195,11 @@ const loadConsignors = (query: string, context: { signal: AbortSignal; limit: nu
     pending.push(entry);
   });
 
+const BUYERS: readonly LookupItem[] = [
+  { value: "c-1001", label: "Lena Hof", meta: "Basel" },
+  { value: "c-2002", label: "Galerie Nord", meta: "Kiel" },
+];
+
 export const articleQuery = defineListQuery({
   key: "articles",
   fields: {
@@ -203,8 +212,19 @@ export const articleQuery = defineListQuery({
       common: true,
       limit: 6,
       load: loadConsignors,
-      resolve: async (values) => CONSIGNORS.filter((item) => values.includes(item.value)),
+      resolve: async (values) => {
+        if (!isServer) window.__resolves = [...(window.__resolves ?? []), [...values]];
+        return CONSIGNORS.filter((item) => values.includes(item.value));
+      },
     }),
+    // a second lookup whose codes look like the consignors' ("c-1001"), with other names
+    buyer: field.lookup({
+      label: "Käufer",
+      load: async () => ({ items: BUYERS }),
+      resolve: async (values) => BUYERS.filter((item) => values.includes(item.value)),
+    }),
+    // points in time, shown in the time zone the app passes (`_tz` in the address of this demo)
+    seen: field.timeRange({ label: "Gesehen", presets: [{ value: "last-1h", label: "letzte Stunde" }] }),
     received: field.dateRange({
       label: "Eingang",
       presets: [
@@ -229,6 +249,7 @@ const memoryStore = (scope: ViewStore["scope"], writable: boolean, views: SavedL
   writable,
   list: async () => views,
   save: async (view) => {
+    if (window.__failStore) throw new Error("");
     const saved = { key: view.key ?? `${scope}-${views.length + 1}`, label: view.label, query: view.query };
     const index = views.findIndex((existing) => existing.key === saved.key);
     if (index >= 0) views[index] = saved;
@@ -237,6 +258,7 @@ const memoryStore = (scope: ViewStore["scope"], writable: boolean, views: SavedL
     return saved;
   },
   remove: async (key) => {
+    if (window.__failStore) throw new Error("");
     const index = views.findIndex((view) => view.key === key);
     if (index >= 0) views.splice(index, 1);
   },
@@ -260,7 +282,10 @@ const matches = (article: Article, state: State) => {
 export function Demo(props: { search?: string; stores?: boolean }) {
   const initial = articleQuery.parse(props.search ?? (isServer ? "" : location.search)).state;
   const [state, setState] = createSignal<State>(initial);
-  const stores = props.stores === false ? undefined : [memoryStore("person", true, []), memoryStore("app", false, [])];
+  // one saved view "für mich", opened with view=person-1: its stored query is what the view holds
+  const saved = { key: "person-1", label: "Teure Möbel", query: "category=furniture&price=2000.." };
+  const stores = props.stores === false ? undefined : [memoryStore("person", true, [saved]), memoryStore("app", false, [])];
+  const timeZone = isServer ? undefined : (new URLSearchParams(location.search).get("_tz") ?? undefined);
   const rows = createMemo(() => {
     const list = articles.filter((article) => matches(article, state()));
     const sort = state().sort;
@@ -318,7 +343,8 @@ export function Demo(props: { search?: string; stores?: boolean }) {
                 received: "calendar",
               }}
               counts={{ status: { consigned: 5, photographed: 4, online: 5, reserved: 3, sold: 2 } }}
-              views={stores ? { stores } : undefined}
+              views={stores ? { stores, current: state().view === saved.key ? { ...saved, scope: "person" } : undefined } : undefined}
+              timeZone={timeZone}
               results={results()}
             />
             <StatusRow

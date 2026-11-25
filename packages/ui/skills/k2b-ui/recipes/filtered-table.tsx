@@ -92,7 +92,7 @@ export default function FilteredOrders() {
               state={state()}
               onChange={setState}
               icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
-              names={CUSTOMERS}
+              names={{ customer: CUSTOMERS }}
               results={`${orders.length} Aufträge`}
             />
             <StatusRow
