@@ -136,7 +136,6 @@ export default function Example(props: ExampleProps) {
           onLoad={syncTheme}
           style={{ transform: scale() < 1 ? `scale(${scale()})` : undefined }}
         />
-        <span class="ui-example__scale">{`${shown()} px${scale() < 1 ? ` · ${Math.round(scale() * 100)} %` : ""}`}</span>
       </div>
       <Show when={tab() === "code"}>
         <div class="ui-example__view ui-example__code">
@@ -147,6 +146,10 @@ export default function Example(props: ExampleProps) {
         <i class="ti ti-file-code" aria-hidden="true" />
         <code>{props.path}</code>
         <span>· {lines()} lines</span>
+        {/* the width and scale of the screen, beside the path: never over the screen's own content */}
+        <span class="ui-example__scale" data-idle={tab() === "code" ? "" : undefined}>
+          {`· ${shown()} px${scale() < 1 ? ` at ${Math.round(scale() * 100)} %` : ""}`}
+        </span>
         <span class="ui-example__fill" />
         <span>
           the same file is a recipe of the skill <code>k2b-ui</code>

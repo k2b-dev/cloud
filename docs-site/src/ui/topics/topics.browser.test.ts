@@ -110,6 +110,10 @@ describe("Example on Lists and tables", () => {
       expect(await box(".ui-example__stage")).toEqual(view);
       expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
 
+      // the width and scale stand in the meta line under the frame, never over the screen
+      const scale = await box(".ui-example__scale");
+      expect((scale?.y ?? 0) >= (view?.y ?? 0) + (view?.height ?? 0)).toBe(true);
+
       // the code: the whole recipe in the same place and size as the screen; the toolbar keeps its height
       await tabs.getByRole("button", { name: "Code" }).click();
       await example.locator(".ui-example__code").waitFor();
@@ -149,6 +153,34 @@ describe("Example on Lists and tables", () => {
       await page.close();
     }
   }, 60_000);
+});
+
+describe("Example switches", () => {
+  for (const width of [1440, 390])
+    test(`every segment keeps its words whole and off the group's edge at ${width} px`, async () => {
+      // Dialogs and overlays has the longest state names ("Members", "Confirm")
+      const { page, errors } = await open("/en/ui/v2/dialogs-and-overlays", width);
+      try {
+        await page.locator("figure.ui-example[data-measured]").first().waitFor();
+        await settled(page);
+        const cramped = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".ui-example__bar .k2b-segmented-control")].flatMap((group) => {
+            const edge = group.getBoundingClientRect();
+            return [...group.querySelectorAll<HTMLElement>(".k2b-segmented-control__option")]
+              .filter((option) => {
+                const box = option.getBoundingClientRect();
+                const visible = box.left >= edge.left && box.right <= edge.right;
+                return visible && (option.scrollWidth > option.clientWidth || box.left - edge.left < 2 || edge.right - box.right < 2);
+              })
+              .map((option) => option.textContent?.trim());
+          }),
+        );
+        expect(cramped).toEqual([]);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
 });
 
 describe("navigation", () => {

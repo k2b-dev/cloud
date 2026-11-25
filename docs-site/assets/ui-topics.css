@@ -239,9 +239,15 @@ div.ui-topic__part,
 }
 /* The switches keep their own width, as on the chart pages; v1 draws a segmented control full width. */
 .k2b-ui.ui-example .ui-example__bar .k2b-segmented-control {
+  flex: none;
   width: auto;
   max-width: 100%;
   overflow-x: auto;
+}
+/* v1 shares a full-width control equally (`flex: 1`); here each segment is as wide as its words with the normal
+   inner padding, so a long state name such as "Mitglieder" never touches the edge of the group */
+.k2b-ui.ui-example .ui-example__bar .k2b-segmented-control__option {
+  flex: none;
 }
 .ui-example__open {
   display: inline-grid;
@@ -296,16 +302,15 @@ div.ui-topic__part,
 .ui-example:not([data-measured]) .ui-example__stage iframe {
   visibility: hidden;
 }
+/* the width and scale in the meta line; its room is kept, so switching the width never moves the line */
 .ui-example__scale {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  background: var(--k2b-surface);
-  color: var(--c-faint);
-  font-family: var(--c-mono);
-  font-size: 0.7rem;
+  display: inline-block;
+  min-width: 15ch;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ui-example__scale[data-idle] {
+  visibility: hidden;
 }
 /* The code fills the view's frame: no frame or rounding of its own, its lines scroll inside. */
 .ui-example__code {
