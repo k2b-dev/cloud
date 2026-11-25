@@ -58,9 +58,11 @@ const narrowColumn = async (page: Page, selector: string, width: number) => {
     ([target, wanted]) => {
       const frame = document.querySelector<HTMLElement>(".frame")!;
       const element = document.querySelector(target)!;
+      // the frame's width before it loses its right edge: a workspace takes the width of its place and brings none
+      const start = frame.getBoundingClientRect().width;
       frame.style.right = "auto";
       frame.style.boxSizing = "border-box";
-      frame.style.width = `${frame.getBoundingClientRect().width}px`;
+      frame.style.width = `${start}px`;
       for (let step = 0; step < 6; step++) {
         const short = element.getBoundingClientRect().width - wanted;
         if (Math.abs(short) < 0.5) break;

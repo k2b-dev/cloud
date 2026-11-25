@@ -93,6 +93,8 @@ const uiMessages = i18n.define({
       closeNamed: ({ name }: { name: string }) => `Close ${name}`,
       range: "Range",
       edit: "Edit",
+      sidebar: "Sidebar",
+      showSidebar: "Show sidebar",
       yes: "Yes",
     },
     de: {
@@ -183,6 +185,8 @@ const uiMessages = i18n.define({
       closeNamed: ({ name }) => `${name} schließen`,
       range: "Zeitraum",
       edit: "Bearbeiten",
+      sidebar: "Seitenleiste",
+      showSidebar: "Seitenleiste zeigen",
       yes: "Ja",
     },
   },

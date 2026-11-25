@@ -246,6 +246,9 @@
   --k2-pane-min: initial;
   --k2-ws-side: initial;
   --k2-ws-side-min: initial;
+  --k2-ws-toggle: initial;
+  --k2-ws-drawer: initial;
+  --k2-drawer-w: initial;
   --k2-p: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
@@ -383,6 +386,51 @@
 .k2-ui .k2-ws-main > .k2-split {
   flex: 1;
   min-height: 0;
+}
+/* The sidebar as a drawer (a tablet, a narrow window): where the workspace cannot hold the sidebar at its default
+   beside every column at its minimum, the rule the workspace makes from its own widths hides the sidebar and sets
+   --k2-ws-toggle and --k2-ws-drawer on the head. The button that opens the drawer then stands at the start of the
+   head, its icon on the text edge, and the head's own content moves past it. */
+/* the workspace's width is the one the rule asks for, so it takes the width of its place and brings none of its own */
+.k2-ui .k2-ws {
+  container-type: inline-size;
+}
+.k2-ui .k2-ws-main > [data-slot="head"] {
+  position: relative;
+}
+.k2-ui .k2-btn.k2-ws-toggle {
+  display: var(--k2-ws-toggle, none);
+  position: absolute;
+  top: calc((var(--k2-h-head) - var(--k2-h-control)) / 2);
+  left: calc(var(--k2-edge) - 10px);
+  z-index: 1;
+}
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar {
+  padding-left: calc(var(--k2-edge) + var(--k2-ws-drawer, 0) * (var(--k2-h-control) + 8px - 10px));
+}
+/* a workspace without a head: the button stands in a head of its own */
+.k2-ui .k2-ws-main > [data-slot="head"][data-toggle-only] > .k2-ws-toggle {
+  position: static;
+  margin: calc((var(--k2-h-head) - var(--k2-h-control)) / 2) 0 calc((var(--k2-h-head) - var(--k2-h-control)) / 2)
+    calc(var(--k2-edge) - 10px);
+}
+/* the drawer: the sidebar from the start of the window, as wide as its column, its free corners round */
+.k2-ui .k2-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 70;
+  width: var(--k2-drawer-w);
+  max-width: calc(100vw - 48px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  border-radius: 0 var(--k2-r-overlay) var(--k2-r-overlay) 0;
+  box-shadow: var(--k2-float-large);
 }
 
 /* The seam is the one line between two columns and the home of its grip (K13). A grip is a small round pill,
