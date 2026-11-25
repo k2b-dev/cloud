@@ -286,6 +286,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
             when={!draft()}
             fallback={<Empty icon="send" text={props.audience.legacy ? t().createNewNotificationBatch : t().finalizeDraftForRecipients} />}
           >
+            {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
             <Show when={props.recipients} fallback={<Failed text={words().recipientsFailed} onRetry={() => void showChanges()} />}>
               {(rows) => (
                 <Table
@@ -322,7 +323,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                     },
                     {
                       title: t().status,
-                      width: { min: 130, default: 150 },
+                      width: { min: 150, default: 160 },
                       cell: (row) => {
                         const chip = recipientChip(row.status, recipientStatusLabel(t(), row.status));
                         return row.mail

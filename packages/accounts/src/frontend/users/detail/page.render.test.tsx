@@ -120,9 +120,10 @@ const server = (options: Options = {}) => {
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockResolvedValue(false),
     spyOn(services.appApproval, "config").mockRejectedValue(new Error("Not configured")),
-    spyOn(services.accountsAppService.user, "get").mockImplementation(async ({ id }) =>
-      options.account !== undefined && id !== admin.id ? null : id === admin.id ? admin : person,
-    ),
+    spyOn(services.accountsAppService.user, "get").mockImplementation(async (input) => {
+      const id = "id" in input ? input.id : null;
+      return id === admin.id ? admin : options.account !== undefined ? null : person;
+    }),
     spyOn(services.serviceAccounts, "get").mockResolvedValue(options.account ? serviceAccount(options.account.kind) : null),
     spyOn(avatars, "getServiceAccountAvatarState").mockResolvedValue(null),
     spyOn(services.linuxIdentities, "get").mockResolvedValue({

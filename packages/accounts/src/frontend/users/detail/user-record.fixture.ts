@@ -11,7 +11,7 @@ export const KEY_ID = (index: number) => `44444444-4444-4444-8444-${String(index
 export const DEVICE_ID = (index: number) => `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`;
 export const PHONE_ID = (index: number) => `77777777-7777-4777-8777-${String(index).padStart(12, "0")}`;
 
-export type FixtureName = "sample" | "worst" | "empty" | "optional-email";
+export type FixtureName = "sample" | "worst" | "empty" | "optional-email" | "huge";
 
 const base: User = {
   id: USER_ID,
@@ -247,7 +247,21 @@ const empty = (): UserRecordView => ({
   appDevices: [],
 });
 
+/** A person in 1,200 groups who manages 1,000: the record must stay light and quick. */
+const huge = (): UserRecordView => {
+  const memberships = Array.from({ length: 1200 }, (_, index) => group(1000 + index, `Projekt ${index + 1}`, index % 2 ? `Arbeitsgruppe ${index + 1}` : null));
+  return {
+    ...sample(),
+    memberships,
+    directCount: memberships.length,
+    allCount: memberships.length,
+    managed: memberships.slice(0, 1000).map((entry) => ({ ...entry, direct: false })),
+    memberGroupIds: memberships.map((entry) => entry.id),
+  };
+};
+
 export const fixtureRecord = (name: FixtureName): UserRecordView =>
+  name === "huge" ? huge() :
   name === "worst"
     ? worst()
     : name === "empty"

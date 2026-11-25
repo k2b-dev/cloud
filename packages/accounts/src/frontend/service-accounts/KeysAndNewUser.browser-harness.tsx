@@ -5,12 +5,15 @@ import AccountsNav from "../AccountsNav";
 import NewUserScreen from "../users/new/NewUserScreen";
 import ApiKeysScreen from "./ApiKeysScreen";
 import ApiKeysSection from "./ApiKeysSection";
+import { KEYS_PER_PAGE, toKeyPage } from "./account-keys";
 import DirectoryAccessSection from "./DirectoryAccessSection";
 import {
   accountRequest,
   agentAccount,
   agentKeys,
   directoryPage,
+  HUGE_TOTAL,
+  hugeSources,
   listRows,
   policy,
   worstKeys,
@@ -23,7 +26,7 @@ import { apiKeysQuery, parseApiKeysAddress } from "./query";
  * API. "record" stands in for an account's record (lane E's frame) with the two sections in it.
  */
 type State =
-  | { screen: "record"; keys?: "sample" | "worst" | "empty" | "failed"; active?: boolean }
+  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean }
   | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -32,7 +35,17 @@ if (!host) throw new Error("Missing harness root");
 const state = JSON.parse(document.documentElement.dataset.state ?? "{}") as State;
 
 const record = (props: Extract<State, { screen: "record" }>) => {
-  const keys = props.keys === "worst" ? worstKeys : props.keys === "empty" ? [] : props.keys === "failed" ? null : agentKeys;
+  const keys = props.keys === "worst" ? worstKeys : props.keys === "empty" ? [] : props.keys === "sample" || !props.keys ? agentKeys : null;
+  const first =
+    props.keys === "huge"
+      ? toKeyPage({ items: hugeSources(1, KEYS_PER_PAGE), total: HUGE_TOTAL }, 1, {
+          locale: "de",
+          timeZone: "Europe/Berlin",
+          now: new Date("2026-11-25T12:00:00Z"),
+        })
+      : keys
+        ? { keys, total: keys.length, page: 1 }
+        : null;
   const account = { ...agentAccount, active: props.active !== false };
   return (
     <Workspace
@@ -40,7 +53,7 @@ const record = (props: Extract<State, { screen: "record" }>) => {
       head={<Bar start={<RecordHead name={account.name} avatar={{ name: account.name }} kinds={["Agent"]} />} />}
     >
       <Pane label={account.name} scrollKey="harness-record">
-        <ApiKeysSection account={account} keys={keys} total={keys?.length ?? 0} modelsAvailable timeZone="Europe/Berlin" />
+        <ApiKeysSection account={account} first={first} modelsAvailable timeZone="Europe/Berlin" />
         <DirectoryAccessSection account={account} initial={directoryPage} />
       </Pane>
     </Workspace>

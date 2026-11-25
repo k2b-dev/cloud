@@ -115,6 +115,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
               </Notice>
             )}
           </Show>
+          {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
           <Show when={props.rows} fallback={<Failed text={words().loadFailed} onRetry={() => void showChanges()} />}>
             {(rows) => (
               <Table
@@ -144,7 +145,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                   { title: t().subject, width: { min: 200, default: 300 }, cell: (row) => ({ lines: [row.subject, row.note] }) },
                   {
                     title: t().status,
-                    width: { min: 110, default: 130 },
+                    width: { min: 140, default: 150 },
                     cell: (row) => batchChip(row.status, batchStatusLabel(t(), row.status)),
                   },
                   { title: t().recipients, width: { min: 140, default: 170 }, cell: (row) => row.recipients, drop: true },

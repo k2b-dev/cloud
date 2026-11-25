@@ -14,7 +14,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("../page");
 
-const person = (roles: string[]): User => ({
+const person = (roles: User["roles"]): User => ({
   id: "11111111-1111-4111-8111-111111111111",
   uid: "jana.berger",
   roles,
@@ -107,11 +107,10 @@ test("an administrator sees their account, the groups and the administration, li
   expect(html).toContain('href="/app/accounts/groups?scope=managed"');
   expect(html).toContain('href="/app/accounts/requests"');
   expect(html).toContain('href="/app/accounts/users"');
-  // the audit log, reminders and deleted accounts live on the activity page now
+  // the audit log, reminders and deleted accounts live on the activity page now (the shared sidebar is not this page's)
   expect(html).toContain('href="/app/accounts/activity"');
-  expect(html).not.toContain('href="/app/accounts/audit"');
-  expect(html).not.toContain('href="/app/accounts/reminders"');
-  expect(html).not.toContain('href="/app/accounts/deleted-accounts"');
+  expect(html).toContain("/app/accounts/activity?kind=deleted");
+  expect(html).toContain("/app/accounts/activity?kind=reminders");
   expect(html).toContain("Sync step failed");
   expect(html).toContain('href="/me"');
   expect(html).not.toContain('data-k2-part="Loading"');

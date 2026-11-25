@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { User } from "@/contracts";
+import type { LocalUser, User } from "@k2b/cloud/contracts";
 import { emailRules, userActionAvailability } from "./user-actions";
 import { dayFromText } from "./user-dialogs";
 import { toSafeParagraphHtml } from "./user-requests";
 import { userRecordHref, userTabFrom } from "./user-view";
 
-const user = (mail: string | null, overrides: Partial<User> = {}): User => ({
+const user = (mail: string | null, overrides: Partial<Omit<LocalUser, "provider" | "ipa">> = {}): LocalUser => ({
   id: "local-id",
   uid: "ada",
   provider: "local",
@@ -41,7 +41,22 @@ describe("the deeds a user's record offers", () => {
     expect(userActionAvailability(user(null, { uid: "admin", roles: ["user", "admin"] }), true).loginToken).toBe(false);
   });
   test("a FreeIPA account is changed only while FreeIPA is on, and never gets local profile or admin deeds", () => {
-    const ipa = user("ada@example.com", { provider: "ipa" });
+    const ipa: User = {
+      ...user("ada@example.com"),
+      provider: "ipa",
+      ipa: {
+        uidNumber: null,
+        phone: null,
+        employeeType: null,
+        mobile: null,
+        address: { street: null, postalCode: null, city: null, state: null },
+        passwordExpires: null,
+        lastLoginIpa: null,
+        syncedAt: null,
+        sshPublicKeys: [],
+        sshFingerprints: [],
+      },
+    };
     expect(userActionAvailability(ipa, false)).toMatchObject({ canMutate: false, setExpiry: false, ipaDeeds: false, local: false });
     expect(userActionAvailability(ipa, true)).toMatchObject({ canMutate: true, ipaDeeds: true, loginToken: false });
   });

@@ -1,7 +1,8 @@
 /**
  * The activity screens for the browser test, built from the invented samples as the server would build them for the
  * page's address: each kind's declaration reads the address and the sample is filtered like its service does. `worst`
- * swaps the samples for worst-case data (very long names, subjects and errors; many entries).
+ * swaps the samples for worst-case data (very long names, subjects and errors); `huge` stands for a list of thousands
+ * of entries, of which the server sends one full page, as it does.
  */
 import { formatNumber } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
@@ -30,8 +31,8 @@ const when = (iso: string) => dates.formatDateTime(iso, { locale, timeZone });
 const LONG = "Außerordentliche Mitgliederversammlung des Fördervereins Werkstattgemeinschaft Solberg-Kramer am Donnerstag";
 const UNBROKEN = "verylongunbrokenidentifier_without_any_space_0123456789abcdefghijklmnopqrstuvwxyz@solberg-kramer-werkstatt.example";
 
-const worstEvents = () =>
-  Array.from({ length: 24 }, (_, index) => ({
+const worstEvents = (length = 24) =>
+  Array.from({ length }, (_, index) => ({
     ...AUDIT_EVENTS[index % AUDIT_EVENTS.length]!,
     id: 100 + index,
     actor: { userId: null, uid: index % 2 ? UNBROKEN : "ü", provider: "local", roles: [] },
@@ -39,17 +40,17 @@ const worstEvents = () =>
     reason: index % 3 ? `${LONG}: ${UNBROKEN}` : null,
   }));
 
-export const AuditFixture = (props: { worst?: boolean }) => {
+export const AuditFixture = (props: { worst?: boolean; huge?: boolean }) => {
   const query = auditQuery(locale);
   const address = parseAuditAddress(query, new URLSearchParams(location.search));
   const outcome = address.state.filters.outcome;
-  const events = (props.worst ? worstEvents() : AUDIT_EVENTS).filter((event) => !outcome || event.outcome === outcome);
+  const events = (props.huge ? worstEvents(100) : props.worst ? worstEvents() : AUDIT_EVENTS).filter((event) => !outcome || event.outcome === outcome);
   return (
     <AuditScreen
       state={address.state}
       page={1}
-      pages={props.worst ? 3 : 1}
-      total={props.worst ? 12_480 : events.length}
+      pages={props.huge ? 125 : props.worst ? 3 : 1}
+      total={props.huge ? 12_480 : props.worst ? 2_480 : events.length}
       rows={auditRows(events, { t, locale, timeZone, names: [{ userId: "55555555-5555-4555-8555-000000000001", name: "Ada Renz" }] })}
       names={{ actor: [], target: [], serviceAccountId: [], action: [] }}
       automatic={{ shown: false, hidden: 32, href: `${location.pathname}?automatic=1` }}
@@ -59,9 +60,9 @@ export const AuditFixture = (props: { worst?: boolean }) => {
   );
 };
 
-const batchRows = (worst: boolean) =>
+const batchRows = (worst: boolean, length = 18) =>
   (worst
-    ? Array.from({ length: 18 }, (_, index) => batch(index, { subject: `${LONG} ${index + 1}`, lastError: index % 2 ? UNBROKEN : null }))
+    ? Array.from({ length }, (_, index) => batch(index, { subject: `${LONG} ${index + 1}`, lastError: index % 2 ? UNBROKEN : null }))
     : BATCHES
   ).map((entry) => ({
     id: entry.id,
@@ -75,17 +76,17 @@ const batchRows = (worst: boolean) =>
     created: when(entry.createdAt),
   }));
 
-export const NotificationsFixture = (props: { worst?: boolean }) => {
+export const NotificationsFixture = (props: { worst?: boolean; huge?: boolean }) => {
   const params = new URLSearchParams(location.search);
   const address = parseListAddress(batchesQuery(locale), params);
   const status = address.state.filters.status;
-  const rows = batchRows(Boolean(props.worst)).filter((row) => !status || row.status === status);
+  const rows = batchRows(Boolean(props.worst || props.huge), props.huge ? 50 : 18).filter((row) => !status || row.status === status);
   return (
     <NotificationsScreen
       state={address.state}
       page={1}
-      pages={1}
-      total={rows.length}
+      pages={props.huge ? 40 : 1}
+      total={props.huge ? 2_000 : rows.length}
       rows={rows}
       creating={params.get("new") === "1"}
       ignored={null}
@@ -94,12 +95,13 @@ export const NotificationsFixture = (props: { worst?: boolean }) => {
   );
 };
 
-export const NotificationFixture = (props: { status?: "draft" | "running" | "completed_with_errors"; worst?: boolean }) => {
+export const NotificationFixture = (props: { status?: "draft" | "running" | "completed_with_errors"; worst?: boolean; huge?: boolean }) => {
   const address = parseListAddress(recipientsQuery(locale), new URLSearchParams(location.search));
   const status = props.status ?? "completed_with_errors";
   const filter = address.state.filters.status;
-  const source = props.worst
-    ? Array.from({ length: 30 }, (_, index) =>
+  const source =
+    props.worst || props.huge
+    ? Array.from({ length: props.huge ? 100 : 30 }, (_, index) =>
         recipient(index, index % 4 === 0 ? "error" : "sent", index % 4 === 0 ? "failed" : "sent", {
           displayName: `${LONG} ${index}`,
           recipient: UNBROKEN,
@@ -136,8 +138,8 @@ export const NotificationFixture = (props: { status?: "draft" | "running" | "com
       }}
       state={address.state}
       page={1}
-      pages={props.worst ? 4 : 1}
-      total={recipients.length}
+      pages={props.huge ? 50 : props.worst ? 4 : 1}
+      total={props.huge ? 5_000 : recipients.length}
       recipients={
         status === "draft"
           ? []
@@ -218,13 +220,14 @@ export const DeletedFixture = () => {
 };
 
 /** The screen of the address: a batch's record, or the activity list of the kind the address names. */
-export const ActivityFixture = (props: { worst?: boolean; status?: "draft" | "running" | "completed_with_errors" }) => {
-  if (location.pathname.startsWith(`${BATCH_PATH}/`)) return <NotificationFixture status={props.status} worst={props.worst} />;
+export const ActivityFixture = (props: { worst?: boolean; huge?: boolean; status?: "draft" | "running" | "completed_with_errors" }) => {
+  if (location.pathname.startsWith(`${BATCH_PATH}/`))
+    return <NotificationFixture status={props.status} worst={props.worst} huge={props.huge} />;
   const kind = activityKindOf(new URLSearchParams(location.search));
   return kind === "audit" ? (
-    <AuditFixture worst={props.worst} />
+    <AuditFixture worst={props.worst} huge={props.huge} />
   ) : kind === "notifications" ? (
-    <NotificationsFixture worst={props.worst} />
+    <NotificationsFixture worst={props.worst} huge={props.huge} />
   ) : kind === "reminders" ? (
     <RemindersFixture />
   ) : (

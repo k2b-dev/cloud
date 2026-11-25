@@ -27,8 +27,12 @@ type Props = {
   agent: AgentView;
   /** The keys in the chosen order; null when they could not be loaded. */
   keys: readonly AgentKeyView[] | null;
-  /** How many active keys the agent has; the page lists at most the service's page of them. */
+  /** How many active keys the agent has; the page lists one page of them. */
   keysTotal: number;
+  page: number;
+  pages: number;
+  /** Whether a column may order the keys: only while every key stands on the one page. */
+  sortable: boolean;
   sort: AgentKeySort;
   open: AgentKeyOpen;
   modelsAvailable: boolean;
@@ -45,7 +49,7 @@ export default function AgentScreen(props: Props) {
   const accounts = useAccountsMessages();
   const { showChanges, openPage } = usePageSwap();
   const changePicture = useAgentPictureChange(() => props.agent);
-  const href = (open?: string) => agentPageHref(props.agent.id, { sort: props.sort, open });
+  const href = (open?: string, page = props.page) => agentPageHref(props.agent.id, { sort: props.sort, open, page });
   const status = () => (props.agent.active ? t().active : t().disabled);
   // What is open stays open when the order changes.
   const openParam = () => (props.open.kind === "new" ? "new" : props.open.kind === "key" ? props.open.id : undefined);
@@ -58,7 +62,7 @@ export default function AgentScreen(props: Props) {
         ? { status: "warn", label: t().expired }
         : { status: "ok", label: t().keyActive };
   const sortBy = (sort: AgentKeySort) => ({
-    href: agentPageHref(props.agent.id, { sort: props.sort === sort ? "created" : sort, open: openParam() }),
+    href: agentPageHref(props.agent.id, { sort: props.sort === sort ? "created" : sort, open: openParam(), page: props.page }),
   });
   const openKey = () => {
     const open = props.open;
@@ -102,9 +106,16 @@ export default function AgentScreen(props: Props) {
           </Show>
           <Band>
             <Text>{t().keysIntro}</Text>
+            <Show when={!props.sortable}>
+              <Text type="meta" muted>
+                {t().sortAllOnly}
+              </Text>
+            </Show>
           </Band>
           <Show when={props.keys} fallback={<Failed text={t().keysFailed} onRetry={() => void showChanges()} />}>
             {(keys) => (
+              <>
+              {/* one page of the service at a time, with the true count; k2b-ui gap: virtualized list (lane MW) */}
               <Table
                 label={t().keys}
                 rows={keys()}
@@ -133,14 +144,15 @@ export default function AgentScreen(props: Props) {
                 columns={[
                   {
                     title: t().name,
-                    sort: sortBy("name"),
+                    // k2b-ui gap: a cell cuts a long key name at its end; no cut in the middle with the whole name as hint
+                    sort: props.sortable ? sortBy("name") : undefined,
                     width: { min: 160, default: 180 },
                     cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
                   },
                   { title: t().keyAccess, width: { min: 150, default: 170 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
                   {
                     title: t().lastUsed,
-                    sort: sortBy("used"),
+                    sort: props.sortable ? sortBy("used") : undefined,
                     width: { min: 120, default: 130 },
                     cell: (entry) => entry.lastUsed ?? t().neverUsed,
                     drop: true,
@@ -155,6 +167,22 @@ export default function AgentScreen(props: Props) {
                   },
                 ]}
               />
+              <Show when={props.pages > 1}>
+                <Bar
+                  start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
+                  end={
+                    <>
+                      <Button icon="chevron-left" href={href(openParam(), props.page - 1)} disabled={props.page <= 1}>
+                        {t().previous}
+                      </Button>
+                      <Button href={href(openParam(), props.page + 1)} disabled={props.page >= props.pages} forward>
+                        {t().next}
+                      </Button>
+                    </>
+                  }
+                />
+              </Show>
+              </>
             )}
           </Show>
         </Pane>

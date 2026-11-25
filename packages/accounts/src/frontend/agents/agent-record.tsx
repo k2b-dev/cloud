@@ -12,10 +12,16 @@ import { accountsNavigationItems } from "../accounts-nav";
 import { accountsMessages } from "../messages";
 import type { AgentKeyView } from "./AgentKeyDialogs";
 import AgentScreen from "./AgentScreen.island";
-import { type AgentKey, agentKeyOpenFrom, agentKeySortFrom, isAgentKeyExpired, sortAgentKeys } from "./agent-keys";
-
-/** The most keys one agent's record lists: the service's page limit. */
-const KEYS_PER_PAGE = 500;
+import {
+  AGENT_KEYS_PER_PAGE,
+  type AgentKey,
+  agentKeyOpenFrom,
+  agentKeyPageFrom,
+  agentKeySortFrom,
+  agentPageHref,
+  isAgentKeyExpired,
+  sortAgentKeys,
+} from "./agent-keys";
 
 /** The service accounts the account record opens as an agent: the kinds the agent page opened, nothing more. */
 export const isAgentRecordKind = (account: Pick<ServiceAccount, "kind">): boolean =>
@@ -29,10 +35,11 @@ const keyAccess = (credential: { scopes: readonly string[] }): AgentKey["access"
  * order the address names. `?key=new` opens the form for a new key, `?key=<id>` one key; both stand beside the list,
  * so reload, back and forward show the same page. The caller resolved the account and checked its kind.
  */
-export const renderAgentRecord = async (c: Context<AuthContext>, account: ServiceAccount) => {
+export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, account: ServiceAccount) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const sort = agentKeySortFrom(c.req.query("sort"));
+  const requestedSort = agentKeySortFrom(c.req.query("sort"));
   const open = agentKeyOpenFrom(c.req.query("key"));
+  const page = agentKeyPageFrom(c.req.query("page"));
   const [pendingRequests, picture, creator, modelsAvailable, credentials] = await Promise.all([
     accountsService.accountRequest.countPending(),
     getServiceAccountAvatarState({ id: account.id }),
@@ -41,11 +48,18 @@ export const renderAgentRecord = async (c: Context<AuthContext>, account: Servic
     // A failed read shows "could not be loaded" in place of the list; the head and the picture stay.
     serviceAccountCredentials
       .listOverview({
-        pagination: { page: 1, perPage: KEYS_PER_PAGE },
+        pagination: { page, perPage: AGENT_KEYS_PER_PAGE },
         filter: { serviceAccountId: account.id, serviceAccountKind: account.kind, credentialStatus: "active" },
       })
       .catch(() => null),
   ]);
+  const pages = Math.max(1, Math.ceil((credentials?.total ?? 0) / AGENT_KEYS_PER_PAGE));
+  // a page past the end (keys were revoked meanwhile) opens the last one, with the same order and open key
+  if (credentials && page > pages)
+    return c.redirect(agentPageHref(account.id, { sort: requestedSort, page: pages, open: open.kind === "new" ? "new" : open.kind === "key" ? open.id : undefined }), 302);
+  // the service pages the newest first; a column order holds only while every key stands on the one page
+  const sortable = pages === 1;
+  const sort = sortable ? requestedSort : "created";
   const now = new Date();
   const formatted = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : null);
   const keys: AgentKeyView[] | null = credentials
@@ -99,6 +113,9 @@ export const renderAgentRecord = async (c: Context<AuthContext>, account: Servic
         }}
         keys={keys}
         keysTotal={credentials?.total ?? 0}
+        page={page}
+        pages={pages}
+        sortable={sortable}
         sort={sort}
         open={open}
         modelsAvailable={modelsAvailable === true}

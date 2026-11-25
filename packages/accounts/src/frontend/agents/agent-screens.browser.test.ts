@@ -95,7 +95,7 @@ const desktop: View = { width: 1280, height: 860, touch: false, name: "1280" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 type State =
   | { screen: "agents"; empty?: boolean }
-  | { screen: "agent"; keys?: "sample" | "empty" | "failed"; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean };
+  | { screen: "agent"; keys?: "sample" | "empty" | "failed" | "huge"; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean };
 /** What the API answers next: a create answers with a token, a status, or a lost connection; a revoke with a status. */
 type Api = { create: "token" | 400 | 500 | "lost"; revoke: number[]; posts: unknown[]; deletes: string[]; pages: string[] };
 const api = (create: Api["create"] = "token", revoke: number[] = [200]): Api => ({ create, revoke, posts: [], deletes: [], pages: [] });
@@ -385,6 +385,31 @@ describe("an agent's API keys on v2", () => {
       }
     }
   }, 120_000);
+
+  test("an agent with 1,284 keys lists one page of 100 with the true count, pages through them and opens quickly", async () => {
+    const { context, tab, errors } = await open(desktop, `/app/accounts/users/${AGENT_ID}`, api(), { state: { keys: "huge" } });
+    try {
+      const rows = tab.locator("[data-k2-part=Table] tbody tr");
+      await rows.first().waitFor();
+      expect(await tab.evaluate(() => performance.now())).toBeLessThan(1500);
+      expect(await rows.count()).toBe(100);
+      expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
+      // the true count with the locale's separator, and no column order across pages
+      await tab.getByText(t.keysCount({ count: 1284 })).first().waitFor();
+      expect(t.keysCount({ count: 1284 })).toBe("1.284 API Keys");
+      await tab.getByText(t.sortAllOnly).waitFor();
+      expect(await tab.locator("thead th a").count()).toBe(0);
+      await tab.getByText(t.pageOf({ page: 1, pages: 13 })).waitFor();
+      await tab.getByRole("link", { name: t.next }).click();
+      await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?page=2`);
+      await tab.getByText("Kasse 101", { exact: true }).waitFor();
+      await expectClean(tab);
+      await shoot(tab, "detail-huge-1280");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
   test("the page and the dialog keep the rules in the dark", async () => {
     for (const address of [`/app/accounts/users/${AGENT_ID}`, `/app/accounts/users/${AGENT_ID}?key=new`]) {

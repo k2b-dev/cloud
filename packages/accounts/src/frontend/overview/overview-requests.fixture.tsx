@@ -2,6 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import RequestsScreen, { type RequestRow } from "../requests/RequestsScreen";
 import type { RequestStatusView } from "../requests/requests-url";
 import OverviewScreen, { type OverviewAdmin, type OverviewScreenProps } from "./OverviewScreen";
+import { REQUESTS } from "./overview-requests.fixture-data";
 
 // Frozen, invented sample data for the overview and the request list: dates are text as the server formats them.
 
@@ -87,36 +88,6 @@ export const OverviewFixture = (props: { admin?: boolean; worst?: boolean; empty
   </LocaleProvider>
 );
 
-export const REQUESTS: RequestRow[] = [
-  {
-    id: "aaaaaaaa-0000-4000-8000-000000000001",
-    name: "Jonas Weber",
-    firstName: "Jonas",
-    email: "jonas.weber@solberg-kramer.example",
-    status: "pending",
-    requested: "20. Nov. 2026",
-    comment: "Neu im Lager ab Dezember",
-  },
-  {
-    id: "aaaaaaaa-0000-4000-8000-000000000002",
-    name: "Mira Kaya",
-    firstName: "Mira",
-    email: "mira.kaya@solberg-kramer.example",
-    status: "pending",
-    requested: "18. Nov. 2026",
-    comment: null,
-  },
-  {
-    id: "aaaaaaaa-0000-4000-8000-000000000003",
-    name: "Lars Petersen",
-    firstName: "Lars",
-    email: "lars@solberg-kramer.example",
-    status: "denied",
-    requested: "02. Nov. 2026",
-    comment: "Praktikum",
-  },
-];
-
 /** Long names, an address without a break, a long comment, and many requests over several pages. */
 const WORST: RequestRow[] = Array.from({ length: 24 }, (_, index) => ({
   id: `bbbbbbbb-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -132,9 +103,35 @@ const WORST: RequestRow[] = Array.from({ length: 24 }, (_, index) => ({
       : null,
 }));
 
-export const RequestsFixture = (props: { status?: RequestStatusView; worst?: boolean; empty?: boolean; freeIpa?: boolean }) => {
+/** A huge state: 1,000 pending requests on one screen (the page shows 100 per page; this proves the list scales). */
+const HUGE: RequestRow[] = Array.from({ length: 1000 }, (_, index) => ({
+  id: `cccccccc-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  name: `Anfrage ${index + 1}`,
+  firstName: "Anfrage",
+  email: `anfrage${index + 1}@solberg-kramer.example`,
+  status: "pending" as const,
+  requested: "20. Nov. 2026",
+  comment: index % 3 === 0 ? "Neu im Lager" : null,
+}));
+
+export const RequestsFixture = (props: {
+  status?: RequestStatusView;
+  worst?: boolean;
+  huge?: boolean;
+  full?: boolean;
+  empty?: boolean;
+  freeIpa?: boolean;
+}) => {
   const status = props.status ?? "pending";
-  const rows = props.empty ? [] : props.worst ? WORST : REQUESTS.filter((row) => status === "all" || row.status === status);
+  const rows = props.empty
+    ? []
+    : props.huge
+      ? HUGE
+      : props.full
+        ? HUGE.slice(0, 100)
+        : props.worst
+          ? WORST
+          : REQUESTS.filter((row) => status === "all" || row.status === status);
   return (
     <LocaleProvider locale="de">
       <RequestsScreen

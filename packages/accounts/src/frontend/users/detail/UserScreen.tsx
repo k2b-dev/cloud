@@ -28,7 +28,7 @@ import AccountsNav from "../../AccountsNav";
 import { useAccountsMessages } from "../../messages";
 import { deleteUserRequest } from "../delete-user";
 import LinuxIdentitySection from "./linux-identity";
-import { useUserRecordMessages } from "./messages";
+import { number, useUserRecordMessages } from "./messages";
 import { createCloudAppPairing } from "./pair-cloud-app";
 import { userActionAvailability } from "./user-actions";
 import { AddToGroupsDialog, CredentialDialog, EditUserDialog, ExpiryDialog, NotifyDialog } from "./user-dialogs";
@@ -49,6 +49,8 @@ import { type UserGroupView, type UserRecordView, type UserTab, userRecordHref }
 
 /** Rows of direct groups the overview shows before "All groups". */
 const OVERVIEW_GROUPS = 6;
+/** Rows a long list shows at first and adds per press, so the page stays light with a thousand memberships. */
+const REVEAL = 100;
 
 type Props = {
   record: UserRecordView;
@@ -78,11 +80,20 @@ export default function UserScreen(props: Props) {
   const toast = useToast();
   const { showChanges, openPage } = usePageSwap();
   const record = () => props.record;
+  const n = (count: number) => number(count, locale());
   const user = () => props.record.user;
   const can = () => userActionAvailability(user(), record().freeIpaEnabled);
   const href = (tab: UserTab, recursive = false) => userRecordHref(user().id, props.list, { tab, recursive });
   const [dialog, setDialog] = createSignal<Dialogs>({ kind: "none" });
   const [busy, setBusy] = createSignal<string | null>(null);
+  const [shown, setShown] = createSignal({ memberships: REVEAL, managed: REVEAL });
+  /** "Show more" at the end of a list that holds more rows than it shows. */
+  const moreOf = (list: "memberships" | "managed", total: number) => {
+    const rest = total - shown()[list];
+    return rest > 0
+      ? { label: r().showMore({ count: Math.min(REVEAL, rest) }), onClick: () => setShown((now) => ({ ...now, [list]: now[list] + REVEAL })) }
+      : undefined;
+  };
   const closed = (changed: boolean) => {
     setDialog({ kind: "none" });
     if (changed) void showChanges();
@@ -245,7 +256,7 @@ export default function UserScreen(props: Props) {
 
   const menu = (): MenuEntry[] => {
     const allowed = can();
-    return [
+    const entries: MenuEntry[] = [
       {
         title: t().auditLog,
         items: [
@@ -290,7 +301,8 @@ export default function UserScreen(props: Props) {
         ],
       },
       ...(allowed.canMutate ? [{ label: t().delete, icon: "trash", danger: true, onClick: () => void destroy() }] : []),
-    ].filter((entry) => !("title" in entry) || entry.items.length > 0);
+    ];
+    return entries.filter((entry) => typeof entry === "string" || !("title" in entry) || entry.items.length > 0);
   };
 
   const providerName = (group: UserGroupView) => (group.provider === "ipa" ? "FreeIPA" : t().local);
@@ -360,13 +372,13 @@ export default function UserScreen(props: Props) {
           }
           href={href("groups")}
         />
-        <Cells.Cell icon="key" label={t().apiKeys} value={String(record().keysTotal)} meta={r().keysMeta} href={href("keys")} />
+        <Cells.Cell icon="key" label={t().apiKeys} value={n(record().keysTotal)} meta={r().keysMeta} href={href("keys")} />
         <Cells.Cell
           icon="devices"
           label={r().devices}
           value={
             record().signInDevices && record().appDevices
-              ? String((record().signInDevices?.length ?? 0) + (record().appDevices?.length ?? 0))
+              ? n((record().signInDevices?.length ?? 0) + (record().appDevices?.length ?? 0))
               : "–"
           }
           meta={record().signInDevices && record().appDevices ? r().devicesMeta : r().notLoaded}
@@ -378,7 +390,7 @@ export default function UserScreen(props: Props) {
           <Section
             icon="users-group"
             title={r().directGroupsTitle}
-            count={record().directCount}
+            count={n(record().directCount)}
             actions={[addAction()]}
             more={record().directCount > OVERVIEW_GROUPS ? { label: r().allMemberships, href: href("groups"), forward: true } : undefined}
           >
@@ -408,7 +420,7 @@ export default function UserScreen(props: Props) {
             />
           </Section>
           <Show when={record().sshFingerprints.length > 0}>
-            <Section icon="key" title={r().sshKeys} count={record().sshFingerprints.length}>
+            <Section icon="key" title={r().sshKeys} count={n(record().sshFingerprints.length)}>
               <Facts
                 items={record().sshFingerprints.map((value, index) => ({ label: String(index + 1), value, mono: true, copy: value }))}
               />
@@ -426,7 +438,7 @@ export default function UserScreen(props: Props) {
       <Section
         icon="users-group"
         title={r().memberOf}
-        count={record().memberships.length}
+        count={n(record().memberships.length)}
         summary={
           props.recursive
             ? t().membershipsIncludingInherited({ count: record().memberships.length })
@@ -438,19 +450,23 @@ export default function UserScreen(props: Props) {
             : { label: r().includeInherited, icon: "git-branch", href: href("groups", true) },
           addAction(),
         ]}
+        more={moreOf("memberships", record().memberships.length)}
       >
         <Show when={record().memberships.length > 0} fallback={noGroups()}>
-          <For each={record().memberships}>{(group) => groupRow(group, true)}</For>
+          {/* k2b-ui gap: virtualized list (lane MW); until then the rows come in steps of REVEAL. */}
+          <For each={record().memberships.slice(0, shown().memberships)}>{(group) => groupRow(group, true)}</For>
         </Show>
       </Section>
       <Show when={record().managed.length > 0}>
         <Section
           icon="shield"
           title={t().manages}
-          count={record().managed.length}
+          count={n(record().managed.length)}
           summary={t().manageableGroups({ count: record().managed.length })}
+          more={moreOf("managed", record().managed.length)}
         >
-          <For each={record().managed}>{(group) => groupRow(group, false)}</For>
+          {/* k2b-ui gap: virtualized list (lane MW); until then the rows come in steps of REVEAL. */}
+          <For each={record().managed.slice(0, shown().managed)}>{(group) => groupRow(group, false)}</For>
         </Section>
       </Show>
     </>
@@ -460,7 +476,7 @@ export default function UserScreen(props: Props) {
     <Section
       icon="key"
       title={t().apiKeys}
-      count={record().keysTotal}
+      count={n(record().keysTotal)}
       summary={t().personalAutomationKeys({ count: record().keysTotal })}
       more={{ label: t().viewAll, href: record().keysHref, forward: true }}
     >
@@ -656,11 +672,11 @@ export default function UserScreen(props: Props) {
               {
                 label: t().groups,
                 icon: "users-group",
-                count: record().directCount,
+                count: n(record().directCount),
                 href: href("groups", props.recursive),
                 current: props.tab === "groups",
               },
-              { label: t().apiKeys, icon: "key", count: record().keysTotal, href: href("keys"), current: props.tab === "keys" },
+              { label: t().apiKeys, icon: "key", count: n(record().keysTotal), href: href("keys"), current: props.tab === "keys" },
               { label: r().devices, icon: "devices", href: href("devices"), current: props.tab === "devices" },
             ]}
           />

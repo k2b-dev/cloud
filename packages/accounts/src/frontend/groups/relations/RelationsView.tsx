@@ -1,6 +1,6 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Empty, Failed, Lookup, Menu, Notice, Pane, Popover, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Canvas, Empty, Failed, Lookup, Menu, Notice, Pane, Popover, Row, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { usePageSwap } from "../../lib/page-swap";
@@ -191,18 +191,21 @@ export default function RelationsView(props: RelationsViewProps) {
                                   },
                                 ]
                               : []),
+                            {
+                              title: t().show,
+                              items: [
+                                {
+                                  label: t().managers,
+                                  icon: "user-star",
+                                  checked: props.state.managers,
+                                  onClick: () => go({ managers: !props.state.managers }),
+                                },
+                              ],
+                            },
                           ]}
                         >
                           {props.state.view === "graph" ? `${t().graph} · ${t().depthValue({ depth: props.state.depth })}` : t().tree}
                         </Menu>
-                        <Button
-                          variant="ghost"
-                          icon="user-star"
-                          pressed={props.state.managers}
-                          onClick={() => go({ managers: !props.state.managers })}
-                        >
-                          {t().managers}
-                        </Button>
                       </>
                     }
                   />
@@ -253,15 +256,17 @@ export default function RelationsView(props: RelationsViewProps) {
                           icon="users-group"
                           title={chosen().name}
                           summary={`${chosen().provider === "ipa" ? "FreeIPA" : t().local} · ${t().directMembers({ count: chosen().members })}`}
-                          actions={
-                            focusHref(chosen().id)
-                              ? [
-                                  { label: t().openGroup, href: `/app/accounts/groups/${chosen().id}` },
-                                  { label: t().makeFocus, href: focusHref(chosen().id) },
-                                ]
-                              : undefined
-                          }
-                        />
+                        >
+                          {/* rows, not head actions: they stay on the phone */}
+                          <Show when={focusHref(chosen().id)}>
+                            {(focus) => (
+                              <>
+                                <Row icon="external-link" lines={[t().openGroup]} href={`/app/accounts/groups/${chosen().id}`} />
+                                <Row icon="focus-2" lines={[t().makeFocus]} href={focus()} />
+                              </>
+                            )}
+                          </Show>
+                        </Section>
                         <Show when={selected()?.cycle}>
                           {(cycle) => (
                             <Notice tone="warn" icon="refresh-alert" title={t().cycleTitle}>

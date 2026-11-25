@@ -7,13 +7,14 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import { REQUESTS } from "./overview-requests.fixture";
+import { REQUESTS } from "./overview-requests.fixture-data";
 
 // The Accounts overview and the request list on v2: both keep the v2 rules at every width, the overview links to the
 // places that replaced the old pages, and a request is denied in a v2 dialog. The test stands in for the server.
 const ui = resolve(import.meta.dir, "../../../../ui");
 const origin = "https://cloud.example.test";
-const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
+// a relative folder is read from the package, so a run on another machine can bring the pictures back
+const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS ? resolve(import.meta.dir, "../../..", process.env.CLOUD_ACCOUNTS_V2_SHOTS) : undefined;
 
 const buildHarness = async (): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -74,7 +75,7 @@ const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
 
-type State = { admin?: boolean; worst?: boolean; empty?: boolean; freeIpa?: boolean };
+type State = { admin?: boolean; worst?: boolean; huge?: boolean; full?: boolean; empty?: boolean; freeIpa?: boolean };
 const page = (state: State) =>
   `<!doctype html><html lang="de" class="light" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
@@ -197,6 +198,39 @@ describe("the request list on v2", () => {
       }
     }
   }, 180_000);
+
+  /** Opens the list with `count` rows and returns how long the page took from navigation to its last row, and its nodes. */
+  const measure = async (state: State, count: number, clean = true) => {
+    const { context, tab, errors } = await open(wide, "/app/accounts/requests", state);
+    try {
+      await tab
+        .locator("[data-k2-part=Table] tbody tr")
+        .nth(count - 1)
+        .waitFor({ state: "attached" });
+      // from the start of the navigation to the last row, the browser's own start left out
+      const ready = await tab.evaluate(() => performance.now());
+      const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
+      await tab.mouse.wheel(0, 20_000);
+      if (clean) await expectClean(tab);
+      expect(errors).toEqual([]);
+      return { ready, nodes };
+    } finally {
+      await context.close();
+    }
+  };
+
+  test("the largest page the server sends (100 requests) is ready within 1.5 s", async () => {
+    const { ready, nodes } = await measure({ full: true }, 100);
+    console.info(`requests full page: ${nodes} DOM nodes, ready ${Math.round(ready)} ms`);
+    expect(ready).toBeLessThan(1500);
+  }, 60_000);
+
+  // k2b-ui gap: virtualized list (lane MW). Until v2 virtualizes `Table`, 1,000 rows are 1,000 DOM rows, so this
+  // records the time and node count (the outline and measurement of 1,000 rows outlast a test); the bound (< 1.5 s, bounded nodes) follows with MW.
+  test("1,000 requests render without errors (scale record until the list is virtualized)", async () => {
+    const { ready, nodes } = await measure({ huge: true }, 1000, false);
+    console.info(`requests huge: ${nodes} DOM nodes, ready ${Math.round(ready)} ms`);
+  }, 120_000);
 
   test("on the phone a pending request opens its page, where it is created or denied", async () => {
     const { context, tab, errors } = await open(phone, "/app/accounts/requests");

@@ -31,10 +31,23 @@ export type ApiKeyOwner =
 export type ApiKeyRow = AccountKey & { kind: ApiKeyKind; owner: ApiKeyOwner };
 
 /** The person's language and time zone, and the time of the answer (for `expired`). */
-type Context = { locale: string; timeZone: string; now: Date };
+export type KeyContext = { locale: string; timeZone: string; now: Date };
+
+/** What a key needs from the service's overview, as the server reads it and the APIs answer it. */
+export type KeySource = {
+  id: string;
+  name: string;
+  status: "active" | "revoked";
+  tokenPrefix: string;
+  scopes: readonly string[];
+  expiresAt: string | Date | null;
+  lastUsedAt: string | Date | null;
+  createdAt: string | Date;
+  serviceAccount: { id: string; kind: string };
+};
 
 /** The key as an account's record shows it, with dates in the person's language and time zone. */
-export const toAccountKey = (entry: ServiceAccountCredentialOverview, context: Context): AccountKey => {
+export const toAccountKey = (entry: KeySource, context: KeyContext): AccountKey => {
   const format = { locale: context.locale, timeZone: context.timeZone };
   const when = (value: string | Date | null) => (value ? dates.formatDateTime(value, format) : null);
   const agent = isAgentServiceAccountKind(entry.serviceAccount.kind);
@@ -54,7 +67,7 @@ export const toAccountKey = (entry: ServiceAccountCredentialOverview, context: C
 };
 
 /** The key as the list of all keys shows it, with its account's kind and owner. */
-export const toApiKeyRow = (entry: ServiceAccountCredentialOverview, context: Context): ApiKeyRow => {
+export const toApiKeyRow = (entry: ServiceAccountCredentialOverview, context: KeyContext): ApiKeyRow => {
   const owner = entry.owner;
   return {
     ...toAccountKey(entry, context),

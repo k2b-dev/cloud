@@ -37,6 +37,7 @@ import { directoryMessages } from "./directory-messages";
 import MachineKeyDialog from "./MachineKeyDialog";
 import { useApiKeyMessages } from "./messages";
 import { API_KEYS_PATH, type ApiKeysState, apiKeysHref, apiKeysQuery } from "./query";
+import { shortName } from "./short-name";
 
 export type ApiKeysScreenProps = {
   state: ApiKeysState;
@@ -215,10 +216,10 @@ export default function ApiKeysScreen(props: ApiKeysScreenProps) {
               state={state()}
               onChange={change}
               icons={{ kind: "user-key", status: "circle-dot", automatic: "refresh" }}
-              results={t().serviceAccountSummary({ count: props.total })}
+              results={words().keysCount({ count: new Intl.NumberFormat(locale()).format(props.total) })}
             />
             <StatusRow
-              lead={t().serviceAccountSummary({ count: props.total })}
+              lead={words().keysCount({ count: new Intl.NumberFormat(locale()).format(props.total) })}
               loading={refreshing()}
               filters={<ListOrder query={query()} state={state()} onChange={change} />}
             />
@@ -262,12 +263,12 @@ export default function ApiKeysScreen(props: ApiKeysScreenProps) {
               : { icon: "key", text: words().noKeys }
           }
           phone={(row) => ({
-            lines: [row.name, `${ownerName(t(), row)} · ${kindLabel(t(), row.kind)}`],
+            lines: [shortName(row.name), `${ownerName(t(), row)} · ${kindLabel(t(), row.kind)}`],
             time: row.lastUsed ?? undefined,
             marks: statusChip(t(), row),
           })}
           columns={[
-            { title: t().apiKey, width: { min: 180, default: 220 }, cell: (row) => ({ lines: [row.name, row.prefix] }) },
+            { title: t().apiKey, width: { min: 180, default: 220 }, cell: (row) => ({ lines: [shortName(row.name), row.prefix] }) },
             { title: t().owner, width: { min: 180, default: 240 }, cell: (row) => ({ lines: [owner(row), ownerDetail(row)] }) },
             {
               title: t().type,

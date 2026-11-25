@@ -15,6 +15,12 @@ export const overviewMessages = i18n.define({
       failedRuns: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 run with errors", other: `${count} runs with errors` }),
       expiredOn: ({ when }: { when: string }) => `Expired ${when}`,
+      lastSync: "Last sync",
+      sourceCounts: ({ freeIpa, local }: { freeIpa: string; local: string }) => `${freeIpa} FreeIPA · ${local} local`,
+      levelError: "Error",
+      levelWarn: "Warning",
+      levelInfo: "Info",
+      levelDebug: "Debug",
     },
     de: {
       yourAccount: "Dein Konto",
@@ -24,6 +30,12 @@ export const overviewMessages = i18n.define({
       runRate: ({ rate }) => `${rate} % ohne Fehler`,
       failedRuns: ({ count }) => i18n.plural(count, "de", { one: "1 Lauf mit Fehlern", other: `${count} Läufe mit Fehlern` }),
       expiredOn: ({ when }) => `Abgelaufen am ${when}`,
+      lastSync: "Letzte Synchronisierung",
+      sourceCounts: ({ freeIpa, local }) => `${freeIpa} FreeIPA · ${local} lokal`,
+      levelError: "Fehler",
+      levelWarn: "Warnung",
+      levelInfo: "Info",
+      levelDebug: "Debug",
     },
   },
 });

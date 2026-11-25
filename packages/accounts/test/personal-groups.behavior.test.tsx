@@ -1,10 +1,23 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { isServer } from "solid-js/web";
+import { createDomTestHarness } from "../../ui/test/dom";
 
-// A personal group's tag, its owner link and why it cannot be deleted are checked where they render: the group record's
+// A personal group's kind, its owner link and why it cannot be deleted are checked where they render: the group record's
 // render test (`src/frontend/groups/detail/page.render.test.tsx`) and browser test (`group-screen.browser.test.ts`).
 const toggle = { en: "Personal groups", de: "Persönliche Gruppen" } as const;
 
 describe("personal Linux groups in Accounts", () => {
+  if (isServer) {
+    test.skip("requires the package DOM runner", () => {});
+    return;
+  }
+  // the browser build of @k2b/ui, which the list declaration loads, needs a document while its modules evaluate
+  let dom: ReturnType<typeof createDomTestHarness>;
+  beforeEach(() => {
+    dom = createDomTestHarness();
+  });
+  afterEach(() => dom.cleanup());
+
   for (const locale of ["en", "de"] as const) {
     test(`${locale}: the group list's filters offer membership and origin without personal groups`, async () => {
       const { groupsHref, groupsQuery } = await import("../src/frontend/groups/query");

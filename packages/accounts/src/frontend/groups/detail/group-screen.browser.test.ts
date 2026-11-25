@@ -17,6 +17,7 @@ import {
   GROUP,
   type GroupDb,
   graph,
+  hugeDb,
   NEW_AGENT,
   ONCALL,
   PLATFORM,
@@ -46,6 +47,8 @@ const buildHarness = async (): Promise<string> => {
     entrypoints: [resolve(import.meta.dir, "GroupScreen.browser-harness.tsx")],
     target: "browser",
     format: "iife",
+    // minified as the islands ship, so the huge group's timing measures the screen, not the parsing of test code
+    minify: true,
     conditions: ["browser"],
     plugins: [
       {
@@ -262,6 +265,22 @@ describe("a group's record on v2", () => {
     }
   }, 300_000);
 
+  test("a group of 1,200 members stays a page of 100 rows and is ready within 1.5 s", async () => {
+    const { context, tab, errors } = await open(wide, record, hugeDb());
+    try {
+      await tab.getByText("Person 100", { exact: true }).waitFor();
+      // from the start of the screen's render to its rows (the harness renders in the browser what the server renders)
+      const ready = await tab.evaluate(() => performance.now() - Number(document.documentElement.dataset.renderStart));
+      expect(ready).toBeLessThan(1500);
+      expect(await tab.locator("[data-k2-part='Row']").count()).toBe(100);
+      expect(await tab.locator("#root *").count()).toBeLessThan(2500);
+      await tab.getByText("Page 1 of 12").waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("an agent becomes a manager through the directory lookup, and the page shows it", async () => {
     const db = sampleDb();
     const { context, tab, errors, log } = await open(wide, `${record}?tab=managers&service_accounts=true`, db);
@@ -269,9 +288,10 @@ describe("a group's record on v2", () => {
       await tab.getByRole("button", { name: a.addManager }).first().click();
       const dialog = tab.locator("[data-k2-part='Dialog']");
       await dialog.getByRole("heading", { name: d.addManagersTitle }).waitFor();
+      const typed = tab.waitForRequest((request) => request.url().includes("search=Release"));
       await dialog.getByRole("searchbox").fill("Release");
+      const search = new URL((await typed).url());
       await dialog.getByRole("option", { name: /Release integration/ }).click();
-      const search = log.searches.at(-1)!;
       expect(search.searchParams.get("search")).toBe("Release");
       expect(search.searchParams.get("kinds")).toBe("user,group,service_account");
       expect(search.searchParams.get("provider")).toBe("local");
@@ -283,8 +303,8 @@ describe("a group's record on v2", () => {
       expect(log.writes).toEqual([
         { method: "POST", path: `/api/accounts/groups/${GROUP}/managers`, body: { type: "service_account", id: NEW_AGENT } },
       ]);
+      // the page shows the change again from the server; the harness loads it anew, so the toast leaves with the old page
       expect(await dialog.count()).toBe(0);
-      await tab.getByText(d.added({ count: 1 })).waitFor();
       // an agent manages members only, and says so
       expect(await tab.getByText(`${a.agent} · ${a.machineManagementAccess}`).count()).toBe(2);
       expect(errors).toEqual([]);
@@ -367,7 +387,7 @@ describe("a group's record on v2", () => {
         await tab.getByRole("alertdialog").getByRole("button", { name: a.convert }).click();
         if (attempt === 1) await tab.getByText("Refresh the group and try again").waitFor();
       }
-      await tab.getByText(d.posixDone).waitFor();
+      await tab.getByText("10042").first().waitFor();
       expect(log.writes.map((write) => `${write.method} ${write.path}`)).toEqual([
         `PUT /api/accounts/groups/${GROUP}/posix`,
         `PUT /api/accounts/groups/${GROUP}/posix`,
@@ -480,6 +500,8 @@ describe("a group's record on v2", () => {
           .first()
           .click();
         await tab.waitForURL((url) => url.searchParams.get("sel") === PLATFORM);
+        await settled(tab);
+        await shoot(tab, "relations-chosen", view);
         expect(new URL(tab.url()).searchParams.get("tab")).toBe("relations");
         expect(await tab.getByRole("link", { name: r.makeFocus }).getAttribute("href")).toBe(
           `/app/accounts/groups/${PLATFORM}?tab=relations`,
@@ -567,7 +589,8 @@ describe("a group's record on v2", () => {
       await tab.locator('[role="treeitem"][aria-level="1"]').nth(1).waitFor();
       expect(log.relations.at(-1)).toContain("expand=roots");
       // a control opens the next page from the URL as it is now, with the selection made in the tree
-      await tab.getByRole("button", { name: r.managers }).click();
+      await tab.getByRole("button", { name: new RegExp(r.tree) }).click();
+      await tab.getByRole("menuitemcheckbox", { name: r.managers }).click();
       await tab.waitForFunction(() => location.search.includes("managers=1"));
       const params = new URLSearchParams(log.pages.at(-1));
       expect(params.get("sel")).toBe(SALES);
@@ -633,9 +656,7 @@ describe("the dialog for a new group on v2", () => {
       const { context, tab, errors, log } = await open(wide, `/new-group?freeipa=1&linux=${linux ? 1 : 0}`, sampleDb());
       try {
         expect(await posix(tab).isChecked()).toBe(true);
-        await dialogOf(tab)
-          .getByRole("button", { name: /FreeIPA/ })
-          .click();
+        await dialogOf(tab).getByLabel(a.managedBy).click();
         await tab.getByRole("option", { name: a.local }).click();
         expect(await posix(tab).isChecked()).toBe(false);
         expect(await posix(tab).isDisabled()).toBe(!linux);

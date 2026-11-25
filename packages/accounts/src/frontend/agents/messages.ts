@@ -2,13 +2,16 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
+/** A count as the locale writes it: "1.284", "1,284". */
+const number = (count: number, locale: string) => new Intl.NumberFormat(locale).format(count);
+
 /** The words of the agent list and an agent's page with its API keys. */
 export const agentMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
       agents: "Agents",
-      agentsCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 agent", other: `${count} agents` }),
+      agentsCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 agent", other: `${number(count, "en")} agents` }),
       noAgents: "No agents yet. Create one with cld admin agents create.",
       agent: "Agent",
       active: "Active",
@@ -23,11 +26,12 @@ export const agentMessages = i18n.define({
       details: "Details",
       access: "Access",
       keys: "API keys",
-      keysCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 API key", other: `${count} API keys` }),
+      keysCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 API key", other: `${number(count, "en")} API keys` }),
       keysIntro: "A program outside Cloud, such as a script or an MCP client, works as this agent with an API key.",
       noKeys: "This agent has no API key yet.",
       keysFailed: "The API keys could not be loaded. The keys themselves are unchanged.",
       retry: "Try again",
+      sortAllOnly: "Sorting by a column needs all keys on one page; the pages list the newest first.",
       createKey: "Create API key",
       createKeyFor: ({ name }: { name: string }) => `New API key for ${name}`,
       keyName: "Name",
@@ -75,7 +79,7 @@ export const agentMessages = i18n.define({
     },
     de: {
       agents: "Agenten",
-      agentsCount: ({ count }) => i18n.plural(count, "de", { one: "1 Agent", other: `${count} Agenten` }),
+      agentsCount: ({ count }) => i18n.plural(count, "de", { one: "1 Agent", other: `${number(count, "de")} Agenten` }),
       noAgents: "Noch keine Agenten. Lege einen mit cld admin agents create an.",
       agent: "Agent",
       active: "Aktiv",
@@ -90,11 +94,12 @@ export const agentMessages = i18n.define({
       details: "Angaben",
       access: "Zugang",
       keys: "API Keys",
-      keysCount: ({ count }) => i18n.plural(count, "de", { one: "1 API Key", other: `${count} API Keys` }),
+      keysCount: ({ count }) => i18n.plural(count, "de", { one: "1 API Key", other: `${number(count, "de")} API Keys` }),
       keysIntro: "Ein Programm außerhalb von Cloud, etwa ein Skript oder ein MCP-Client, arbeitet mit einem API Key als dieser Agent.",
       noKeys: "Dieser Agent hat noch keinen API Key.",
       keysFailed: "Die API Keys konnten nicht geladen werden. Die Keys selbst bleiben unverändert.",
       retry: "Erneut versuchen",
+      sortAllOnly: "Nach einer Spalte sortieren lässt sich nur, wenn alle Schlüssel auf eine Seite passen; die Seiten zeigen die neuesten zuerst.",
       createKey: "API Key anlegen",
       createKeyFor: ({ name }) => `Neuer API Key für ${name}`,
       keyName: "Name",

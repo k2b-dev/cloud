@@ -147,6 +147,7 @@ export default function RemindersScreen(props: RemindersScreenProps) {
             </Notice>
           )}
         </Show>
+        {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
         <Table
           label={t().reminderHistory}
           rows={props.rows}

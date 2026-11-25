@@ -77,7 +77,7 @@ type View = { width: number; height: number; touch: boolean; name: string };
 const wide: View = { width: 1440, height: 900, touch: false, name: "1440" };
 const narrow: View = { width: 1024, height: 768, touch: false, name: "1024" };
 const phone: View = { width: 390, height: 844, touch: true, name: "390" };
-type State = { worst?: boolean; status?: "draft" | "running" | "completed_with_errors" };
+type State = { worst?: boolean; huge?: boolean; status?: "draft" | "running" | "completed_with_errors" };
 
 const page = (state: State) =>
   `<!doctype html><html lang="de" class="light" data-state='${JSON.stringify(state)}'><head><meta charset="utf-8">` +
@@ -193,6 +193,33 @@ describe("the activity page on v2", () => {
     }
   }, 300_000);
 
+  test("a list of thousands of entries shows one page of rows: bounded DOM, ready within 1.5 s", async () => {
+    for (const [address, most] of [
+      ["/app/accounts/activity", 100],
+      ["/app/accounts/activity?kind=notifications", 50],
+      [`/app/accounts/activity/notifications/${BATCH_ID}`, 100],
+    ] as const) {
+      const { context, tab, errors } = await open(wide, address, { huge: true });
+      try {
+        await tab.locator("[data-k2-part=Table] tbody tr").first().waitFor({ state: "attached" }).catch(async () => {
+          throw new Error(`no rows: ${JSON.stringify(errors)} ${(await tab.locator("#root").textContent())?.slice(0, 400)}`);
+        });
+        // the page was ready (its rows rendered) within 1.5 s of the navigation
+        const ready = await tab.evaluate(() => performance.getEntriesByType("navigation")[0]?.duration ?? performance.now());
+        expect(ready).toBeLessThan(1_500);
+        expect(await rows(tab)).toBeLessThanOrEqual(most);
+        const elements = await tab.evaluate(() => document.querySelectorAll("*").length);
+        expect(elements).toBeLessThan(8_000);
+        // the way to the other pages stands under the rows
+        await tab.getByRole("link", { name: "Weiter" }).first().waitFor();
+        await shoot(tab, `huge-${address.includes("kind=") ? "notifications" : address.includes("/notifications/") ? "batch" : "audit"}-light-1440`);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 120_000);
+
   test("a filter of the audit log writes the address and the log shows its events", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/accounts/activity");
     try {
@@ -216,7 +243,7 @@ describe("the activity page on v2", () => {
       await tab.locator(".k2-stmt-b").filter({ hasText: "Protokoll" }).first().click();
       await tab.getByRole("option", { name: /Benachrichtigungen/ }).click();
       await tab.waitForFunction(() => location.search === "?kind=notifications");
-      await tab.getByRole("button", { name: "Neue Benachrichtigung" }).first().waitFor();
+      await tab.getByRole("link", { name: "Neue Benachrichtigung" }).first().waitFor();
       expect(await tab.locator("[data-k2-part=Table]").textContent()).toContain("Wartungsfenster heute Nacht");
       expect(errors).toEqual([]);
     } finally {
@@ -273,8 +300,10 @@ describe("the activity page on v2", () => {
     }
     const sent = await open(wide, `/app/accounts/activity/notifications/${BATCH_ID}`);
     try {
+      // a sent-again recipient shows the batch again from the server (here: the same page)
+      const retry = sent.tab.waitForRequest((request) => request.url().includes("/retry"));
       await sent.tab.getByRole("button", { name: "Erneut senden" }).first().click();
-      await sent.tab.waitForFunction(() => document.body.textContent?.includes("wird erneut gesendet"));
+      await retry;
       expect(sent.seen.retried).toEqual([`/api/accounts/notifications/batches/${BATCH_ID}/recipients/${RECIPIENTS[3]!.userId}/retry`]);
       expect(sent.errors).toEqual([]);
     } finally {

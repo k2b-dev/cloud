@@ -168,8 +168,8 @@ test("the tabs are links that keep the list context and clear the tab's own sear
       const nav = html.match(/<nav[^>]*data-k2-part="Tabs"[^>]*>[\s\S]*?<\/nav>/)?.[0];
       expect(nav).toContain('aria-label="Group detail sections"');
       const links = [...nav!.matchAll(/<a\b([^>]*)>/g)];
-      expect(links).toHaveLength(3);
-      for (const [index, tab] of ["members", "managers", "member-of"].entries()) {
+      expect(links).toHaveLength(4);
+      for (const [index, tab] of ["members", "managers", "member-of", "relations"].entries()) {
         const attrs = links[index]![1]!;
         expect(attrs).toContain(`href="/app/accounts/groups/${groupId}?list_search=ops&amp;list_page=2&amp;tab=${tab}"`);
         expect(attrs.includes('aria-current="page"')).toBe(tab === current);
@@ -258,8 +258,10 @@ for (const [language, shown] of [
     };
     await withGroup({ total: 1, entities: () => [parent] }, async (app) => {
       const html = await (await open(app, "?tab=member-of", language)).text();
-      const row = html.match(/<a\b[^>]*href="\/app\/accounts\/groups\/33333333-3333-4333-8333-0000000000aa"[^>]*>[\s\S]*?<\/a>/)?.[0];
-      expect(row).toContain(`>${shown}<`);
+      // the row opens the group by its ID and is named by its title, which shows the display name
+      const label = html.match(/aria-labelledby="([^"]+)" href="\/app\/accounts\/groups\/33333333-3333-4333-8333-0000000000aa"/)?.[1];
+      expect(label).toBeDefined();
+      expect(html).toContain(`id="${label}">${shown}<`);
     });
   });
 
@@ -273,10 +275,12 @@ test("a personal Linux group names its user, explains why it stays, and links ad
   for (const language of ["en", "de"] as const) {
     await withGroup({ group: personal, total: 0 }, async (app) => {
       const html = await (await open(app, "", language)).text();
-      expect(html).toContain(language === "en" ? "Personal · of Quinn Doe" : "Persönlich · von Quinn Doe");
+      // the head says the group is personal; the facts say whose it is
+      expect(html).toMatch(language === "en" ? />Personal</ : />Persönlich</);
+      expect(html).toMatch(language === "en" ? />Belongs to</ : />Gehört zu</);
       expect(html).toContain(
         language === "en"
-          ? "This is Quinn Doe&#39;s personal Linux group. It can&#39;t be deleted while it is their primary group."
+          ? "This is Quinn Doe's personal Linux group. It can't be deleted while it is their primary group."
           : "Das ist die persönliche Linux-Gruppe von Quinn Doe. Sie kann nicht gelöscht werden, solange sie deren primäre Gruppe ist.",
       );
       expect(html).toContain(`href="/app/accounts/users/${person.id}"`);
@@ -285,9 +289,10 @@ test("a personal Linux group names its user, explains why it stays, and links ad
   // Someone who cannot open user details reads the owner's name only, and no explanation of a deed they cannot take.
   await withGroup({ viewer: person, group: personal, total: 0 }, async (app) => {
     const html = await (await open(app, "")).text();
-    expect(html).toContain("Personal · of Quinn Doe");
+    expect(html).toMatch(/>Personal</);
+    expect(html).toContain(">Quinn Doe<");
     expect(html).not.toContain(`href="/app/accounts/users/${person.id}"`);
-    expect(html).not.toContain("can&#39;t be deleted");
+    expect(html).not.toContain("be deleted while");
   });
 });
 
@@ -336,13 +341,13 @@ test("a group without relations to show and a failed read each say so in place; 
     async (app) => {
       const html = await (await open(app, "?tab=relations")).text();
       expect(html).toContain("Could not load relations");
-      expect(html).toContain("Try again");
+      expect(html).toContain('data-k2-part="Failed"');
     },
   );
   await withGroup({ viewer: person, total: 0 }, async (app, calls) => {
     const html = await (await open(app, "?tab=relations")).text();
     expect(calls.relations).toEqual([]);
-    expect(html).not.toContain("tab=relations");
+    expect(html.match(/<nav[^>]*data-k2-part="Tabs"[^>]*>[\s\S]*?<\/nav>/)?.[0]).not.toContain("tab=relations");
     expect(html).toContain("This group has no members.");
   });
 });

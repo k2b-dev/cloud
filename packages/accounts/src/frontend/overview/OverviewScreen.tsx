@@ -1,3 +1,4 @@
+import { useLocale } from "@k2b/ui";
 import { Bar, Button, Cells, Chip, Facts, Menu, Notice, Pane, Progress, RecordHead, Section, Table, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
@@ -49,6 +50,10 @@ const levelStatus = (level: string) => (level === "error" ? "bad" : level === "w
 export default function OverviewScreen(props: OverviewScreenProps) {
   const t = useAccountsMessages();
   const o = useOverviewMessages();
+  const locale = useLocale();
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const levelLabel = (level: string) =>
+    level === "error" ? o().levelError : level === "warn" ? o().levelWarn : level === "debug" ? o().levelDebug : o().levelInfo;
   const runLabel = (run: OverviewAdmin["health"][number]["run"]) =>
     run === "ipaSync" ? t().ipaSync : run === "ipaDemotion" ? t().ipaDemotion : t().reminders;
   return (
@@ -102,28 +107,28 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             ]}
           />
         </Section>
-        <Section icon="users-group" title={t().groups}>
-          <Cells>
-            <Cells.Cell
-              icon="shield"
-              label={t().managedByMe}
-              value={t().groupCount({ count: props.groups.managed.count })}
-              href={props.groups.managed.href}
-            />
-            <Cells.Cell
-              icon="users-group"
-              label={t().myGroups}
-              value={t().groupCount({ count: props.groups.member.count })}
-              href={props.groups.member.href}
-            />
-            <Cells.Cell
-              icon="layout-grid"
-              label={t().allGroups}
-              value={t().groupCount({ count: props.groups.all.count })}
-              href={props.groups.all.href}
-            />
-          </Cells>
-        </Section>
+        {/* the cells stand under their section's head, not inside it: the section's one line then separates them */}
+        <Section icon="users-group" title={t().groups} />
+        <Cells>
+          <Cells.Cell
+            icon="shield"
+            label={t().managedByMe}
+            value={t().groupCount({ count: props.groups.managed.count })}
+            href={props.groups.managed.href}
+          />
+          <Cells.Cell
+            icon="users-group"
+            label={t().myGroups}
+            value={t().groupCount({ count: props.groups.member.count })}
+            href={props.groups.member.href}
+          />
+          <Cells.Cell
+            icon="layout-grid"
+            label={t().allGroups}
+            value={t().groupCount({ count: props.groups.all.count })}
+            href={props.groups.all.href}
+          />
+        </Cells>
         <Show when={props.admin}>
           {(admin) => (
             <>
@@ -135,48 +140,51 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   { label: t().operations, icon: "tool", href: "/admin/signin/operations" },
                   { label: t().settings, icon: "settings", href: "/admin/signin" },
                 ]}
-              >
-                <Cells>
-                  <Cells.Cell
-                    icon="users"
-                    label={t().accountTotalLabel}
-                    value={admin().accounts.total}
-                    meta={t().sourceCounts({ freeIpa: admin().accounts.freeIpa, local: admin().accounts.local })}
-                    href="/app/accounts/users"
-                  />
-                  <Cells.Cell
-                    icon="users-group"
-                    label={t().groups}
-                    value={admin().groups.total}
-                    meta={t().sourceCounts({ freeIpa: admin().groups.freeIpa, local: admin().groups.local })}
-                    href={props.groups.all.href}
-                  />
-                  <Cells.Cell
-                    icon="user-plus"
-                    label={t().requests}
-                    value={admin().openRequests > 0 ? <Chip status="warn">{admin().openRequests}</Chip> : 0}
-                    meta={admin().openRequests > 0 ? t().pendingReview : t().nonePending}
-                    href={admin().openRequests > 0 ? "/app/accounts/requests" : undefined}
-                  />
-                  <Cells.Cell
-                    icon="calendar-due"
-                    label={t().expiring30d}
-                    value={admin().expiring > 0 ? <Chip status="warn">{admin().expiring}</Chip> : 0}
-                    meta={admin().expiring > 0 ? t().accountCount({ count: admin().expiring }) : t().noneSoon}
-                  />
-                </Cells>
-              </Section>
+              />
+              <Cells>
+                <Cells.Cell
+                  icon="users"
+                  label={t().accountTotalLabel}
+                  value={number(admin().accounts.total)}
+                  meta={o().sourceCounts({ freeIpa: number(admin().accounts.freeIpa), local: number(admin().accounts.local) })}
+                  href="/app/accounts/users"
+                />
+                <Cells.Cell
+                  icon="users-group"
+                  label={t().groups}
+                  value={number(admin().groups.total)}
+                  meta={o().sourceCounts({ freeIpa: number(admin().groups.freeIpa), local: number(admin().groups.local) })}
+                  href={props.groups.all.href}
+                />
+                <Cells.Cell
+                  icon="user-plus"
+                  label={t().requests}
+                  value={admin().openRequests > 0 ? <Chip status="warn">{number(admin().openRequests)}</Chip> : 0}
+                  meta={admin().openRequests > 0 ? t().pendingReview : t().nonePending}
+                  href={admin().openRequests > 0 ? "/app/accounts/requests" : undefined}
+                />
+                <Cells.Cell
+                  icon="calendar-due"
+                  label={t().expiring30d}
+                  value={admin().expiring > 0 ? <Chip status="warn">{number(admin().expiring)}</Chip> : 0}
+                  meta={admin().expiring > 0 ? undefined : t().noneSoon}
+                />
+              </Cells>
               <Section icon="heart-rate-monitor" title={t().runHealth} summary={t().basedOnRuns({ count: admin().window })}>
                 <Facts
                   items={[
-                    {
-                      label: t().ipaSync,
-                      value: (
-                        <Show when={admin().lastSync} fallback={<Text muted>{t().noSyncYet}</Text>}>
-                          {(when) => <Chip status="ok">{t().synced({ value: when() })}</Chip>}
-                        </Show>
-                      ),
-                    },
+                    ...(admin().health.some((row) => row.run === "ipaSync")
+                      ? [
+                          {
+                            label: o().lastSync,
+                            value: (
+                              <Show when={admin().lastSync} fallback={<Text muted>{t().noSyncYet}</Text>}>
+                                {(when) => <Chip status="ok">{t().synced({ value: when() })}</Chip>}
+                              </Show>
+                            ),
+                          },
+                        ]
+                      : []),
                     ...admin().health.map((row) => {
                       const rate = row.runs > 0 ? Math.round(((row.runs - row.failed) / row.runs) * 100) : 100;
                       return {
@@ -204,13 +212,13 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   empty={{ icon: "history", text: t().noLifecycleActivity }}
                   phone={(entry) => ({ lines: [entry.message, entry.source], time: entry.time })}
                   columns={[
-                    { title: t().time, width: { min: 130, default: 150 }, cell: (entry) => entry.time },
+                    { title: t().time, width: { min: 150, default: 170 }, cell: (entry) => entry.time },
                     {
                       title: o().level,
                       width: { min: 90, default: 100 },
                       cell: (entry) => {
                         const status = levelStatus(entry.level);
-                        return status ? <Chip status={status}>{entry.level}</Chip> : entry.level;
+                        return status ? <Chip status={status}>{levelLabel(entry.level)}</Chip> : levelLabel(entry.level);
                       },
                       drop: true,
                     },

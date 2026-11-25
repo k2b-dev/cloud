@@ -64,7 +64,7 @@ const withRequests = async (freeIpa: boolean, run: (app: ReturnType<typeof serve
     const items = [
       request("aaaaaaaa-0000-4000-8000-000000000001", "pending", "Jonas", "Weber"),
       request("aaaaaaaa-0000-4000-8000-000000000002", "denied", "Mira", "Kaya"),
-    ].filter((item) => !("status" in filter) || item.status === filter.status);
+    ].filter((item) => !filter || !("status" in filter) || item.status === filter.status);
     return { items, page: 1, perPage: 100, total: items.length, hasNext: false } as never;
   });
   const spies = [

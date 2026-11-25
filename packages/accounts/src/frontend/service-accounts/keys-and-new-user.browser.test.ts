@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import { AGENT_ID, accountRequest, KEY_IDS, OTHER_AGENT_ID, PERSON_ID, TOKEN } from "./keys-and-new-user.fixture";
+import { AGENT_ID, accountRequest, HUGE_TOTAL, hugeSources, KEY_IDS, OTHER_AGENT_ID, PERSON_ID, TOKEN } from "./keys-and-new-user.fixture";
 
 // An administrator works with an account's API keys and directory access as sections of its record, with the list of
 // all keys while it still has its route, and creates a person's account (also from a request). The screens render from
@@ -17,7 +17,7 @@ const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
 
 type State =
-  | { screen: "record"; keys?: "sample" | "worst" | "empty" | "failed"; active?: boolean }
+  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean }
   | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -98,6 +98,8 @@ type Api = {
   deletes: string[];
   pages: string[];
   shares: { id: string; label: string; principal: unknown; serviceAccountKind: null }[];
+  /** Pages of an agent's keys the section asked the API for. */
+  keyPages: number[];
 };
 const api = (patch: Partial<Api> = {}): Api => ({
   create: [],
@@ -149,6 +151,20 @@ const open = async (view: View, address: string, answers: Api, state?: State) =>
           ].filter((item) => item.name.toLowerCase().includes((url.searchParams.get("search") ?? "").toLowerCase())),
         },
       });
+    if (url.pathname === `/api/admin/identity/service-accounts/${AGENT_ID}/api-keys` && method === "GET") {
+      const pageNumber = Number(url.searchParams.get("page") ?? 1);
+      const perPage = Number(url.searchParams.get("perPage") ?? 100);
+      answers.keyPages.push(pageNumber);
+      return route.fulfill({
+        json: {
+          items: hugeSources(pageNumber, perPage),
+          page: pageNumber,
+          perPage,
+          total: HUGE_TOTAL,
+          hasNext: pageNumber * perPage < HUGE_TOTAL,
+        },
+      });
+    }
     if (url.pathname.endsWith("/api-keys") && method === "POST") {
       answers.posts.push({ path: url.pathname, body: request.postDataJSON() });
       const answer = answers.create.shift() ?? "token";
@@ -244,6 +260,36 @@ describe("an account's API keys and directory access as record sections", () => 
         }
       }
   }, 120_000);
+
+  test("1,284 keys: the true count, one API page of 50 rows, ready in under 1.5 s, the next page from the API", async () => {
+    const answers = api();
+    const { context, tab, errors } = await open(wide, record, answers, { screen: "record", keys: "huge" });
+    try {
+      await tab.getByRole("button", { name: "Gerät 2", exact: true }).waitFor();
+      // milliseconds since the page's navigation began, measured in the page
+      const ready = await tab.evaluate(() => performance.now());
+      expect(ready).toBeLessThan(1500);
+      const keys = tab.locator("[data-k2-part=Section]").first();
+      expect(await keys.locator("[data-k2-part=Row]").count()).toBe(50);
+      expect(await tab.locator("#root *").count()).toBeLessThan(2500);
+      expect(await keys.textContent()).toContain("1.284");
+      expect(await tab.textContent("body")).toContain("Seite 1 von 26");
+      // the long first name is shortened in the middle; the open key shows it whole
+      const first = keys.locator("[data-k2-part=Row]").first();
+      expect(await first.textContent()).toContain("…");
+      expect(answers.keyPages).toEqual([]);
+      await expectClean(tab);
+      await shoot(tab, "record-huge-light-1440");
+      await tab.getByRole("button", { name: "Weiter" }).first().click();
+      await tab.getByRole("button", { name: "Gerät 51", exact: true }).waitFor();
+      expect(answers.keyPages).toEqual([2]);
+      expect(await tab.textContent("body")).toContain("Seite 2 von 26");
+      expect(await keys.locator("[data-k2-part=Row]").count()).toBe(50);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
   test("a new key: models only by default, a refusal keeps the form, the token shows once, closing reads the record", async () => {
     const answers = api({ create: [400, "token"] });

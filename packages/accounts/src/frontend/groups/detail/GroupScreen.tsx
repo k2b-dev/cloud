@@ -149,7 +149,7 @@ export default function GroupScreen(props: GroupScreenProps) {
           ? a().noManagers
           : a().noParentGroups;
   const placeholder = () =>
-    props.tab === "members" ? a().searchMembers : props.tab === "managers" ? t().searchManagers : t().searchParentGroups;
+    props.tab === "members" ? a().searchMembers : props.tab === "managers" ? t().searchManagers : a().searchGroups;
   const search = (text: string) => {
     const url = new URL(props.links.search, window.location.origin);
     if (text.trim()) url.searchParams.set("search", text.trim());
@@ -180,16 +180,25 @@ export default function GroupScreen(props: GroupScreenProps) {
     props.tab === "member-of" ? a().removeFromLabel({ name: member.name }) : a().removeLabel({ name: member.name });
 
   /** A deed that ran: on success the page shows the change and says so; a refusal says why and changes nothing. */
-  const finish = async (result: { ok: true } | { ok: false; message: string }, done: string, retry: () => unknown) => {
-    if (!result.ok) {
-      toast(result.message, { status: "bad", retry });
-      return;
-    }
-    await showChanges();
-    toast(done, { status: "ok" });
-  };
-  const remove = async (member: GroupMember) => {
+  /** A deed the server refused: its reason stands on the page with a way to take it again, until the next deed. */
+  const [failure, setFailure] = createSignal<{ title: string; message: string; again: { label: string; onClick: () => void } } | null>(
+    null,
+  );
+  const refused = (title: string, message: string, label: string, again: () => unknown) =>
+    setFailure({
+      title,
+      message,
+      again: {
+        label,
+        onClick: () => {
+          setFailure(null);
+          void again();
+        },
+      },
+    });
+  const remove = async (member: GroupMember): Promise<void> => {
     if (busy()) return;
+    setFailure(null);
     const agreed = await Dialog.confirm({
       title:
         props.tab === "member-of"
@@ -208,13 +217,16 @@ export default function GroupScreen(props: GroupScreenProps) {
         props.tab === "member-of"
           ? await deeds.leave({ id: member.id, name: member.name }, a().removeFromGroupFailed)
           : await deeds.remove(role(), entity, a().removeFailed);
-      await finish(result, t().removed({ name: member.name }), () => void remove(member));
+      if (!result.ok) return void refused(t().notRemoved, result.message, a().remove, () => remove(member));
+      await showChanges();
+      toast(t().removed, { status: "ok" });
     } finally {
       setBusy(null);
     }
   };
-  const convert = async () => {
+  const convert = async (): Promise<void> => {
     if (busy()) return;
+    setFailure(null);
     const agreed = await Dialog.confirm({
       title: a().makePosix,
       description: a().posixConfirm({ name: props.group.name }),
@@ -224,13 +236,17 @@ export default function GroupScreen(props: GroupScreenProps) {
     if (!agreed || busy()) return;
     setBusy("posix");
     try {
-      await finish(await deeds.posix(a().posixFailed), t().posixDone, () => void convert());
+      const result = await deeds.posix(a().posixFailed);
+      if (!result.ok) return void refused(t().notConverted, result.message, a().convert, convert);
+      await showChanges();
+      toast(t().posixDone, { status: "ok" });
     } finally {
       setBusy(null);
     }
   };
-  const destroy = async () => {
+  const destroy = async (): Promise<void> => {
     if (busy()) return;
+    setFailure(null);
     const agreed = await Dialog.confirm({
       title: a().deleteGroupQuestion({ name: props.group.name }),
       description: a().deleteGroupExplanation({ freeIpa: props.group.provider === "ipa" }),
@@ -241,9 +257,9 @@ export default function GroupScreen(props: GroupScreenProps) {
     setBusy("delete");
     try {
       const result = await deeds.delete(a().deleteGroupFailed);
-      if (!result.ok) return void toast(result.message, { status: "bad", retry: () => void destroy() });
+      if (!result.ok) return void refused(t().notDeleted, result.message, a().delete, destroy);
       await openPage(props.links.list);
-      toast(a().groupDeletedFrom({ name: props.group.name, provider: providerWord(props.group.provider) }), { status: "ok" });
+      toast(t().groupDeleted, { status: "ok" });
     } finally {
       setBusy(null);
     }
@@ -327,7 +343,8 @@ export default function GroupScreen(props: GroupScreenProps) {
                 kinds={[
                   providerWord(props.group.provider),
                   ...(props.group.gid !== null ? ["POSIX"] : []),
-                  ...(props.group.owner ? [a().personalGroupOf({ name: props.group.owner.name })] : []),
+                  // the owner's name stands in the facts: a long name would not fit a kind
+                  ...(props.group.owner ? [t().personal] : []),
                 ]}
                 ids={props.group.gid !== null ? [{ label: a().gid, value: String(props.group.gid), copy: true }] : []}
               />
@@ -378,7 +395,7 @@ export default function GroupScreen(props: GroupScreenProps) {
             add={spec().add}
             close={(added) => {
               setDialog(null);
-              if (added > 0) void showChanges().then(() => toast(t().added({ count: added }), { status: "ok" }));
+              if (added > 0) void showChanges().then(() => toast(t().added, { status: "ok" }));
             }}
           />
         )}
@@ -411,6 +428,18 @@ export default function GroupScreen(props: GroupScreenProps) {
           <Notice tone="warn" icon="alert-triangle">
             {a().ipaDisabledMutations}
           </Notice>
+        </Show>
+        <Show when={failure()}>
+          {(shown) => (
+            <Notice
+              tone="bad"
+              icon="alert-circle"
+              title={shown().title}
+              actions={[shown().again, { label: t().hide, onClick: () => setFailure(null) }]}
+            >
+              {shown().message}
+            </Notice>
+          )}
         </Show>
         <Show when={canEdit() && props.group.owner}>
           {(owner) => (
@@ -459,6 +488,7 @@ export default function GroupScreen(props: GroupScreenProps) {
                     />
                   }
                 >
+                  {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the entries, 100 at a time. */}
                   <List label={tabLabel(props.tab)}>
                     <For each={props.rows}>
                       {(member) => (

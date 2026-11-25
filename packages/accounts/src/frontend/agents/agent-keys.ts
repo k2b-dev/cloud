@@ -51,10 +51,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const agentKeyOpenFrom = (value: string | undefined): AgentKeyOpen =>
   value === "new" ? { kind: "new" } : value && UUID.test(value) ? { kind: "key", id: value.toLowerCase() } : { kind: "none" };
 
+/** Keys one page of an agent's record lists: one page of the service, so the page stays light at any count. */
+export const AGENT_KEYS_PER_PAGE = 100;
+
+/** The page named in the address (`?page=`), 1 when it names none or nonsense. */
+export const agentKeyPageFrom = (value: string | undefined): number => {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 1 && page <= 100_000 ? page : 1;
+};
+
 /** The address of an agent's record (the one account record of every kind): the sort stays when something opens or
  * closes; the newest first is left out. */
-export const agentPageHref = (agentId: string, state: { sort: AgentKeySort; open?: "new" | string }): string => {
+export const agentPageHref = (agentId: string, state: { sort: AgentKeySort; open?: "new" | string; page?: number }): string => {
   const params = new URLSearchParams();
+  if (state.page && state.page > 1) params.set("page", String(state.page));
   if (state.sort !== "created") params.set("sort", state.sort);
   if (state.open) params.set("key", state.open);
   const query = params.toString();

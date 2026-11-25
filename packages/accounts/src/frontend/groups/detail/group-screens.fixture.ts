@@ -136,7 +136,8 @@ export const worstDb = (): GroupDb => {
     ...db.group,
     name: "Interdisziplinäre-Arbeitsgemeinschaft-für-Qualitätssicherung-und-Prozessdokumentation-Standort-Nord",
     gid: 1_999_999_999,
-    description: "x".repeat(400),
+    description:
+      "Koordiniert die Qualitätssicherung, die Prozessdokumentation und die Audits aller Standorte im Norden; zuständig für Vorlagen, Prüfpläne, Schulungen und die jährliche Zertifizierung nach ISO 9001 sowie für Rückfragen der Auditoren.",
     owner: { id: id(77), name: "Maximiliane Theodora von Hohenzollern-Sigmaringen" },
   };
   db.members = Array.from({ length: 120 }, (_, index) =>
@@ -148,6 +149,21 @@ export const worstDb = (): GroupDb => {
       : user(index + 1, `Person ${index + 1}`),
   );
   return db;
+};
+
+/** A huge group: 1,200 members, of which the page shows the server's first 100. */
+export const hugeDb = (): GroupDb => {
+  const db = sampleDb();
+  db.members = Array.from({ length: 1200 }, (_, index) => user(index + 1, `Person ${index + 1}`));
+  return db;
+};
+
+/** The relations the service answers: the tree for `view=list`, and the details of the chosen group (`sel`). */
+const relationsFor = (db: GroupDb, url: URL): GroupDb["relations"] => {
+  if (db.relations !== graph) return db.relations;
+  const base = url.searchParams.get("view") === "list" ? tree : graph;
+  const sel = url.searchParams.get("sel");
+  return sel && base.selected ? { ...base, selected: { ...base.selected, id: sel, cycle: null } } : base;
 };
 
 /** The props `page.tsx` would pass for an address. */
@@ -209,7 +225,7 @@ export const propsFor = (db: GroupDb, url: URL): GroupScreenProps => {
       tab === "relations"
         ? {
             state: { ...parseRelationsUrl((name) => url.searchParams.get(name) ?? undefined), focus: db.group.id },
-            data: db.relations === graph && query("view") === "list" ? tree : db.relations,
+            data: relationsFor(db, url),
             context: "",
           }
         : undefined,

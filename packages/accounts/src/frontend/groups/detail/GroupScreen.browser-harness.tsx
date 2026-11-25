@@ -11,6 +11,8 @@ type State =
   | { screen: "group"; locale: string; props: GroupScreenProps }
   | { screen: "new-group"; locale: string; freeIpaEnabled: boolean; linuxEnabled: boolean };
 
+// when the screen starts to render, so a test can time the screen apart from loading the test page
+document.documentElement.dataset.renderStart = String(performance.now());
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const state = JSON.parse(document.documentElement.dataset.state ?? "{}") as State;

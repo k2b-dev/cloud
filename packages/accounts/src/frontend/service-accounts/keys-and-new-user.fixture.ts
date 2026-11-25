@@ -73,6 +73,26 @@ export const worstKeys: AccountKey[] = Array.from({ length: 14 }, (_, index) => 
   ...(index % 3 === 1 ? { replace: { serviceAccountId: AGENT_ID } } : {}),
 }));
 
+/** Huge case: an agent with 1,284 keys, which the API pages 50 at a time. */
+export const HUGE_TOTAL = 1284;
+
+/** One page of the huge agent's keys as the service's overview items, as the record's server and the API read them. */
+export const hugeSources = (page: number, perPage: number) =>
+  Array.from({ length: Math.max(0, Math.min(perPage, HUGE_TOTAL - (page - 1) * perPage)) }, (_, offset) => {
+    const index = (page - 1) * perPage + offset;
+    return {
+      id: `4e3f0000-0000-4000-8000-2${String(index).padStart(11, "0")}`,
+      name: index === 0 ? `Gerät 1 ${"mit-sehr-langem-namen-".repeat(5)}Ende` : `Gerät ${index + 1}`,
+      status: index % 7 === 6 ? ("revoked" as const) : ("active" as const),
+      tokenPrefix: index.toString(16).padStart(4, "0"),
+      scopes: index % 10 === 0 ? ["ai:inference"] : ["read", "write", "admin"],
+      expiresAt: null,
+      lastUsedAt: index % 3 ? "2026-11-20T07:00:00.000Z" : null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      serviceAccount: { id: AGENT_ID, kind: "agent" },
+    };
+  });
+
 export const directoryPage: DirectoryPage = {
   items: [
     {

@@ -163,6 +163,7 @@ export default function AuditScreen(props: AuditScreenProps) {
             {props.automatic.shown ? t().automaticAppAuditShown : t().automaticAppAuditHidden({ count: props.automatic.hidden })}
           </Notice>
         </Show>
+        {/* k2b-ui gap: virtualized list (lane MW). Until it lands the server pages the list (at most one page of rows in the DOM). */}
         <Show when={props.rows} fallback={<Failed text={words().loadFailed} onRetry={() => void showChanges()} />}>
           {(rows) => (
             <Table
@@ -207,7 +208,7 @@ export default function AuditScreen(props: AuditScreenProps) {
                   }),
                   drop: true,
                 },
-                { title: t().outcome, width: { min: 110, default: 130 }, cell: outcome },
+                { title: t().outcome, width: { min: 140, default: 150 }, cell: outcome },
                 { title: t().reason, cell: (row) => row.reason ?? "–", drop: true },
               ]}
             />

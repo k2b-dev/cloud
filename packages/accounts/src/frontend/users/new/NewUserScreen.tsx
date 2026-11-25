@@ -33,6 +33,7 @@ import {
   createUserPayload,
   emailOptional,
   missingFields,
+  tooLong,
 } from "./create-user";
 import DenyRequestDialog from "./DenyRequestDialog";
 import { useNewUserMessages } from "./messages";
@@ -84,6 +85,12 @@ export default function NewUserScreen(props: NewUserScreenProps) {
   const optionalEmail = () => emailOptional(form(), props.localEmailOptional, request !== null);
   const withoutEmail = () => optionalEmail() && !form().email.trim();
   const missing = () => (tried() ? missingFields(form(), optionalEmail()) : null);
+  // k2b-ui gap: Input has no maxLength; a name longer than the server takes is an error at its field.
+  const long = () => tooLong(form());
+  const lengthError = (field: "givenname" | "sn" | "displayName") => {
+    const max = long()[field];
+    return max ? words().tooLong({ max }) : undefined;
+  };
   const update = (patch: Partial<CreateUserForm>) => {
     setDirty(true);
     setForm((before) => {
@@ -111,7 +118,13 @@ export default function NewUserScreen(props: NewUserScreenProps) {
     setTried(true);
     const current = form();
     const category = current.category;
-    if (busy() || !category || Object.values(missingFields(current, optionalEmail())).some(Boolean)) return;
+    if (
+      busy() ||
+      !category ||
+      Object.values(missingFields(current, optionalEmail())).some(Boolean) ||
+      Object.values(tooLong(current)).some(Boolean)
+    )
+      return;
     const payload = createUserPayload({ ...current, category }, request?.id);
     controller?.abort();
     const abort = new AbortController();
@@ -219,8 +232,13 @@ export default function NewUserScreen(props: NewUserScreenProps) {
                   </Field>
                 </Show>
                 <Field.Row>
-                  <Field name="givenname" label={t().firstName} error={missing()?.givenname ? t().firstNameRequired : undefined} required>
-                    {/* k2b-ui gap: Input has no maxLength or autocomplete; the server holds the limits. */}
+                  <Field
+                    name="givenname"
+                    label={t().firstName}
+                    error={missing()?.givenname ? t().firstNameRequired : lengthError("givenname")}
+                    required
+                  >
+                    {/* k2b-ui gap: Input has no autocomplete (given-name, family-name, email). */}
                     <Input
                       value={form().givenname}
                       disabled={busy()}
@@ -228,7 +246,7 @@ export default function NewUserScreen(props: NewUserScreenProps) {
                       onKeyDown={submitOnEnter}
                     />
                   </Field>
-                  <Field name="sn" label={t().lastName} error={missing()?.sn ? t().lastNameRequired : undefined} required>
+                  <Field name="sn" label={t().lastName} error={missing()?.sn ? t().lastNameRequired : lengthError("sn")} required>
                     <Input value={form().sn} disabled={busy()} onInput={(value) => update({ sn: value })} onKeyDown={submitOnEnter} />
                   </Field>
                 </Field.Row>
@@ -249,7 +267,13 @@ export default function NewUserScreen(props: NewUserScreenProps) {
                     onKeyDown={submitOnEnter}
                   />
                 </Field>
-                <Field name="displayName" label={t().displayName} optional={words().optional} hint={t().displayNameHelp}>
+                <Field
+                  name="displayName"
+                  label={t().displayName}
+                  optional={words().optional}
+                  hint={t().displayNameHelp}
+                  error={lengthError("displayName")}
+                >
                   <Input
                     value={form().displayName}
                     disabled={busy()}

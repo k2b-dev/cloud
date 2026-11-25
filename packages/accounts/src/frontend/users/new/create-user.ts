@@ -54,6 +54,19 @@ export const allowedCategories = (policy: AccountCategoryPolicy, freeIpaEnabled:
 export const emailOptional = (form: Pick<CreateUserForm, "category">, localEmailOptional: boolean, fromRequest: boolean) =>
   localEmailOptional && form.category === "login" && !fromRequest;
 
+/** The longest names the server takes (`CreateUserSchema`). */
+export const NAME_LIMITS = { givenname: 120, sn: 120, displayName: 160 } as const;
+
+/** The limit of each field whose text is longer than the server takes; undefined where it fits. */
+export const tooLong = (form: CreateUserForm) => {
+  const over = (text: string, max: number) => (text.trim().length > max ? max : undefined);
+  return {
+    givenname: over(form.givenname, NAME_LIMITS.givenname),
+    sn: over(form.sn, NAME_LIMITS.sn),
+    displayName: over(form.displayName, NAME_LIMITS.displayName),
+  };
+};
+
 /** What is missing before the form may be sent, as message keys by field. */
 export const missingFields = (form: CreateUserForm, optionalEmail: boolean) => ({
   category: !form.category,

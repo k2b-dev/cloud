@@ -95,7 +95,12 @@ export default function DirectoryAccessSection(props: DirectoryAccessSectionProp
 
   return (
     <>
-      <Section title={t().title} icon="address-book" count={current()?.total} summary={t().hint}>
+      <Section
+        title={t().title}
+        icon="address-book"
+        count={current() ? new Intl.NumberFormat(locale()).format(current()!.total) : undefined}
+        summary={t().hint}
+      >
         <Show when={change.error()}>
           {(error) => (
             <Notice

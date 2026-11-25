@@ -14,6 +14,7 @@ export const newUserMessages = i18n.define({
       requestFrom: ({ name }: { name: string }) => `Request from ${name}`,
       backToUsers: "Back to users",
       result: "Result",
+      tooLong: ({ max }: { max: number }) => `At most ${max} characters.`,
     },
     de: {
       optional: "optional",
@@ -23,6 +24,7 @@ export const newUserMessages = i18n.define({
       requestFrom: ({ name }) => `Antrag von ${name}`,
       backToUsers: "Zurück zu den Benutzern",
       result: "Ergebnis",
+      tooLong: ({ max }) => `Höchstens ${max} Zeichen.`,
     },
   },
 });

@@ -2,6 +2,9 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
+/** A count as the locale writes it: "1.284", "1,284". */
+export const number = (count: number, locale: string) => new Intl.NumberFormat(locale).format(count);
+
 /** The words of a user's record on v2 that the shared Accounts catalog does not have. */
 export const userRecordMessages = i18n.define({
   baseLocale: "en",
@@ -16,10 +19,10 @@ export const userRecordMessages = i18n.define({
       expiresOn: ({ date }: { date: string }) => `Expires on ${date}`,
       expiredOn: ({ date }: { date: string }) => `Expired on ${date}`,
       neverExpires: "Never expires",
-      directCount: ({ count }: { count: number }) => `${count} direct`,
-      withInherited: ({ count }: { count: number }) => `${count} including inherited`,
+      directCount: ({ count }: { count: number }) => `${number(count, "en")} direct`,
+      withInherited: ({ count }: { count: number }) => `${number(count, "en")} including inherited`,
       managesCount: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", { one: "Manages 1 group", other: `Manages ${count} groups` }),
+        i18n.plural(count, "en", { one: "Manages 1 group", other: `Manages ${number(count, "en")} groups` }),
       keysMeta: "Personal automation",
       devicesMeta: "Cloud Login and Cloud app",
       notLoaded: "Not loaded",
@@ -60,6 +63,7 @@ export const userRecordMessages = i18n.define({
       notified: "Notification sent.",
       tokenOnce: "Copy the values now. They are shown only once.",
       deedFailed: "That did not work. Try again.",
+      showMore: ({ count }: { count: number }) => `Show ${number(count, "en")} more`,
     },
     de: {
       areas: "Bereiche",
@@ -72,9 +76,9 @@ export const userRecordMessages = i18n.define({
       expiresOn: ({ date }) => `Läuft am ${date} ab`,
       expiredOn: ({ date }) => `Am ${date} abgelaufen`,
       neverExpires: "Läuft nie ab",
-      directCount: ({ count }) => `${count} direkt`,
-      withInherited: ({ count }) => `${count} mit geerbten`,
-      managesCount: ({ count }) => i18n.plural(count, "de", { one: "Verwaltet 1 Gruppe", other: `Verwaltet ${count} Gruppen` }),
+      directCount: ({ count }) => `${number(count, "de")} direkt`,
+      withInherited: ({ count }) => `${number(count, "de")} mit geerbten`,
+      managesCount: ({ count }) => i18n.plural(count, "de", { one: "Verwaltet 1 Gruppe", other: `Verwaltet ${number(count, "de")} Gruppen` }),
       keysMeta: "Persönliche Automatisierung",
       devicesMeta: "Cloud Login und Cloud-App",
       notLoaded: "Nicht geladen",
@@ -115,6 +119,7 @@ export const userRecordMessages = i18n.define({
       notified: "Benachrichtigung gesendet.",
       tokenOnce: "Kopiere die Werte jetzt. Sie werden nur einmal angezeigt.",
       deedFailed: "Das hat nicht geklappt. Versuche es noch einmal.",
+      showMore: ({ count }) => `${number(count, "de")} weitere anzeigen`,
     },
   },
 });

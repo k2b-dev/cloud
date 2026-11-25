@@ -12,7 +12,6 @@ import {
   Pane,
   StatusRow,
   Table,
-  Tabs,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
@@ -23,7 +22,6 @@ import { useListMessages } from "../list-messages";
 import NewGroupDialog from "./NewGroupDialog";
 import { useGroupCreated } from "./new-group";
 import { GROUPS_PAGE_PATH, type GroupScope, type GroupsState, groupsHref, groupsQuery } from "./query";
-import { RELATIONS_PATH } from "./relations/relations-view";
 
 /** One group as the list shows it; the server words the name and builds the link with the list's context. */
 export type GroupListEntry = {
@@ -95,19 +93,8 @@ export default function GroupsScreen(props: GroupsScreenProps) {
       sidebar={<AccountsNav active="groups" pendingRequests={props.pendingRequests} isAdmin={props.isAdmin} />}
       head={
         <Bar
-          start={
-            props.isAdmin ? (
-              <Tabs
-                label={t().views}
-                items={[
-                  { label: t().list, icon: "list", href: GROUPS_PAGE_PATH, current: true },
-                  { label: t().relations, icon: "hierarchy-3", href: RELATIONS_PATH },
-                ]}
-              />
-            ) : (
-              <Text type="body">{t().groups}</Text>
-            )
-          }
+          // the relations of groups are a view inside each group's record now
+          start={<Text type="body">{t().groups}</Text>}
           end={
             <>
               <Input

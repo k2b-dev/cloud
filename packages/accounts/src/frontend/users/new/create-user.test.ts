@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
-import { allowedCategories, type CreateUserForm, createUserPayload, emailOptional, missingFields } from "./create-user";
+import { allowedCategories, type CreateUserForm, createUserPayload, emailOptional, missingFields, tooLong } from "./create-user";
 
 const form = (patch: Partial<CreateUserForm> = {}): CreateUserForm => ({
   category: "login",
@@ -73,6 +73,14 @@ describe("a new account's rules", () => {
       displayName: "Ada Lovelace",
       autoSendNotification: false,
       requestId: "request-1",
+    });
+  });
+
+  test("a name longer than the server takes is named with its limit", () => {
+    expect(tooLong(form({ givenname: "a".repeat(121), displayName: "d".repeat(160) }))).toEqual({
+      givenname: 120,
+      sn: undefined,
+      displayName: undefined,
     });
   });
 });

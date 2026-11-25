@@ -7,7 +7,7 @@ import { z } from "zod";
 import { useAccountsMessages } from "../messages";
 import { useApiKeyMessages } from "./messages";
 
-/** Longest key name the server takes. */
+/** Longest key name the server takes (`ServiceAccountApiKeyInputSchema`, admin identity API). */
 const NAME_MAX = 120;
 const CreatedSchema = z.object({ token: z.string().min(1) });
 const AccountsSchema = z.object({ items: z.array(z.object({ id: z.string(), name: z.string() })) });
@@ -61,7 +61,11 @@ export default function MachineKeyDialog(props: {
   const known = new Map<string, LookupItem>();
 
   const nameError = () =>
-    tried() && !name().trim() ? words().keyNameRequired : name().length > NAME_MAX ? t().machineKeyFailed : undefined;
+    tried() && !name().trim()
+      ? words().keyNameRequired
+      : name().trim().length > NAME_MAX
+        ? words().nameTooLong({ max: NAME_MAX })
+        : undefined;
   const expiry = () => expiryOf(expires(), props.timeZone);
   const expiresError = () => {
     if (!tried() && !expires().trim()) return undefined;

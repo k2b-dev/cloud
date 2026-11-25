@@ -66,12 +66,31 @@ export const agents: AgentListEntry[] = [
   { id: "0b2f5c7e-0000-4000-8000-0000000000bd", name: "Import Buchhaltung", active: false, created: "01.04.2026, 16:30" },
 ];
 
-export const AgentScreenFixture = (props: { keys?: AgentKeyView[] | null; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean }) => (
+/** An agent with 1,284 keys, such as one key per shop terminal: the record lists one page of 100 and the true count. */
+export const HUGE_TOTAL = 1284;
+export const hugeKeys = (page: number): AgentKeyView[] =>
+  Array.from({ length: Math.min(100, HUGE_TOTAL - (page - 1) * 100) }, (_, row) => (page - 1) * 100 + row).map((index) => ({
+  ...keys[0]!,
+  id: `4d1e8a20-0000-4000-8000-${String(100000 + index).padStart(12, "0")}`,
+  name: `Kasse ${index + 1}`,
+  }));
+
+export const AgentScreenFixture = (props: {
+  keys?: AgentKeyView[] | null;
+  total?: number;
+  page?: number;
+  open?: AgentKeyOpen;
+  sort?: AgentKeySort;
+  active?: boolean;
+}) => (
   <LocaleProvider locale="de">
     <AgentScreen
       agent={{ ...agent, active: props.active ?? true }}
       keys={props.keys === undefined ? sortedKeys(props.sort ?? "created") : props.keys}
-      keysTotal={props.keys === undefined ? keys.length : (props.keys?.length ?? 0)}
+      keysTotal={props.total ?? (props.keys === undefined ? keys.length : (props.keys?.length ?? 0))}
+      page={props.page ?? 1}
+      pages={Math.max(1, Math.ceil((props.total ?? 0) / 100))}
+      sortable={(props.total ?? 0) <= 100}
       sort={props.sort ?? "created"}
       open={props.open ?? { kind: "none" }}
       modelsAvailable
