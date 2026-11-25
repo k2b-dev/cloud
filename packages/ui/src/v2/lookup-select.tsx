@@ -1,14 +1,13 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
-import { isServer } from "solid-js/web";
-import { usePopover } from "./behavior/overlays";
-import { Button } from "./button";
+import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
+import { createAsyncOptions } from "./behavior/async-options";
+import { useBehaviorMessages } from "./behavior/messages";
+import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useField } from "./controls";
 import { useFilterMessages } from "./filter-messages";
 import type { LookupItem } from "./list-query";
-import { Lookup, type LookupLoad, type LookupResolve } from "./lookup";
+import { type LookupLoad, type LookupResolve, lookupTiming } from "./lookup";
 import { Icon } from "./marks";
-import { alignTo } from "./menu";
-import { Dialog } from "./overlays";
+import { Empty, Failed } from "./states";
 
 type LookupSelectCommon = {
   /** The app's own search, with its own access checks; pass `signal` to `fetch` (see `Lookup`). */
@@ -21,6 +20,12 @@ type LookupSelectCommon = {
   limit?: number;
   /** Characters a search needs before it loads; 0 by default. */
   minChars?: number;
+  /**
+   * The sentence a failed load shows, from the app's own catalog, for what its server answered (a message or a code
+   * the app reads off the error `load` threw); "Konnte nicht geladen werden. Deine Auswahl bleibt." when it gives none.
+   * "Erneut versuchen" stays beside it.
+   */
+  failure?: (error: unknown) => string | undefined;
   /** The quiet words of the closed field while nothing is chosen, such as "Kunde wählen". */
   placeholder?: string;
   /** The name each chosen code is sent under in a form; the field's name by default. */
@@ -47,25 +52,23 @@ export type LookupSelectProps = LookupSelectCommon &
       }
   );
 
-/** The phone of v2: every width below 768 px. */
-const phoneQuery = "not all and (min-width: 768px)";
-const isPhone = () => !isServer && matchMedia(phoneQuery).matches;
-
 /**
  * A form field that chooses from values the app loads while the person types, such as a customer of 412 or a person:
- * closed it shows the chosen names like `Select`; open, the `Lookup` panel (search, 200 ms wait, abort, placeholders,
- * empty, failed with retry) in a popover under the field, on the phone in a sheet. In a `Field` it takes the field's
- * label, name, hint, error and `required`. The names come from `known` (resolved on the server) and from what loads,
- * so the server and the first picture in the browser agree; codes without a name are resolved once in the browser.
+ * core's select with a search field in its list. Closed it shows the chosen names like `Select`; open, the search
+ * (200 ms wait, a newer search aborts the older, placeholders, empty, failed with retry) over the matches, under the
+ * field or, on a small touch screen, as a sheet from the bottom. In a `Field` it takes the field's label, name, hint,
+ * error and `required`; core's form input sends each chosen code, blocks an empty required send, follows a form's
+ * reset and leaves a disabled field out. The names come from `known` (resolved on the server) and from what loads, so
+ * the server and the first picture in the browser agree; codes without a name are resolved once in the browser.
  */
 export const LookupSelect = (props: LookupSelectProps) => {
   const field = useField();
   const t = useFilterMessages();
+  const said = useBehaviorMessages();
   const nameId = createUniqueId();
-  const popupId = createUniqueId();
-  const sheetId = createUniqueId();
   let trigger: HTMLElement | undefined;
   field?.named(() => trigger?.focus());
+  const limit = () => Math.min(Math.max(props.limit ?? 8, 1), 50);
 
   const chosen = (): readonly string[] =>
     props.multiple ? props.value : props.value === undefined || props.value === "" ? [] : [props.value];
@@ -75,8 +78,7 @@ export const LookupSelect = (props: LookupSelectProps) => {
     if (fresh.length === 0) return;
     setNames((before) => new Map([...before, ...fresh.map((item) => [item.value, item] as const)]));
   };
-  const labels = createMemo(() => chosen().map((code) => names().get(code)?.label ?? code));
-  const text = () => labels().join(", ");
+  const labelOf = (code: string) => names().get(code)?.label ?? code;
 
   // Codes the page could not name: asked for once, after the first picture, so the server and the browser agree on it.
   onMount(() => {
@@ -91,204 +93,141 @@ export const LookupSelect = (props: LookupSelectProps) => {
     );
   });
 
-  const choose = (next: string[]) => {
-    if (props.multiple) props.onChange(next);
-    else {
-      props.onChange(next.at(-1));
-      close();
-    }
-  };
-
-  // one value that may stay empty can be taken back: "Auswahl entfernen" in the panel and the sheet
-  const clearable = () => !props.multiple && !field?.required && chosen().length > 0;
-  const clear = () => {
-    if (!props.multiple) props.onChange(undefined);
-    close();
-  };
-
-  const [open, setOpen] = createSignal(false);
-  const [sheet, setSheet] = createSignal(false);
-  const [align, setAlign] = createSignal<"start" | "end">("start");
-  const close = () => {
-    setOpen(false);
-    setSheet(false);
-  };
-  const popover = usePopover(() => ({
-    open: open(),
-    onOpenChange: (next: boolean) => {
-      if (next && isPhone()) return;
-      if (next) setAlign(alignTo(trigger));
-      setOpen(next);
+  // Core loads: the wait while typing, the abort of a search a newer one replaces, the status. Names are kept only
+  // from an answer that still counts, so a late answer of an aborted search renames nothing.
+  const options = createAsyncOptions<LookupItem>(
+    async (text, context) => {
+      const result = await props.load(text, { signal: context.signal, limit: limit() });
+      const items = result.items.slice(0, limit());
+      if (!context.signal.aborted) remember(items);
+      return items;
     },
-  }));
-  // Core's popover owns the trigger's aria-expanded and aria-controls (they name its popup). While the phone's sheet is
-  // open instead, the trigger says so and points at the sheet; when it closes, core's own values come back.
-  let held: [string | null, string | null] | undefined;
-  createEffect(
-    on(
-      sheet,
-      (shown) => {
-        const element = trigger;
-        if (!element) return;
-        const put = (name: string, value: string | null) =>
-          value === null ? element.removeAttribute(name) : element.setAttribute(name, value);
-        if (shown) {
-          held ??= [element.getAttribute("aria-expanded"), element.getAttribute("aria-controls")];
-          put("aria-expanded", "true");
-          // the sheet's dialog has the id core gives it; it is found through the panel inside it, once it is there
-          queueMicrotask(() => {
-            const dialog = document.getElementById(sheetId)?.closest<HTMLElement>('[role="dialog"]');
-            if (sheet() && dialog?.id) put("aria-controls", dialog.id);
-          });
-        } else if (held) {
-          put("aria-expanded", held[0]);
-          put("aria-controls", held[1]);
-          held = undefined;
-        }
-      },
-      { defer: true },
-    ),
+    { debounce: lookupTiming.debounce, minLength: props.minChars ?? 0 },
   );
-  // The search takes the focus once, as the panel opens (never later, so typing keeps it); the phone's sheet keeps the
-  // keyboard down until a tap.
-  let popup: HTMLElement | undefined;
+  const [state, setState] = createSignal(options.getState());
+  onCleanup(options.subscribe(() => setState(options.getState())));
+  onCleanup(() => options.cancel());
+  const items = (): ChoiceItem[] => state().items.map((item) => ({ value: item.value, label: item.label }));
+  const metaOf = (code: string) => state().items.find((item) => item.value === code)?.meta;
 
-  const panel = () => (
-    <Lookup
-      label={field?.text ?? props.label ?? ""}
-      value={chosen()}
-      multiple={props.multiple === true}
-      known={[...names().values()]}
-      // names are kept only from an answer that still counts: a search a newer one aborted renames nothing
-      load={async (query, context) => {
-        const result = await props.load(query, context);
-        if (!context.signal.aborted) remember(result.items);
-        return result;
-      }}
-      resolve={
-        props.resolve &&
-        (async (values, context) => {
-          const found = await (props.resolve as LookupResolve)(values, context);
-          if (!context.signal.aborted) remember(found);
-          return found;
-        })
-      }
-      limit={props.limit}
-      minChars={props.minChars}
-      onChange={choose}
-    />
+  // One value that may stay empty can be taken back: "Auswahl entfernen" under the matches.
+  const clearable = () => !props.multiple && !field?.required && !props.disabled && chosen().length > 0;
+  const shared = () => ({
+    items: items(),
+    filter: false as const,
+    status: state().status,
+    onQueryChange: (query: string) => options.setQuery(query.trim()),
+    onOpenChange: (open: boolean) => {
+      // the first matches load as the list opens, without the wait for typing
+      if (open && (props.minChars ?? 0) === 0) options.reload();
+      if (!open) options.cancel();
+    },
+    itemToLabel: labelOf,
+    presentation: "auto" as const,
+    disabled: props.disabled,
+    required: field?.required && !props.disabled,
+    placeholder: props.placeholder,
+    name: props.name ?? field?.name,
+  });
+  const select = useSelect(() =>
+    props.multiple
+      ? {
+          ...shared(),
+          multiple: true as const,
+          value: [...chosen()],
+          onValueChange: (next: string[]) => (props.onChange as (value: string[]) => void)(next),
+        }
+      : {
+          ...shared(),
+          value: chosen()[0] ?? null,
+          onValueChange: (next: string | null) => (props.onChange as (value: string | undefined) => void)(next ?? undefined),
+        },
   );
 
   return (
     <>
-      <popover.Trigger
+      <select.Trigger
         ref={(element: HTMLElement) => {
           trigger = element;
         }}
-        type="button"
         class="k2-input"
         data-k2-part="LookupSelect"
         data-select=""
         data-invalid={field?.invalid ? "" : undefined}
-        disabled={props.disabled}
-        role="combobox"
-        aria-haspopup="dialog"
         aria-labelledby={field?.label ?? nameId}
         aria-describedby={field?.described}
         aria-invalid={field?.invalid ? "true" : undefined}
-        aria-required={field?.required ? "true" : undefined}
-        title={labels().length > 1 ? text() : undefined}
-        // On the phone the sheet opens after the whole tap (its click), so no part of the tap lands on the sheet.
-        onPointerDown={(event: PointerEvent) => isPhone() && event.preventDefault()}
-        onClick={(event: MouseEvent) => {
-          if (!isPhone()) return;
-          event.preventDefault();
-          setTimeout(() => setSheet(true));
-        }}
-        onKeyDown={(event: KeyboardEvent) => {
-          // Arrow down opens the list, as it does a selection; on the phone Enter and Space open the sheet
-          const phone = isPhone();
-          if (event.key !== "ArrowDown" && !(phone && (event.key === "Enter" || event.key === " "))) return;
-          event.preventDefault();
-          if (phone) setSheet(true);
-          else {
-            setAlign(alignTo(trigger));
-            setOpen(true);
-          }
-        }}
+        title={chosen().length > 1 ? chosen().map(labelOf).join(", ") : undefined}
       >
         <Show when={!field}>
           <span class="k2-hidden-text" id={nameId}>
             {props.label}
           </span>
         </Show>
-        <span class="k2-input-value" data-placeholder={labels().length === 0 ? "" : undefined}>
-          {labels().length > 0 ? text() : (props.placeholder ?? "")}
+        <span class="k2-input-value" data-placeholder={chosen().length === 0 ? "" : undefined}>
+          {chosen().length > 0 ? chosen().map(labelOf).join(", ") : (props.placeholder ?? "")}
         </span>
         <Icon name="chevron-down" />
-      </popover.Trigger>
-      {/* what a form sends: one entry per code under the field's name; `required` blocks a submit while empty */}
-      <Show when={props.name ?? field?.name}>
-        {(name) => <For each={[...chosen()]}>{(code) => <input type="hidden" name={name()} value={code} disabled={props.disabled} />}</For>}
-      </Show>
-      {/* a disabled field asks for nothing: it is not sent and holds no form back */}
-      <Show when={field?.required && !props.disabled && chosen().length === 0}>
-        <input
-          class="k2-hidden-text"
-          tabindex="-1"
-          aria-hidden="true"
-          required
-          value=""
-          // the browser would point at this hidden input; the field itself takes the focus, its error says why
-          onInvalid={(event) => {
-            event.preventDefault();
-            trigger?.focus();
-          }}
-        />
-      </Show>
-      <popover.Popup
-        ref={(element: HTMLElement) => {
-          popup = element;
-        }}
-        id={popupId}
-        initialFocus={() => popup?.querySelector<HTMLElement>(".k2-lookup-search input") ?? null}
-        class="k2-pop k2-lpop"
-        data-k2-part="Popover"
-        side="bottom"
-        align={align()}
+      </select.Trigger>
+      {/* core's form input: each chosen code under the field's name, required, reset with the form, out when disabled */}
+      <select.FormInput />
+      <select.Popup
+        class="k2-menu k2-lpick"
+        data-listbox=""
         sideOffset={4}
         collisionPadding={8}
-      >
-        {panel()}
-        <Show when={clearable()}>
-          <div class="k2-lpop-foot">
-            <Button variant="text" icon="x" onClick={clear}>
-              {t().clearChoice}
-            </Button>
-          </div>
-        </Show>
-      </popover.Popup>
-      <Dialog
-        title={field?.text ?? props.label ?? ""}
-        open={sheet()}
-        onOpenChange={(next) => {
-          if (!next) close();
-        }}
-        foot={
-          <>
-            <Show when={clearable()}>
-              <Button onClick={clear}>{t().clearChoice}</Button>
-            </Show>
-            <Button variant="primary" onClick={close}>
-              {t().done}
-            </Button>
-          </>
+        head={
+          <span class="k2-input k2-lookup-search" data-search="">
+            <Icon name="search" />
+            <select.Input aria-label={t().search({ field: field?.text ?? props.label ?? "" })} />
+          </span>
         }
+        option={(item: ChoiceItem) => (
+          <select.Item class="k2-mi" value={item.value} label={item.label}>
+            <Show when={props.multiple}>
+              <span class="k2-check" data-checked={chosen().includes(item.value) ? "" : undefined} aria-hidden="true">
+                <Show when={chosen().includes(item.value)}>
+                  <Icon name="check" />
+                </Show>
+              </span>
+            </Show>
+            <span class="k2-mi-label">
+              {item.label}
+              <Show when={metaOf(item.value)}>{(meta) => <span class="k2-opt-meta">{meta()}</span>}</Show>
+            </span>
+            <Show when={!props.multiple}>
+              {/* one choice: the tick at the end of the row */}
+              <span class="k2-mi-tick">
+                <select.ItemIndicator item={item.value}>
+                  <Icon name="check" />
+                </select.ItemIndicator>
+              </span>
+            </Show>
+          </select.Item>
+        )}
       >
-        <div class="k2-fsheet" data-k2-part="LookupSheet" id={sheetId}>
-          {panel()}
-        </div>
-      </Dialog>
+        <select.Status class="k2-lpick-state">
+          {(now: { status?: string }) => (
+            <Show
+              when={now.status === "error"}
+              fallback={<Show when={now.status === "loading" && state().items.length === 0}>{said().loading}</Show>}
+            >
+              <Failed text={props.failure?.(state().error) ?? t().loadFailed} onRetry={() => options.reload()} />
+            </Show>
+          )}
+        </select.Status>
+        <select.Empty class="k2-lpick-state">
+          <Show when={state().status === "idle"}>
+            <Empty icon="search-off" text={state().query ? t().noMatch({ query: state().query }) : t().noValues} />
+          </Show>
+        </select.Empty>
+        <Show when={clearable()}>
+          <select.Clear class="k2-btn k2-lpick-clear" data-variant="text">
+            <Icon name="x" />
+            <span class="k2-btn-label">{t().clearChoice}</span>
+          </select.Clear>
+        </Show>
+      </select.Popup>
     </>
   );
 };

@@ -50,6 +50,19 @@ type ChoiceOptions<Value> = {
   placeholder?: string;
   /** The name the value is sent under in a form, through `FormInput`. */
   name?: string;
+  /** The text of the search field (`Input` in the list); closing the list empties it. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
+  /** How the search narrows the list: `false` keeps every item, for items a server already found for the text. */
+  filter?: false | "contains" | "startsWith";
+  /** Whether the items are loading or failed, for `Status` and `Empty`; the list is `aria-busy` while loading. */
+  status?: "idle" | "loading" | "error";
+  /** The highlight or scrolling reached the last item: the next page can load. */
+  onLoadMore?: () => void;
+  /** The words of a value whose item is not in the list now, such as a chosen value of a search. */
+  itemToLabel?: (value: string) => string;
+  /** `"auto"`: a sheet from the bottom on small touch screens, else under the trigger. */
+  presentation?: "popover" | "sheet" | "auto";
 };
 
 export type SelectOptions = ChoiceOptions<string | null>;
@@ -64,7 +77,7 @@ export type SelectParts = {
    * The list, shown while open. `option` renders each item core lists, which a search narrows; other children follow
    * the options. Takes `side`, `align`, `sideOffset`, `collisionPadding`, `alignItemWithTrigger`.
    */
-  Popup: (props: PartProps & { option: (item: ChoiceItem) => JSX.Element }) => JSX.Element;
+  Popup: (props: PartProps & { option: (item: ChoiceItem) => JSX.Element; head?: JSX.Element }) => JSX.Element;
   /** One option: `value`, `label`, `disabled`. */
   Item: SlotComponent;
   /** The mark of a selected option; pass the option's value as `item`. */
@@ -77,6 +90,10 @@ export type SelectParts = {
    * submit), that a form's reset puts back to the first value, that autofill fills, and that fires `change`.
    */
   FormInput: SlotComponent;
+  /** A search field inside the list: what is typed goes to `onQueryChange`, the keys still move the highlight. */
+  Input: SlotComponent;
+  /** What the list says about its items: its children function gets `{ status }` (loading, failed). */
+  Status: SlotComponent;
 };
 
 /** The given items in the order core lists them (a search leaves some out); core's list holds the same data. */
@@ -93,11 +110,12 @@ const listed = (list: unknown, items: ChoiceItem[]): ChoiceItem[] => {
 const listPopup =
   (Popup: SlotComponent, items: () => ChoiceItem[]): SelectParts["Popup"] =>
   (props) => {
-    const [own, rest] = splitProps(props, ["option", "children"]);
+    const [own, rest] = splitProps(props, ["option", "children", "head"]);
     return Popup(
       mergeProps(rest, {
         children: (state: Props) => (
           <>
+            {own.head}
             <For each={listed(state.items, items())}>{(item) => own.option(item)}</For>
             {own.children}
           </>
@@ -158,10 +176,12 @@ export function useSelect(options: () => SelectOptions | MultiSelectOptions): Se
     Empty: emptyComponent(slotComponent(handle, "empty", "div")),
     Clear: slotComponent(handle, "clear", "button"),
     FormInput: slotComponent(handle, "form-input", "input"),
+    Input: slotComponent(handle, "input", "input"),
+    Status: slotComponent(handle, "status", "div"),
   };
 }
 
-export type ComboboxParts = SelectParts & {
+export type ComboboxParts = Omit<SelectParts, "Status"> & {
   /** The search field that also holds focus while the list is open. */
   Input: SlotComponent;
   /** The chips of a multiple combobox, with `Chip` and `ChipRemove` per value (pass `value`). */

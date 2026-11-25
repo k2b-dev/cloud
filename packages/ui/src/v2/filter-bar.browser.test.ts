@@ -204,7 +204,7 @@ test("nothing moves when a statement is hovered, focused or opened, or when the 
 test("lookup: typing waits, a newer search aborts the one that runs, and closing aborts too", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
     await page.evaluate(() => window.__lookup?.answer());
     expect(await calls(page)).toEqual([{ query: "", aborted: false }]);
     // typing within 200 ms loads once, for the whole word
@@ -235,7 +235,7 @@ test("lookup: typing waits, a newer search aborts the one that runs, and closing
 test("lookup: a failed load says so, keeps the choice, and “Erneut versuchen” loads again", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
     await page.evaluate(() => window.__lookup?.fail());
     await page.getByText("Konnte nicht geladen werden. Deine Auswahl bleibt.").waitFor();
     expect(await page.locator(".k2-lookup [role=option]").allTextContents()).toEqual(["Nachlass KesslerWaldkirch"]);
@@ -649,20 +649,30 @@ test("points in time read in the app's time zone, the same on the server and in 
   );
 });
 
-test("lookup: Arrow up from the second entry goes to the first, and from the first to the search", async () => {
+test("lookup: the focus stays in the search; the arrows move the highlight and Enter ticks it", async () => {
   await withPage("consignor=c-1005", async (page) => {
     await page.locator(".k2-stmt-b").first().click();
-    await page.getByRole("searchbox", { name: "Einlieferer suchen" }).waitFor();
+    const search = page.getByRole("combobox", { name: "Einlieferer suchen" });
+    await search.waitFor();
     await page.evaluate(() => window.__lookup?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).waitFor();
+    const highlighted = () =>
+      page.evaluate(() => {
+        const id = document.activeElement?.getAttribute("aria-activedescendant");
+        return id ? (document.getElementById(id)?.textContent ?? "") : "";
+      });
     await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toContain("Nachlass Kessler");
     await page.keyboard.press("ArrowDown");
-    const focused = () => page.evaluate(() => document.activeElement?.textContent ?? "");
-    expect(await focused()).toContain("Haus Bergmann");
+    expect(await highlighted()).toContain("Haus Bergmann");
     await page.keyboard.press("ArrowUp");
-    expect(await focused()).toContain("Nachlass Kessler");
-    await page.keyboard.press("ArrowUp");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
+    expect(await highlighted()).toContain("Nachlass Kessler");
+    // the search keeps the focus all along, so typing goes on
+    expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("consignor") === "c-1005,c-1001");
+    expect(await page.getByRole("option", { name: /Haus Bergmann/ }).getAttribute("aria-checked")).toBe("true");
   });
 });
 

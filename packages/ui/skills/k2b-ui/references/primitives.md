@@ -298,10 +298,12 @@ lines instead of cutting a thing.
   person types, such as a customer or a person: `value`, `onChange`,
   `load` (with `signal` and `limit`), `known` (names the server resolved,
   so the first picture shows names), `resolve?`, `placeholder`, `limit?`,
-  `minChars?`. Closed it reads like a `Select`; open it is the `Lookup`
-  panel under the field (a sheet on the phone). In a `Field` it takes the
-  label, name (one entry per code), hint, error and `required`. Never a
-  `Select` with a few of many entries, never free text for a person.
+  `minChars?`, `disabled`. Closed it reads like a `Select`; open it is the
+  select's list with a search on top (a sheet on a small touch screen); an
+  optional single one offers "Auswahl entfernen". In a `Field` it takes the
+  label, name, hint, error and `required`; the form gets each chosen code,
+  nothing while disabled. Never a `Select` with a few of many entries, never
+  free text for a person.
 - `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
   writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
   text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
@@ -385,7 +387,8 @@ lines instead of cutting a thing.
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
   `limit?`, `minChars?`, `multiple?`; the panel of values that load while
-  the person types, which `FilterBar` and `LookupSelect` open. In a form use
+  the person types, which `FilterBar` opens: the search keeps the focus, the
+  arrows move the highlight, Enter or a press ticks. In a form use
   `LookupSelect`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the

@@ -1,6 +1,7 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
-import { useListbox } from "./behavior/lists";
-import { useBehaviorMessages } from "./behavior/messages";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show, untrack } from "solid-js";
+import { isServer } from "solid-js/web";
+import { createAsyncOptions } from "./behavior/async-options";
+import { useCommand } from "./behavior/command";
 import { useFilterMessages } from "./filter-messages";
 import type { LookupItem } from "./list-query";
 import { Icon } from "./marks";
@@ -37,31 +38,33 @@ export type LookupProps = {
   limit?: number;
   /** Characters a search needs before it loads; 0 by default, so an empty search shows the first values. */
   minChars?: number;
+  /**
+   * The sentence a failed load shows, from the app's own catalog, for what its server answered (a message or a code
+   * the app reads off the error `load` threw); "Konnte nicht geladen werden. Deine Auswahl bleibt." when it gives none.
+   * "Erneut versuchen" stays beside it.
+   */
+  failure?: (error: unknown) => string | undefined;
 };
 
 /** How long typing must pause before a search loads, and how long a load may run before its placeholders show. */
 export const lookupTiming = { debounce: 200, placeholder: 150 } as const;
 
-type Phase = "idle" | "waiting" | "loading" | "done" | "error";
+type Phase = "idle" | "loading" | "done" | "error";
 
 /**
- * Values that are loaded while the person types, the panel of a filter and of `LookupSelect`: a search field over a
- * list that chooses several (a box first) or one (`multiple={false}`, a tick at the end). Typing waits 200 ms, then loads; a newer search and closing abort the one that runs (`AbortSignal`). A load
- * that takes longer than 150 ms shows three placeholder rows; empty and failed take the same height, so nothing jumps.
- * What is chosen stands on top under "Gewählt" in every state. The list is the ui-sdk listbox (arrows, Home, End,
- * Space, typeahead); Arrow down in the field moves into it, Arrow up from its first entry back.
+ * Values that are loaded while the person types, the panel of a filter: a search over a list that stays open (core's
+ * command, no popup) and chooses several (a box first) or one (`multiple={false}`, a tick at the end). Typing waits
+ * 200 ms, then loads; a newer search and closing abort the one that runs (core's async options, `AbortSignal`). A
+ * load that takes longer than 150 ms shows three placeholder rows; empty and failed take the same height, so nothing
+ * jumps. What is chosen stands on top under "Gewählt" in every state. The focus stays in the search while the arrows
+ * move the highlight; Enter or a press ticks the highlighted entry.
  */
 export const Lookup = (props: LookupProps) => {
   const t = useFilterMessages();
-  const said = useBehaviorMessages();
   const limit = () => Math.min(Math.max(props.limit ?? 8, 1), 50);
   const [query, setQuery] = createSignal("");
-  const [phase, setPhase] = createSignal<Phase>("idle");
   const [slow, setSlow] = createSignal(false);
-  const [items, setItems] = createSignal<readonly LookupItem[]>([]);
   const [counts, setCounts] = createSignal<Readonly<Record<string, number>>>({});
-  const [loadedFor, setLoadedFor] = createSignal("");
-  const [answered, setAnswered] = createSignal(false);
   const [names, setNames] = createSignal<ReadonlyMap<string, LookupItem>>(new Map((props.known ?? []).map((item) => [item.value, item])));
   const [missing, setMissing] = createSignal<ReadonlySet<string>>(new Set());
   const remember = (list: readonly LookupItem[]) => {
@@ -73,60 +76,53 @@ export const Lookup = (props: LookupProps) => {
     });
   };
 
-  let running: AbortController | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let slowTimer: ReturnType<typeof setTimeout> | undefined;
-  const stop = () => {
-    running?.abort();
-    running = undefined;
-    clearTimeout(timer);
-    clearTimeout(slowTimer);
+  // Core loads: it waits while the person types, aborts a load a newer one replaces, and keeps the status. The counts
+  // come with a load's answer and are kept only from the answer that counts.
+  const options = createAsyncOptions<LookupItem>(
+    async (text, context) => {
+      const result = await props.load(text, { signal: context.signal, limit: limit() });
+      if (!context.signal.aborted) setCounts(result.counts ?? {});
+      return result.items.slice(0, limit());
+    },
+    { debounce: lookupTiming.debounce, immediate: !isServer && (props.minChars ?? 0) === 0, minLength: props.minChars ?? 0 },
+  );
+  const [state, setState] = createSignal(options.getState());
+  onCleanup(options.subscribe(() => setState(options.getState())));
+  onCleanup(() => options.cancel());
+  const items = () => state().items;
+  // what the shown matches are for, and whether any search has answered yet
+  const [loadedFor, setLoadedFor] = createSignal("");
+  const [answered, setAnswered] = createSignal(false);
+  const phase = (): Phase => {
+    const now = state();
+    if (now.status === "loading") return "loading";
+    if (now.status === "error") return "error";
+    return answered() ? "done" : "idle";
   };
-  onCleanup(stop);
-
-  const run = (text: string) => {
-    stop();
-    const controller = new AbortController();
-    running = controller;
-    setPhase("loading");
-    slowTimer = setTimeout(() => setSlow(true), lookupTiming.placeholder);
-    props.load(text, { signal: controller.signal, limit: limit() }).then(
-      (result) => {
-        if (controller.signal.aborted) return;
-        clearTimeout(slowTimer);
+  // Placeholders show only once a load runs longer than 150 ms; while typing, the load starts after the 200 ms wait.
+  createEffect(
+    on(
+      () => state().status,
+      (status) => {
         setSlow(false);
-        const list = result.items.slice(0, limit());
-        remember(list);
-        setItems(list);
-        setCounts(result.counts ?? {});
-        setLoadedFor(text);
-        setAnswered(true);
-        setPhase("done");
+        if (status === "loading") {
+          const timer = setTimeout(() => setSlow(true), (answered() ? lookupTiming.debounce : 0) + lookupTiming.placeholder);
+          onCleanup(() => clearTimeout(timer));
+          return;
+        }
+        if (status === "idle" && state().query.trim().length >= (props.minChars ?? 0)) {
+          remember(state().items);
+          setLoadedFor(state().query);
+          setAnswered(true);
+        }
+        if (status === "error") setLoadedFor(state().query);
       },
-      () => {
-        if (controller.signal.aborted) return;
-        clearTimeout(slowTimer);
-        setSlow(false);
-        setLoadedFor(text);
-        setPhase("error");
-      },
-    );
-  };
+    ),
+  );
   const search = (text: string) => {
     setQuery(text);
-    stop();
-    setSlow(false);
-    if (text.trim().length < (props.minChars ?? 0)) {
-      setItems([]);
-      setPhase("idle");
-      return;
-    }
-    setPhase("waiting");
-    timer = setTimeout(() => run(text.trim()), lookupTiming.debounce);
+    options.setQuery(text.trim());
   };
-  onMount(() => {
-    if ((props.minChars ?? 0) === 0) run("");
-  });
 
   // Codes without a name (from a link) are named once; a code the app cannot name stays a code with a warning and is
   // not asked for again while this lookup is open.
@@ -156,36 +152,30 @@ export const Lookup = (props: LookupProps) => {
   const chosen = createMemo(() => props.value.map((value) => names().get(value) ?? { value, label: value }));
   const offered = createMemo(() => items().filter((item) => !props.value.includes(item.value)));
   // the last matches stay while the next search waits and loads, until its placeholders show (150 ms into the load)
-  const showList = () => phase() === "done" || ((phase() === "loading" || phase() === "waiting") && !slow() && answered());
+  const showList = () => phase() === "done" || (phase() === "loading" && !slow() && answered());
 
   const several = () => props.multiple !== false;
-  const list = useListbox(() => ({
-    multiple: several(),
-    value: several() ? [...props.value] : (props.value[0] ?? null),
-    // the arrows only move; a press, Space or Enter chooses (one choice then closes the field that holds the list)
-    activation: "manual",
+  // Core's command: the focus stays in the search, the arrows move the highlight (aria-activedescendant), Enter or a
+  // press runs the highlighted entry. What is chosen is ours: core's value is only the highlighted entry.
+  const choose = (code: string) => {
+    if (!several()) return props.onChange(props.value.includes(code) ? [...props.value] : [code]);
+    props.onChange(props.value.includes(code) ? props.value.filter((value) => value !== code) : [...props.value, code]);
+  };
+  const list = useCommand(() => ({
+    query: query(),
+    onQueryChange: search,
+    onAction: choose,
+    filter: false,
+    status: state().status,
     loop: false,
-    onValueChange: (value) => props.onChange(Array.isArray(value) ? value : value ? [value] : []),
   }));
 
-  const [listId, setListId] = createSignal<string>();
   // core names a group by its label through the group's id, which a label is handed here (no renderer context does it)
   const chosenGroup = createUniqueId();
   const offeredGroup = createUniqueId();
-  let field: HTMLInputElement | undefined;
-  let box: HTMLDivElement | undefined;
-  const focusList = () => {
-    const target = box?.querySelector<HTMLElement>('[role="option"][tabindex="0"]') ?? box?.querySelector<HTMLElement>('[role="option"]');
-    target?.focus();
-  };
-  const announcement = () => {
-    if (phase() === "loading" && slow()) return said().loading;
-    if (phase() !== "done") return "";
-    return offered().length ? said().listResults({ count: offered().length }) : said().listEmpty;
-  };
 
   const Option = (item: LookupItem) => (
-    <list.Item class="k2-opt" value={item.value} label={item.label}>
+    <list.Item class="k2-opt" value={item.value} label={item.label} aria-checked={props.value.includes(item.value) ? "true" : "false"}>
       <Show when={several()}>
         <span class="k2-check" data-checked={props.value.includes(item.value) ? "" : undefined} aria-hidden="true">
           <Show when={props.value.includes(item.value)}>
@@ -216,86 +206,47 @@ export const Lookup = (props: LookupProps) => {
   );
 
   return (
-    <div class="k2-lookup" data-k2-part="Lookup">
+    <list.Root class="k2-lookup" data-k2-part="Lookup">
       <div class="k2-input k2-lookup-search" data-search="">
         <Icon name="search" />
-        <input
-          ref={field}
-          type="search"
-          aria-label={t().search({ field: props.label })}
-          aria-controls={listId()}
-          autocomplete="off"
-          spellcheck={false}
-          value={query()}
-          onInput={(event) => search(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              focusList();
-            }
-          }}
-        />
+        <list.Input aria-label={t().search({ field: props.label })} spellcheck={false} />
       </div>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keys come up from the listbox's options; the box takes no focus. */}
-      <div
-        ref={box}
-        onKeyDown={(event) => {
-          // Arrow up from the first entry goes back to the search, where typing goes on
-          if (event.key !== "ArrowUp") return;
-          // the listbox moves the focus before the key reaches this box, so the option the key was pressed on is
-          // the event's target, not the focused element
-          const options = [...(box?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
-          if (options[0] && event.target === options[0]) {
-            event.preventDefault();
-            field?.focus();
-          }
-        }}
-      >
-        <list.Root
-          ref={(element: HTMLElement) => queueMicrotask(() => setListId(element.id || undefined))}
-          class="k2-lookup-list"
-          aria-label={props.label}
-          aria-busy={phase() === "loading" ? "true" : undefined}
-        >
-          <Show when={chosen().length > 0}>
-            <list.Group class="k2-opt-group" id={chosenGroup}>
-              <list.GroupLabel class="k2-opt-head" id={chosenGroup} group={chosenGroup}>
-                {t().chosen}
-              </list.GroupLabel>
-              <For each={chosen()}>{Option}</For>
-            </list.Group>
-          </Show>
-          <list.Group class="k2-opt-group" id={offeredGroup}>
-            <list.GroupLabel class="k2-opt-head" id={offeredGroup} group={offeredGroup}>
-              {loadedFor() && showList() ? t().resultsFor({ query: loadedFor() }) : t().results}
+      <list.List class="k2-lookup-list" aria-label={props.label}>
+        <Show when={chosen().length > 0}>
+          <list.Group class="k2-opt-group" id={chosenGroup}>
+            <list.GroupLabel class="k2-opt-head" id={chosenGroup} group={chosenGroup}>
+              {t().chosen}
             </list.GroupLabel>
-            <Show when={showList() && offered().length > 0}>
-              <For each={offered()}>{Option}</For>
-            </Show>
+            <For each={chosen()}>{Option}</For>
           </list.Group>
-        </list.Root>
-        <Show when={!(showList() && offered().length > 0)}>
-          <div class="k2-lookup-state">
-            <Show when={phase() === "error"}>
-              <Failed text={t().loadFailed} onRetry={() => run(query().trim())} />
-            </Show>
-            <Show when={phase() === "done" && offered().length === 0}>
-              <Empty icon="search-off" text={loadedFor() ? t().noMatch({ query: loadedFor() }) : t().noValues} />
-            </Show>
-            <Show when={phase() === "loading" || phase() === "waiting" || phase() === "idle"}>
-              <div class="k2-lookup-skel" aria-hidden="true" data-shown={slow() ? "" : undefined}>
-                <span class="k2-skel" />
-                <span class="k2-skel" />
-                <span class="k2-skel" />
-              </div>
-            </Show>
-          </div>
         </Show>
-      </div>
+        <list.Group class="k2-opt-group" id={offeredGroup}>
+          <list.GroupLabel class="k2-opt-head" id={offeredGroup} group={offeredGroup}>
+            {loadedFor() && showList() ? t().resultsFor({ query: loadedFor() }) : t().results}
+          </list.GroupLabel>
+          <Show when={showList() && offered().length > 0}>
+            <For each={offered()}>{Option}</For>
+          </Show>
+        </list.Group>
+      </list.List>
+      <Show when={!(showList() && offered().length > 0)}>
+        <div class="k2-lookup-state">
+          <Show when={phase() === "error"}>
+            <Failed text={props.failure?.(state().error) ?? t().loadFailed} onRetry={() => options.reload()} />
+          </Show>
+          <Show when={phase() === "done" && offered().length === 0}>
+            <Empty icon="search-off" text={loadedFor() ? t().noMatch({ query: loadedFor() }) : t().noValues} />
+          </Show>
+          <Show when={phase() === "loading" || phase() === "idle"}>
+            <div class="k2-lookup-skel" aria-hidden="true" data-shown={slow() ? "" : undefined}>
+              <span class="k2-skel" />
+              <span class="k2-skel" />
+              <span class="k2-skel" />
+            </div>
+          </Show>
+        </div>
+      </Show>
       <p class="k2-lookup-hint">{t().limitHint({ limit: limit() })}</p>
-      <span class="k2-hidden-text" aria-live="polite">
-        {announcement()}
-      </span>
-    </div>
+    </list.Root>
   );
 };

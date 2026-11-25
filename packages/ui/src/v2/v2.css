@@ -2058,6 +2058,12 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* a quiet line under an option's words: what choosing it means, or why it cannot be chosen */
+.k2-ui .k2-choice-hint {
+  display: block;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
 .k2-ui .k2-choices {
   display: flex;
   flex-direction: column;
@@ -3965,19 +3971,39 @@
   padding: 0;
   gap: 0;
 }
-/* The panel of a LookupSelect: the lookup under its field, at least as wide as the field and never narrower than a
-   filter's editor; its search starts on the panel's top edge like the editor's values. */
-.k2-ui .k2-pop.k2-lpop {
-  width: auto;
+/* LookupSelect: core's select list with a search field on top, at least as wide as its field and never narrower than
+   a filter's editor; what the list says (loading, failed, nothing found) and "Auswahl entfernen" follow the matches.
+   On a small touch screen the same list is a sheet from the bottom, its top corners round. */
+.k2-ui .k2-menu.k2-lpick {
   min-width: max(300px, var(--anchor-width, 300px));
-  max-width: min(480px, calc(100vw - 16px));
-  padding: 8px 0 0;
-  gap: 0;
+  max-height: min(420px, var(--available-height, 420px));
 }
-/* "Auswahl entfernen" of an optional single LookupSelect: a quiet deed under the panel, on its text edge */
-.k2-ui .k2-lpop-foot {
-  display: flex;
-  padding: 0 4px 6px;
+.k2-ui .k2-lpick > .k2-lookup-search {
+  flex: none;
+  margin: 4px 4px 8px;
+}
+.k2-ui .k2-lpick-state {
+  padding: 4px 8px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-lpick-state:empty {
+  display: none;
+}
+.k2-ui .k2-lpick-clear {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.k2-ui .k2-menu[data-presentation="sheet"] {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
 }
 .k2-ui .k2-fed {
   display: flex;
@@ -4278,18 +4304,7 @@
   }
 }
 
-/* The dialog that saves a view: the scopes as radio rows with a hint, and what the view shows as a quiet summary */
-.k2-ui .k2-fsave-scopes {
-  padding-inline: var(--k2-edge);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.k2-ui .k2-fsave-hint {
-  display: block;
-  font: var(--k2-t-meta);
-  color: var(--k2-subtle);
-}
+/* The dialog that saves a view: what the view shows as a quiet summary (the scopes are a Choice with hints) */
 .k2-ui .k2-fsave-sum {
   padding-inline: var(--k2-edge);
   display: grid;

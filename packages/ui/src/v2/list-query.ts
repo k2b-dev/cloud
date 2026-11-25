@@ -115,6 +115,8 @@ export type LookupField<M extends boolean = boolean, R = unknown> = FieldCommon 
   readonly limit: number;
   /** Characters before `load` runs. Default 0: an empty search shows frequent or recent values. */
   readonly minChars: number;
+  /** The sentence a failed load shows, from the app's catalog for what its server answered (see `Lookup`). */
+  readonly failure?: (error: unknown) => string | undefined;
   readonly required: R;
 };
 
@@ -236,6 +238,7 @@ export const field = {
         readonly resolve: LookupField["resolve"];
         readonly limit?: number;
         readonly minChars?: number;
+        readonly failure?: LookupField["failure"];
       },
   ): NoInfer<LookupField<M, R>> {
     return {
@@ -246,6 +249,7 @@ export const field = {
       resolve: spec.resolve,
       limit: spec.limit ?? 8,
       minChars: spec.minChars ?? 0,
+      ...(spec.failure ? { failure: spec.failure } : {}),
       required: spec.required as R,
     };
   },

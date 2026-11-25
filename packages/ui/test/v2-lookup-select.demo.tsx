@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Band, Bar, Field, Input, LookupSelect, Pane, Text, Workspace } from "../src/v2";
+import { Band, Bar, Field, Input, Lookup, LookupSelect, Pane, Text, Workspace } from "../src/v2";
 import type { LookupItem } from "../src/v2/list-query";
 
 // A form that picks a customer (one, named on the server), contact people (several) and a required consignor from values that
@@ -28,6 +28,8 @@ declare global {
       changes: string[];
       /** Sets the quantity from outside, as the app would. */
       setQuantity?: (value: string) => void;
+      /** The places of the inline lookup: answer or fail its loads, and what it chose. */
+      places?: { answer: () => void; fail: () => void; chosen: string[] };
     };
   }
 }
@@ -64,10 +66,31 @@ const load = (query: string, context: { signal: AbortSignal; limit: number }) =>
     pending.push(entry);
   });
 
+// The inline lookup of a place, one choice; its loads wait for `window.__picks.places`.
+const PLACES: readonly LookupItem[] = [
+  { value: "p-fr", label: "Freiburg", meta: "Baden-Württemberg" },
+  { value: "p-of", label: "Offenburg", meta: "Baden-Württemberg" },
+];
+const placeLoads: Pending[] = [];
+const loadPlaces = () =>
+  new Promise<{ items: readonly LookupItem[] }>((resolve, reject) => {
+    const picks = hooks();
+    if (picks) picks.places ??= { answer: () => placeLoads.shift()?.resolve(), fail: () => placeLoads.shift()?.reject(), chosen: [] };
+    placeLoads.push({ resolve: () => resolve({ items: PLACES }), reject: () => reject(new Error("quota")) });
+  });
+/** What the app's catalog says for what its server answered. */
+const failure = (error: unknown) =>
+  error instanceof Error && error.message === "offline"
+    ? "Keine Verbindung zum Kundenverzeichnis."
+    : error instanceof Error && error.message === "quota"
+      ? "Zu viele Suchen in kurzer Zeit. Gleich noch einmal."
+      : undefined;
+
 export function Demo() {
   const [customer, setCustomer] = createSignal<string | undefined>("k-17");
   const [people, setPeople] = createSignal<string[]>([]);
   const [consignor, setConsignor] = createSignal<string | undefined>();
+  const [place, setPlace] = createSignal<string[]>([]);
   // `?quantity=` starts the field with another value (the browser only; the server renders 1500)
   const [quantity, setQuantity] = createSignal((isServer ? null : new URLSearchParams(location.search).get("quantity")) ?? "1500");
   const picks = hooks();
@@ -87,6 +110,7 @@ export function Demo() {
                 load={load}
                 known={[CUSTOMERS[0]!]}
                 placeholder="Kunde wählen"
+                failure={failure}
               />
             </Field>
             <Field name="people" label="Ansprechpersonen" optional="optional">
@@ -125,6 +149,19 @@ export function Demo() {
               placeholder="Einlieferer wählen"
             />
           </Field>
+          {/* an inline lookup with one choice, as a place search is */}
+          <Lookup
+            label="Ort"
+            multiple={false}
+            value={place()}
+            onChange={(value) => {
+              const picks = hooks();
+              if (picks?.places) picks.places.chosen = value;
+              setPlace(value);
+            }}
+            load={loadPlaces}
+            failure={failure}
+          />
           {/* disabled fields: never sent, and a required one does not hold the form back */}
           <Field.Row>
             <Field name="agent" label="Vertretung" required>

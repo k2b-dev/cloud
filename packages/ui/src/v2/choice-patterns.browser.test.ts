@@ -224,13 +224,13 @@ test("LookupSelect: the first picture is the server's; the field reads like a Se
     pickBundle,
     "",
     async (page) => {
-      const customer = page.getByRole("combobox", { name: "Kunde" });
+      const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
       expect(await customer.textContent()).toBe("Familie Oswald");
-      expect(await page.getByRole("combobox", { name: "Ansprechpersonen" }).textContent()).toBe("Personen wählen");
+      expect(await page.getByRole("combobox", { name: "Ansprechpersonen", exact: true }).textContent()).toBe("Personen wählen");
       expect(await customer.getAttribute("aria-required")).toBeNull();
-      expect(await page.getByRole("combobox", { name: "Einlieferer" }).getAttribute("aria-required")).toBe("true");
+      expect(await page.getByRole("combobox", { name: "Einlieferer", exact: true }).getAttribute("aria-required")).toBe("true");
       expect((await customer.boundingBox())?.height).toBe(36);
-      expect(await page.locator('input[type="hidden"][name="customer"]').inputValue()).toBe("k-17");
+      expect(await page.locator('[name="customer"]').inputValue()).toBe("k-17");
       // nothing loads before the list opens
       expect(await calls(page)).toEqual([]);
     },
@@ -240,13 +240,13 @@ test("LookupSelect: the first picture is the server's; the field reads like a Se
 
 test("LookupSelect: Arrow down opens, the search takes the focus, a newer search aborts the older, Enter chooses one", async () => {
   await withPage(pickBundle, "", async (page) => {
-    const customer = page.getByRole("combobox", { name: "Kunde" });
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
     await customer.focus();
     await page.keyboard.press("ArrowDown");
-    const panel = page.locator(".k2-lpop");
+    const panel = page.locator(".k2-lpick");
     await panel.waitFor();
-    const search = page.getByRole("searchbox", { name: "Kunde suchen" });
-    await page.waitForFunction(() => document.activeElement?.matches(".k2-lpop .k2-lookup-search input") === true);
+    const search = page.getByRole("combobox", { name: "Kunde suchen" });
+    await page.waitForFunction(() => document.activeElement?.matches(".k2-lpick .k2-lookup-search input") === true);
     // at least as wide as its field
     const [field, popup] = [await customer.boundingBox(), await panel.boundingBox()];
     expect(popup!.width).toBeGreaterThanOrEqual(field!.width - 0.5);
@@ -259,16 +259,15 @@ test("LookupSelect: Arrow down opens, the search takes the focus, a newer search
     expect((await calls(page)).slice(1).map((call) => call.aborted)).toEqual([true, false]);
     await page.evaluate(() => window.__picks?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).waitFor();
+    // the arrows move the highlight from the search into the matches; they choose nothing
     await search.press("ArrowDown");
-    // the chosen customer stands first under "Gewählt"; the arrows only move, they choose nothing
-    await page.keyboard.press("ArrowDown");
     expect(await panel.isVisible()).toBe(true);
     expect(await page.evaluate(() => window.__picks?.changes)).toEqual([]);
     await page.keyboard.press("Enter");
     await panel.waitFor({ state: "hidden" });
     expect(await page.evaluate(() => window.__picks?.changes)).toEqual(["customer=k-44"]);
     expect(await customer.textContent()).toBe("Haus Bergmann");
-    expect(await page.locator('input[type="hidden"][name="customer"]').inputValue()).toBe("k-44");
+    expect(await page.locator('[name="customer"]').inputValue()).toBe("k-44");
     // the focus is back on the field
     expect(await customer.evaluate((node) => node === document.activeElement)).toBe(true);
   });
@@ -276,12 +275,12 @@ test("LookupSelect: Arrow down opens, the search takes the focus, a newer search
 
 test("LookupSelect: Escape closes and aborts the load that runs; a failed load offers to try again", async () => {
   await withPage(pickBundle, "", async (page) => {
-    const customer = page.getByRole("combobox", { name: "Kunde" });
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
     await customer.click();
-    await page.locator(".k2-lpop").waitFor();
+    await page.locator(".k2-lpick").waitFor();
     await page.waitForFunction(() => window.__picks?.calls.length === 1);
     await page.keyboard.press("Escape");
-    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    await page.locator(".k2-lpick").waitFor({ state: "hidden" });
     expect(await calls(page)).toEqual([{ query: "", aborted: true }]);
     expect(await customer.evaluate((node) => node === document.activeElement)).toBe(true);
     // a failure keeps the field as it is and says so in the panel
@@ -298,26 +297,27 @@ test("LookupSelect: Escape closes and aborts the load that runs; a failed load o
 
 test("LookupSelect multiple: each press ticks a box first and the list stays open; one choice ticks at the end", async () => {
   await withPage(pickBundle, "", async (page) => {
-    const people = page.getByRole("combobox", { name: "Ansprechpersonen" });
+    const people = page.getByRole("combobox", { name: "Ansprechpersonen", exact: true });
     await people.click();
     await page.waitForFunction(() => window.__picks?.calls.length === 1);
     await page.evaluate(() => window.__picks?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).click();
     await page.getByRole("option", { name: /Stadtwerke Auental/ }).click();
-    expect(await page.locator(".k2-lpop").isVisible()).toBe(true);
+    expect(await page.locator(".k2-lpick").isVisible()).toBe(true);
     await settled(page);
-    expect((await tickPlaces(page, ".k2-lpop .k2-opt")).slice(0, 2)).toEqual(["start", "start"]);
+    expect(await tickPlaces(page, ".k2-lpick .k2-mi")).toEqual(["none", "none", "start", "start", "none"]);
     await page.keyboard.press("Escape");
     expect(await people.textContent()).toBe("Haus Bergmann, Stadtwerke Auental");
-    expect(
-      await page.locator('input[type="hidden"][name="people"]').evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value)),
-    ).toEqual(["k-44", "k-31"]);
+    expect(await page.locator('[name="people"]').evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value))).toEqual([
+      "k-44",
+      "k-31",
+    ]);
     // the one customer: its tick at the end
-    await page.getByRole("combobox", { name: "Kunde" }).click();
+    await page.getByRole("combobox", { name: "Kunde", exact: true }).click();
     await page.waitForFunction(() => window.__picks?.calls.length === 2);
     await page.evaluate(() => window.__picks?.answer());
     await page.getByRole("option", { name: /Stadtwerke Auental/ }).waitFor();
-    expect((await tickPlaces(page, ".k2-lpop .k2-opt"))[0]).toBe("end");
+    expect((await tickPlaces(page, ".k2-lpick .k2-mi"))[0]).toBe("end");
   });
 });
 
@@ -326,15 +326,15 @@ test("LookupSelect on the phone: a tap opens the sheet named after the field; a 
     pickBundle,
     "",
     async (page) => {
-      await page.getByRole("combobox", { name: "Kunde" }).tap();
-      const sheet = page.getByRole("dialog", { name: "Kunde" });
+      await page.getByRole("combobox", { name: "Kunde", exact: true }).tap();
+      const sheet = page.locator('.k2-lpick[data-presentation="sheet"]');
       await sheet.waitFor();
-      await steady(page, '[role="dialog"]');
+      await steady(page, ".k2-lpick");
       await page.waitForFunction(() => window.__picks?.calls.length === 1);
       await page.evaluate(() => window.__picks?.answer());
       await sheet.getByRole("option", { name: /Architekturbüro Winter/ }).tap();
       await sheet.waitFor({ state: "hidden" });
-      expect(await page.getByRole("combobox", { name: "Kunde" }).textContent()).toBe("Architekturbüro Winter");
+      expect(await page.getByRole("combobox", { name: "Kunde", exact: true }).textContent()).toBe("Architekturbüro Winter");
     },
     { width: 390, touch: true },
   );
@@ -352,9 +352,9 @@ test("LookupSelect required: the form is not sent while it is empty, and is once
         document.body.dataset.sent = "";
       });
     });
-    const consignor = page.getByRole("combobox", { name: "Einlieferer" });
+    const consignor = page.getByRole("combobox", { name: "Einlieferer", exact: true });
     expect(await consignor.textContent()).toBe("Einlieferer wählen");
-    expect(await page.locator('input[type="hidden"][name="consignor"]').count()).toBe(0);
+    expect(await page.locator('[name="consignor"]').count()).toBe(0);
     await page.evaluate(() => document.querySelector("form")?.requestSubmit());
     expect(await page.evaluate(() => document.body.dataset.sent)).toBeUndefined();
     // the browser points at the field that is missing
@@ -363,8 +363,8 @@ test("LookupSelect required: the form is not sent while it is empty, and is once
     await page.waitForFunction(() => window.__picks?.calls.length === 1);
     await page.evaluate(() => window.__picks?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).click();
-    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
-    expect(await page.locator('input[type="hidden"][name="consignor"]').inputValue()).toBe("k-44");
+    await page.locator(".k2-lpick").waitFor({ state: "hidden" });
+    expect(await page.locator('[name="consignor"]').inputValue()).toBe("k-44");
     await page.evaluate(() => document.querySelector("form")?.requestSubmit());
     expect(await page.evaluate(() => document.body.dataset.sent)).toBe("");
   });
@@ -546,18 +546,18 @@ test("a form's reset puts a number field back as a whole: what it shows, what it
 
 test("a late answer of an aborted search never renames what the newer one named", async () => {
   await withPage(pickBundle, "", async (page) => {
-    const customer = page.getByRole("combobox", { name: "Kunde" });
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
     await customer.click();
     await page.waitForFunction(() => window.__picks?.calls.length === 1);
     await page.evaluate(() => window.__picks?.answer());
-    const search = page.getByRole("searchbox", { name: "Kunde suchen" });
+    const search = page.getByRole("combobox", { name: "Kunde suchen" });
     await search.pressSequentially("Archi");
     await page.waitForFunction(() => window.__picks?.calls.at(-1)?.query === "Archi");
     await search.pressSequentially("t");
     await page.waitForFunction(() => window.__picks?.calls.at(-1)?.query === "Archit");
     await page.evaluate(() => window.__picks?.answer("Winter (neu)"));
     await page.getByRole("option", { name: /Winter \(neu\)/ }).click();
-    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    await page.locator(".k2-lpick").waitFor({ state: "hidden" });
     expect(await customer.textContent()).toBe("Winter (neu)");
     // the aborted "Archi" answers late with an old name
     await page.evaluate(() => window.__picks?.answerStale("Winter (alt)"));
@@ -569,12 +569,12 @@ test("a late answer of an aborted search never renames what the newer one named"
 test("disabled lookups send nothing, and a disabled required one does not hold the form back", async () => {
   await withPage(pickBundle, "", async (page) => {
     await inForm(page);
-    const consignor = page.getByRole("combobox", { name: "Einlieferer" });
+    const consignor = page.getByRole("combobox", { name: "Einlieferer", exact: true });
     await consignor.click();
     await page.waitForFunction(() => window.__picks?.calls.length === 1);
     await page.evaluate(() => window.__picks?.answer());
     await page.getByRole("option", { name: /Haus Bergmann/ }).click();
-    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    await page.locator(".k2-lpick").waitFor({ state: "hidden" });
     await page.evaluate(() => document.querySelector("form")?.requestSubmit());
     expect(await page.evaluate(() => document.body.dataset.sent)).toBe("");
     expect(await formData(page)).toEqual([
@@ -588,40 +588,42 @@ test("disabled lookups send nothing, and a disabled required one does not hold t
 test("an optional single LookupSelect can be cleared with a named deed", async () => {
   await withPage(pickBundle, "", async (page) => {
     await inForm(page);
-    const customer = page.getByRole("combobox", { name: "Kunde" });
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
     await customer.click();
     await page.getByRole("button", { name: "Auswahl entfernen" }).click();
-    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    await page.locator(".k2-lpick").waitFor({ state: "hidden" });
     expect(await customer.textContent()).toBe("Kunde wählen");
     expect(await page.evaluate(() => window.__picks?.changes)).toEqual(["customer="]);
     expect(await formData(page)).toEqual([["quantity", "1500"]]);
     // a required one has no such deed
-    await page.getByRole("combobox", { name: "Einlieferer" }).click();
-    await page.locator(".k2-lpop").waitFor();
+    await page.getByRole("combobox", { name: "Einlieferer", exact: true }).click();
+    await page.locator(".k2-lpick").waitFor();
     expect(await page.getByRole("button", { name: "Auswahl entfernen" }).count()).toBe(0);
   });
 });
 
 test("LookupSelect's field says which surface is open and points at it, on the computer and the phone", async () => {
   await withPage(pickBundle, "", async (page) => {
-    const customer = page.getByRole("combobox", { name: "Kunde" });
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
     expect(await customer.getAttribute("aria-expanded")).toBe("false");
     await customer.click();
-    await page.locator(".k2-lpop").waitFor();
+    await page.locator(".k2-lpick").waitFor();
     expect(await customer.getAttribute("aria-expanded")).toBe("true");
     const controls = await customer.getAttribute("aria-controls");
-    expect(await page.evaluate((id) => document.getElementById(id ?? "")?.classList.contains("k2-lpop"), controls)).toBe(true);
+    expect(await page.evaluate((id) => document.getElementById(id ?? "")?.closest(".k2-lpick") != null, controls)).toBe(true);
   });
   await withPage(
     pickBundle,
     "",
     async (page) => {
-      const customer = page.getByRole("combobox", { name: "Kunde" });
+      const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
       await customer.tap();
-      await page.getByRole("dialog", { name: "Kunde" }).waitFor();
+      await page.locator('.k2-lpick[data-presentation="sheet"]').waitFor();
       expect(await customer.getAttribute("aria-expanded")).toBe("true");
       const controls = await customer.getAttribute("aria-controls");
-      expect(await page.evaluate((id) => document.getElementById(id ?? "")?.getAttribute("role"), controls)).toBe("dialog");
+      expect(
+        await page.evaluate((id) => document.getElementById(id ?? "")?.closest('.k2-lpick[data-presentation="sheet"]') != null, controls),
+      ).toBe(true);
     },
     { width: 390, touch: true },
   );
@@ -635,5 +637,38 @@ test("a number range's refusal speaks of “Ab” and “Bis”", async () => {
     await field.fill("300");
     await field.press("Enter");
     await page.getByText("„Ab“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
+  });
+});
+
+test("a failed search says what the server answered, in the app's words, and offers to try again", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await page.getByRole("combobox", { name: "Kunde", exact: true }).click();
+    await page.waitForFunction(() => window.__picks?.calls.length === 1);
+    await page.evaluate(() => window.__picks?.fail());
+    await page.getByText("Keine Verbindung zum Kundenverzeichnis.").waitFor();
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.waitForFunction(() => window.__picks?.calls.length === 2);
+  });
+});
+
+test("an inline lookup with one choice: Enter chooses the highlighted place, the next replaces it, its tick at the end", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    const search = page.getByRole("combobox", { name: "Ort suchen" });
+    await page.waitForFunction(() => window.__picks?.places !== undefined);
+    // a failed load says why, in the app's words
+    await page.evaluate(() => window.__picks?.places?.fail());
+    await page.getByText("Zu viele Suchen in kurzer Zeit. Gleich noch einmal.").waitFor();
+    await page.getByRole("button", { name: "Erneut versuchen" }).last().click();
+    await page.evaluate(() => window.__picks?.places?.answer());
+    await page.getByRole("option", { name: /Offenburg/ }).waitFor();
+    await search.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__picks?.places?.chosen.join() === "p-fr");
+    await page.getByRole("option", { name: /Offenburg/ }).click();
+    await page.waitForFunction(() => window.__picks?.places?.chosen.join() === "p-of");
+    expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+    await settled(page);
+    expect(await tickPlaces(page, '.k2-lookup [role="option"]')).toEqual(["end", "none"]);
   });
 });

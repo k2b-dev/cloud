@@ -1,5 +1,6 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -14,6 +15,8 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import type { SlotComponent } from "./behavior/adapter";
+import { useTabs } from "./behavior/controls";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
@@ -288,35 +291,12 @@ const TabsRoot = (props: TabsProps) => {
   const inPlace = createMemo(
     () => props.items.every((tab) => tab.href === undefined || tab.menu !== undefined) && props.items.some((tab) => !tab.menu),
   );
-  // the one tab stop stands on a tab that shows: the open one, or the first while the open one hides in the menu
-  const stop = () => {
-    const open = plain().findIndex((tab) => tab.current);
-    return open >= 0 && open < fit() ? open : 0;
-  };
-  const tabId = (index: number) =>
-    props.panel ? (plain()[index]?.current ? `${props.panel}-tab` : `${props.panel}-tab-${index}`) : undefined;
-  const roam = (event: KeyboardEvent) => {
-    const keys: Record<string, (index: number, count: number) => number> = {
-      ArrowRight: (index, count) => (index + 1) % count,
-      ArrowLeft: (index, count) => (index - 1 + count) % count,
-      Home: () => 0,
-      End: (_, count) => count - 1,
-    };
-    const step = keys[event.key];
-    const tabs = [...(row?.querySelectorAll<HTMLElement>('[role="tab"]:not([data-overflow])') ?? [])];
-    const index = tabs.indexOf(event.target as HTMLElement);
-    if (!step || index < 0 || tabs.length === 0) return;
-    event.preventDefault();
-    const next = step(index, tabs.length);
-    tabs[next]?.focus();
-    plain()[next]?.onClick?.();
-  };
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
   // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
-  let row: HTMLDivElement | undefined;
+  let row: HTMLElement | undefined;
   onMount(() => {
     if (!row) return;
     const measure = () => {
@@ -354,40 +334,92 @@ const TabsRoot = (props: TabsProps) => {
       parts.disconnect();
     });
   });
+  // In place: core's tabs (roving focus, Home and End, selection as the arrows move, the panel they control).
+  const open = () => plain().findIndex((tab) => tab.current);
+  const tabs = useTabs(() => ({
+    value: open() >= 0 ? String(open()) : undefined,
+    onValueChange: (value: string) => plain()[Number(value)]?.onClick?.(),
+  }));
+  if (props.panel) registerPanel(props.panel, tabs.Panel, () => (open() >= 0 ? String(open()) : ""));
+  // Core walks every tab, also one that hides for lack of room (it knows no tab that cannot take the focus). While
+  // tabs hide, the arrows, Home and End walk only those that show, and while the open tab hides in the menu, the
+  // first tab that shows holds the tab stop until the focus comes into the list.
+  const walk = (event: KeyboardEvent, index: number) => {
+    const shown = Math.min(fit(), plain().length);
+    const keys: Record<string, (count: number) => number> = {
+      ArrowRight: (count) => (index + 1) % count,
+      ArrowLeft: (count) => (index - 1 + count) % count,
+      Home: () => 0,
+      End: (count) => count - 1,
+    };
+    const step = keys[event.key];
+    if (shown >= plain().length || !step || shown === 0) return;
+    event.preventDefault();
+    const next = step(shown);
+    row?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+    plain()[next]?.onClick?.();
+  };
+  createEffect(() => {
+    if (!inPlace() || open() < fit()) return;
+    queueMicrotask(() => {
+      const all = [...(row?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+      if (all.some((tab) => tab === document.activeElement)) return;
+      all.forEach((tab, index) => tab.setAttribute("tabindex", index === 0 ? "0" : "-1"));
+    });
+  });
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map(asEntry);
   return (
     <Dynamic component={inPlace() ? "div" : "nav"} class="k2-tabs-nav" data-k2-part="Tabs" aria-label={inPlace() ? undefined : props.label}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useAriaPropsSupportedByRole: in place it is the WAI-ARIA tab list (its keys come up from its tabs); with addresses a plain row of links */}
-      <div
-        class="k2-tabs"
-        ref={row}
-        role={inPlace() ? "tablist" : undefined}
-        aria-label={inPlace() ? props.label : undefined}
-        onKeyDown={(event) => inPlace() && roam(event)}
+      <Show
+        when={inPlace()}
+        fallback={
+          <div
+            class="k2-tabs"
+            ref={(element) => {
+              row = element;
+            }}
+          >
+            <Index each={plain()}>
+              {(tab, index) => (
+                <Dynamic
+                  component={linkOr(tab().href, "button")}
+                  type={tab().href !== undefined ? undefined : "button"}
+                  class="k2-tab"
+                  href={tab().href}
+                  onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
+                  onClick={() => tab().onClick?.()}
+                  aria-current={tab().current ? "page" : undefined}
+                  data-overflow={index >= fit() ? "" : undefined}
+                >
+                  <TabFace tab={tab()} />
+                </Dynamic>
+              )}
+            </Index>
+          </div>
+        }
       >
-        <Index each={plain()}>
-          {(tab, index) => (
-            <Dynamic
-              component={linkOr(tab().href, "button")}
-              type={tab().href !== undefined ? undefined : "button"}
-              class="k2-tab"
-              href={tab().href}
-              onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
-              onClick={() => tab().onClick?.()}
-              role={inPlace() ? "tab" : undefined}
-              id={inPlace() ? tabId(index) : undefined}
-              aria-selected={inPlace() ? (tab().current ? "true" : "false") : undefined}
-              aria-controls={inPlace() ? props.panel : undefined}
-              tabindex={inPlace() ? (index === stop() ? 0 : -1) : undefined}
-              aria-current={!inPlace() && tab().current ? "page" : undefined}
-              data-overflow={index >= fit() ? "" : undefined}
-            >
-              <TabFace tab={tab()} />
-            </Dynamic>
-          )}
-        </Index>
-      </div>
+        <tabs.List
+          class="k2-tabs"
+          ref={(element: HTMLElement) => {
+            row = element;
+          }}
+          aria-label={props.label}
+        >
+          <Index each={plain()}>
+            {(tab, index) => (
+              <tabs.Tab
+                value={String(index)}
+                class="k2-tab"
+                data-overflow={index >= fit() ? "" : undefined}
+                onKeyDown={(event: KeyboardEvent) => walk(event, index)}
+              >
+                <TabFace tab={tab()} />
+              </tabs.Tab>
+            )}
+          </Index>
+        </tabs.List>
+      </Show>
       <Index each={withMenu()}>
         {(tab, index) => (
           <MenuTab
@@ -416,11 +448,47 @@ export type TabPanelProps = {
   children: JSX.Element;
 };
 
-/** The panel of tabs that switch in place: named by the open tab, reached with Tab after the tab list. */
+/**
+ * The panels of tabs in place, by the id their `Tabs` names in `panel`: the tabs and their panel stand in different
+ * places (the tabs in a head, the panel in the content), so the panel finds core's panel part of its tabs here. A
+ * signal, so a panel made before its tabs follows once they are there; the tabs leave it when they go.
+ */
+const [panels, setPanels] = createSignal<ReadonlyMap<string, { Panel: SlotComponent; value: () => string }>>(new Map());
+const registerPanel = (id: string, Panel: SlotComponent, value: () => string) => {
+  const entry = { Panel, value };
+  setPanels((before) => new Map(before).set(id, entry));
+  onCleanup(() =>
+    setPanels((before) => {
+      if (before.get(id) !== entry) return before;
+      const next = new Map(before);
+      next.delete(id);
+      return next;
+    }),
+  );
+};
+
+/**
+ * The panel of tabs that switch in place: core's panel of the open tab, so the open tab controls it and names it, and
+ * Tab after the tab list reaches it. Without its tabs it stands as a plain panel.
+ */
 const TabPanel = (props: TabPanelProps) => (
-  <div class="k2-tabpanel" data-k2-part="TabPanel" role="tabpanel" id={props.id} aria-labelledby={`${props.id}-tab`} tabindex="0">
-    {props.children}
-  </div>
+  <Show
+    when={panels().get(props.id)}
+    fallback={
+      <div class="k2-tabpanel" data-k2-part="TabPanel" role="tabpanel" id={props.id} tabindex="0">
+        {props.children}
+      </div>
+    }
+  >
+    {(entry) => {
+      const Panel = entry().Panel;
+      return (
+        <Panel value={entry().value()} class="k2-tabpanel" data-k2-part="TabPanel">
+          {props.children}
+        </Panel>
+      );
+    }}
+  </Show>
 );
 
 /**

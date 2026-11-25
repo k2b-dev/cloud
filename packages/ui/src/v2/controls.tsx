@@ -15,13 +15,14 @@ import {
 } from "solid-js";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isDateKey } from "../inputs/date-picker";
-import { decimalSeparator, parseLocalizedNumber, useLocale } from "../intl/locale";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
+import { readNumber, readPlain, showNumber } from "./number-text";
 import { textEdge } from "./tokens";
 
 type FieldIds = {
@@ -310,45 +311,22 @@ export const Input = (props: InputProps) => {
   );
 };
 
-/** Significant digits a number holds exactly (IEEE 754 double); a number with more is refused, never rounded. */
-const exactDigits = 15;
-
 /**
- * The text of a number field and the plain number it stands for. The plain number is a decimal string kept apart
- * from what is shown: typed text is read with the locale's marks into it digit by digit (never through a float),
- * a value the app sets is kept as given. What is shown follows in the locale's form where it can be shown exactly.
- * The field's validity (a number, exact, within `min`/`max`) follows text, value, bounds and locale; a form's
- * reset puts text, plain number and the app's value back to the value the field started with.
+ * The text of a number field and the plain number it stands for, read and shown by core in the locale
+ * (`number-text`). The plain number is kept apart from what is shown: typed text is read into it, a value the app
+ * sets is kept as given. What is shown follows in the locale's form where it can be shown exactly. The field's
+ * validity (a number, exact, within `min`/`max`) follows text, value, bounds and locale; a form's reset puts text,
+ * plain number and the app's value back to the value the field started with.
  */
+// ui-sdk gap: number-input clamps on commit; a number field here keeps what is out of range and marks it invalid, so
+// only core's reading and showing of numbers (behavior/number) is used, not its number-input.
 const useNumberText = (props: InputProps) => {
   const locale = useLocale();
   const said = useUiMessages();
-  /** The plain decimal string of typed text, or why it is none: "" for empty, "invalid", "inexact". */
-  const plainOf = (text: string): string | "invalid" | "inexact" => {
-    const typed = text.trim();
-    if (typed === "") return "";
-    if (parseLocalizedNumber(typed, decimalSeparator(locale())) === "invalid") return "invalid";
-    // the same reading as parseLocalizedNumber, kept as digits: the other mark of . and , groups, the locale's separates
-    const point = decimalSeparator(locale()) === "," ? "," : ".";
-    const group = point === "," ? "." : ",";
-    const grouped = new RegExp(`^-?[1-9]\\d{0,2}(\\${group}\\d{3})+(\\${point}\\d*)?$`).test(typed);
-    const body = grouped ? typed.replaceAll(group, "").replace(point, ".") : typed.replace(/[.,]/, ".");
-    return checkPlain(body);
-  };
-  /** A plain decimal string as it is, or why it cannot be one. */
-  const checkPlain = (value: string): string | "invalid" | "inexact" => {
-    const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(value);
-    if (!match || !/\d/.test(value)) return "invalid";
-    const digits = `${match[2] ?? ""}${match[3] ?? ""}`.replace(/^0+/, "").replace(/0+$/, "");
-    if (digits.length > exactDigits) return "inexact";
-    return value.endsWith(".") ? value.slice(0, -1) : value;
-  };
-  const format = (value: string) =>
-    new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(Number(value));
   /** What a plain value shows: in the locale's form where that is exact, else the value as it is (it is refused). */
   const show = (value: string) => {
-    const plain = checkPlain(value.trim());
-    return value.trim() === "" || plain === "invalid" || plain === "inexact" ? value : format(plain);
+    const read = readPlain(value);
+    return "refused" in read || read.value === null ? value : showNumber(read.value, locale());
   };
   const initial = props.value ?? "";
   const [text, setText] = createSignal(show(initial));
@@ -364,17 +342,17 @@ const useNumberText = (props: InputProps) => {
       { defer: true },
     ),
   );
-  /** Why the shown value is refused, in words; "" when it is fine. */
+  /** Why the field refuses its value, in words; "" when it is fine. */
   const problem = () => {
-    const value = plain().trim();
-    if (value === "") return "";
-    const checked = checkPlain(value);
-    const typed = plainOf(text());
-    if (checked === "inexact" || typed === "inexact") return said().numberInexact;
-    if (checked === "invalid" || typed === "invalid") return said().numberInvalid;
-    const amount = Number(checked);
-    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: format(String(props.min)) });
-    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: format(String(props.max)) });
+    const typed = readNumber(text(), locale());
+    const given = readPlain(plain());
+    const refused = "refused" in typed ? typed.refused : "refused" in given ? given.refused : undefined;
+    if (refused === "inexact") return said().numberInexact;
+    if (refused === "invalid") return said().numberInvalid;
+    const amount = "refused" in given ? null : given.value;
+    if (amount === null) return "";
+    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: showNumber(props.min, locale()) });
+    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: showNumber(props.max, locale()) });
     return "";
   };
   let element: HTMLInputElement | undefined;
@@ -384,9 +362,9 @@ const useNumberText = (props: InputProps) => {
   });
   const take = (value: string) => {
     setText(value);
-    const read = plainOf(value);
+    const read = readNumber(value, locale());
     // text that is no exact number is handed on as typed, so the app sees what is there and the field says why
-    setPlain(read === "invalid" || read === "inexact" ? value : read);
+    setPlain("refused" in read ? value : read.plain);
     props.onInput?.(plain());
   };
   return {
@@ -412,8 +390,8 @@ const useNumberText = (props: InputProps) => {
     },
     input: take,
     settle: () => {
-      const read = plainOf(text());
-      if (read !== "" && read !== "invalid" && read !== "inexact") setText(format(read));
+      const read = readNumber(text(), locale());
+      if (!("refused" in read) && read.value !== null) setText(showNumber(read.value, locale()));
     },
   };
 };
@@ -727,7 +705,11 @@ export const MarkCheck = (
 
 export type ChoiceProps = {
   name: string;
-  options: readonly (string | { value: string; label: string })[];
+  /**
+   * The options; one may carry a quiet `hint` under its words (what choosing it means) and be `disabled` alone (it
+   * stays readable, with the reason in its hint).
+   */
+  options: readonly (string | { value: string; label: string; hint?: string; disabled?: boolean })[];
   value?: string;
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
@@ -753,7 +735,10 @@ export const Choice = (props: ChoiceProps) => {
 const ChoiceGroup = (props: ChoiceProps) => {
   const field = useField();
   field?.group();
-  const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  const options = () =>
+    props.options.map((option): { value: string; label: string; hint?: string; disabled?: boolean } =>
+      typeof option === "string" ? { value: option, label: option } : option,
+    );
   const [own, setOwn] = createSignal(props.value);
   const value = () => (props.onChange ? props.value : own());
   return (
@@ -768,7 +753,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
     >
       <For each={options()}>
         {(option) => (
-          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
+          <label class="k2-choice" data-disabled={props.disabled || option.disabled ? "" : undefined}>
             <span class="k2-mark">
               <input
                 class="k2-mark-input"
@@ -777,7 +762,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 value={option.value}
                 checked={option.value === value()}
                 required={field?.required || undefined}
-                disabled={props.disabled}
+                disabled={props.disabled || option.disabled}
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
@@ -785,7 +770,10 @@ const ChoiceGroup = (props: ChoiceProps) => {
               />
               <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />
             </span>
-            <span class="k2-choice-text">{option.label}</span>
+            <span class="k2-choice-text">
+              {option.label}
+              <Show when={option.hint}>{(hint) => <span class="k2-choice-hint">{hint()}</span>}</Show>
+            </span>
           </label>
         )}
       </For>

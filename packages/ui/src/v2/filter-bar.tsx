@@ -1,10 +1,10 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
-import { decimalSeparator, parseLocalizedNumber, useLocale } from "../intl/locale";
+import { useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
-import { Field, Input } from "./controls";
+import { Choice, Field, Input } from "./controls";
 import { DatePicker } from "./date-picker";
 import { type FilterMessages, useFilterMessages } from "./filter-messages";
 import type {
@@ -23,6 +23,7 @@ import type {
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
 import { Menu, type MenuEntry, type MenuItem } from "./menu";
+import { readNumber, showNumber } from "./number-text";
 import { Dialog } from "./overlays";
 import { useToast } from "./toast";
 
@@ -859,6 +860,7 @@ const EditorBody = (props: EditorProps) => {
           }}
           limit={definition.limit}
           minChars={definition.minChars}
+          failure={definition.failure}
           multiple={definition.multiple}
           onChange={(next) => props.onChange(definition.multiple ? next : next.at(-1))}
         />
@@ -1044,16 +1046,15 @@ const NumberEntry = (props: {
 }) => {
   const t = useFilterMessages();
   const locale = useLocale();
-  const shown = (value: number | undefined) =>
-    value === undefined ? "" : new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(value);
+  const shown = (value: number | undefined) => (value === undefined ? "" : showNumber(value, locale()));
   const [text, setText] = createSignal(shown(props.value));
   const [error, setError] = createSignal<string>();
   const apply = () => {
-    const read = parseLocalizedNumber(text().trim(), decimalSeparator(locale()));
-    if (read === "invalid" || (read !== null && !Number.isFinite(read))) return setError(t().notANumber);
-    const refused = props.onApply(read ?? undefined);
+    const read = readNumber(text(), locale());
+    if ("refused" in read) return setError(read.refused === "inexact" ? t().tooManyDigits : t().notANumber);
+    const refused = props.onApply(read.value ?? undefined);
     setError(refused);
-    if (!refused) setText(shown(read ?? undefined));
+    if (!refused) setText(shown(read.value ?? undefined));
   };
   return (
     <div class="k2-nentry" data-k2-part="NumberEntry">
@@ -1815,34 +1816,22 @@ const SaveDialog = (props: {
         />
       </Field>
       <Show when={props.mode === "new" && props.stores.length > 1}>
-        <div class="k2-fsave-scopes" role="radiogroup" aria-label={t().whoSees}>
-          <span class="k2-fed-label">{t().whoSees}</span>
-          <For each={props.stores}>
-            {(candidate) => {
-              const words = () => scopeWords(candidate.scope, t());
-              return (
-                <label class="k2-choice" data-disabled={candidate.writable ? undefined : ""}>
-                  <span class="k2-mark">
-                    <input
-                      class="k2-mark-input"
-                      type="radio"
-                      name="k2-view-scope"
-                      value={candidate.scope}
-                      checked={scope() === candidate.scope}
-                      disabled={!candidate.writable}
-                      onChange={() => setScope(candidate.scope)}
-                    />
-                    <span class="k2-radio" data-checked={scope() === candidate.scope ? "" : undefined} data-k2-mark="" />
-                  </span>
-                  <span class="k2-choice-text">
-                    {words().label}
-                    <span class="k2-fsave-hint">{candidate.writable ? words().hint : `${words().hint} ${t().notAllowed}.`}</span>
-                  </span>
-                </label>
-              );
-            }}
-          </For>
-        </div>
+        <Field label={t().whoSees}>
+          <Choice
+            name="k2-view-scope"
+            value={scope()}
+            onChange={(value) => setScope(props.stores.find((candidate) => candidate.scope === value)?.scope)}
+            options={props.stores.map((candidate) => {
+              const words = scopeWords(candidate.scope, t());
+              return {
+                value: candidate.scope,
+                label: words.label,
+                hint: candidate.writable ? words.hint : `${words.hint} ${t().notAllowed}.`,
+                disabled: !candidate.writable,
+              };
+            })}
+          />
+        </Field>
       </Show>
       <Show when={props.mode === "new"}>
         <dl class="k2-fsave-sum">

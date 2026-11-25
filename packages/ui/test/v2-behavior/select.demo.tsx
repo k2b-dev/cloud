@@ -25,7 +25,7 @@ export function Demo() {
   const select = useSelect(() => ({ items: states, value: state(), onValueChange: setState, placeholder: "Status wählen" }));
   const multi = useSelect(() => ({ items: states, multiple: true, value: tags(), onValueChange: setTags, placeholder: "Keine" }));
   const combobox = useCombobox(() => ({ items: people, multiple: true, value: assignees(), onValueChange: setAssignees }));
-  const option = (parts: typeof select) => (item: ChoiceItem) => (
+  const option = (parts: Pick<typeof select, "Item" | "ItemIndicator">) => (item: ChoiceItem) => (
     <parts.Item class="option" value={item.value} label={item.label} disabled={item.disabled}>
       {item.label}
       <parts.ItemIndicator item={item.value}>✓</parts.ItemIndicator>
