@@ -111,10 +111,27 @@ the new release. For Kubernetes or custom deployments, remove the
 FAQ workload and service from your manifests. Remove its app-key mount and
 secret from deployment configuration after the service is gone. Core also
 deletes the application's remembered registration, package assignment, app
-keys, grants, settings, rail entries, notifications, approvals, audit references
-and indexed Help. Explicit FAQ grants are removed from other workloads'
-mandates, and those workloads are paused for review. Other applications'
-data stays. Back up the database before upgrading if you need this history.
+keys and service accounts with their grants, settings and domains, rail
+entries and chooser/consent preferences, notification definitions and
+deliveries, approvals and remembered approval grants, Help/search documents
+and app Skill catalogs, app-owned Code, workflow runs/scopes and their AI
+admission/budget state, event subscriptions/outbox data, and its own capability
+execution and idempotency records. Explicit FAQ grants are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through FAQ. Core writes one
+`app.removed` audit event with direct row-mutation counts per table;
+foreign-key cascades delete additional dependent rows. Other applications'
+data stays. Back up the database before upgrading if you need removed data.
+
+Stopping the old FAQ service first is mandatory: restarting its old container
+would recreate an empty FAQ schema. Remove it from automatic restart and
+deployment configuration before upgrading. On large installations the cleanup
+transaction can extend Core startup and hold database locks. Wait for Core's
+readiness check to pass before starting the remaining applications.
+
 You can remove the cached CLI module with
 `cld --profile <admin-profile> plugins remove faq` after exporting.
 

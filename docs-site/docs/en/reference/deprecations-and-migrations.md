@@ -2470,7 +2470,7 @@ empty.
 ## First-party CLI modules are served plugins
 
 `cld` no longer bundles the application modules (`account`, `admin`, `apps`,
-`capabilities`, `accounts`, `api-docs`, `assistant`, `contacts`,
+`capabilities`, `accounts`, `api-docs`, `assistant`, `contacts`, `faq`,
 `filesv2`, `grids`, `ipa-hosts`, `mail`, `notebooks`, `oauth`, `pulse`,
 `spaces`, `tools`, `venue`). Each Cloud serves them as plugins, and a profile
 installs the versions of its Cloud: accept the offer after `cld login`, or run

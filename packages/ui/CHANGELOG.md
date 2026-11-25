@@ -41,7 +41,7 @@
 
 ### Bug Fixes
 
-* **apps:** Files, Grids, Weather, Contacts, Notebooks and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
+* **apps:** Files, Grids, Weather, Contacts, Notebooks, FAQ and Gustav return to their look from before the flat build ([#4013](https://github.com/k2b-dev/cloud/issues/4013)) ([a51c840](https://github.com/k2b-dev/cloud/commit/a51c840ff17b05f27777ef3f374077523e292291))
 * **chat:** a message sent right after Quote shows at once and never goes out without a quote that could not load ([#4036](https://github.com/k2b-dev/cloud/issues/4036)) ([cadd95a](https://github.com/k2b-dev/cloud/commit/cadd95a2004eb115988135beb8417f929c310c27))
 * **cloud:** an app page loads the shared stylesheet after the app's own again ([#4044](https://github.com/k2b-dev/cloud/issues/4044)) ([b4a433a](https://github.com/k2b-dev/cloud/commit/b4a433afc39c81686c3327d61226efef2277a867))
 * **ui:** a refreshed DataTable keeps the focus on a link or button inside a cell ([#4034](https://github.com/k2b-dev/cloud/issues/4034)) ([d215888](https://github.com/k2b-dev/cloud/commit/d215888e5ddc7a53ea3dc6ade09eec6718f07bf5))

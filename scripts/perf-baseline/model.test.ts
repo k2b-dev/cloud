@@ -450,7 +450,13 @@ test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flo
     "invalid",
   ])
     expect(() => parseArgs(["--pages", "pwa", "--origin", origin])).toThrow();
-  for (const extra of [["--pages", "document"], ["--pages", "pwa,document"], ["--pages", "pwa", "--skip-build"], ["--pages", "pwa", "--keep"], []])
+  for (const extra of [
+    ["--pages", "document"],
+    ["--pages", "pwa,document"],
+    ["--pages", "pwa", "--skip-build"],
+    ["--pages", "pwa", "--keep"],
+    [],
+  ])
     expect(() => parseArgs(["--origin", "https://example.test", ...extra])).toThrow();
   for (const value of ["1", "2", "1000"]) expect(parseArgs(["--rtt", value]).rttMs).toBe(Number(value));
   for (const value of ["0", "-1", "1001", "2.5", "NaN", "1ms"]) expect(() => parseArgs(["--rtt", value])).toThrow();
