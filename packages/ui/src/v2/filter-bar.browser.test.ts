@@ -415,7 +415,7 @@ test("views: “Als neue Ansicht speichern” waits for a change and saves the w
     await dialog.getByRole("button", { name: "Speichern" }).click();
     await dialog.waitFor({ state: "detached" });
     expect(await page.evaluate(() => window.__changes?.filter((change) => change.startsWith("saved")))).toEqual([
-      `saved person Möbel in Arbeit ${articles.replaceAll(",", "%2C")}&group=location`,
+      `saved person Möbel in Arbeit ${articles}&group=location`,
     ]);
   });
 });
