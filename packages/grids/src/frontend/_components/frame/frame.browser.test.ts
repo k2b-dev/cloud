@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
-import { FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
+import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
 // rules of v2 hold at 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
@@ -89,6 +89,23 @@ const page = (variant: FixtureVariant) =>
 
 type Seen = { created: unknown[] };
 
+/** Runs in the page: Date flows on from the pinned instant; timers and animation frames stay real. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 const open = async (view: View, address: string, variant: FixtureVariant = "plain") => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
@@ -98,6 +115,8 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
     reducedMotion: "reduce",
     colorScheme: "light",
   });
+  // the fixtures' dates are relative to FIXTURE_NOW: the page's Date starts there, so no picture depends on the day
+  await context.addInitScript(pinPageClock, Date.parse(FIXTURE_NOW));
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
@@ -119,11 +138,11 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
-  const started = Date.now();
+  const started = performance.now();
   await tab.goto(`${origin}${address}`);
   await tab.evaluate(() => document.fonts.ready);
   await settled(tab);
-  return { context, tab, errors, seen, readyMs: Date.now() - started };
+  return { context, tab, errors, seen, readyMs: Math.round(performance.now() - started) };
 };
 
 const shoot = async (tab: Page, name: string) => {
