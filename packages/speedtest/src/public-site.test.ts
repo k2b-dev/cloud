@@ -65,7 +65,8 @@ test("standalone production page serves localized SSR and local assets without c
       expect(html).toContain(`<body class="k2-ui">`);
       expect(html).toContain(`data-k2-part="Text" data-type="body" >${title}</span>`);
       expect(html).toContain(action!);
-      expect(html).toContain(`data-k2-part="Prose"`);
+      expect(html).toContain(`data-k2-part="Cells"`);
+      expect(html).not.toContain(`data-k2-part="Loading"`);
       expect(html).toContain("node speedtest.mjs");
       expect(html).not.toContain("cld tools speedtest --server");
       expect(html).toContain(`rel="canonical" href="${origin}/${locale}"`);
