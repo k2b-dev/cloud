@@ -1,13 +1,13 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
+import { formatNumber, formatPercent } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
-import type { KeyCell } from "../_components/KeyCells";
 import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
 import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
 import { opsCharts } from "../_components/ops-chart";
 import { getRedisDiagnostics } from "../data/service";
+import { valkeyCells } from "../infrastructure/sections";
 import ValkeyScreen from "./_components/ValkeyScreen.island";
 import { legacyValkeyHref, valkeyHref, valkeyQuery } from "./query";
 
@@ -34,41 +34,7 @@ export default ssr<AuthContext>(async (c) => {
     .sort((left, right) => right.count - left.count || left.prefix.localeCompare(right.prefix))
     .slice(0, 10)
     .map((prefix) => ({ label: prefix.prefix, value: prefix.count }));
-  const runtime = diagnostics.runtime;
-  const memoryPressure =
-    runtime.usedMemoryBytes !== null && runtime.maxMemoryBytes !== null && runtime.maxMemoryBytes > 0
-      ? runtime.usedMemoryBytes / runtime.maxMemoryBytes > 0.85
-      : false;
-  const expiringKeys = diagnostics.keyspace.reduce((sum, row) => sum + row.expires, 0);
-  const cells: KeyCell[] = [
-    { icon: "key", label: t.keys, value: number(diagnostics.dbSize), meta: t.expiringKeys({ count: number(expiringKeys) }) },
-    {
-      icon: "cpu",
-      label: t.memory,
-      value: runtime.usedMemoryBytes === null ? "—" : formatBytes(runtime.usedMemoryBytes, { locale }),
-      meta:
-        runtime.maxMemoryBytes && runtime.maxMemoryBytes > 0
-          ? t.ofValue({ value: formatBytes(runtime.maxMemoryBytes, { locale }) })
-          : runtime.usedMemoryBytes === null
-            ? t.unavailable
-            : t.noMaxMemory,
-      tone: memoryPressure ? "warn" : undefined,
-    },
-    {
-      icon: "trash-x",
-      label: t.evicted,
-      value: runtime.evictedKeys === null ? "—" : number(runtime.evictedKeys),
-      meta: runtime.maxMemoryPolicy ?? t.policyUnknown,
-      tone: (runtime.evictedKeys ?? 0) > 0 ? "bad" : undefined,
-    },
-    {
-      icon: "target-arrow",
-      label: t.hitRate,
-      value: runtime.hitRate === null ? "—" : formatPercent(runtime.hitRate, { locale }),
-      meta: runtime.connectedClients === null ? t.clientsUnknown : t.clientCount({ count: number(runtime.connectedClients) }),
-      tone: runtime.hitRate !== null && runtime.hitRate < 0.8 ? "warn" : undefined,
-    },
-  ];
+  const cells = valkeyCells(diagnostics, locale);
   const sampled = diagnostics.scanComplete
     ? t.keysScanned({ count: number(diagnostics.sampledKeys) })
     : t.keysSampled({ count: number(diagnostics.sampledKeys), total: number(diagnostics.dbSize) });

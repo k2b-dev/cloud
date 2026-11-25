@@ -8,6 +8,7 @@ import { areaText, observabilityGroups, readAttention } from "../_components/Obs
 import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
 import { opsCharts } from "../_components/ops-chart";
 import { getPostgresDiagnostics, listPostgresIndexes, listPostgresSessions, type PostgresTableDiagnostic } from "../data/service";
+import { postgresCells } from "../infrastructure/sections";
 import PostgresScreen from "./_components/PostgresScreen.island";
 import { legacyPostgresHref, type PostgresState, postgresQuery } from "./query";
 
@@ -136,37 +137,7 @@ export default ssr<AuthContext>(async (c) => {
   );
 
   const runtime = diagnostics.runtime;
-  const critical = diagnostics.warnings.some((warning) => warning.tone === "red");
-  const cells: KeyCell[] = [
-    {
-      icon: "database",
-      label: t.storage,
-      value: bytes(diagnostics.totalBytes),
-      meta: t.tablesCount({ count: number(diagnostics.tables) }),
-      tone: diagnostics.available ? undefined : "bad",
-    },
-    {
-      icon: "plug-connected",
-      label: t.connections,
-      value: `${number(runtime.connections)}/${number(runtime.maxConnections)}`,
-      meta: t.activeCount({ count: number(runtime.activeConnections) }),
-      tone: runtime.maxConnections > 0 && runtime.connections / runtime.maxConnections >= 0.8 ? "warn" : undefined,
-    },
-    {
-      icon: "lock",
-      label: t.lockWaits,
-      value: number(runtime.waitingLocks),
-      meta: runtime.waitingLocks ? t.oldestQuerySeconds({ seconds: Math.round(runtime.oldestWaitingQuerySeconds) }) : t.none,
-      tone: runtime.waitingLocks ? "warn" : undefined,
-    },
-    {
-      icon: critical ? "alert-circle" : "alert-triangle",
-      label: t.warnings,
-      value: number(diagnostics.warnings.length),
-      meta: diagnostics.warnings.length ? t.needsReview : t.none,
-      tone: critical ? "bad" : diagnostics.warnings.length ? "warn" : undefined,
-    },
-  ];
+  const cells = postgresCells(diagnostics, locale);
   const runtimeCells: KeyCell[] = [
     { icon: "lock-x", label: t.deadlocks, value: diagnostics.available ? number(runtime.deadlocks) : "—", meta: t.sinceReset },
     {
