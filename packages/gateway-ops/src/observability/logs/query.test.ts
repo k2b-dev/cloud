@@ -4,13 +4,13 @@ import {
   endsNow,
   LOG_VIEWS,
   legacyLogsHref,
+  logSearchOf,
   logsApiParams,
   logsHref,
   logsQuery,
   logsWindow,
   parseLogsAddress,
 } from "./query";
-import { logSearchOf } from "./service";
 
 // Every date in this file is fixed: the address names absolute minutes and presets count back from `now`.
 const now = new Date("2026-11-25T10:43:30.000Z");

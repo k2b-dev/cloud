@@ -5,9 +5,9 @@ import { areaText, observabilityGroups, readAttention } from "../_components/Obs
 import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
 import LogsScreen from "./_components/LogsScreen.island";
 import { logsMessages } from "./messages";
-import { isLogView, LOG_VIEWS, legacyLogsHref, logsHref, logsQuery, parseLogsAddress } from "./query";
+import { isLogView, LOG_VIEWS, legacyLogsHref, logSearchOf, logsHref, logsQuery, parseLogsAddress } from "./query";
 import { logRowFormatter } from "./rows";
-import { logSearchOf, loggingService } from "./service";
+import { loggingService } from "./service";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

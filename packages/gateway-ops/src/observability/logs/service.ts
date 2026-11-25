@@ -2,22 +2,9 @@ import { escapeLikePattern, logging, toPgTextArray } from "@k2b/cloud/services";
 import { readQuery } from "@k2b/cloud/services/logging/read";
 import { err, type PageParams, type Paginated, paginate, tryCatch } from "@k2b/stdlib";
 import type { LogLevel } from "./contracts";
-import { LOG_LEVELS, LOGS_PER_PAGE, type LogsState, logsWindow } from "./query";
+import { LOG_LEVELS, LOGS_PER_PAGE, type LogSearch } from "./query";
 
 type LogEntry = Awaited<ReturnType<typeof logging.list>>["entries"][number];
-
-/** What the log list asks for, read from its address by the declaration in `query.ts`. */
-export type LogSearch = {
-  since: Date;
-  /** Exclusive; absent means until now. */
-  until?: Date;
-  levels?: readonly LogLevel[];
-  sources?: readonly string[];
-  /** Part of the message or of the metadata, as before v2. */
-  search?: string;
-  /** Part of the metadata, such as a request ID in `requestId` or `request_id`. */
-  request?: string;
-};
 
 export type LogSearchResult = {
   entries: LogEntry[];
@@ -25,15 +12,6 @@ export type LogSearchResult = {
   /** Matching entries per level over the whole result, not only this page. */
   levels: Record<LogLevel, number>;
 };
-
-/** The search a list state asks for. */
-export const logSearchOf = (state: LogsState, now: Date = new Date()): LogSearch => ({
-  ...logsWindow(state.filters.time, now),
-  levels: state.filters.level,
-  sources: state.filters.source,
-  search: state.search,
-  request: state.filters.request,
-});
 
 type Row = { id: string | number; level: LogLevel; source: string; message: string; metadata: unknown; created_at: string };
 

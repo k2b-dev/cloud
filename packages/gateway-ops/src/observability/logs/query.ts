@@ -177,6 +177,28 @@ export const logsWindow = (time: PeriodValue<LogTimePreset>, now: Date = new Dat
   return until ? { since, until } : { since };
 };
 
+/** What the log list asks for, read from its address by the declaration in `query.ts`. */
+export type LogSearch = {
+  since: Date;
+  /** Exclusive; absent means until now. */
+  until?: Date;
+  levels?: readonly LogLevel[];
+  sources?: readonly string[];
+  /** Part of the message or of the metadata, as before v2. */
+  search?: string;
+  /** Part of the metadata, such as a request ID in `requestId` or `request_id`. */
+  request?: string;
+};
+
+/** The search a list state asks for. */
+export const logSearchOf = (state: LogsState, now: Date = new Date()): LogSearch => ({
+  ...logsWindow(state.filters.time, now),
+  levels: state.filters.level,
+  sources: state.filters.source,
+  search: state.search,
+  request: state.filters.request,
+});
+
 /** Whether the range ends now, so new entries can still arrive. */
 export const endsNow = (state: LogsState): boolean => state.filters.time.kind === "preset" || !state.filters.time.to;
 

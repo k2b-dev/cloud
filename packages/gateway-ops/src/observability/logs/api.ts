@@ -24,8 +24,8 @@ import {
   PaginationResponseSchema,
   parsePagination,
 } from "./contracts";
-import { LOG_REQUEST_MAX, LOG_SEARCH_MAX, LOG_SOURCES_MAX, logsApiParams, logsQuery, parseLogsAddress } from "./query";
-import { logSearchOf, loggingService } from "./service";
+import { LOG_REQUEST_MAX, LOG_SEARCH_MAX, LOG_SOURCES_MAX, logSearchOf, logsApiParams, logsQuery, parseLogsAddress } from "./query";
+import { loggingService } from "./service";
 
 const LogListResponseSchema = z.object({
   entries: z.array(LogEntrySchema),

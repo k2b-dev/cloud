@@ -1,0 +1,110 @@
+import type { AdminAreaGroup } from "@k2b/cloud/ssr";
+import { LocaleProvider } from "@k2b/ui";
+import type { LogEntry, LogLevel } from "../contracts";
+import { LOG_LEVELS, LOGS_PER_PAGE, type LogSearch, logSearchOf, logsQuery, parseLogsAddress } from "../query";
+import LogsScreen, { type LogsData } from "./LogsScreen";
+
+// Invented log entries for render, browser tests and screenshots: fixed times, no production data.
+
+/** The moment the fixture is looked at; the entries are the minutes before it. */
+export const FIXTURE_NOW = new Date("2026-11-24T09:44:10.000Z");
+export const FIXTURE_TIME_ZONE = "Europe/Berlin";
+export const FIXTURE_TODAY = "2026-11-24";
+
+const ENTRIES: [string, LogLevel, string, string, Record<string, unknown> | null][] = [
+  ["09:43:48.377", "error", "gateway", "Upstream mail: Zeitüberschreitung nach 30 s", { requestId: "7f3a9c", durationMs: 30012, upstream: "mail" }],
+  ["09:43:35.992", "error", "mail", "SMTP-Verbindung: Zeitüberschreitung (timeout) nach 30 s", { requestId: "7f3a9c", durationMs: 30004, host: "smtp.example.org" }],
+  ["09:43:22.648", "error", "mail", "Zustellung fehlgeschlagen: 550 Postfach unbekannt", { requestId: "704879", durationMs: 64, rcpt: "info@stadtwerke.example" }],
+  ["09:42:44.820", "error", "gateway", "502 von gustav bei POST /gustav/api/turn", { requestId: "2b2dd8", durationMs: 1392 }],
+  ["09:42:28.153", "warn", "mail", "Zustellung verzögert: Greylisting bei stadtwerke.example", { requestId: "cc5031", durationMs: 145 }],
+  ["09:42:06.622", "warn", "mail", "IMAP-Abgleich dauert länger als 20 s", { requestId: "31415c", durationMs: 1015, mailbox: "mbx_info" }],
+  ["09:41:59.040", "info", "core", "Anmeldung mit Passkey · Mia Muster", { requestId: "a1b2c3", durationMs: 88 }],
+  ["09:41:46.394", "warn", "mail", "Zustellung verzögert: Greylisting bei stadtwerke.example", { requestId: "32f4dc", durationMs: 519 }],
+  ["09:41:12.500", "info", "notebooks", "Export „Handbuch“ fertig (18 Seiten)", { requestId: "e4f5a6", durationMs: 2210, pages: 18 }],
+  ["09:40:41.431", "error", "mail", "SMTP-Verbindung: Zeitüberschreitung (timeout) nach 30 s", { requestId: "88ca68", durationMs: 416 }],
+  ["09:40:24.944", "warn", "mail", "Zustellung verzögert: Greylisting bei stadtwerke.example", { requestId: "aa46f6", durationMs: 1052 }],
+  ["09:40:02.118", "debug", "assistant", "Hintergrundaufgabe „Wochenrückblick“ geplant", null],
+  ["09:39:31.596", "warn", "gateway", "Langsame Antwort von mail: 1.840 ms", { requestId: "818b95", durationMs: 120 }],
+  ["09:33:17.032", "error", "mail", "SMTP-Verbindung: Zeitüberschreitung (timeout) nach 30 s", { requestId: "3109c8", durationMs: 86 }],
+  ["09:32:50.770", "info", "files", "Freigabe-Link erstellt · Ordner „Angebote 2026“", { requestId: "5d6e7f", durationMs: 41 }],
+];
+
+export const fixtureEntries: LogEntry[] = ENTRIES.map(([time, level, source, message, metadata], index) => ({
+  id: String(9000 + index),
+  level,
+  source,
+  message,
+  metadata,
+  createdAt: `2026-11-24T${time}Z`,
+}));
+
+/** The service's filter over the invented entries: the same window, levels, sources and text matches. */
+export const fixtureSearch = (filter: LogSearch, page = 1): LogsData => {
+  const text = filter.search?.toLowerCase();
+  const request = filter.request?.toLowerCase();
+  const matching = fixtureEntries.filter((entry) => {
+    const at = Date.parse(entry.createdAt);
+    const metadata = JSON.stringify(entry.metadata ?? {}).toLowerCase();
+    return (
+      at >= filter.since.getTime() &&
+      (!filter.until || at < filter.until.getTime()) &&
+      (!filter.levels?.length || filter.levels.includes(entry.level)) &&
+      (!filter.sources?.length || filter.sources.includes(entry.source)) &&
+      (!text || entry.message.toLowerCase().includes(text) || metadata.includes(text)) &&
+      (!request || (entry.metadata !== null && metadata.includes(request)))
+    );
+  });
+  const levels = Object.fromEntries(LOG_LEVELS.map((level) => [level, matching.filter((entry) => entry.level === level).length])) as Record<LogLevel, number>;
+  return { entries: matching.slice((page - 1) * LOGS_PER_PAGE, page * LOGS_PER_PAGE), total: matching.length, levels };
+};
+
+export const fixtureArea: { title: string; groups: AdminAreaGroup[]; markLabel: string } = {
+  title: "Betrieb",
+  markLabel: "Braucht Aufmerksamkeit",
+  groups: [
+    { items: [{ id: "home", label: "Übersicht", href: "/admin/observability", icon: "ti ti-dashboard", mark: "warning" }] },
+    {
+      title: "Ansehen",
+      items: [
+        { id: "logs", label: "Protokolle", href: "/admin/observability/logs", icon: "ti ti-file-text" },
+        { id: "jobs", label: "Jobs", href: "/admin/observability/jobs", icon: "ti ti-hourglass" },
+        { id: "telemetry", label: "Anfragen", href: "/admin/observability/telemetry", icon: "ti ti-activity" },
+      ],
+    },
+    {
+      title: "Dienste",
+      items: [
+        { id: "gateway", label: "Gateway & Routen", href: "/admin/observability/gateway/routes", icon: "ti ti-route" },
+        { id: "nats", label: "NATS & Sync", href: "/admin/observability/nats", icon: "ti ti-topology-star-3", mark: "warning" },
+      ],
+    },
+    { title: "Einrichtung", items: [{ id: "retention", label: "Aufbewahrung", href: "/admin/observability/retention", icon: "ti ti-archive" }] },
+  ],
+};
+
+/** The screen for one address, as the page renders it: `state` "loadfail" stands for a log store that does not answer. */
+export const LogsScreenFixture = (props: { search: string; locale?: string; state?: "normal" | "loadfail" }) => {
+  const locale = props.locale ?? "de";
+  const query = logsQuery(locale);
+  const address = parseLogsAddress(query, new URLSearchParams(props.search), FIXTURE_NOW);
+  const failed = props.state === "loadfail";
+  const data = failed ? null : fixtureSearch(logSearchOf(address.state, FIXTURE_NOW), address.page);
+  const open = address.entry ? (fixtureEntries.find((entry) => entry.id === address.entry) ?? null) : null;
+  return (
+    <LocaleProvider locale={locale}>
+      <LogsScreen
+        timeZone={FIXTURE_TIME_ZONE}
+        today={FIXTURE_TODAY}
+        area={fixtureArea}
+        state={address.state}
+        page={address.page}
+        entry={address.entry}
+        liveOff={address.liveOff}
+        ignored={address.issues.length ? `Nicht angewendet: ${address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ")}. Die Liste zeigt den Rest.` : null}
+        data={data}
+        error={failed ? "Der Protokollspeicher antwortet nicht." : null}
+        selected={address.entry ? { entry: open, error: null } : null}
+      />
+    </LocaleProvider>
+  );
+};
