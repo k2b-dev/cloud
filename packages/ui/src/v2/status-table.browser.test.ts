@@ -25,14 +25,20 @@ afterAll(async () => {
   await browser?.close();
 });
 
-/** Opens the fixture in a window of `width`; the column (the root) is `column` wide, so it narrows without the window. */
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, column = width }: { width?: number; column?: number } = {}) => {
+/**
+ * Opens the fixture in a window of `width`; the column (the root) is `column` wide, so it narrows without the window.
+ * `host` marks the v2 scope as a host's that offers the page's search in a bar of its own (`data-k2-host-search`).
+ */
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  { width = 1440, column = width, host = false }: { width?: number; column?: number; host?: boolean } = {},
+) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root" style="width: ${column}px"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"${host ? " data-k2-host-search" : ""}><div id="root" style="width: ${column}px"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -215,6 +221,41 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
       expect(await width()).toBeGreaterThan(300);
     },
     { width: 390 },
+  );
+});
+
+// The Cloud shell offers the page's search in its phone bar (as the mockup draws Mail): the head keeps its tabs, and the
+// field opens over the head when the host focuses it.
+test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus, Escape folds it away", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      const state = () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('[data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+          const field = document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect();
+          const tabs = [...document.querySelectorAll<HTMLElement>('[data-slot="head"] .k2-tabs > .k2-tab')]
+            .filter((tab) => tab.getClientRects().length > 0 && getComputedStyle(tab).visibility !== "hidden")
+            .map((tab) => tab.firstChild?.textContent ?? "");
+          const menu = document.querySelector('[data-slot="head"] .k2-tabs-nav > :not(.k2-tabs)')?.textContent?.trim();
+          return { tabs, menu, field: [Math.round(field.width), Math.round(field.left - bar.left), Math.round(bar.right - field.right)] };
+        });
+      const folded = await state();
+      // every view keeps its tab beside the menu of further views; none joins that menu for the search's sake
+      expect([folded.tabs, folded.menu]).toEqual([["Alle", "Fehler", "Warnungen"], "Weitere+2"]);
+      expect(folded.field[0]).toBeLessThanOrEqual(1);
+      // the host focuses the field (the shell's phone bar does it on a tap): it opens over the head
+      await search.focus();
+      await settled(page);
+      expect((await state()).field).toEqual([390 - 2 * textEdge.phone, textEdge.phone, textEdge.phone]);
+      await page.keyboard.type("Zeitüberschreitung");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+      expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      expect(await state()).toEqual(folded);
+    },
+    { width: 390, host: true },
   );
 });
 

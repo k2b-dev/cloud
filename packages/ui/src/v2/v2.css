@@ -3340,6 +3340,26 @@
     border-color: var(--k2-blue);
     background: var(--k2-surface);
   }
+  /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
+     `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep
+     the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
+     way as a head with only a path does, until its search opens. */
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) {
+    height: 0;
+    padding-block: 0;
+    border-bottom: 0;
+    overflow: hidden;
+  }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
     height: var(--k2-h-tabs);
   }

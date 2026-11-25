@@ -37,7 +37,10 @@ The working surface of an app: one per screen.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs, and the host focuses the field from its bar.
 
 ### Pane
 

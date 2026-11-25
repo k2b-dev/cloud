@@ -75,7 +75,16 @@ render(
               label="Ansichten"
               items={[
                 { label: "Alle", href: "#alle", current: true },
-                { label: "Fehler", href: "#fehler" },
+                { label: "Fehler", count: 5, href: "#fehler" },
+                { label: "Warnungen", count: 6, href: "#warnungen" },
+                {
+                  label: "Weitere",
+                  count: "+2",
+                  menu: [
+                    { label: "Jobs", href: "#jobs" },
+                    { label: "Anfragen", href: "#anfragen" },
+                  ],
+                },
               ]}
             />
           }

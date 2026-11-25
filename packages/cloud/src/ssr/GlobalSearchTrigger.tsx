@@ -1,4 +1,5 @@
 import { IconButton, Kbd, useLocale } from "@k2b/ui";
+import { openPageSearch } from "../browser/page-search";
 import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { createBusyAction } from "./busy-action";
@@ -8,6 +9,8 @@ import { useShellData } from "./shell-data";
 
 type GlobalSearchTriggerProps = {
   variant: "header" | "rail";
+  /** A v2 page: the phone bar's button opens the search of the page's head when it shows one, else the global search. */
+  page?: boolean;
   class?: string;
 };
 
@@ -48,10 +51,13 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
   return (
     <IconButton
       class={props.class}
-      onClick={open}
+      onClick={(event) => {
+        if (props.page && openPageSearch(event.currentTarget)) return;
+        open();
+      }}
       aria-busy={action.busy() ? "true" : undefined}
-      label={t().openGlobalSearch}
-      title={t().searchShortcut}
+      label={props.page ? t().search : t().openGlobalSearch}
+      title={props.page ? undefined : t().searchShortcut}
     >
       <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-search"} text-base`} />
     </IconButton>

@@ -17,7 +17,15 @@ import { useShellData } from "./shell-data";
 
 type CloudShellProps =
   | { slot: "rail"; currentPath: string; panelOpen?: boolean }
-  | { slot: "header"; authenticated: boolean; title?: string; launchpad: boolean; breadcrumbs?: LayoutBreadcrumb[]; panelOpen?: boolean };
+  | {
+      slot: "header";
+      authenticated: boolean;
+      pageSearch?: boolean;
+      title?: string;
+      launchpad: boolean;
+      breadcrumbs?: LayoutBreadcrumb[];
+      panelOpen?: boolean;
+    };
 
 /**
  * The interactive part of the shell chrome. `LayoutRail` and `LayoutHeader`
@@ -75,6 +83,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
  */
 function HeaderControls(props: {
   authenticated: boolean;
+  pageSearch?: boolean;
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
@@ -121,7 +130,7 @@ function HeaderControls(props: {
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <div class="flex items-center gap-1">
-          {props.authenticated && <GlobalSearchTrigger variant="header" />}
+          {props.authenticated && <GlobalSearchTrigger variant="header" page={props.pageSearch} />}
           <LayoutHelpTrigger
             variant="header"
             panel={data.panel?.providers.some((provider) => provider.id === "core")}

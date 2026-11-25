@@ -300,6 +300,15 @@ nothing for this. A banner between the bar and the content keeps the bar whole,
 and the way back keeps its own row below. Like a v1 workspace, a v2 workspace
 brings its own head, so the shell's row of the way up stays hidden above it.
 
+On a signed-in phone the search of a v2 page's head sits in the phone bar, as
+in the approved Mail mockup: the bar's search button, named “Search”, opens the
+head's search field (`Input type="search"`), which opens over the head and
+brings the phone's keyboard; Escape folds it away with its words and returns
+the focus to the button. The head keeps its room for its views. Without such a
+field, or while an open detail hides the head, the button opens the global
+search. The app changes nothing for this: Layout marks the v2 content with
+`data-k2-host-search`, and `@k2b/ui/v2` folds the head's search away there.
+
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling

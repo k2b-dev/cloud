@@ -153,7 +153,8 @@ export type InputProps = {
    * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
    * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
    * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
-   * itself with `preventDefault`).
+   * itself with `preventDefault`). Where a host offers the page's search in a bar of its own (`data-k2-host-search`
+   * on the v2 scope, as the Cloud shell's phone bar does), the folded search leaves the head and the host focuses it.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
