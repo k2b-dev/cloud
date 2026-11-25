@@ -376,9 +376,14 @@ test("select: its value has the type and the place of an input's value", async (
 test("select: typing the start of an option chooses it with Enter", async () => {
   await withPage(async (page) => {
     const art = page.getByRole("combobox", { name: "Art" });
+    const list = page.locator(".k2-menu[data-listbox]");
     await art.click();
-    await page.locator(".k2-menu[data-listbox]").waitFor();
+    // the list takes keys once it highlights an option (the chosen one), not as soon as it is visible
+    await list.locator("[data-highlighted]").waitFor();
     await page.keyboard.type("Mo");
+    // Enter chooses what is highlighted: wait until the typing has moved the highlight. (Core resets its typeahead after
+    // 500 ms; "M" alone already reaches "Montage" and "o" alone matches nothing, so a slow runner cannot change the result.)
+    await list.locator("[data-highlighted]", { hasText: "Montage" }).waitFor();
     await page.keyboard.press("Enter");
     await page.locator(".k2-menu[data-listbox]").waitFor({ state: "hidden" });
     expect(await art.textContent()).toContain("Montage");
