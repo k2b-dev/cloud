@@ -1,5 +1,5 @@
 import type { UiCatalogEntry } from "../catalog";
-import { topics } from "./topics";
+import { topicIndex } from "./topic-files";
 
 /** The v1 pages that belong to another topic than their section's (`section/slug` → topic slug). */
 const pageTopics: Record<string, string> = {
@@ -44,7 +44,7 @@ const sectionTopics: Record<string, string> = {
 /** The v2 topic a v1 page points to. */
 export const v2TopicFor = (section: string, slug: string) => {
   const target = pageTopics[`${section}/${slug}`] ?? sectionTopics[section] ?? "frame";
-  const topic = topics.find((candidate) => candidate.slug === target);
+  const topic = topicIndex.find((candidate) => candidate.slug === target);
   if (!topic) throw new Error(`v1 pointer: no v2 topic "${target}"`);
   return topic;
 };
@@ -52,5 +52,8 @@ export const v2TopicFor = (section: string, slug: string) => {
 /** The line every v1 page starts with, in its HTML and in what search and MCP read. */
 export const v1Pointer = (entry: Pick<UiCatalogEntry, "section" | "page">) => {
   const topic = v2TopicFor(entry.section, entry.page.slug);
-  return `> **v1 (existing).** Apps still use this component, and it stays until v1 is removed. New screens use \`@k2b/ui/v2\`: see [${topic.parsed.title}](${topic.href}).`;
+  return `> **v1 (existing).** Apps still use this component, and it stays until v1 is removed. New screens use \`@k2b/ui/v2\`: see [${topic.title}](${topic.href}).`;
 };
+
+/** The Markdown a v1 page serves (its HTML, search, MCP and `.md`): the pointer to v2, then its canonical context. */
+export const v1PageMarkdown = (entry: Pick<UiCatalogEntry, "section" | "page" | "context">) => `${v1Pointer(entry)}\n\n${entry.context}`;

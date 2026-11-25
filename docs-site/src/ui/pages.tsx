@@ -17,7 +17,7 @@ import screensMarkdown from "./topics/screens.md" with { type: "text" };
 import { MarkdownArticle, TopicPage } from "./topics/TopicPage";
 import { parseTopic, topicMarkdown } from "./topics/topic-markdown";
 import { topics } from "./topics/topics";
-import { v1Pointer } from "./topics/v1-pointers";
+import { v1PageMarkdown } from "./topics/v1-pointers";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 import { V2RulesPage } from "./V2RulesPage";
 import { V2DemoScreens } from "./v2/V2DemoPage";
@@ -301,9 +301,7 @@ export const uiPages = [
       section: v1Section,
       order: 1_000 + entry.order,
       layout: "full",
-      content: `${v1Pointer(entry)}
-
-${entry.context}`,
+      content: v1PageMarkdown(entry),
       component: ({ content, page, request }) => (
         <UiComponentShowcase
           title={page.meta.title}
