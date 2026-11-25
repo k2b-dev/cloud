@@ -1,6 +1,6 @@
 // Recipe: a form with a required field, a range limit, an error from the server at its field, and a conflict that
-// blocks saving. The form state lives in the app; the primitives only show it. (Dialog comes with the behaviour layer;
-// until then a form stands in its own pane.)
+// blocks saving. The form state lives in the app; the primitives only show it. This form has a page of its own; a
+// form over the page is a `Dialog`.
 import { Band, Bar, Button, Check, Choice, Field, Input, Notice, Pane, Select, Text, Workspace } from "@k2b/ui/v2";
 
 type Values = { name: string; kind: string; interval: string; url: string };

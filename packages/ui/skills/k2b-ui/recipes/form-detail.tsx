@@ -51,7 +51,7 @@ export default function NewAppointment(props: Props) {
             ))}
           </List>
         </Pane>
-        {/* k2b-ui gap: Dialog. Until v2 has one, the form is a detail beside the list and its own route on the phone. */}
+        {/* The form beside the list keeps the list in view while it is filled in; a form over the page is a `Dialog`. */}
         <Pane
           detail
           label="Neuer Termin"

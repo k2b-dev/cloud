@@ -59,7 +59,8 @@ with "Cancel" and the one primary "Save", disabled while the conflict lasts.
 
 - Validation and server answers live in the app's state; the primitives
   only show `error`.
-- Until v2 has a `Dialog`, the form stands in its own pane or route.
+- A form that opens over the page is a `Dialog` (a sheet on the phone);
+  this one has a page of its own.
 - States: `fresh` (nothing sent yet), `errors` ("Pflichtfeld." and the
   server's errors at their fields), `saving` (`Button busy`).
 
@@ -69,8 +70,8 @@ with "Cancel" and the one primary "Save", disabled while the conflict lasts.
 ![form beside a list at 390 px](../images/form-detail-390.png)
 
 The page's one primary "Neuer Termin" stays in the head; the form is a
-`Pane detail` beside the list (the stand-in for a dialog, marked as a gap)
-with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
+`Pane detail` beside the list, so the list stays in view while it is
+filled in, with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
 multiline `Input`, and `Check`s, one of them `disabled` with the reason
 in its words. Its footer `Bar` saves with a default button.
 
