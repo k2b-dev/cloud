@@ -36,7 +36,7 @@ import {
   writeMailReplyNote,
 } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
-import { frameMenuEntries, type MailReplyFrame } from "./mail-reply-frame";
+import type { MailReplyFrame } from "./mail-reply-frame";
 
 type ComposerModule = typeof import("./MailComposer");
 type ComposerParts = { Composer: ComposerModule["default"]; signatures: MailComposerSignatures };
@@ -91,6 +91,9 @@ type Mount =
 type PendingAction = { kind: "append" | "quote"; text: string } | { kind: "sendAt"; at: string } | { kind: "focus" };
 
 class NoVerifiedSender extends Error {}
+
+/** The modes a frame offers as one choice, in the order of the v1 menu. */
+const frameModes = ["reply", "reply_all", "forward", "note"] as const satisfies readonly MailReplyMode[];
 
 /** What the reader asks of the box: Reply, Reply all, Forward, a quote, or a draft that must stand in it. */
 export type MailReplyBoxApi = {
@@ -894,7 +897,21 @@ export default function MailReplyBox(props: {
         mode: {
           icon: () => modeIcon(mode()).replace(/^ti-/, ""),
           label: () => t().changeMode({ mode: modeLabel(mode()) }),
-          items: () => frameMenuEntries(modeItems()),
+          value: mode,
+          // The same modes as the v1 menu: Reply all only when someone else was addressed, the note with its hint.
+          options: () =>
+            frameModes
+              .filter((value) => value !== "reply_all" || props.canReplyAll)
+              .map((value) => ({
+                label: modeLabel(value),
+                value,
+                icon: modeIcon(value).replace(/^ti-/, ""),
+                ...(value === "note" ? { meta: t().modeNoteHint } : {}),
+              })),
+          choose: (value) => {
+            const next = frameModes.find((candidate) => candidate === value);
+            if (next) chooseMode(next);
+          },
           disabled: switching,
         },
       },

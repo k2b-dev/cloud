@@ -31,7 +31,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
-import type { MenuEntry } from "@k2b/ui/v2";
+import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
 import {
   type Accessor,
   createEffect,
@@ -2599,7 +2599,7 @@ export default function MailComposer(props: {
           const shown = mailSendLaterPresets(new Date(), timeZone);
           // The time is taken at the click, so a menu left open across midnight still means the next morning.
           const at = (preset: "tomorrow" | "monday") => mailSendLaterPresets(new Date(), timeZone)[preset];
-          return [
+          const items: MenuItem[] = [
             {
               label: r().sendLaterTomorrow,
               icon: "sunrise",
@@ -2617,6 +2617,7 @@ export default function MailComposer(props: {
             // Like v1's split button, Send later waits while Send waits (uploads, offline, a held reply).
             { label: r().sendLaterCustom, icon: "clock", disabled: sendHeld(), onClick: () => void schedule() },
           ];
+          return [{ title: t().sendLater, items }];
         };
         return (
           <section
@@ -2661,11 +2662,25 @@ export default function MailComposer(props: {
                 if (!identity) return null;
                 return {
                   text: identity.label,
-                  menu:
+                  choice:
                     verifiedIdentities().length > 1
                       ? {
                           label: () => t().changeSender({ label: identity.label, address: identity.fromAddress }),
-                          items: () => frameMenuEntries(identityMenuItems()),
+                          value: identityId,
+                          options: () =>
+                            verifiedIdentities().map((option) => ({
+                              label: option.label,
+                              value: option.id,
+                              meta: option.fromAddress,
+                            })),
+                          // As the v1 sender menu: another sender brings its default signature; the choice is remembered.
+                          choose: (id) => {
+                            if (id !== identityId()) {
+                              setIdentityId(id);
+                              setSignatureTemplateId(defaultSignatureTemplateId(props.signatures, props.identities, id));
+                            }
+                            writeMailSenderPreference(localStorage, props.mailboxId, id);
+                          },
                           disabled: () => !editable(),
                         }
                       : null,
@@ -2838,18 +2853,14 @@ export default function MailComposer(props: {
                   return {
                     label: () => t().chooseSignature({ name }),
                     disabled: () => !editable(),
-                    items: () =>
+                    value: () => signatureTemplateId() ?? "",
+                    options: () =>
                       signatureOptions(props.signatures, signatureTemplateId(), senderDefaultSignatureId(), {
                         none: t().noSignature,
                         default: t().defaultSignature,
                         unavailable: t().unavailableSignature,
-                      }).map((option) => ({
-                        label: option.label,
-                        // One signature is chosen: the menu closes, the chosen one carries the check.
-                        icon: option.value === (signatureTemplateId() ?? "") ? "check" : undefined,
-                        meta: option.description,
-                        onClick: () => setSignatureTemplateId(option.value || null),
-                      })),
+                      }).map((option) => ({ label: option.label, value: option.value, meta: option.description })),
+                    choose: (value) => setSignatureTemplateId(value || null),
                   };
                 },
                 assistant: {

@@ -377,6 +377,28 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  test("the reply's mode is one choice under its heading: choosing the note closes the menu and shows the note", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      await answerReplyApi(page);
+      const composer = await openReply(page, "Hallo");
+      await composer.getByRole("button", { name: "Antworten. Art ändern" }).click();
+      const reply = page.getByRole("menuitemradio", { name: "Antworten", exact: true });
+      await reply.waitFor();
+      expect(await reply.getAttribute("aria-checked")).toBe("true");
+      expect(await page.getByRole("group", { name: "Antwortart" }).count()).toBe(1);
+      await page.getByRole("menuitemradio", { name: /Interne Notiz/ }).click();
+      // The menu closes on the choice; the draft steps aside for the internal note in the same place.
+      await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="note"]').waitFor();
+      // (the note's own mode menu is v1's and keeps its entries closed in the page; the v2 menu leaves it)
+      await page.waitForFunction(() => document.querySelector(".k2-menu") === null);
+      expect(await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="mail"]').isHidden()).toBe(true);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Cc and Bcc of the open reply open Mail's recipient rows in the frame", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {
