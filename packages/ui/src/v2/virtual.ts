@@ -74,8 +74,13 @@ export const createVirtualWindow = <T>(options: {
   const [layout, setLayout] = createSignal(0);
   const [focused, setFocused] = createSignal<string>();
 
+  // Set once the list is in the page: takes and restores the place someone reads around a change of the items.
+  let hold: () => void = () => {};
+  let restore: () => void = () => {};
+
   // The sizes follow the items: a known key keeps its height, a new one is estimated.
   const sync = createMemo(() => {
+    hold();
     const items = options.items();
     keys = items.map(options.key);
     position.clear();
@@ -125,6 +130,24 @@ export const createVirtualWindow = <T>(options: {
   const mount = (list: HTMLElement) => {
     if (isServer) return;
     const scroller = scrollerOf(list);
+    // The first row in view and the one after it (which takes its place when it goes), with their distance to the top.
+    let held: { node: Element; top: number }[] = [];
+    hold = () => {
+      held = [];
+      if (!scroller || scroller.scrollTop <= 0) return;
+      const viewTop = scroller.getBoundingClientRect().top;
+      const rows = Array.from(list.children);
+      const first = rows.findIndex((row) => row.getBoundingClientRect().bottom > viewTop);
+      if (first < 0) return;
+      held = rows.slice(first, first + 2).map((node) => ({ node, top: node.getBoundingClientRect().top - viewTop }));
+    };
+    restore = () => {
+      const place = held.find((each) => each.node.isConnected);
+      held = [];
+      if (!place || !scroller) return;
+      const moved = place.node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - place.top;
+      if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
+    };
     const view = scroller ?? document.documentElement;
     let frame = 0;
     const nodes = new WeakMap<Element, string>();
@@ -195,7 +218,19 @@ export const createVirtualWindow = <T>(options: {
   };
 
   // A new list of items moves the window to what the column shows now.
-  createEffect(on(sync, () => update(), { defer: true }));
+  // A new list of items keeps the place someone reads: the first row in view stays where it was (as `keepPlace` does
+  // for a written list; browsers with scroll anchoring already hold it, so nothing moves twice), then the window
+  // follows what the column shows now. Only a change of the items is held, never a move of the window itself.
+  createEffect(
+    on(
+      sync,
+      () => {
+        restore();
+        update();
+      },
+      { defer: true },
+    ),
+  );
 
   return {
     shown: () => placed().shown,
