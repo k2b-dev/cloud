@@ -32,6 +32,42 @@ const firstText = (metadata: Record<string, unknown> | null, keys: readonly stri
 /** The request an entry belongs to, from its metadata (`requestId`, `request_id` or `reqId`). */
 export const requestIdOf = (metadata: Record<string, unknown> | null): string | null => firstText(metadata, REQUEST_KEYS);
 
+const UNITS = [
+  { unit: "day", ms: 86_400_000 },
+  { unit: "hour", ms: 3_600_000 },
+  { unit: "minute", ms: 60_000 },
+  { unit: "second", ms: 1000 },
+] as const;
+
+/**
+ * A duration in the largest units that say it: "64 ms", "1,4 s", "17 min 3 s", "1 h 17 min", "2 d 3 h" in the reader's
+ * language. A negative or unreadable value is no duration (null), never "-1 ms".
+ */
+export const logDurationFormatter = (locale: string) => {
+  const unit = (name: string, digits = 0) =>
+    new Intl.NumberFormat(locale, { style: "unit", unit: name, unitDisplay: "short", maximumFractionDigits: digits });
+  const ms = unit("millisecond");
+  const seconds = unit("second", 1);
+  const whole = Object.fromEntries(UNITS.map((entry) => [entry.unit, unit(entry.unit)])) as Record<(typeof UNITS)[number]["unit"], Intl.NumberFormat>;
+  return (value: number): string | null => {
+    if (!Number.isFinite(value) || value < 0) return null;
+    if (Math.round(value) < 1000) return ms.format(Math.round(value));
+    if (value < 60_000) return seconds.format(value / 1000);
+    // two units at most: the largest one and the next, the rest is rounded away
+    const index = UNITS.findIndex((entry) => value >= entry.ms);
+    const big = UNITS[index]!;
+    const small = UNITS[index + 1]!;
+    let count = Math.floor(value / big.ms);
+    let rest = Math.round((value - count * big.ms) / small.ms);
+    // 59.6 min rounds to 60 min: that is one more hour
+    if (rest * small.ms >= big.ms) {
+      count += 1;
+      rest = 0;
+    }
+    return rest > 0 ? `${whole[big.unit].format(count)} ${whole[small.unit].format(rest)}` : whole[big.unit].format(count);
+  };
+};
+
 const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
   parts.find((entry) => entry.type === type)?.value ?? "";
 
@@ -58,7 +94,7 @@ export const logRowFormatter = (locale: string, timeZone: string) => {
     minute: "2-digit",
     hourCycle: "h23",
   });
-  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const duration = logDurationFormatter(locale);
   return {
     /** Today's date in the reader's zone, as the server knows it. */
     today: (now: Date) => {
@@ -71,8 +107,7 @@ export const logRowFormatter = (locale: string, timeZone: string) => {
       const date = `${part(keyParts, "year")}-${part(keyParts, "month")}-${part(keyParts, "day")}`;
       const hourMinute = `${part(keyParts, "hour")}:${part(keyParts, "minute")}`;
       const dayPrefix = date === today ? "" : `${day.format(at)} `;
-      const duration = firstText(entry.metadata, DURATION_KEYS);
-      const durationNumber = duration === null ? Number.NaN : Number(duration);
+      const durationValue = firstText(entry.metadata, DURATION_KEYS);
       return {
         id: entry.id,
         level: entry.level,
@@ -82,7 +117,7 @@ export const logRowFormatter = (locale: string, timeZone: string) => {
         minute: `${date} ${hourMinute}`,
         minuteLabel: `${dayPrefix}${hourMinute}`,
         requestId: requestIdOf(entry.metadata),
-        duration: Number.isFinite(durationNumber) ? `${number.format(durationNumber)} ms` : null,
+        duration: durationValue === null ? null : duration(Number(durationValue)),
       };
     },
   };

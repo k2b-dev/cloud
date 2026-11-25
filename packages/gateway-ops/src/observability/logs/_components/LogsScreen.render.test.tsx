@@ -11,6 +11,27 @@ const root = mkdtempSync(resolve(tmpdir(), "gateway-ops-logs-screen-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { LogsScreenFixture } = await import("./logs-screen.fixture");
+const { default: LogEntryPane } = await import("./LogEntryPane");
+const { LocaleProvider } = await import("@k2b/ui");
+
+/** The open entry alone, as the detail beside the list renders it. */
+const renderEntry = (entry: { message: string; metadata: Record<string, unknown> | null }) => {
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(LogEntryPane, {
+          selected: { entry: { id: "77", level: "error", source: "mail", createdAt: "2026-11-24T09:43:35.992Z", ...entry }, error: null },
+          timeZone: "Europe/Berlin",
+          closeHref: "/admin/observability/logs",
+          listLabel: "Protokolle",
+          onRequest: () => {},
+        });
+      },
+    }),
+  );
+  return parser.parseFromString(html, "text/html").body;
+};
 
 const dom = createDomTestHarness();
 dom.cleanup();
@@ -51,6 +72,9 @@ describe("the log list on the server", () => {
     const empty = render("time=last-15m&q=nichtda");
     expect(empty.text).toContain("Keine Einträge passen zu diesen Filtern.");
     expect(empty.text).toContain("Filter zurücksetzen");
+    // the status row says there is nothing, not "0 von 0 Einträgen"
+    expect(empty.text).toContain("Keine Einträge");
+    expect(empty.text).not.toContain("0 von 0");
     const failed = render("time=last-15m&level=error", "loadfail");
     expect(failed.text).toContain("Stufe ist Fehler");
     expect(failed.text).toContain("Der Protokollspeicher war nicht lesbar.");
@@ -67,5 +91,18 @@ describe("the log list on the server", () => {
     const { text } = render("time=last-15m&entry=9001");
     expect(text).toContain("Fehler · mail");
     expect(text).toContain("smtp.example.org");
+  });
+
+  test("a stack trace keeps its lines in the open entry, in the message and in the metadata", () => {
+    const stack = "Error: SMTP timeout\n    at send (mail/smtp.ts:41:11)\n    at deliver (mail/queue.ts:88:5)";
+    const body = renderEntry({ message: stack, metadata: { stack, requestId: "7f3a9c" } });
+    const blocks = [...body.querySelectorAll("pre")].map((block) => block.textContent?.trim());
+    expect(blocks).toEqual([stack, stack]);
+    expect(body.textContent).toContain("7f3a9c");
+  });
+
+  test("an entry without a message says so instead of leaving a blank", () => {
+    const body = renderEntry({ message: "   ", metadata: null });
+    expect(body.textContent).toContain("(ohne Text)");
   });
 });

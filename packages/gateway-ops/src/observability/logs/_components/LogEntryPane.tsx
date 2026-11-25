@@ -16,6 +16,18 @@ type Props = {
   onRequest: (id: string) => void;
 };
 
+/**
+ * Text whose line breaks carry meaning, such as a stack trace, as a code block: the lines stay as they were.
+ * k2b-ui gap: 23 – v2 has no preformatted text block yet; a Markdown code fence in `Prose` stands in for it. The fence is
+ * longer than any run of backticks in the text, so the text cannot close it.
+ */
+const preformatted = (text: string) => {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return [`${fence}text`, text, fence].join("\n");
+};
+const multiline = (value: unknown): value is string => typeof value === "string" && value.includes("\n");
+
 const valueText = (value: unknown): string =>
   value === null || value === undefined ? "null" : typeof value === "object" ? JSON.stringify(value) : String(value);
 
@@ -87,7 +99,11 @@ export default function LogEntryPane(props: Props) {
         {(open) => (
           <>
             <Band>
-              <Text type="body">{open().message}</Text>
+              <Show when={open().message.trim()} fallback={<Text muted>{words().noMessage}</Text>}>
+                <Show when={multiline(open().message)} fallback={<Text type="body">{open().message}</Text>}>
+                  <Prose markdown={preformatted(open().message)} />
+                </Show>
+              </Show>
             </Band>
             <Section
               icon="info-circle"
@@ -126,13 +142,26 @@ export default function LogEntryPane(props: Props) {
                   <Show
                     when={raw()}
                     fallback={
-                      <Facts
-                        items={Object.entries(metadata()).map(([key, value]) => ({
-                          label: key,
-                          value: valueText(value),
-                          mono: typeof value === "object" && value !== null,
-                        }))}
-                      />
+                      <>
+                        <Facts
+                          items={Object.entries(metadata())
+                            .filter(([, value]) => !multiline(value))
+                            .map(([key, value]) => ({
+                              label: key,
+                              value: valueText(value),
+                              mono: typeof value === "object" && value !== null,
+                            }))}
+                        />
+                        {/* a stack trace and other text of several lines keeps its lines, under its key */}
+                        {Object.entries(metadata())
+                          .filter((entry): entry is [string, string] => multiline(entry[1]))
+                          .map(([key, value]) => (
+                            <>
+                              <Text type="meta">{key}</Text>
+                              <Prose markdown={preformatted(value)} />
+                            </>
+                          ))}
+                      </>
                     }
                   >
                     <Prose markdown={`\`\`\`json\n${JSON.stringify(metadata(), null, 2)}\n\`\`\``} />

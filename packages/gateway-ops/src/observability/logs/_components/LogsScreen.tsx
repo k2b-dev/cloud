@@ -372,7 +372,9 @@ export default function LogsScreen(props: LogsScreenProps) {
                 results={t().entries({ count: number(total()) })}
               />
               <StatusRow
-                lead={data() ? t().entriesOf({ count: number(rows().length), total: number(total()) }) : t().unavailable}
+                lead={
+                  !data() ? t().unavailable : total() === 0 ? t().noEntriesLead : t().entriesOf({ count: number(rows().length), total: number(total()) })
+                }
                 loading={refreshing()}
                 facts={[
                   ...(!data()
@@ -420,7 +422,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                   : { icon: "list-search", text: t().noEntries }
               }
               phone={(row) => ({
-                lines: [row.message, [row.source, row.requestId, row.duration].filter(Boolean).join(" · ")],
+                lines: [row.message.trim() || t().noMessage, [row.source, row.requestId, row.duration].filter(Boolean).join(" · ")],
                 time: row.time.slice(-12, -4),
                 marks: levelChip(row.level),
               })}
@@ -428,7 +430,11 @@ export default function LogsScreen(props: LogsScreenProps) {
                 { title: t().at, width: { min: 110, default: 120 }, cell: (row) => row.time },
                 { title: t().level, width: { min: 96, default: 110 }, cell: (row) => levelChip(row.level) },
                 { title: t().source, width: { min: 90, default: 120 }, cell: (row) => row.source, drop: true },
-                { title: t().message, width: { min: 240, default: 480 }, cell: (row) => row.message },
+                {
+                  title: t().message,
+                  width: { min: 240, default: 480 },
+                  cell: (row) => (row.message.trim() ? row.message : <Text muted>{t().noMessage}</Text>),
+                },
                 {
                   title: t().request,
                   width: { min: 90, default: 120 },

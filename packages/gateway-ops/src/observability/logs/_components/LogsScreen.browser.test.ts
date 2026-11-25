@@ -163,8 +163,10 @@ describe("the log list on v2", () => {
       await tab.waitForFunction(() => window.document.body.innerText.includes("2 of 2 entries"));
       expect(new URLSearchParams(calls.at(-1)).get("request")).toBe("7f3a9c");
       const rows = await rowTexts(tab);
-      expect(rows.filter((text) => text.includes("ms"))).toHaveLength(2);
-      for (const text of rows.filter((row) => row.includes("ms"))) expect(text).toContain("7f3a9c");
+      // entry rows start with their time to the second; the head row has none
+      const entries = rows.filter((text) => /\d\d:\d\d:\d\d/.test(text));
+      expect(entries).toHaveLength(2);
+      for (const text of entries) expect(text).toContain("7f3a9c");
       await tab.reload();
       await tab.waitForSelector('body[data-ready="true"]');
       expect(await tab.getByRole("group", { name: "Filters" }).innerText()).toContain("Request ID is 7f3a9c");
