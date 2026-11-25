@@ -66,10 +66,16 @@ export const agents: AgentListEntry[] = [
   { id: "0b2f5c7e-0000-4000-8000-0000000000bd", name: "Import Buchhaltung", active: false, created: "01.04.2026, 16:30" },
 ];
 
-export const AgentScreenFixture = (props: { keys?: AgentKeyView[] | null; open?: AgentKeyOpen; sort?: AgentKeySort; active?: boolean }) => (
+export const AgentScreenFixture = (props: {
+  keys?: AgentKeyView[] | null;
+  open?: AgentKeyOpen;
+  sort?: AgentKeySort;
+  active?: boolean;
+  agent?: AgentView;
+}) => (
   <LocaleProvider locale="de">
     <AgentScreen
-      agent={{ ...agent, active: props.active ?? true }}
+      agent={{ ...(props.agent ?? agent), active: props.active ?? true }}
       keys={props.keys === undefined ? sortedKeys(props.sort ?? "created") : props.keys}
       keysTotal={props.keys === undefined ? keys.length : (props.keys?.length ?? 0)}
       sort={props.sort ?? "created"}
@@ -85,3 +91,36 @@ export const AgentsScreenFixture = (props: { empty?: boolean }) => (
     <AgentsScreen agents={props.empty ? [] : agents} total={props.empty ? 0 : agents.length} page={1} pages={1} pendingRequests={2} />
   </LocaleProvider>
 );
+
+/**
+ * The realistic worst case of the agent page (break-ui): agent and key names have no length limit in the API, so these
+ * are long; a key never used, one used a moment ago, one expired years ago, a creator with a long name, and 1,284 keys.
+ */
+export const worstAgent: AgentView = {
+  ...agent,
+  name: "Wochenbericht für die Geschäftsführung und den Aufsichtsrat der Nachlassverwaltung Oberhauser-Wettstein",
+  image: `/api/accounts/users/${AGENT_ID}/avatar-missing`,
+  createdBy: {
+    name: "Christopher Alexander Montgomery III von Oberhauser-Wettstein zu Hohenlohe-Langenburg",
+    href: "/app/accounts/users/7a3c0000-0000-4000-8000-000000000001",
+  },
+};
+export const worstKeys: AgentKeyView[] = [
+  {
+    ...keys[0]!,
+    name: "MCP-Server Team Ops Rechenzentrum Frankfurt Ausfallsystem (Bereitschaft, nur nachts und am Wochenende)",
+    lastUsed: "gerade eben",
+  },
+  { ...keys[1]!, name: "J" },
+  {
+    ...keys[2]!,
+    name: "IMG_20250914_183022_HDR_portrait_edited_edited.HEIC-Uploader",
+    lastUsed: "02.03.2019",
+    expires: "01.07.2019, 00:00",
+  },
+  ...Array.from({ length: 1281 }, (_, index) => ({
+    ...keys[index % 3]!,
+    id: `4d1e8a20-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+    name: `Laptop ${index + 1}`,
+  })),
+];
