@@ -139,13 +139,23 @@ test("direct and indirect user memberships hide personal groups and keep normal 
 });
 
 test("list page 2 -> a user's page -> back lands on page 2 with the same filters", async () => {
-  const entry = { ...user, role: "admin" as const, status: "active" as const, lastLogin: null, passkey: false, groups: [], groupCount: 0 };
+  const entry = {
+    ...user,
+    kind: "person" as const,
+    role: "admin" as const,
+    status: "active" as const,
+    lastLogin: null,
+    passkey: false,
+    groups: [],
+    groupCount: 0,
+    duplicateMail: false,
+  };
   const spies = [
     stubRailSnapshot(),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockResolvedValue(false),
     spyOn(services.appApproval, "config").mockRejectedValue(new Error("Not configured")),
-    spyOn(services.accountsAppService.user, "directory").mockResolvedValue({
+    spyOn(services.accountsAppService.account, "directory").mockResolvedValue({
       ok: true,
       data: { items: [entry], page: 2, perPage: 100, total: 150, hasNext: false },
     }),

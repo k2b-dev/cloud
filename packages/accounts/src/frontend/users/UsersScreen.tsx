@@ -76,6 +76,7 @@ const viewLabel = (t: ListMessages, view: UserView): string =>
     duplicates: t.viewDuplicates,
   })[view];
 
+/** A state as colour, dot and word. */
 const statusChip = (t: ListMessages, entry: AccountDirectoryEntry) =>
   entry.status === "active" ? (
     <Chip status="ok">{t.active}</Chip>
@@ -87,6 +88,12 @@ const statusChip = (t: ListMessages, entry: AccountDirectoryEntry) =>
 
 const kindWord = (t: ListMessages, entry: AccountDirectoryEntry) =>
   ({ person: t.person, agent: t.agent, "api-key": t.apiKey })[entry.kind];
+
+/** Each kind of service account in its own symbol and colour, so agents and API key accounts stand out among people. */
+const SERVICE_LOOK = {
+  agent: { icon: "robot", color: "#6d28d9" },
+  "api-key": { icon: "key", color: "#0f766e" },
+} as const;
 
 /** The page of an account: a person's record, or for now the agent page, which also holds API key accounts. */
 const recordHref = (entry: AccountDirectoryEntry, context: string) =>
@@ -218,6 +225,15 @@ export default function UsersScreen(props: UsersScreenProps) {
   };
   const roleWord = (entry: AccountDirectoryEntry) =>
     entry.kind === "person" ? { admin: t().admin, member: t().member, guest: t().guest }[entry.role] : "";
+  /** What an account is in the list: a person's role, or the kind of a service account in its colour. */
+  const roleCell = (entry: AccountDirectoryEntry) =>
+    entry.kind === "person" ? (
+      roleWord(entry)
+    ) : (
+      <Chip tag color={SERVICE_LOOK[entry.kind].color} icon={SERVICE_LOOK[entry.kind].icon}>
+        {kindWord(t(), entry)}
+      </Chip>
+    );
   /** A person's first groups by name; the row says how many there are in all where these are not all of them. */
   const groupWords = (entry: AccountDirectoryEntry) =>
     entry.kind !== "person"
@@ -394,14 +410,17 @@ export default function UsersScreen(props: UsersScreenProps) {
                   </Inline>
                 ),
               },
-              { title: t().kind, width: { min: 90, default: 110 }, cell: (row) => kindWord(t(), row.entry), drop: true },
               {
                 title: t().email,
                 width: { min: 160, default: 240 },
-                cell: (row) => (row.entry.kind === "person" && row.entry.mail) || "–",
+                // the account name and who manages it tell apart two accounts on one address
+                cell: (row) =>
+                  row.entry.kind === "person"
+                    ? { lines: [row.entry.mail || "–", `${row.entry.uid} · ${row.entry.provider === "ipa" ? "FreeIPA" : t().local}`] }
+                    : "–",
                 drop: true,
               },
-              { title: t().role, width: { min: 90, default: 110 }, cell: (row) => roleWord(row.entry) || "–", drop: true },
+              { title: t().role, width: { min: 100, default: 116 }, cell: (row) => roleCell(row.entry), drop: true },
               { title: t().groups, width: { min: 140, default: 220 }, cell: (row) => groupCell(row.entry), drop: true },
               { title: t().status, width: { min: 110, default: 120 }, cell: (row) => statusChip(t(), row.entry) },
               {

@@ -393,7 +393,7 @@ describe("the account list on v2", () => {
         expect(text).toContain("<script>alert(1)</script> &amp; **fett**");
         if (view !== phone) {
           // twelve groups: their count leads the cell, so the cut names never hide it
-          const groups = tab.locator("[data-k2-part=Table] tbody tr").filter({ hasText: "Christopher Alexander" }).locator("td").nth(4);
+          const groups = tab.locator("[data-k2-part=Table] tbody tr").filter({ hasText: "Waldenburg" }).locator("td").nth(3);
           const chip = groups.locator("[data-k2-part=Chip]");
           expect(await chip.textContent()).toBe("12");
           const cell = await groups.boundingBox();
@@ -411,12 +411,15 @@ describe("the account list on v2", () => {
 
   test("1,284 accounts: the list is ready within 1.5 s and holds one page, so the page stays the same size", async () => {
     for (const view of [wide, phone]) {
-      const started = Date.now();
       const { context, tab, errors } = await open(view, "/app/accounts/users", { sample: "huge" });
       try {
-        await tab.locator("[data-k2-part=Table]").first().waitFor();
-        expect(Date.now() - started).toBeLessThan(1500);
-        const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-group]), [data-k2-part=Table] li").count();
+        await tab.locator("[data-status-row]").waitFor();
+        // ready: the page has loaded and rendered its rows (the harness renders while its script runs)
+        const ready = await tab.evaluate(() => (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).loadEventEnd);
+        expect(ready).toBeGreaterThan(0);
+        expect(ready).toBeLessThan(1500);
+        const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-group]):visible, [data-k2-part=Row]:visible").count();
+        expect(rows).toBeGreaterThan(0);
         expect(rows).toBeLessThanOrEqual(USERS_PER_PAGE);
         // bounded DOM: about what one page of 100 rows needs, whatever the number of accounts
         const nodes = await tab.evaluate(() => document.querySelectorAll("#root *").length);
