@@ -359,8 +359,12 @@ for (const width of [1440, 900, 700, 390])
           await page.locator(menu).waitFor();
           const entries = (await page.getByRole("menuitem").allTextContents()).map((text) => text.replace(/\d+$/, "").trim());
           expect(entries).toEqual([...views.hidden.map((text) => text?.replace(/\d+$/, "").trim()), "Archiv", "Vorlagen"]);
+          // the first hidden view runs as its tab does: a deed at once, or (with an address) its onNavigate, which
+          // runs after the menu closed, in the page's view transition; the test waits for that deed
+          const before = (await deeds(page)).length;
           await page.getByRole("menuitem").first().click();
           await closed(page, menu);
+          await page.waitForFunction((count) => (window.__deeds?.length ?? 0) > count, before);
           expect((await deeds(page)).at(-1)).toMatch(/^view:/);
         }
         if (areas.hidden.length > 0) {
