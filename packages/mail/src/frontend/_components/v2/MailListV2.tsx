@@ -25,6 +25,8 @@ export default function MailListV2(props: {
   assigneeNames: (userIds: readonly string[]) => string[];
   text: MailV2Text;
   label: string;
+  /** While conversations are being selected: each row's box, in the place of its lead. */
+  selection?: { selected: (item: MailListItem) => boolean; toggle: (item: MailListItem) => void };
   /** A plain click on a row opens its conversation in place; the row stays a link for a new tab. */
   onOpen: (nav: LinkNavigateEvent, item: MailListItem) => void | Promise<void>;
   onRetry: () => void;
@@ -101,7 +103,12 @@ export default function MailListV2(props: {
                 meta={item.selectionKind === "conversation" && item.messageCount > 1 ? String(item.messageCount) : undefined}
                 time={mailV2RowTime(item.latestMessageAt, props.dateConfig)}
                 unread={item.unread}
-                selected={isMailListItemActive(item, props.selectedConversationId, props.selectedMessageId)}
+                current={isMailListItemActive(item, props.selectedConversationId, props.selectedMessageId)}
+                select={
+                  props.selection && item.conversationId
+                    ? { selected: props.selection.selected(item), onChange: () => props.selection?.toggle(item) }
+                    : undefined
+                }
                 marks={marks(item)}
               />
             )}

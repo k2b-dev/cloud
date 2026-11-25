@@ -215,6 +215,23 @@ const navigation = createNavigation({
 <WorkspaceNavigationProvider label="Inventory" navigation={navigation} />
 ```
 
+A page on `@k2b/ui/v2` puts its sidebar away on phones. Render
+`V2WorkspaceNavigation` once inside the application island with the same groups
+and foot as its v2 `Nav`; the phone bar's title becomes the menu and lists them:
+
+```tsx
+import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
+
+<V2WorkspaceNavigation label="Inventory" groups={groups()} />
+<Workspace sidebar={<Nav title="Inventory" icon="box" groups={groups()} />} …>
+```
+
+A group with a name becomes a section, a `nested` entry stands under the entry
+before it, and `current`, `count` and `dot` carry over; a group's own
+`action` stays in the sidebar. A tap opens an entry the way the sidebar does:
+in place through its `onNavigate`, otherwise as a page; an entry without a
+link runs its `onClick`.
+
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
 cleanup. When navigation has a `switcher`, the snapshot also carries its

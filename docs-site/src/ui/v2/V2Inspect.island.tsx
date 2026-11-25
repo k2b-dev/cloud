@@ -24,6 +24,7 @@ const named: [attribute: string, say: (value: string, element: HTMLElement) => s
   ["data-detail", () => "detail"],
   ["data-side", () => "side"],
   ["data-unread", () => "unread"],
+  ["data-current", () => "current"],
   ["data-selected", () => "selected"],
   ["data-yours", () => "yours"],
   ["data-strong", () => "strong"],

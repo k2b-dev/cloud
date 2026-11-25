@@ -68,15 +68,13 @@ type MailSearchFilterProps = {
 };
 
 /**
- * F9: one filter button at the search field holds what the head's chips did: Unread, Flagged, With attachment, the
- * date range and a tag, and while searching "Search in" and the place. A count on the button and Reset beside it show
- * an active filter. Arbitrary search trees stay in the search builder under "More filters".
+ * The filter menu's entries, its count of active filters and its button's name: one builder for v1's filter button
+ * and the v2 pilot's, so both offer the same.
  */
-export function MailSearchFilter(props: MailSearchFilterProps) {
+export function createMailSearchFilterMenu(props: Omit<MailSearchFilterProps, "hint">) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
-  const workspaceText = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const folderName = createMemo(() => mailFolderNames(locale()));
   const url = () => mailRouteUrl(props.requestUrl);
   const quick = createMemo(() => readMailHeadFilters(url(), props.search, props.folderId));
@@ -248,8 +246,21 @@ export function MailSearchFilter(props: MailSearchFilterProps) {
     }
     props.onOpenHref(buildMailSearchClearHref(url()));
   };
-  let trigger: HTMLElement | undefined;
   const label = () => (activeCount() > 0 ? listText().filtersActive({ count: activeCount() }) : listText().filters);
+  return { items, activeCount, label };
+}
+
+/**
+ * F9: one filter button at the search field holds what the head's chips did: Unread, Flagged, With attachment, the
+ * date range and a tag, and while searching "Search in" and the place. A count on the button and Reset beside it show
+ * an active filter. Arbitrary search trees stay in the search builder under "More filters".
+ */
+export function MailSearchFilter(props: MailSearchFilterProps) {
+  const locale = useLocale();
+  const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const workspaceText = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
+  const { items, activeCount, label } = createMailSearchFilterMenu(props);
+  let trigger: HTMLElement | undefined;
   return (
     <span class="mail-search-filter" ref={(element) => (trigger = element)} data-mail-search-filter>
       <Dropdown.Root position="bottom-right" width="18rem" items={items()} label={listText().filters} phone="sheet">

@@ -286,7 +286,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const meta = element.querySelector(".k2-row-meta")?.textContent;
         const lead = element.querySelector(":scope > .k2-row-lead [data-k2-part]");
         const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
-        const state = flags(element, ["unread", "selected", "yours", "strong"]);
+        const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks")].flatMap(words);
         return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;

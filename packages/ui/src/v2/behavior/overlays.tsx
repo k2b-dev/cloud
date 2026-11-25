@@ -42,10 +42,26 @@ export type DialogParts = {
 export type Presentation = "auto" | "dialog" | "sheet";
 
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
-export function useDialog(options: () => OverlayOptions & { modal?: boolean; presentation?: Presentation } = () => ({})): DialogParts {
+export type DialogOptions = OverlayOptions & {
+  modal?: boolean;
+  presentation?: Presentation;
+  /** `false`: Escape, an outside press, a swipe on a sheet and Android's back gesture do not close it; its parts do. */
+  dismissible?: boolean;
+  /** A refused dismissal and how it was tried: "escape-key", "outside-press", "back" or "swipe". */
+  onDismissAttempt?: (reason: string) => void;
+};
+
+export function useDialog(options: () => DialogOptions = () => ({})): DialogParts {
   // An async action in the dialog announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
-  const handle = usePrimitive(dialogPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));
+  const handle = usePrimitive(dialogPrimitive, () => {
+    const { onDismissAttempt, ...given } = options();
+    return {
+      ...given,
+      pendingAnnouncement: t().loading,
+      onDismissAttempt: onDismissAttempt && ((details: { reason: string }) => onDismissAttempt(details.reason)),
+    };
+  });
   const Backdrop = popupComponent(handle, "backdrop");
   const Content = popupComponent(handle, "content");
   return {

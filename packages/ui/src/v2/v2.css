@@ -258,6 +258,10 @@
 .k2-ui :where([class^="k2-"], [class*=" k2-"])::after {
   box-sizing: border-box;
 }
+/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden */
+.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden] {
+  display: none !important;
+}
 /* elements a primitive draws without a class of their own */
 .k2-ui :where(.k2-table th, .k2-table td, .k2-fact-pair > dt, .k2-fact-pair > dd, .k2-path > b, .k2-tile > span) {
   box-sizing: border-box;
@@ -283,7 +287,7 @@
 .k2-ui :where(.k2-ni) {
   width: 100%;
 }
-.k2-ui :where(.k2-btn, .k2-row, .k2-chip, .k2-ni, .k2-mark-input, .k2-input > input, .k2-input > textarea, .k2-native-select) {
+.k2-ui :where(.k2-btn, .k2-row, .k2-chip, .k2-ni, .k2-mark-input, .k2-input > input, .k2-input > textarea) {
   font: inherit;
   color: inherit;
   margin: 0;
@@ -1070,11 +1074,23 @@
 .k2-ui .k2-row[data-strong] .k2-row-title {
   font-weight: 600;
 }
-.k2-ui .k2-row[data-selected] {
+.k2-ui .k2-row[data-current] {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-row[data-yours] {
   background: var(--k2-blue-tint);
+}
+/* a row chosen in a selection takes the blue tint of a selected table row; open and chosen at once, it stays blue */
+.k2-ui .k2-row[data-selected] {
+  background: var(--k2-blue-tint);
+}
+/* the box of a row in a selection stands in the lead; its target reaches 12 px to the edge, 8 px towards the title
+   (the gap before it) and 8 px up and down (36 × 36 px), inside the row, so a finger meets it and never the title or
+   the entry beside it */
+.k2-ui .k2-row-lead > .k2-mark > .k2-mark-input {
+  inset: -8px -8px -8px -12px;
+  width: calc(100% + 20px);
+  height: calc(100% + 16px);
 }
 .k2-ui .k2-row[data-avatar] {
   column-gap: 12px;
@@ -1128,8 +1144,9 @@
   position: absolute;
   inset: 0;
 }
-.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open),
-.k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex]):not(.k2-row-open) {
+/* (a box's mark stands above as a whole: its input lies over the mark and keeps its place there) */
+.k2-ui .k2-row[data-open] :is(a, button, input, select, textarea, label, [tabindex], .k2-mark):not(.k2-row-open, .k2-mark-input),
+.k2-ui .k2-cell[data-open] :is(a, button, input, select, textarea, label, [tabindex], .k2-mark):not(.k2-row-open, .k2-mark-input) {
   position: relative;
   z-index: 1;
 }
@@ -1998,20 +2015,27 @@
   height: 20px;
   vertical-align: top;
 }
+/* the field of a selection is a button: the value on the left, the chevron at the end; its value in the type of an
+   input's value */
 .k2-ui .k2-input[data-select] {
-  position: relative;
-}
-.k2-ui .k2-native-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
   cursor: default;
+  width: 100%;
+  text-align: left;
+  font: var(--k2-t-row);
+  color: var(--k2-text);
 }
-.k2-ui .k2-input[data-select]:has(> .k2-native-select:focus-visible) {
+.k2-ui .k2-input[data-select]:focus-visible {
+  outline: none;
   border-color: var(--k2-blue);
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+/* the open list of a selection: at least as wide as its field, an option per row like a menu, the check at the end */
+.k2-ui .k2-menu[data-listbox] {
+  width: auto;
+  min-width: var(--anchor-width, 232px);
+  max-height: min(320px, var(--available-height, 320px));
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 /* the copy button beside a value: quiet, 28 px, its icon on the text edge */
 .k2-ui .k2-fact-pair > dd > .k2-btn {

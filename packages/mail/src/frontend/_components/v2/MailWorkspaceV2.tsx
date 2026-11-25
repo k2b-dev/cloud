@@ -1,12 +1,14 @@
+import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { announce, useLocale } from "@k2b/ui";
-import { Bar, Button, Input, Nav, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Input, Menu, Nav, type NavGroup, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
 import type { MailSidebarMailbox } from "../MailSidebar";
+import { createMailSearchFilterMenu } from "../MailWorkspaceHead";
 import { buildVisibleMailFolderTree, flattenMailFolderTree } from "../mail-folder-tree";
 import { mailListRowKey } from "../mail-list-projection";
 import type { MailboxPreferences } from "../mail-mailbox-preferences";
@@ -15,6 +17,7 @@ import { buildMailListHref, buildMailSearchHref, buildMailSelectionHref, mailRou
 import MailListV2 from "./MailListV2";
 import MailReaderV2 from "./MailReaderV2";
 import type { MailV2Session } from "./MailReplyV2";
+import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
 /** The head shows these views as tabs; the others wait under "More". */
@@ -83,6 +86,35 @@ export default function MailWorkspaceV2(props: {
   const openView: OnNavigate = (nav) => c().navigateWorkspace(nav);
   const openRow = (nav: LinkNavigateEvent, item: MailListItem) =>
     c().navigateConversation(nav.href, item, nav.event.detail === 0 ? "keyboard" : "pointer");
+  // The filter menu at the search field, v1's (F9): what narrows the list, all in the URL.
+  const filter = createMailSearchFilterMenu({
+    get requestUrl() {
+      return c().requestPath();
+    },
+    get search() {
+      return c().data.search;
+    },
+    get folderId() {
+      return c().data.folderId;
+    },
+    get folders() {
+      return c().data.folders;
+    },
+    get localTags() {
+      return c().data.localTags;
+    },
+    get quickSearch() {
+      return c().searchControls;
+    },
+    onEditSearch: (state, source) => {
+      c().searchControls.cancelPending();
+      c().searchControls.edit(state, source);
+    },
+    onOpenHref: (href) => {
+      c().searchControls.cancelPending();
+      void c().openWorkspaceHref(href);
+    },
+  });
   // Enter in the head's search field searches the mailbox, as v1's search field does.
   const searchKey = (event: KeyboardEvent) => {
     if (event.key !== "Enter" || event.isComposing) return;
@@ -150,6 +182,11 @@ export default function MailWorkspaceV2(props: {
     );
   });
   const hiddenCount = () => props.shell.mailboxes.filter((mailbox) => props.shell.preferences.isHidden(mailbox.id)).length;
+  // The sidebar's entries, also in the shell's phone menu ("Mail ⌄"), where the sidebar gives way.
+  const navGroups = createMemo((): NavGroup[] => [{ label: text().mailboxes, items: navItems() }]);
+  const navFoot = createMemo((): NavItem[] | undefined =>
+    hiddenCount() > 0 ? [{ label: text().hidden({ count: hiddenCount() }), icon: "eye-off" }] : undefined,
+  );
 
   // ── Head ───────────────────────────────────────────────────────────────────────────────────────────────────────
   const tabs = createMemo(() => {
@@ -192,105 +229,110 @@ export default function MailWorkspaceV2(props: {
   const runOnSelection = (actionId: "archive" | "trash") => void c().runAction(actionId);
 
   return (
-    <Workspace
-      sidebarLabel={text().sidebarWidth}
-      primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
-      sidebar={
-        <Nav
-          title="Mail"
-          icon="mail"
-          groups={[{ label: text().mailboxes, items: navItems() }]}
-          foot={hiddenCount() > 0 ? [{ label: text().hidden({ count: hiddenCount() }), icon: "eye-off" }] : undefined}
-        />
-      }
-      head={
-        <Bar
-          start={<Tabs label={text().views} items={tabs()} />}
-          end={
-            <>
-              <Input
-                type="search"
-                icon="search"
-                label={text().search}
-                placeholder={text().search}
-                value={search()}
-                onInput={setSearch}
-                onKeyDown={searchKey}
+    <>
+      <V2WorkspaceNavigation label={c().data.mailbox.name} groups={navGroups()} foot={navFoot()} />
+      <Workspace
+        sidebarLabel={text().sidebarWidth}
+        primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
+        sidebar={<Nav title="Mail" icon="mail" groups={navGroups()} foot={navFoot()} />}
+        head={
+          <Bar
+            start={<Tabs label={text().views} items={tabs()} />}
+            end={
+              <>
+                <Input
+                  type="search"
+                  icon="search"
+                  label={text().search}
+                  placeholder={text().search}
+                  value={search()}
+                  onInput={setSearch}
+                  onKeyDown={searchKey}
+                  end={<Menu icon="adjustments-horizontal" label={filter.label()} items={mailV2MenuEntries(filter.items())} />}
+                />
+                <Show when={c().canWrite() && !c().assignedOnly()}>
+                  <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
+                    {c().sidebarText().compose}
+                  </Button>
+                </Show>
+              </>
+            }
+          />
+        }
+      >
+        <Pane.Split>
+          <Pane
+            label={text().listWidth}
+            width={c().readerOpen() ? { min: 320, default: 432 } : undefined}
+            scrollKey={`mail-list-${c().data.mailbox.id}`}
+            status={
+              <StatusRow
+                select={
+                  c().canWrite() && items().some((item) => item.conversationId)
+                    ? {
+                        label: c().t().selectAllConversations,
+                        checked: selectionCount() === 0 ? false : selectionCount() >= items().length ? true : "mixed",
+                        onChange: () => c().toggleAllConversations(),
+                      }
+                    : undefined
+                }
+                lead={text().unread({ count: formatCount(unreadCount()) })}
+                facts={
+                  c().data.listMode === "conversations"
+                    ? [
+                        {
+                          before: text().today,
+                          value: c().data.doneTodayCounts.doneToday,
+                          after: text().done({ automated: c().data.doneTodayCounts.doneByAutomation }),
+                        },
+                      ]
+                    : undefined
+                }
+                selection={
+                  selecting()
+                    ? {
+                        count: text().selected({ count: formatCount(selectionCount()) }),
+                        actions: [
+                          { label: text().done_, icon: "check", onClick: () => void c().completeSelection() },
+                          { label: text().archive, icon: "archive", onClick: () => runOnSelection("archive") },
+                          { label: text().delete, icon: "trash", onClick: () => runOnSelection("trash") },
+                        ],
+                        clear: { label: text().clearSelection, onClick: () => c().exitHeadSelection() },
+                      }
+                    : undefined
+                }
               />
-              <Show when={c().canWrite() && !c().assignedOnly()}>
-                <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
-                  {c().sidebarText().compose}
-                </Button>
-              </Show>
-            </>
-          }
-        />
-      }
-    >
-      <Pane.Split>
-        <Pane
-          label={text().listWidth}
-          width={c().readerOpen() ? { min: 320, default: 432 } : undefined}
-          scrollKey={`mail-list-${c().data.mailbox.id}`}
-          status={
-            <StatusRow
-              select={
-                c().canWrite() && items().some((item) => item.conversationId)
-                  ? {
-                      label: c().t().selectAllConversations,
-                      checked: selectionCount() === 0 ? false : selectionCount() >= items().length ? true : "mixed",
-                      onChange: () => c().toggleAllConversations(),
-                    }
-                  : undefined
-              }
-              lead={text().unread({ count: formatCount(unreadCount()) })}
-              facts={
-                c().data.listMode === "conversations"
-                  ? [
-                      {
-                        before: text().today,
-                        value: c().data.doneTodayCounts.doneToday,
-                        after: text().done({ automated: c().data.doneTodayCounts.doneByAutomation }),
-                      },
-                    ]
-                  : undefined
-              }
+            }
+          >
+            <MailListV2
+              items={items()}
+              requestPath={c().requestPath()}
+              selectedConversationId={c().data.selectedConversationId}
+              selectedMessageId={c().data.selectedMessageId}
+              dateConfig={props.dateConfig}
+              error={c().data.listError}
+              nextCursor={c().data.nextListCursor}
+              assigneeNames={c().assigneeNames}
+              text={text()}
+              label={c().t().conversationList}
+              onOpen={openRow}
               selection={
                 selecting()
                   ? {
-                      count: text().selected({ count: formatCount(selectionCount()) }),
-                      actions: [
-                        { label: text().done_, icon: "check", onClick: () => void c().completeSelection() },
-                        { label: text().archive, icon: "archive", onClick: () => runOnSelection("archive") },
-                        { label: text().delete, icon: "trash", onClick: () => runOnSelection("trash") },
-                      ],
-                      clear: { label: text().clearSelection, onClick: () => c().exitHeadSelection() },
+                      selected: (item) => Boolean(item.conversationId && c().selectedConversationIds().has(item.conversationId)),
+                      toggle: (item) => c().toggleConversationSelection(item, false),
                     }
                   : undefined
               }
+              onRetry={() => void c().refreshList()}
+              onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
             />
-          }
-        >
-          <MailListV2
-            items={items()}
-            requestPath={c().requestPath()}
-            selectedConversationId={c().data.selectedConversationId}
-            selectedMessageId={c().data.selectedMessageId}
-            dateConfig={props.dateConfig}
-            error={c().data.listError}
-            nextCursor={c().data.nextListCursor}
-            assigneeNames={c().assigneeNames}
-            text={text()}
-            label={c().t().conversationList}
-            onOpen={openRow}
-            onRetry={() => void c().refreshList()}
-            onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
-          />
-        </Pane>
-        <Show when={c().readerOpen()}>
-          <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} session={props.session} />
-        </Show>
-      </Pane.Split>
-    </Workspace>
+          </Pane>
+          <Show when={c().readerOpen()}>
+            <MailReaderV2 controller={c()} dateConfig={props.dateConfig} text={text()} session={props.session} />
+          </Show>
+        </Pane.Split>
+      </Workspace>
+    </>
   );
 }
