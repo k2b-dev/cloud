@@ -31,6 +31,8 @@ const screens = {
   record: "record",
   deliveries: "deliveries",
   table: "table",
+  // the states of the primitives (no mockup of its own): only the layout rules
+  keys: "keys",
 } as const;
 
 /** Boxes relative to the workspace, measured in the mockup at 1440 × 900 and 390 × 844 (left,top width×height). */
@@ -97,6 +99,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       folded: [".k2-group[data-folded]", "16,1285 358x102"],
     },
   },
+  keys: { 1440: {}, 390: {} },
   // tabelle-grids.html; the table is wider than its column and scrolls sideways
   table: {
     1440: {

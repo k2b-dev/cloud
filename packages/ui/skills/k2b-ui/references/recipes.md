@@ -16,7 +16,7 @@ thing you can point at in the image.
 
 `Workspace` with `Nav`, a head `Bar` with `Tabs` and the main action;
 `Pane.Split` with the list (`StatusRow`, `List` of two-line `Row`s, the open
-one `selected`) and a `Pane detail` (head `Bar` with the name and actions,
+one `current`) and a `Pane detail` (head `Bar` with the name and actions,
 `Notice tone="bad"` with a way out, `Section`s with `Facts` and `Row`s).
 
 - On the phone the detail pane leaves. Open an entry as its own route there.

@@ -1,5 +1,7 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import KeysScreen from "./KeysScreen.island";
+import MailSelectScreen from "./MailSelectScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
@@ -37,6 +39,15 @@ export const v2Screens = {
     phone: { app: "Mail" },
     render: () => <MailScreen open={false} />,
   },
+  "mail-select": {
+    title: "Mail · Auswahl",
+    description:
+      "The same inbox with two messages selected: every row has its box in the lead, named by its sender, a selected row is blue, and the status row is the bar of what can be done with them. On the phone the list stays the page.",
+    mockup: "tabelle-grids.html (selection), mail.html",
+    app: "#0f766e",
+    phone: { app: "Mail" },
+    render: () => <MailSelectScreen />,
+  },
   record: {
     title: "Kundenakte · Überblick",
     description:
@@ -65,11 +76,20 @@ export const v2Screens = {
   form: {
     title: "Bedienung · Neuer Auftrag",
     description:
-      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Dialog, menu, the open list of a selection and the toast with Rückgängig after the main action follow with the behaviour layer.",
+      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Als Vorlage speichern opens a dialog with a field, a sheet from the bottom on a phone; Abbrechen asks with Dialog.confirm before the order is discarded. The menu, the open list of a selection and the toast with Rückgängig after the main action follow.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
     phone: { back: "Aufträge" },
     render: () => <FormScreen />,
+  },
+  keys: {
+    title: "Zustände · Schlüssel eines Agenten",
+    description:
+      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), disabled fields and a disabled deed of a notice, and facts with a token in monospace. On the phone the side column stands under the table, with one line between them.",
+    mockup: "tabelle.html (Sortiert), index.html (Button, Field)",
+    app: "#7c3aed",
+    phone: { back: "Agenten" },
+    render: () => <KeysScreen />,
   },
 } satisfies Record<string, V2Screen>;
 

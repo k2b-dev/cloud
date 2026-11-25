@@ -109,14 +109,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       // The label only: an avatar's initials in the button are no part of its name.
       const label = element.getAttribute("aria-label") ?? textOf(element.querySelector(".k2-btn-label") ?? element);
       const variant = element.getAttribute("data-variant");
+      const busy = element.getAttribute("aria-busy") === "true";
       const disabled = element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true";
-      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${disabled ? " disabled" : ""}]`;
+      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${busy ? " busy" : disabled ? " disabled" : ""}]`;
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");
       return `(${clip(element.textContent ?? "", 30)}${kind && kind !== "plain" ? ` · ${kind}` : ""})`;
     }
-    if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}`;
+    if (name === "Avatar") return `@${element.getAttribute("aria-label") ?? ""}${element.hasAttribute("data-image") ? " picture" : ""}`;
     if (name === "Icon") return element.getAttribute("aria-label") ? `icon ${quote(element.getAttribute("aria-label"))}` : "";
     if (name === "Text") {
       const type = element.getAttribute("data-type");
@@ -155,7 +156,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
             : shownValue?.textContent
           : ((control as HTMLInputElement | null)?.value ?? control?.getAttribute("value"));
       const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
-      return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}`;
+      return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
     if (name === "Progress")
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
@@ -167,7 +168,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         (input as HTMLInputElement | null)?.indeterminate === true ||
         !!element.querySelector("[data-k2-mark] [data-name='minus']");
       const state = mixed ? "mixed" : (input as HTMLInputElement | null)?.checked || input?.hasAttribute("checked") ? "on" : "off";
-      return `${element.hasAttribute("data-switch") ? "Switch" : "Check"} ${quote(element.textContent)} ${state}`;
+      return `${element.hasAttribute("data-switch") ? "Switch" : "Check"} ${quote(element.textContent)} ${state}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
     if (name === "Choice") {
       const options = [...element.querySelectorAll("label")].map((label) => {
@@ -176,7 +177,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       });
       // A choice in a field is named by the field's label; alone it names itself.
       const label = element.getAttribute("aria-label");
-      return `Choice${label ? ` ${quote(label)}` : ""}: ${options.join(", ")}`;
+      const disabled = element.getAttribute("aria-disabled") === "true" ? " disabled" : "";
+      return `Choice${label ? ` ${quote(label)}` : ""}${disabled}: ${options.join(", ")}`;
     }
     if (name === "Inline") return words(element).join(" ");
     if (name === "Nav.Item" || name === "Digest.Entry" || name === "Cells.Cell") return quote(element.textContent);
@@ -286,7 +288,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const meta = element.querySelector(".k2-row-meta")?.textContent;
         const lead = element.querySelector(":scope > .k2-row-lead [data-k2-part]");
         const leadWord = lead && part(lead) === "Avatar" ? ` @${lead.getAttribute("aria-label")}` : "";
-        const state = flags(element, ["unread", "selected", "yours", "strong"]);
+        const state = flags(element, ["unread", "current", "selected", "yours", "strong"]);
         const opens = element.tagName === "A" ? " opens link" : element.tagName === "BUTTON" ? " opens" : "";
         const tail = [...element.querySelectorAll(":scope > .k2-row-end, :scope > .k2-row-marks")].flatMap(words);
         return `Row${leadWord} ${lineTexts.join(" / ")}${meta ? ` (${clip(meta, 20)})` : ""}${time ? ` · ${clip(time, 20)}` : ""}${state.length ? ` [${state.join(", ")}]` : ""}${opens}${tail.length ? ` ${tail.join(" ")}` : ""}`;
@@ -302,9 +304,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.nextElementSibling?.classList.contains("k2-table-phone") ? "phone rows" : "",
         ].filter(Boolean);
         const columns = heads.map((th) => {
-          const notes = [th.getAttribute("data-align") === "end" ? "end" : "", th.hasAttribute("data-drop") ? "drops on phone" : ""].filter(
-            Boolean,
-          );
+          const sorted = th.getAttribute("aria-sort");
+          const notes = [
+            th.getAttribute("data-align") === "end" ? "end" : "",
+            th.hasAttribute("data-drop") ? "drops on phone" : "",
+            sorted ? `sorted ${sorted}` : th.querySelector(".k2-th-sort") ? "sorts" : "",
+          ].filter(Boolean);
           return `${clip(th.textContent ?? "", 20)}${notes.length ? ` (${notes.join(", ")})` : ""}`;
         });
         const dropped =
@@ -452,15 +457,39 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
 
   for (const child of root.matches("[data-k2-part]") ? [root] : [...root.children]) visit(child, 0);
 
-  const primaries = [...root.querySelectorAll("[data-k2-part='Button'][data-variant='primary'], .k2-fab")].filter((button) =>
-    options.layout ? !hidden(button) : !button.classList.contains("k2-fab"),
-  );
-  if (options.layout && !primaries.length && root.querySelector("[data-k2-part='Button'][data-variant='primary']"))
+  // One primary action per surface: the page, and each open dialog or sheet above it, which has its own (such as
+  // "Erstellen" in a dialog over a page whose head creates the thing).
+  const surfaces = "dialog, [role='dialog'], [role='alertdialog'], [data-k2-part='Dialog']";
+  const surfaceOf = (element: Element) => {
+    const surface = element.closest(surfaces);
+    return surface && root.contains(surface) ? surface : root;
+  };
+  const surfaceName = (surface: Element) => {
+    const labelledBy = surface.getAttribute("aria-labelledby");
+    const title =
+      surface.getAttribute("aria-label") ??
+      (labelledBy ? surface.ownerDocument.getElementById(labelledBy)?.textContent : undefined) ??
+      surface.querySelector(".k2-dialog-title")?.textContent;
+    return `dialog${title ? ` ${quote(title, 30)}` : ""}`;
+  };
+  const allPrimaries = [...root.querySelectorAll("[data-k2-part='Button'][data-variant='primary'], .k2-fab")];
+  const shownPrimaries = allPrimaries.filter((button) => (options.layout ? !hidden(button) : !button.classList.contains("k2-fab")));
+  const bySurface = new Map<Element, Element[]>([[root, []]]);
+  for (const button of shownPrimaries) {
+    const surface = surfaceOf(button);
+    bySurface.set(surface, [...(bySurface.get(surface) ?? []), button]);
+  }
+  if (
+    options.layout &&
+    !bySurface.get(root)!.length &&
+    allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
+  )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
-  if (primaries.length > 1)
-    problems.push(
-      `${primaries.length} primary buttons (${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per page; make the others secondary`,
-    );
+  for (const [surface, primaries] of bySurface)
+    if (primaries.length > 1)
+      problems.push(
+        `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
+      );
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {

@@ -48,6 +48,8 @@ type ChoiceOptions<Value> = {
   disabled?: boolean;
   required?: boolean;
   placeholder?: string;
+  /** The name the value is sent under in a form, through `FormInput`. */
+  name?: string;
 };
 
 export type SelectOptions = ChoiceOptions<string | null>;
@@ -70,6 +72,11 @@ export type SelectParts = {
   /** Its children show only while no option matches. */
   Empty: (props: EmptyProps) => JSX.Element;
   Clear: SlotComponent;
+  /**
+   * Core's form input: a visually hidden input under `name` that a form sends and validates (`required` blocks an empty
+   * submit), that a form's reset puts back to the first value, that autofill fills, and that fires `change`.
+   */
+  FormInput: SlotComponent;
 };
 
 /** The given items in the order core lists them (a search leaves some out); core's list holds the same data. */
@@ -150,6 +157,7 @@ export function useSelect(options: () => SelectOptions | MultiSelectOptions): Se
     ItemIndicator: slotComponent(handle, "item-indicator", "span"),
     Empty: emptyComponent(slotComponent(handle, "empty", "div")),
     Clear: slotComponent(handle, "clear", "button"),
+    FormInput: slotComponent(handle, "form-input", "input"),
   };
 }
 
@@ -181,6 +189,7 @@ export function useCombobox(
     ItemIndicator: slotComponent(handle, "item-indicator", "span"),
     Empty: emptyComponent(slotComponent(handle, "empty", "div")),
     Clear: slotComponent(handle, "clear", "button"),
+    FormInput: slotComponent(handle, "form-input", "input"),
     Chips: slotComponent(handle, "chips", "div"),
     Chip: chipComponent(handle, "chip", "div"),
     ChipRemove: chipComponent(handle, "chip-remove", "button"),

@@ -192,6 +192,8 @@ function measureInPage(options: InPage): DomResult {
     const seen = new Map<Element, string>();
     for (const element of [root, ...Array.from(root.querySelectorAll("*"))]) {
       if (element.localName === "k2-stand-in") continue;
+      // what turns forever (the sign of a busy button) changes its box between two looks by itself, not by a stand-in
+      if (element.getAnimations().some((animation) => animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY)) continue;
       const r = element.getBoundingClientRect();
       const s = getComputedStyle(element);
       seen.set(

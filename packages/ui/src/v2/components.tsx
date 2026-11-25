@@ -414,7 +414,7 @@ export type RecordHeadProps = {
 /** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
-    <Show when={props.avatar}>{(person) => <Avatar {...person()} />}</Show>
+    <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
     <h1 class="k2-record-name" data-k2-part="RecordHead">
       {props.name}
     </h1>

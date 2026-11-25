@@ -9,6 +9,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { type ChoiceItem, useSelect } from "./behavior/select";
 import { Icon } from "./marks";
 
 type FieldIds = {
@@ -23,6 +24,11 @@ type FieldIds = {
   described?: string;
   /** A control of several choices (Check, Choice) makes the field a named group instead of a labelled control. */
   group: () => void;
+  /**
+   * A control whose id the behaviour layer owns (Select) is named by the label line through `aria-labelledby`, so the
+   * label line points at no id with `for`; a press on the label line calls `focus`, as a label does for its control.
+   */
+  named: (focus: () => void) => void;
 };
 const FieldContext = createContext<FieldIds>();
 
@@ -55,6 +61,7 @@ export const Field = (props: FieldProps) => {
   // The control is made first, so the field knows whether it labels one control or names a group of choices; the
   // order is the same on the server and in the browser.
   let grouped = false;
+  let named: (() => void) | undefined;
   const content = (
     <FieldContext.Provider
       value={{
@@ -74,6 +81,9 @@ export const Field = (props: FieldProps) => {
         },
         group: () => {
           grouped = true;
+        },
+        named: (focus) => {
+          named = focus;
         },
       }}
     >
@@ -101,6 +111,15 @@ export const Field = (props: FieldProps) => {
   return grouped ? (
     <div class="k2-field" data-k2-part="Field" role="group" aria-labelledby={label}>
       <span class="k2-field-label" id={label}>
+        {labelLine}
+      </span>
+      {content}
+      {messageLine}
+    </div>
+  ) : named ? (
+    <div class="k2-field" data-k2-part="Field">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
+      <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
       {content}
@@ -153,6 +172,8 @@ export type InputProps = {
   ref?: HTMLInputElement | HTMLTextAreaElement | ((element: HTMLInputElement | HTMLTextAreaElement) => void);
   /** At the end inside the field: a symbol, or a ghost icon button such as the filter of a search. */
   end?: JSX.Element;
+  /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
+  disabled?: boolean;
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -174,12 +195,14 @@ export const Input = (props: InputProps) => {
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
     "aria-describedby": field?.described,
     required: field?.required || undefined,
+    disabled: props.disabled,
   });
   return (
     <span
       class="k2-input"
       data-k2-part="Input"
       data-invalid={field?.invalid ? "" : undefined}
+      data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
     >
@@ -212,58 +235,84 @@ export const Input = (props: InputProps) => {
   );
 };
 
+export type SelectOption = { value: string; label: string; disabled?: boolean };
+
 export type SelectProps = {
-  options: readonly (string | { value: string; label: string })[];
+  options: readonly (string | SelectOption)[];
   /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
+  /** A name for the selection when it stands without a Field. */
   label?: string;
 };
 
 /**
- * The closed shape of a selection: the value and a chevron in the round field. (The list opens with the behaviour
- * layer; until then it is a native select laid over the shape, so it works with the keyboard and in forms.) The
- * shape always shows the value that is chosen now.
+ * One value from a list: the round field shows it with a chevron, and the list opens below it with the keyboard,
+ * typeahead and a check at the chosen option (the behaviour layer on the ui-sdk core). The list is at least as wide as
+ * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
+ * field is required, put back by the form's reset, with a `change` event.
  */
 export const Select = (props: SelectProps) => {
   const field = useField();
-  const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
-  const [chosen, setChosen] = createSignal(props.value);
-  const value = () => (props.onChange ? props.value : chosen());
-  const current = () => options().find((option) => option.value === value());
+  let trigger: HTMLElement | undefined;
+  // the behaviour layer owns the trigger's id, so the field names it through aria-labelledby; its label focuses it
+  field?.named(() => trigger?.focus());
+  const items = (): ChoiceItem[] => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  // Without `onChange` core holds the choice (so a form's reset puts it back); the field only follows it.
+  const [chosen, setChosen] = createSignal<string | null>(props.value ?? null);
+  const value = () => (props.onChange ? (props.value ?? null) : chosen());
+  const select = useSelect(() => ({
+    items: items(),
+    ...(props.onChange ? { value: props.value ?? null } : { defaultValue: props.value ?? null }),
+    onValueChange: (next: string | null) => {
+      // a form's reset may put back "nothing chosen"; the caller hears only of a value
+      setChosen(next);
+      if (next !== null) props.onChange?.(next);
+    },
+    placeholder: props.placeholder,
+    required: field?.required,
+    name: props.name ?? field?.name,
+  }));
   return (
-    <span class="k2-input" data-k2-part="Select" data-select="" data-invalid={field?.invalid ? "" : undefined}>
-      <span class="k2-input-value" data-placeholder={current() ? undefined : ""}>
-        {current()?.label ?? props.placeholder ?? ""}
-      </span>
-      <Icon name="chevron-down" />
-      <select
-        class="k2-native-select"
-        id={field?.control}
-        name={props.name ?? field?.name}
-        aria-label={field ? undefined : props.label}
-        aria-invalid={field?.invalid ? "true" : undefined}
-        aria-describedby={field?.described}
-        required={field?.required || undefined}
-        onChange={(event) => {
-          setChosen(event.currentTarget.value);
-          props.onChange?.(event.currentTarget.value);
+    <>
+      <select.Trigger
+        ref={(element: HTMLElement) => {
+          trigger = element;
         }}
+        class="k2-input"
+        data-k2-part="Select"
+        data-select=""
+        data-invalid={field?.invalid ? "" : undefined}
+        aria-labelledby={field?.label}
+        aria-label={field ? undefined : props.label}
+        aria-describedby={field?.described}
+        aria-invalid={field?.invalid ? "true" : undefined}
       >
-        <Show when={!current()}>
-          <option value="">{props.placeholder ?? ""}</option>
-        </Show>
-        <For each={options()}>
-          {(option) => (
-            <option value={option.value} selected={option.value === value()}>
-              {option.label}
-            </option>
-          )}
-        </For>
-      </select>
-    </span>
+        <span class="k2-input-value" data-placeholder={value() === null ? "" : undefined}>
+          <select.Value placeholder={props.placeholder ?? ""} />
+        </span>
+        <Icon name="chevron-down" />
+      </select.Trigger>
+      {/* core's form input: sent, validated (`required`), reset with the form, and it fires `change` */}
+      <select.FormInput />
+      <select.Popup
+        class="k2-menu"
+        data-listbox=""
+        sideOffset={4}
+        collisionPadding={8}
+        option={(item: ChoiceItem) => (
+          <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
+            {item.label}
+            <select.ItemIndicator item={item.value} class="k2-mi-meta">
+              <Icon name="check" />
+            </select.ItemIndicator>
+          </select.Item>
+        )}
+      />
+    </>
   );
 };
 
@@ -321,7 +370,12 @@ export const Check = (props: CheckProps) => {
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
   return (
-    <label class="k2-choice" data-k2-part="Check" data-switch={props.switch ? "" : undefined}>
+    <label
+      class="k2-choice"
+      data-k2-part="Check"
+      data-switch={props.switch ? "" : undefined}
+      data-disabled={props.disabled ? "" : undefined}
+    >
       <span class="k2-mark">
         <input
           class="k2-mark-input"
@@ -366,13 +420,22 @@ const mixed = (input: HTMLInputElement, when: () => boolean) => {
   });
 };
 
-/** A box without visible words, named for assistive technology (internal: "select all", "select this row"). */
-export const MarkCheck = (props: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void }) => (
+/**
+ * A box without visible words, named for assistive technology by a `label` or by the element `labelledBy` (internal:
+ * "select all", "select this row", a row's box named by its title).
+ */
+export const MarkCheck = (
+  props: ({ label: string; labelledBy?: undefined } | { label?: undefined; labelledBy: string }) & {
+    checked?: boolean | "mixed";
+    onChange?: (checked: boolean) => void;
+  },
+) => (
   <span class="k2-mark">
     <input
       class="k2-mark-input"
       type="checkbox"
       aria-label={props.label}
+      aria-labelledby={props.labelledBy}
       checked={props.checked === true}
       ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
@@ -392,6 +455,8 @@ export type ChoiceProps = {
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
   onChange?: (value: string) => void;
+  /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
+  disabled?: boolean;
 };
 
 /**
@@ -422,10 +487,11 @@ const ChoiceGroup = (props: ChoiceProps) => {
       aria-label={field ? undefined : props.label}
       aria-labelledby={field?.label}
       aria-describedby={field?.described}
+      aria-disabled={props.disabled ? "true" : undefined}
     >
       <For each={options()}>
         {(option) => (
-          <label class="k2-choice">
+          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
             <span class="k2-mark">
               <input
                 class="k2-mark-input"
@@ -434,6 +500,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 value={option.value}
                 checked={option.value === value()}
                 required={field?.required || undefined}
+                disabled={props.disabled}
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
